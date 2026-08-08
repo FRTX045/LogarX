@@ -173,6 +173,47 @@ def test_ip_summaries_are_ordered_by_request_count(store: ParquetEventStore) -> 
     assert [s.client_ip for s in store.ip_summaries()] == ["2.2.2.2", "1.1.1.1"]
 
 
+def test_ip_summaries_can_be_ordered_by_most_recent_activity(
+    store: ParquetEventStore,
+) -> None:
+    store.write(
+        [
+            event("1.1.1.1", offset_seconds=0),
+            event("2.2.2.2", offset_seconds=500, line_no=2),
+            event("2.2.2.2", offset_seconds=600, line_no=3),
+            event("3.3.3.3", offset_seconds=9000, line_no=4),
+        ]
+    )
+    store.finalize()
+
+    order = [s.client_ip for s in store.ip_summaries(order_by="recent")]
+
+    assert order == ["3.3.3.3", "2.2.2.2", "1.1.1.1"]
+
+
+def test_ip_summaries_can_be_ordered_by_client_error_ratio(
+    store: ParquetEventStore,
+) -> None:
+    """The IP generating mostly 404s is the one worth looking at first."""
+    store.write(
+        [
+            event("quiet", status=200),
+            event("prober", status=404, line_no=2),
+            event("prober", status=404, line_no=3),
+        ]
+    )
+    store.finalize()
+
+    assert store.ip_summaries(order_by="errors")[0].client_ip == "prober"
+
+
+def test_an_unknown_sort_key_is_rejected(store: ParquetEventStore) -> None:
+    store.finalize()
+
+    with pytest.raises(ValueError, match="unknown sort"):
+        store.ip_summaries(order_by="'; DROP TABLE events; --")
+
+
 def test_ip_summaries_can_be_limited(store: ParquetEventStore) -> None:
     store.write([event(f"10.0.0.{n}", line_no=n) for n in range(1, 6)])
     store.finalize()

@@ -41,6 +41,16 @@ class StoreStateError(RuntimeError):
 #: read-side selectivity.
 BUCKETS: Final = 64
 
+#: Sort keys exposed to callers, mapped to SQL. A whitelist rather than string
+#: interpolation of whatever was asked for: this text ends up in a query.
+SORT_KEYS: Final[dict[str, str]] = {
+    "requests": "request_count DESC",
+    "recent": "last_seen DESC",
+    "errors": "client_error_ratio DESC, request_count DESC",
+    "bytes": "bytes_total DESC",
+    "paths": "distinct_paths DESC",
+}
+
 #: Timestamps are stored without a zone. The parser normalises everything to UTC
 #: before it gets here, so the zone is a constant; recording it per row would be
 #: redundant and forces a timezone database dependency at read time.
@@ -62,6 +72,7 @@ SCHEMA: Final = pa.schema(
         ("extra", pa.string()),
     ]
 )
+
 
 def _storable(text: str | None) -> str | None:
     """Make a string safe to write to a UTF-8 Parquet column.
@@ -209,8 +220,17 @@ class ParquetEventStore:
         )
         return [_to_event(row) for row in rows]
 
-    def ip_summaries(self, *, limit: int | None = None) -> list[IpSummary]:
+    def ip_summaries(
+        self, *, limit: int | None = None, order_by: str = "requests"
+    ) -> list[IpSummary]:
         self._require_finalized()
+        try:
+            ordering = SORT_KEYS[order_by]
+        except KeyError:
+            raise ValueError(
+                f"unknown sort key {order_by!r}; choose one of {', '.join(SORT_KEYS)}"
+            ) from None
+
         clause = f"LIMIT {int(limit)}" if limit is not None else ""
         rows = (
             self._connect()
@@ -218,7 +238,7 @@ class ParquetEventStore:
             SELECT client_ip, request_count, first_seen, last_seen, distinct_paths,
                    client_error_ratio, bytes_total
             FROM read_parquet({self._sql_path(self._ip_index)})
-            ORDER BY request_count DESC, client_ip
+            ORDER BY {ordering}, client_ip
             {clause}
         """)
             .fetchall()

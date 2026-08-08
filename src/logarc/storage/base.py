@@ -51,8 +51,10 @@ class EventStore(Protocol):
         """All events for one client, in time order."""
         ...
 
-    def ip_summaries(self, *, limit: int | None = None) -> list[IpSummary]:
-        """Per-client summaries, busiest first."""
+    def ip_summaries(
+        self, *, limit: int | None = None, order_by: str = "requests"
+    ) -> list[IpSummary]:
+        """Per-client summaries, busiest first unless `order_by` says otherwise."""
         ...
 
     def close(self) -> None:
