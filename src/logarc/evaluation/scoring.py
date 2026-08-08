@@ -1,0 +1,167 @@
+"""Running the real reconstruction over a known log and scoring the result.
+
+Deliberately no shortcut: this drives `analyse_ip`, the same entry point the
+CLI and the GUI use, so what is measured is what ships. A scorer that ran its
+own simplified pipeline would report on code nobody else executes.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
+
+from logarc.analysis import analyse_ip
+from logarc.evaluation.metrics import (
+    Prediction,
+    score_classification,
+    score_segmentation,
+)
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from logarc.analysis import AnalysisPolicy
+    from logarc.detect.engine import RuleEngine
+    from logarc.evaluation.metrics import ClassificationReport, SegmentationReport
+    from logarc.evaluation.truth import GroundTruth
+    from logarc.storage.base import EventStore
+
+__all__ = ["EvaluationReport", "evaluate"]
+
+
+@dataclass(frozen=True, slots=True)
+class EvaluationReport:
+    """Everything one evaluation run concluded."""
+
+    scenario: str
+    source_file_id: str
+    ruleset_fingerprint: str
+    policy: dict[str, Any]
+
+    classification: ClassificationReport
+    segmentation: SegmentationReport
+
+    clients: int
+    lines_expected: int
+    lines_scored: int
+
+    @property
+    def lines_missing(self) -> int:
+        """Lines the log contains that never reached the store.
+
+        Malformed lines are quarantined rather than dropped, so this is where
+        they surface. Left out of the accuracy figures, counted here, because a
+        parser that silently discarded the hard lines would otherwise look like
+        a classifier that is very accurate on the easy ones.
+        """
+        return self.lines_expected - self.lines_scored
+
+    def to_dict(self) -> dict[str, Any]:
+        """The machine-readable form, for a results table."""
+        return {
+            "scenario": self.scenario,
+            "source_file_id": self.source_file_id,
+            "ruleset_fingerprint": self.ruleset_fingerprint,
+            "policy": self.policy,
+            "totals": {
+                "clients": self.clients,
+                "lines_expected": self.lines_expected,
+                "lines_scored": self.lines_scored,
+                "lines_missing": self.lines_missing,
+            },
+            "classification": {
+                "accuracy": self.classification.accuracy,
+                "macro_f1": self.classification.macro_f1,
+                "weighted_f1": self.classification.weighted_f1,
+                "per_category": [
+                    {
+                        "category": score.category.value,
+                        "support": score.support,
+                        "predicted": score.predicted,
+                        "true_positives": score.true_positives,
+                        "false_positives": score.false_positives,
+                        "false_negatives": score.false_negatives,
+                        "precision": score.precision,
+                        "recall": score.recall,
+                        "f1": score.f1,
+                        "recall_any": score.recall_any,
+                    }
+                    for score in self.classification.scores
+                ],
+                "top_confusions": [
+                    {"expected": expected.value, "predicted": predicted.value, "count": count}
+                    for expected, predicted, count in self.classification.top_confusions()
+                ],
+            },
+            "segmentation": {
+                "truth_activities": self.segmentation.truth_activities,
+                "predicted_episodes": self.segmentation.predicted_episodes,
+                "fragmentation": self.segmentation.fragmentation,
+                "boundaries_expected": self.segmentation.boundaries_expected,
+                "boundaries_found": self.segmentation.boundaries_found,
+                "boundaries_agreed": self.segmentation.boundaries_agreed,
+                "boundary_precision": self.segmentation.boundary_precision,
+                "boundary_recall": self.segmentation.boundary_recall,
+                "boundary_f1": self.segmentation.boundary_f1,
+            },
+        }
+
+
+def evaluate(
+    store: EventStore,
+    truth: GroundTruth,
+    *,
+    engine: RuleEngine | None = None,
+    policy: AnalysisPolicy | None = None,
+    on_client: Callable[[str], None] | None = None,
+) -> EvaluationReport:
+    """Reconstruct every client the truth knows about, and score the result."""
+    predictions: list[Prediction] = []
+    sequences: list[list[tuple[str, str]]] = []
+    scored = 0
+    fingerprint = ""
+    settings: dict[str, Any] = {}
+
+    grouped = truth.by_client()
+    for client_ip, records in grouped.items():
+        result = analyse_ip(store, client_ip, engine=engine, policy=policy)
+        fingerprint = result.ruleset_fingerprint
+        settings = result.policy.as_config()
+
+        found = {
+            item.evidence.line_no: item
+            for item in result.assignments
+            if item.evidence.source_file_id == truth.source_file_id
+        }
+
+        sequence: list[tuple[str, str]] = []
+        for record in records:
+            assignment = found.get(record.line_no)
+            if assignment is None:
+                continue
+            scored += 1
+            predictions.append(
+                Prediction(
+                    truth=record.category,
+                    predicted=assignment.category,
+                    considered=assignment.categories,
+                )
+            )
+            sequence.append((record.instance_id, assignment.episode_id))
+
+        if sequence:
+            sequences.append(sequence)
+        if on_client is not None:
+            on_client(client_ip)
+
+    return EvaluationReport(
+        scenario=truth.scenario,
+        source_file_id=truth.source_file_id,
+        ruleset_fingerprint=fingerprint,
+        policy=settings,
+        classification=score_classification(predictions),
+        segmentation=score_segmentation(sequences),
+        clients=len(grouped),
+        lines_expected=truth.line_count,
+        lines_scored=scored,
+    )
