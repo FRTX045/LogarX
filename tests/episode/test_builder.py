@@ -1,0 +1,301 @@
+"""Tests for merging labelled requests into activity episodes."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+
+from logarc.core.activity import ActivityCategory, ActivityLabel, Outcome, Severity
+from logarc.core.event import NormalizedEvent
+from logarc.core.evidence import EvidenceRef
+from logarc.detect.engine import LabelledEvent
+from logarc.episode.builder import EpisodePolicy, build_episodes
+
+START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
+
+
+def label(
+    category: ActivityCategory,
+    *,
+    rule_id: str = "rule",
+    severity: Severity = Severity.MEDIUM,
+) -> ActivityLabel:
+    return ActivityLabel(
+        rule_id=rule_id,
+        name=rule_id,
+        category=category,
+        severity=severity,
+        confidence=0.9,
+    )
+
+
+def labelled(
+    category: ActivityCategory,
+    *,
+    seconds: float = 0,
+    path: str = "/a",
+    status: int | None = 200,
+    bytes_sent: int = 100,
+    severity: Severity = Severity.MEDIUM,
+    rule_id: str = "rule",
+) -> LabelledEvent:
+    event = NormalizedEvent(
+        timestamp=START + timedelta(seconds=seconds),
+        client_ip="203.0.113.5",
+        evidence=EvidenceRef("access.log", int(seconds) + 1),
+        method="GET",
+        path=path,
+        status=status,
+        bytes_sent=bytes_sent,
+    )
+    activity = label(category, rule_id=rule_id, severity=severity)
+    return LabelledEvent(event=event, label=activity, all_labels=[activity])
+
+
+def test_no_events_produce_no_episodes() -> None:
+    assert build_episodes([]) == []
+
+
+def test_consecutive_requests_of_one_category_form_one_episode() -> None:
+    events = [labelled(ActivityCategory.INJECTION, seconds=n) for n in range(5)]
+
+    (episode,) = build_episodes(events)
+
+    assert episode.request_count == 5
+    assert episode.activity.category is ActivityCategory.INJECTION
+
+
+def test_a_change_of_category_starts_a_new_episode() -> None:
+    events = [
+        labelled(ActivityCategory.RECONNAISSANCE, seconds=0),
+        labelled(ActivityCategory.INJECTION, seconds=1),
+    ]
+
+    episodes = build_episodes(events)
+
+    assert [e.activity.category for e in episodes] == [
+        ActivityCategory.RECONNAISSANCE,
+        ActivityCategory.INJECTION,
+    ]
+
+
+def test_a_long_gap_splits_an_episode_even_within_one_category() -> None:
+    """The same activity resumed an hour later is a separate act."""
+    events = [
+        labelled(ActivityCategory.INJECTION, seconds=0),
+        labelled(ActivityCategory.INJECTION, seconds=3600),
+    ]
+
+    assert len(build_episodes(events)) == 2
+
+
+def test_a_gap_exactly_at_the_threshold_does_not_split() -> None:
+    policy = EpisodePolicy(max_gap=timedelta(minutes=5))
+    events = [
+        labelled(ActivityCategory.INJECTION, seconds=0),
+        labelled(ActivityCategory.INJECTION, seconds=300),
+    ]
+
+    assert len(build_episodes(events, policy=policy)) == 1
+
+
+def test_a_short_benign_interlude_is_absorbed() -> None:
+    """Without this, one favicon fetch mid-attack splits a single episode into
+    three and the graph turns into fragments."""
+    events = [
+        labelled(ActivityCategory.INJECTION, seconds=0),
+        labelled(ActivityCategory.INJECTION, seconds=1),
+        labelled(ActivityCategory.STATIC_ASSET, seconds=2, path="/favicon.ico"),
+        labelled(ActivityCategory.INJECTION, seconds=3),
+        labelled(ActivityCategory.INJECTION, seconds=4),
+    ]
+
+    (episode,) = build_episodes(events)
+
+    assert episode.activity.category is ActivityCategory.INJECTION
+    assert episode.request_count == 5
+
+
+def test_a_substantial_benign_stretch_is_not_absorbed() -> None:
+    """Real browsing between two attacks is part of the story, not noise."""
+    events = [
+        labelled(ActivityCategory.INJECTION, seconds=0),
+        *[labelled(ActivityCategory.BROWSING, seconds=n) for n in range(1, 9)],
+        labelled(ActivityCategory.INJECTION, seconds=10),
+    ]
+
+    assert len(build_episodes(events)) == 3
+
+
+def test_a_slow_benign_interlude_is_not_absorbed() -> None:
+    """Few requests but spread over minutes is a pause, not noise."""
+    events = [
+        labelled(ActivityCategory.INJECTION, seconds=0),
+        labelled(ActivityCategory.STATIC_ASSET, seconds=100, path="/x.css"),
+        labelled(ActivityCategory.INJECTION, seconds=200),
+    ]
+
+    assert len(build_episodes(events)) == 3
+
+
+def test_an_interlude_between_different_categories_is_not_absorbed() -> None:
+    events = [
+        labelled(ActivityCategory.RECONNAISSANCE, seconds=0),
+        labelled(ActivityCategory.STATIC_ASSET, seconds=1),
+        labelled(ActivityCategory.INJECTION, seconds=2),
+    ]
+
+    assert len(build_episodes(events)) == 3
+
+
+def test_a_hostile_interlude_is_never_absorbed() -> None:
+    """Only benign noise is absorbed; an attack between two attacks is a step."""
+    events = [
+        labelled(ActivityCategory.INJECTION, seconds=0),
+        labelled(ActivityCategory.SSRF, seconds=1),
+        labelled(ActivityCategory.INJECTION, seconds=2),
+    ]
+
+    assert len(build_episodes(events)) == 3
+
+
+def test_absorption_can_be_turned_off() -> None:
+    policy = EpisodePolicy(absorb_noise=False)
+    events = [
+        labelled(ActivityCategory.INJECTION, seconds=0),
+        labelled(ActivityCategory.STATIC_ASSET, seconds=1),
+        labelled(ActivityCategory.INJECTION, seconds=2),
+    ]
+
+    assert len(build_episodes(events, policy=policy)) == 3
+
+
+def test_an_episode_reports_its_span_and_shape() -> None:
+    events = [
+        labelled(ActivityCategory.INJECTION, seconds=0, path="/a", bytes_sent=10),
+        labelled(ActivityCategory.INJECTION, seconds=30, path="/b", bytes_sent=20),
+        labelled(ActivityCategory.INJECTION, seconds=60, path="/a", bytes_sent=30),
+    ]
+
+    (episode,) = build_episodes(events)
+
+    assert episode.start == START
+    assert episode.end == START + timedelta(seconds=60)
+    assert episode.duration == timedelta(seconds=60)
+    assert episode.request_count == 3
+    assert episode.distinct_paths == 2
+    assert episode.bytes_total == 60
+
+
+def test_the_most_severe_label_represents_the_episode() -> None:
+    events = [
+        labelled(ActivityCategory.INJECTION, seconds=0, severity=Severity.LOW, rule_id="mild"),
+        labelled(ActivityCategory.INJECTION, seconds=1, severity=Severity.CRITICAL, rule_id="bad"),
+    ]
+
+    (episode,) = build_episodes(events)
+
+    assert episode.activity.rule_id == "bad"
+    assert episode.severity is Severity.CRITICAL
+
+
+def test_every_rule_that_fired_is_listed() -> None:
+    events = [
+        labelled(ActivityCategory.INJECTION, seconds=0, rule_id="sqli"),
+        labelled(ActivityCategory.INJECTION, seconds=1, rule_id="xss"),
+    ]
+
+    (episode,) = build_episodes(events)
+
+    assert set(episode.rule_ids) == {"sqli", "xss"}
+
+
+def test_an_episode_where_nothing_succeeded_is_blocked() -> None:
+    events = [labelled(ActivityCategory.INJECTION, seconds=n, status=403) for n in range(3)]
+
+    (episode,) = build_episodes(events)
+
+    assert episode.outcome is Outcome.BLOCKED
+
+
+def test_an_episode_where_everything_succeeded_is_a_success() -> None:
+    events = [labelled(ActivityCategory.INJECTION, seconds=n, status=200) for n in range(3)]
+
+    (episode,) = build_episodes(events)
+
+    assert episode.outcome is Outcome.SUCCESS
+
+
+def test_an_episode_with_some_successes_is_mixed() -> None:
+    """This is the distinction that matters most: attempts that were refused
+    versus attempts that got through."""
+    events = [
+        labelled(ActivityCategory.INJECTION, seconds=0, status=403),
+        labelled(ActivityCategory.INJECTION, seconds=1, status=200),
+    ]
+
+    (episode,) = build_episodes(events)
+
+    assert episode.outcome is Outcome.MIXED
+
+
+def test_an_episode_without_status_codes_has_an_unknown_outcome() -> None:
+    events = [labelled(ActivityCategory.INJECTION, seconds=0, status=None)]
+
+    (episode,) = build_episodes(events)
+
+    assert episode.outcome is Outcome.UNKNOWN
+
+
+def test_the_status_histogram_is_kept() -> None:
+    events = [
+        labelled(ActivityCategory.INJECTION, seconds=0, status=403),
+        labelled(ActivityCategory.INJECTION, seconds=1, status=403),
+        labelled(ActivityCategory.INJECTION, seconds=2, status=200),
+    ]
+
+    (episode,) = build_episodes(events)
+
+    assert dict(episode.status_histogram) == {403: 2, 200: 1}
+
+
+def test_the_busiest_targets_are_listed() -> None:
+    events = [
+        *[labelled(ActivityCategory.INJECTION, seconds=n, path="/hot") for n in range(3)],
+        labelled(ActivityCategory.INJECTION, seconds=4, path="/cold"),
+    ]
+
+    (episode,) = build_episodes(events)
+
+    assert episode.top_targets[0] == "/hot"
+
+
+def test_evidence_points_back_at_the_raw_log_lines() -> None:
+    events = [labelled(ActivityCategory.INJECTION, seconds=n) for n in range(3)]
+
+    (episode,) = build_episodes(events)
+
+    assert episode.evidence[0] == EvidenceRef("access.log", 1)
+    assert episode.evidence_total == 3
+
+
+def test_evidence_is_sampled_but_the_true_count_is_kept() -> None:
+    """A thousand-request episode must not carry a thousand references, but a
+    report still has to state how many there were."""
+    policy = EpisodePolicy(evidence_sample=5)
+    events = [labelled(ActivityCategory.INJECTION, seconds=n) for n in range(50)]
+
+    (episode,) = build_episodes(events, policy=policy)
+
+    assert len(episode.evidence) == 5
+    assert episode.evidence_total == 50
+
+
+def test_episode_ids_are_stable_and_ordered() -> None:
+    events = [
+        labelled(ActivityCategory.RECONNAISSANCE, seconds=0),
+        labelled(ActivityCategory.INJECTION, seconds=1),
+    ]
+
+    episodes = build_episodes(events, session_id="203.0.113.5#1")
+
+    assert [e.episode_id for e in episodes] == ["203.0.113.5#1/1", "203.0.113.5#1/2"]
