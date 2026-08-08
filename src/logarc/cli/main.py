@@ -2,20 +2,33 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Final
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
 from logarc import __version__
+from logarc.analysis import analyse_ip
 from logarc.case import Case, CaseError
+from logarc.core.activity import Severity
+from logarc.detect.rules import RulePackError
 from logarc.ingest.pipeline import FormatDetectionError
 from logarc.ingest.reader import LogSourceError
 from logarc.parsers.apache import PRESETS
 from logarc.parsers.registry import UnknownFormatError
+from logarc.report.html import render_report
 from logarc.storage.event_store import SORT_KEYS
+
+_SEVERITY_STYLE: Final[dict[Severity, str]] = {
+    Severity.INFO: "dim",
+    Severity.LOW: "cyan",
+    Severity.MEDIUM: "yellow",
+    Severity.HIGH: "bright_red",
+    Severity.CRITICAL: "bold red",
+}
 
 app = typer.Typer(
     name="logarc",
@@ -29,7 +42,14 @@ errors = Console(stderr=True)
 #: Errors that represent a bad request from the user rather than a defect. These
 #: are reported as a single line; anything else keeps its traceback, because an
 #: unexpected failure in a forensic tool should be loud.
-USER_ERRORS = (CaseError, FormatDetectionError, LogSourceError, UnknownFormatError, ValueError)
+USER_ERRORS = (
+    CaseError,
+    FormatDetectionError,
+    LogSourceError,
+    RulePackError,
+    UnknownFormatError,
+    ValueError,
+)
 
 
 def _fail(message: str) -> typer.Exit:
@@ -127,6 +147,77 @@ def list_ips(
             summary.last_seen.strftime("%Y-%m-%d %H:%M:%S"),
         )
     console.print(table)
+
+
+@app.command()
+def analyze(
+    case: Annotated[Path, typer.Option("--case", "-c", help="Case directory to read.")],
+    ip: Annotated[str, typer.Option("--ip", help="Client address to reconstruct.")],
+    out: Annotated[
+        Path | None, typer.Option("--out", "-o", help="Write the graph as JSON to this path.")
+    ] = None,
+) -> None:
+    """Reconstruct one client's activity as a graph."""
+    try:
+        with Case.open(case) as opened:
+            result = analyse_ip(opened.store, ip)
+    except USER_ERRORS as exc:
+        raise _fail(str(exc)) from exc
+
+    if not result.episodes:
+        console.print(f"[yellow]No activity found for {ip} in this case.[/yellow]")
+        return
+
+    table = Table(title=f"Activity of {ip}")
+    table.add_column("Time")
+    table.add_column("Activity")
+    table.add_column("Severity")
+    table.add_column("OWASP")
+    table.add_column("Requests", justify="right")
+    table.add_column("Outcome")
+    for episode in result.episodes:
+        table.add_row(
+            episode.start.strftime("%Y-%m-%d %H:%M:%S"),
+            episode.label,
+            f"[{_SEVERITY_STYLE[episode.severity]}]{episode.severity.name.title()}[/]",
+            episode.activity.owasp or "-",
+            f"{episode.request_count:,}",
+            episode.outcome.value,
+        )
+    console.print(table)
+    console.print(
+        f"{result.request_count:,} requests across {len(result.sessions)} session(s) "
+        f"reduced to {len(result.episodes)} activities."
+    )
+
+    if out is not None:
+        out.write_text(json.dumps(result.to_dict(), indent=2), encoding="utf-8")
+        console.print(f"Graph written to {out}")
+
+
+@app.command()
+def export(
+    case: Annotated[Path, typer.Option("--case", "-c", help="Case directory to read.")],
+    ip: Annotated[str, typer.Option("--ip", help="Client address to report on.")],
+    out: Annotated[Path, typer.Option("--out", "-o", help="File to write.")],
+    output_format: Annotated[str, typer.Option("--format", "-f", help="html or json.")] = "html",
+) -> None:
+    """Write a standalone report for one client."""
+    if output_format not in {"html", "json"}:
+        raise _fail(f"unknown format {output_format!r}; choose html or json")
+
+    try:
+        with Case.open(case) as opened:
+            result = analyse_ip(opened.store, ip)
+            manifest = opened.manifest
+    except USER_ERRORS as exc:
+        raise _fail(str(exc)) from exc
+
+    if output_format == "json":
+        out.write_text(json.dumps(result.to_dict(), indent=2), encoding="utf-8")
+    else:
+        out.write_text(render_report(result, manifest), encoding="utf-8")
+    console.print(f"Report written to {out}")
 
 
 @app.command()

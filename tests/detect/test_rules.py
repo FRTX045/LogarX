@@ -164,6 +164,42 @@ def test_confidence_outside_zero_to_one_is_rejected(tmp_path: Path) -> None:
         load_rules([write_pack(tmp_path, pack)])
 
 
+def test_each_condition_holds_its_own_compiled_pattern(tmp_path: Path) -> None:
+    """Patterns were once cached in a side table keyed by `id()`. CPython
+    reuses ids after garbage collection, so a condition could be handed another
+    rule's pattern once the original was freed — matching the wrong thing with
+    no error anywhere."""
+    pack = """
+version: 1
+rules:
+  - id: first
+    name: First
+    category: injection
+    severity: high
+    match:
+      any:
+        - field: path_decoded
+          regex: 'alpha'
+        - field: query_decoded
+          regex: 'bravo'
+  - id: second
+    name: Second
+    category: reconnaissance
+    severity: low
+    match:
+      all:
+        - field: path_decoded
+          regex: 'charlie'
+"""
+    rules = load_rules([write_pack(tmp_path, pack)])
+
+    for rule in rules:
+        assert isinstance(rule, SignatureRule)
+        for condition in rule.match.conditions:
+            assert condition.compiled is not None
+            assert condition.compiled.pattern == condition.regex
+
+
 def test_rules_carry_the_pack_they_came_from(tmp_path: Path) -> None:
     """Reports state which ruleset produced a finding."""
     path = write_pack(tmp_path, SIGNATURE_PACK, "owasp.yaml")
