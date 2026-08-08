@@ -282,6 +282,25 @@ rules:
         - field: path_decoded
           regex: '/(cgi-bin|struts|jenkins|solr|elasticsearch)/|/wp-content/plugins/'
 
+  - id: dependency_manifest_probe
+    name: Dependency Manifest Probe
+    category: reconnaissance
+    owasp: "A06:2021"
+    severity: low
+    confidence: 0.5
+    # A manifest names every library and version the application runs, which is
+    # the step before looking up what those versions are vulnerable to. Kept at
+    # low confidence: these files are occasionally served on purpose, and this
+    # is a hint about intent rather than evidence of an attack.
+    match:
+      any:
+        - field: path_decoded
+          regex: '/(composer|package|package-lock|bower)\.json$'
+        - field: path_decoded
+          regex: '/(composer|yarn|gemfile|package)\.lock$|/(gemfile|pipfile|go\.mod|pom\.xml)$'
+        - field: path_decoded
+          regex: '/requirements(-[a-z]+)?\.txt$'
+
   # -- A10: Server-Side Request Forgery ------------------------------------
 
   - id: ssrf_internal_target
