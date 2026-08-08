@@ -15,17 +15,20 @@ from typing import TYPE_CHECKING, Any
 
 from logarc.detect.engine import RuleEngine
 from logarc.detect.rulepacks import default_rules
-from logarc.episode.builder import EpisodePolicy, build_episodes
+from logarc.episode.builder import EpisodePolicy, segment
 from logarc.graphbuild.build import build_behaviour_map, build_trace_graph
 from logarc.sessionize.segmenter import SessionPolicy, sessionize
 
 if TYPE_CHECKING:
+    from logarc.core.activity import ActivityCategory
     from logarc.core.episode import Episode
+    from logarc.core.evidence import EvidenceRef
     from logarc.core.graph import ActivityGraph
     from logarc.core.session import Session
+    from logarc.detect.engine import LabelledEvent
     from logarc.storage.base import EventStore
 
-__all__ = ["AnalysisPolicy", "AnalysisResult", "analyse_ip"]
+__all__ = ["AnalysisPolicy", "AnalysisResult", "RequestAssignment", "analyse_ip"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,12 +47,47 @@ class AnalysisPolicy:
 
 
 @dataclass(frozen=True, slots=True)
+class RequestAssignment:
+    """One request, what the rules made of it, and where it ended up.
+
+    The bridge between the two levels of the result: an episode says what
+    happened, and this says which lines it is made of. Both the evidence panel
+    and the accuracy measurement start here.
+    """
+
+    labelled: LabelledEvent
+    episode_id: str
+
+    @property
+    def evidence(self) -> EvidenceRef:
+        return self.labelled.event.evidence
+
+    @property
+    def category(self) -> ActivityCategory:
+        """The category that reached the graph."""
+        return self.labelled.label.category
+
+    @property
+    def categories(self) -> frozenset[ActivityCategory]:
+        """Every category that matched, including any that were outranked.
+
+        A request can honestly be two things. Keeping the losers separates a
+        rule that never fired from one that fired and was outranked — different
+        problems, with different fixes.
+        """
+        return frozenset(
+            {self.labelled.label.category} | {label.category for label in self.labelled.all_labels}
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class AnalysisResult:
     """What one client did, at every level of detail."""
 
     client_ip: str
     sessions: tuple[Session, ...]
     episodes: tuple[Episode, ...]
+    assignments: tuple[RequestAssignment, ...]
     trace: ActivityGraph
     behaviour: ActivityGraph
     ruleset_fingerprint: str
@@ -93,16 +131,21 @@ def analyse_ip(
     sessions.sort(key=lambda session: session.start)
 
     episodes: list[Episode] = []
+    assignments: list[RequestAssignment] = []
     for session in sessions:
         labelled = engine.label_events(session.events)
-        episodes.extend(
-            build_episodes(labelled, session_id=session.session_id, policy=policy.episode)
-        )
+        for part in segment(labelled, session_id=session.session_id, policy=policy.episode):
+            episodes.append(part.episode)
+            assignments.extend(
+                RequestAssignment(labelled=item, episode_id=part.episode.episode_id)
+                for item in part.members
+            )
 
     return AnalysisResult(
         client_ip=client_ip,
         sessions=tuple(sessions),
         episodes=tuple(episodes),
+        assignments=tuple(assignments),
         trace=build_trace_graph(episodes, client_ip=client_ip),
         behaviour=build_behaviour_map(episodes, client_ip=client_ip),
         ruleset_fingerprint=engine.fingerprint,

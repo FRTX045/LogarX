@@ -160,11 +160,34 @@ def test_the_result_records_what_produced_it(campaign: Case) -> None:
     assert result.policy.as_config()["idle_timeout_seconds"] == 1800
 
 
+def test_every_request_is_accounted_for_by_exactly_one_episode(campaign: Case) -> None:
+    """Nothing is silently dropped between the log and the graph."""
+    result = analyse_ip(campaign.store, ATTACKER)
+    episode_ids = {episode.episode_id for episode in result.episodes}
+
+    assert len(result.assignments) == result.request_count
+    assert all(item.episode_id in episode_ids for item in result.assignments)
+    assert sorted(item.evidence.line_no for item in result.assignments) == sorted(
+        {item.evidence.line_no for item in result.assignments}
+    )
+
+
+def test_assignments_keep_the_matches_that_lost_the_ranking(campaign: Case) -> None:
+    """Which rules matched, not only which one won, so misses can be diagnosed."""
+    result = analyse_ip(campaign.store, ATTACKER)
+
+    assert all(item.category in item.categories for item in result.assignments)
+    injected = [item for item in result.assignments if item.category is ActivityCategory.INJECTION]
+    assert injected
+    assert all(item.labelled.all_labels for item in injected)
+
+
 def test_an_unseen_client_yields_an_empty_reconstruction(campaign: Case) -> None:
     result = analyse_ip(campaign.store, "192.0.2.99")
 
     assert result.episodes == ()
     assert result.trace.nodes == ()
+    assert result.assignments == ()
 
 
 def test_ordinary_browsing_produces_no_hostile_episodes(tmp_path: Path) -> None:

@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     from logarc.core.activity import ActivityLabel
     from logarc.detect.engine import LabelledEvent
 
-__all__ = ["EpisodePolicy", "build_episodes"]
+__all__ = ["EpisodePolicy", "EpisodeSegment", "build_episodes", "segment"]
 
 #: Same activity, but this far apart, is a separate act rather than a pause.
 DEFAULT_MAX_GAP: Final = timedelta(minutes=5)
@@ -70,6 +70,19 @@ class EpisodePolicy:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class EpisodeSegment:
+    """An episode and the requests that went into it.
+
+    The membership exists while an episode is being built and used to be
+    discarded. Two things need it: scoring where the boundaries were put, and
+    showing an investigator the raw lines behind a node they clicked on.
+    """
+
+    episode: Episode
+    members: tuple[LabelledEvent, ...]
+
+
 def build_episodes(
     labelled: Sequence[LabelledEvent],
     *,
@@ -77,6 +90,16 @@ def build_episodes(
     policy: EpisodePolicy | None = None,
 ) -> list[Episode]:
     """Group labelled requests into episodes."""
+    return [part.episode for part in segment(labelled, session_id=session_id, policy=policy)]
+
+
+def segment(
+    labelled: Sequence[LabelledEvent],
+    *,
+    session_id: str = "",
+    policy: EpisodePolicy | None = None,
+) -> list[EpisodeSegment]:
+    """Group labelled requests into episodes, keeping what went into each."""
     policy = policy or EpisodePolicy()
     if not labelled:
         return []
@@ -86,7 +109,10 @@ def build_episodes(
         runs = _absorb_noise(runs, policy)
 
     return [
-        _build(run, session_id=session_id, index=index, policy=policy)
+        EpisodeSegment(
+            episode=_build(run, session_id=session_id, index=index, policy=policy),
+            members=tuple(run),
+        )
         for index, run in enumerate(runs, start=1)
     ]
 
