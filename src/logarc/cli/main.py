@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
+from datetime import timedelta
 from pathlib import Path
 from typing import Annotated, Final
 
@@ -11,15 +13,20 @@ from rich.console import Console
 from rich.table import Table
 
 from logarc import __version__
-from logarc.analysis import analyse_ip
+from logarc.analysis import AnalysisPolicy, analyse_ip
 from logarc.case import Case, CaseError
 from logarc.core.activity import Severity
 from logarc.detect.rules import RulePackError
+from logarc.episode.builder import EpisodePolicy
+from logarc.evaluation.generator import DEFAULT_SEED, describe_scenarios, write_log
+from logarc.evaluation.scoring import evaluate as score_case
+from logarc.evaluation.truth import TruthError, read_truth
 from logarc.ingest.pipeline import FormatDetectionError
 from logarc.ingest.reader import LogSourceError
 from logarc.parsers.apache import PRESETS
 from logarc.parsers.registry import UnknownFormatError
 from logarc.report.html import render_report
+from logarc.sessionize.segmenter import SessionPolicy
 from logarc.storage.event_store import SORT_KEYS
 
 _SEVERITY_STYLE: Final[dict[Severity, str]] = {
@@ -47,6 +54,7 @@ USER_ERRORS = (
     FormatDetectionError,
     LogSourceError,
     RulePackError,
+    TruthError,
     UnknownFormatError,
     ValueError,
 )
@@ -55,6 +63,21 @@ USER_ERRORS = (
 def _fail(message: str) -> typer.Exit:
     errors.print(f"[red]error:[/red] {message}")
     return typer.Exit(code=1)
+
+
+def _analysis_policy(
+    *, absorb: bool, episode_gap: int | None, idle_timeout: int | None
+) -> AnalysisPolicy:
+    """Build a policy from the thresholds a user chose to override."""
+    session = SessionPolicy()
+    if idle_timeout is not None:
+        session = replace(session, idle_timeout=timedelta(seconds=idle_timeout))
+
+    episode = EpisodePolicy(absorb_noise=absorb)
+    if episode_gap is not None:
+        episode = replace(episode, max_gap=timedelta(seconds=episode_gap))
+
+    return AnalysisPolicy(session=session, episode=episode)
 
 
 def _version_callback(requested: bool) -> None:
@@ -218,6 +241,144 @@ def export(
     else:
         out.write_text(render_report(result, manifest), encoding="utf-8")
     console.print(f"Report written to {out}")
+
+
+@app.command()
+def generate(
+    out: Annotated[Path | None, typer.Option("--out", "-o", help="Log file to write.")] = None,
+    scenario: Annotated[
+        str, typer.Option("--scenario", "-s", help="Which traffic to generate.")
+    ] = "mixed",
+    lines: Annotated[int, typer.Option("--lines", "-n", help="How many lines.")] = 100_000,
+    seed: Annotated[int, typer.Option("--seed", help="Same seed, same log.")] = DEFAULT_SEED,
+    truth: Annotated[
+        Path | None,
+        typer.Option("--truth", "-t", help="Write the ground truth here, for evaluate."),
+    ] = None,
+    list_scenarios: Annotated[
+        bool, typer.Option("--list", "-l", help="List the scenarios and stop.")
+    ] = False,
+) -> None:
+    """Write a synthetic access log with a known answer."""
+    if list_scenarios:
+        table = Table(title="Scenarios")
+        table.add_column("Name")
+        table.add_column("Contains")
+        for name, description in describe_scenarios():
+            table.add_row(name, description)
+        console.print(table)
+        return
+
+    if out is None:
+        raise _fail("--out is required unless --list is given")
+
+    with console.status(f"Generating {lines:,} lines…") as status:
+        try:
+            result = write_log(
+                out,
+                scenario=scenario,
+                lines=lines,
+                seed=seed,
+                truth_path=truth,
+                on_progress=lambda done: status.update(f"Generated {done:,} of {lines:,} lines…"),
+            )
+        except USER_ERRORS as exc:
+            raise _fail(str(exc)) from exc
+
+    console.print(
+        f"Wrote {result.lines:,} lines ({result.megabytes:,.1f} MB) of "
+        f"[bold]{result.scenario}[/bold] to {result.path} "
+        f"in {result.elapsed_seconds:.1f}s (seed {result.seed})"
+    )
+    if result.truth_path is not None:
+        console.print(f"Ground truth written to {result.truth_path}")
+
+
+@app.command()
+def evaluate(
+    case: Annotated[Path, typer.Option("--case", "-c", help="Case directory to read.")],
+    truth: Annotated[Path, typer.Option("--truth", "-t", help="Ground truth for its log.")],
+    out: Annotated[
+        Path | None, typer.Option("--out", "-o", help="Write the full numbers as JSON.")
+    ] = None,
+    absorb: Annotated[
+        bool,
+        typer.Option(
+            "--absorb/--no-absorb",
+            help="Merge activities split only by a brief benign interlude.",
+        ),
+    ] = True,
+    episode_gap: Annotated[
+        int | None, typer.Option("--episode-gap", help="Seconds of silence that end an activity.")
+    ] = None,
+    idle_timeout: Annotated[
+        int | None, typer.Option("--idle-timeout", help="Seconds of silence that end a session.")
+    ] = None,
+) -> None:
+    """Measure the reconstruction against a log whose content is known.
+
+    The thresholds can be overridden so their effect can be measured rather
+    than assumed; `--no-absorb` turns off noise absorption, which is the one
+    rule in the segmentation whose cost is worth showing both ways.
+    """
+    policy = _analysis_policy(absorb=absorb, episode_gap=episode_gap, idle_timeout=idle_timeout)
+    try:
+        loaded = read_truth(truth)
+        with Case.open(case) as opened, console.status("Scoring…") as status:
+            report = score_case(
+                opened.store,
+                loaded,
+                policy=policy,
+                on_client=lambda client: status.update(f"Scoring {client}…"),
+            )
+    except USER_ERRORS as exc:
+        raise _fail(str(exc)) from exc
+
+    if not report.classification.total:
+        console.print("[yellow]Nothing to score: no truth line matched a stored event.[/yellow]")
+        return
+
+    table = Table(title=f"Classification — {report.scenario}")
+    table.add_column("Activity")
+    for column in ("Support", "Predicted", "Precision", "Recall", "F1", "Recall(any)"):
+        table.add_column(column, justify="right")
+    for score in report.classification.scores:
+        table.add_row(
+            score.category.value,
+            f"{score.support:,}",
+            f"{score.predicted:,}",
+            f"{score.precision:.3f}",
+            f"{score.recall:.3f}",
+            f"{score.f1:.3f}",
+            f"{score.recall_any:.3f}",
+        )
+    console.print(table)
+    console.print(
+        f"accuracy {report.classification.accuracy:.3f}   "
+        f"macro F1 {report.classification.macro_f1:.3f}   "
+        f"weighted F1 {report.classification.weighted_f1:.3f}   "
+        f"({report.clients:,} clients, {report.lines_scored:,} requests, "
+        f"{report.lines_missing:,} unmatched)"
+    )
+
+    confusions = report.classification.top_confusions(limit=5)
+    if confusions:
+        console.print("\n[bold]Most frequent mistakes[/bold]")
+        for expected, predicted, count in confusions:
+            console.print(f"  {expected.value} read as {predicted.value}: {count:,}")
+
+    segmentation = report.segmentation
+    console.print(
+        f"\n[bold]Boundaries[/bold] precision {segmentation.boundary_precision:.3f}   "
+        f"recall {segmentation.boundary_recall:.3f}   F1 {segmentation.boundary_f1:.3f}\n"
+        f"{segmentation.truth_activities:,} activities in the log became "
+        f"{segmentation.predicted_episodes:,} episodes "
+        f"(x{segmentation.fragmentation:.2f}); below 1.0 is deliberate coarsening."
+    )
+
+    if out is not None:
+        out.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
+        console.print(f"\nFull numbers written to {out}")
 
 
 @app.command()
