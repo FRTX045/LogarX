@@ -1,0 +1,13 @@
+# Normalise line endings so the Windows and Linux CI jobs see identical bytes.
+* text=auto eol=lf
+
+# Windows-only scripts must keep CRLF to remain executable.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Never touch binary or fixture data.
+*.png binary
+*.parquet binary
+*.gz binary
+tests/data/** -text
