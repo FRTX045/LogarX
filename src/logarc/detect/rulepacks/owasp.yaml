@@ -62,6 +62,25 @@ rules:
         - field: target_decoded
           regex: 'information_schema|sysobjects|pg_catalog\.|\bsqlite_master\b'
 
+  - id: sqli_error_based
+    name: SQL Injection (error-based)
+    category: injection
+    owasp: "A03:2021"
+    severity: high
+    confidence: 0.85
+    references: ["CAPEC-7"]
+    # These payloads never return rows. They provoke a database error whose
+    # text leaks the answer, so they carry no UNION, no tautology and no sleep,
+    # and every other injection rule misses them.
+    match:
+      any:
+        - field: target_decoded
+          regex: '@@(version|servername|datadir|hostname|basedir)|\bversion\s*\(\s*\)'
+        - field: target_decoded
+          regex: '\b(extractvalue|updatexml)\s*\(|\bdbms_pipe\.receive_message\b'
+        - field: target_decoded
+          regex: '\b(convert|cast)\s*\(.*\b(int|integer|char|varchar|nvarchar|signed)\b'
+
   - id: sqli_stacked_query
     name: SQL Injection (stacked statement)
     category: injection

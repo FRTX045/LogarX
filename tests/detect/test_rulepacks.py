@@ -76,6 +76,12 @@ def test_owasp_mappings_use_the_expected_notation() -> None:
             ActivityCategory.INJECTION,
         ),
         ("/p?id=1; DROP TABLE users--", ActivityCategory.INJECTION),
+        # Error-based probing: the payload never returns rows, it provokes a
+        # message that names the database. Found missing by the evaluation run.
+        ("/p?id=1 AND 1=CONVERT(int,@@version)--", ActivityCategory.INJECTION),
+        ("/p?id=1 AND EXTRACTVALUE(1,CONCAT(0x7e,version()))", ActivityCategory.INJECTION),
+        ("/p?id=1' AND 1=CAST((SELECT current_user) AS int)--", ActivityCategory.INJECTION),
+        ("/p?id=1 AND UPDATEXML(1,CONCAT(0x7e,@@datadir),1)", ActivityCategory.INJECTION),
         ("/search?q=<script>alert(1)</script>", ActivityCategory.INJECTION),
         ("/p?next=javascript:alert(1)", ActivityCategory.INJECTION),
         ("/ping?host=127.0.0.1;cat /etc/passwd", ActivityCategory.PATH_TRAVERSAL),
@@ -159,6 +165,10 @@ def test_credential_attack_is_seen_across_requests(engine: RuleEngine) -> None:
         "/api/v1/products?page=2",
         "/blog/2024/05/a-post-about-unions",
         "/cart?add=17&quantity=2",
+        # Words the error-based injection rule looks for, used innocently.
+        "/api/convert?from=usd&to=eur",
+        "/docs/version",
+        "/api/v1/users/cast-members",
     ],
 )
 def test_ordinary_traffic_is_not_flagged_as_hostile(engine: RuleEngine, target: str) -> None:
