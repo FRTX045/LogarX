@@ -99,9 +99,13 @@ show_error_codes = true
 module = ["logarc.core.*", "logarc.detect.*", "logarc.episode.*", "logarc.sessionize.*"]
 strict = true
 
+# These ship stubs written against a newer Python than we target, so analysing
+# them fails on syntax we never execute. We only need their signatures at the
+# call site, not a full check of their internals.
 [[tool.mypy.overrides]]
-module = ["duckdb.*", "pyarrow.*", "networkx.*"]
+module = ["duckdb.*", "pyarrow.*", "networkx.*", "numpy.*"]
 ignore_missing_imports = true
+follow_imports = "skip"
 
 # ---------------------------------------------------------------------------
 # Tests
