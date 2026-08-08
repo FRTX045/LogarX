@@ -1,0 +1,334 @@
+"""Level 2 segmentation: attaching an activity label to every request.
+
+Two rule families run here. Signature rules test one request against a pattern.
+Window rules test a run of requests against aggregate thresholds, catching what
+no single request reveals — twenty 404s in a minute is enumeration, while any
+one of them is a missing page.
+
+Requests matching nothing are not left blank. They fall through to benign
+classification, because a graph of attacks alone loses the thread between them
+and cannot tell a scanner that only probed from an attacker who probed,
+succeeded, and then used what they opened.
+"""
+
+from __future__ import annotations
+
+import hashlib
+from dataclasses import dataclass, field
+from functools import cached_property
+from typing import TYPE_CHECKING, Final
+
+from logarc.core.activity import ActivityCategory, ActivityLabel, Severity
+from logarc.detect.rules import Condition, SignatureRule, WindowRule
+from logarc.normalize.decode import NormalizedText, normalize
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from logarc.core.event import NormalizedEvent
+    from logarc.detect.rules import Rule, WindowCondition
+
+__all__ = ["LabelledEvent", "RuleEngine"]
+
+_STATIC_EXTENSIONS: Final[frozenset[str]] = frozenset(
+    {
+        "css", "js", "mjs", "map", "png", "jpg", "jpeg", "gif", "svg", "webp", "ico",
+        "woff", "woff2", "ttf", "eot", "mp4", "webm", "mp3", "pdf", "txt", "xml",
+    }
+)  # fmt: skip
+
+_AUTH_HINTS: Final[tuple[str, ...]] = ("/login", "/signin", "/auth", "/oauth", "/session")
+_API_HINTS: Final[tuple[str, ...]] = ("/api/", "/graphql", "/v1/", "/v2/", "/rest/")
+_CRAWLER_HINTS: Final[tuple[str, ...]] = ("bot", "crawler", "spider", "slurp")
+
+_BENIGN_CONFIDENCE: Final = 0.5
+
+
+def _benign(category: ActivityCategory, name: str) -> ActivityLabel:
+    return ActivityLabel(
+        rule_id=f"benign:{category.value}",
+        name=name,
+        category=category,
+        severity=Severity.INFO,
+        confidence=_BENIGN_CONFIDENCE,
+    )
+
+
+class RequestView:
+    """One request, with its normalised forms computed once and reused.
+
+    Normalisation is the expensive part of matching, and a request is tested
+    against every rule, so it is cached per request rather than per rule.
+    """
+
+    __slots__ = ("__dict__", "event")
+
+    def __init__(self, event: NormalizedEvent) -> None:
+        self.event = event
+
+    @cached_property
+    def _path(self) -> NormalizedText:
+        return normalize(self.event.path)
+
+    @cached_property
+    def _query(self) -> NormalizedText:
+        return normalize(self.event.query)
+
+    @cached_property
+    def _target(self) -> NormalizedText:
+        return normalize(self.event.target)
+
+    @cached_property
+    def _referer(self) -> NormalizedText:
+        return normalize(self.event.referer)
+
+    @cached_property
+    def _user_agent(self) -> NormalizedText:
+        return normalize(self.event.user_agent)
+
+    @cached_property
+    def extension(self) -> str:
+        path = self.event.path or ""
+        _, _, tail = path.rpartition("/")
+        stem, dot, extension = tail.rpartition(".")
+        return extension.lower() if dot and stem else ""
+
+    def value(self, field_name: str) -> str:
+        """The text of one matchable field, as a string."""
+        event = self.event
+        match field_name:
+            case "method":
+                return event.method or ""
+            case "path":
+                return event.path or ""
+            case "query":
+                return event.query or ""
+            case "target":
+                return event.target
+            case "referer":
+                return event.referer or ""
+            case "user_agent":
+                return event.user_agent or ""
+            case "protocol":
+                return event.protocol or ""
+            case "host":
+                return event.host or ""
+            case "extension":
+                return self.extension
+            case "path_decoded":
+                return self._path.text
+            case "query_decoded":
+                return self._query.text
+            case "target_decoded":
+                return self._target.text
+            case "referer_decoded":
+                return self._referer.text
+            case "user_agent_decoded":
+                return self._user_agent.text
+            case "status":
+                return str(event.status) if event.status is not None else ""
+            case "bytes_sent":
+                return str(event.bytes_sent) if event.bytes_sent is not None else ""
+            case "decode_depth":
+                return str(self._target.decode_depth)
+        return ""  # pragma: no cover - field names are validated at load time
+
+
+@dataclass
+class LabelledEvent:
+    """A request together with what the rules concluded about it."""
+
+    event: NormalizedEvent
+    label: ActivityLabel
+    all_labels: list[ActivityLabel] = field(default_factory=list)
+
+
+class RuleEngine:
+    """Applies a ruleset to requests."""
+
+    def __init__(self, rules: Sequence[Rule]) -> None:
+        self.rules = list(rules)
+        self._signatures = [rule for rule in self.rules if isinstance(rule, SignatureRule)]
+        self._windows = [rule for rule in self.rules if isinstance(rule, WindowRule)]
+
+    @cached_property
+    def fingerprint(self) -> str:
+        """A digest of the ruleset, recorded so a report can name what produced it."""
+        digest = hashlib.sha256()
+        for rule in sorted(self.rules, key=lambda item: item.id):
+            digest.update(rule.model_dump_json(exclude={"source_pack"}).encode())
+        return digest.hexdigest()
+
+    def label_events(self, events: Sequence[NormalizedEvent]) -> list[LabelledEvent]:
+        """Label each request, then let window rules upgrade what they cover.
+
+        Events are assumed to be in time order, as a session's are.
+        """
+        labelled = [self._label_one(event) for event in events]
+        self._apply_windows(labelled)
+        return labelled
+
+    def _label_one(self, event: NormalizedEvent) -> LabelledEvent:
+        view = RequestView(event)
+        matches = [rule for rule in self._signatures if _matches(rule, view)]
+
+        if not matches:
+            return LabelledEvent(event=event, label=_classify_benign(view))
+
+        labels = [_to_label(rule) for rule in matches]
+        return LabelledEvent(event=event, label=_most_severe(labels), all_labels=labels)
+
+    def _apply_windows(self, labelled: list[LabelledEvent]) -> None:
+        """Fire window rules over sliding spans and upgrade the labels inside.
+
+        A window label never displaces a more severe signature match: the
+        specific finding is more useful in a report than the aggregate one.
+        """
+        for rule in self._windows:
+            for start, end in _windows_meeting(rule, labelled):
+                label = _to_label(rule)
+                for item in labelled[start:end]:
+                    item.all_labels.append(label)
+                    if label.severity > item.label.severity:
+                        item.label = label
+
+
+def _windows_meeting(rule: WindowRule, labelled: Sequence[LabelledEvent]) -> list[tuple[int, int]]:
+    """Index ranges where `rule`'s thresholds hold.
+
+    A forward scan: for each start, take every request within the span and test
+    the aggregate. Ranges are returned rather than merged so the caller decides
+    what to do with overlaps.
+    """
+    span = rule.window.span_seconds
+    hits: list[tuple[int, int]] = []
+
+    end = 0
+    for start in range(len(labelled)):
+        if end < start:
+            end = start
+        limit = labelled[start].event.timestamp.timestamp() + span
+        while end < len(labelled) and labelled[end].event.timestamp.timestamp() <= limit:
+            end += 1
+
+        if end - start < rule.window.min_requests:
+            continue
+        events = [item.event for item in labelled[start:end]]
+        if all(_metric_holds(condition, events, span) for condition in rule.window.conditions):
+            hits.append((start, end))
+    return hits
+
+
+def _metric_holds(condition: WindowCondition, events: Sequence[NormalizedEvent], span: int) -> bool:
+    actual = _metric(condition.metric, events, span)
+    target = condition.value
+    match condition.op:
+        case ">=":
+            return actual >= target
+        case ">":
+            return actual > target
+        case "<=":
+            return actual <= target
+        case "<":
+            return actual < target
+        case "==":
+            return actual == target
+        case "!=":
+            return actual != target
+    return False  # pragma: no cover - operators are validated at load time
+
+
+def _metric(name: str, events: Sequence[NormalizedEvent], span: int) -> float:
+    total = len(events)
+    if total == 0:  # pragma: no cover - windows always hold at least one event
+        return 0.0
+
+    match name:
+        case "request_count":
+            return float(total)
+        case "distinct_paths":
+            return float(len({event.path for event in events}))
+        case "distinct_statuses":
+            return float(len({event.status for event in events}))
+        case "not_found_ratio":
+            return sum(event.status == 404 for event in events) / total
+        case "client_error_ratio":
+            return sum(_in_range(event.status, 400, 499) for event in events) / total
+        case "server_error_ratio":
+            return sum(_in_range(event.status, 500, 599) for event in events) / total
+        case "success_ratio":
+            return sum(_in_range(event.status, 200, 299) for event in events) / total
+        case "requests_per_second":
+            return total / span if span else 0.0
+    return 0.0  # pragma: no cover - metrics are validated at load time
+
+
+def _in_range(status: int | None, low: int, high: int) -> bool:
+    return status is not None and low <= status <= high
+
+
+def _matches(rule: SignatureRule, view: RequestView) -> bool:
+    conditions = rule.match.conditions
+    if rule.match.requires_all:
+        return all(_condition_holds(condition, view) for condition in conditions)
+    return any(_condition_holds(condition, view) for condition in conditions)
+
+
+def _condition_holds(condition: Condition, view: RequestView) -> bool:
+    value = view.value(condition.field_name)
+
+    if (pattern := condition.compiled) is not None:
+        return pattern.search(value) is not None
+    if condition.contains is not None:
+        return condition.contains.lower() in value.lower()
+    if condition.equals is not None:
+        return value.lower() == condition.equals.lower()
+    if condition.any_of is not None:
+        return value.lower() in {option.lower() for option in condition.any_of}
+
+    try:
+        numeric = float(value)
+    except ValueError:
+        return False
+    if condition.min is not None:
+        return numeric >= condition.min
+    return condition.max is not None and numeric <= condition.max
+
+
+def _to_label(rule: Rule) -> ActivityLabel:
+    return ActivityLabel(
+        rule_id=rule.id,
+        name=rule.name,
+        category=rule.category,
+        severity=rule.severity,
+        confidence=rule.confidence,
+        owasp=rule.owasp,
+        references=rule.references,
+    )
+
+
+def _most_severe(labels: Sequence[ActivityLabel]) -> ActivityLabel:
+    return max(labels, key=lambda label: (label.severity, label.confidence))
+
+
+def _classify_benign(view: RequestView) -> ActivityLabel:
+    """Describe a request no rule claimed.
+
+    Deliberately coarse. These categories exist to give the graph continuity,
+    not to make fine distinctions about ordinary traffic.
+    """
+    event = view.event
+    agent = (event.user_agent or "").lower()
+    path = view.value("path_decoded")
+
+    if any(hint in agent for hint in _CRAWLER_HINTS):
+        return _benign(ActivityCategory.CRAWLING, "Crawler Traffic")
+    if view.extension in _STATIC_EXTENSIONS:
+        return _benign(ActivityCategory.STATIC_ASSET, "Static Asset")
+    if any(hint in path for hint in _AUTH_HINTS):
+        return _benign(ActivityCategory.AUTHENTICATION, "Authentication")
+    if any(hint in path for hint in _API_HINTS):
+        return _benign(ActivityCategory.API_CALL, "API Call")
+    if event.method and event.method.upper() not in {"GET", "HEAD"}:
+        return _benign(ActivityCategory.API_CALL, "Non-idempotent Request")
+    return _benign(ActivityCategory.BROWSING, "Page View")

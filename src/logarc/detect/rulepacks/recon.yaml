@@ -1,0 +1,119 @@
+# Reconnaissance and enumeration.
+#
+# Mostly window rules, because this is behaviour no single request reveals: one
+# 404 is a missing page, and forty in a minute across forty paths is someone
+# working through a wordlist. These are the rules that make the difference
+# between a graph of isolated hits and one that shows a campaign.
+
+version: 1
+rules:
+
+  - id: scanner_user_agent
+    name: Security Scanner User-Agent
+    category: reconnaissance
+    owasp: "A01:2021"
+    severity: medium
+    confidence: 0.95
+    match:
+      any:
+        - field: user_agent_decoded
+          regex: '\b(sqlmap|nikto|nmap|masscan|zgrab|acunetix|nessus|openvas|wpscan|dirbuster|gobuster|ffuf|feroxbuster|nuclei|arachni|w3af|havij)\b'
+
+  - id: http_library_user_agent
+    name: Scripted Client
+    category: reconnaissance
+    severity: info
+    confidence: 0.4
+    match:
+      any:
+        - field: user_agent_decoded
+          regex: '^(curl|wget|python-requests|python-urllib|go-http-client|java|libwww-perl|okhttp|axios)\b'
+
+  - id: absent_user_agent
+    name: Request Without User-Agent
+    category: reconnaissance
+    severity: low
+    confidence: 0.4
+    match:
+      any:
+        - field: user_agent
+          equals: ""
+
+  - id: directory_enumeration
+    name: Directory Enumeration
+    category: enumeration
+    owasp: "A01:2021"
+    severity: medium
+    confidence: 0.85
+    references: ["CAPEC-127"]
+    window:
+      span_seconds: 60
+      min_requests: 20
+      conditions:
+        - metric: distinct_paths
+          op: ">="
+          value: 15
+        - metric: not_found_ratio
+          op: ">="
+          value: 0.7
+
+  - id: forced_browsing
+    name: Forced Browsing (repeated refusals)
+    category: access_control
+    owasp: "A01:2021"
+    severity: medium
+    confidence: 0.8
+    window:
+      span_seconds: 120
+      min_requests: 10
+      conditions:
+        - metric: client_error_ratio
+          op: ">="
+          value: 0.8
+        - metric: distinct_paths
+          op: ">="
+          value: 8
+
+  - id: credential_attack
+    name: Credential Attack
+    category: credential_attack
+    owasp: "A07:2021"
+    severity: high
+    confidence: 0.8
+    references: ["CAPEC-49"]
+    window:
+      span_seconds: 300
+      min_requests: 10
+      conditions:
+        - metric: distinct_paths
+          op: "<="
+          value: 3
+        - metric: client_error_ratio
+          op: ">="
+          value: 0.5
+
+  - id: rapid_request_burst
+    name: Rapid Request Burst
+    category: reconnaissance
+    severity: low
+    confidence: 0.6
+    window:
+      span_seconds: 10
+      min_requests: 50
+      conditions:
+        - metric: requests_per_second
+          op: ">="
+          value: 5
+
+  - id: server_errors_provoked
+    name: Server Errors Provoked
+    category: exploitation
+    severity: high
+    confidence: 0.7
+    window:
+      span_seconds: 120
+      min_requests: 5
+      conditions:
+        - metric: server_error_ratio
+          op: ">="
+          value: 0.4
