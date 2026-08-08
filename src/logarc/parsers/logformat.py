@@ -1,0 +1,426 @@
+"""Compiles Apache `LogFormat` directives into line parsers.
+
+Rather than hardcoding "combined" and "common", this compiles the actual
+directive string an administrator wrote in their server config. That covers the
+standard formats, any custom Apache format, and — because the syntax is close
+enough — most nginx `log_format` definitions too.
+
+Supported directive syntax::
+
+    %h  %{User-Agent}i  %>s  %400,501{Referer}i  %%
+
+Conditional prefixes (``%400,501...``) are parsed and ignored: they control
+whether Apache *writes* the field, which we cannot recover after the fact, and
+the field is already optional on our side.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta, timezone
+from typing import TYPE_CHECKING, Final
+
+from logarc.core.event import NormalizedEvent
+
+if TYPE_CHECKING:
+    from logarc.core.evidence import EvidenceRef
+
+__all__ = ["LogFormatError", "LogFormatParser"]
+
+
+class LogFormatError(ValueError):
+    """Raised when a LogFormat directive string cannot be compiled."""
+
+
+# --------------------------------------------------------------------------
+# Directive tables
+# --------------------------------------------------------------------------
+
+#: Directives taking no argument, mapped to the field name they produce.
+_SIMPLE_DIRECTIVES: Final[dict[str, str]] = {
+    "h": "remote_host",
+    "a": "client_ip",
+    "A": "local_ip",
+    "l": "remote_logname",
+    "u": "remote_user",
+    "t": "time",
+    "r": "request_line",
+    "m": "method",
+    "U": "url_path",
+    "q": "query_string",
+    "H": "protocol",
+    "s": "status",
+    "b": "bytes_clf",
+    "B": "bytes_sent",
+    "v": "server_name",
+    "V": "server_name",
+    "p": "port",
+    "D": "duration_us",
+    "T": "duration_s",
+    "O": "bytes_out",
+    "I": "bytes_in",
+    "f": "filename",
+    "P": "process_id",
+    "k": "keepalive_requests",
+    "X": "connection_status",
+}
+
+#: Directives taking a ``{...}`` argument, mapped to their field-name prefix.
+_ARG_DIRECTIVES: Final[dict[str, str]] = {
+    "i": "req_header",
+    "o": "resp_header",
+    "C": "cookie",
+    "e": "env",
+    "n": "note",
+    "p": "port",
+    "P": "process",
+}
+
+_DIRECTIVE_RE: Final = re.compile(
+    r"""
+    %
+    (?P<condition>[!0-9,]*)              # conditional status list, e.g. 400,501 or !200
+    (?P<modifier>[<>]?)                  # original (<) or final (>) request
+    (?:
+        \{(?P<arg>[^}]*)\}(?P<argfmt>[a-zA-Z])
+      | (?P<fmt>[a-zA-Z%])
+    )
+    """,
+    re.VERBOSE,
+)
+
+#: Matches the contents of a double-quoted field, honouring Apache's backslash
+#: escaping. Apache escapes `"` and `\`, and renders control bytes as `\xHH`.
+_QUOTED_BODY: Final = r'(?:[^"\\]|\\.)*'
+_BRACKETED_BODY: Final = r"\[[^\]]*\]"
+
+#: A bare field must consume at least one character. If it could match nothing,
+#: a line with a field omitted would still satisfy the pattern and auto-detection
+#: would happily pick the wrong format.
+_BARE_BODY: Final = r"\S+"
+
+#: `%q` is the exception: it is genuinely empty when a request has no query
+#: string, and Apache writes no placeholder for it.
+_OPTIONAL_BARE_BODY: Final = r"\S*"
+
+_MONTHS: Final[dict[str, int]] = {
+    "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6,
+    "Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12,
+}  # fmt: skip
+
+#: Fields promoted onto `NormalizedEvent`; everything else lands in `extra`.
+_PROMOTED: Final[frozenset[str]] = frozenset(
+    {
+        "time",
+        "remote_host",
+        "client_ip",
+        "request_line",
+        "method",
+        "url_path",
+        "query_string",
+        "protocol",
+        "status",
+        "bytes_clf",
+        "bytes_sent",
+        "server_name",
+        "req_header_referer",
+        "req_header_user_agent",
+    }
+)
+
+
+@dataclass(frozen=True, slots=True)
+class _Literal:
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
+class _Field:
+    name: str
+    directive: str
+
+
+def _field_name(match: re.Match[str]) -> str:
+    """Derive a stable field name from one directive match."""
+    arg, argfmt, fmt = match.group("arg"), match.group("argfmt"), match.group("fmt")
+
+    if fmt is not None:
+        name = _SIMPLE_DIRECTIVES.get(fmt)
+        if name is None:
+            raise LogFormatError(f"unsupported directive %{fmt}")
+        return name
+
+    prefix = _ARG_DIRECTIVES.get(argfmt or "")
+    if prefix is None:
+        raise LogFormatError(f"unsupported directive %{{{arg}}}{argfmt}")
+    if argfmt == "t":  # a custom time format, e.g. %{%Y-%m-%d}t
+        return "time"
+    slug = re.sub(r"[^a-z0-9]+", "_", (arg or "").lower()).strip("_")
+    return f"{prefix}_{slug}" if slug else prefix
+
+
+def _tokenize(log_format: str) -> list[_Literal | _Field]:
+    tokens: list[_Literal | _Field] = []
+    pos = 0
+    for match in _DIRECTIVE_RE.finditer(log_format):
+        if match.start() > pos:
+            tokens.append(_Literal(log_format[pos : match.start()]))
+        if match.group("fmt") == "%":
+            tokens.append(_Literal("%"))
+        else:
+            directive = match.group("fmt") or match.group("argfmt") or ""
+            tokens.append(_Field(_field_name(match), directive))
+        pos = match.end()
+    if pos < len(log_format):
+        tokens.append(_Literal(log_format[pos:]))
+    return tokens
+
+
+def _body_pattern(token: _Field, prev: str, nxt: str) -> str:
+    """Choose the regex body for a field from how it is delimited in the format.
+
+    A field wrapped in literal quotes may contain spaces; a bare one may not.
+    Getting this from the format string rather than from a hardcoded list is
+    what lets custom formats work without special cases.
+    """
+    if prev.endswith('"') and nxt.startswith('"'):
+        return _QUOTED_BODY
+    if token.directive == "t" and not (prev.endswith("[") or nxt.startswith("]")):
+        return _BRACKETED_BODY
+    if token.directive == "q":
+        return _OPTIONAL_BARE_BODY
+    return _BARE_BODY
+
+
+@dataclass(frozen=True, slots=True)
+class _CompiledFormat:
+    pattern: re.Pattern[str]
+    quoted_fields: frozenset[str]
+    """Group names that were delimited by quotes in the format, and therefore
+    carry Apache's backslash escaping."""
+
+
+def _compile(log_format: str) -> _CompiledFormat:
+    tokens = _tokenize(log_format)
+    if not any(isinstance(t, _Field) for t in tokens):
+        raise LogFormatError(f"no directives found in log format: {log_format!r}")
+
+    parts: list[str] = []
+    quoted: set[str] = set()
+    seen: dict[str, int] = {}
+    for index, token in enumerate(tokens):
+        if isinstance(token, _Literal):
+            parts.append(re.escape(token.text))
+            continue
+
+        preceding = tokens[index - 1] if index else None
+        following = tokens[index + 1] if index + 1 < len(tokens) else None
+        prev = preceding.text if isinstance(preceding, _Literal) else ""
+        nxt = following.text if isinstance(following, _Literal) else ""
+
+        # A format may legitimately repeat a directive; group names must stay unique.
+        count = seen.get(token.name, 0)
+        seen[token.name] = count + 1
+        group = token.name if count == 0 else f"{token.name}__{count}"
+
+        body = _body_pattern(token, prev, nxt)
+        if body is _QUOTED_BODY:
+            quoted.add(group)
+        parts.append(f"(?P<{group}>{body})")
+
+    try:
+        pattern = re.compile("^" + "".join(parts) + r"\s*$")
+    except re.error as exc:  # pragma: no cover - defensive; _field_name rejects bad names
+        raise LogFormatError(f"could not compile log format {log_format!r}: {exc}") from exc
+    return _CompiledFormat(pattern=pattern, quoted_fields=frozenset(quoted))
+
+
+# --------------------------------------------------------------------------
+# Field conversion
+# --------------------------------------------------------------------------
+
+
+_ESCAPE_RE: Final = re.compile(r'\\(x[0-9a-fA-F]{2}|[nrtvf"\\])')
+_SIMPLE_ESCAPES: Final[dict[str, str]] = {
+    "n": "\n",
+    "r": "\r",
+    "t": "\t",
+    "v": "\v",
+    "f": "\f",
+    '"': '"',
+    "\\": "\\",
+}
+
+
+def _expand_escape(match: re.Match[str]) -> str:
+    token = match.group(1)
+    return chr(int(token[1:], 16)) if token[0] == "x" else _SIMPLE_ESCAPES[token]
+
+
+def _unescape(text: str) -> str:
+    """Reverse Apache's escaping of a quoted field.
+
+    Apache writes `"` as `\\"`, backslash as `\\\\`, and any non-printable byte
+    as `\\xHH`. Detection rules must see the bytes the client actually sent, so
+    this is undone before matching — a payload hidden behind `\\x` escaping
+    would otherwise slip past every signature.
+
+    Only applied to fields the format wrapped in quotes: a bare field may
+    contain a literal backslash sequence that was never escaping to begin with.
+    """
+    return _ESCAPE_RE.sub(_expand_escape, text) if "\\" in text else text
+
+
+def _parse_timestamp(raw: str | None) -> datetime | None:
+    """Parse a CLF timestamp such as ``[10/Oct/2000:13:55:36 -0700]`` into UTC.
+
+    Hand-rolled rather than `strptime` because this runs once per line and
+    `strptime` is roughly an order of magnitude slower. The layout is fixed
+    width, so slicing is safe; anything that does not fit falls through to the
+    slow path.
+    """
+    if not raw:
+        return None
+    text = raw[1:-1] if raw.startswith("[") and raw.endswith("]") else raw
+    try:
+        offset_sign = 1 if text[21] == "+" else -1
+        offset = timedelta(hours=int(text[22:24]), minutes=int(text[24:26])) * offset_sign
+        return datetime(
+            year=int(text[7:11]),
+            month=_MONTHS[text[3:6]],
+            day=int(text[0:2]),
+            hour=int(text[12:14]),
+            minute=int(text[15:17]),
+            second=int(text[18:20]),
+            tzinfo=timezone(offset),
+        ).astimezone(UTC)
+    except (ValueError, KeyError, IndexError):
+        return _parse_timestamp_fallback(text)
+
+
+def _parse_timestamp_fallback(text: str) -> datetime | None:
+    """Handle non-CLF timestamps produced by custom ``%{...}t`` formats."""
+    for fmt in ("%d/%b/%Y:%H:%M:%S %z", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%d %H:%M:%S"):
+        try:
+            parsed = datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+        return (parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)).astimezone(UTC)
+    return None
+
+
+def _as_int(raw: str | None) -> int | None:
+    """Convert a numeric log field, treating Apache's ``-`` placeholder as absent."""
+    if not raw or raw == "-":
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
+def _clean(raw: str | None) -> str | None:
+    """Normalise an optional text field, treating ``-`` as absent.
+
+    This is ambiguous and unavoidably so: Apache writes ``"-"`` for a missing
+    header, and a client that genuinely sends a header of ``-`` produces
+    byte-identical output. The information is gone by the time the log is
+    written. We resolve it as "absent", which is correct in essentially every
+    real case, and accept that a request deliberately crafted with a ``-``
+    User-Agent will be recorded as having none.
+    """
+    if raw is None or raw == "-" or raw == "":
+        return None
+    return raw
+
+
+def _split_request_line(raw: str) -> tuple[str | None, str | None, str | None, str | None]:
+    """Split ``GET /a?b=c HTTP/1.1`` into method, path, query and protocol.
+
+    Returns all-`None` for a request line that cannot be split. That is not an
+    error worth discarding the line over — malformed request lines are routine
+    in attack traffic (TLS handshakes sent to a plaintext port, deliberately
+    corrupted verbs) and are themselves a signal. The caller keeps the raw text.
+    """
+    parts = raw.split(" ")
+    if len(parts) >= 3 and parts[-1].startswith("HTTP/"):
+        method, protocol = parts[0], parts[-1]
+        target = " ".join(parts[1:-1])
+    elif len(parts) == 2:
+        method, target, protocol = parts[0], parts[1], None
+    else:
+        return None, None, None, None
+
+    path, separator, query = target.partition("?")
+    return method, path, (query if separator else None), protocol
+
+
+class LogFormatParser:
+    """Parses lines of one Apache-style log format.
+
+    Instances are immutable and hold a compiled regex, so a single parser can be
+    shared across ingest workers.
+    """
+
+    def __init__(self, log_format: str, name: str = "custom") -> None:
+        self.name = name
+        self.log_format = log_format
+        self._compiled = _compile(log_format)
+
+    @property
+    def pattern(self) -> re.Pattern[str]:
+        """The compiled regex. Exposed for diagnostics and tests."""
+        return self._compiled.pattern
+
+    def parse_line(self, line: str, ref: EvidenceRef) -> NormalizedEvent | None:
+        """Parse one line, or return `None` if it does not fit this format.
+
+        `None` means "this line is not in this format" — the caller quarantines
+        it. Lines that *are* in the format but have unusable individual fields
+        are still returned, with those fields absent.
+        """
+        match = self._compiled.pattern.match(line)
+        if match is None:
+            return None
+
+        fields = match.groupdict()
+        for name in self._compiled.quoted_fields:
+            if value := fields.get(name):
+                fields[name] = _unescape(value)
+
+        timestamp = _parse_timestamp(fields.get("time"))
+        if timestamp is None:
+            return None
+
+        client_ip = _clean(fields.get("client_ip")) or _clean(fields.get("remote_host"))
+        if client_ip is None:
+            return None
+
+        extra = {k: v for k, v in fields.items() if k not in _PROMOTED and v and v != "-"}
+
+        method = _clean(fields.get("method"))
+        path = _clean(fields.get("url_path"))
+        query = _clean(fields.get("query_string"))
+        protocol = _clean(fields.get("protocol"))
+
+        if (request_line := _clean(fields.get("request_line"))) is not None:
+            method, path, query, protocol = _split_request_line(request_line)
+            if method is None:
+                extra["malformed_request_line"] = request_line
+
+        return NormalizedEvent(
+            timestamp=timestamp,
+            client_ip=client_ip,
+            evidence=ref,
+            method=method,
+            path=path,
+            query=query.lstrip("?") if query else None,
+            protocol=protocol,
+            status=_as_int(fields.get("status")),
+            bytes_sent=_as_int(fields.get("bytes_clf") or fields.get("bytes_sent")),
+            referer=_clean(fields.get("req_header_referer")),
+            user_agent=_clean(fields.get("req_header_user_agent")),
+            host=_clean(fields.get("server_name")),
+            extra=extra,
+        )

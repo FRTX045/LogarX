@@ -124,4 +124,5 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "raise NotImplementedError",
     "@overload",
+    '^\s*\.\.\.$',  # Protocol method bodies carry no logic to cover.
 ]
