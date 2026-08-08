@@ -72,11 +72,13 @@ class RequestView:
 
     @cached_property
     def _query(self) -> NormalizedText:
-        return normalize(self.event.query)
+        # Form encoding: a `+` here is a space, and reading it literally is how
+        # `1'+or+'1'='1` slips past every rule that expects whitespace.
+        return normalize(self.event.query, plus_is_space=True)
 
     @cached_property
     def _target(self) -> NormalizedText:
-        return normalize(self.event.target)
+        return normalize(self.event.target, plus_is_space=True)
 
     @cached_property
     def _referer(self) -> NormalizedText:

@@ -76,6 +76,10 @@ def test_owasp_mappings_use_the_expected_notation() -> None:
             ActivityCategory.INJECTION,
         ),
         ("/p?id=1; DROP TABLE users--", ActivityCategory.INJECTION),
+        # Form encoding, as a browser and most attack tools send it: spaces
+        # written as `+`. Found missing by the CSIC 2010 conversion.
+        ("/p?id=1%27+OR+%271%27%3D%271", ActivityCategory.INJECTION),
+        ("/p?q=1+UNION+SELECT+null%2Cnull--", ActivityCategory.INJECTION),
         # Error-based probing: the payload never returns rows, it provokes a
         # message that names the database. Found missing by the evaluation run.
         ("/p?id=1 AND 1=CONVERT(int,@@version)--", ActivityCategory.INJECTION),

@@ -16,7 +16,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 from typing import Final
-from urllib.parse import unquote
+from urllib.parse import unquote, unquote_plus
 
 __all__ = ["DEFAULT_MAX_DEPTH", "NormalizedText", "normalize"]
 
@@ -50,11 +50,23 @@ class NormalizedText:
         return self.decode_depth > 1
 
 
-def normalize(text: str | None, *, max_depth: int = DEFAULT_MAX_DEPTH) -> NormalizedText:
+def normalize(
+    text: str | None,
+    *,
+    max_depth: int = DEFAULT_MAX_DEPTH,
+    plus_is_space: bool = False,
+) -> NormalizedText:
     """Canonicalise `text` for rule matching.
 
     Applied in order: recursive percent-decoding, Unicode compatibility folding,
     case folding, SQL comment removal, whitespace collapsing.
+
+    `plus_is_space` is for text that is form-encoded — a query string, or a
+    body folded into one. There a `+` means a space, which is how every HTML
+    form and most attack tools write one, and reading it literally leaves
+    `1'+or+'1'='1` with no whitespace for a rule to match on. It is off by
+    default because a path, a Referer and a User-Agent are not form data, and a
+    `+` in those is a `+`.
 
     Invalid escapes such as `%zz` are left as-is rather than guessed at — they
     are evidence, and rewriting them would misrepresent what was sent.
@@ -62,7 +74,7 @@ def normalize(text: str | None, *, max_depth: int = DEFAULT_MAX_DEPTH) -> Normal
     if not text:
         return NormalizedText(text="", decode_depth=0, truncated_decoding=False)
 
-    decoded, depth, truncated = _percent_decode(text, max_depth)
+    decoded, depth, truncated = _percent_decode(text, max_depth, plus_is_space=plus_is_space)
 
     # Compatibility folding turns lookalikes (fullwidth, ligatures) into the
     # ASCII a rule is written against.
@@ -74,18 +86,19 @@ def normalize(text: str | None, *, max_depth: int = DEFAULT_MAX_DEPTH) -> Normal
     return NormalizedText(text=collapsed, decode_depth=depth, truncated_decoding=truncated)
 
 
-def _percent_decode(text: str, max_depth: int) -> tuple[str, int, bool]:
+def _percent_decode(text: str, max_depth: int, *, plus_is_space: bool) -> tuple[str, int, bool]:
     """Percent-decode until the text stops changing or the limit is hit."""
+    decode = unquote_plus if plus_is_space else unquote
     current = text
     depth = 0
     for _ in range(max_depth):
         # `errors="strict"` would raise on malformed UTF-8 sequences, which are
         # exactly what hostile input contains; surrogate escapes keep the bytes.
-        candidate = unquote(current, errors="surrogateescape")
+        candidate = decode(current, errors="surrogateescape")
         if candidate == current:
             return current, depth, False
         current = candidate
         depth += 1
 
-    still_encoded = unquote(current, errors="surrogateescape") != current
+    still_encoded = decode(current, errors="surrogateescape") != current
     return current, depth, still_encoded
