@@ -78,6 +78,35 @@ def test_compression_is_detected_from_content_not_the_file_name(tmp_path: Path) 
         assert len(list(stream)) == 3
 
 
+def test_byte_order_mark_is_not_left_in_the_first_field(tmp_path: Path) -> None:
+    """Windows tools write UTF-8 with a BOM. Left in place it becomes part of
+    the first field, silently splitting one client into two in the results."""
+    path = write(tmp_path / "access.log", b"\xef\xbb\xbf1.2.3.4 first\n5.6.7.8 second\n")
+
+    with open_log(path) as stream:
+        assert list(stream) == [(1, "1.2.3.4 first"), (2, "5.6.7.8 second")]
+
+
+def test_byte_order_mark_is_still_covered_by_the_integrity_hash(tmp_path: Path) -> None:
+    """The BOM is part of the file as seized, even though it is not data."""
+    payload = b"\xef\xbb\xbfline\n"
+    path = write(tmp_path / "access.log", payload)
+
+    with open_log(path) as stream:
+        list(stream)
+        digest = stream.sha256
+
+    assert digest == hashlib.sha256(payload).hexdigest()
+
+
+def test_a_mark_appearing_later_in_the_file_is_left_alone(tmp_path: Path) -> None:
+    """Only a leading mark is an encoding artefact; elsewhere it is content."""
+    path = write(tmp_path / "access.log", "first\n﻿second\n".encode())
+
+    with open_log(path) as stream:
+        assert list(stream) == [(1, "first"), (2, "﻿second")]
+
+
 def test_invalid_utf8_bytes_survive_the_round_trip(tmp_path: Path) -> None:
     """Attack payloads contain arbitrary bytes. Decoding must never fail and
     must never silently replace them, or the evidence is altered."""

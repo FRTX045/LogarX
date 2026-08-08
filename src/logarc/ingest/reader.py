@@ -127,7 +127,14 @@ class LogStream:
         if self._stream is None:  # pragma: no cover - guarded by open_log
             raise LogSourceError(f"{self.path} is not open")
         for number, raw in enumerate(self._stream, start=1):
-            yield number, raw.decode("utf-8", errors="surrogateescape").rstrip("\r\n")
+            text = raw.decode("utf-8", errors="surrogateescape").rstrip("\r\n")
+            # A leading byte order mark is an encoding artefact, not data. Left
+            # in place it becomes part of the first field, which quietly splits
+            # one client into two everywhere downstream. Only the very first
+            # line can carry one; a mark anywhere else is content.
+            if number == 1 and text.startswith("﻿"):
+                text = text[1:]
+            yield number, text
         self._exhausted = True
 
     @property
