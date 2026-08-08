@@ -1,0 +1,110 @@
+"""The full reconstruction, from stored events to activity graphs.
+
+This is the O(k) half of the design: everything here works on one client's
+events, which is a small number even when the case is enormous. See ADR-0002.
+
+The order is fixed and each step is independently testable:
+
+    events -> sessions -> labelled requests -> episodes -> graphs
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
+
+from logarc.detect.engine import RuleEngine
+from logarc.detect.rulepacks import default_rules
+from logarc.episode.builder import EpisodePolicy, build_episodes
+from logarc.graphbuild.build import build_behaviour_map, build_trace_graph
+from logarc.sessionize.segmenter import SessionPolicy, sessionize
+
+if TYPE_CHECKING:
+    from logarc.core.episode import Episode
+    from logarc.core.graph import ActivityGraph
+    from logarc.core.session import Session
+    from logarc.storage.base import EventStore
+
+__all__ = ["AnalysisPolicy", "AnalysisResult", "analyse_ip"]
+
+
+@dataclass(frozen=True, slots=True)
+class AnalysisPolicy:
+    """Every threshold a reconstruction depends on, in one place.
+
+    Grouped so the whole set can be written into the case manifest as a unit —
+    a result is only reproducible if the settings that produced it are known.
+    """
+
+    session: SessionPolicy = field(default_factory=SessionPolicy)
+    episode: EpisodePolicy = field(default_factory=EpisodePolicy)
+
+    def as_config(self) -> dict[str, Any]:
+        return {**self.session.as_config(), **self.episode.as_config()}
+
+
+@dataclass(frozen=True, slots=True)
+class AnalysisResult:
+    """What one client did, at every level of detail."""
+
+    client_ip: str
+    sessions: tuple[Session, ...]
+    episodes: tuple[Episode, ...]
+    trace: ActivityGraph
+    behaviour: ActivityGraph
+    ruleset_fingerprint: str
+    policy: AnalysisPolicy
+
+    @property
+    def request_count(self) -> int:
+        return sum(session.request_count for session in self.sessions)
+
+    @property
+    def hostile_episodes(self) -> tuple[Episode, ...]:
+        return tuple(episode for episode in self.episodes if episode.category.is_hostile)
+
+    def to_dict(self) -> dict[str, Any]:
+        """The machine-readable form, for export and for other tools."""
+        return {
+            "client_ip": self.client_ip,
+            "session_count": len(self.sessions),
+            "episode_count": len(self.episodes),
+            "request_count": self.request_count,
+            "ruleset_fingerprint": self.ruleset_fingerprint,
+            "policy": self.policy.as_config(),
+            "trace": self.trace.to_dict(),
+            "behaviour": self.behaviour.to_dict(),
+        }
+
+
+def analyse_ip(
+    store: EventStore,
+    client_ip: str,
+    *,
+    engine: RuleEngine | None = None,
+    policy: AnalysisPolicy | None = None,
+) -> AnalysisResult:
+    """Reconstruct what one client did."""
+    engine = engine or RuleEngine(default_rules())
+    policy = policy or AnalysisPolicy()
+
+    events = store.events_for_ip(client_ip)
+    sessions = sessionize(events, policy.session)
+    sessions.sort(key=lambda session: session.start)
+
+    episodes: list[Episode] = []
+    for session in sessions:
+        labelled = engine.label_events(session.events)
+        episodes.extend(
+            build_episodes(labelled, session_id=session.session_id, policy=policy.episode)
+        )
+
+    return AnalysisResult(
+        client_ip=client_ip,
+        sessions=tuple(sessions),
+        episodes=tuple(episodes),
+        trace=build_trace_graph(episodes, client_ip=client_ip),
+        behaviour=build_behaviour_map(episodes, client_ip=client_ip),
+        ruleset_fingerprint=engine.fingerprint,
+        policy=policy,
+    )
