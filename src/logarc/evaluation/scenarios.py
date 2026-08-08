@@ -232,13 +232,18 @@ def _browse(rng: Random) -> Actor:
             )
             referer = f"{_SITE}{page}"
 
-            if rng.random() < 0.25:
+            if rng.random() < 0.15:
                 # People put the tab down and come back to it. The request
                 # either side is a page view, so nothing but the length of the
                 # gap separates the two visits — which is the only arrangement
                 # that asks the episode-gap threshold a question. Put the pause
                 # next to an asset fetch instead and the change of category
                 # decides the boundary before the gap is ever consulted.
+                #
+                # Kept short of an hour, and uncommon. Clients are merged on
+                # time, so a role that spends hours idle contributes far fewer
+                # lines than one that does not, and generous pauses here turn a
+                # mixed corpus into an almost entirely hostile one.
                 page = rng.choice(_PAGES)
                 yield Step(
                     "reading a page",
@@ -246,7 +251,7 @@ def _browse(rng: Random) -> Actor:
                     path=page,
                     status=200,
                     size=rng.randint(2_000, 40_000),
-                    gap=rng.uniform(120.0, 3_600.0),
+                    gap=rng.uniform(120.0, 1_800.0),
                     resumed=True,
                 )
                 referer = f"{_SITE}{page}"
@@ -443,7 +448,11 @@ def _inject(rng: Random) -> Actor:
             query=f"id={_encode('5 UNION ALL SELECT card_number FROM orders--')}",
             status=200,
             size=rng.randint(400_000, 900_000),
-            gap=rng.uniform(2_400.0, 21_600.0),
+            # Long enough to end a session, short enough that one attacker does
+            # not occupy the whole corpus: a client that idles for six hours
+            # emits nothing for six hours, and its replacement cannot start
+            # until it finishes.
+            gap=rng.uniform(2_400.0, 5_400.0),
             resumed=True,
         )
 
@@ -577,11 +586,20 @@ SCENARIOS: Final[dict[str, Scenario]] = {
             "A download parameter walked out of the document root.",
             mix=(BROWSER,) * 5 + (TRAVERSER,),
         ),
+        # Ordinary clients outnumber hostile ones heavily, as they do on a real
+        # site. It is also the harder test: most of the corpus is traffic that
+        # must not be flagged, so a false positive has plenty of chances to
+        # appear.
         Scenario(
             "mixed",
             "Everything at once: the case a real investigator is handed.",
-            mix=(BROWSER,) * 6
-            + (CRAWLER, CRAWLER, SCANNER, NOISY_SCANNER, INJECTOR, GUESSER, TRAVERSER),
+            # Several injectors, because one is not enough to measure against:
+            # an attacker that pauses between visits emits nothing while it
+            # waits, so a single slot yields a few dozen injection requests in
+            # a corpus of forty thousand, which is too thin to score.
+            mix=(BROWSER,) * 14
+            + (CRAWLER, CRAWLER, SCANNER, NOISY_SCANNER, GUESSER, TRAVERSER)
+            + (INJECTOR,) * 4,
         ),
     )
 }
