@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import platform
+import shutil
+import tempfile
 from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
@@ -18,6 +21,7 @@ from logarc.case import Case, CaseError
 from logarc.core.activity import Severity
 from logarc.detect.rules import RulePackError
 from logarc.episode.builder import EpisodePolicy
+from logarc.evaluation.benchmark import BenchmarkError, BenchmarkResult, run_benchmark
 from logarc.evaluation.generator import DEFAULT_SEED, describe_scenarios, write_log
 from logarc.evaluation.scoring import evaluate as score_case
 from logarc.evaluation.truth import TruthError, read_truth
@@ -28,6 +32,10 @@ from logarc.parsers.registry import UnknownFormatError
 from logarc.report.html import render_report
 from logarc.sessionize.segmenter import SessionPolicy
 from logarc.storage.event_store import SORT_KEYS
+
+#: Sizes the benchmark measures when none are named. Ten million is deliberately
+#: not here: it takes minutes, and a default should not.
+DEFAULT_BENCHMARK_SIZES: Final = (100_000, 1_000_000)
 
 _SEVERITY_STYLE: Final[dict[Severity, str]] = {
     Severity.INFO: "dim",
@@ -379,6 +387,100 @@ def evaluate(
     if out is not None:
         out.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
         console.print(f"\nFull numbers written to {out}")
+
+
+@app.command()
+def benchmark(
+    lines: Annotated[
+        list[int] | None,
+        typer.Option("--lines", "-n", help="Corpus size to measure. Repeatable."),
+    ] = None,
+    scenario: Annotated[str, typer.Option("--scenario", "-s", help="Traffic to measure on.")] = (
+        "mixed"
+    ),
+    seed: Annotated[int, typer.Option("--seed", help="Same seed, same corpus.")] = 1,
+    work: Annotated[
+        Path | None, typer.Option("--work", help="Where to put the working files.")
+    ] = None,
+    keep: Annotated[bool, typer.Option("--keep", help="Do not delete the working files.")] = False,
+    out: Annotated[
+        Path | None, typer.Option("--out", "-o", help="Write the measurements as JSON.")
+    ] = None,
+) -> None:
+    """Measure ingest throughput, peak memory and reconstruction time.
+
+    Each size runs in a process of its own: peak memory is a high-water mark
+    for the life of a process, so measuring several sizes in one would report
+    the largest run's peak for every run after it.
+    """
+    sizes = lines or list(DEFAULT_BENCHMARK_SIZES)
+
+    # Always work inside a directory of our own making, even when the user
+    # named where to put it. Cleanup then removes only what this run created,
+    # so pointing --work at somewhere that already has files in it is safe.
+    root = Path(work) if work is not None else Path(tempfile.gettempdir())
+    root.mkdir(parents=True, exist_ok=True)
+    workdir = Path(tempfile.mkdtemp(prefix="logarc-bench-", dir=root))
+
+    table = Table(title=f"Ingest — {scenario}")
+    table.add_column("Lines", justify="right")
+    for column in ("MB", "Seconds", "Lines/s", "MB/s", "Peak RSS", "Store", "Ratio", "Analyse"):
+        table.add_column(column, justify="right")
+
+    measurements: list[BenchmarkResult] = []
+    try:
+        with console.status("Measuring…") as status:
+            for result in run_benchmark(
+                sizes,
+                scenario=scenario,
+                seed=seed,
+                workdir=workdir,
+                on_start=lambda size: status.update(f"Measuring {size:,} lines…"),
+            ):
+                measurements.append(result)
+                table.add_row(
+                    f"{result.lines:,}",
+                    f"{result.bytes_read / 1_048_576:,.1f}",
+                    f"{result.ingest_seconds:,.2f}",
+                    f"{result.lines_per_second:,.0f}",
+                    f"{result.megabytes_per_second:,.1f}",
+                    f"{result.peak_rss_mb:,.0f} MB",
+                    f"{result.store_bytes / 1_048_576:,.1f} MB",
+                    f"{result.compression_ratio:,.1f}x",
+                    f"{result.analyse_seconds * 1000:,.0f} ms",
+                )
+    except BenchmarkError as exc:
+        raise _fail(str(exc)) from exc
+    finally:
+        if not keep:
+            shutil.rmtree(workdir, ignore_errors=True)
+
+    console.print(table)
+    if measurements:
+        slowest = min(result.lines_per_second for result in measurements)
+        console.print(
+            f"Reconstruction time is the cost of one question, and is paid per client; "
+            f"ingest is paid once. Sustained at least {slowest:,.0f} lines/s."
+        )
+    if not keep:
+        console.print("Working files removed. Pass --keep to inspect them.")
+
+    if out is not None:
+        out.write_text(
+            json.dumps(
+                {
+                    "tool": f"logarc {__version__}",
+                    "python": platform.python_version(),
+                    "platform": platform.platform(),
+                    "scenario": scenario,
+                    "seed": seed,
+                    "runs": [result.to_dict() for result in measurements],
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        console.print(f"Measurements written to {out}")
 
 
 @app.command()
