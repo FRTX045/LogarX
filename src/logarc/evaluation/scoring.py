@@ -10,7 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from logarc.analysis import analyse_ip
+from logarc.analysis import AnalysisPolicy, analyse_ip
+from logarc.detect.engine import RuleEngine
+from logarc.detect.rulepacks import default_rules
 from logarc.evaluation.metrics import (
     Prediction,
     score_binary,
@@ -21,8 +23,6 @@ from logarc.evaluation.metrics import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from logarc.analysis import AnalysisPolicy
-    from logarc.detect.engine import RuleEngine
     from logarc.evaluation.metrics import (
         BinaryScore,
         ClassificationReport,
@@ -137,18 +137,20 @@ def evaluate(
     on_client: Callable[[str], None] | None = None,
 ) -> EvaluationReport:
     """Reconstruct every client the truth knows about, and score the result."""
+    # Built once. Left to default, `analyse_ip` compiles the whole ruleset from
+    # YAML for every client it is given, which on a corpus with two thousand of
+    # them is two thousand identical rule compilations.
+    engine = engine or RuleEngine(default_rules())
+    policy = policy or AnalysisPolicy()
+
     predictions: list[Prediction] = []
     judgements: list[tuple[bool, bool]] = []
     sequences: list[list[tuple[str, str]]] = []
     scored = 0
-    fingerprint = ""
-    settings: dict[str, Any] = {}
 
     grouped = truth.by_client()
     for client_ip, records in grouped.items():
         result = analyse_ip(store, client_ip, engine=engine, policy=policy)
-        fingerprint = result.ruleset_fingerprint
-        settings = result.policy.as_config()
 
         found = {
             item.evidence.line_no: item
@@ -181,8 +183,8 @@ def evaluate(
         scenario=truth.scenario,
         source_file_id=truth.source_file_id,
         granularity=truth.granularity,
-        ruleset_fingerprint=fingerprint,
-        policy=settings,
+        ruleset_fingerprint=engine.fingerprint,
+        policy=policy.as_config(),
         # A source that only knows attack-or-not carries stand-in categories,
         # and a per-activity table built from those would look like a result
         # while meaning nothing.
