@@ -41,6 +41,14 @@ class StoreStateError(RuntimeError):
 #: read-side selectivity.
 BUCKETS: Final = 64
 
+#: How much memory the query engine may use. Deliberately modest: `finalize`
+#: sorts the whole corpus, and left to its own devices DuckDB claims most of the
+#: machine before it spills anything — ten million events peaked at 6.9 GB.
+#: Bounding it makes the sort external, which is slower on a corpus that would
+#: not have fitted anyway, and keeps the tool usable on an ordinary laptop while
+#: the rest of it is still running.
+DEFAULT_MEMORY_LIMIT: Final = "1GB"
+
 #: Sort keys exposed to callers, mapped to SQL. A whitelist rather than string
 #: interpolation of whatever was asked for: this text ends up in a query.
 SORT_KEYS: Final[dict[str, str]] = {
@@ -93,11 +101,13 @@ def _storable(text: str | None) -> str | None:
 class ParquetEventStore:
     """A case directory on disk, holding ingested events."""
 
-    def __init__(self, root: Path | str) -> None:
+    def __init__(self, root: Path | str, *, memory_limit: str = DEFAULT_MEMORY_LIMIT) -> None:
         self.root = Path(root)
         self._staging = self.root / "staging"
         self._events = self.root / "events"
         self._ip_index = self.root / "ip_index.parquet"
+        self._scratch = self.root / "tmp"
+        self._memory_limit = memory_limit
         self._writer: pq.ParquetWriter | None = None
         self._batch = 0
         self._connection: duckdb.DuckDBPyConnection | None = None
@@ -178,6 +188,16 @@ class ParquetEventStore:
             ) TO {self._sql_path(self._ip_index)} (FORMAT PARQUET, COMPRESSION zstd)
         """)
         shutil.rmtree(self._staging, ignore_errors=True)
+        self._clear_scratch()
+
+    def _clear_scratch(self) -> None:
+        """Drop whatever the sort spilled. It can be gigabytes, and it is not evidence."""
+        connection = self._connection
+        if connection is not None:
+            # DuckDB holds its spill files open; point it elsewhere before
+            # removing them, or Windows refuses and the case keeps them.
+            connection.execute("SET temp_directory = ''")
+        shutil.rmtree(self._scratch, ignore_errors=True)
 
     def _write_empty_index(self) -> None:
         empty = pa.table(
@@ -264,8 +284,20 @@ class ParquetEventStore:
             self._connection = None
 
     def _connect(self) -> duckdb.DuckDBPyConnection:
+        """Open the query engine with a memory ceiling and room to spill.
+
+        Left at its defaults DuckDB will take most of the machine before it
+        spills anything, and the sort in `finalize` covers the whole corpus.
+        Measured on ten million events that came to 6.9 GB of resident memory,
+        which is not what "bounded by batch size" means. Capping it and giving
+        it somewhere to write turns the sort into an external one: slower on a
+        corpus that would not have fitted anyway, and survivable.
+        """
         if self._connection is None:
+            self._scratch.mkdir(parents=True, exist_ok=True)
             self._connection = duckdb.connect(":memory:")
+            self._connection.execute(f"SET memory_limit = '{self._memory_limit}'")
+            self._connection.execute(f"SET temp_directory = {self._sql_path(self._scratch)}")
         return self._connection
 
     def _require_finalized(self) -> None:
