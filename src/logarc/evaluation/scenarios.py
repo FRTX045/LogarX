@@ -219,10 +219,7 @@ def _browse(rng: Random) -> Actor:
 
     def steps() -> Iterator[Step]:
         referer: str | None = None
-        for visit in range(rng.randint(3, 9)):
-            # People put the tab down. A corpus in which nobody ever does
-            # cannot exercise either of the gap thresholds.
-            away = visit > 0 and rng.random() < 0.2
+        for _ in range(rng.randint(3, 9)):
             page = rng.choice(_PAGES)
             yield Step(
                 "reading a page",
@@ -230,11 +227,29 @@ def _browse(rng: Random) -> Actor:
                 path=page,
                 status=200,
                 size=rng.randint(2_000, 40_000),
-                referer=None if away else referer,
-                gap=rng.uniform(400.0, 5_400.0) if away else rng.uniform(5.0, 45.0),
-                resumed=away,
+                referer=referer,
+                gap=rng.uniform(5.0, 45.0),
             )
             referer = f"{_SITE}{page}"
+
+            if rng.random() < 0.25:
+                # People put the tab down and come back to it. The request
+                # either side is a page view, so nothing but the length of the
+                # gap separates the two visits — which is the only arrangement
+                # that asks the episode-gap threshold a question. Put the pause
+                # next to an asset fetch instead and the change of category
+                # decides the boundary before the gap is ever consulted.
+                page = rng.choice(_PAGES)
+                yield Step(
+                    "reading a page",
+                    Category.BROWSING,
+                    path=page,
+                    status=200,
+                    size=rng.randint(2_000, 40_000),
+                    gap=rng.uniform(120.0, 3_600.0),
+                    resumed=True,
+                )
+                referer = f"{_SITE}{page}"
             for asset in rng.sample(_ASSETS, rng.randint(1, 4)):
                 yield Step(
                     "loading page assets",
@@ -417,6 +432,21 @@ def _inject(rng: Random) -> Actor:
             gap=rng.uniform(2.0, 6.0),
         )
 
+        # Back hours later for more of the same. Injection on both sides of the
+        # pause, so only its length distinguishes two visits from one long one:
+        # the question the episode gap answers, and — being longer than the
+        # idle timeout — the one the session boundary answers too.
+        yield Step(
+            "returning to the data",
+            Category.INJECTION,
+            path="/products/detail.php",
+            query=f"id={_encode('5 UNION ALL SELECT card_number FROM orders--')}",
+            status=200,
+            size=rng.randint(400_000, 900_000),
+            gap=rng.uniform(2_400.0, 21_600.0),
+            resumed=True,
+        )
+
         for page in ("/", "/cart"):
             yield Step(
                 "leaving quietly",
@@ -426,19 +456,6 @@ def _inject(rng: Random) -> Actor:
                 size=rng.randint(3_000, 20_000),
                 gap=rng.uniform(10.0, 60.0),
             )
-
-        # Back hours later to use what was opened. Two visits, not one long
-        # one — the case the session and episode thresholds both exist for.
-        yield Step(
-            "returning to the data",
-            Category.INJECTION,
-            path="/products/detail.php",
-            query=f"id={_encode('5 UNION ALL SELECT card_number FROM orders--')}",
-            status=200,
-            size=rng.randint(400_000, 900_000),
-            gap=rng.uniform(7_200.0, 21_600.0),
-            resumed=True,
-        )
 
     return Actor(user_agent=rng.choice(_BROWSER_AGENTS), steps=steps())
 
