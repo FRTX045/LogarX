@@ -1,0 +1,287 @@
+"""A self-contained HTML report.
+
+One file, no external requests: it can be attached to an email, archived
+alongside the evidence, or opened on a machine with no network. The graph is
+inline SVG rather than a script-drawn canvas so it survives being printed to PDF
+and stays readable in ten years.
+
+The manifest is embedded rather than referenced, so the report states on its own
+face which files, which ruleset and which thresholds produced it.
+"""
+
+from __future__ import annotations
+
+import html
+import json
+from typing import TYPE_CHECKING, Final
+
+from logarc.core.activity import Outcome, Severity
+from logarc.core.graph import GraphKind
+from logarc.graphbuild.layout import layout_graph
+
+if TYPE_CHECKING:
+    from logarc.analysis import AnalysisResult
+    from logarc.core.graph import ActivityGraph
+    from logarc.storage.case import CaseManifest
+
+__all__ = ["render_report"]
+
+_SEVERITY_COLOUR: Final[dict[Severity, str]] = {
+    Severity.INFO: "#64748b",
+    Severity.LOW: "#0891b2",
+    Severity.MEDIUM: "#ca8a04",
+    Severity.HIGH: "#ea580c",
+    Severity.CRITICAL: "#dc2626",
+}
+
+_OUTCOME_NOTE: Final[dict[Outcome, str]] = {
+    Outcome.BLOCKED: "every request refused",
+    Outcome.SUCCESS: "every request served",
+    Outcome.MIXED: "some requests served",
+    Outcome.UNKNOWN: "outcome unknown",
+}
+
+_NODE_WIDTH: Final = 180.0
+_NODE_HEIGHT: Final = 74.0
+_MARGIN: Final = 60.0
+
+
+def render_report(result: AnalysisResult, manifest: CaseManifest | None = None) -> str:
+    """Render a complete report for one client as a single HTML document."""
+    return _DOCUMENT.format(
+        ip=html.escape(result.client_ip),
+        style=_STYLE,
+        summary=_summary(result),
+        trace=_svg(result.trace),
+        behaviour=_svg(result.behaviour),
+        episodes=_episode_table(result),
+        provenance=_provenance(result, manifest),
+        payload=html.escape(json.dumps(result.to_dict(), indent=2)),
+    )
+
+
+def _summary(result: AnalysisResult) -> str:
+    hostile = result.hostile_episodes
+    worst = max((e.severity for e in result.episodes), default=Severity.INFO)
+    breached = any(e.outcome in {Outcome.SUCCESS, Outcome.MIXED} for e in hostile)
+
+    cards = [
+        ("Requests", f"{result.request_count:,}"),
+        ("Sessions", str(len(result.sessions))),
+        ("Activities", str(len(result.episodes))),
+        ("Hostile activities", str(len(hostile))),
+        ("Highest severity", worst.name.title()),
+        ("Any hostile request served", "Yes" if breached else "No"),
+    ]
+    return "".join(
+        f'<div class="card"><div class="card-label">{label}</div>'
+        f'<div class="card-value">{value}</div></div>'
+        for label, value in cards
+    )
+
+
+def _svg(graph: ActivityGraph) -> str:
+    if not graph.nodes:
+        return '<p class="empty">No activity to draw.</p>'
+
+    positions = layout_graph(graph)
+    xs = [point.x for point in positions.values()]
+    ys = [point.y for point in positions.values()]
+    offset_x = _MARGIN - min(xs)
+    offset_y = _MARGIN - min(ys)
+    width = max(xs) - min(xs) + _NODE_WIDTH + 2 * _MARGIN
+    height = max(ys) - min(ys) + _NODE_HEIGHT + 2 * _MARGIN
+
+    parts = [
+        f'<svg viewBox="0 0 {width:.0f} {height:.0f}" '
+        f'style="max-width:100%;height:auto" role="img">',
+        '<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" '
+        'markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
+        '<path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/></marker></defs>',
+    ]
+
+    for edge in graph.edges:
+        start, end = positions.get(edge.source), positions.get(edge.target)
+        if start is None or end is None:  # pragma: no cover - edges follow nodes
+            continue
+        x1 = start.x + offset_x + _NODE_WIDTH
+        y1 = start.y + offset_y + _NODE_HEIGHT / 2
+        x2 = end.x + offset_x
+        y2 = end.y + offset_y + _NODE_HEIGHT / 2
+        thickness = min(1 + edge.weight * 0.6, 6)
+        if edge.source == edge.target:
+            parts.append(
+                f'<path d="M{x1:.0f},{y1 - 20:.0f} c 40,-30 40,30 0,20" fill="none" '
+                f'stroke="#94a3b8" stroke-width="{thickness:.1f}" marker-end="url(#arrow)"/>'
+            )
+            continue
+        midpoint = (x1 + x2) / 2
+        parts.append(
+            f'<path d="M{x1:.0f},{y1:.0f} C{midpoint:.0f},{y1:.0f} '
+            f'{midpoint:.0f},{y2:.0f} {x2:.0f},{y2:.0f}" fill="none" stroke="#94a3b8" '
+            f'stroke-width="{thickness:.1f}" marker-end="url(#arrow)"/>'
+        )
+        if edge.gap_seconds is not None and graph.kind is GraphKind.TRACE:
+            parts.append(
+                f'<text x="{midpoint:.0f}" y="{(y1 + y2) / 2 - 6:.0f}" class="edge-label" '
+                f'text-anchor="middle">{_duration(edge.gap_seconds)}</text>'
+            )
+
+    for node in graph.nodes:
+        point = positions[node.node_id]
+        x, y = point.x + offset_x, point.y + offset_y
+        colour = _SEVERITY_COLOUR[node.severity]
+        dashed = ' stroke-dasharray="6 3"' if node.outcome is Outcome.BLOCKED else ""
+        parts.append(
+            f'<g><rect x="{x:.0f}" y="{y:.0f}" width="{_NODE_WIDTH:.0f}" '
+            f'height="{_NODE_HEIGHT:.0f}" rx="10" fill="#ffffff" stroke="{colour}" '
+            f'stroke-width="2.5"{dashed}/>'
+            f'<rect x="{x:.0f}" y="{y:.0f}" width="6" height="{_NODE_HEIGHT:.0f}" '
+            f'rx="3" fill="{colour}"/>'
+            f'<text x="{x + 16:.0f}" y="{y + 26:.0f}" class="node-title">'
+            f"{html.escape(_truncate(node.label, 22))}</text>"
+            f'<text x="{x + 16:.0f}" y="{y + 46:.0f}" class="node-meta">'
+            f"{node.request_count:,} requests</text>"
+            f'<text x="{x + 16:.0f}" y="{y + 62:.0f}" class="node-meta">'
+            f"{html.escape(_OUTCOME_NOTE[node.outcome])}</text></g>"
+        )
+
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def _episode_table(result: AnalysisResult) -> str:
+    if not result.episodes:
+        return '<p class="empty">No activity reconstructed.</p>'
+
+    rows = []
+    for episode in result.episodes:
+        colour = _SEVERITY_COLOUR[episode.severity]
+        targets = ", ".join(html.escape(target) for target in episode.top_targets[:3])
+        evidence = ", ".join(str(ref) for ref in episode.evidence[:5])
+        if episode.evidence_total > len(episode.evidence[:5]):
+            evidence += f" (+{episode.evidence_total - 5:,} more)"
+        rows.append(
+            "<tr>"
+            f'<td class="mono">{episode.start:%H:%M:%S}</td>'
+            f"<td><strong>{html.escape(episode.label)}</strong><br>"
+            f'<span class="muted">{html.escape(episode.category.value)}</span></td>'
+            f'<td><span class="pill" style="background:{colour}">'
+            f"{episode.severity.name.title()}</span></td>"
+            f"<td>{html.escape(episode.activity.owasp or '—')}</td>"
+            f"<td>{episode.request_count:,}</td>"
+            f"<td>{html.escape(_OUTCOME_NOTE[episode.outcome])}</td>"
+            f'<td class="mono small">{targets}</td>'
+            f'<td class="mono small">{html.escape(evidence)}</td>'
+            "</tr>"
+        )
+    return "".join(rows)
+
+
+def _provenance(result: AnalysisResult, manifest: CaseManifest | None) -> str:
+    rows = [("Ruleset fingerprint", result.ruleset_fingerprint)]
+    if manifest is not None:
+        rows.append(("Case", manifest.case_id))
+        rows.append(("Tool version", manifest.tool_version))
+        rows.append(("Ingested", manifest.created_at.isoformat()))
+        for source in manifest.sources:
+            rows.append((f"Source: {source.file_id}", source.original_path))
+            rows.append((f"SHA-256: {source.file_id}", source.sha256))
+            rows.append(
+                (
+                    f"Parsed: {source.file_id}",
+                    f"{source.events_parsed:,} events from {source.lines_read:,} lines "
+                    f"({source.lines_quarantined:,} unparseable), format {source.log_format}",
+                )
+            )
+    rows.extend((key, str(value)) for key, value in sorted(result.policy.as_config().items()))
+
+    return "".join(
+        f'<tr><td>{html.escape(label)}</td><td class="mono small">{html.escape(value)}</td></tr>'
+        for label, value in rows
+    )
+
+
+def _duration(seconds: float) -> str:
+    if seconds < 90:
+        return f"{seconds:.0f}s"
+    if seconds < 5400:
+        return f"{seconds / 60:.0f}m"
+    return f"{seconds / 3600:.1f}h"
+
+
+def _truncate(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+_STYLE: Final = """
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 2.5rem 1.5rem; background: #f8fafc; color: #0f172a;
+  font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1100px; margin: 0 auto; }
+h1 { font-size: 1.6rem; margin: 0 0 .25rem; }
+h2 { font-size: 1.1rem; margin: 2.5rem 0 .75rem; }
+.subtitle { color: #64748b; margin: 0 0 2rem; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .75rem; }
+.card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: .9rem 1rem; }
+.card-label { color: #64748b; font-size: .78rem; text-transform: uppercase;
+  letter-spacing: .04em; }
+.card-value { font-size: 1.35rem; font-weight: 600; margin-top: .2rem; }
+.panel { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+  padding: 1rem; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; background: #fff;
+  border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; }
+th, td { text-align: left; padding: .6rem .75rem; border-bottom: 1px solid #f1f5f9;
+  vertical-align: top; }
+th { background: #f1f5f9; font-size: .8rem; text-transform: uppercase;
+  letter-spacing: .04em; color: #475569; }
+tr:last-child td { border-bottom: none; }
+.mono { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
+.small { font-size: .82rem; }
+.muted { color: #64748b; font-size: .85rem; }
+.pill { color: #fff; border-radius: 999px; padding: .1rem .55rem; font-size: .78rem; }
+.empty { color: #64748b; font-style: italic; }
+.node-title { font: 600 14px system-ui, sans-serif; fill: #0f172a; }
+.node-meta { font: 12px system-ui, sans-serif; fill: #64748b; }
+.edge-label { font: 11px ui-monospace, monospace; fill: #94a3b8; }
+details { margin-top: 2.5rem; }
+pre { background: #0f172a; color: #e2e8f0; padding: 1rem; border-radius: 10px;
+  overflow-x: auto; font-size: .8rem; }
+footer { margin-top: 3rem; color: #94a3b8; font-size: .82rem; }
+"""
+
+_DOCUMENT: Final = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>logarc — activity reconstruction for {ip}</title>
+<style>{style}</style></head>
+<body><main>
+<h1>Activity reconstruction: {ip}</h1>
+<p class="subtitle">Reconstructed from web server access logs. Every activity below
+links back to the log lines that produced it.</p>
+
+<div class="cards">{summary}</div>
+
+<h2>What happened, in order</h2>
+<div class="panel">{trace}</div>
+
+<h2>How this client behaved</h2>
+<div class="panel">{behaviour}</div>
+
+<h2>Activities</h2>
+<table><thead><tr>
+<th>Time</th><th>Activity</th><th>Severity</th><th>OWASP</th>
+<th>Requests</th><th>Outcome</th><th>Top targets</th><th>Evidence</th>
+</tr></thead><tbody>{episodes}</tbody></table>
+
+<h2>Provenance</h2>
+<table><thead><tr><th>Item</th><th>Value</th></tr></thead>
+<tbody>{provenance}</tbody></table>
+
+<details><summary>Machine-readable data</summary><pre>{payload}</pre></details>
+
+<footer>Generated by logarc. Dashed borders mark activities where every request
+was refused.</footer>
+</main></body></html>
+"""
