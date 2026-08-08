@@ -53,6 +53,15 @@ class Step:
     gap: float = 2.0
     """Seconds since this client's previous request."""
 
+    resumed: bool = False
+    """The client had gone away and has come back: a fresh act.
+
+    Stated by the scenario rather than inferred from `gap`, because the whole
+    point of sweeping the gap thresholds is to ask which of them agrees with
+    intent. Deriving intent from a gap size would make that circular — the
+    truth would agree with whatever setting was being tested.
+    """
+
 
 @dataclass(frozen=True, slots=True)
 class Actor:
@@ -210,7 +219,10 @@ def _browse(rng: Random) -> Actor:
 
     def steps() -> Iterator[Step]:
         referer: str | None = None
-        for _ in range(rng.randint(3, 9)):
+        for visit in range(rng.randint(3, 9)):
+            # People put the tab down. A corpus in which nobody ever does
+            # cannot exercise either of the gap thresholds.
+            away = visit > 0 and rng.random() < 0.2
             page = rng.choice(_PAGES)
             yield Step(
                 "reading a page",
@@ -218,8 +230,9 @@ def _browse(rng: Random) -> Actor:
                 path=page,
                 status=200,
                 size=rng.randint(2_000, 40_000),
-                referer=referer,
-                gap=rng.uniform(5.0, 45.0),
+                referer=None if away else referer,
+                gap=rng.uniform(400.0, 5_400.0) if away else rng.uniform(5.0, 45.0),
+                resumed=away,
             )
             referer = f"{_SITE}{page}"
             for asset in rng.sample(_ASSETS, rng.randint(1, 4)):
@@ -413,6 +426,19 @@ def _inject(rng: Random) -> Actor:
                 size=rng.randint(3_000, 20_000),
                 gap=rng.uniform(10.0, 60.0),
             )
+
+        # Back hours later to use what was opened. Two visits, not one long
+        # one — the case the session and episode thresholds both exist for.
+        yield Step(
+            "returning to the data",
+            Category.INJECTION,
+            path="/products/detail.php",
+            query=f"id={_encode('5 UNION ALL SELECT card_number FROM orders--')}",
+            status=200,
+            size=rng.randint(400_000, 900_000),
+            gap=rng.uniform(7_200.0, 21_600.0),
+            resumed=True,
+        )
 
     return Actor(user_agent=rng.choice(_BROWSER_AGENTS), steps=steps())
 

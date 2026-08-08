@@ -133,6 +133,49 @@ def test_mixed_carries_both_ordinary_and_hostile_clients() -> None:
     assert any(not category.is_hostile for category in categories)
 
 
+def test_clients_go_away_and_come_back() -> None:
+    """Both segmentation thresholds exist for pauses. A corpus with none in it
+    cannot exercise either, which a threshold sweep found the hard way: every
+    setting of the episode gap and the idle timeout produced identical scores,
+    because no client had ever paused for longer than a minute.
+    """
+    parser = get_parser("apache-combined")
+    last: dict[str, datetime] = {}
+    longest: dict[str, float] = {}
+    for number, (text, truth) in enumerate(emitted("mixed", 20_000), start=1):
+        event = parser.parse_line(text, EvidenceRef("gen.log", number))
+        assert event is not None
+        previous = last.get(truth.client_ip)
+        if previous is not None:
+            gap = (event.timestamp - previous).total_seconds()
+            longest[truth.client_ip] = max(longest.get(truth.client_ip, 0.0), gap)
+        last[truth.client_ip] = event.timestamp
+
+    gaps = sorted(longest.values(), reverse=True)
+    assert any(gap > 300 for gap in gaps), "nothing exceeds the default episode gap"
+    assert any(gap > 1800 for gap in gaps), "nothing exceeds the default idle timeout"
+
+
+def test_coming_back_after_a_pause_is_a_new_activity() -> None:
+    """Truth says so because the client went away, not because of a threshold.
+
+    Deciding it by a gap size would make the sweep circular: the truth would
+    agree with whatever setting the tool happened to be using.
+    """
+    per_client: dict[str, list[tuple[str, str]]] = {}
+    for _, truth in emitted("normal_browsing", 20_000):
+        per_client.setdefault(truth.client_ip, []).append((truth.instance_id, truth.category.value))
+
+    resumed = [
+        steps
+        for steps in per_client.values()
+        # A client that read a page, paused, and read another has two browsing
+        # instances that are not adjacent to each other.
+        if len({instance for instance, category in steps if category == "browsing"}) > 1
+    ]
+    assert resumed
+
+
 def test_an_unknown_scenario_lists_the_ones_that_exist() -> None:
     with pytest.raises(GenerationError, match="sqli_campaign"):
         list(generate("does_not_exist", lines=10, seed=1, start=START))

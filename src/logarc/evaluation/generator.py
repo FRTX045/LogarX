@@ -132,7 +132,7 @@ def generate(
             at += rng.uniform(1.0, 120.0)
             following = live.pending
 
-        if following.activity != live.activity:
+        if following.activity != live.activity or following.resumed:
             instances += 1
             live.activity = following.activity
             live.instance_id = f"{live.client_ip}#{instances}"

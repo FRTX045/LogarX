@@ -17,7 +17,7 @@ cannot be measured on this dataset at all.
 distinct `JSESSIONID` is given an address of its own. A session is the closest
 thing the traces carry to one person's visit.
 
-**Half the attacks are in POST bodies.** A web server access log records the
+**Many of the attacks are in POST bodies.** A web server access log records the
 request line and nothing after it, so a payload sent in a body leaves no trace
 in one. Bodies are therefore dropped, and the number of attacks that thereby
 become invisible is counted and reported — it is a real limit on what any
