@@ -12,7 +12,15 @@ from pathlib import Path
 from typing import Annotated, Any, Final, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from logarc.core.activity import ActivityCategory, Severity
 
@@ -105,19 +113,22 @@ class Condition(BaseModel):
             )
         return self
 
+    _pattern: re.Pattern[str] | None = PrivateAttr(default=None)
+    """Compiled at load time so matching does not recompile per request.
+
+    Held as a private attribute rather than in a side table keyed by `id()`:
+    CPython reuses ids after garbage collection, so such a table can hand one
+    condition another's pattern once the original is freed.
+    """
+
     @property
     def compiled(self) -> re.Pattern[str] | None:
-        return _compiled_patterns.get(id(self))
+        return self._pattern
 
     def compile(self) -> None:
         """Compile the pattern once, at load time rather than per request."""
         if self.regex is not None:
-            _compiled_patterns[id(self)] = re.compile(self.regex, re.IGNORECASE)
-
-
-#: Compiled patterns keyed by condition identity. Held outside the model so the
-#: models stay comparable and serialisable.
-_compiled_patterns: dict[int, re.Pattern[str]] = {}
+            self._pattern = re.compile(self.regex, re.IGNORECASE)
 
 
 class MatchBlock(BaseModel):
