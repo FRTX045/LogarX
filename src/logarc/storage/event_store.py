@@ -191,12 +191,17 @@ class ParquetEventStore:
         self._clear_scratch()
 
     def _clear_scratch(self) -> None:
-        """Drop whatever the sort spilled. It can be gigabytes, and it is not evidence."""
-        connection = self._connection
-        if connection is not None:
-            # DuckDB holds its spill files open; point it elsewhere before
-            # removing them, or Windows refuses and the case keeps them.
-            connection.execute("SET temp_directory = ''")
+        """Drop whatever the sort spilled. It can be gigabytes, and it is not evidence.
+
+        The connection is closed first, because DuckDB holds its spill files
+        open and Windows will not delete a file that is. It reopens by itself on
+        the next query; `finalize` is the last thing the write side does, so
+        nothing is paying for the reconnect but the first read.
+
+        Redirecting the temp directory instead does not work: once DuckDB has
+        used one it refuses to be moved off it.
+        """
+        self.close()
         shutil.rmtree(self._scratch, ignore_errors=True)
 
     def _write_empty_index(self) -> None:
@@ -298,6 +303,12 @@ class ParquetEventStore:
             self._connection = duckdb.connect(":memory:")
             self._connection.execute(f"SET memory_limit = '{self._memory_limit}'")
             self._connection.execute(f"SET temp_directory = {self._sql_path(self._scratch)}")
+            # Under a ceiling, the partitioned write in `finalize` runs out of
+            # memory rather than spilling, because holding insertion order
+            # across 64 partitions means buffering them. Every query here that
+            # cares about order states it with ORDER BY, so there is nothing to
+            # preserve and a great deal to buffer.
+            self._connection.execute("SET preserve_insertion_order = false")
         return self._connection
 
     def _require_finalized(self) -> None:

@@ -289,3 +289,35 @@ def test_the_spill_directory_does_not_outlive_finalize(tmp_path: Path) -> None:
 
     assert not (tmp_path / "case" / "tmp").exists()
     assert store.events_for_ip("203.0.113.1")
+
+
+def test_finalize_survives_a_sort_that_does_not_fit_in_memory(tmp_path: Path) -> None:
+    """The path a real corpus takes, forced by a ceiling a small one exceeds.
+
+    Two things only go wrong once the engine has actually spilled, and neither
+    shows up on twenty rows: the partitioned write runs out of memory instead of
+    spilling unless insertion order is let go of, and the scratch files cannot
+    be removed by pointing the engine elsewhere, because it refuses to move off
+    a temporary directory it has used.
+    """
+    store = ParquetEventStore(tmp_path / "case", memory_limit="256MB")
+    for start in range(0, 120_000, 20_000):
+        store.write(
+            [
+                event(
+                    f"203.0.113.{n % 251}",
+                    offset_seconds=n,
+                    line_no=n + 1,
+                    path=f"/page/{n}/" + "x" * 120,
+                    query="q=" + "y" * 120,
+                    user_agent="z" * 160,
+                )
+                for n in range(start, start + 20_000)
+            ]
+        )
+
+    store.finalize()
+
+    assert not (tmp_path / "case" / "tmp").exists()
+    assert len(store.events_for_ip("203.0.113.1")) == len(range(1, 120_000, 251))
+    store.close()
