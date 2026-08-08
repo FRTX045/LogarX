@@ -179,43 +179,62 @@ class RuleEngine:
         return LabelledEvent(event=event, label=_most_severe(labels), all_labels=labels)
 
     def _apply_windows(self, labelled: list[LabelledEvent]) -> None:
-        """Fire window rules over sliding spans and upgrade the labels inside.
+        """Fire window rules, then settle each request's primary label.
 
-        A window label never displaces a more severe signature match: the
-        specific finding is more useful in a report than the aggregate one.
+        The primary label is recomputed from the complete set of matches rather
+        than replaced as each rule fires. Sequential replacement made the winner
+        depend on the order rules happened to be loaded in, which is not a
+        property a forensic result may have — the same evidence and the same
+        ruleset must always produce the same answer.
         """
         for rule in self._windows:
-            for start, end in _windows_meeting(rule, labelled):
-                label = _to_label(rule)
-                for item in labelled[start:end]:
-                    item.all_labels.append(label)
-                    if label.severity > item.label.severity:
-                        item.label = label
+            members = [index for index, item in enumerate(labelled) if _is_member(rule, item)]
+            label = _to_label(rule)
+            for covered in _windows_meeting(rule, labelled, members):
+                for index in covered:
+                    labelled[index].all_labels.append(label)
+
+        for item in labelled:
+            if item.all_labels:
+                item.label = _most_severe(item.all_labels)
 
 
-def _windows_meeting(rule: WindowRule, labelled: Sequence[LabelledEvent]) -> list[tuple[int, int]]:
-    """Index ranges where `rule`'s thresholds hold.
+def _is_member(rule: WindowRule, item: LabelledEvent) -> bool:
+    if rule.member is None:
+        return True
+    conditions = rule.member.conditions
+    view = RequestView(item.event)
+    if rule.member.requires_all:
+        return all(_condition_holds(condition, view) for condition in conditions)
+    return any(_condition_holds(condition, view) for condition in conditions)
 
-    A forward scan: for each start, take every request within the span and test
-    the aggregate. Ranges are returned rather than merged so the caller decides
-    what to do with overlaps.
+
+def _windows_meeting(
+    rule: WindowRule, labelled: Sequence[LabelledEvent], members: Sequence[int]
+) -> list[list[int]]:
+    """Index groups where `rule`'s thresholds hold.
+
+    The scan runs over the rule's *members* rather than over every request, so a
+    burst is measured against the requests it consists of. Neighbouring
+    unrelated traffic neither dilutes the metrics nor gets labelled by
+    association.
     """
     span = rule.window.span_seconds
-    hits: list[tuple[int, int]] = []
+    hits: list[list[int]] = []
 
     end = 0
-    for start in range(len(labelled)):
+    for start in range(len(members)):
         if end < start:
             end = start
-        limit = labelled[start].event.timestamp.timestamp() + span
-        while end < len(labelled) and labelled[end].event.timestamp.timestamp() <= limit:
+        limit = labelled[members[start]].event.timestamp.timestamp() + span
+        while end < len(members) and labelled[members[end]].event.timestamp.timestamp() <= limit:
             end += 1
 
         if end - start < rule.window.min_requests:
             continue
-        events = [item.event for item in labelled[start:end]]
+        events = [labelled[index].event for index in members[start:end]]
         if all(_metric_holds(condition, events, span) for condition in rule.window.conditions):
-            hits.append((start, end))
+            hits.append(list(members[start:end]))
     return hits
 
 
@@ -308,7 +327,13 @@ def _to_label(rule: Rule) -> ActivityLabel:
 
 
 def _most_severe(labels: Sequence[ActivityLabel]) -> ActivityLabel:
-    return max(labels, key=lambda label: (label.severity, label.confidence))
+    """Pick the label a report should lead with.
+
+    Severity first, then confidence, then rule id. The last is a tie-break with
+    no meaning of its own; it exists so that two equally severe, equally
+    confident rules always resolve the same way rather than by load order.
+    """
+    return max(labels, key=lambda label: (label.severity, label.confidence, label.rule_id))
 
 
 def _classify_benign(view: RequestView) -> ActivityLabel:

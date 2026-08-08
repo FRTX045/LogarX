@@ -39,6 +39,13 @@ rules:
         - field: user_agent
           equals: ""
 
+  # Every rule below declares `member`: the requests it is actually about.
+  # Without it a window is only a span of time, so a burst of 404s next to a
+  # stretch of ordinary browsing produces a window covering both — and the
+  # browsing gets labelled as enumeration. Scoping to members means the metrics
+  # are computed over the requests that constitute the behaviour, and only those
+  # are labelled.
+
   - id: directory_enumeration
     name: Directory Enumeration
     category: enumeration
@@ -46,6 +53,12 @@ rules:
     severity: medium
     confidence: 0.85
     references: ["CAPEC-127"]
+    member:
+      all:
+        - field: status
+          min: 400
+        - field: status
+          max: 499
     window:
       span_seconds: 60
       min_requests: 20
@@ -53,9 +66,6 @@ rules:
         - metric: distinct_paths
           op: ">="
           value: 15
-        - metric: not_found_ratio
-          op: ">="
-          value: 0.7
 
   - id: forced_browsing
     name: Forced Browsing (repeated refusals)
@@ -63,13 +73,14 @@ rules:
     owasp: "A01:2021"
     severity: medium
     confidence: 0.8
+    member:
+      any:
+        - field: status
+          any_of: ["401", "403"]
     window:
       span_seconds: 120
       min_requests: 10
       conditions:
-        - metric: client_error_ratio
-          op: ">="
-          value: 0.8
         - metric: distinct_paths
           op: ">="
           value: 8
@@ -81,6 +92,14 @@ rules:
     severity: high
     confidence: 0.8
     references: ["CAPEC-49"]
+    # Restricted to authentication endpoints. Without that, any low-diversity
+    # high-error traffic matches — including a paginated export.
+    member:
+      all:
+        - field: path_decoded
+          regex: '/(login|signin|sign-in|auth|oauth|session|token|account/login)'
+        - field: status
+          min: 400
     window:
       span_seconds: 300
       min_requests: 10
@@ -88,9 +107,6 @@ rules:
         - metric: distinct_paths
           op: "<="
           value: 3
-        - metric: client_error_ratio
-          op: ">="
-          value: 0.5
 
   - id: rapid_request_burst
     name: Rapid Request Burst
@@ -110,10 +126,14 @@ rules:
     category: exploitation
     severity: high
     confidence: 0.7
+    member:
+      any:
+        - field: status
+          min: 500
     window:
       span_seconds: 120
       min_requests: 5
       conditions:
-        - metric: server_error_ratio
+        - metric: request_count
           op: ">="
-          value: 0.4
+          value: 5

@@ -225,9 +225,20 @@ class WindowRule(_RuleBase):
     """
 
     window: WindowBlock
+    member: MatchBlock | None = None
+    """Which requests the rule is about.
+
+    Without it, a window is just a span of time, and a burst of 404s next to a
+    stretch of ordinary browsing produces a window straddling both — labelling
+    the browsing as enumeration. With it, metrics are computed over matching
+    requests only, and only those are labelled. The window then describes a
+    behaviour rather than a period.
+    """
 
     def compile(self) -> None:
-        return None
+        if self.member is not None:
+            for condition in self.member.conditions:
+                condition.compile()
 
 
 Rule = SignatureRule | WindowRule
