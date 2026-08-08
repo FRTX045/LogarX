@@ -1,0 +1,167 @@
+"""The synthetic log generator.
+
+The generator is the yardstick, so it is held to a higher standard than the code
+it measures: if it emits a line the real parser cannot read, or if two runs of
+the same seed differ, every accuracy number downstream is meaningless.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+
+from logarc.core.activity import ActivityCategory
+from logarc.core.evidence import EvidenceRef
+from logarc.evaluation.generator import (
+    SCENARIOS,
+    GenerationError,
+    generate,
+    write_log,
+)
+from logarc.evaluation.truth import read_truth
+from logarc.parsers.registry import get_parser
+
+START = datetime(2024, 5, 1, tzinfo=UTC)
+
+
+def emitted(scenario: str, lines: int, seed: int = 1) -> list[tuple[str, object]]:
+    return list(generate(scenario, lines=lines, seed=seed, start=START))
+
+
+def test_every_scenario_emits_exactly_the_requested_number_of_lines() -> None:
+    for scenario in SCENARIOS:
+        assert len(emitted(scenario, 200)) == 200, scenario
+
+
+def test_every_line_parses_with_the_real_apache_parser() -> None:
+    """A generator that emits lines logarc cannot read proves nothing."""
+    parser = get_parser("apache-combined")
+    for scenario in SCENARIOS:
+        for number, (text, _) in enumerate(emitted(scenario, 300), start=1):
+            event = parser.parse_line(text, EvidenceRef("gen.log", number))
+            assert event is not None, f"{scenario} line {number} unparseable: {text}"
+            assert event.method is not None
+            assert event.status is not None
+
+
+def test_the_same_seed_reproduces_the_same_log() -> None:
+    first = [text for text, _ in emitted("mixed", 400, seed=99)]
+    second = [text for text, _ in emitted("mixed", 400, seed=99)]
+
+    assert first == second
+
+
+def test_a_different_seed_produces_a_different_log() -> None:
+    first = [text for text, _ in emitted("mixed", 400, seed=1)]
+    second = [text for text, _ in emitted("mixed", 400, seed=2)]
+
+    assert first != second
+
+
+def test_lines_are_emitted_in_time_order() -> None:
+    """Actors are interleaved, so the merge must keep the file chronological."""
+    parser = get_parser("apache-combined")
+    stamps = [
+        parser.parse_line(text, EvidenceRef("gen.log", number)).timestamp  # type: ignore[union-attr]
+        for number, (text, _) in enumerate(emitted("mixed", 500), start=1)
+    ]
+
+    assert stamps == sorted(stamps)
+
+
+def test_truth_records_number_the_lines_they_describe() -> None:
+    records = [truth for _, truth in emitted("sqli_campaign", 250)]
+
+    assert [item.line_no for item in records] == list(range(1, 251))
+
+
+def test_truth_reports_the_client_that_the_line_belongs_to() -> None:
+    parser = get_parser("apache-combined")
+    for number, (text, truth) in enumerate(emitted("mixed", 300), start=1):
+        event = parser.parse_line(text, EvidenceRef("gen.log", number))
+        assert event is not None
+        assert event.client_ip == truth.client_ip
+
+
+def test_an_activity_instance_is_stable_while_the_activity_lasts() -> None:
+    """One id per intended activity, so segmentation has something to score."""
+    per_client: dict[str, list[tuple[str, ActivityCategory]]] = {}
+    for _, truth in emitted("sqli_campaign", 400):
+        per_client.setdefault(truth.client_ip, []).append((truth.instance_id, truth.category))
+
+    for steps in per_client.values():
+        seen: dict[str, ActivityCategory] = {}
+        for instance, category in steps:
+            # An id never comes back with a different category, and never
+            # reappears after another id has taken over.
+            assert seen.setdefault(instance, category) == category
+        ordered = [instance for instance, _ in steps]
+        first_seen = list(dict.fromkeys(ordered))
+        assert ordered == sorted(ordered, key=first_seen.index)
+
+
+@pytest.mark.parametrize(
+    ("scenario", "expected"),
+    [
+        ("normal_browsing", ActivityCategory.BROWSING),
+        ("wordpress_scan", ActivityCategory.ENUMERATION),
+        ("sqli_campaign", ActivityCategory.INJECTION),
+        ("brute_force", ActivityCategory.CREDENTIAL_ATTACK),
+        ("path_traversal", ActivityCategory.PATH_TRAVERSAL),
+    ],
+)
+def test_a_scenario_contains_the_behaviour_it_is_named_after(
+    scenario: str, expected: ActivityCategory
+) -> None:
+    categories = {truth.category for _, truth in emitted(scenario, 600)}
+
+    assert expected in categories
+
+
+def test_normal_browsing_contains_nothing_hostile() -> None:
+    """The false-positive half of the evaluation needs clean traffic."""
+    for _, truth in emitted("normal_browsing", 1000):
+        assert not truth.category.is_hostile, truth
+
+
+def test_mixed_carries_both_ordinary_and_hostile_clients() -> None:
+    categories = {truth.category for _, truth in emitted("mixed", 2000)}
+
+    assert any(category.is_hostile for category in categories)
+    assert any(not category.is_hostile for category in categories)
+
+
+def test_an_unknown_scenario_lists_the_ones_that_exist() -> None:
+    with pytest.raises(GenerationError, match="sqli_campaign"):
+        list(generate("does_not_exist", lines=10, seed=1, start=START))
+
+
+def test_write_log_writes_the_log_and_its_truth(tmp_path: Path) -> None:
+    log = tmp_path / "sample.log"
+
+    result = write_log(
+        log, scenario="mixed", lines=150, seed=5, truth_path=tmp_path / "sample.truth.jsonl"
+    )
+
+    assert result.lines == 150
+    assert result.bytes_written == log.stat().st_size
+    assert len(log.read_text(encoding="utf-8").splitlines()) == 150
+
+    truth = read_truth(tmp_path / "sample.truth.jsonl")
+    assert truth.scenario == "mixed"
+    assert truth.seed == 5
+    assert truth.source_file_id == "sample.log"
+    assert truth.line_count == 150
+
+
+def test_write_log_can_skip_truth_for_benchmark_sized_inputs(tmp_path: Path) -> None:
+    """At ten million lines the truth file is the expensive part, and unused."""
+    log = tmp_path / "big.log"
+
+    result = write_log(log, scenario="mixed", lines=50, seed=1, truth_path=None)
+
+    assert result.truth_path is None
+    assert not list(tmp_path.glob("*.truth.jsonl"))
+    assert result.lines == 50
