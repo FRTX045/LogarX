@@ -126,6 +126,58 @@ def test_the_report_serialises_for_a_paper_table(mixed: tuple[Case, Path]) -> No
     assert payload["totals"]["lines_missing"] == 0
 
 
+def test_hostile_or_not_is_scored_alongside_the_categories(mixed: tuple[Case, Path]) -> None:
+    """The question a defender actually asks first."""
+    case, truth_path = mixed
+
+    report = evaluate(case.store, read_truth(truth_path))
+
+    assert report.granularity == "category"
+    assert report.binary.total == report.lines_scored
+    assert report.binary.recall > 0.9
+    assert report.binary.false_positive_rate < 0.05
+
+
+def test_a_binary_truth_gets_no_per_category_table(tmp_path: Path) -> None:
+    """A dataset that only knows attack-or-not cannot support one.
+
+    The truth file says so in its header, so this is enforced rather than
+    written down and hoped for.
+    """
+    from logarc.evaluation.csic import convert_csic
+
+    normal = tmp_path / "normal.txt"
+    anomalous = tmp_path / "anomalous.txt"
+    normal.write_text(
+        "GET http://localhost:8080/shop/index.jsp HTTP/1.1\n"
+        "User-Agent: Mozilla/5.0\n"
+        "Cookie: JSESSIONID=AAAA\n\n",
+        encoding="utf-8",
+    )
+    anomalous.write_text(
+        "GET http://localhost:8080/shop/item.jsp?id=1%27+OR+%271%27%3D%271 HTTP/1.1\n"
+        "User-Agent: Mozilla/5.0\n"
+        "Cookie: JSESSIONID=BBBB\n\n",
+        encoding="utf-8",
+    )
+    log = tmp_path / "csic.log"
+    convert_csic(
+        normal=[normal], anomalous=[anomalous], out=log, truth_path=tmp_path / "csic.truth.jsonl"
+    )
+    with Case.create(tmp_path / "case") as case:
+        case.ingest([log])
+
+    with Case.open(tmp_path / "case") as case:
+        report = evaluate(case.store, read_truth(tmp_path / "csic.truth.jsonl"))
+
+    assert report.granularity == "binary"
+    assert report.classification is None
+    assert report.binary.total == 2
+    assert report.binary.true_positives == 1
+    assert report.binary.true_negatives == 1
+    assert "classification" not in report.to_dict()
+
+
 def test_progress_is_reported_per_client(mixed: tuple[Case, Path]) -> None:
     case, truth_path = mixed
     seen: list[str] = []

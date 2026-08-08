@@ -22,6 +22,7 @@ from logarc.core.activity import Severity
 from logarc.detect.rules import RulePackError
 from logarc.episode.builder import EpisodePolicy
 from logarc.evaluation.benchmark import BenchmarkError, BenchmarkResult, run_benchmark
+from logarc.evaluation.csic import CsicError, convert_csic
 from logarc.evaluation.generator import DEFAULT_SEED, describe_scenarios, write_log
 from logarc.evaluation.scoring import evaluate as score_case
 from logarc.evaluation.truth import TruthError, read_truth
@@ -342,38 +343,53 @@ def evaluate(
     except USER_ERRORS as exc:
         raise _fail(str(exc)) from exc
 
-    if not report.classification.total:
+    if not report.binary.total:
         console.print("[yellow]Nothing to score: no truth line matched a stored event.[/yellow]")
         return
 
-    table = Table(title=f"Classification — {report.scenario}")
-    table.add_column("Activity")
-    for column in ("Support", "Predicted", "Precision", "Recall", "F1", "Recall(any)"):
-        table.add_column(column, justify="right")
-    for score in report.classification.scores:
-        table.add_row(
-            score.category.value,
-            f"{score.support:,}",
-            f"{score.predicted:,}",
-            f"{score.precision:.3f}",
-            f"{score.recall:.3f}",
-            f"{score.f1:.3f}",
-            f"{score.recall_any:.3f}",
+    if report.classification is not None:
+        table = Table(title=f"Classification — {report.scenario}")
+        table.add_column("Activity")
+        for column in ("Support", "Predicted", "Precision", "Recall", "F1", "Recall(any)"):
+            table.add_column(column, justify="right")
+        for score in report.classification.scores:
+            table.add_row(
+                score.category.value,
+                f"{score.support:,}",
+                f"{score.predicted:,}",
+                f"{score.precision:.3f}",
+                f"{score.recall:.3f}",
+                f"{score.f1:.3f}",
+                f"{score.recall_any:.3f}",
+            )
+        console.print(table)
+        console.print(
+            f"accuracy {report.classification.accuracy:.3f}   "
+            f"macro F1 {report.classification.macro_f1:.3f}   "
+            f"weighted F1 {report.classification.weighted_f1:.3f}   "
+            f"({report.clients:,} clients, {report.lines_scored:,} requests, "
+            f"{report.lines_missing:,} unmatched)"
         )
-    console.print(table)
-    console.print(
-        f"accuracy {report.classification.accuracy:.3f}   "
-        f"macro F1 {report.classification.macro_f1:.3f}   "
-        f"weighted F1 {report.classification.weighted_f1:.3f}   "
-        f"({report.clients:,} clients, {report.lines_scored:,} requests, "
-        f"{report.lines_missing:,} unmatched)"
-    )
 
-    confusions = report.classification.top_confusions(limit=5)
-    if confusions:
-        console.print("\n[bold]Most frequent mistakes[/bold]")
-        for expected, predicted, count in confusions:
-            console.print(f"  {expected.value} read as {predicted.value}: {count:,}")
+        confusions = report.classification.top_confusions(limit=5)
+        if confusions:
+            console.print("\n[bold]Most frequent mistakes[/bold]")
+            for expected, predicted, count in confusions:
+                console.print(f"  {expected.value} read as {predicted.value}: {count:,}")
+    else:
+        console.print(
+            f"[yellow]{report.scenario}[/yellow] only records whether a request was an "
+            "attack, not which kind, so there is no per-activity table to show."
+        )
+
+    hostile = report.binary
+    console.print(
+        f"\n[bold]Attack or not[/bold] precision {hostile.precision:.3f}   "
+        f"recall {hostile.recall:.3f}   F1 {hostile.f1:.3f}   "
+        f"false alarms {hostile.false_positive_rate:.3%} of ordinary traffic\n"
+        f"{hostile.true_positives:,} caught, {hostile.false_negatives:,} missed, "
+        f"{hostile.false_positives:,} raised in error, over {hostile.total:,} requests."
+    )
 
     segmentation = report.segmentation
     console.print(
@@ -387,6 +403,64 @@ def evaluate(
     if out is not None:
         out.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
         console.print(f"\nFull numbers written to {out}")
+
+
+@app.command("convert-csic")
+def convert_csic_command(
+    out: Annotated[Path, typer.Option("--out", "-o", help="Access log to write.")],
+    normal: Annotated[
+        list[Path] | None,
+        typer.Option("--normal", help="CSIC file of ordinary traffic. Repeatable."),
+    ] = None,
+    anomalous: Annotated[
+        list[Path] | None,
+        typer.Option("--anomalous", help="CSIC file of attack traffic. Repeatable."),
+    ] = None,
+    truth: Annotated[
+        Path | None, typer.Option("--truth", "-t", help="Write the ground truth here.")
+    ] = None,
+    include_bodies: Annotated[
+        bool,
+        typer.Option(
+            "--include-bodies",
+            help="Fold POST bodies into the query. Off by default: a real access log has none.",
+        ),
+    ] = False,
+) -> None:
+    """Turn the CSIC 2010 HTTP dataset into an access log logarc can read."""
+    if not normal and not anomalous:
+        raise _fail("give at least one --normal or --anomalous file")
+
+    try:
+        result = convert_csic(
+            normal=normal or [],
+            anomalous=anomalous or [],
+            out=out,
+            truth_path=truth,
+            include_bodies=include_bodies,
+        )
+    except (CsicError, OSError) as exc:
+        raise _fail(str(exc)) from exc
+
+    console.print(
+        f"Wrote {result.requests:,} requests to {result.path} "
+        f"({result.normal:,} ordinary, {result.anomalous:,} attacks, "
+        f"{result.sessions:,} sessions)"
+    )
+    if result.truth_path is not None:
+        console.print(f"Ground truth written to {result.truth_path}")
+    if result.attacks_hidden_in_bodies and not include_bodies:
+        console.print(
+            f"[yellow]{result.attacks_hidden_in_bodies:,} attacks "
+            f"({1 - result.visible_attack_ratio:.0%}) carry their payload only in a POST "
+            "body.[/yellow] A web server access log records the request line and nothing "
+            "after it, so those are invisible to any tool that reads one. Recall measured "
+            f"here cannot exceed {result.visible_attack_ratio:.0%}."
+        )
+    console.print(
+        "\nThe traces carry no responses, so status is written as 200 throughout: "
+        "outcome cannot be evaluated on this dataset."
+    )
 
 
 @app.command()

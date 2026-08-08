@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 from logarc.analysis import analyse_ip
 from logarc.evaluation.metrics import (
     Prediction,
+    score_binary,
     score_classification,
     score_segmentation,
 )
@@ -22,7 +23,11 @@ if TYPE_CHECKING:
 
     from logarc.analysis import AnalysisPolicy
     from logarc.detect.engine import RuleEngine
-    from logarc.evaluation.metrics import ClassificationReport, SegmentationReport
+    from logarc.evaluation.metrics import (
+        BinaryScore,
+        ClassificationReport,
+        SegmentationReport,
+    )
     from logarc.evaluation.truth import GroundTruth
     from logarc.storage.base import EventStore
 
@@ -35,10 +40,18 @@ class EvaluationReport:
 
     scenario: str
     source_file_id: str
+    granularity: str
     ruleset_fingerprint: str
     policy: dict[str, Any]
 
-    classification: ClassificationReport
+    classification: ClassificationReport | None
+    """Per-activity figures, or None when the truth only knew attack-or-not.
+
+    Absent rather than empty, so a table that cannot be honestly produced from
+    the source cannot be produced by accident either.
+    """
+
+    binary: BinaryScore
     segmentation: SegmentationReport
 
     clients: int
@@ -58,9 +71,10 @@ class EvaluationReport:
 
     def to_dict(self) -> dict[str, Any]:
         """The machine-readable form, for a results table."""
-        return {
+        payload: dict[str, Any] = {
             "scenario": self.scenario,
             "source_file_id": self.source_file_id,
+            "granularity": self.granularity,
             "ruleset_fingerprint": self.ruleset_fingerprint,
             "policy": self.policy,
             "totals": {
@@ -69,30 +83,7 @@ class EvaluationReport:
                 "lines_scored": self.lines_scored,
                 "lines_missing": self.lines_missing,
             },
-            "classification": {
-                "accuracy": self.classification.accuracy,
-                "macro_f1": self.classification.macro_f1,
-                "weighted_f1": self.classification.weighted_f1,
-                "per_category": [
-                    {
-                        "category": score.category.value,
-                        "support": score.support,
-                        "predicted": score.predicted,
-                        "true_positives": score.true_positives,
-                        "false_positives": score.false_positives,
-                        "false_negatives": score.false_negatives,
-                        "precision": score.precision,
-                        "recall": score.recall,
-                        "f1": score.f1,
-                        "recall_any": score.recall_any,
-                    }
-                    for score in self.classification.scores
-                ],
-                "top_confusions": [
-                    {"expected": expected.value, "predicted": predicted.value, "count": count}
-                    for expected, predicted, count in self.classification.top_confusions()
-                ],
-            },
+            "binary": self.binary.to_dict(),
             "segmentation": {
                 "truth_activities": self.segmentation.truth_activities,
                 "predicted_episodes": self.segmentation.predicted_episodes,
@@ -104,6 +95,36 @@ class EvaluationReport:
                 "boundary_recall": self.segmentation.boundary_recall,
                 "boundary_f1": self.segmentation.boundary_f1,
             },
+        }
+        if self.classification is not None:
+            payload["classification"] = self._classification_dict(self.classification)
+        return payload
+
+    @staticmethod
+    def _classification_dict(report: ClassificationReport) -> dict[str, Any]:
+        return {
+            "accuracy": report.accuracy,
+            "macro_f1": report.macro_f1,
+            "weighted_f1": report.weighted_f1,
+            "per_category": [
+                {
+                    "category": score.category.value,
+                    "support": score.support,
+                    "predicted": score.predicted,
+                    "true_positives": score.true_positives,
+                    "false_positives": score.false_positives,
+                    "false_negatives": score.false_negatives,
+                    "precision": score.precision,
+                    "recall": score.recall,
+                    "f1": score.f1,
+                    "recall_any": score.recall_any,
+                }
+                for score in report.scores
+            ],
+            "top_confusions": [
+                {"expected": expected.value, "predicted": predicted.value, "count": count}
+                for expected, predicted, count in report.top_confusions()
+            ],
         }
 
 
@@ -117,6 +138,7 @@ def evaluate(
 ) -> EvaluationReport:
     """Reconstruct every client the truth knows about, and score the result."""
     predictions: list[Prediction] = []
+    judgements: list[tuple[bool, bool]] = []
     sequences: list[list[tuple[str, str]]] = []
     scored = 0
     fingerprint = ""
@@ -147,6 +169,7 @@ def evaluate(
                     considered=assignment.categories,
                 )
             )
+            judgements.append((record.category.is_hostile, assignment.category.is_hostile))
             sequence.append((record.instance_id, assignment.episode_id))
 
         if sequence:
@@ -157,9 +180,14 @@ def evaluate(
     return EvaluationReport(
         scenario=truth.scenario,
         source_file_id=truth.source_file_id,
+        granularity=truth.granularity,
         ruleset_fingerprint=fingerprint,
         policy=settings,
-        classification=score_classification(predictions),
+        # A source that only knows attack-or-not carries stand-in categories,
+        # and a per-activity table built from those would look like a result
+        # while meaning nothing.
+        classification=None if truth.is_binary else score_classification(predictions),
+        binary=score_binary(judgements),
         segmentation=score_segmentation(sequences),
         clients=len(grouped),
         lines_expected=truth.line_count,

@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from typing import IO
 
 __all__ = [
+    "GRANULARITIES",
     "TRUTH_KIND",
     "TRUTH_VERSION",
     "GroundTruth",
@@ -38,6 +39,15 @@ __all__ = [
 
 TRUTH_KIND: Final = "logarc-truth"
 TRUTH_VERSION: Final = 1
+
+#: What a truth file is able to say about each request.
+#:
+#: `category` means the source knows which activity produced the line, which is
+#: only true of traffic generated on purpose. `binary` means it knows the line
+#: is an attack but not what kind — all a labelled public dataset can offer.
+#: Recorded so that scoring a binary file per category fails loudly instead of
+#: quietly reporting nonsense.
+GRANULARITIES: Final = ("category", "binary")
 
 
 class TruthError(ValueError):
@@ -78,10 +88,16 @@ class GroundTruth:
     source_file_id: str
     generated_at: datetime
     records: tuple[TruthRecord, ...]
+    granularity: str = "category"
 
     @property
     def line_count(self) -> int:
         return len(self.records)
+
+    @property
+    def is_binary(self) -> bool:
+        """True when the source only knows attack-or-not."""
+        return self.granularity == "binary"
 
     def by_client(self) -> Mapping[str, Sequence[TruthRecord]]:
         """Group records by client, preserving line order within each."""
@@ -98,7 +114,19 @@ class TruthWriter:
     A count that is derived on read cannot contradict the records it describes.
     """
 
-    def __init__(self, path: Path, *, scenario: str, seed: int, source_file_id: str) -> None:
+    def __init__(
+        self,
+        path: Path,
+        *,
+        scenario: str,
+        seed: int,
+        source_file_id: str,
+        granularity: str = "category",
+    ) -> None:
+        if granularity not in GRANULARITIES:
+            raise TruthError(
+                f"unknown granularity {granularity!r}; choose {' or '.join(GRANULARITIES)}"
+            )
         self._path = path
         self._header = {
             "kind": TRUTH_KIND,
@@ -106,6 +134,7 @@ class TruthWriter:
             "scenario": scenario,
             "seed": seed,
             "source_file_id": source_file_id,
+            "granularity": granularity,
             "generated_at": datetime.now(UTC).isoformat(),
         }
         self._handle: IO[str] | None = None
@@ -153,12 +182,17 @@ def read_truth(path: Path) -> GroundTruth:
             if line.strip()
         )
 
+    granularity = str(header.get("granularity", "category"))
+    if granularity not in GRANULARITIES:
+        raise TruthError(f"{path} declares an unknown granularity {granularity!r}")
+
     return GroundTruth(
         scenario=str(header.get("scenario", "unknown")),
         seed=int(header.get("seed", 0)),
         source_file_id=str(header.get("source_file_id", "")),
         generated_at=_to_datetime(header.get("generated_at")),
         records=records,
+        granularity=granularity,
     )
 
 

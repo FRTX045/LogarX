@@ -29,10 +29,12 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
 __all__ = [
+    "BinaryScore",
     "CategoryScore",
     "ClassificationReport",
     "Prediction",
     "SegmentationReport",
+    "score_binary",
     "score_classification",
     "score_segmentation",
 ]
@@ -183,6 +185,70 @@ def score_classification(predictions: Iterable[Prediction]) -> ClassificationRep
         confusion=dict(confusion),
         total=total,
         correct=sum(hits.values()),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class BinaryScore:
+    """Attack or not, for sources that cannot say more.
+
+    A labelled public dataset marks a request as anomalous without saying which
+    technique it is, so per-category figures cannot be computed from it. This is
+    the whole of what such a dataset can honestly support.
+    """
+
+    total: int
+    true_positives: int
+    false_positives: int
+    true_negatives: int
+    false_negatives: int
+
+    @property
+    def precision(self) -> float:
+        return _ratio(self.true_positives, self.true_positives + self.false_positives)
+
+    @property
+    def recall(self) -> float:
+        return _ratio(self.true_positives, self.true_positives + self.false_negatives)
+
+    @property
+    def f1(self) -> float:
+        precision, recall = self.precision, self.recall
+        return _ratio(2 * precision * recall, precision + recall)
+
+    @property
+    def accuracy(self) -> float:
+        return _ratio(self.true_positives + self.true_negatives, self.total)
+
+    @property
+    def false_positive_rate(self) -> float:
+        """How much ordinary traffic gets flagged — the cost of using the tool."""
+        return _ratio(self.false_positives, self.false_positives + self.true_negatives)
+
+    def to_dict(self) -> dict[str, float | int]:
+        return {
+            "total": self.total,
+            "true_positives": self.true_positives,
+            "false_positives": self.false_positives,
+            "true_negatives": self.true_negatives,
+            "false_negatives": self.false_negatives,
+            "precision": self.precision,
+            "recall": self.recall,
+            "f1": self.f1,
+            "accuracy": self.accuracy,
+            "false_positive_rate": self.false_positive_rate,
+        }
+
+
+def score_binary(judgements: Iterable[tuple[bool, bool]]) -> BinaryScore:
+    """Score `(was hostile, was called hostile)` pairs."""
+    counts = Counter(judgements)
+    return BinaryScore(
+        total=sum(counts.values()),
+        true_positives=counts[True, True],
+        false_positives=counts[False, True],
+        true_negatives=counts[False, False],
+        false_negatives=counts[True, False],
     )
 
 
