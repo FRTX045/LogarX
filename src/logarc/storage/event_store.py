@@ -41,6 +41,20 @@ class StoreStateError(RuntimeError):
 #: read-side selectivity.
 BUCKETS: Final = 64
 
+#: How much memory the query engine may use. Deliberately modest: `finalize`
+#: sorts the whole corpus, and left to its own devices DuckDB claims most of the
+#: machine before it spills anything — ten million events peaked at 6.9 GB.
+#: Bounding it makes the sort external, which is slower on a corpus that would
+#: not have fitted anyway, and keeps the tool usable on an ordinary laptop while
+#: the rest of it is still running.
+DEFAULT_MEMORY_LIMIT: Final = "1GB"
+
+#: Rows a worker buffers before flushing a partition during the bucketing pass.
+#: The default is half a million per worker, which across eight of them is four
+#: million rows resident — memory that grows with the corpus. Flushing this much
+#: sooner trades a little write throughput for a peak that is a constant.
+PARTITION_FLUSH_ROWS: Final = 65_536
+
 #: Sort keys exposed to callers, mapped to SQL. A whitelist rather than string
 #: interpolation of whatever was asked for: this text ends up in a query.
 SORT_KEYS: Final[dict[str, str]] = {
@@ -93,11 +107,13 @@ def _storable(text: str | None) -> str | None:
 class ParquetEventStore:
     """A case directory on disk, holding ingested events."""
 
-    def __init__(self, root: Path | str) -> None:
+    def __init__(self, root: Path | str, *, memory_limit: str = DEFAULT_MEMORY_LIMIT) -> None:
         self.root = Path(root)
         self._staging = self.root / "staging"
         self._events = self.root / "events"
         self._ip_index = self.root / "ip_index.parquet"
+        self._scratch = self.root / "tmp"
+        self._memory_limit = memory_limit
         self._writer: pq.ParquetWriter | None = None
         self._batch = 0
         self._connection: duckdb.DuckDBPyConnection | None = None
@@ -152,14 +168,7 @@ class ParquetEventStore:
 
         connection = self._connect()
         staged = self._sql_path(self._staging / "*.parquet")
-        connection.execute(f"""
-            COPY (
-                SELECT *, hash(client_ip) % {BUCKETS} AS bucket
-                FROM read_parquet({staged})
-                ORDER BY client_ip, timestamp
-            ) TO {self._sql_path(self._events)}
-            (FORMAT PARQUET, PARTITION_BY (bucket), COMPRESSION zstd, OVERWRITE_OR_IGNORE)
-        """)
+        self._partition_and_sort(connection, staged)
         connection.execute(f"""
             COPY (
                 SELECT
@@ -178,6 +187,75 @@ class ParquetEventStore:
             ) TO {self._sql_path(self._ip_index)} (FORMAT PARQUET, COMPRESSION zstd)
         """)
         shutil.rmtree(self._staging, ignore_errors=True)
+        self._clear_scratch()
+
+    def _partition_and_sort(self, connection: duckdb.DuckDBPyConnection, staged: str) -> None:
+        """Lay the events out bucketed and sorted, in two bounded passes.
+
+        Doing it in one — sort the whole corpus, hand the sorted stream to a
+        partitioned writer — is the obvious formulation and does not survive a
+        memory ceiling. The sorted result has to be held while sixty-four
+        partition writers drain it, so the working set follows the corpus. Ten
+        million events ran out of memory inside a gigabyte and took 6.9 GB
+        without one.
+
+        Split in two, neither pass needs to hold much:
+
+        1. Bucket the events with no ordering at all. A partitioned write with
+           nothing to preserve streams straight through.
+        2. Sort each bucket into its final file, one at a time. Each sort covers
+           a sixty-fourth of the corpus, so the peak follows `BUCKETS` and the
+           width of a single bucket rather than the size of the log.
+
+        The cost is one extra write of the events, which is transient and worth
+        it: the ordering is what lets a later per-IP query skip almost every row
+        group in the bucket it lands in.
+        """
+        # Named as briefly as the final layout is. Windows still refuses paths
+        # past 260 characters by default, and this directory sits at the same
+        # depth as `events/bucket=NN/...`, so a longer name here would be the
+        # thing that tips a deep case directory over the limit.
+        scratch = self.root / "raw"
+        shutil.rmtree(scratch, ignore_errors=True)
+        connection.execute(f"""
+            COPY (
+                SELECT *, hash(client_ip) % {BUCKETS} AS bucket
+                FROM read_parquet({staged})
+            ) TO {self._sql_path(scratch)}
+            (FORMAT PARQUET, PARTITION_BY (bucket), COMPRESSION zstd, OVERWRITE_OR_IGNORE)
+        """)
+
+        try:
+            for part in sorted(scratch.glob("bucket=*")):
+                target = self._events / part.name
+                target.mkdir(parents=True, exist_ok=True)
+                # `bucket` is excluded on the way out: it lives in the directory
+                # name, and a copy inside the file would collide with the value
+                # hive partitioning reads back off the path.
+                connection.execute(f"""
+                    COPY (
+                        SELECT * EXCLUDE (bucket)
+                        FROM read_parquet({self._sql_path(part / "*.parquet")})
+                        ORDER BY client_ip, timestamp
+                    ) TO {self._sql_path(target / "data.parquet")}
+                    (FORMAT PARQUET, COMPRESSION zstd)
+                """)
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)
+
+    def _clear_scratch(self) -> None:
+        """Drop whatever the sort spilled. It can be gigabytes, and it is not evidence.
+
+        The connection is closed first, because DuckDB holds its spill files
+        open and Windows will not delete a file that is. It reopens by itself on
+        the next query; `finalize` is the last thing the write side does, so
+        nothing is paying for the reconnect but the first read.
+
+        Redirecting the temp directory instead does not work: once DuckDB has
+        used one it refuses to be moved off it.
+        """
+        self.close()
+        shutil.rmtree(self._scratch, ignore_errors=True)
 
     def _write_empty_index(self) -> None:
         empty = pa.table(
@@ -264,8 +342,37 @@ class ParquetEventStore:
             self._connection = None
 
     def _connect(self) -> duckdb.DuckDBPyConnection:
+        """Open the query engine with a memory ceiling and room to spill.
+
+        Left at its defaults DuckDB will take most of the machine before it
+        spills anything, and the sort in `finalize` covers the whole corpus.
+        Measured on ten million events that came to 6.9 GB of resident memory,
+        which is not what "bounded by batch size" means. Capping it and giving
+        it somewhere to write turns the sort into an external one: slower on a
+        corpus that would not have fitted anyway, and survivable.
+        """
         if self._connection is None:
+            self._scratch.mkdir(parents=True, exist_ok=True)
             self._connection = duckdb.connect(":memory:")
+            self._connection.execute(f"SET memory_limit = '{self._memory_limit}'")
+            self._connection.execute(f"SET temp_directory = {self._sql_path(self._scratch)}")
+            # Under a ceiling, the partitioned write in `finalize` runs out of
+            # memory rather than spilling, because holding insertion order
+            # across 64 partitions means buffering them. Every query here that
+            # cares about order states it with ORDER BY, so there is nothing to
+            # preserve and a great deal to buffer.
+            self._connection.execute("SET preserve_insertion_order = false")
+            # Each worker buffers this many rows before flushing a partition,
+            # and the default half-million across eight of them is four million
+            # rows held at once — memory that follows the corpus, which is the
+            # thing being avoided. Flushing more often costs a little write
+            # throughput and makes the peak a constant.
+            self._connection.execute(
+                f"SET partitioned_write_flush_threshold = {PARTITION_FLUSH_ROWS}"
+            )
+            # One open file per bucket, so the writer never has to close and
+            # reopen partitions as rows arrive out of order.
+            self._connection.execute(f"SET partitioned_write_max_open_files = {BUCKETS + 1}")
         return self._connection
 
     def _require_finalized(self) -> None:

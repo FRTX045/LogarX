@@ -1,0 +1,245 @@
+# Evaluation
+
+How the tool is checked, what the numbers say, and what they do not.
+
+Every figure here is reproducible from the commands shown. See
+[ADR-0005](adr/0005-measuring-accuracy-against-generated-ground-truth.md) for why it is measured
+this way.
+
+## What is being measured
+
+Two questions, scored separately, because a tool can be good at one and bad at the other.
+
+**Classification** — was each request understood? Reported per activity category as precision,
+recall and F1. A category the tool is weak at cannot hide inside an overall average.
+
+**Segmentation** — were the joins between one activity and the next put in the right places?
+Scored over adjacent pairs of one client's requests: for each pair the truth either does or does
+not place a boundary there, and so does the reconstruction. That treats a merge and a split as
+different mistakes, which they are; comparing episode counts cannot.
+
+Alongside both, **attack or not** — the question a defender asks first — is reported for every
+run, including on sources that cannot support anything finer.
+
+## Where the ground truth comes from
+
+Real access logs cannot be used to measure accuracy, because nobody knows what is in them. That
+is the problem the tool exists to solve.
+
+`logarc generate` writes synthetic Apache logs from scripted client roles — shoppers, a search
+engine crawler, a content scanner, a password guesser, someone walking out of the document root,
+and an attacker who works a site up to a successful injection and returns later to use it.
+Clients run concurrently and are merged on time, so they interleave the way a real server sees
+them rather than arriving in tidy blocks. Alongside the log it writes a record of which activity
+produced every line.
+
+That record is written from the client's script, never from what the rules match. The generator
+does not import the detection engine. A burst is labelled enumeration because the client is
+sweeping a wordlist, not because the enumeration rule fires on it.
+
+Two categories sit close enough together to need a stated boundary, applied consistently:
+
+- **reconnaissance** — probing for particular known-interesting artefacts: configuration files,
+  backups, debug endpoints, a dependency manifest. Few requests, chosen deliberately.
+- **enumeration** — sweeping a wordlist to discover what exists at all. Many requests, no prior
+  knowledge of any of them.
+
+## Reproducing
+
+```bash
+logarc generate --scenario mixed --lines 40000 --seed 7 -o mixed.log -t mixed.truth.jsonl
+logarc ingest mixed.log --case ./case-mixed
+logarc evaluate --case ./case-mixed --truth mixed.truth.jsonl --out mixed.json
+```
+
+The same seed reproduces the same log byte for byte.
+
+## Classification
+
+40,000 requests per scenario, seed 7, default thresholds, ruleset `9edf8587…`.
+
+| Scenario | Clients | Accuracy | Macro F1 | Weighted F1 | Attack P | Attack R | False alarms |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `mixed` | 2,000 | 0.966 | 0.959 | 0.966 | 1.000 | 0.993 | 0 |
+| `sqli_campaign` | 1,141 | 0.934 | 0.930 | 0.919 | 1.000 | 1.000 | 0 |
+| `wordpress_scan` | 1,757 | 0.946 | 0.971 | 0.944 | 1.000 | 1.000 | 0 |
+| `brute_force` | 1,344 | 0.982 | 0.941 | 0.985 | 1.000 | 0.970 | 0 |
+| `path_traversal` | 3,012 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 0 |
+| `normal_browsing` | 2,355 | 1.000 | 1.000 | 1.000 | — | — | 0 |
+
+**Not one false positive** in 240,000 requests, including 40,000 lines of purely ordinary
+traffic. `normal_browsing` has no attacks in it, so its attack precision and recall are
+undefined; the tool reported none, which is the right answer and the reason the cells are empty
+rather than zero.
+
+Per category on `mixed`:
+
+| Activity | Support | Precision | Recall | F1 | Recall (any) |
+|---|---:|---:|---:|---:|---:|
+| enumeration | 9,618 | 0.926 | 0.999 | 0.961 | 0.999 |
+| static asset | 6,236 | 1.000 | 1.000 | 1.000 | 1.000 |
+| credential attack | 5,529 | 1.000 | 0.970 | 0.985 | 0.970 |
+| reconnaissance | 5,519 | 1.000 | 0.788 | 0.881 | 1.000 |
+| browsing | 3,738 | 0.997 | 1.000 | 0.998 | 1.000 |
+| crawling | 2,790 | 1.000 | 1.000 | 1.000 | 1.000 |
+| path traversal | 2,680 | 1.000 | 1.000 | 1.000 | 1.000 |
+| access control | 2,649 | 0.867 | 1.000 | 0.929 | 1.000 |
+| API call | 611 | 1.000 | 1.000 | 1.000 | 1.000 |
+| authentication | 324 | 0.663 | 1.000 | 0.797 | 1.000 |
+| injection | 306 | 1.000 | 1.000 | 1.000 | 1.000 |
+
+The two weak rows are both taxonomy overlaps rather than detection failures, and the lenient
+recall column is what shows it:
+
+- **reconnaissance, recall 0.788, lenient recall 1.000.** Every one of these requests matched a
+  reconnaissance rule. They lost the ranking to a behavioural rule covering the same window: a
+  scanner that probes for `/composer.json` in the middle of a wordlist sweep is doing both things
+  at once, and the sweep is the stronger signal. 764 went to enumeration, 406 to access control.
+- **authentication, precision 0.663.** 165 of the requests it claims are the successful login at
+  the end of a password-guessing run. Truth calls those part of the attack; the tool sees a
+  request to `/login` that succeeded. Both readings are defensible.
+
+## Segmentation, and what noise absorption costs
+
+Absorption merges two same-category episodes separated by a brief benign interlude, so that one
+`favicon.ico` fetch in the middle of an attack does not split it into three activities. It
+therefore removes boundaries the truth records, on purpose. `--no-absorb` runs the same
+evaluation with the rule off:
+
+| Scenario | Truth activities | Episodes (on) | Episodes (off) | Boundary F1 (on) | Boundary F1 (off) | Recall (off) |
+|---|---:|---:|---:|---:|---:|---:|
+| `mixed` | 9,190 | 7,260 | 10,190 | 0.662 | 0.917 | 0.981 |
+| `sqli_campaign` | 5,875 | 6,196 | 7,762 | 0.593 | 0.787 | 0.944 |
+| `wordpress_scan` | 5,858 | 6,120 | 7,466 | 0.597 | 0.789 | 0.944 |
+| `brute_force` | 11,548 | 7,628 | 12,196 | 0.676 | 0.963 | 0.994 |
+| `path_traversal` | 17,305 | 11,044 | 17,218 | 0.720 | 0.997 | 0.994 |
+| `normal_browsing` | 20,368 | 11,060 | 20,244 | 0.652 | 0.997 | 0.993 |
+
+The important column is the last one. **With absorption off, the segmenter finds 94–99% of the
+activity boundaries the log contains** — the three-level scheme works. Absorption then discards
+roughly a third to a half of them deliberately, which is what the drop in the on-column is.
+
+That separates two things that could easily have been confused: whether the segmentation is
+correct, and how coarse a graph it should produce. The first is measured at 0.99; the second is a
+policy, and it has a switch.
+
+## Thresholds
+
+The defaults came from web-analytics literature rather than from this problem, so they were swept
+against ground truth on `mixed`.
+
+**Episode gap** — the silence that ends an activity:
+
+| Gap | Boundary F1 (absorption on) | Boundary F1 (off) |
+|---|---:|---:|
+| 60 s | 0.667 | 0.920 |
+| 120 s | 0.667 | — |
+| **300 s (default)** | **0.662** | **0.917** |
+| 600 s | 0.656 | — |
+| 900 s | 0.650 | 0.909 |
+
+Monotone, and almost flat: 0.017 of F1 across a fifteen-fold range. Shorter scores marginally
+better, and the reason is a caution rather than a result — the generated pauses are drawn from
+120–1800 s, so any threshold below 120 s catches all of them and thresholds above it begin to
+miss some. **The sweep recovers the generator's own pause distribution, not a fact about real
+traffic.** It establishes that the threshold does what it is supposed to do; choosing a value for
+a real corpus needs real logs. The default is kept: the difference is not material, and a longer
+gap is the more forgiving choice for slow clients.
+
+**Idle timeout** — the silence that ends a session. Classification is *identical* at every value
+from 30 seconds to eight hours (macro F1 0.959, enumeration F1 0.961, credential attack F1
+0.985). Boundary F1 moves only at the extreme: 0.766 at 30 s against 0.662 at 300 s and above.
+
+This is structural, not a shortcoming of the corpus. Every gap long enough to end a session is
+also long enough to end an episode, so the session boundary never decides anything the episode
+boundary has not already decided. It would only affect classification if it fell below a
+behavioural rule's window span and cut one in half — and even at 30 s it does not, because the
+requests those rules match are seconds apart. **On this evidence the idle timeout should be
+chosen for how one wants a "session" reported, not tuned for accuracy.**
+
+## Throughput and memory
+
+`logarc benchmark`, Windows 11, Python 3.12, one machine, `mixed` traffic. Each size runs in a
+process of its own so peak memory is that run's and not the previous one's.
+
+| Lines | Log | Ingest | Lines/s | MB/s | Peak RSS | Store | Ratio | Clients | Reconstruct |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 100,000 | 19.7 MB | 3.8 s | 26,313 | 5.2 | 236 MB | 1.1 MB | 17.3× | 4,899 | 64 ms |
+| 1,000,000 | 198 MB | 34.5 s | 29,008 | 5.8 | 626 MB | 8.3 MB | 23.8× | 49,175 | 81 ms |
+| 10,000,000 | 1.99 GB | 321 s | 31,159 | 6.2 | 1,186 MB | 75.5 MB | 26.3× | 368,179 | 84 ms |
+
+**Reconstruction stays flat while the corpus grows a hundredfold.** 64 ms against 84 ms, over a
+store that went from five thousand clients to three hundred and sixty-eight thousand. That is the
+two-pass architecture doing what it was chosen to do, and it is the number that matters most:
+ingest is paid once, and every question after it is cheap.
+
+Throughput is flat too — slightly *rising* with size, as fixed costs amortise.
+
+Memory is bounded rather than proportional. Measured separately, each size in a fresh process:
+
+| Rows | Peak during ingest | Peak after finalize | Finalize |
+|---:|---:|---:|---:|
+| 500,000 | 297 MB | 596 MB | 2.4 s |
+| 2,000,000 | 296 MB | 1,062 MB | 8.3 s |
+| 8,000,000 | 296 MB | 1,186 MB | 28.4 s |
+| 12,000,000 | 296 MB | 1,189 MB | 40.2 s |
+
+Ingest is flat at ~296 MB by construction. `finalize` converges on the configured 1 GB engine
+ceiling: eight million rows to twelve moved it by 3 MB, where four million used to fail outright.
+
+**Ingest throughput falls short of its target.** The plan asked for 100,000 lines/s on a
+development machine; the measured figure is 31,000. The scaling claim holds — cost per line does
+not grow with the corpus — but the constant does not meet the goal. The remedy the design already
+names is parallel ingest over byte-range splits aligned to newline boundaries, which is not
+implemented. It is recorded here rather than dropped.
+
+## What the evaluation found
+
+Running it was not a formality. It found seven defects, all fixed, all locked by tests. Five were
+in the tool; two were in the evaluation itself, which is the more uncomfortable half.
+
+| Found by | Defect |
+|---|---|
+| Evaluation run 1 | Enumeration counted refusals as well as "no such thing", so it covered forced browsing's traffic and outranked it. Access control had **0.000 recall over 2,097 requests** while lenient recall was 1.000 — the rule fired every time and lost every time. |
+| Evaluation run 1 | Error-based SQL injection matched no rule at all: injection recall 0.885 against precision 1.000, every miss the same technique. |
+| Evaluation run 1 | Dependency-manifest probing was uncovered — the whole of the remaining reconnaissance gap. |
+| CSIC conversion | `+` in a query string was not read as the space it means. Form encoding writes spaces that way, so `id=1%27+OR+%271%27%3D%271` reached the rules with no whitespace to match and **a payload any browser would send passed every signature**. |
+| Benchmark | `finalize` used memory in proportion to the corpus — 238 MB, 1.1 GB, **6.9 GB** at 100k, 1M and 10M lines — against a design that says it follows the batch size. Capping the engine only moved the failure; it took splitting the sort in two. |
+| Own test | The first memory fix passed a twenty-row test and failed on real data. Two faults only appear once the engine has actually spilled. |
+| Threshold sweep | Every threshold from 60 s to eight hours scored **identically**, twice over. First because no generated client ever paused; then, after adding pauses, because each landed beside a request of a different category, where the category change decides the boundary before the gap is ever consulted. The tuning deliverable had been measuring nothing. |
+
+The fourth is worth dwelling on. Four scenarios of hand-written attack traffic did not find it,
+because the same person wrote the generator and the rules. A dataset written by someone else found
+it immediately.
+
+The seventh is worth dwelling on for a different reason. The tests passed and the sweep script
+worked; nothing failed. It surfaced only by reading the output and asking why every row was the
+same.
+
+## Limits of these numbers
+
+**They come from traffic this project wrote.** A generator shares the blind spots of whoever wrote
+it, as the `+` defect demonstrates. Read them as an upper bound, not a prediction of field
+performance.
+
+**The corpus is far more hostile than a real site.** About a third of `mixed` is ordinary traffic;
+a real log is overwhelmingly ordinary. That is deliberate — attack categories need enough support
+to be scored — but it means the false-positive rate measured here is measured on less benign
+traffic than a deployment would present.
+
+**Segmentation recall is below one on purpose,** and the `--no-absorb` column is the evidence that
+this is a policy rather than a failure.
+
+**Recall on CSIC 2010 has a ceiling below 100%.** A substantial share of its attacks carry their
+payload in a POST body, and a web server access log records the request line and nothing after it.
+`logarc convert-csic` counts them in the corpus it is given and prints the resulting ceiling, so
+the figure quoted alongside a CSIC result is measured on that copy of the dataset rather than
+repeated from elsewhere.
+
+**Outcome cannot be evaluated on CSIC at all.** The traces have no responses, so the
+attempt-versus-breach distinction the reconstruction is built around has nothing to be scored
+against. It is checked only on generated traffic, where the generator decides which injection
+succeeded.
+
+**Throughput is a single-machine figure**, reported to show that cost per line does not grow with
+the corpus rather than to compete on absolute speed.

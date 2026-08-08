@@ -254,3 +254,70 @@ def test_a_finalised_case_can_be_reopened(tmp_path: Path) -> None:
     reader = ParquetEventStore(path)
 
     assert [e.path for e in reader.events_for_ip("203.0.113.5")] == ["/only"]
+
+
+def test_finalize_is_given_a_memory_ceiling_and_somewhere_to_spill(tmp_path: Path) -> None:
+    """The sort in finalize covers the whole corpus, so it must be bounded.
+
+    DuckDB will take most of the machine's memory before it spills. Left at the
+    defaults, finalising ten million events peaked at 6.9 GB — the design says
+    memory follows the batch size, not the file size, and that has to be
+    arranged rather than assumed.
+    """
+    store = ParquetEventStore(tmp_path / "case", memory_limit="256MB")
+    connection = store._connect()
+
+    limit = connection.execute("SELECT current_setting('memory_limit')").fetchone()
+    temp = connection.execute("SELECT current_setting('temp_directory')").fetchone()
+    store.close()
+
+    # Reported back in binary units, so 256MB comes out as 244.1 MiB. What
+    # matters is that a ceiling in megabytes was applied at all: the default is
+    # a large fraction of the machine, and would be reported in GiB.
+    assert limit is not None
+    assert limit[0].endswith("MiB"), limit[0]
+    assert temp is not None
+    assert Path(temp[0]) == tmp_path / "case" / "tmp"
+
+
+def test_the_spill_directory_does_not_outlive_finalize(tmp_path: Path) -> None:
+    """Sorting ten million rows can spill gigabytes; they are not evidence."""
+    store = ParquetEventStore(tmp_path / "case")
+    store.write([event(f"203.0.113.{n % 5}", offset_seconds=n, line_no=n + 1) for n in range(20)])
+    store.finalize()
+    store.close()
+
+    assert not (tmp_path / "case" / "tmp").exists()
+    assert store.events_for_ip("203.0.113.1")
+
+
+def test_finalize_survives_a_sort_that_does_not_fit_in_memory(tmp_path: Path) -> None:
+    """The path a real corpus takes, forced by a ceiling a small one exceeds.
+
+    Two things only go wrong once the engine has actually spilled, and neither
+    shows up on twenty rows: the partitioned write runs out of memory instead of
+    spilling unless insertion order is let go of, and the scratch files cannot
+    be removed by pointing the engine elsewhere, because it refuses to move off
+    a temporary directory it has used.
+    """
+    store = ParquetEventStore(tmp_path / "case", memory_limit="256MB")
+    for start in range(0, 120_000, 20_000):
+        store.write(
+            [
+                event(
+                    f"203.0.113.{n % 251}",
+                    offset_seconds=n,
+                    line_no=n + 1,
+                    path=f"/page/{n}/" + "x" * 120,
+                    query="q=" + "y" * 120,
+                    user_agent="z" * 160,
+                )
+                for n in range(start, start + 20_000)
+            ]
+        )
+
+    store.finalize()
+
+    assert not (tmp_path / "case" / "tmp").exists()
+    assert len(store.events_for_ip("203.0.113.1")) == len(range(1, 120_000, 251))
+    store.close()

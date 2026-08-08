@@ -68,6 +68,15 @@ Since one IP typically has 10²–10⁵ events, everything after retrieval runs 
 Ingest memory is bounded by the Arrow batch size (100k rows), not by file size — a 50 GB log
 ingests in roughly constant RAM.
 
+That holds for the streaming half by construction, but not for `finalize`, which sorts the whole
+corpus in one query to give the Parquet row groups the ordering that later makes pruning work.
+Left at its defaults the query engine will claim most of the machine before it spills anything;
+measured at ten million events that came to 6.9 GB. It is therefore given an explicit memory
+ceiling and a scratch directory, which turns that sort into an external one — slower on a corpus
+that would not have fitted in memory anyway, and the difference between a tool that runs on a
+laptop and one that does not. The scratch directory is removed once finalize completes; a spill
+can be gigabytes, and it is not evidence.
+
 ## Segmentation
 
 See [ADR-0003](adr/0003-deterministic-three-level-segmentation.md) for the reasoning.

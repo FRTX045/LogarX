@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 import json
+import platform
+import shutil
+import tempfile
+from dataclasses import replace
+from datetime import timedelta
 from pathlib import Path
 from typing import Annotated, Final
 
@@ -11,16 +16,27 @@ from rich.console import Console
 from rich.table import Table
 
 from logarc import __version__
-from logarc.analysis import analyse_ip
+from logarc.analysis import AnalysisPolicy, analyse_ip
 from logarc.case import Case, CaseError
 from logarc.core.activity import Severity
 from logarc.detect.rules import RulePackError
+from logarc.episode.builder import EpisodePolicy
+from logarc.evaluation.benchmark import BenchmarkError, BenchmarkResult, run_benchmark
+from logarc.evaluation.csic import CsicError, convert_csic
+from logarc.evaluation.generator import DEFAULT_SEED, describe_scenarios, write_log
+from logarc.evaluation.scoring import evaluate as score_case
+from logarc.evaluation.truth import TruthError, read_truth
 from logarc.ingest.pipeline import FormatDetectionError
 from logarc.ingest.reader import LogSourceError
 from logarc.parsers.apache import PRESETS
 from logarc.parsers.registry import UnknownFormatError
 from logarc.report.html import render_report
+from logarc.sessionize.segmenter import SessionPolicy
 from logarc.storage.event_store import SORT_KEYS
+
+#: Sizes the benchmark measures when none are named. Ten million is deliberately
+#: not here: it takes minutes, and a default should not.
+DEFAULT_BENCHMARK_SIZES: Final = (100_000, 1_000_000)
 
 _SEVERITY_STYLE: Final[dict[Severity, str]] = {
     Severity.INFO: "dim",
@@ -47,6 +63,7 @@ USER_ERRORS = (
     FormatDetectionError,
     LogSourceError,
     RulePackError,
+    TruthError,
     UnknownFormatError,
     ValueError,
 )
@@ -55,6 +72,21 @@ USER_ERRORS = (
 def _fail(message: str) -> typer.Exit:
     errors.print(f"[red]error:[/red] {message}")
     return typer.Exit(code=1)
+
+
+def _analysis_policy(
+    *, absorb: bool, episode_gap: int | None, idle_timeout: int | None
+) -> AnalysisPolicy:
+    """Build a policy from the thresholds a user chose to override."""
+    session = SessionPolicy()
+    if idle_timeout is not None:
+        session = replace(session, idle_timeout=timedelta(seconds=idle_timeout))
+
+    episode = EpisodePolicy(absorb_noise=absorb)
+    if episode_gap is not None:
+        episode = replace(episode, max_gap=timedelta(seconds=episode_gap))
+
+    return AnalysisPolicy(session=session, episode=episode)
 
 
 def _version_callback(requested: bool) -> None:
@@ -218,6 +250,311 @@ def export(
     else:
         out.write_text(render_report(result, manifest), encoding="utf-8")
     console.print(f"Report written to {out}")
+
+
+@app.command()
+def generate(
+    out: Annotated[Path | None, typer.Option("--out", "-o", help="Log file to write.")] = None,
+    scenario: Annotated[
+        str, typer.Option("--scenario", "-s", help="Which traffic to generate.")
+    ] = "mixed",
+    lines: Annotated[int, typer.Option("--lines", "-n", help="How many lines.")] = 100_000,
+    seed: Annotated[int, typer.Option("--seed", help="Same seed, same log.")] = DEFAULT_SEED,
+    truth: Annotated[
+        Path | None,
+        typer.Option("--truth", "-t", help="Write the ground truth here, for evaluate."),
+    ] = None,
+    list_scenarios: Annotated[
+        bool, typer.Option("--list", "-l", help="List the scenarios and stop.")
+    ] = False,
+) -> None:
+    """Write a synthetic access log with a known answer."""
+    if list_scenarios:
+        table = Table(title="Scenarios")
+        table.add_column("Name")
+        table.add_column("Contains")
+        for name, description in describe_scenarios():
+            table.add_row(name, description)
+        console.print(table)
+        return
+
+    if out is None:
+        raise _fail("--out is required unless --list is given")
+
+    with console.status(f"Generating {lines:,} lines…") as status:
+        try:
+            result = write_log(
+                out,
+                scenario=scenario,
+                lines=lines,
+                seed=seed,
+                truth_path=truth,
+                on_progress=lambda done: status.update(f"Generated {done:,} of {lines:,} lines…"),
+            )
+        except USER_ERRORS as exc:
+            raise _fail(str(exc)) from exc
+
+    console.print(
+        f"Wrote {result.lines:,} lines ({result.megabytes:,.1f} MB) of "
+        f"[bold]{result.scenario}[/bold] to {result.path} "
+        f"in {result.elapsed_seconds:.1f}s (seed {result.seed})"
+    )
+    if result.truth_path is not None:
+        console.print(f"Ground truth written to {result.truth_path}")
+
+
+@app.command()
+def evaluate(
+    case: Annotated[Path, typer.Option("--case", "-c", help="Case directory to read.")],
+    truth: Annotated[Path, typer.Option("--truth", "-t", help="Ground truth for its log.")],
+    out: Annotated[
+        Path | None, typer.Option("--out", "-o", help="Write the full numbers as JSON.")
+    ] = None,
+    absorb: Annotated[
+        bool,
+        typer.Option(
+            "--absorb/--no-absorb",
+            help="Merge activities split only by a brief benign interlude.",
+        ),
+    ] = True,
+    episode_gap: Annotated[
+        int | None, typer.Option("--episode-gap", help="Seconds of silence that end an activity.")
+    ] = None,
+    idle_timeout: Annotated[
+        int | None, typer.Option("--idle-timeout", help="Seconds of silence that end a session.")
+    ] = None,
+) -> None:
+    """Measure the reconstruction against a log whose content is known.
+
+    The thresholds can be overridden so their effect can be measured rather
+    than assumed; `--no-absorb` turns off noise absorption, which is the one
+    rule in the segmentation whose cost is worth showing both ways.
+    """
+    policy = _analysis_policy(absorb=absorb, episode_gap=episode_gap, idle_timeout=idle_timeout)
+    try:
+        loaded = read_truth(truth)
+        with Case.open(case) as opened, console.status("Scoring…") as status:
+            report = score_case(
+                opened.store,
+                loaded,
+                policy=policy,
+                on_client=lambda client: status.update(f"Scoring {client}…"),
+            )
+    except USER_ERRORS as exc:
+        raise _fail(str(exc)) from exc
+
+    if not report.binary.total:
+        console.print("[yellow]Nothing to score: no truth line matched a stored event.[/yellow]")
+        return
+
+    if report.classification is not None:
+        table = Table(title=f"Classification — {report.scenario}")
+        table.add_column("Activity")
+        for column in ("Support", "Predicted", "Precision", "Recall", "F1", "Recall(any)"):
+            table.add_column(column, justify="right")
+        for score in report.classification.scores:
+            table.add_row(
+                score.category.value,
+                f"{score.support:,}",
+                f"{score.predicted:,}",
+                f"{score.precision:.3f}",
+                f"{score.recall:.3f}",
+                f"{score.f1:.3f}",
+                f"{score.recall_any:.3f}",
+            )
+        console.print(table)
+        console.print(
+            f"accuracy {report.classification.accuracy:.3f}   "
+            f"macro F1 {report.classification.macro_f1:.3f}   "
+            f"weighted F1 {report.classification.weighted_f1:.3f}   "
+            f"({report.clients:,} clients, {report.lines_scored:,} requests, "
+            f"{report.lines_missing:,} unmatched)"
+        )
+
+        confusions = report.classification.top_confusions(limit=5)
+        if confusions:
+            console.print("\n[bold]Most frequent mistakes[/bold]")
+            for expected, predicted, count in confusions:
+                console.print(f"  {expected.value} read as {predicted.value}: {count:,}")
+    else:
+        console.print(
+            f"[yellow]{report.scenario}[/yellow] only records whether a request was an "
+            "attack, not which kind, so there is no per-activity table to show."
+        )
+
+    hostile = report.binary
+    console.print(
+        f"\n[bold]Attack or not[/bold] precision {hostile.precision:.3f}   "
+        f"recall {hostile.recall:.3f}   F1 {hostile.f1:.3f}   "
+        f"false alarms {hostile.false_positive_rate:.3%} of ordinary traffic\n"
+        f"{hostile.true_positives:,} caught, {hostile.false_negatives:,} missed, "
+        f"{hostile.false_positives:,} raised in error, over {hostile.total:,} requests."
+    )
+
+    segmentation = report.segmentation
+    console.print(
+        f"\n[bold]Boundaries[/bold] precision {segmentation.boundary_precision:.3f}   "
+        f"recall {segmentation.boundary_recall:.3f}   F1 {segmentation.boundary_f1:.3f}\n"
+        f"{segmentation.truth_activities:,} activities in the log became "
+        f"{segmentation.predicted_episodes:,} episodes "
+        f"(x{segmentation.fragmentation:.2f}); below 1.0 is deliberate coarsening."
+    )
+
+    if out is not None:
+        out.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
+        console.print(f"\nFull numbers written to {out}")
+
+
+@app.command("convert-csic")
+def convert_csic_command(
+    out: Annotated[Path, typer.Option("--out", "-o", help="Access log to write.")],
+    normal: Annotated[
+        list[Path] | None,
+        typer.Option("--normal", help="CSIC file of ordinary traffic. Repeatable."),
+    ] = None,
+    anomalous: Annotated[
+        list[Path] | None,
+        typer.Option("--anomalous", help="CSIC file of attack traffic. Repeatable."),
+    ] = None,
+    truth: Annotated[
+        Path | None, typer.Option("--truth", "-t", help="Write the ground truth here.")
+    ] = None,
+    include_bodies: Annotated[
+        bool,
+        typer.Option(
+            "--include-bodies",
+            help="Fold POST bodies into the query. Off by default: a real access log has none.",
+        ),
+    ] = False,
+) -> None:
+    """Turn the CSIC 2010 HTTP dataset into an access log logarc can read."""
+    if not normal and not anomalous:
+        raise _fail("give at least one --normal or --anomalous file")
+
+    try:
+        result = convert_csic(
+            normal=normal or [],
+            anomalous=anomalous or [],
+            out=out,
+            truth_path=truth,
+            include_bodies=include_bodies,
+        )
+    except (CsicError, OSError) as exc:
+        raise _fail(str(exc)) from exc
+
+    console.print(
+        f"Wrote {result.requests:,} requests to {result.path} "
+        f"({result.normal:,} ordinary, {result.anomalous:,} attacks, "
+        f"{result.sessions:,} sessions)"
+    )
+    if result.truth_path is not None:
+        console.print(f"Ground truth written to {result.truth_path}")
+    if result.attacks_hidden_in_bodies and not include_bodies:
+        console.print(
+            f"[yellow]{result.attacks_hidden_in_bodies:,} attacks "
+            f"({1 - result.visible_attack_ratio:.0%}) carry their payload only in a POST "
+            "body.[/yellow] A web server access log records the request line and nothing "
+            "after it, so those are invisible to any tool that reads one. Recall measured "
+            f"here cannot exceed {result.visible_attack_ratio:.0%}."
+        )
+    console.print(
+        "\nThe traces carry no responses, so status is written as 200 throughout: "
+        "outcome cannot be evaluated on this dataset."
+    )
+
+
+@app.command()
+def benchmark(
+    lines: Annotated[
+        list[int] | None,
+        typer.Option("--lines", "-n", help="Corpus size to measure. Repeatable."),
+    ] = None,
+    scenario: Annotated[str, typer.Option("--scenario", "-s", help="Traffic to measure on.")] = (
+        "mixed"
+    ),
+    seed: Annotated[int, typer.Option("--seed", help="Same seed, same corpus.")] = 1,
+    work: Annotated[
+        Path | None, typer.Option("--work", help="Where to put the working files.")
+    ] = None,
+    keep: Annotated[bool, typer.Option("--keep", help="Do not delete the working files.")] = False,
+    out: Annotated[
+        Path | None, typer.Option("--out", "-o", help="Write the measurements as JSON.")
+    ] = None,
+) -> None:
+    """Measure ingest throughput, peak memory and reconstruction time.
+
+    Each size runs in a process of its own: peak memory is a high-water mark
+    for the life of a process, so measuring several sizes in one would report
+    the largest run's peak for every run after it.
+    """
+    sizes = lines or list(DEFAULT_BENCHMARK_SIZES)
+
+    # Always work inside a directory of our own making, even when the user
+    # named where to put it. Cleanup then removes only what this run created,
+    # so pointing --work at somewhere that already has files in it is safe.
+    root = Path(work) if work is not None else Path(tempfile.gettempdir())
+    root.mkdir(parents=True, exist_ok=True)
+    workdir = Path(tempfile.mkdtemp(prefix="logarc-bench-", dir=root))
+
+    table = Table(title=f"Ingest — {scenario}")
+    table.add_column("Lines", justify="right")
+    for column in ("MB", "Seconds", "Lines/s", "MB/s", "Peak RSS", "Store", "Ratio", "Analyse"):
+        table.add_column(column, justify="right")
+
+    measurements: list[BenchmarkResult] = []
+    try:
+        with console.status("Measuring…") as status:
+            for result in run_benchmark(
+                sizes,
+                scenario=scenario,
+                seed=seed,
+                workdir=workdir,
+                on_start=lambda size: status.update(f"Measuring {size:,} lines…"),
+            ):
+                measurements.append(result)
+                table.add_row(
+                    f"{result.lines:,}",
+                    f"{result.bytes_read / 1_048_576:,.1f}",
+                    f"{result.ingest_seconds:,.2f}",
+                    f"{result.lines_per_second:,.0f}",
+                    f"{result.megabytes_per_second:,.1f}",
+                    f"{result.peak_rss_mb:,.0f} MB",
+                    f"{result.store_bytes / 1_048_576:,.1f} MB",
+                    f"{result.compression_ratio:,.1f}x",
+                    f"{result.analyse_seconds * 1000:,.0f} ms",
+                )
+    except BenchmarkError as exc:
+        raise _fail(str(exc)) from exc
+    finally:
+        if not keep:
+            shutil.rmtree(workdir, ignore_errors=True)
+
+    console.print(table)
+    if measurements:
+        slowest = min(result.lines_per_second for result in measurements)
+        console.print(
+            f"Reconstruction time is the cost of one question, and is paid per client; "
+            f"ingest is paid once. Sustained at least {slowest:,.0f} lines/s."
+        )
+    if not keep:
+        console.print("Working files removed. Pass --keep to inspect them.")
+
+    if out is not None:
+        out.write_text(
+            json.dumps(
+                {
+                    "tool": f"logarc {__version__}",
+                    "python": platform.python_version(),
+                    "platform": platform.platform(),
+                    "scenario": scenario,
+                    "seed": seed,
+                    "runs": [result.to_dict() for result in measurements],
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        console.print(f"Measurements written to {out}")
 
 
 @app.command()

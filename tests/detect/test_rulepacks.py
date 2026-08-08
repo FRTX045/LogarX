@@ -76,6 +76,16 @@ def test_owasp_mappings_use_the_expected_notation() -> None:
             ActivityCategory.INJECTION,
         ),
         ("/p?id=1; DROP TABLE users--", ActivityCategory.INJECTION),
+        # Form encoding, as a browser and most attack tools send it: spaces
+        # written as `+`. Found missing by the CSIC 2010 conversion.
+        ("/p?id=1%27+OR+%271%27%3D%271", ActivityCategory.INJECTION),
+        ("/p?q=1+UNION+SELECT+null%2Cnull--", ActivityCategory.INJECTION),
+        # Error-based probing: the payload never returns rows, it provokes a
+        # message that names the database. Found missing by the evaluation run.
+        ("/p?id=1 AND 1=CONVERT(int,@@version)--", ActivityCategory.INJECTION),
+        ("/p?id=1 AND EXTRACTVALUE(1,CONCAT(0x7e,version()))", ActivityCategory.INJECTION),
+        ("/p?id=1' AND 1=CAST((SELECT current_user) AS int)--", ActivityCategory.INJECTION),
+        ("/p?id=1 AND UPDATEXML(1,CONCAT(0x7e,@@datadir),1)", ActivityCategory.INJECTION),
         ("/search?q=<script>alert(1)</script>", ActivityCategory.INJECTION),
         ("/p?next=javascript:alert(1)", ActivityCategory.INJECTION),
         ("/ping?host=127.0.0.1;cat /etc/passwd", ActivityCategory.PATH_TRAVERSAL),
@@ -84,6 +94,11 @@ def test_owasp_mappings_use_the_expected_notation() -> None:
         ("/download?file=..%2f..%2f..%2fetc%2fpasswd", ActivityCategory.PATH_TRAVERSAL),
         ("/.env", ActivityCategory.RECONNAISSANCE),
         ("/.git/config", ActivityCategory.RECONNAISSANCE),
+        # Dependency manifests: how an attacker learns which versions are
+        # installed before looking up what they are vulnerable to.
+        ("/composer.json", ActivityCategory.RECONNAISSANCE),
+        ("/package-lock.json", ActivityCategory.RECONNAISSANCE),
+        ("/requirements.txt", ActivityCategory.RECONNAISSANCE),
         ("/backup.sql", ActivityCategory.RECONNAISSANCE),
         ("/phpinfo.php", ActivityCategory.RECONNAISSANCE),
         ("/fetch?url=http://169.254.169.254/latest/meta-data/", ActivityCategory.SSRF),
@@ -139,6 +154,24 @@ def test_directory_enumeration_is_seen_across_requests(engine: RuleEngine) -> No
     assert any(item.label.rule_id == "directory_enumeration" for item in labelled)
 
 
+def test_refused_paths_are_forced_browsing_rather_than_enumeration(engine: RuleEngine) -> None:
+    """Two different behaviours, told apart by what the server answered.
+
+    A wall of 404s is someone finding out what exists. A wall of 403s is
+    someone being refused things that do exist. Enumeration used to claim both,
+    so forced browsing — the more specific rule — could never win, and the
+    access-control category never appeared in a graph at all.
+    """
+    # Enough requests, paths and speed that the enumeration rule would also
+    # cover them if it still counted refusals as discovery.
+    events = [request(f"/admin/{n}", status=403, seconds=n) for n in range(25)]
+
+    labelled = engine.label_events(events)
+
+    assert all(item.label.rule_id == "forced_browsing" for item in labelled)
+    assert all(item.label.category is ActivityCategory.ACCESS_CONTROL for item in labelled)
+
+
 def test_credential_attack_is_seen_across_requests(engine: RuleEngine) -> None:
     events = [request("/login", status=401, seconds=n * 2) for n in range(20)]
 
@@ -159,6 +192,10 @@ def test_credential_attack_is_seen_across_requests(engine: RuleEngine) -> None:
         "/api/v1/products?page=2",
         "/blog/2024/05/a-post-about-unions",
         "/cart?add=17&quantity=2",
+        # Words the error-based injection rule looks for, used innocently.
+        "/api/convert?from=usd&to=eur",
+        "/docs/version",
+        "/api/v1/users/cast-members",
     ],
 )
 def test_ordinary_traffic_is_not_flagged_as_hostile(engine: RuleEngine, target: str) -> None:

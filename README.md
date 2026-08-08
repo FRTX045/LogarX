@@ -92,6 +92,33 @@ logarc export --case ./case-001 --ip 203.0.113.45 --format html --out report.htm
 A Windows GUI (PyQt6) wraps the same engine — the CLI and the GUI share one code path, so
 anything the GUI can do is scriptable.
 
+### Checking that it works
+
+Accuracy is measured against logs whose contents are known, because real logs cannot be:
+nobody knows what is in them, which is the problem this tool exists to solve.
+
+```bash
+# Write a synthetic log together with a record of what is in it
+logarc generate --scenario sqli_campaign --lines 200000 -o sample.log -t sample.truth.jsonl
+logarc ingest sample.log --case ./case-demo
+
+# Precision, recall and F1 per activity, and how well the boundaries were found
+logarc evaluate --case ./case-demo --truth sample.truth.jsonl --out scores.json
+
+# The same, with noise absorption off, to see what the merge rule costs
+logarc evaluate --case ./case-demo --truth sample.truth.jsonl --no-absorb
+
+# Throughput, peak memory and reconstruction latency by corpus size
+logarc benchmark --lines 100000 --lines 1000000 --lines 10000000 --out bench.json
+
+# Convert the CSIC 2010 dataset and score against it
+logarc convert-csic --normal normalTrafficTest.txt --anomalous anomalousTrafficTest.txt \
+    -o csic.log -t csic.truth.jsonl
+```
+
+Measured results, and what they do and do not establish, are in
+[docs/evaluation.md](docs/evaluation.md).
+
 ## Development
 
 ```bash
@@ -103,6 +130,7 @@ pytest --cov=logarc --cov-report=term-missing
 ## Documentation
 
 - [docs/architecture.md](docs/architecture.md) — layers, data flow, extension points
+- [docs/evaluation.md](docs/evaluation.md) — how accuracy is measured, and the numbers
 - [docs/adr/](docs/adr/) — architecture decision records
 
 ## License

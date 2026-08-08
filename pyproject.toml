@@ -100,8 +100,18 @@ show_error_codes = true
 # The domain and detection layers carry the correctness-critical logic and are
 # held to strict typing. I/O and UI layers are checked less aggressively because
 # their third-party stubs are incomplete.
+#
+# Evaluation is in this list because it is what says whether the rest is right:
+# an arithmetic slip there is a wrong accuracy figure, which is worse than a bug
+# because it looks like a result.
 [[tool.mypy.overrides]]
-module = ["logarc.core.*", "logarc.detect.*", "logarc.episode.*", "logarc.sessionize.*"]
+module = [
+    "logarc.core.*",
+    "logarc.detect.*",
+    "logarc.episode.*",
+    "logarc.evaluation.*",
+    "logarc.sessionize.*",
+]
 strict = true
 
 # These ship stubs written against a newer Python than we target, so analysing

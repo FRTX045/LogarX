@@ -123,3 +123,21 @@ def test_none_input_normalises_to_empty() -> None:
 )
 def test_known_evasions_reach_their_canonical_form(payload: str, expected: str) -> None:
     assert normalize(payload).text == expected
+
+
+def test_a_plus_is_a_space_when_the_text_is_form_encoded() -> None:
+    """Every HTML form and most attack tools write spaces as `+`.
+
+    Without this, `id=1%27+OR+%271%27%3D%271` reaches the rules as
+    `1'+or+'1'='1`, no whitespace class matches, and a payload that any browser
+    would send passes every signature untouched.
+    """
+    result = normalize("id=1%27+OR+%271%27%3D%271", plus_is_space=True)
+
+    assert result.text == "id=1' or '1'='1"
+
+
+def test_a_plus_stays_a_plus_where_it_is_not_form_encoded() -> None:
+    """A path and a User-Agent are not form data; `+` there means `+`."""
+    assert normalize("/a+b/c").text == "/a+b/c"
+    assert "+http://" in normalize("Mozilla/5.0 (compatible; Googlebot/2.1; +http://x/)").text
