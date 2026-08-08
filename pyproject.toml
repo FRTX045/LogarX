@@ -81,6 +81,11 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]
+# These two deliberately contain lookalike characters. Detecting them is the
+# point of the code, and describing them is the point of the docstring, so the
+# confusable-character warnings are exactly backwards here.
+"src/logarc/normalize/decode.py" = ["RUF002"]
+"tests/normalize/test_decode.py" = ["RUF001"]
 
 # ---------------------------------------------------------------------------
 # Type checking
