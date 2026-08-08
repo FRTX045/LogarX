@@ -1,0 +1,302 @@
+# OWASP Top 10 categories that leave a trace in a web server access log.
+#
+# A02 (Cryptographic Failures), A04 (Insecure Design), A08 (Integrity Failures)
+# and A09 (Logging Failures) are absent on purpose: none of them produces a
+# signature in a request line. Adding rules that pretend otherwise would inflate
+# apparent coverage without detecting anything.
+#
+# Patterns are matched against normalised text, which has already been
+# percent-decoded (recursively), Unicode-folded, case-folded and stripped of SQL
+# comments. Rules are therefore written once, in canonical form, rather than once
+# per evasion.
+
+version: 1
+rules:
+
+  # -- A03: Injection ------------------------------------------------------
+
+  - id: sqli_union_select
+    name: SQL Injection (UNION SELECT)
+    category: injection
+    owasp: "A03:2021"
+    severity: high
+    confidence: 0.95
+    references: ["CAPEC-66"]
+    match:
+      any:
+        - field: target_decoded
+          regex: 'union[\s/(]+(all[\s/(]+)?select'
+
+  - id: sqli_tautology
+    name: SQL Injection (always-true condition)
+    category: injection
+    owasp: "A03:2021"
+    severity: high
+    confidence: 0.85
+    references: ["CAPEC-7"]
+    match:
+      any:
+        - field: target_decoded
+          regex: "(or|and)\\s+['\"]?[0-9a-z]+['\"]?\\s*=\\s*['\"]?[0-9a-z]+['\"]?\\s*(--|#|/\\*|$)"
+
+  - id: sqli_time_based
+    name: SQL Injection (time-based blind)
+    category: injection
+    owasp: "A03:2021"
+    severity: high
+    confidence: 0.9
+    references: ["CAPEC-7"]
+    match:
+      any:
+        - field: target_decoded
+          regex: '\b(sleep|pg_sleep|benchmark)\s*\(|waitfor\s+delay'
+
+  - id: sqli_schema_probe
+    name: SQL Injection (schema enumeration)
+    category: injection
+    owasp: "A03:2021"
+    severity: high
+    confidence: 0.9
+    match:
+      any:
+        - field: target_decoded
+          regex: 'information_schema|sysobjects|pg_catalog\.|\bsqlite_master\b'
+
+  - id: sqli_stacked_query
+    name: SQL Injection (stacked statement)
+    category: injection
+    owasp: "A03:2021"
+    severity: critical
+    confidence: 0.85
+    match:
+      any:
+        - field: target_decoded
+          regex: ';\s*(drop|insert|update|delete|truncate|alter)\s+'
+
+  - id: xss_script_tag
+    name: Cross-Site Scripting (script tag)
+    category: injection
+    owasp: "A03:2021"
+    severity: medium
+    confidence: 0.9
+    references: ["CAPEC-63"]
+    match:
+      any:
+        - field: target_decoded
+          regex: '<\s*script|<\s*/\s*script\s*>'
+
+  - id: xss_event_handler
+    name: Cross-Site Scripting (event handler)
+    category: injection
+    owasp: "A03:2021"
+    severity: medium
+    confidence: 0.8
+    match:
+      any:
+        - field: target_decoded
+          regex: '\bon(error|load|click|mouseover|focus|toggle)\s*='
+        - field: target_decoded
+          regex: 'javascript\s*:'
+
+  - id: command_injection
+    name: OS Command Injection
+    category: injection
+    owasp: "A03:2021"
+    severity: critical
+    confidence: 0.85
+    references: ["CAPEC-88"]
+    match:
+      any:
+        - field: target_decoded
+          regex: '[;|&`]\s*(cat|ls|id|whoami|uname|curl|wget|nc|bash|sh|powershell|cmd)\b'
+        - field: target_decoded
+          regex: '\$\(\s*\w+|\|\s*(bash|sh)\b'
+
+  - id: nosql_injection
+    name: NoSQL Injection
+    category: injection
+    owasp: "A03:2021"
+    severity: high
+    confidence: 0.8
+    match:
+      any:
+        - field: target_decoded
+          regex: '\$(where|ne|gt|lt|regex|exists)\b'
+
+  - id: xxe_entity
+    name: XML External Entity
+    category: injection
+    owasp: "A03:2021"
+    severity: high
+    confidence: 0.85
+    match:
+      any:
+        - field: target_decoded
+          regex: '<!entity|<!doctype[^>]*\bsystem\b'
+
+  - id: template_injection
+    name: Server-Side Template Injection
+    category: injection
+    owasp: "A03:2021"
+    severity: high
+    confidence: 0.7
+    match:
+      any:
+        - field: target_decoded
+          regex: '\{\{\s*[0-9]+\s*[*+]\s*[0-9]+\s*\}\}|\$\{\s*[0-9]+\s*[*+]'
+
+  # -- A01: Broken Access Control -----------------------------------------
+
+  - id: path_traversal
+    name: Path Traversal
+    category: path_traversal
+    owasp: "A01:2021"
+    severity: high
+    confidence: 0.9
+    references: ["CAPEC-126"]
+    match:
+      any:
+        - field: target_decoded
+          regex: '(^|[/\\])\.\.[/\\]'
+
+  - id: sensitive_file_access
+    name: Sensitive System File Access
+    category: path_traversal
+    owasp: "A01:2021"
+    severity: critical
+    confidence: 0.95
+    match:
+      any:
+        - field: target_decoded
+          regex: '/etc/(passwd|shadow|hosts)|[/\\](win\.ini|boot\.ini)|/proc/self/environ'
+
+  - id: admin_area_probe
+    name: Administrative Area Probe
+    category: access_control
+    owasp: "A01:2021"
+    severity: medium
+    confidence: 0.6
+    match:
+      all:
+        - field: path_decoded
+          regex: '/(admin|administrator|wp-admin|phpmyadmin|manager/html|console)\b'
+        - field: status
+          min: 400
+
+  # -- A05: Security Misconfiguration --------------------------------------
+
+  - id: config_file_exposure
+    name: Configuration File Probe
+    category: reconnaissance
+    owasp: "A05:2021"
+    severity: high
+    confidence: 0.9
+    match:
+      any:
+        - field: path_decoded
+          regex: '/\.(env|git/|svn/|hg/|aws/|ssh/|htpasswd|htaccess)'
+        - field: path_decoded
+          regex: '/(web|app|application)\.config\b|/config\.(php|json|yml|yaml)$'
+
+  - id: backup_file_probe
+    name: Backup or Source File Probe
+    category: reconnaissance
+    owasp: "A05:2021"
+    severity: medium
+    confidence: 0.75
+    match:
+      any:
+        - field: path_decoded
+          regex: '\.(bak|old|orig|save|swp|sql|tar\.gz|tgz|zip|rar|7z)$'
+
+  - id: debug_endpoint_probe
+    name: Debug or Status Endpoint Probe
+    category: reconnaissance
+    owasp: "A05:2021"
+    severity: medium
+    confidence: 0.8
+    match:
+      any:
+        - field: path_decoded
+          regex: '/(phpinfo|server-status|server-info|actuator|debug|trace|env)\b'
+
+  # -- A06: Vulnerable and Outdated Components -----------------------------
+
+  - id: log4shell_jndi
+    name: Log4Shell JNDI Lookup
+    category: exploitation
+    owasp: "A06:2021"
+    severity: critical
+    confidence: 0.98
+    references: ["CVE-2021-44228"]
+    match:
+      any:
+        - field: target_decoded
+          regex: '\$\{\s*jndi\s*:'
+        - field: user_agent_decoded
+          regex: '\$\{\s*jndi\s*:'
+        - field: referer_decoded
+          regex: '\$\{\s*jndi\s*:'
+
+  - id: shellshock
+    name: Shellshock Function Definition
+    category: exploitation
+    owasp: "A06:2021"
+    severity: critical
+    confidence: 0.95
+    references: ["CVE-2014-6271"]
+    match:
+      any:
+        - field: user_agent_decoded
+          regex: '\(\s*\)\s*\{.*;\s*\}\s*;'
+        - field: referer_decoded
+          regex: '\(\s*\)\s*\{.*;\s*\}\s*;'
+
+  - id: known_vulnerable_component_path
+    name: Known Vulnerable Component Path
+    category: reconnaissance
+    owasp: "A06:2021"
+    severity: low
+    confidence: 0.5
+    match:
+      any:
+        - field: path_decoded
+          regex: '/(cgi-bin|struts|jenkins|solr|elasticsearch)/|/wp-content/plugins/'
+
+  # -- A10: Server-Side Request Forgery ------------------------------------
+
+  - id: ssrf_internal_target
+    name: SSRF (internal address in parameter)
+    category: ssrf
+    owasp: "A10:2021"
+    severity: high
+    confidence: 0.85
+    references: ["CAPEC-664"]
+    match:
+      any:
+        - field: query_decoded
+          regex: '(url|uri|target|dest|destination|redirect|next|path|src|feed|host)=[^&]*(127\.0\.0\.1|localhost|169\.254\.169\.254|0\.0\.0\.0|\[::1\]|metadata\.google)'
+
+  - id: ssrf_alternate_scheme
+    name: SSRF (non-HTTP scheme in parameter)
+    category: ssrf
+    owasp: "A10:2021"
+    severity: high
+    confidence: 0.8
+    match:
+      any:
+        - field: query_decoded
+          regex: '=\s*(file|gopher|dict|ftp|jar)://'
+
+  # -- Evasion signal, independent of payload ------------------------------
+
+  - id: multiply_encoded_request
+    name: Multiply Encoded Request
+    category: reconnaissance
+    owasp: "A03:2021"
+    severity: low
+    confidence: 0.6
+    match:
+      any:
+        - field: decode_depth
+          min: 2
