@@ -1,0 +1,127 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "logarc"
+version = "0.1.0"
+description = "Forensic reconstruction of per-IP web activity from server access logs, rendered as an activity graph"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+authors = [{ name = "FRTX045" }]
+keywords = ["forensics", "dfir", "access-log", "apache", "owasp", "activity-graph"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Information Technology",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: System :: Logging",
+]
+
+dependencies = [
+    "pyarrow>=15.0",
+    "duckdb>=1.0",
+    "pyyaml>=6.0",
+    "pydantic>=2.6",
+    "networkx>=3.2",
+    "typer>=0.12",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+gui = ["PyQt6>=6.6"]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "hypothesis>=6.100",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "types-PyYAML",
+    "types-networkx",
+]
+
+[project.scripts]
+logarc = "logarc.cli.main:app"
+
+[project.urls]
+Repository = "https://github.com/FRTX045/BlackHat"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/logarc"]
+
+# ---------------------------------------------------------------------------
+# Lint / format
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+# Code samples in documentation are illustrative prose, not compiled sources.
+# Formatting them churns docs and fails CI on wording changes.
+extend-exclude = ["*.md"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort
+    "N",        # pep8-naming
+    "UP",       # pyupgrade
+    "B",        # flake8-bugbear
+    "C4",       # comprehensions
+    "SIM",      # simplify
+    "PTH",      # use pathlib
+    "RUF",      # ruff-specific
+]
+ignore = [
+    "E501",  # line length is enforced by the formatter
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+# ---------------------------------------------------------------------------
+# Type checking
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.11"
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+show_error_codes = true
+
+# The domain and detection layers carry the correctness-critical logic and are
+# held to strict typing. I/O and UI layers are checked less aggressively because
+# their third-party stubs are incomplete.
+[[tool.mypy.overrides]]
+module = ["logarc.core.*", "logarc.detect.*", "logarc.episode.*", "logarc.sessionize.*"]
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["duckdb.*", "pyarrow.*", "networkx.*"]
+ignore_missing_imports = true
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
+markers = [
+    "slow: tests that process large inputs (deselect with '-m \"not slow\"')",
+]
+
+[tool.coverage.run]
+source = ["src/logarc"]
+branch = true
+omit = ["src/logarc/gui/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@overload",
+]

@@ -1,0 +1,56 @@
+# Byte-compiled / optimized
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.hypothesis/
+
+# Type checking / linting caches
+.mypy_cache/
+.ruff_cache/
+
+# PyInstaller
+*.spec.bak
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# --- Project-specific ---
+
+# Case directories hold ingested evidence; never commit them.
+case-*/
+*.logarc-case/
+
+# Sample and generated logs can be huge.
+*.log
+*.log.gz
+*.truth.json
+!tests/data/*.log
+
+# Benchmark and evaluation output
+benchmarks/results/
