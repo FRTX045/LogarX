@@ -9,6 +9,7 @@ construction rather than by promise.
 from __future__ import annotations
 
 import sys
+import threading
 import traceback
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -23,6 +24,7 @@ from PyQt6.QtWidgets import (
     QMenu,
     QMessageBox,
     QProgressBar,
+    QPushButton,
     QSplitter,
     QVBoxLayout,
     QWidget,
@@ -36,6 +38,7 @@ from logarc.gui._qt import required
 from logarc.gui.canvas import ActivityCanvas
 from logarc.gui.panels import ClientTable, EvidencePanel
 from logarc.gui.workers import run_job
+from logarc.ingest.pipeline import IngestCancelled
 from logarc.report.html import render_report
 
 if TYPE_CHECKING:
@@ -66,6 +69,7 @@ class MainWindow(QMainWindow):
         self._case_path: Path | None = None
         self._result: AnalysisResult | None = None
         self._kind = GraphKind.TRACE
+        self._stop: threading.Event | None = None
 
         self._clients = ClientTable()
         self._canvas = ActivityCanvas()
@@ -80,9 +84,13 @@ class MainWindow(QMainWindow):
         self._progress = QProgressBar()
         self._progress.setRange(0, 0)
         self._progress.hide()
+        self._cancel = QPushButton("Cancel")
+        self._cancel.hide()
+        self._cancel.clicked.connect(self._request_cancel)
         status_bar = required(self.statusBar())
         status_bar.addWidget(self._status, 1)
         status_bar.addPermanentWidget(self._progress)
+        status_bar.addPermanentWidget(self._cancel)
 
     # -- construction ------------------------------------------------------
 
@@ -160,18 +168,46 @@ class MainWindow(QMainWindow):
 
         paths = [Path(item) for item in logs]
         case_dir = Path(target)
+        stop = threading.Event()
 
-        def work(report: Callable[[str], None]) -> None:
+        def work(report: Callable[[str], None]) -> IngestCancelled | None:
             report(f"Ingesting {len(paths)} file(s)…")
-            with Case.create(case_dir) as case:
-                case.ingest(paths, on_progress=lambda lines, _: report(f"{lines:,} lines read"))
+            try:
+                with Case.create(case_dir) as case:
+                    case.ingest(
+                        paths,
+                        on_progress=lambda lines, _: report(f"{lines:,} lines read"),
+                        should_cancel=stop.is_set,
+                    )
+            except IngestCancelled as cancelled:
+                # Caught outside the `with`, so the case still sees the failure
+                # on the way out and leaves itself un-finalised. Returned rather
+                # than re-raised: a stop the investigator asked for should not
+                # be presented as a crash.
+                return cancelled
+            return None
 
-        self._busy(f"Ingesting into {case_dir}…")
+        self._busy(f"Ingesting into {case_dir}…", stop=stop)
         run_job(
             work,
-            on_done=lambda _: self._load_case(case_dir),
+            on_done=lambda outcome: self._ingest_finished(case_dir, outcome),
             on_error=self._report_error,
             on_progress=self._status.setText,
+        )
+
+    def _ingest_finished(self, case_dir: Path, outcome: object) -> None:
+        if not isinstance(outcome, IngestCancelled):
+            self._load_case(case_dir)
+            return
+
+        self._idle(f"Cancelled after {outcome.lines_read:,} lines.")
+        QMessageBox.information(
+            self,
+            "Ingest cancelled",
+            f"Stopped after {outcome.lines_read:,} lines.\n\n"
+            f"{case_dir} holds what had been read by then and was not finalised, so it "
+            "cannot be analysed. It is left in place rather than deleted — delete the "
+            "folder yourself if you want to start over.",
         )
 
     def _load_case(self, path: Path) -> None:
@@ -330,13 +366,28 @@ class MainWindow(QMainWindow):
 
     # -- status ------------------------------------------------------------
 
-    def _busy(self, message: str) -> None:
+    def _busy(self, message: str, *, stop: threading.Event | None = None) -> None:
+        """Show that work is running, and offer to stop it when it can be."""
+        self._stop = stop
         self._status.setText(message)
         self._progress.show()
+        self._cancel.setEnabled(True)
+        self._cancel.setVisible(stop is not None)
 
     def _idle(self, message: str) -> None:
+        self._stop = None
         self._status.setText(message)
         self._progress.hide()
+        self._cancel.hide()
+
+    def _request_cancel(self) -> None:
+        if self._stop is None:  # pragma: no cover - the button is hidden then
+            return
+        self._stop.set()
+        # Disabled rather than hidden: the ingest keeps running until the batch
+        # in flight finishes, and a button that vanishes would suggest otherwise.
+        self._cancel.setEnabled(False)
+        self._status.setText("Stopping after the batch in flight…")
 
     def _report_error(self, message: str, detail: str) -> None:
         self._progress.hide()

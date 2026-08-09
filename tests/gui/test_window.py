@@ -73,6 +73,31 @@ def test_the_window_constructs(qt_app: QApplication) -> None:
     window.close()
 
 
+def test_cancel_reaches_the_flag_the_engine_polls(qt_app: QApplication) -> None:
+    """A cancel button wired to nothing is worse than no button at all: the
+    window would report a stop that never happened."""
+    import threading
+
+    window = MainWindow()
+    stop = threading.Event()
+
+    window._busy("Ingesting…", stop=stop)
+    assert not window._cancel.isHidden()
+    window._cancel.click()
+
+    assert stop.is_set()
+    window.close()
+
+
+def test_cancel_is_offered_only_for_work_that_can_be_stopped(qt_app: QApplication) -> None:
+    window = MainWindow()
+
+    window._busy("Reconstructing…")
+
+    assert window._cancel.isHidden()
+    window.close()
+
+
 def test_the_canvas_draws_a_real_reconstruction(qt_app: QApplication, campaign: Path) -> None:
     with Case.open(campaign) as case:
         result = analyse_ip(case.store, CLIENT)
