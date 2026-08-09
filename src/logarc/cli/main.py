@@ -28,8 +28,7 @@ from logarc.evaluation.scoring import evaluate as score_case
 from logarc.evaluation.truth import TruthError, read_truth
 from logarc.ingest.pipeline import FormatDetectionError
 from logarc.ingest.reader import LogSourceError
-from logarc.parsers.apache import PRESETS
-from logarc.parsers.registry import UnknownFormatError
+from logarc.parsers.registry import UnknownFormatError, registered_formats
 from logarc.report.html import render_report
 from logarc.sessionize.segmenter import SessionPolicy
 from logarc.storage.event_store import SORT_KEYS
@@ -620,8 +619,8 @@ def formats() -> None:
     table = Table(title="Known log formats")
     table.add_column("Name")
     table.add_column("LogFormat directive")
-    for name, directive in PRESETS.items():
-        table.add_row(name, directive)
+    for entry in registered_formats():
+        table.add_row(entry.name, entry.description)
     console.print(table)
     console.print(
         "\nA custom Apache or nginx format is supported by passing its directive "
