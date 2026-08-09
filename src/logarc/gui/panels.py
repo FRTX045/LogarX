@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtGui import QColor, QFont, QPalette, QTextCursor
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QHeaderView,
@@ -35,6 +35,11 @@ if TYPE_CHECKING:
 __all__ = ["ClientTable", "EvidencePanel"]
 
 _COLUMNS = ("Client", "Requests", "Paths", "4xx", "First seen", "Last seen")
+
+#: The evidence surface. Matches the canvas ground and the exported report, so
+#: the same finding reads the same way on screen and on paper.
+_PAPER = "#f5f7fa"
+_INK = "#1f2933"
 
 
 class ClientTable(QWidget):
@@ -110,6 +115,20 @@ class EvidencePanel(QWidget):
         font.setStyleHint(QFont.StyleHint.Monospace)
         font.setPointSizeF(8.5)
         self._body.setFont(font)
+        # Pinned light, not inherited. The severity colours written into this
+        # panel are chosen against a pale ground — the same ones the report is
+        # printed with — so on a machine themed dark an inherited background
+        # renders the evidence dark on dark. Illegible evidence is the one
+        # failure this panel cannot have, and it would not look like a fault.
+        #
+        # Set on the palette rather than through a stylesheet so it is
+        # inspectable: a stylesheet leaves `palette()` reporting the inherited
+        # colour, which would make a test of this pass while the panel is
+        # unreadable.
+        paper = self._body.palette()
+        paper.setColor(QPalette.ColorRole.Base, QColor(_PAPER))
+        paper.setColor(QPalette.ColorRole.Text, QColor(_INK))
+        self._body.setPalette(paper)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -147,6 +166,13 @@ class EvidencePanel(QWidget):
                 f"the first {shown} are sampled as evidence.",
                 "#616e7c",
             )
+
+        # Appending leaves the view where the last write ended, which on an
+        # unwrapped log line is the tail of a user agent. Rewind, so the panel
+        # opens on the address and the request rather than "Safari/537.36".
+        self._body.moveCursor(QTextCursor.MoveOperation.Start)
+        self._body.ensureCursorVisible()
+        required(self._body.horizontalScrollBar(), "scroll bar").setValue(0)
 
     def _append(self, text: str, colour: str) -> None:
         self._body.setTextColor(QColor(colour))

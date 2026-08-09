@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from logarc.core.graph import GraphNode
 
 __all__ = [
+    "CAPTION_COLOUR",
     "Border",
     "NodeStyle",
     "format_gap",
@@ -68,6 +69,13 @@ class Border:
     colour: str
 
 
+#: Captions are drawn beneath the node, on the canvas ground rather than on the
+#: fill. A label long enough to be meaningful does not fit inside a circle sized
+#: by request count, and shrinking it until it did was making the graph
+#: unreadable at the scale it is first shown at.
+CAPTION_COLOUR: Final = "#1f2933"
+
+
 @dataclass(frozen=True, slots=True)
 class NodeStyle:
     """Everything a renderer needs to draw one box."""
@@ -75,7 +83,6 @@ class NodeStyle:
     fill: str
     border: Border
     radius: float
-    text_colour: str
 
 
 _OUTCOME_BORDERS: Final[dict[Outcome, Border]] = {
@@ -117,8 +124,6 @@ def style_for(node: GraphNode) -> NodeStyle:
         fill=severity_colour(node.severity),
         border=outcome_border(node.outcome),
         radius=node_radius(node.request_count),
-        # Dark text on the pale end of the ramp, light on the rest.
-        text_colour="#1f2933" if node.severity <= Severity.LOW else "#ffffff",
     )
 
 
