@@ -45,6 +45,12 @@ dev = [
 [project.scripts]
 logarc = "logarc.cli.main:app"
 
+# Installed by the `gui` extra. Kept as a separate entry point so the CLI never
+# imports Qt: a headless server should be able to ingest a log without a
+# windowing toolkit on it.
+[project.gui-scripts]
+logarc-gui = "logarc.gui.app:main"
+
 [project.urls]
 Repository = "https://github.com/FRTX045/BlackHat"
 
@@ -135,7 +141,16 @@ markers = [
 [tool.coverage.run]
 source = ["src/logarc"]
 branch = true
-omit = ["src/logarc/gui/*"]
+# Only the modules that import Qt are excluded. They are kept deliberately thin
+# and are verified by hand against docs/manual-test-plan.md. Anything in the GUI
+# package that can be decided without a display — `style` — stays measured,
+# because those are the judgements that decide whether a graph misinforms.
+omit = [
+    "src/logarc/gui/app.py",
+    "src/logarc/gui/canvas.py",
+    "src/logarc/gui/panels.py",
+    "src/logarc/gui/workers.py",
+]
 
 [tool.coverage.report]
 exclude_lines = [
