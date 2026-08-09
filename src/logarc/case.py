@@ -11,6 +11,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import TYPE_CHECKING
 
+from logarc.evidence import EvidenceLine, read_evidence
 from logarc.ingest.pipeline import DEFAULT_BATCH_SIZE, IngestResult, ingest_file
 from logarc.ingest.quarantine import Quarantine
 from logarc.storage.case import MANIFEST_NAME, CaseManifest, SourceRecord
@@ -18,6 +19,8 @@ from logarc.storage.event_store import ParquetEventStore
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+
+    from logarc.core.evidence import EvidenceRef
 
 __all__ = ["Case", "CaseError"]
 
@@ -59,6 +62,17 @@ class Case:
 
     def close(self) -> None:
         self.store.close()
+
+    # -- evidence ----------------------------------------------------------
+
+    def read_evidence(self, refs: Sequence[EvidenceRef]) -> list[EvidenceLine]:
+        """Fetch the raw source lines behind a set of references.
+
+        Lives on the case rather than in the interface layers because it is
+        what makes a finding checkable, and both the CLI and the GUI need it to
+        say the same thing about the same evidence.
+        """
+        return read_evidence(self.manifest, refs)
 
     def __enter__(self) -> Case:
         return self
