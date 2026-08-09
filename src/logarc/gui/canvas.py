@@ -2,12 +2,12 @@
 
 Draws what `graphbuild.layout` decided and `gui.style` described, and does no
 deciding of its own. That split is what keeps the appearance of a finding
-testable without a display — see ADR-0004.
+testable without a display.
 
 QGraphicsView rather than an embedded browser: the graphs here are tens of
 nodes, a scene graph handles that without a rendering engine, and QtWebEngine
 would add hundreds of megabytes to a build whose point is that an investigator
-can run it without installing anything.
+can run it without installing anything. See ADR-0006.
 """
 
 from __future__ import annotations
@@ -37,14 +37,22 @@ from PyQt6.QtWidgets import (
 )
 
 from logarc.graphbuild.layout import Point, layout_graph
-from logarc.gui.style import format_gap, style_for, summarise
+from logarc.gui.style import CAPTION_COLOUR, format_gap, style_for, summarise
 
 if TYPE_CHECKING:
     from PyQt6.QtGui import QMouseEvent
 
     from logarc.core.graph import ActivityGraph, GraphNode
 
-__all__ = ["ActivityCanvas"]
+__all__ = ["MIN_FIT_SCALE", "ActivityCanvas"]
+
+#: How far `fit` may shrink a graph. A long session trace is a wide, flat chain,
+#: and fitting one to the window scales the whole scene down until the captions
+#: inside the nodes are a grey smudge. Below this the graph stops carrying the
+#: information it exists to carry, so the view stops at this scale and lets the
+#: investigator pan instead. Requiring a pan is a smaller failure than
+#: presenting a picture nobody can read.
+MIN_FIT_SCALE: Final = 0.55
 
 _PEN_STYLES: Final = {
     "solid": Qt.PenStyle.SolidLine,
@@ -55,6 +63,7 @@ _PEN_STYLES: Final = {
 _EDGE_COLOUR: Final = "#616e7c"
 _ARROW_LENGTH: Final = 12.0
 _ARROW_WIDTH: Final = 7.0
+_CAPTION_GAP: Final = 6.0
 _ZOOM_STEP: Final = 1.15
 _MIN_SCALE: Final = 0.15
 _MAX_SCALE: Final = 6.0
@@ -146,13 +155,16 @@ class ActivityCanvas(QGraphicsView):
         item.setToolTip(_tooltip(node))
         self._scene.addItem(item)
 
+        # Below the circle, not inside it. An activity name long enough to mean
+        # something does not fit in a node sized by request count, and the
+        # version that did fit was a smudge at the scale the graph opens at.
         caption = QGraphicsSimpleTextItem(summarise(node), item)
-        caption.setBrush(QBrush(QColor(style.text_colour)))
+        caption.setBrush(QBrush(QColor(CAPTION_COLOUR)))
         font = QFont()
         font.setPointSizeF(7.5)
         caption.setFont(font)
         bounds = caption.boundingRect()
-        caption.setPos(-bounds.width() / 2, -bounds.height() / 2)
+        caption.setPos(-bounds.width() / 2, style.radius + _CAPTION_GAP)
 
     def _draw_edge(
         self,
@@ -239,10 +251,14 @@ class ActivityCanvas(QGraphicsView):
             self.scale(step, step)
 
     def fit(self) -> None:
-        """Frame the whole graph."""
+        """Frame the whole graph, down to the point where it stays readable."""
         if not self._scene.items():
             return
         self.fitInView(self._scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+        scale = self.transform().m11()
+        if scale < MIN_FIT_SCALE:
+            self.resetTransform()
+            self.scale(MIN_FIT_SCALE, MIN_FIT_SCALE)
 
 
 def _tooltip(node: GraphNode) -> str:

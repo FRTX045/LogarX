@@ -1,9 +1,16 @@
-"""Parser lookup and log format auto-detection.
+"""Parser lookup, registration and log format auto-detection.
 
 Detection scores each known format by the fraction of a sample it can parse.
 This works because the Apache presets are mutually exclusive in practice: a
 combined line carries two quoted fields that `common` has no place for, and a
 vhost line begins with a `host:port` token that `combined` cannot match.
+
+The registry is open. `LogParser` being a Protocol only makes a new format
+*expressible*; it takes a way to register one to make it reachable, otherwise
+the extension point is a preset list with extra steps. Anything satisfying the
+protocol can be added here and is then available to `logarc ingest --format`,
+to auto-detection, and to the window's format dropdown, without a change
+anywhere else. See docs/adding-a-parser.md.
 """
 
 from __future__ import annotations
@@ -16,16 +23,21 @@ from logarc.parsers.apache import PRESETS
 from logarc.parsers.logformat import LogFormatParser
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Callable, Iterable, Sequence
 
     from logarc.parsers.base import LogParser
 
 __all__ = [
     "FormatDetection",
+    "FormatEntry",
     "UnknownFormatError",
     "available_formats",
     "detect_format",
     "get_parser",
+    "register_format",
+    "register_logformat",
+    "registered_formats",
+    "unregister_format",
 ]
 
 #: Below this share of parseable lines, a format is not considered a match.
@@ -51,19 +63,84 @@ class FormatDetection:
     """Share of non-blank sample lines the parser accepted, 0.0 to 1.0."""
 
 
+@dataclass(frozen=True, slots=True)
+class FormatEntry:
+    """One registered format: how to build it, and how to describe it."""
+
+    name: str
+    factory: Callable[[], LogParser]
+    description: str = ""
+    """Shown by `logarc formats`. The LogFormat directive, where there is one."""
+
+
+def _apache_entry(name: str, directive: str) -> FormatEntry:
+    # Built in a function rather than inline in the comprehension below: the
+    # lambda closes over these parameters, which are bound once per call, where
+    # closing over a comprehension's loop variable would leave every preset
+    # building the last directive in the dict.
+    return FormatEntry(
+        name=name,
+        factory=lambda: LogFormatParser(directive, name=name),
+        description=directive,
+    )
+
+
+#: Registration order is preference order. Detection compares confidence first
+#: and only falls back to this on a tie, so the built-ins stay ahead of anything
+#: added later — a new format cannot quietly take over logs that already parse.
+_REGISTRY: Final[dict[str, FormatEntry]] = {
+    name: _apache_entry(name, directive) for name, directive in PRESETS.items()
+}
+
+
+def register_format(name: str, factory: Callable[[], LogParser], *, description: str = "") -> None:
+    """Make a log format available everywhere a built-in one is.
+
+    `factory` is called per use rather than being handed a parser instance,
+    because auto-detection builds one parser per candidate format and ingest
+    shares a parser across workers; a factory keeps both honest without the
+    registry having to know which is happening.
+    """
+    if name in _REGISTRY:
+        raise ValueError(
+            f"log format {name!r} is already registered; "
+            "pick another name or unregister the existing one first"
+        )
+    _REGISTRY[name] = FormatEntry(name=name, factory=factory, description=description)
+
+
+def register_logformat(name: str, directive: str) -> None:
+    """Register an Apache- or nginx-style format from its directive string."""
+    register_format(
+        name,
+        lambda: LogFormatParser(directive, name=name),
+        description=directive,
+    )
+
+
+def unregister_format(name: str) -> None:
+    """Remove a registered format. Unknown names are ignored."""
+    _REGISTRY.pop(name, None)
+
+
+def registered_formats() -> list[FormatEntry]:
+    """Every registered format, in preference order."""
+    return list(_REGISTRY.values())
+
+
 def available_formats() -> list[str]:
     """Registered format names, most specific first."""
-    return list(PRESETS)
+    return list(_REGISTRY)
 
 
-def get_parser(name: str) -> LogFormatParser:
+def get_parser(name: str) -> LogParser:
     """Build the parser registered under `name`."""
     try:
-        log_format = PRESETS[name]
+        entry = _REGISTRY[name]
     except KeyError:
-        known = ", ".join(PRESETS)
+        known = ", ".join(_REGISTRY)
         raise UnknownFormatError(f"unknown log format {name!r}; available: {known}") from None
-    return LogFormatParser(log_format, name=name)
+    return entry.factory()
 
 
 def score_parser(parser: LogParser, lines: Sequence[str]) -> float:
@@ -96,7 +173,7 @@ def detect_format(
         return None
 
     best: FormatDetection | None = None
-    for name in PRESETS:
+    for name in _REGISTRY:
         parser = get_parser(name)
         confidence = score_parser(parser, lines)
         if confidence >= min_confidence and (best is None or confidence > best.confidence):

@@ -18,13 +18,14 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
+from PyQt6.QtGui import QPalette
 from PyQt6.QtWidgets import QApplication
 
 from logarc.analysis import analyse_ip
 from logarc.case import Case
 from logarc.core.graph import GraphKind
 from logarc.gui.app import MainWindow
-from logarc.gui.canvas import ActivityCanvas
+from logarc.gui.canvas import MIN_FIT_SCALE, ActivityCanvas
 from logarc.gui.panels import ClientTable, EvidencePanel
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
@@ -155,6 +156,59 @@ def test_the_evidence_panel_shows_the_raw_lines(qt_app: QApplication, campaign: 
     shown = panel._body.toPlainText()
     assert "access.log:" in shown
     assert CLIENT in shown
+
+
+def test_the_evidence_panel_does_not_depend_on_the_system_theme(qt_app: QApplication) -> None:
+    """The panel writes dark text. If it also inherits the window background, a
+    machine themed dark renders the evidence dark-on-dark — the one panel an
+    investigator cannot do without, invisible, with nothing to indicate why.
+
+    Asserts the exact colour rather than "light enough". The offscreen platform
+    this suite runs under always supplies a light default palette, so a
+    brightness check would pass whether or not the panel set anything, and this
+    fault would stay invisible to CI exactly as it is invisible on screen.
+    """
+    from logarc.gui.panels import _INK, _PAPER
+
+    panel = EvidencePanel()
+    palette = panel._body.palette()
+
+    assert palette.color(QPalette.ColorRole.Base).name() == _PAPER
+    assert palette.color(QPalette.ColorRole.Text).name() == _INK
+
+
+def test_the_canvas_will_not_shrink_a_graph_out_of_legibility(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    """A long trace fitted to the window width scales the nodes down until the
+    labels cannot be read. Requiring a pan is better than showing a graph
+    nobody can read."""
+    with Case.open(campaign) as case:
+        result = analyse_ip(case.store, CLIENT)
+    canvas = ActivityCanvas()
+    canvas.resize(400, 300)
+
+    canvas.show_graph(result.trace)
+
+    assert canvas.transform().m11() >= MIN_FIT_SCALE
+
+
+def test_the_evidence_panel_opens_at_the_start_of_the_lines(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    """Appending leaves the view at the end of the last line written, which for
+    a log line is the tail of a user agent. The investigator would be looking at
+    "Safari/537.36" where the address and the request should be."""
+    with Case.open(campaign) as case:
+        result = analyse_ip(case.store, CLIENT)
+        episode = result.episodes[0]
+        lines = case.read_evidence(episode.evidence[:5])
+    panel = EvidencePanel()
+
+    panel.show_evidence(episode, lines)
+
+    assert panel._body.textCursor().position() == 0
+    assert panel._body.horizontalScrollBar().value() == 0
 
 
 def test_the_evidence_panel_reports_an_unreadable_source(

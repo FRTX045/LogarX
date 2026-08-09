@@ -19,7 +19,9 @@ from logarc import __version__
 from logarc.analysis import AnalysisPolicy, analyse_ip
 from logarc.case import Case, CaseError
 from logarc.core.activity import Severity
-from logarc.detect.rules import RulePackError
+from logarc.detect.engine import RuleEngine
+from logarc.detect.rulepacks import default_rules
+from logarc.detect.rules import RulePackError, load_rules
 from logarc.episode.builder import EpisodePolicy
 from logarc.evaluation.benchmark import BenchmarkError, BenchmarkResult, run_benchmark
 from logarc.evaluation.csic import CsicError, convert_csic
@@ -28,8 +30,7 @@ from logarc.evaluation.scoring import evaluate as score_case
 from logarc.evaluation.truth import TruthError, read_truth
 from logarc.ingest.pipeline import FormatDetectionError
 from logarc.ingest.reader import LogSourceError
-from logarc.parsers.apache import PRESETS
-from logarc.parsers.registry import UnknownFormatError
+from logarc.parsers.registry import UnknownFormatError, registered_formats
 from logarc.report.html import render_report
 from logarc.sessionize.segmenter import SessionPolicy
 from logarc.storage.event_store import SORT_KEYS
@@ -72,6 +73,28 @@ USER_ERRORS = (
 def _fail(message: str) -> typer.Exit:
     errors.print(f"[red]error:[/red] {message}")
     return typer.Exit(code=1)
+
+
+#: Shared by every command that applies rules, so a report cannot disagree with
+#: the analysis it came from because one of them was given a different pack.
+RULES_OPTION = typer.Option(
+    "--rules",
+    "-r",
+    help="Extra rule pack (file or directory). Repeatable. Adds to the bundled packs.",
+)
+
+
+def _rule_engine(rules: list[Path] | None) -> RuleEngine | None:
+    """Build an engine from extra packs, or None to use the bundled ones.
+
+    Extra packs are added to the defaults rather than replacing them: someone
+    writing one rule about their own application should not silently lose OWASP
+    coverage in the process. `load_rules` refuses a duplicate id, so a pack that
+    copies a bundled rule to edit it fails loudly instead of shadowing it.
+    """
+    if not rules:
+        return None
+    return RuleEngine([*default_rules(), *load_rules(list(rules))])
 
 
 def _analysis_policy(
@@ -188,11 +211,13 @@ def analyze(
     out: Annotated[
         Path | None, typer.Option("--out", "-o", help="Write the graph as JSON to this path.")
     ] = None,
+    rules: Annotated[list[Path] | None, RULES_OPTION] = None,
 ) -> None:
     """Reconstruct one client's activity as a graph."""
     try:
+        engine = _rule_engine(rules)
         with Case.open(case) as opened:
-            result = analyse_ip(opened.store, ip)
+            result = analyse_ip(opened.store, ip, engine=engine)
     except USER_ERRORS as exc:
         raise _fail(str(exc)) from exc
 
@@ -237,6 +262,7 @@ def evidence(
     limit: Annotated[
         int, typer.Option("--limit", "-n", help="Source lines to show per activity.")
     ] = 10,
+    rules: Annotated[list[Path] | None, RULES_OPTION] = None,
 ) -> None:
     """Show the raw log lines behind a client's reconstructed activity.
 
@@ -244,8 +270,9 @@ def evidence(
     says which lines say so.
     """
     try:
+        engine = _rule_engine(rules)
         with Case.open(case) as opened:
-            result = analyse_ip(opened.store, ip)
+            result = analyse_ip(opened.store, ip, engine=engine)
             episodes = result.episodes
             if episode is not None:
                 episodes = tuple(item for item in episodes if item.episode_id == episode)
@@ -290,14 +317,16 @@ def export(
     ip: Annotated[str, typer.Option("--ip", help="Client address to report on.")],
     out: Annotated[Path, typer.Option("--out", "-o", help="File to write.")],
     output_format: Annotated[str, typer.Option("--format", "-f", help="html or json.")] = "html",
+    rules: Annotated[list[Path] | None, RULES_OPTION] = None,
 ) -> None:
     """Write a standalone report for one client."""
     if output_format not in {"html", "json"}:
         raise _fail(f"unknown format {output_format!r}; choose html or json")
 
     try:
+        engine = _rule_engine(rules)
         with Case.open(case) as opened:
-            result = analyse_ip(opened.store, ip)
+            result = analyse_ip(opened.store, ip, engine=engine)
             manifest = opened.manifest
     except USER_ERRORS as exc:
         raise _fail(str(exc)) from exc
@@ -620,8 +649,8 @@ def formats() -> None:
     table = Table(title="Known log formats")
     table.add_column("Name")
     table.add_column("LogFormat directive")
-    for name, directive in PRESETS.items():
-        table.add_row(name, directive)
+    for entry in registered_formats():
+        table.add_row(entry.name, entry.description)
     console.print(table)
     console.print(
         "\nA custom Apache or nginx format is supported by passing its directive "

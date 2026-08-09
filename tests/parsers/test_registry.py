@@ -1,7 +1,14 @@
 """Tests for parser lookup and log format auto-detection."""
 
+from __future__ import annotations
+
+import json
+from collections.abc import Iterator
+from datetime import UTC, datetime
+
 import pytest
 
+from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
 from logarc.parsers.apache import COMBINED, COMMON
 from logarc.parsers.logformat import LogFormatParser
@@ -10,6 +17,10 @@ from logarc.parsers.registry import (
     available_formats,
     detect_format,
     get_parser,
+    register_format,
+    register_logformat,
+    registered_formats,
+    unregister_format,
 )
 
 COMBINED_LINES = [
@@ -31,6 +42,107 @@ VHOST_LINES = [
 ]
 
 REF = EvidenceRef(source_file_id="f", line_no=1)
+
+#: A format that is not an Apache directive at all, so registering it exercises
+#: the seam rather than the LogFormat compiler.
+JSON_LINES = [
+    json.dumps({"ip": "203.0.113.7", "ts": "2024-05-01T12:00:00Z", "path": "/", "status": 200}),
+    json.dumps({"ip": "203.0.113.7", "ts": "2024-05-01T12:00:05Z", "path": "/a", "status": 404}),
+]
+
+
+class JsonParser:
+    """The smallest thing that satisfies the LogParser protocol."""
+
+    name = "test-json"
+
+    def parse_line(self, line: str, ref: EvidenceRef) -> NormalizedEvent | None:
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            return None
+        if not {"ip", "ts", "path"} <= payload.keys():
+            return None
+        return NormalizedEvent(
+            timestamp=datetime.fromisoformat(payload["ts"].replace("Z", "+00:00")).astimezone(UTC),
+            client_ip=payload["ip"],
+            method=payload.get("method", "GET"),
+            path=payload["path"],
+            query=None,
+            protocol=None,
+            status=payload.get("status"),
+            bytes_sent=None,
+            referer=None,
+            user_agent=None,
+            host=None,
+            evidence=ref,
+        )
+
+
+@pytest.fixture(autouse=True)
+def restore_registry() -> Iterator[None]:
+    """Registration is global, so a test that adds a format must undo it."""
+    before = list(available_formats())
+    yield
+    for name in available_formats():
+        if name not in before:
+            unregister_format(name)
+
+
+def test_a_custom_logformat_directive_can_be_registered() -> None:
+    """The common case: a site with its own Apache or nginx LogFormat."""
+    register_logformat("site-custom", '%h %t "%r" %>s %b')
+
+    parser = get_parser("site-custom")
+
+    assert parser.name == "site-custom"
+    line = '203.0.113.4 [10/Oct/2000:13:55:36 +0000] "GET /x HTTP/1.1" 200 12'
+    assert parser.parse_line(line, REF) is not None
+
+
+def test_a_parser_that_is_not_logformat_based_can_be_registered() -> None:
+    """The seam has to hold for a format Apache's directives cannot describe,
+    or it is not an extension point, only a preset list."""
+    register_format("test-json", JsonParser, description="one JSON object per line")
+
+    parser = get_parser("test-json")
+    event = parser.parse_line(JSON_LINES[0], REF)
+
+    assert event is not None
+    assert event.client_ip == "203.0.113.7"
+
+
+def test_a_registered_format_takes_part_in_auto_detection() -> None:
+    register_format("test-json", JsonParser)
+
+    found = detect_format(JSON_LINES)
+
+    assert found is not None
+    assert found.name == "test-json"
+
+
+def test_registering_over_an_existing_name_is_refused() -> None:
+    """Silently shadowing a built-in would change what an existing case means."""
+    with pytest.raises(ValueError, match="apache-combined"):
+        register_logformat("apache-combined", "%h")
+
+
+def test_registered_formats_carry_a_description_for_display() -> None:
+    register_logformat("site-custom", '%h %t "%r" %>s %b')
+
+    entry = next(item for item in registered_formats() if item.name == "site-custom")
+
+    assert entry.description == '%h %t "%r" %>s %b'
+
+
+def test_unregistering_removes_the_format() -> None:
+    register_format("test-json", JsonParser)
+
+    unregister_format("test-json")
+
+    assert "test-json" not in available_formats()
+    with pytest.raises(UnknownFormatError):
+        get_parser("test-json")
 
 
 def test_known_format_can_be_looked_up_by_name() -> None:

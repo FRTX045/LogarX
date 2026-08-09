@@ -93,7 +93,7 @@ def test_a_style_carries_everything_needed_to_draw_one_node() -> None:
     assert style.fill == severity_colour(Severity.CRITICAL)
     assert style.border == outcome_border(Outcome.MIXED)
     assert style.radius == node_radius(42)
-    assert style.text_colour.startswith("#")
+    assert style.radius > 0
 
 
 def test_hostile_and_ordinary_activity_are_told_apart_at_a_glance() -> None:

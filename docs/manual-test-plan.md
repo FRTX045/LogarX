@@ -214,7 +214,7 @@ report says which version of the tool produced it.
 4. Check the folder.
 
 **Pass:** roughly 250 MB, with no `QtWebEngine*` in `_internal\` — the canvas is
-QGraphicsView specifically so no browser engine ships (ADR-0004).
+QGraphicsView specifically so no browser engine ships (ADR-0006).
 
 ---
 
