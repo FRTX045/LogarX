@@ -30,6 +30,12 @@ def peak_rss_bytes() -> int:
 
 
 def _windows_peak() -> int:
+    # Guarded for the type checker as much as the runtime, and symmetrically
+    # with the POSIX branch below: `ctypes.WinDLL` does not exist off Windows,
+    # so without this every check run on Linux reports this function as broken.
+    if sys.platform != "win32":  # pragma: no cover - unreachable via peak_rss_bytes
+        return 0
+
     import ctypes
     from ctypes import wintypes
 

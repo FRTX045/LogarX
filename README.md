@@ -124,8 +124,14 @@ Measured results, and what they do and do not establish, are in
 ```bash
 ruff check . && ruff format --check .
 mypy src/logarc
+mypy --platform linux src/logarc    # CI runs on both; some code is platform-shaped
 pytest --cov=logarc --cov-report=term-missing
 ```
+
+The second type check is not redundant. `mypy` analyses for the platform it runs
+on, so a Windows-only branch guarded by `sys.platform` is skipped on Windows and
+checked on Linux — and the reverse. Checking one platform passes code that the
+other rejects.
 
 ## Documentation
 
