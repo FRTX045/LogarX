@@ -52,7 +52,7 @@ excludes = [
     "matplotlib",
     "PIL",
     "pandas",
-    # ADR-0004: the canvas is QGraphicsView precisely so no browser engine is
+    # ADR-0006: the canvas is QGraphicsView precisely so no browser engine is
     # needed. QtWebEngine alone is a few hundred megabytes; letting it in would
     # undo the reason for the decision.
     "PyQt6.QtWebEngineCore",
