@@ -95,6 +95,18 @@ logarc export --case ./case-001 --ip 203.0.113.45 --format html --out report.htm
 logarc-gui
 ```
 
+![The logarc window: client list, session trace, and the log lines behind the selected activity](docs/images/screenshot-trace.png)
+
+*Session trace — what happened, in order. A scanner's 69 requests reduced to 7 activities. The
+panel on the right holds the raw log lines the selected node was built from; every finding traces
+back to a line.*
+
+![The same client drawn as a behaviour map](docs/images/screenshot-behaviour.png)
+
+*Behaviour map — the same reconstruction folded by activity type, so repetition becomes structure.
+The two `Directory Enumeration` episodes in the trace, 5 requests and 48, are one 53-request node
+here. Colour is severity, border is outcome: every dashed node above was refused.*
+
 A Windows GUI (PyQt6) wraps the same engine — the CLI and the GUI share one code path, so
 anything the GUI can do is scriptable. Pick a client from the table, read the activity graph,
 click a node to see the raw log lines that node was built from, and export the same report the
@@ -167,9 +179,12 @@ plan exists to catch it.
 ## Documentation
 
 - [docs/architecture.md](docs/architecture.md) — layers, data flow, extension points
-- [docs/evaluation.md](docs/evaluation.md) — how accuracy is measured, and the numbers
+- [docs/writing-rules.md](docs/writing-rules.md) — adding detection without writing Python
+- [docs/adding-a-parser.md](docs/adding-a-parser.md) — supporting another log format
+- [docs/evaluation.md](docs/evaluation.md) — how accuracy is measured, the numbers, and their limits
 - [docs/manual-test-plan.md](docs/manual-test-plan.md) — what the automated suite cannot check
 - [docs/adr/](docs/adr/) — architecture decision records
+- [CHANGELOG.md](CHANGELOG.md) — what is in this release, including what falls short
 
 ## License
 
