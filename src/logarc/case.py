@@ -98,29 +98,40 @@ class Case:
         log_format: str | None = None,
         batch_size: int = DEFAULT_BATCH_SIZE,
         on_progress: Callable[[int, int], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> list[IngestResult]:
-        """Read logs into the case and record them in the manifest."""
+        """Read logs into the case and record them in the manifest.
+
+        `should_cancel` lets a caller stop a long ingest; it raises
+        `IngestCancelled` and the case is left un-finalised, so a stopped run
+        cannot be mistaken for a complete one.
+        """
         if self.store.is_finalized:
             raise CaseError(
                 f"case at {self.root} is already finalised; start a new case to add more logs"
             )
 
         results: list[IngestResult] = []
-        with Quarantine(self.root) as quarantine:
-            for path in paths:
-                result = ingest_file(
-                    Path(path),
-                    self.store,
-                    quarantine,
-                    file_id=self._allocate_file_id(Path(path)),
-                    log_format=log_format,
-                    batch_size=batch_size,
-                    on_progress=on_progress,
-                )
-                results.append(result)
-                self.manifest.sources.append(_to_source_record(result))
-
-        self.manifest.save(self.root)
+        try:
+            with Quarantine(self.root) as quarantine:
+                for path in paths:
+                    result = ingest_file(
+                        Path(path),
+                        self.store,
+                        quarantine,
+                        file_id=self._allocate_file_id(Path(path)),
+                        log_format=log_format,
+                        batch_size=batch_size,
+                        on_progress=on_progress,
+                        should_cancel=should_cancel,
+                    )
+                    results.append(result)
+                    self.manifest.sources.append(_to_source_record(result))
+        finally:
+            # Saved even when the run is cut short. Events sitting in the store
+            # that the manifest does not name would be evidence with no chain of
+            # custody, which is the one thing the manifest exists to prevent.
+            self.manifest.save(self.root)
         return results
 
     def finalize(self) -> None:

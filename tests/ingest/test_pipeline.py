@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from logarc.ingest.pipeline import FormatDetectionError, ingest_file
+from logarc.ingest.pipeline import FormatDetectionError, IngestCancelled, ingest_file
 from logarc.ingest.quarantine import Quarantine
 from logarc.storage.event_store import ParquetEventStore
 
@@ -84,6 +84,45 @@ def test_format_is_detected_when_not_specified(log: Path, case: Path) -> None:
         result = ingest_file(log, store, quarantine)
 
     assert result.log_format == "apache-combined"
+
+
+def test_a_cancelled_ingest_stops_reading_and_says_how_far_it_got(
+    tmp_path: Path, case: Path
+) -> None:
+    path = tmp_path / "access.log"
+    path.write_text("\n".join(LINES * 10) + "\n", encoding="utf-8")
+    store = ParquetEventStore(case)
+    checks = 0
+
+    def stop() -> bool:
+        nonlocal checks
+        checks += 1
+        return checks >= 2
+
+    with (
+        Quarantine(case) as quarantine,
+        pytest.raises(IngestCancelled) as raised,
+    ):
+        ingest_file(path, store, quarantine, batch_size=5, should_cancel=stop)
+
+    assert raised.value.lines_read == 10
+    assert "cancelled" in str(raised.value)
+
+
+def test_what_was_read_before_a_cancel_is_kept(tmp_path: Path, case: Path) -> None:
+    """A stopped ingest is short, not void: the batches already written are
+    evidence, and discarding them would make a cancel destructive."""
+    path = tmp_path / "access.log"
+    path.write_text("\n".join(LINES * 10) + "\n", encoding="utf-8")
+    store = ParquetEventStore(case)
+
+    with Quarantine(case) as quarantine, pytest.raises(IngestCancelled):
+        ingest_file(path, store, quarantine, batch_size=5, should_cancel=lambda: True)
+    store.finalize()
+
+    kept = store.events_for_ip("203.0.113.5")
+    assert kept
+    assert max(event.evidence.line_no for event in kept) <= 5
 
 
 def test_an_explicit_format_overrides_detection(log: Path, case: Path) -> None:
