@@ -11,6 +11,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import TYPE_CHECKING
 
+from logarc.evidence import EvidenceLine, read_evidence
 from logarc.ingest.pipeline import DEFAULT_BATCH_SIZE, IngestResult, ingest_file
 from logarc.ingest.quarantine import Quarantine
 from logarc.storage.case import MANIFEST_NAME, CaseManifest, SourceRecord
@@ -18,6 +19,8 @@ from logarc.storage.event_store import ParquetEventStore
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+
+    from logarc.core.evidence import EvidenceRef
 
 __all__ = ["Case", "CaseError"]
 
@@ -60,6 +63,17 @@ class Case:
     def close(self) -> None:
         self.store.close()
 
+    # -- evidence ----------------------------------------------------------
+
+    def read_evidence(self, refs: Sequence[EvidenceRef]) -> list[EvidenceLine]:
+        """Fetch the raw source lines behind a set of references.
+
+        Lives on the case rather than in the interface layers because it is
+        what makes a finding checkable, and both the CLI and the GUI need it to
+        say the same thing about the same evidence.
+        """
+        return read_evidence(self.manifest, refs)
+
     def __enter__(self) -> Case:
         return self
 
@@ -84,29 +98,40 @@ class Case:
         log_format: str | None = None,
         batch_size: int = DEFAULT_BATCH_SIZE,
         on_progress: Callable[[int, int], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> list[IngestResult]:
-        """Read logs into the case and record them in the manifest."""
+        """Read logs into the case and record them in the manifest.
+
+        `should_cancel` lets a caller stop a long ingest; it raises
+        `IngestCancelled` and the case is left un-finalised, so a stopped run
+        cannot be mistaken for a complete one.
+        """
         if self.store.is_finalized:
             raise CaseError(
                 f"case at {self.root} is already finalised; start a new case to add more logs"
             )
 
         results: list[IngestResult] = []
-        with Quarantine(self.root) as quarantine:
-            for path in paths:
-                result = ingest_file(
-                    Path(path),
-                    self.store,
-                    quarantine,
-                    file_id=self._allocate_file_id(Path(path)),
-                    log_format=log_format,
-                    batch_size=batch_size,
-                    on_progress=on_progress,
-                )
-                results.append(result)
-                self.manifest.sources.append(_to_source_record(result))
-
-        self.manifest.save(self.root)
+        try:
+            with Quarantine(self.root) as quarantine:
+                for path in paths:
+                    result = ingest_file(
+                        Path(path),
+                        self.store,
+                        quarantine,
+                        file_id=self._allocate_file_id(Path(path)),
+                        log_format=log_format,
+                        batch_size=batch_size,
+                        on_progress=on_progress,
+                        should_cancel=should_cancel,
+                    )
+                    results.append(result)
+                    self.manifest.sources.append(_to_source_record(result))
+        finally:
+            # Saved even when the run is cut short. Events sitting in the store
+            # that the manifest does not name would be evidence with no chain of
+            # custody, which is the one thing the manifest exists to prevent.
+            self.manifest.save(self.root)
         return results
 
     def finalize(self) -> None:

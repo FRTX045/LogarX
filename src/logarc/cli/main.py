@@ -228,6 +228,63 @@ def analyze(
 
 
 @app.command()
+def evidence(
+    case: Annotated[Path, typer.Option("--case", "-c", help="Case directory to read.")],
+    ip: Annotated[str, typer.Option("--ip", help="Client address to show evidence for.")],
+    episode: Annotated[
+        str | None, typer.Option("--episode", "-e", help="Show only this activity.")
+    ] = None,
+    limit: Annotated[
+        int, typer.Option("--limit", "-n", help="Source lines to show per activity.")
+    ] = 10,
+) -> None:
+    """Show the raw log lines behind a client's reconstructed activity.
+
+    The other half of the chain of custody: `analyze` says what happened, this
+    says which lines say so.
+    """
+    try:
+        with Case.open(case) as opened:
+            result = analyse_ip(opened.store, ip)
+            episodes = result.episodes
+            if episode is not None:
+                episodes = tuple(item for item in episodes if item.episode_id == episode)
+                if not episodes:
+                    known = ", ".join(item.episode_id for item in result.episodes) or "none"
+                    raise _fail(f"no activity {episode!r} for {ip}; this client has: {known}")
+            lines = {
+                item.episode_id: opened.read_evidence(item.evidence[:limit]) for item in episodes
+            }
+    except USER_ERRORS as exc:
+        raise _fail(str(exc)) from exc
+
+    if not episodes:
+        console.print(f"[yellow]No activity found for {ip} in this case.[/yellow]")
+        return
+
+    for item in episodes:
+        console.print(
+            f"\n[bold]{item.episode_id}[/bold]  "
+            f"[{_SEVERITY_STYLE[item.severity]}]{item.label}[/]  "
+            f"{item.request_count:,} requests, outcome {item.outcome.value}"
+        )
+        for line in lines[item.episode_id]:
+            if line.available:
+                marker = "" if line.verified else " [yellow](source changed since ingest)[/yellow]"
+                console.print(f"  [dim]{line.ref}[/dim]{marker}")
+                console.print(f"    {line.text}", highlight=False)
+            else:
+                console.print(f"  [dim]{line.ref}[/dim] [yellow]unavailable[/yellow]")
+                if line.note:
+                    console.print(f"    [yellow]{line.note}[/yellow]")
+        if item.evidence_total > len(lines[item.episode_id]):
+            console.print(
+                f"  [dim]… {item.evidence_total - len(lines[item.episode_id]):,} more lines "
+                f"in this activity[/dim]"
+            )
+
+
+@app.command()
 def export(
     case: Annotated[Path, typer.Option("--case", "-c", help="Case directory to read.")],
     ip: Annotated[str, typer.Option("--ip", help="Client address to report on.")],

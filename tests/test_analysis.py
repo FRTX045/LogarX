@@ -140,6 +140,24 @@ def test_every_node_traces_back_to_real_log_lines(campaign: Case) -> None:
             assert ATTACKER in raw[ref.line_no - 1]
 
 
+def test_reading_a_node_back_returns_the_lines_it_was_built_from(campaign: Case) -> None:
+    """Closes the loop the test above leaves open.
+
+    That one checks the references are sound. This one checks the reader the
+    CLI and the window both go through resolves them to the same text — a
+    correct reference displayed beside the wrong line is worse than no evidence
+    panel at all, because it is wrong with a citation attached.
+    """
+    result = analyse_ip(campaign.store, ATTACKER)
+    raw = (campaign.root.parent / "access.log").read_text(encoding="utf-8").splitlines()
+
+    for node in result.trace.nodes:
+        for shown in campaign.read_evidence(node.evidence):
+            assert shown.available
+            assert shown.text == raw[shown.ref.line_no - 1]
+            assert shown.text is not None and shown.text.startswith(ATTACKER + " ")
+
+
 def test_another_client_is_not_mixed_in(campaign: Case) -> None:
     result = analyse_ip(campaign.store, ATTACKER)
 

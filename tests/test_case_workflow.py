@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from logarc.case import Case, CaseError
+from logarc.ingest.pipeline import IngestCancelled
 
 LINES = [
     '203.0.113.5 - - [10/Oct/2020:13:55:36 +0000] "GET / HTTP/1.1" 200 2326 "-" "curl/8.0"',
@@ -99,6 +100,39 @@ def test_ingest_records_quarantined_lines_in_the_manifest(tmp_path: Path) -> Non
         case.ingest([log])
 
     assert Case.open(tmp_path / "case").manifest.total_lines_quarantined == 1
+
+
+def test_a_cancelled_ingest_leaves_the_case_unfinalised(tmp_path: Path) -> None:
+    """A case stopped halfway must not read as a complete one. Finalising is
+    what says "this is all of it", so a cancel has to leave it undone."""
+    log = write_log(tmp_path / "access.log", LINES * 10)
+
+    case = Case.create(tmp_path / "case")
+    with pytest.raises(IngestCancelled), case:
+        case.ingest([log], batch_size=5, should_cancel=lambda: True)
+
+    with Case.open(tmp_path / "case") as reopened:
+        assert not reopened.store.is_finalized
+
+
+def test_a_cancelled_ingest_still_records_the_files_that_completed(tmp_path: Path) -> None:
+    """Events in the store that the manifest does not name are evidence with no
+    chain of custody — exactly the gap the manifest exists to close."""
+    first = write_log(tmp_path / "a.log", LINES)
+    second = write_log(tmp_path / "b.log", LINES * 10)
+    checks = 0
+
+    def stop() -> bool:
+        nonlocal checks
+        checks += 1
+        return checks > 1
+
+    case = Case.create(tmp_path / "case")
+    with pytest.raises(IngestCancelled), case:
+        case.ingest([first, second], batch_size=5, should_cancel=stop)
+
+    manifest = Case.open(tmp_path / "case").manifest
+    assert [source.file_id for source in manifest.sources] == ["a.log"]
 
 
 def test_ingesting_into_an_already_finalised_case_is_refused(tmp_path: Path) -> None:

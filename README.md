@@ -89,8 +89,22 @@ logarc analyze --case ./case-001 --ip 203.0.113.45 --out graph.json
 logarc export --case ./case-001 --ip 203.0.113.45 --format html --out report.html
 ```
 
+### The desktop application
+
+```bash
+logarc-gui
+```
+
 A Windows GUI (PyQt6) wraps the same engine — the CLI and the GUI share one code path, so
-anything the GUI can do is scriptable.
+anything the GUI can do is scriptable. Pick a client from the table, read the activity graph,
+click a node to see the raw log lines that node was built from, and export the same report the
+CLI produces. Long work runs on a worker thread and can be cancelled; a cancelled ingest leaves
+the case un-finalised, so a partial read can never be analysed as if it were complete.
+
+It is verified by hand against [docs/manual-test-plan.md](docs/manual-test-plan.md) — whether the
+node you clicked is the one whose evidence appeared is a judgement about what a person sees.
+The decisions that determine whether a graph *misinforms* are kept out of Qt, in
+`logarc.gui.style`, and tested directly.
 
 ### Checking that it works
 
@@ -133,10 +147,28 @@ on, so a Windows-only branch guarded by `sys.platform` is skipped on Windows and
 checked on Linux — and the reverse. Checking one platform passes code that the
 other rejects.
 
+### Building the Windows bundle
+
+```bash
+pip install -e ".[gui,package]"
+pyinstaller --clean --noconfirm packaging/logarc.spec
+```
+
+Produces `dist/logarc/` (~250 MB), which runs without Python installed. One folder rather than
+one file: a one-file build unpacks the whole bundle to `%TEMP%` on every launch, which with Qt
+and Arrow in it costs seconds each time and leaves copies of the tool behind.
+
+Two things a freezer drops silently, and the spec therefore carries explicitly: the rule packs,
+which are data that nothing imports, and the package metadata, which is where the case manifest
+gets the tool version it records. Both fail at runtime rather than at build time, and the first
+one fails *quietly* — no rules means every request reads as benign. Check 7 of the manual test
+plan exists to catch it.
+
 ## Documentation
 
 - [docs/architecture.md](docs/architecture.md) — layers, data flow, extension points
 - [docs/evaluation.md](docs/evaluation.md) — how accuracy is measured, and the numbers
+- [docs/manual-test-plan.md](docs/manual-test-plan.md) — what the automated suite cannot check
 - [docs/adr/](docs/adr/) — architecture decision records
 
 ## License

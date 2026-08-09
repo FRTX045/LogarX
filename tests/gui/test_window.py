@@ -1,0 +1,180 @@
+"""Smoke tests for the window itself, run without a display.
+
+The GUI is verified by hand against docs/manual-test-plan.md — a checklist
+cannot be automated away. What *can* be automated is that it still constructs,
+still draws a real reconstruction, and still survives a case with nothing in it.
+Those are the failures that would otherwise be found by opening the app.
+"""
+
+from __future__ import annotations
+
+import os
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+import pytest
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
+
+from PyQt6.QtWidgets import QApplication
+
+from logarc.analysis import analyse_ip
+from logarc.case import Case
+from logarc.core.graph import GraphKind
+from logarc.gui.app import MainWindow
+from logarc.gui.canvas import ActivityCanvas
+from logarc.gui.panels import ClientTable, EvidencePanel
+
+START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
+CLIENT = "203.0.113.66"
+
+
+@pytest.fixture(scope="module")
+def qt_app() -> QApplication:
+    return QApplication.instance() or QApplication([])
+
+
+@pytest.fixture(scope="module")
+def campaign(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """A case with a recognisable attack in it, so the canvas has real work."""
+    root = tmp_path_factory.mktemp("gui")
+    lines = []
+    at = 0
+    for path in ("/", "/products", "/assets/app.css"):
+        lines.append(_line(at, path))
+        at += 15
+    for index in range(30):
+        lines.append(_line(at, f"/admin/{index}", status=404))
+        at += 1
+    for payload in ("id=1%27%20OR%20%271%27%3D%271", "id=1%20UNION%20SELECT%20NULL"):
+        lines.append(_line(at, f"/product?{payload}", status=403))
+        at += 3
+    lines.append(_line(at, "/product?id=1%20UNION%20SELECT%20pw%20FROM%20users", size=1_400_000))
+
+    log = root / "access.log"
+    log.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    with Case.create(root / "case") as case:
+        case.ingest([log])
+    return root / "case"
+
+
+def _line(seconds: int, target: str, *, status: int = 200, size: int = 512) -> str:
+    when = (START + timedelta(seconds=seconds)).strftime("%d/%b/%Y:%H:%M:%S +0000")
+    agent = "Mozilla/5.0 (X11; Linux x86_64)"
+    return f'{CLIENT} - - [{when}] "GET {target} HTTP/1.1" {status} {size} "-" "{agent}"'
+
+
+def test_the_window_constructs(qt_app: QApplication) -> None:
+    window = MainWindow()
+
+    assert window.windowTitle().startswith("logarc")
+    window.close()
+
+
+def test_cancel_reaches_the_flag_the_engine_polls(qt_app: QApplication) -> None:
+    """A cancel button wired to nothing is worse than no button at all: the
+    window would report a stop that never happened."""
+    import threading
+
+    window = MainWindow()
+    stop = threading.Event()
+
+    window._busy("Ingesting…", stop=stop)
+    assert not window._cancel.isHidden()
+    window._cancel.click()
+
+    assert stop.is_set()
+    window.close()
+
+
+def test_cancel_is_offered_only_for_work_that_can_be_stopped(qt_app: QApplication) -> None:
+    window = MainWindow()
+
+    window._busy("Reconstructing…")
+
+    assert window._cancel.isHidden()
+    window.close()
+
+
+def test_the_canvas_draws_a_real_reconstruction(qt_app: QApplication, campaign: Path) -> None:
+    with Case.open(campaign) as case:
+        result = analyse_ip(case.store, CLIENT)
+    canvas = ActivityCanvas()
+
+    canvas.show_graph(result.trace)
+
+    assert result.trace.nodes
+    assert len(canvas.scene().items()) > len(result.trace.nodes)
+
+
+def test_both_graph_views_draw(qt_app: QApplication, campaign: Path) -> None:
+    with Case.open(campaign) as case:
+        result = analyse_ip(case.store, CLIENT)
+    canvas = ActivityCanvas()
+
+    for graph in (result.trace, result.behaviour):
+        canvas.show_graph(graph)
+        assert canvas.scene().items()
+    assert result.behaviour.kind is GraphKind.BEHAVIOUR
+
+
+def test_a_client_with_no_activity_does_not_break_the_canvas(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    with Case.open(campaign) as case:
+        result = analyse_ip(case.store, "192.0.2.99")
+    canvas = ActivityCanvas()
+
+    canvas.show_graph(result.trace)
+
+    assert canvas.scene().items(), "an empty graph should still say so on screen"
+
+
+def test_the_client_table_lists_and_sorts_by_number(qt_app: QApplication, campaign: Path) -> None:
+    with Case.open(campaign) as case:
+        summaries = case.store.ip_summaries(limit=50, order_by="requests")
+    table = ClientTable()
+
+    table.show_clients(summaries)
+
+    assert summaries
+    assert table._table.rowCount() == len(summaries)
+
+
+def test_the_evidence_panel_shows_the_raw_lines(qt_app: QApplication, campaign: Path) -> None:
+    with Case.open(campaign) as case:
+        result = analyse_ip(case.store, CLIENT)
+        episode = result.episodes[0]
+        lines = case.read_evidence(episode.evidence[:5])
+    panel = EvidencePanel()
+
+    panel.show_evidence(episode, lines)
+
+    shown = panel._body.toPlainText()
+    assert "access.log:" in shown
+    assert CLIENT in shown
+
+
+def test_the_evidence_panel_reports_an_unreadable_source(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    """A case outlives its logs; the panel must say so rather than look empty."""
+    from logarc.core.evidence import EvidenceRef
+    from logarc.evidence import EvidenceLine
+
+    with Case.open(campaign) as case:
+        result = analyse_ip(case.store, CLIENT)
+    panel = EvidencePanel()
+    missing = [
+        EvidenceLine(
+            ref=EvidenceRef("access.log", 1),
+            source_path="gone.log",
+            note="cannot open log file gone.log",
+        )
+    ]
+
+    panel.show_evidence(result.episodes[0], missing)
+
+    assert "unavailable" in panel._body.toPlainText()

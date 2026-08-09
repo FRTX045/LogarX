@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from logarc.parsers.base import LogParser
     from logarc.storage.base import EventStore
 
-__all__ = ["FormatDetectionError", "IngestResult", "ingest_file"]
+__all__ = ["FormatDetectionError", "IngestCancelled", "IngestResult", "ingest_file"]
 
 #: Events buffered before a write. Large enough that Parquet row groups are
 #: worth having, small enough that memory stays flat on a huge log.
@@ -36,6 +36,24 @@ _UNPARSEABLE: Final = "line does not match the log format"
 
 class FormatDetectionError(RuntimeError):
     """Raised when a log's format cannot be identified."""
+
+
+# No `Error` suffix: this is not a failure. It reports that someone asked the
+# ingest to stop, and calling it an error would push callers towards handling a
+# deliberate cancel the same way they handle a corrupt file.
+class IngestCancelled(RuntimeError):  # noqa: N818
+    """Raised when the caller stopped an ingest before it reached the end.
+
+    Deliberately an exception rather than a quiet early return. A short read
+    that looks like a finished one is the worst outcome available here: the
+    case would go on to be finalised, and a truncated log would present as a
+    complete one. Raising forces every caller to decide what to do about it.
+    """
+
+    def __init__(self, path: Path, lines_read: int) -> None:
+        super().__init__(f"ingest of {path} cancelled after {lines_read:,} lines")
+        self.path = path
+        self.lines_read = lines_read
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +85,7 @@ def ingest_file(
     log_format: str | None = None,
     batch_size: int = DEFAULT_BATCH_SIZE,
     on_progress: Callable[[int, int], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> IngestResult:
     """Parse `path` into `store`, quarantining whatever does not parse.
 
@@ -77,6 +96,14 @@ def ingest_file(
 
     `on_progress` is called with `(lines_read, bytes_read)` once per batch, for
     progress reporting in long-running ingests.
+
+    `should_cancel` is polled at the same batch boundaries and raises
+    `IngestCancelled` when it answers true. A plain predicate rather than a
+    threading primitive: the engine has no opinion on what makes a caller want
+    to stop, and taking one would drag the interface layer's concerns in here.
+    Asking once per batch rather than once per line keeps a ten-million-line
+    ingest from paying for the question; the cost is that a stop lands at the
+    next boundary rather than instantly.
     """
     file_id = file_id or path.name
     started = time.perf_counter()
@@ -111,6 +138,11 @@ def ingest_file(
                 batch = []
                 if on_progress:
                     on_progress(lines_read, stream.bytes_read)
+                # After the write, never before: whatever has been read is real
+                # evidence, and a cancel should shorten the ingest rather than
+                # throw away the part that already succeeded.
+                if should_cancel and should_cancel():
+                    raise IngestCancelled(path, lines_read)
 
         if batch:
             store.write(batch)
