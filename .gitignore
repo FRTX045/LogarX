@@ -54,3 +54,6 @@ case-*/
 
 # Benchmark and evaluation output
 benchmarks/results/
+
+# Packaged bundles prepared to hand to someone, and the script that builds them.
+handoff/
