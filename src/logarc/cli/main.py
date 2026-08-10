@@ -469,13 +469,24 @@ def evaluate(
         )
 
     hostile = report.binary
-    console.print(
-        f"\n[bold]Attack or not[/bold] precision {hostile.precision:.3f}   "
-        f"recall {hostile.recall:.3f}   F1 {hostile.f1:.3f}   "
-        f"false alarms {hostile.false_positive_rate:.3%} of ordinary traffic\n"
-        f"{hostile.true_positives:,} caught, {hostile.false_negatives:,} missed, "
-        f"{hostile.false_positives:,} raised in error, over {hostile.total:,} requests."
-    )
+    if hostile.has_attacks:
+        console.print(
+            f"\n[bold]Attack or not[/bold] precision {hostile.precision:.3f}   "
+            f"recall {hostile.recall:.3f}   F1 {hostile.f1:.3f}   "
+            f"false alarms {hostile.false_positive_rate:.3%} of ordinary traffic\n"
+            f"{hostile.true_positives:,} caught, {hostile.false_negatives:,} missed, "
+            f"{hostile.false_positives:,} raised in error, over {hostile.total:,} requests."
+        )
+    else:
+        # Precision and recall are 0/0 here. Printing them would report a clean
+        # corpus as total detection failure, which is the opposite of what it is.
+        console.print(
+            f"\n[bold]Attack or not[/bold] no hostile traffic in this log, so "
+            f"precision and recall do not apply.\n"
+            f"false alarms {hostile.false_positive_rate:.3%} — "
+            f"{hostile.false_positives:,} raised in error over {hostile.total:,} "
+            f"ordinary requests."
+        )
 
     segmentation = report.segmentation
     console.print(

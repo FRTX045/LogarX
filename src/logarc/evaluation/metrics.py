@@ -225,6 +225,19 @@ class BinaryScore:
         """How much ordinary traffic gets flagged — the cost of using the tool."""
         return _ratio(self.false_positives, self.false_positives + self.true_negatives)
 
+    @property
+    def has_attacks(self) -> bool:
+        """Whether the truth holds a hostile request at all.
+
+        Without one, precision and recall are 0/0 — undefined, not zero — and
+        anything that prints them as 0.000 tells whoever ran a clean-traffic
+        control that detection failed completely, when nothing was there to
+        detect and nothing was wrongly flagged. A figure that looks like a
+        result and is not one is the worst thing an evaluation can emit, so
+        callers are given the means to say so instead.
+        """
+        return (self.true_positives + self.false_negatives) > 0
+
     def to_dict(self) -> dict[str, float | int]:
         return {
             "total": self.total,
@@ -237,6 +250,7 @@ class BinaryScore:
             "f1": self.f1,
             "accuracy": self.accuracy,
             "false_positive_rate": self.false_positive_rate,
+            "has_attacks": self.has_attacks,
         }
 
 

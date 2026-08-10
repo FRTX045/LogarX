@@ -7,6 +7,7 @@ import pytest
 from logarc.core.activity import ActivityCategory as Category
 from logarc.evaluation.metrics import (
     Prediction,
+    score_binary,
     score_classification,
     score_segmentation,
 )
@@ -214,3 +215,26 @@ def test_scoring_no_clients_is_empty_rather_than_an_error() -> None:
     assert report.truth_activities == 0
     assert report.fragmentation == 0.0
     assert report.boundary_f1 == 0.0
+
+
+def test_a_clean_corpus_reports_attack_scores_as_undefined_not_zero() -> None:
+    """Precision and recall over a corpus with no attacks in it are 0/0.
+
+    Printing them as 0.000 tells whoever ran the clean-traffic control that
+    detection failed completely, when in fact there was nothing to detect and
+    nothing was wrongly flagged. A number that looks like a result and is not
+    one is the worst thing an evaluation can produce.
+    """
+    score = score_binary([(False, False)] * 100)
+
+    assert not score.has_attacks
+    assert score.false_positive_rate == 0.0
+    assert score.accuracy == 1.0
+
+
+def test_a_corpus_with_attacks_is_scored_normally() -> None:
+    score = score_binary([(True, True)] * 8 + [(True, False)] * 2 + [(False, False)] * 90)
+
+    assert score.has_attacks
+    assert score.recall == pytest.approx(0.8)
+    assert score.precision == pytest.approx(1.0)
