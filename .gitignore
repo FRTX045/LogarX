@@ -46,10 +46,13 @@ Desktop.ini
 case-*/
 *.logarc-case/
 
-# Sample and generated logs can be huge.
+# Sample and generated logs can be huge. The ground-truth sidecars are larger
+# still, and a fixed seed reproduces both exactly — samples/README.md carries
+# the commands, which is the part worth versioning.
 *.log
 *.log.gz
 *.truth.json
+*.truth.jsonl
 !tests/data/*.log
 
 # Benchmark and evaluation output
