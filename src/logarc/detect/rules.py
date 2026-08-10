@@ -62,6 +62,7 @@ MATCH_FIELDS: Final[frozenset[str]] = frozenset(
         "status",
         "bytes_sent",
         "decode_depth",
+        "had_null",
     }
 )
 

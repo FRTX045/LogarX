@@ -173,6 +173,31 @@ def test_a_window_rule_does_not_fire_below_its_thresholds(engine: RuleEngine) ->
     assert all(item.label.rule_id != "dir_enumeration" for item in labelled)
 
 
+def test_one_resource_written_several_ways_is_not_enumeration(engine: RuleEngine) -> None:
+    """Eight requests, but only two resources between them.
+
+    Counted literally these are eight distinct paths and the rule fires, calling
+    a client that reloaded two pages an enumeration. `distinct_paths` is a
+    threshold, so how a path happens to be written decides whether a behaviour
+    is detected — which is not a property this metric may have.
+    """
+    written = ["/a", "/a/", "//a", "/./a", "/b", "/b/", "//b", "/x/../b"]
+    events = [event(seconds=n, path=path, status=404) for n, path in enumerate(written)]
+
+    labelled = engine.label_events(events)
+
+    assert all(item.label.rule_id != "dir_enumeration" for item in labelled)
+
+
+def test_genuinely_distinct_paths_still_reach_the_threshold(engine: RuleEngine) -> None:
+    """The counterpart: canonicalising must not suppress real enumeration."""
+    events = [event(seconds=n, path=f"/a/./secret-{n}", status=404) for n in range(8)]
+
+    labelled = engine.label_events(events)
+
+    assert any(item.label.rule_id == "dir_enumeration" for item in labelled)
+
+
 def test_a_window_rule_needs_its_requests_inside_the_span(engine: RuleEngine) -> None:
     """The same requests spread over an hour are not a burst."""
     events = [event(seconds=n * 600, path=f"/secret-{n}", status=404) for n in range(8)]

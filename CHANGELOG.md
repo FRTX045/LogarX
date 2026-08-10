@@ -13,7 +13,7 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   come from traffic this project wrote, graded against rules this project wrote. The corpus is not
   vendored: `--corpus` takes a clone path, and its git revision is recorded next to the ruleset
   fingerprint so a rate stays re-derivable as CRS gains cases.
-- **The measured result is 12.0%** — 137 of the 1,138 payloads an access log can carry. Reported
+- **The measured result is 12.3%** — 140 of the 1,138 payloads an access log can carry. Reported
   here because a changelog that quotes only favourable numbers is worse than none. Part of the gap
   is that CRS grades payload syntax while these rules classify behaviour, and part is genuinely
   uncovered ground: 933 (PHP) scores 0.012 over 173 cases against no PHP rule at all, and 932 (RCE)
@@ -27,6 +27,36 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   [ADR-0007](docs/adr/0007-scoring-detection-against-the-crs-regression-corpus.md).
 - `--out` writes every uncaught payload with its source file, test id and URI. The rate is the
   summary; that list is what can inform which rules to write next.
+- **The CRS gap is expressiveness, not decoding**, and that is now measured rather than assumed.
+  Adding HTML entity decoding, JavaScript escape decoding and null removal moved the rate from
+  12.0% to 12.3% — three cases, all Log4Shell in a `User-Agent`. Of the 1,001 missed payloads, five
+  contain an HTML entity, one a JavaScript escape and none a null byte; the rest arrive in plain
+  text and no rule expresses their syntax (`for %variable in (set) do`, `while(!false)`,
+  Postgres `::jsonb` operators). See the follow-up in
+  [ADR-0007](docs/adr/0007-scoring-detection-against-the-crs-regression-corpus.md).
+
+### Detection
+
+- **HTML entity, JavaScript escape and null-byte normalisation.** `&#60;script&#62;`,
+  `<script>` and `/etc/passwd%00.jpg` now reach the rules in the form the server acts on.
+  The three decoders run in one loop with percent-decoding rather than in sequence, because they
+  nest in both directions — `%26lt%3B` is percent-then-entity and `&#x25;3C` is entity-then-percent.
+  Entity decoding is deliberately stricter than `html.unescape`, which resolves unterminated named
+  entities and would invent payloads in ordinary query strings.
+- A null byte is now stripped from the matched text but recorded on the result as `had_null`, and
+  exposed as a `had_null` match field. This reverses an earlier decision to keep the null in the
+  text: the reasoning behind it — that sending one is never accidental — was right, but keeping it
+  in the text meant `sensitive_file_access` never saw the path the server actually opens. Both are
+  satisfiable at once.
+
+### Fixed
+
+- **`distinct_paths` counted `/a/b`, `/a//b` and `/a/./b` as three paths.** That metric is a
+  threshold in three of the five bundled window rules, so how a path happened to be written decided
+  whether a behaviour was detected — eight requests across two resources were labelled directory
+  enumeration. Paths are now counted canonically while `top_targets` still reports what was
+  actually requested. Note this changes window-rule firing, not only accuracy: episodes whose
+  detection depended on the inflated count will no longer be labelled.
 
 ## [0.1.0] — 2026-08-09
 

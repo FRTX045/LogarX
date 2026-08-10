@@ -96,3 +96,51 @@ traffic. It is a second secondary check, alongside CSIC, measuring a different a
 to inform that decision and deliberately does not make it: the next step is to add the missing
 normalisation (HTML entity decode, JS decode, null removal) and re-run, because the split between
 what these rules cannot express and what they merely fail to decode is not yet known.
+
+## Follow-up: the split is now known
+
+- **Date:** 2026-08-10
+- **Against:** coreruleset `d694d465`, the revision the original figure was taken on
+
+The three transforms named above were added and the corpus re-scored. **The rate moved from 12.0%
+to 12.3%** — 137 to 140 of 1,138. Every gain is in one family:
+
+| Family | Before | After |
+|---|---|---|
+| 944 Java | 3 / 15 (0.200) | 6 / 15 (0.400) |
+| all others | unchanged | unchanged |
+
+CRS's own false-positive cases were unaffected: 13 of 341 fired before and after. The generated
+corpus and its boundary figures did not move at all.
+
+**The gap is expressiveness, not decoding, and the margin is not close.** Of the 1,001 missed
+payloads, scanning the full scored input — request line, `User-Agent` and `Referer` — five contain
+an HTML entity, one contains a JavaScript escape, and **none contains a null byte**. The ceiling
+for all three transforms together was therefore six cases before a line was written.
+
+Only three of the six converted, and the reason is the finding restated: the other three are
+entity-encoded `<script>` payloads sitting in a header, and no XSS rule reads a header field. The
+three that did convert are Log4Shell, because `log4shell_jndi` is one of the few bundled rules that
+matches `user_agent_decoded` and `referer_decoded`. Decoding revealed the payload in all six; a
+rule existed to catch it in three.
+
+What the remaining misses actually are, once percent-decoded by the normalisation that was already
+in place:
+
+| CRS rule | Misses | Payload, decoded |
+|---|---|---|
+| 932140 | 150 | `for %variable in (set) do command` — Windows batch |
+| 934160 | 28 | `while(!false)` — JavaScript control flow |
+| 942550 | 27 | `OR '{"b":2}'::jsonb <@ '{"a":1, "b":2}'::jsonb` — Postgres JSON operators |
+
+None of these is obscured. They arrive at the rules in plain text and no rule expresses the syntax.
+
+**Consequence for the decision this ADR was built to inform.** The measurement now says what it was
+built to say: coverage cannot be bought with normalisation. Raising the rate means either writing
+signatures for syntax the rule packs do not cover, or adopting CRS's — and the second is now a
+decision about breadth of expression, taken on evidence, rather than a guess about decoding.
+
+One thing the transforms are still worth, separately from the rate: null removal scored nothing
+here because the corpus does not put a null in a request line, but `/etc/passwd%00.jpg` is a real
+evasion and `sensitive_file_access` was blind to it. That is a gap the corpus happens not to test,
+which is its own reminder that an external corpus bounds what can be claimed, not what is true.

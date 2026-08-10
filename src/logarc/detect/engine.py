@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Final
 
 from logarc.core.activity import ActivityCategory, ActivityLabel, Severity
 from logarc.detect.rules import Condition, SignatureRule, WindowRule
-from logarc.normalize.decode import NormalizedText, normalize
+from logarc.normalize.decode import NormalizedText, canonical_path, normalize
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -133,6 +133,10 @@ class RequestView:
                 return str(event.bytes_sent) if event.bytes_sent is not None else ""
             case "decode_depth":
                 return str(self._target.decode_depth)
+            case "had_null":
+                # Numeric so a rule can write `min: 1`, matching how
+                # `decode_depth` is tested rather than inventing a boolean form.
+                return "1" if self._target.had_null else "0"
         return ""  # pragma: no cover - field names are validated at load time
 
 
@@ -268,7 +272,10 @@ def _metric(name: str, events: Sequence[NormalizedEvent], span: int) -> float:
         case "request_count":
             return float(total)
         case "distinct_paths":
-            return float(len({event.path for event in events}))
+            # Counted canonically: `/a/b`, `/a//b` and `/a/./b` are one path,
+            # and counting them as three moves this metric across its threshold
+            # without the client having touched a new resource.
+            return float(len({canonical_path(event.path) for event in events}))
         case "distinct_statuses":
             return float(len({event.status for event in events}))
         case "not_found_ratio":

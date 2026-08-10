@@ -25,6 +25,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING, Final
 
 from logarc.core.episode import Episode, derive_outcome
+from logarc.normalize.decode import canonical_path
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -192,7 +193,11 @@ def _build(
     events = [item.event for item in run]
     statuses = [event.status for event in events]
 
+    # Counted canonically, displayed raw. `/a/b` and `/a//b` are one resource
+    # and must count once, but an analyst reading `top_targets` should see what
+    # was actually requested rather than a tidied version of it.
     targets = Counter(event.path for event in events if event.path)
+    distinct = {canonical_path(event.path) for event in events if event.path}
     histogram = Counter(status for status in statuses if status is not None)
 
     return Episode(
@@ -203,7 +208,7 @@ def _build(
         start=events[0].timestamp,
         end=events[-1].timestamp,
         request_count=len(events),
-        distinct_paths=len(targets),
+        distinct_paths=len(distinct),
         bytes_total=sum(event.bytes_sent or 0 for event in events),
         status_histogram=dict(histogram),
         top_targets=tuple(path for path, _ in targets.most_common(_TOP_TARGETS)),

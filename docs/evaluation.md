@@ -154,12 +154,12 @@ Ruleset `9edf8587…` (33 rules) against coreruleset `d694d465951e`, 200 case fi
 | 934 | generic | 195 | 18 | 0.092 | 195 | 0 |
 | 941 | XSS | 83 | 17 | 0.205 | 69 | 14 |
 | 942 | SQLi | 169 | 42 | 0.249 | 154 | 15 |
-| 944 | Java | 15 | 3 | 0.200 | 9 | 6 |
-| **total** | | **1,138** | **137** | **0.120** | **1,000** | **138** |
+| 944 | Java | 15 | 6 | 0.400 | 9 | 6 |
+| **total** | | **1,138** | **140** | **0.123** | **1,000** | **138** |
 
 ### Reading it
 
-**12.0%**, and the number should be read for what it measures rather than argued down.
+**12.3%**, and the number should be read for what it measures rather than argued down.
 
 Part of the gap is a difference in what the two projects are for. CRS enumerates payload
 *syntax* — hundreds of encodings, obfuscations and dialect variants of the same handful of
@@ -184,6 +184,30 @@ Two properties of the measurement worth stating. Status is synthesised as 200 be
 has no responses, which disables exactly one bundled rule (`admin_area_probe`, which needs a 4xx),
 so the figure is a **floor** rather than an estimate. And the ceiling is 27%: only 1,138 of 4,224
 cases are visible to an access-log tool at all.
+
+### It is not a decoding problem
+
+The obvious first suspicion about a low rate is that payloads are arriving obfuscated and the
+normaliser is not undoing enough of it. That was measured rather than assumed, and it is wrong.
+
+HTML entity decoding, JavaScript escape decoding and null removal were added and the corpus
+re-scored: **12.0% to 12.3%**, three cases, all in 944 (Java), where `log4shell_jndi` is one of the
+few rules that reads `User-Agent` and `Referer`. Scanning the full scored input of all 1,001 misses
+beforehand had already put a ceiling on it — five contain an HTML entity, one a JavaScript escape,
+and none a null byte.
+
+What the misses actually are, after the percent-decoding that was already in place:
+
+| CRS rule | Misses | Payload, decoded |
+|---|---|---|
+| 932140 | 150 | `for %variable in (set) do command` — Windows batch |
+| 934160 | 28 | `while(!false)` — JavaScript control flow |
+| 942550 | 27 | `OR '{"b":2}'::jsonb <@ '{"a":1, "b":2}'::jsonb` — Postgres JSON operators |
+
+These arrive in plain text. Nothing is hidden; no rule expresses the syntax. The gap is
+**expressiveness, not decoding** — which means coverage cannot be bought with normalisation, and
+raising the rate means writing signatures for syntax the packs do not cover. See
+[ADR-0007](adr/0007-scoring-detection-against-the-crs-regression-corpus.md) for the full follow-up.
 
 ### What is not claimed
 
@@ -297,7 +321,7 @@ implemented. It is recorded here rather than dropped.
 
 ## What the evaluation found
 
-Running it was not a formality. It found seven defects, all fixed, all locked by tests. Five were
+Running it was not a formality. It found eight defects, all fixed, all locked by tests. Six were
 in the tool; two were in the evaluation itself, which is the more uncomfortable half.
 
 | Found by | Defect |
@@ -309,6 +333,7 @@ in the tool; two were in the evaluation itself, which is the more uncomfortable 
 | Benchmark | `finalize` used memory in proportion to the corpus — 238 MB, 1.1 GB, **6.9 GB** at 100k, 1M and 10M lines — against a design that says it follows the batch size. Capping the engine only moved the failure; it took splitting the sort in two. |
 | Own test | The first memory fix passed a twenty-row test and failed on real data. Two faults only appear once the engine has actually spilled. |
 | Threshold sweep | Every threshold from 60 s to eight hours scored **identically**, twice over. First because no generated client ever paused; then, after adding pauses, because each landed beside a request of a different category, where the category change decides the boundary before the gap is ever consulted. The tuning deliverable had been measuring nothing. |
+| CRS follow-up | `distinct_paths` counted raw paths, so `/a/b`, `/a//b` and `/a/./b` counted as three. That metric is a threshold in three window rules, so **how a path happened to be written decided whether a behaviour was detected**. Eight requests across two resources were labelled enumeration. |
 
 The fourth is worth dwelling on. Four scenarios of hand-written attack traffic did not find it,
 because the same person wrote the generator and the rules. A dataset written by someone else found
@@ -317,6 +342,11 @@ it immediately.
 The seventh is worth dwelling on for a different reason. The tests passed and the sweep script
 worked; nothing failed. It surfaced only by reading the output and asking why every row was the
 same.
+
+The eighth repeats the fourth's lesson exactly. The generated corpus scored **identically** before
+and after the fix — accuracy 0.965, 17,983 episodes, every figure unchanged — because the generator
+writes clean paths and cannot produce the input that triggers the bug. A generator does not test
+what its author did not think to vary.
 
 ## Limits of these numbers
 
@@ -336,7 +366,7 @@ this is a policy rather than a failure.
 tool reading an access log at all; the rest carry their payload in a body or an unlogged header,
 or assert that nothing should match. `logarc score-crs` counts every exclusion by reason and
 prints the accounting on every run, so the ceiling travels with the figure rather than living in
-this list. The 12.0% is also a floor within that ceiling: status is synthesised as 200, which
+this list. The 12.3% is also a floor within that ceiling: status is synthesised as 200, which
 disables the one bundled rule that needs a 4xx.
 
 **Recall on CSIC 2010 has a ceiling below 100%.** A substantial share of its attacks carry their
