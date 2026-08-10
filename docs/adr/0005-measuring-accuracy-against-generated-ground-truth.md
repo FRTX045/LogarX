@@ -86,3 +86,11 @@ around — cannot be evaluated on CSIC at all, because the traces have no respon
 
 **Revisit if** a labelled dataset appears with real responses and per-request attack types, at
 which point generated traffic should become the regression suite and the real corpus the headline.
+
+## Amendments
+
+**2026-08-10.** The policy "use CSIC 2010 as a secondary, binary-only check" is extended by
+[ADR-0007](0007-scoring-detection-against-the-crs-regression-corpus.md), which adds the OWASP CRS
+regression corpus as a second external check, scored as a per-family detection rate. It does not
+trigger the revisit clause above: CRS carries per-request attack families but no responses at all,
+so generated traffic remains the headline.

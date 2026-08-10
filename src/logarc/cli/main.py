@@ -24,6 +24,12 @@ from logarc.detect.rulepacks import default_rules
 from logarc.detect.rules import RulePackError, load_rules
 from logarc.episode.builder import EpisodePolicy
 from logarc.evaluation.benchmark import BenchmarkError, BenchmarkResult, run_benchmark
+from logarc.evaluation.crs import (
+    SCORED_FAMILIES,
+    CrsError,
+    ExclusionReason,
+    score_crs,
+)
 from logarc.evaluation.csic import CsicError, convert_csic
 from logarc.evaluation.generator import DEFAULT_SEED, describe_scenarios, write_log
 from logarc.evaluation.scoring import evaluate as score_case
@@ -558,6 +564,132 @@ def convert_csic_command(
         "\nThe traces carry no responses, so status is written as 200 throughout: "
         "outcome cannot be evaluated on this dataset."
     )
+
+
+@app.command("score-crs")
+def score_crs_command(
+    corpus: Annotated[
+        Path, typer.Option("--corpus", help="Clone of the OWASP coreruleset repository.")
+    ],
+    family: Annotated[
+        list[str] | None,
+        typer.Option("--family", help="CRS family to score, e.g. 942. Repeatable."),
+    ] = None,
+    out: Annotated[
+        Path | None, typer.Option("--out", "-o", help="Write the full numbers as JSON.")
+    ] = None,
+    rules: Annotated[list[Path] | None, RULES_OPTION] = None,
+) -> None:
+    """Score the rules against the OWASP CRS regression corpus.
+
+    An external check. The cases were written by the Core Rule Set project, not
+    by this one, and each declares which of their rules should fire. Only
+    payloads that ride in a request line or a logged header can be scored; the
+    rest are counted and reported rather than quietly dropped.
+    """
+    try:
+        with console.status("Scoring…") as status:
+            report = score_crs(
+                clone=corpus,
+                engine=_rule_engine(rules),
+                families=family or SCORED_FAMILIES,
+                on_progress=lambda done, total: status.update(
+                    f"Scoring {done:,} of {total:,} payloads…"
+                ),
+            )
+    except (CrsError, OSError) as exc:
+        raise _fail(str(exc)) from exc
+
+    if not report.families:
+        console.print("[yellow]No cases found for those families.[/yellow]")
+        return
+
+    table = Table(title="OWASP CRS regression corpus — access-log-visible payloads")
+    table.add_column("Family")
+    table.add_column("Attack")
+    for column in ("Scoreable", "Detected", "Rate", "In URI", "In header", "Hidden"):
+        table.add_column(column, justify="right")
+    for score in report.families:
+        table.add_row(
+            score.family,
+            score.title,
+            f"{score.scoreable:,}",
+            f"{score.detected:,}",
+            f"{score.detection_rate:.3f}" if score.scoreable else "—",
+            f"{score.in_request_line:,}",
+            f"{score.in_logged_header:,}",
+            f"{score.hidden_in_bodies:,}",
+        )
+    table.add_row(
+        "TOTAL",
+        "",
+        f"{report.scoreable:,}",
+        f"{report.detected:,}",
+        f"{report.detection_rate:.3f}",
+        f"{sum(item.in_request_line for item in report.families):,}",
+        f"{sum(item.in_logged_header for item in report.families):,}",
+        f"{report.hidden_in_bodies:,}",
+        style="bold",
+    )
+    console.print(table)
+
+    fired = [score for score in report.families if score.categories]
+    if fired:
+        categories = Table(title="Which categories fired — descriptive, not scored")
+        categories.add_column("Family")
+        categories.add_column("Attack")
+        categories.add_column("Categories")
+        for score in fired:
+            categories.add_row(
+                score.family,
+                score.title,
+                ", ".join(f"{name.value} {count}" for name, count in score.categories.items()),
+            )
+        console.print(categories)
+
+    hidden = report.hidden_in_bodies
+    if hidden:
+        console.print(
+            f"\n[yellow]{hidden:,} of {report.total:,} cases "
+            f"({hidden / report.total:.0%}) carry their payload in a request body.[/yellow] "
+            "A web server access log records the request line and nothing after it, so those "
+            "are invisible to any tool that reads one."
+        )
+    unlogged = report.by_reason().get(ExclusionReason.UNLOGGED_HEADER, 0)
+    if unlogged:
+        console.print(
+            f"A further {unlogged:,} put it in a header the combined format does not write. "
+            f"The rate above is measured on the {report.scoreable:,} that remain, "
+            f"a ceiling of {report.visible_ratio:.0%}."
+        )
+    if report.negatives_scored:
+        console.print(
+            f"\n{report.negatives_scored:,} cases assert that no rule should fire — the Core "
+            "Rule Set's own false-positive regression tests. They are not attacks to be caught, "
+            "so they are excluded from the rate. A rule fired on "
+            f"{report.negatives_fired:,} of them ({report.negatives_fired / report.negatives_scored:.1%}), "
+            "which is advisory only: `no_expect_ids` says one particular CRS rule must not match, "
+            "not that the request is benign."
+        )
+    console.print(
+        "\nStatus is synthesised as 200 throughout, because the corpus has no responses. One "
+        "bundled rule needs a 4xx and therefore cannot fire here, so this figure is a floor "
+        "rather than an estimate."
+    )
+    console.print(
+        "The category column asserts nothing. CRS families name vulnerability classes and this "
+        "tool's categories name observed behaviour; no mapping between them is claimed, and a "
+        "payload CRS files under SQL injection that a path-traversal rule catches counts as "
+        "caught."
+    )
+    console.print(
+        f"\nRuleset {report.ruleset_fingerprint[:12]} ({report.rule_count} rules) against "
+        f"coreruleset {report.corpus_revision or 'unknown'}, {report.files_read:,} case files."
+    )
+
+    if out is not None:
+        out.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
+        console.print(f"\nFull numbers, including all {report.missed:,} misses, written to {out}")
 
 
 @app.command()

@@ -3,6 +3,31 @@
 Notable changes to logarc. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Evaluation
+
+- `logarc score-crs` scores the bundled rules against the **OWASP CRS regression corpus** — 4,224
+  cases written by the Core Rule Set project, each a payload with an assertion naming which of
+  their rules must fire. The first external check of the signature layer; the existing figures all
+  come from traffic this project wrote, graded against rules this project wrote. The corpus is not
+  vendored: `--corpus` takes a clone path, and its git revision is recorded next to the ruleset
+  fingerprint so a rate stays re-derivable as CRS gains cases.
+- **The measured result is 12.0%** — 137 of the 1,138 payloads an access log can carry. Reported
+  here because a changelog that quotes only favourable numbers is worse than none. Part of the gap
+  is that CRS grades payload syntax while these rules classify behaviour, and part is genuinely
+  uncovered ground: 933 (PHP) scores 0.012 over 173 cases against no PHP rule at all, and 932 (RCE)
+  scores 0.079 over 406 against one. Three qualifications travel with the figure and the command
+  prints all three: the ceiling is 27%, because three cases in five put their payload in a request
+  body no access log records; it is a floor within that, because status is synthesised as 200 and
+  one bundled rule needs a 4xx; and CRS's own 341 false-positive tests are held out of the rate and
+  reported separately (a rule fired on 13, 3.8%).
+- No mapping between CRS families and this tool's activity categories is asserted. The categories
+  that fired are printed descriptively and never scored — see
+  [ADR-0007](docs/adr/0007-scoring-detection-against-the-crs-regression-corpus.md).
+- `--out` writes every uncaught payload with its source file, test id and URI. The rate is the
+  summary; that list is what can inform which rules to write next.
+
 ## [0.1.0] — 2026-08-09
 
 First release. Reconstructs what an IP did on a web server, from its access logs,

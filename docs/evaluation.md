@@ -99,6 +99,108 @@ recall column is what shows it:
   the end of a password-guessing run. Truth calls those part of the attack; the tool sees a
   request to `/login` that succeeded. Both readings are defensible.
 
+## An external corpus: OWASP CRS regression tests
+
+Every figure above is measured on traffic this project wrote, against rules this project wrote.
+That is a real weakness, and the `+`-as-space defect is the proof: it survived every generated
+scenario and surfaced only when someone else's dataset was converted. A generator cannot find a
+blind spot it shares.
+
+The OWASP Core Rule Set ships a regression suite — 4,224 cases across the nine attack families
+relevant here, each a concrete payload with an assertion about which of *their* rules must fire.
+It is externally authored, maintained against real bypasses, and owes nothing to this project's
+assumptions.
+
+### What can be scored, and what cannot
+
+| | cases |
+|---|---:|
+| scoreable, payload in the request line | 1,000 |
+| scoreable, payload in `User-Agent` or `Referer` | 138 |
+| payload in a request body | 2,560 |
+| payload in a header a combined log does not write | 181 |
+| CRS asserts that no rule should fire | 341 |
+| no rule-id assertion either way | 3 |
+| pre-encoded request | 1 |
+| **total** | **4,224** |
+
+Three in five cases put their payload in a request body, which no access-log tool can ever see.
+"Visible" here means the **combined** format — the request line, plus `Referer` and `User-Agent`,
+which this tool parses and has rules for. Judging against the common format instead would delete
+the two families these rules are strongest at. The 341 negative cases are CRS's own
+false-positive regression tests; counting them as payloads to be caught would score correct
+restraint as failure, so they are held out of the rate and reported separately.
+
+`logarc score-crs` prints this accounting on every run rather than leaving it to a footnote.
+
+### Reproducing
+
+```bash
+git clone --depth 1 https://github.com/coreruleset/coreruleset vendor/coreruleset
+logarc score-crs --corpus vendor/coreruleset --out crs.json
+```
+
+### The result
+
+Ruleset `9edf8587…` (33 rules) against coreruleset `d694d465951e`, 200 case files.
+
+| Family | Attack | Scoreable | Detected | Rate | In URI | In header |
+|---|---|---:|---:|---:|---:|---:|
+| 913 | scanner | 5 | 5 | 1.000 | 0 | 5 |
+| 930 | LFI | 58 | 13 | 0.224 | 48 | 10 |
+| 931 | RFI | 34 | 5 | 0.147 | 34 | 0 |
+| 932 | RCE | 406 | 32 | 0.079 | 318 | 88 |
+| 933 | PHP | 173 | 2 | 0.012 | 173 | 0 |
+| 934 | generic | 195 | 18 | 0.092 | 195 | 0 |
+| 941 | XSS | 83 | 17 | 0.205 | 69 | 14 |
+| 942 | SQLi | 169 | 42 | 0.249 | 154 | 15 |
+| 944 | Java | 15 | 3 | 0.200 | 9 | 6 |
+| **total** | | **1,138** | **137** | **0.120** | **1,000** | **138** |
+
+### Reading it
+
+**12.0%**, and the number should be read for what it measures rather than argued down.
+
+Part of the gap is a difference in what the two projects are for. CRS enumerates payload
+*syntax* — hundreds of encodings, obfuscations and dialect variants of the same handful of
+techniques — because a WAF has to survive an attacker rewriting a payload until something gets
+through. This tool classifies *behaviour* an investigator reconstructs from, plus a set of
+well-known artefacts. On a corpus that grades signature breadth, a behavioural ruleset scores
+badly, and that is a fact about the two designs rather than an excuse.
+
+The rest is genuinely uncovered ground, and the per-family split says where:
+
+- **933 (PHP), 0.012 over 173 cases.** There is no PHP rule in either pack. The two detections
+  are reconnaissance rules catching a path. Payloads like `tidy_parse_string()` and
+  `$_SERVER['REQUEST_URI']` pass untouched. This is a hole, not a framing artefact.
+- **932 (RCE), 0.079 over 406 cases** — the largest absolute gap, against a single
+  `command_injection` rule.
+- **934 (generic), 0.092 over 195**, where there is nothing generic to match with.
+- **942 (SQLi), 0.249** and **941 (XSS), 0.205** are where six and two rules respectively do
+  reach, and the misses are variants — `xor 5-`, `union all` split by comments, `!=` tautologies.
+- **913 (scanner), 1.000** — all five, from `scanner_user_agent`.
+
+Two properties of the measurement worth stating. Status is synthesised as 200 because the corpus
+has no responses, which disables exactly one bundled rule (`admin_area_probe`, which needs a 4xx),
+so the figure is a **floor** rather than an estimate. And the ceiling is 27%: only 1,138 of 4,224
+cases are visible to an access-log tool at all.
+
+### What is not claimed
+
+No mapping from a CRS family to one of this tool's categories exists anywhere in the scorer. CRS
+families name vulnerability classes; these categories name observed behaviour. A payload CRS files
+under SQL injection that a path-traversal rule catches counts as caught. The categories that fired
+are printed descriptively — 932 RCE payloads reaching `reconnaissance` 17 times and `injection` 12
+is a shape worth seeing — and are not scored, because scoring them would turn an opinion about
+taxonomy into a metric and make every future taxonomy change look like a regression.
+
+The 341 negative cases were run separately: a rule fired on 13 of them, 3.8%. Advisory only —
+`no_expect_ids` says one particular CRS rule must not match, not that the request is benign, so
+this is not a false-positive rate.
+
+`--out` writes all 1,001 uncaught payloads with their source file, test id and URI. The rate is
+the summary; that list is the part that can inform which rules to write next.
+
 ## Segmentation, and what noise absorption costs
 
 Absorption merges two same-category episodes separated by a brief benign interlude, so that one
@@ -229,6 +331,13 @@ traffic than a deployment would present.
 
 **Segmentation recall is below one on purpose,** and the `--no-absorb` column is the evidence that
 this is a policy rather than a failure.
+
+**The CRS rate has a ceiling of 27%.** Only 1,138 of the corpus's 4,224 cases are visible to a
+tool reading an access log at all; the rest carry their payload in a body or an unlogged header,
+or assert that nothing should match. `logarc score-crs` counts every exclusion by reason and
+prints the accounting on every run, so the ceiling travels with the figure rather than living in
+this list. The 12.0% is also a floor within that ceiling: status is synthesised as 200, which
+disables the one bundled rule that needs a 4xx.
 
 **Recall on CSIC 2010 has a ceiling below 100%.** A substantial share of its attacks carry their
 payload in a POST body, and a web server access log records the request line and nothing after it.
