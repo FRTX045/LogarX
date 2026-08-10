@@ -1,6 +1,6 @@
 # ADR-0007: Score detection against the OWASP CRS regression corpus
 
-- **Status:** Accepted
+- **Status:** Accepted; the measurement was taken and the tooling then removed (see Postscript)
 - **Date:** 2026-08-10
 
 ## Context
@@ -144,3 +144,25 @@ One thing the transforms are still worth, separately from the rate: null removal
 here because the corpus does not put a null in a request line, but `/etc/passwd%00.jpg` is a real
 evasion and `sensitive_file_access` was blind to it. That is a gap the corpus happens not to test,
 which is its own reminder that an external corpus bounds what can be claimed, not what is true.
+
+## Postscript: the tooling is removed, the finding stands
+
+- **Date:** 2026-08-10
+
+`logarc score-crs`, `src/logarc/evaluation/crs.py` and their tests are removed. The decision that
+follows this one is to adopt CRS itself as the signature layer, which makes the CRS regression
+corpus unusable as an external check: rules scored against the corpus their own project maintains
+grade themselves. A measurement that can no longer mean anything is worse than no measurement,
+because the number would keep being quoted.
+
+**What is deliberately kept.** This ADR, the follow-up above, and the figures in
+`docs/evaluation.md`. They record why the CRS decision was taken, and an architecture decision
+whose evidence has been deleted is indistinguishable from a guess. The follow-up in particular is
+the reason the choice was not "CRS is more mature" but "we measured 12.3%, characterised the misses
+as expressiveness rather than decoding, and adopted CRS on that basis".
+
+**Reproducing it.** The scoring code is in git history, added in commit `cf59dfc` and removed in
+the commit carrying this postscript, against coreruleset `d694d465`. `git revert` of the removal
+restores a working `score-crs`. If the CRS adoption does not proceed, that is the first thing to
+put back, because it is the only external check on the signature layer that this project did not
+write.

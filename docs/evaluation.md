@@ -101,6 +101,12 @@ recall column is what shows it:
 
 ## An external corpus: OWASP CRS regression tests
 
+> **The `score-crs` command that produced this section has been removed.** CRS is being adopted as
+> the signature layer, and rules scored against the corpus their own project maintains would be
+> grading themselves. The figures below are kept because they are the evidence for that decision;
+> they were measured against coreruleset `d694d465` and can be re-derived by reverting the removal.
+> See the postscript in [ADR-0007](adr/0007-scoring-detection-against-the-crs-regression-corpus.md).
+
 Every figure above is measured on traffic this project wrote, against rules this project wrote.
 That is a real weakness, and the `+`-as-space defect is the proof: it survived every generated
 scenario and surfaced only when someone else's dataset was converted. A generator cannot find a

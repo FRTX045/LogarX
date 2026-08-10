@@ -140,14 +140,7 @@ logarc benchmark --lines 100000 --lines 1000000 --lines 10000000 --out bench.jso
 # Convert the CSIC 2010 dataset and score against it
 logarc convert-csic --normal normalTrafficTest.txt --anomalous anomalousTrafficTest.txt \
     -o csic.log -t csic.truth.jsonl
-
-# Score the rules against OWASP CRS's own regression corpus — payloads written elsewhere
-logarc score-crs --corpus vendor/coreruleset --out crs.json
 ```
-
-Generated traffic cannot find a blind spot it shares. `score-crs` grades the detection rules
-against 4,224 cases written by the Core Rule Set project, and reports what it scores badly on as
-plainly as what it scores well on.
 
 Measured results, and what they do and do not establish, are in
 [docs/evaluation.md](docs/evaluation.md).

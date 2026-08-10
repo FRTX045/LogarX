@@ -5,6 +5,16 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Removed
+
+- **`logarc score-crs`**, added earlier in this same unreleased cycle, is removed along with
+  `evaluation/crs.py` and its tests. CRS is being adopted as the signature layer, at which point
+  scoring against CRS's own regression corpus grades the rules with the suite their project
+  maintains — a number that cannot mean anything and would still be quoted. The measurement it
+  produced is kept in `docs/evaluation.md` and ADR-0007, because it is the evidence for the
+  adoption decision. The code is recoverable from git history; ADR-0007's postscript names the
+  commits.
+
 ### Evaluation
 
 - `logarc score-crs` scores the bundled rules against the **OWASP CRS regression corpus** — 4,224
