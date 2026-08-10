@@ -137,14 +137,22 @@ the two families these rules are strongest at. The 341 negative cases are CRS's 
 false-positive regression tests; counting them as payloads to be caught would score correct
 restraint as failure, so they are held out of the rate and reported separately.
 
-`logarc score-crs` prints this accounting on every run rather than leaving it to a footnote.
+`score-crs` printed this accounting on every run rather than leaving it to a footnote.
 
 ### Reproducing
 
+The command has been removed, so reproducing these figures means restoring it first. It was added
+in `3335ee3` and removed in `003abcd`; reverting the removal restores a working `score-crs`:
+
 ```bash
-git clone --depth 1 https://github.com/coreruleset/coreruleset vendor/coreruleset
+git revert 003abcd
+git clone https://github.com/coreruleset/coreruleset vendor/coreruleset
+git -C vendor/coreruleset checkout d694d465951ee06347214f1291ae096e40700001
 logarc score-crs --corpus vendor/coreruleset --out crs.json
 ```
+
+The corpus revision matters: both the denominator and the rate drift as CRS gains cases, so a
+figure quoted without it is not re-derivable.
 
 ### The result
 
@@ -370,10 +378,10 @@ this is a policy rather than a failure.
 
 **The CRS rate has a ceiling of 27%.** Only 1,138 of the corpus's 4,224 cases are visible to a
 tool reading an access log at all; the rest carry their payload in a body or an unlogged header,
-or assert that nothing should match. `logarc score-crs` counts every exclusion by reason and
-prints the accounting on every run, so the ceiling travels with the figure rather than living in
-this list. The 12.3% is also a floor within that ceiling: status is synthesised as 200, which
-disables the one bundled rule that needs a 4xx.
+or assert that nothing should match. `score-crs` counted every exclusion by reason and printed the
+accounting on every run, so the ceiling travelled with the figure rather than living in this list.
+The 12.3% is also a floor within that ceiling: status is synthesised as 200, which disables the one
+bundled rule that needs a 4xx.
 
 **Recall on CSIC 2010 has a ceiling below 100%.** A substantial share of its attacks carry their
 payload in a POST body, and a web server access log records the request line and nothing after it.
