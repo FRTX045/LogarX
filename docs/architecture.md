@@ -68,6 +68,18 @@ Since one IP typically has 10²–10⁵ events, everything after retrieval runs 
 Ingest memory is bounded by the Arrow batch size (100k rows), not by file size — a 50 GB log
 ingests in roughly constant RAM.
 
+Ingest can also be spread across processes (`--workers N`). A sequential byte scan first records
+where the file can be cut on line boundaries, what line number each range begins at, and the
+SHA-256; workers then parse a range each, writing their own Parquet shard and quarantine file into
+the shared case. The line numbers are why the scan exists: `EvidenceRef` carries one, and a worker
+opening the file at byte 25,000,000 has no other way to know it is at line 130,457.
+
+It is off by default. Each worker holds a batch of its own, so memory rises roughly in step with
+the count, and bounded memory is not spent without being asked. Compressed logs cannot be split at
+all — gzip has no random access — and fall back rather than failing. See
+[ADR-0009](adr/0009-parallel-ingest-rather-than-a-native-parser.md) for why the work was
+parallelised instead of the parser being rewritten in another language.
+
 That holds for the streaming half by construction, but not for `finalize`, which sorts the whole
 corpus in one query to give the Parquet row groups the ordering that later makes pruning work.
 Left at its defaults the query engine will claim most of the machine before it spills anything;
