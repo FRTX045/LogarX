@@ -8,9 +8,10 @@ import shutil
 import tempfile
 from dataclasses import replace
 from datetime import timedelta
+from itertools import chain
 from pathlib import Path
 from time import perf_counter
-from typing import Annotated, Final
+from typing import TYPE_CHECKING, Annotated, Final
 
 import typer
 from rich.console import Console
@@ -43,6 +44,11 @@ from logarc.parsers.registry import UnknownFormatError, registered_formats
 from logarc.report.html import render_report
 from logarc.sessionize.segmenter import SessionPolicy
 from logarc.storage.event_store import SORT_KEYS
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Iterator
+
+    from logarc.core.event import NormalizedEvent
 
 #: Sizes the benchmark measures when none are named. Ten million is deliberately
 #: not here: it takes minutes, and a default should not.
@@ -646,16 +652,31 @@ def enrich(
         paranoia=paranoia,
     )
 
+    # Counted while streaming rather than by taking a length first. `enrich` is
+    # the one command that reads a whole case, so it is the one command where
+    # materialising the events would put the corpus in memory — which is exactly
+    # what `EventStore.all_events()` streams to avoid.
+    replayed = 0
+
+    def counting(source: Iterable[NormalizedEvent]) -> Iterator[NormalizedEvent]:
+        nonlocal replayed
+        for stored in source:
+            replayed += 1
+            yield stored
+
     try:
         with Case.open(case) as opened:
-            with console.status("Reading events…"):
-                events = list(opened.store.all_events())
-            if not events:
+            stream = opened.store.all_events()
+            # One event is pulled to tell an empty case from a full one, then put
+            # back. Checking after the run instead would report a missing sidecar
+            # to someone whose real problem is that they have not ingested yet.
+            first = next(stream, None)
+            if first is None:
                 raise _fail(f"no events in {case}; ingest a log first")
 
-            with console.status(f"Replaying {len(events):,} requests through CRS…"):
+            with console.status("Replaying requests through CRS…"):
                 started = perf_counter()
-                detections = run_sidecar(events, config=config)
+                detections = run_sidecar(counting(chain([first], stream)), config=config)
                 elapsed = perf_counter() - started
 
             path = write_detections(opened.root, detections)
@@ -665,7 +686,7 @@ def enrich(
         raise _fail(str(exc)) from exc
 
     covered = len({(item.source_file_id, item.line_no) for item in detections})
-    rate = len(events) / elapsed if elapsed else 0.0
+    rate = replayed / elapsed if elapsed else 0.0
 
     table = Table(title="CRS enrichment")
     table.add_column("Requests", justify="right")
@@ -674,7 +695,7 @@ def enrich(
     table.add_column("Paranoia", justify="right")
     table.add_column("Rules/s", justify="right")
     table.add_row(
-        f"{len(events):,}",
+        f"{replayed:,}",
         f"{covered:,}",
         f"{len(detections):,}",
         str(config.paranoia),
