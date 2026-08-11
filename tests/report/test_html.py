@@ -188,6 +188,6 @@ def test_the_report_writes_how_often_a_transition_was_seen(campaign: Case) -> No
     from logarc.core.graph import GraphEdge, GraphKind
     from logarc.report.html import _edge_label
 
-    assert "×2" in _edge_label(GraphKind.BEHAVIOUR, GraphEdge("a", "b", weight=2, gap_seconds=9.0))
-    assert "×" not in _edge_label(GraphKind.BEHAVIOUR, GraphEdge("a", "b", weight=1, gap_seconds=9))
-    assert "×" not in _edge_label(GraphKind.TRACE, GraphEdge("a", "b", weight=1, gap_seconds=9.0))
+    assert "x2" in _edge_label(GraphKind.BEHAVIOUR, GraphEdge("a", "b", weight=2, gap_seconds=9.0))
+    assert "x" not in _edge_label(GraphKind.BEHAVIOUR, GraphEdge("a", "b", weight=1, gap_seconds=9))
+    assert "x" not in _edge_label(GraphKind.TRACE, GraphEdge("a", "b", weight=1, gap_seconds=9.0))

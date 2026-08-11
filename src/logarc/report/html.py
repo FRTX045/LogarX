@@ -95,7 +95,7 @@ def _edge_label(kind: GraphKind, edge: GraphEdge) -> str:
     gap = _duration(edge.gap_seconds) if edge.gap_seconds is not None else ""
     if kind is GraphKind.TRACE or edge.weight <= 1:
         return gap
-    return f"×{edge.weight:,}" + (f" · {gap}" if gap else "")
+    return f"x{edge.weight:,}" + (f" · {gap}" if gap else "")
 
 
 def _svg(graph: ActivityGraph) -> str:

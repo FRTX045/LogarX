@@ -167,4 +167,4 @@ def edge_label(kind: GraphKind, *, weight: int, gap_seconds: float | None) -> st
     gap = format_gap(gap_seconds)
     if kind is GraphKind.TRACE or weight <= 1:
         return gap
-    return f"×{weight:,}" + (f" · {gap}" if gap else "")
+    return f"x{weight:,}" + (f" · {gap}" if gap else "")
