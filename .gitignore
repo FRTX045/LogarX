@@ -61,9 +61,6 @@ benchmarks/results/
 # Packaged bundles prepared to hand to someone, and the script that builds them.
 handoff/
 
-# Knowledge-graph output from the graphify tool.
-graphify-out/
-
 # CRS sidecar: a compiled Go binary and the ruleset clone it needs. Both are
 # fetched or built locally; see crs/README.md.
 crs/crs-sidecar
