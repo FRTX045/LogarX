@@ -4,12 +4,18 @@ Everything else about CRS integration is testable with a synthetic detection
 set. This is not: it checks that the sidecar's JSON contract still holds, which
 guards against CRS or Coraza changing underneath rather than against this code.
 
-Skipped when the sidecar has not been built, which is how CI runs — see
-`crs/README.md` for the build.
+Skipped locally when the sidecar has not been built — see `crs/README.md`. CI
+builds it and sets `LOGARC_REQUIRE_CRS=1`, which turns the skip off so a build
+that quietly failed surfaces as a failure here.
+
+That switch exists because the skip is otherwise self-concealing: the only
+cross-language boundary in the project would go unverified on every run, and
+the evidence of it would be four lines of "skipped" that a green tick hides.
 """
 
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime
 
 import pytest
@@ -20,9 +26,16 @@ from logarc.detect.crs import SidecarConfig, run_sidecar
 
 CONFIG = SidecarConfig()
 
+REQUIRE_ENV = "LOGARC_REQUIRE_CRS"
+
+_unbuilt = not CONFIG.binary.exists() or not (CONFIG.rules / "rules").is_dir()
+
+# One condition, read two ways, rather than a second copy of it in the CI file:
+# when the sidecar is required and missing, the tests run and fail on the real
+# `CrsUnavailableError`, which names what is absent and how to build it.
 pytestmark = pytest.mark.skipif(
-    not CONFIG.binary.exists() or not (CONFIG.rules / "rules").is_dir(),
-    reason="CRS sidecar or ruleset not built; see crs/README.md",
+    _unbuilt and os.environ.get(REQUIRE_ENV) != "1",
+    reason=f"CRS sidecar or ruleset not built; see crs/README.md (set {REQUIRE_ENV}=1 to require)",
 )
 
 

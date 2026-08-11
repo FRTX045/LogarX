@@ -9,6 +9,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Pinned to a commit rather than a branch, and stated once here so the CI
+  # build and crs/README.md cannot drift apart. CRS changes weekly; a detection
+  # measurement that cannot name the ruleset that produced it is not reproducible.
+  CRS_COMMIT: d694d465951ee06347214f1291ae096e40700001
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -68,7 +74,42 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             libegl1 libgl1 libxkbcommon-x11-0 libdbus-1-3
       - run: pip install -e ".[dev,gui]"
+
+      # The CRS sidecar is built here rather than left unbuilt, because the
+      # contract tests skip themselves without it — and they are the only tests
+      # that exercise the Python/Go boundary. Four quiet skips behind a green
+      # tick left the newest and least-proven code in the project unverified.
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: crs/go.mod
+          cache-dependency-path: crs/go.sum
+
+      - name: Fetch the CRS ruleset
+        shell: bash
+        run: |
+          git clone --filter=blob:none --no-checkout \
+            https://github.com/coreruleset/coreruleset.git vendor/coreruleset
+          git -C vendor/coreruleset checkout --detach "$CRS_COMMIT"
+
+      # `logarc` looks for crs-sidecar.exe on Windows and crs-sidecar elsewhere,
+      # because a Windows interpreter cannot spawn an ELF. Built on both runners
+      # rather than Linux only: this project ships a Windows desktop application,
+      # so Windows is where the binary most needs to be known to work.
+      - name: Build the CRS sidecar
+        shell: bash
+        working-directory: crs
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            go build -o crs-sidecar.exe .
+          else
+            go build -o crs-sidecar .
+          fi
+
       - name: Test
         env:
           QT_QPA_PLATFORM: offscreen
+          # Turns the contract tests' skip into a failure. Without it a build
+          # step that broke would land us back where we started, silently.
+          LOGARC_REQUIRE_CRS: "1"
         run: pytest --cov=logarc --cov-report=term-missing --cov-report=xml
