@@ -24,9 +24,11 @@ from PyQt6.QtWidgets import QApplication
 from logarc.analysis import analyse_ip
 from logarc.case import Case
 from logarc.core.graph import GraphKind
-from logarc.gui.app import MainWindow
+from logarc.detect.crs import CrsDetection, write_detections
+from logarc.gui.app import MainWindow, read_case, reconstruct_client
 from logarc.gui.canvas import MIN_FIT_SCALE, ActivityCanvas
 from logarc.gui.panels import ClientTable, EvidencePanel
+from logarc.storage.case import CaseManifest
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 CLIENT = "203.0.113.66"
@@ -65,6 +67,65 @@ def _line(seconds: int, target: str, *, status: int = 200, size: int = 512) -> s
     when = (START + timedelta(seconds=seconds)).strftime("%d/%b/%Y:%H:%M:%S +0000")
     agent = "Mozilla/5.0 (X11; Linux x86_64)"
     return f'{CLIENT} - - [{when}] "GET {target} HTTP/1.1" {status} {size} "-" "{agent}"'
+
+
+@pytest.fixture
+def enriched(campaign: Path, tmp_path: Path) -> Path:
+    """A copy of the campaign case that `logarc enrich` has been run over."""
+    import shutil
+
+    root = tmp_path / "enriched"
+    shutil.copytree(campaign, root)
+    write_detections(
+        root,
+        [
+            CrsDetection(
+                source_file_id="access.log",
+                line_no=1,
+                rule_id=942100,
+                severity="critical",
+                msg="SQL Injection Attack Detected via libinjection",
+                matched_var="ARGS:id",
+                transformed_value="1' UNION SELECT",
+            )
+        ],
+    )
+    manifest = CaseManifest.load(root)
+    manifest.config["crs_fingerprint"] = "test-fingerprint"
+    manifest.save(root)
+    return root
+
+
+def test_the_window_reads_the_crs_evidence_a_case_carries(enriched: Path) -> None:
+    """Regression: the window passed no CRS to `analyse_ip` at all, so the same
+    enriched case answered differently here than on the command line. Two front
+    ends that disagree about the evidence are worse than one that offers the
+    feature only in the other, because nothing tells you which answer is real."""
+    _summaries, crs = read_case(enriched)
+
+    assert crs.fingerprint == "test-fingerprint"
+    assert crs.index is not None
+
+
+def test_a_reconstruction_credits_the_crs_configuration_that_produced_it(
+    enriched: Path,
+) -> None:
+    """The evidence has to reach the analysis, not merely be loaded beside it."""
+    _summaries, crs = read_case(enriched)
+
+    result = reconstruct_client(enriched, CLIENT, crs)
+
+    assert result.crs_fingerprint == "test-fingerprint"
+
+
+def test_an_unenriched_case_credits_nothing(campaign: Path) -> None:
+    """The ordinary case, and the one that must not claim CRS took part."""
+    _summaries, crs = read_case(campaign)
+
+    result = reconstruct_client(campaign, CLIENT, crs)
+
+    assert crs.index is None
+    assert result.crs_fingerprint is None
 
 
 def test_the_window_constructs(qt_app: QApplication) -> None:

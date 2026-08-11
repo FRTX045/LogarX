@@ -24,8 +24,6 @@ from logarc.core.activity import Severity
 from logarc.detect.crs import (
     CrsUnavailableError,
     SidecarConfig,
-    is_enriched,
-    load_detections,
     run_sidecar,
     write_detections,
 )
@@ -97,22 +95,6 @@ RULES_OPTION = typer.Option(
     "-r",
     help="Extra rule pack (file or directory). Repeatable. Adds to the bundled packs.",
 )
-
-
-def _crs_fingerprint(case: Case) -> str | None:
-    """Which CRS configuration actually contributed to this analysis.
-
-    Read from the case directory rather than the manifest alone. The manifest
-    records that `enrich` once ran; only the presence of the detection file says
-    it still applies. A case whose `crs.jsonl` was deleted would otherwise
-    analyse on the bundled rules while reporting a CRS fingerprint — a result
-    naming something that did not produce it, which is the exact failure the
-    fingerprint exists to prevent.
-    """
-    if not is_enriched(case.root):
-        return None
-    fingerprint = case.manifest.config.get("crs_fingerprint")
-    return str(fingerprint) if fingerprint is not None else None
 
 
 def _rule_engine(rules: list[Path] | None) -> RuleEngine | None:
@@ -248,13 +230,13 @@ def analyze(
     try:
         engine = _rule_engine(rules)
         with Case.open(case) as opened:
-            crs = load_detections(opened.root)
+            crs = opened.crs_evidence()
             result = analyse_ip(
                 opened.store,
                 ip,
                 engine=engine,
-                crs=crs or None,
-                crs_fingerprint=_crs_fingerprint(opened),
+                crs=crs.index,
+                crs_fingerprint=crs.fingerprint,
             )
     except USER_ERRORS as exc:
         raise _fail(str(exc)) from exc
@@ -320,12 +302,13 @@ def evidence(
     try:
         engine = _rule_engine(rules)
         with Case.open(case) as opened:
+            crs = opened.crs_evidence()
             result = analyse_ip(
                 opened.store,
                 ip,
                 engine=engine,
-                crs=load_detections(opened.root) or None,
-                crs_fingerprint=_crs_fingerprint(opened),
+                crs=crs.index,
+                crs_fingerprint=crs.fingerprint,
             )
             episodes = result.episodes
             if episode is not None:
@@ -380,12 +363,13 @@ def export(
     try:
         engine = _rule_engine(rules)
         with Case.open(case) as opened:
+            crs = opened.crs_evidence()
             result = analyse_ip(
                 opened.store,
                 ip,
                 engine=engine,
-                crs=load_detections(opened.root) or None,
-                crs_fingerprint=_crs_fingerprint(opened),
+                crs=crs.index,
+                crs_fingerprint=crs.fingerprint,
             )
             manifest = opened.manifest
     except USER_ERRORS as exc:
@@ -484,7 +468,7 @@ def evaluate(
                 opened.store,
                 loaded,
                 policy=policy,
-                crs=load_detections(opened.root) or None,
+                crs=opened.crs_evidence().index,
                 on_client=lambda client: status.update(f"Scoring {client}…"),
             )
     except USER_ERRORS as exc:
