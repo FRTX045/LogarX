@@ -20,8 +20,8 @@ import json
 import os
 import subprocess
 import sys
-from collections import defaultdict
 from dataclasses import dataclass, field
+from itertools import groupby, islice
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
@@ -223,6 +223,10 @@ def as_record(event: NormalizedEvent) -> dict[str, Any]:
     }
 
 
+def _source_of(event: NormalizedEvent) -> str:
+    return event.evidence.source_file_id
+
+
 def run_sidecar(
     events: Iterable[NormalizedEvent],
     *,
@@ -232,19 +236,28 @@ def run_sidecar(
 
     Events are grouped by source file so a detection can be tied back to the
     line it came from, and each group is sent in batches rather than as one
-    write, so a large case does not need the whole payload resident at once.
+    write, so a large case never has more than one batch resident at a time.
+
+    The grouping is `groupby` over the stream rather than a dict of lists, and
+    that difference is the whole point: `EventStore.all_events()` already yields
+    in `(source_file_id, line_no)` order, so consecutive grouping sees each
+    source exactly once without ever holding the corpus. Collecting into a dict
+    first would have read every event into memory before the sidecar started —
+    undoing the streaming the store goes to trouble to provide, on the one path
+    that reads a whole case.
+
+    Input that is *not* ordered by source is still handled correctly; a source
+    that appears in several runs simply costs several invocations, because each
+    batch carries the id it was grouped under.
     """
     config = config or SidecarConfig()
     config.check()
 
-    by_source: dict[str, list[NormalizedEvent]] = defaultdict(list)
-    for event in events:
-        by_source[event.evidence.source_file_id].append(event)
-
     found: list[CrsDetection] = []
-    for source_file_id, group in by_source.items():
-        for start in range(0, len(group), _BATCH):
-            batch = group[start : start + _BATCH]
+    for source_file_id, group in groupby(events, key=_source_of):
+        # `group` is only valid until the outer iterator advances, so it is
+        # drained here rather than stashed.
+        while batch := list(islice(group, _BATCH)):
             found.extend(_invoke(config, batch, source_file_id=source_file_id))
     return found
 

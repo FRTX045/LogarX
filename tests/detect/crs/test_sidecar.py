@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -17,6 +18,7 @@ import pytest
 from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
 from logarc.detect.crs.sidecar import (
+    _BATCH,
     BINARY_ENV,
     CrsDetection,
     CrsUnavailableError,
@@ -258,3 +260,60 @@ def test_a_detached_head_is_read_directly(tmp_path: Path) -> None:
 
 def test_a_ruleset_that_is_not_a_checkout_has_no_revision(tmp_path: Path) -> None:
     assert SidecarConfig(rules=tmp_path, conf=tmp_path).revision() is None
+
+
+def test_a_case_is_streamed_rather_than_gathered_before_the_first_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The store streams `all_events()` precisely so a case bigger than memory
+    can be enriched. Gathering them here would undo that, and the failure would
+    be invisible on any case small enough to test by hand.
+
+    Measured at the moment of the first invocation rather than by peak memory:
+    how many events had to exist for work to begin is the property that decides
+    whether a twelve-million-line case is enrichable, and it is exact.
+    """
+    pulled = 0
+    pulled_at_first_call: list[int] = []
+    records_sent: list[int] = []
+
+    def events() -> Iterator[NormalizedEvent]:
+        nonlocal pulled
+        for line_no in range(1, _BATCH + 2):  # one more than a single batch holds
+            pulled += 1
+            yield event(line_no=line_no)
+
+    def run(*_args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        pulled_at_first_call.append(pulled)
+        records_sent.append(len(str(kwargs["input"]).splitlines()))
+        return subprocess.CompletedProcess([], 0, "", "")
+
+    monkeypatch.setattr(subprocess, "run", run)
+
+    run_sidecar(events(), config=working_config(tmp_path))
+
+    assert pulled_at_first_call[0] <= _BATCH
+    # Streaming must not be bought by dropping the tail.
+    assert sum(records_sent) == _BATCH + 1
+
+
+def test_every_record_reaches_the_sidecar_under_its_own_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A detection is keyed by `(source_file_id, line_no)`, so a case holding
+    two logs must not have one's findings attributed to the other."""
+    monkeypatch.setattr(
+        subprocess, "run", _fake_run(stdout=json.dumps(detection(line_no=1).to_dict()))
+    )
+    first = event(line_no=1)
+    second = NormalizedEvent(
+        timestamp=START,
+        client_ip="203.0.113.9",
+        evidence=EvidenceRef("other.log", 1),
+        method="GET",
+        path="/",
+    )
+
+    found = run_sidecar([first, second], config=working_config(tmp_path))
+
+    assert {item.source_file_id for item in found} == {"access.log", "other.log"}
