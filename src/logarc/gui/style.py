@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
 from logarc.core.activity import Outcome, Severity
+from logarc.core.graph import GraphKind
 
 if TYPE_CHECKING:
     from logarc.core.graph import GraphNode
@@ -29,6 +30,7 @@ __all__ = [
     "CAPTION_COLOUR",
     "Border",
     "NodeStyle",
+    "edge_label",
     "format_gap",
     "node_radius",
     "outcome_border",
@@ -145,3 +147,24 @@ def format_gap(seconds: float | None) -> str:
     if seconds < 3600:
         return f"{int(seconds // 60)}m {int(seconds % 60)}s"
     return f"{int(seconds // 3600)}h {int(seconds % 3600 // 60)}m"
+
+
+def edge_label(kind: GraphKind, *, weight: int, gap_seconds: float | None) -> str:
+    """What to write beside an arrow.
+
+    On a behaviour map the weight is the finding. A transition seen twice is a
+    habit and one seen once is an incident, and the difference is what turns a
+    set of arrows into a shape — a cycle between three probe types says the
+    client is a tool rotating through them, which no single episode reveals.
+    Carried only as line thickness, as it was, that cannot be read as a number
+    or compared between two clients' maps.
+
+    A weight of one is left off. Every step of a trace has one by construction,
+    so printing it would add a column of identical numbers to every arrow on the
+    chronological view, and on a busy behaviour map it is one more thing to read
+    past.
+    """
+    gap = format_gap(gap_seconds)
+    if kind is GraphKind.TRACE or weight <= 1:
+        return gap
+    return f"×{weight:,}" + (f" · {gap}" if gap else "")

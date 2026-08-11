@@ -8,9 +8,10 @@ import pytest
 
 from logarc.core.activity import ActivityCategory, Outcome, Severity
 from logarc.core.evidence import EvidenceRef
-from logarc.core.graph import GraphNode
+from logarc.core.graph import GraphKind, GraphNode
 from logarc.gui.style import (
     NodeStyle,
+    edge_label,
     format_gap,
     node_radius,
     outcome_border,
@@ -132,3 +133,29 @@ def test_a_gap_is_written_the_way_a_person_would_say_it(
     seconds: float | None, expected: str
 ) -> None:
     assert format_gap(seconds) == expected
+
+
+def test_a_repeated_transition_says_how_often_it_was_seen() -> None:
+    """On a behaviour map the weight is the finding: a transition seen twice is
+    a habit, one seen once is an incident. It used to be carried only by line
+    thickness, which cannot be read as a number and cannot be compared between
+    two clients' maps."""
+    label = edge_label(GraphKind.BEHAVIOUR, weight=2, gap_seconds=30.0)
+
+    assert "2" in label
+    assert "30s" in label
+
+
+def test_a_transition_seen_once_says_nothing_about_its_count() -> None:
+    """A number that is always the same is not information, and on a crowded
+    map it is one more thing to read past."""
+    assert "1" not in edge_label(GraphKind.BEHAVIOUR, weight=1, gap_seconds=30.0)
+
+
+def test_a_trace_never_shows_a_weight() -> None:
+    """Every step of a trace happened once by construction."""
+    assert edge_label(GraphKind.TRACE, weight=1, gap_seconds=5.0) == format_gap(5.0)
+
+
+def test_a_transition_with_no_recorded_gap_still_reports_its_weight() -> None:
+    assert "3" in edge_label(GraphKind.BEHAVIOUR, weight=3, gap_seconds=None)

@@ -178,3 +178,16 @@ def test_an_edge_that_runs_backwards_leaves_from_the_left_of_its_node(tmp_path: 
     # 440 + offset is the source's own x — its left edge, facing the target.
     # Adding _NODE_WIDTH would anchor the line to the right edge, pointing away.
     assert float(path.group(1)) < 440.0 + _NODE_WIDTH
+
+
+def test_the_report_writes_how_often_a_transition_was_seen(campaign: Case) -> None:
+    """The behaviour map's weights carried no label at all in the report — only
+    line thickness, which a reader cannot turn back into a number. A report is
+    read by someone who never opened the application, so it is the copy that
+    most needs the arrow to say what it means."""
+    from logarc.core.graph import GraphEdge, GraphKind
+    from logarc.report.html import _edge_label
+
+    assert "×2" in _edge_label(GraphKind.BEHAVIOUR, GraphEdge("a", "b", weight=2, gap_seconds=9.0))
+    assert "×" not in _edge_label(GraphKind.BEHAVIOUR, GraphEdge("a", "b", weight=1, gap_seconds=9))
+    assert "×" not in _edge_label(GraphKind.TRACE, GraphEdge("a", "b", weight=1, gap_seconds=9.0))

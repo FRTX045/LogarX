@@ -21,7 +21,7 @@ from logarc.graphbuild.layout import layout_graph
 
 if TYPE_CHECKING:
     from logarc.analysis import AnalysisResult
-    from logarc.core.graph import ActivityGraph
+    from logarc.core.graph import ActivityGraph, GraphEdge
     from logarc.storage.case import CaseManifest
 
 __all__ = ["render_report"]
@@ -80,6 +80,24 @@ def _summary(result: AnalysisResult) -> str:
     )
 
 
+def _edge_label(kind: GraphKind, edge: GraphEdge) -> str:
+    """What to write beside an arrow.
+
+    On a behaviour map the weight is the finding — a transition seen twice is a
+    habit, one seen once is an incident — and it used to be carried here by line
+    thickness alone, which a reader cannot turn back into a number. The report
+    is read by someone who never opened the application, so it is the copy that
+    most needs an arrow to say what it means.
+
+    A weight of one is left off: every step of a trace has one by construction,
+    so it would print a column of identical numbers.
+    """
+    gap = _duration(edge.gap_seconds) if edge.gap_seconds is not None else ""
+    if kind is GraphKind.TRACE or edge.weight <= 1:
+        return gap
+    return f"×{edge.weight:,}" + (f" · {gap}" if gap else "")
+
+
 def _svg(graph: ActivityGraph) -> str:
     if not graph.nodes:
         return '<p class="empty">No activity to draw.</p>'
@@ -131,10 +149,10 @@ def _svg(graph: ActivityGraph) -> str:
             f'{midpoint:.0f},{y2:.0f} {x2:.0f},{y2:.0f}" fill="none" stroke="#94a3b8" '
             f'stroke-width="{thickness:.1f}" marker-end="url(#arrow)"/>'
         )
-        if edge.gap_seconds is not None and graph.kind is GraphKind.TRACE:
+        if label := _edge_label(graph.kind, edge):
             parts.append(
                 f'<text x="{midpoint:.0f}" y="{(y1 + y2) / 2 - 6:.0f}" class="edge-label" '
-                f'text-anchor="middle">{_duration(edge.gap_seconds)}</text>'
+                f'text-anchor="middle">{html.escape(label)}</text>'
             )
 
     for node in graph.nodes:

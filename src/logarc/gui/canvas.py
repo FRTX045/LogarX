@@ -37,7 +37,7 @@ from PyQt6.QtWidgets import (
 )
 
 from logarc.graphbuild.layout import Point, layout_graph
-from logarc.gui.style import CAPTION_COLOUR, format_gap, style_for, summarise
+from logarc.gui.style import CAPTION_COLOUR, edge_label, style_for, summarise
 
 if TYPE_CHECKING:
     from PyQt6.QtGui import QMouseEvent
@@ -121,7 +121,7 @@ class ActivityCanvas(QGraphicsView):
                     positions[edge.target],
                     by_id[edge.source],
                     by_id[edge.target],
-                    label=format_gap(edge.gap_seconds),
+                    label=edge_label(graph.kind, weight=edge.weight, gap_seconds=edge.gap_seconds),
                     weight=edge.weight,
                 )
         for node in graph.nodes:
