@@ -88,7 +88,10 @@ def test_each_session_gets_its_own_row() -> None:
 
 def _trace(count: int, *, session: str = "1.2.3.4#1"):
     return build_trace_graph(
-        [episode(ActivityCategory.INJECTION, index=n, session=session) for n in range(1, count + 1)],
+        [
+            episode(ActivityCategory.INJECTION, index=n, session=session)
+            for n in range(1, count + 1)
+        ],
         client_ip="1.2.3.4",
     )
 

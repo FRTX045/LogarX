@@ -30,7 +30,7 @@ _ROW: Final = 130.0
 #: Larger than a wrap on purpose: once a trace wraps, a session boundary drawn at
 #: the same spacing is indistinguishable from a line break, and the graph would
 #: report two visits where the log holds one.
-_SESSION_GAP: Final = 2.0
+_SESSION_GAP: Final = 2
 
 #: Shortest chain that is allowed to wrap, and the narrowest a wrap may be.
 #: Below this a trace already fits, and wrapping would cost the straight timeline
