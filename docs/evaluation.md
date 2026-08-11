@@ -355,11 +355,53 @@ Memory is bounded rather than proportional. Measured separately, each size in a 
 Ingest is flat at ~296 MB by construction. `finalize` converges on the configured 1 GB engine
 ceiling: eight million rows to twelve moved it by 3 MB, where four million used to fail outright.
 
-**Ingest throughput falls short of its target.** The plan asked for 100,000 lines/s on a
-development machine; the measured figure is 31,000. The scaling claim holds — cost per line does
-not grow with the corpus — but the constant does not meet the goal. The remedy the design already
-names is parallel ingest over byte-range splits aligned to newline boundaries, which is not
-implemented. It is recorded here rather than dropped.
+### Where the time goes
+
+Before trying to make ingest faster, it was worth establishing what it spends its time on. On
+`samples/mixed.log`, 50,000 lines:
+
+| Stage | Time | Throughput | Share |
+|---|---:|---:|---:|
+| Read only — decode, strip, SHA-256 | 0.08 s | 611,000 lines/s | **4%** |
+| Read and parse | 1.92 s | 26,000 lines/s | **96%** |
+
+I/O is free; parsing is everything. Inside `parse_line`, by `cProfile` self-time: the regex match
+is **25%**, `_parse_timestamp` 17%, and the remaining ~40% is CPython moving fields between
+dictionaries — 800,000 `dict.get` calls for 50,000 lines, plus `groupdict` and `_clean`.
+
+That the regex is only a quarter is the useful finding. It rules out a faster pattern engine as the
+answer and points at either removing interpreter overhead or spreading the work.
+
+### Parallel ingest
+
+Spreading it. 400,000 lines, 75 MB, ingest only with `finalize` excluded:
+
+| | Ingest | Lines/s | Speedup |
+|---|---:|---:|---:|
+| Sequential | 14.7 s | 27,265 | 1.00× |
+| 2 workers | 8.5 s | 46,964 | 1.72× |
+| 4 workers | 6.1 s | 65,864 | 2.42× |
+| 8 workers | 5.7 s | **69,655** | **2.55×** |
+
+Every one of those runs stored byte-identical results to the sequential run — same events, same
+line numbers, same digest, same quarantine count. That is asserted first and the timings read only
+afterwards, because a parallel ingest that loses a line looks exactly like a fast one.
+
+**Ingest throughput still falls short of its target.** The plan asked for 100,000 lines/s; the
+measured figure is 69,655 with eight workers, against 27,265 sequential on the same corpus.
+
+The prediction behind this work was 124,000 — four workers times the sequential rate — and it was
+wrong because throughput does not scale with the worker count. This machine has **four physical
+cores behind eight logical ones**, and hyperthreading adds perhaps a quarter to CPU-bound work
+rather than doubling it. 2.55× is close to what the hardware has to give, and adding workers past
+four buys almost nothing: 2.42× to 2.55×.
+
+What remains is in the parse itself. The profile above puts ~40% of it in field marshalling that
+could be removed without leaving Python — positional groups rather than `groupdict`, fewer
+`dict.get` calls per line. That is the honest next step, and it is not done.
+
+[ADR-0009](adr/0009-parallel-ingest-rather-than-a-native-parser.md) records why the parser was not
+rewritten in Go instead, given that the project already builds a Go binary for CRS.
 
 ## What the evaluation found
 

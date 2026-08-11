@@ -79,6 +79,10 @@ pip install -e ".[dev,gui]"
 # Ingest a log into a case directory (streaming; memory is bounded by batch size, not file size)
 logarc ingest access.log --case ./case-001
 
+# Parse across processes on a large log. Faster, and costs memory in step with
+# the worker count — which is why it is opt-in rather than the default.
+logarc ingest access.log --case ./case-001 --workers 4
+
 # List the IPs seen, ranked by how suspicious their traffic looks
 logarc list-ips --case ./case-001 --sort suspicion
 

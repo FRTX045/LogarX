@@ -5,6 +5,43 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Performance
+
+- **Ingest can parse a log across worker processes** — `logarc ingest --workers N`. Measured on
+  400,000 lines, ingest only: 27,265 lines/s sequential against **69,655 at eight workers, 2.55×**.
+  Profiling drove the choice: parsing is 96% of ingest and the regex is only a quarter of *that*,
+  so a faster pattern engine had little to give while the work parallelises cleanly.
+  See [ADR-0009](docs/adr/0009-parallel-ingest-rather-than-a-native-parser.md).
+- **The 100,000 lines/s target is still not met.** The remedy named in 0.1.0 has now been
+  implemented and measured; it closes about two thirds of the gap. The prediction of 124,000
+  assumed throughput scales with the worker count, and it does not — the test machine has four
+  physical cores behind eight logical ones. The rest of the gap is in the parse, where 40% of the
+  time is field marshalling that could be removed without leaving Python.
+- Parallel ingest is opt-in and defaults to off, because **each worker holds its own batch and
+  memory rises roughly in step with the count.** Bounded memory is one of the design's stronger
+  claims and is not spent without being asked. Compressed logs (no random access) and logs under
+  32 MB (spawning costs more than parsing saves) fall back to sequential rather than failing.
+  Cancellation is not offered on the parallel path — a stop that only sometimes reaches every
+  process is worse than none — so the sequential path, which the desktop application uses, keeps it.
+- `logarc enrich` no longer reads the whole case into memory. `EventStore.all_events()` streams, and
+  both of its consumers were undoing that: the CLI wrapped it in `list()` and the sidecar collected
+  it again into a dict of lists. On a twelve-million-line case that was several gigabytes, against a
+  design whose central claim is that memory follows the batch size.
+
+### Fixed
+
+- **The desktop application ignored CRS entirely.** `analyse_ip` has taken a detection index since
+  CRS was added and the CLI passed one, but the window never did — so the same enriched case
+  reported different findings depending on which front end asked. `CrsEvidence` and
+  `Case.crs_evidence()` are now the one way to obtain it, so the two cannot disagree again.
+- **Staged Parquet files were numbered per store instance.** Harmless with one writer and silent
+  data loss with several: every worker would have written `part-000000.parquet` and all but the
+  last would have been replaced.
+- **CI never built the CRS sidecar**, so the four tests covering the Python/Go boundary skipped
+  themselves on every run — the newest and least-proven component was the one nothing verified. CI
+  now builds it on both runners and sets `LOGARC_REQUIRE_CRS=1`, which turns the skip into a
+  failure so a broken build cannot go back to being quiet.
+
 ### Detection
 
 - **OWASP CRS runs beside the bundled rules**, through Coraza in a Go sidecar. `logarc enrich`
