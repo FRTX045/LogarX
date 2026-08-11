@@ -104,9 +104,19 @@ def _svg(graph: ActivityGraph) -> str:
         start, end = positions.get(edge.source), positions.get(edge.target)
         if start is None or end is None:  # pragma: no cover - edges follow nodes
             continue
-        x1 = start.x + offset_x + _NODE_WIDTH
+        # Anchored on the side each box faces the other from. A trace wraps onto
+        # further rows and those rows alternate direction, so an edge may run
+        # right to left; anchoring both ends as though it always ran left to
+        # right sends the line back across the two boxes it connects.
+        if end.x > start.x:
+            x1 = start.x + offset_x + _NODE_WIDTH
+            x2 = end.x + offset_x
+        elif end.x < start.x:
+            x1 = start.x + offset_x
+            x2 = end.x + offset_x + _NODE_WIDTH
+        else:  # directly below: leave from the middle rather than either side
+            x1 = x2 = start.x + offset_x + _NODE_WIDTH / 2
         y1 = start.y + offset_y + _NODE_HEIGHT / 2
-        x2 = end.x + offset_x
         y2 = end.y + offset_y + _NODE_HEIGHT / 2
         thickness = min(1 + edge.weight * 0.6, 6)
         if edge.source == edge.target:

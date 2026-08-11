@@ -86,6 +86,91 @@ def test_each_session_gets_its_own_row() -> None:
     assert positions["1.2.3.4#2/1"].x == positions["1.2.3.4#1/1"].x
 
 
+def _trace(count: int, *, session: str = "1.2.3.4#1"):
+    return build_trace_graph(
+        [episode(ActivityCategory.INJECTION, index=n, session=session) for n in range(1, count + 1)],
+        client_ip="1.2.3.4",
+    )
+
+
+def test_a_long_trace_wraps_instead_of_running_off_the_canvas() -> None:
+    """A chain laid out on one row is 1,480 units wide and 290 tall in a canvas
+    that is roughly square, so fitting it shrinks the whole scene to ~0.64 and
+    the captions become a smudge. Wrapping is what buys the scale back."""
+    positions = layout_graph(_trace(12))
+
+    assert len({point.y for point in positions.values()}) > 1
+
+
+def test_a_short_trace_still_reads_as_one_line() -> None:
+    """Wrapping a four-step trace would cost the straight timeline and buy no
+    readability, because it already fits."""
+    positions = layout_graph(_trace(4))
+
+    assert len({point.y for point in positions.values()}) == 1
+
+
+def test_wrapping_leaves_the_block_closer_to_square() -> None:
+    """The point of the exercise, stated as the shape it produces."""
+    positions = layout_graph(_trace(16)).values()
+    width = max(p.x for p in positions) - min(p.x for p in positions)
+    height = max(p.y for p in positions) - min(p.y for p in positions)
+
+    assert height > 0
+    assert width / height < 6.0
+
+
+def test_wrapped_rows_alternate_direction() -> None:
+    """Serpentine, so the join between rows is short. Laying every row
+    left-to-right would send a line the whole width of the block backwards on
+    every wrap, crossing everything in between."""
+    graph = _trace(12)
+    positions = layout_graph(graph)
+    rows: dict[float, list[float]] = {}
+    for node in graph.nodes:
+        point = positions[node.node_id]
+        rows.setdefault(point.y, []).append(point.x)
+
+    ordered = [rows[y] for y in sorted(rows)]
+    assert ordered[0] == sorted(ordered[0])
+    assert ordered[1] == sorted(ordered[1], reverse=True)
+
+
+def test_reading_the_serpentine_recovers_chronological_order() -> None:
+    """The trace is a timeline. If the wrap reordered it, the graph would be
+    telling a different story from the one the log holds."""
+    graph = _trace(12)
+    positions = layout_graph(graph)
+    # Row *index*, not the y coordinate: the direction alternates by row, and
+    # y is a multiple of the row height rather than a counter.
+    row_of = {y: index for index, y in enumerate(sorted({p.y for p in positions.values()}))}
+
+    def where(node_id: str) -> tuple[int, float]:
+        point = positions[node_id]
+        row = row_of[point.y]
+        return (row, point.x if row % 2 == 0 else -point.x)
+
+    ids = [node.node_id for node in graph.nodes]
+    assert sorted(ids, key=where) == ids
+    assert len(row_of) > 1  # otherwise this proves nothing about wrapping
+
+
+def test_sessions_stay_further_apart_than_the_rows_within_one() -> None:
+    """Otherwise a session boundary is indistinguishable from a wrap, and the
+    graph says two visits where the log holds one."""
+    first = [
+        episode(ActivityCategory.INJECTION, index=n, session="1.2.3.4#1") for n in range(1, 13)
+    ]
+    second = [episode(ActivityCategory.RECONNAISSANCE, index=1, session="1.2.3.4#2")]
+    graph = build_trace_graph([*first, *second], client_ip="1.2.3.4")
+
+    positions = layout_graph(graph)
+    within = sorted({positions[node.node_id].y for node in graph.nodes if "#1" in node.node_id})
+    between = positions["1.2.3.4#2/1"].y - within[-1]
+
+    assert between > (within[1] - within[0])
+
+
 def test_a_behaviour_map_spreads_its_nodes_out() -> None:
     graph = build_behaviour_map(
         [
