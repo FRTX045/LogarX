@@ -142,10 +142,10 @@ restraint as failure, so they are held out of the rate and reported separately.
 ### Reproducing
 
 The command has been removed, so reproducing these figures means restoring it first. It was added
-in `3335ee3` and removed in `003abcd`; reverting the removal restores a working `score-crs`:
+in `cf59dfc` and removed in `2868e78`; reverting the removal restores a working `score-crs`:
 
 ```bash
-git revert 003abcd
+git revert 2868e78
 git clone https://github.com/coreruleset/coreruleset vendor/coreruleset
 git -C vendor/coreruleset checkout d694d465951ee06347214f1291ae096e40700001
 logarc score-crs --corpus vendor/coreruleset --out crs.json
@@ -198,6 +198,34 @@ Two properties of the measurement worth stating. Status is synthesised as 200 be
 has no responses, which disables exactly one bundled rule (`admin_area_probe`, which needs a 4xx),
 so the figure is a **floor** rather than an estimate. And the ceiling is 27%: only 1,138 of 4,224
 cases are visible to an access-log tool at all.
+
+### What was done about it
+
+CRS itself was adopted, through Coraza in a Go sidecar — see
+[ADR-0008](adr/0008-crs-as-a-signature-layer-beside-the-rule-packs.md). Three measurements decided
+whether the rescue rule was safe, and they are the numbers that matter more than the 12.3%:
+
+| Corpus | Native only | With CRS |
+|---|---|---|
+| `normal_browsing`, 20,000 generated requests | 0 hostile episodes | **0 hostile episodes** |
+| Real 2010 WordPress traffic, 365 lines | 5 hostile episodes | **5 hostile episodes** |
+| `mixed`, 100,000 generated requests | acc 0.965, prec 1.000 | **identical** |
+
+Zero false positives on both negative controls at the shipped paranoia level of 2 — and this is
+what fixed that level. The generated corpus produces no CRS detections at any level, so the real
+log is the only control with anything to say: PL1 and PL2 leave its five hostile episodes alone,
+while PL3 flags a plain `GET /` as "Unix Shell Code Found in Request" and invents a sixth. Against
+CRS's own 1,194 regression payloads, PL1 classifies 67% as hostile and PL2 reaches 90%, so the
+level is the highest one no control objects to rather than the most cautious available. And no
+change
+at all on the generated corpus, despite 54,720 CRS detections across 17,439 of its requests —
+because the native rules already fire on everything CRS catches there, so nothing is rescued.
+
+**That last row is ADR-0005's blind spot again, and it is worth stating plainly: the generated
+corpus cannot demonstrate the benefit of this change.** The generator writes payloads the rules
+were written for, so it contains nothing for CRS to rescue. The benefit only appears on payloads
+from the miss list — where 42 requests reported as one Info-level `Scripted Client` episode became
+three activities with the attack correctly named Critical.
 
 ### It is not a decoding problem
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -10,6 +11,7 @@ import pytest
 from logarc.core.activity import ActivityCategory, Severity
 from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
+from logarc.detect.crs import CrsDetection
 from logarc.detect.engine import RuleEngine
 from logarc.detect.rules import load_rules
 
@@ -251,3 +253,156 @@ def test_changing_a_rule_changes_the_fingerprint(tmp_path: Path) -> None:
     after = RuleEngine(load_rules([path])).fingerprint
 
     assert before != after
+
+
+def crs_detection(
+    *,
+    line_no: int = 1,
+    rule_id: int = 942100,
+    family: str | None = "attack-sqli",
+    severity: str = "critical",
+    msg: str = "SQL Injection Attack Detected via libinjection",
+) -> CrsDetection:
+    return CrsDetection(
+        source_file_id="access.log",
+        line_no=line_no,
+        rule_id=rule_id,
+        severity=severity,
+        msg=msg,
+        matched_var="ARGS:q",
+        transformed_value="1' UNION SELECT",
+        attack_family=family,
+    )
+
+
+def crs_index(*detections: CrsDetection) -> dict[tuple[str, int], list[CrsDetection]]:
+    index: dict[tuple[str, int], list[CrsDetection]] = {}
+    for item in detections:
+        index.setdefault((item.source_file_id, item.line_no), []).append(item)
+    return index
+
+
+def test_crs_does_not_displace_a_rule_that_examined_the_request(engine: RuleEngine) -> None:
+    """The invariant the whole design rests on.
+
+    CRS asserts no category of its own — a family tag is read through a mapping
+    this project wrote. Where a rule looked at the request and made a claim, that
+    claim stands, and CRS is kept as corroboration.
+    """
+    events = [event(query="id=1 UNION SELECT password")]
+
+    (labelled,) = engine.label_events(events, crs=crs_index(crs_detection()))
+
+    assert labelled.label.rule_id == "sqli_union"
+    assert labelled.crs[0].rule_id == 942100
+
+
+def test_crs_names_a_request_the_rules_had_no_answer_for(engine: RuleEngine) -> None:
+    """The point of the feature.
+
+    These rules catch 12.3% of the payload syntax CRS enumerates, so "no rule
+    matched" says more about this project's coverage than about the request.
+    """
+    events = [event(path="/get", query="foo=for %variable in (set) do command")]
+    detection = crs_detection(
+        rule_id=932140,
+        family="attack-rce",
+        msg="Remote Command Execution: Windows FOR/IF Command Found",
+    )
+
+    (labelled,) = engine.label_events(events, crs=crs_index(detection))
+
+    assert labelled.label.rule_id == "crs:932140"
+    assert labelled.label.category is ActivityCategory.INJECTION
+    assert labelled.label.severity is Severity.CRITICAL
+
+
+def test_a_withheld_family_never_names_a_request(engine: RuleEngine) -> None:
+    """`attack-protocol` is the largest group in CRS's request rules and fires on
+    request lines that are unusual rather than hostile. Letting it override
+    ordinary traffic would turn a benign corpus hostile in bulk."""
+    detection = crs_detection(
+        rule_id=920100, family="attack-protocol", msg="Invalid HTTP Request Line"
+    )
+
+    (labelled,) = engine.label_events([event(path="/index.html")], crs=crs_index(detection))
+
+    assert labelled.label.category is ActivityCategory.BROWSING
+    assert labelled.crs[0].rule_id == 920100
+
+
+def test_an_observation_does_not_suppress_a_rescue(engine: RuleEngine) -> None:
+    """Regression: a `curl` user-agent used to block a critical CRS detection.
+
+    `Scripted Client` is INFO — it notices a scripted client without claiming an
+    attack — but under the first cut of the rescue any rule firing at all was
+    enough to keep CRS quiet, so the payload on the same request went unreported.
+    """
+    events = [event(path="/get", query="foo=payload", user_agent="curl/8.0")]
+    detection = crs_detection(rule_id=932140, family="attack-rce", msg="Windows FOR/IF")
+
+    (labelled,) = engine.label_events(events, crs=crs_index(detection))
+
+    assert labelled.label.rule_id == "crs:932140"
+
+
+def test_a_real_claim_still_outranks_crs(engine: RuleEngine) -> None:
+    """The other side of that fix: LOW and above is a claim, and it keeps its
+    precedence even against a critical CRS detection."""
+    events = [event(path="/admin/panel", status=404)]
+    detection = crs_detection(rule_id=932140, family="attack-rce", msg="Windows FOR/IF")
+
+    (labelled,) = engine.label_events(events, crs=crs_index(detection))
+
+    assert labelled.label.rule_id == "admin_probe"
+
+
+def test_labelling_without_crs_is_unchanged(engine: RuleEngine) -> None:
+    """A case nobody enriched must behave exactly as it did before CRS existed."""
+    events = [event(query="id=1 UNION SELECT password"), event(path="/index.html")]
+
+    with_none = engine.label_events(events)
+    with_empty = engine.label_events(events, crs={})
+
+    assert [item.label.rule_id for item in with_none] == ["sqli_union", "benign:browsing"]
+    assert [item.label.rule_id for item in with_empty] == ["sqli_union", "benign:browsing"]
+
+
+def test_the_most_severe_crs_detection_names_the_request(engine: RuleEngine) -> None:
+    """Several rules fire on one payload routinely — the sample SQLi request
+    matched four. They are resolved the way competing rule matches already are."""
+    index = crs_index(
+        crs_detection(rule_id=942190, severity="notice", msg="Quiet"),
+        crs_detection(rule_id=942100, severity="critical", msg="Loud"),
+    )
+
+    (labelled,) = engine.label_events([event(path="/get", query="foo=x")], crs=index)
+
+    assert labelled.label.rule_id == "crs:942100"
+    assert len(labelled.crs) == 2
+
+
+def test_the_most_confident_crs_account_names_the_request(engine: RuleEngine) -> None:
+    """Regression: an arbitrary number used to decide what an analyst reads.
+
+    At paranoia level 2, two SQLi rules fire alongside 932140 on
+    `for %variable in (set) do command` — all three critical. Ranked on rule id
+    alone, 942 beats 932 and the episode came out named "SQL Injection Attack"
+    for a Windows command payload. CRS's paranoia levels encode how readily a
+    rule fires, so the lowest one present wins.
+    """
+    index = crs_index(
+        crs_detection(rule_id=942410, family="attack-sqli", msg="SQL Injection Attack"),
+        crs_detection(
+            rule_id=932140,
+            family="attack-rce",
+            msg="Remote Command Execution: Windows FOR/IF Command Found",
+        ),
+    )
+    index[("access.log", 1)][0] = replace(index[("access.log", 1)][0], paranoia_level=2)
+    index[("access.log", 1)][1] = replace(index[("access.log", 1)][1], paranoia_level=1)
+
+    (labelled,) = engine.label_events([event(path="/get", query="foo=x")], crs=index)
+
+    assert labelled.label.rule_id == "crs:932140"
+    assert "Windows FOR/IF" in labelled.label.name

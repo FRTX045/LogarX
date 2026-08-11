@@ -19,6 +19,7 @@ from functools import cached_property
 from typing import TYPE_CHECKING, Final
 
 from logarc.core.activity import ActivityCategory, ActivityLabel, Severity
+from logarc.detect.crs import RESCUE_CONFIDENCE, category_for_family, severity_for
 from logarc.detect.rules import Condition, SignatureRule, WindowRule
 from logarc.normalize.decode import NormalizedText, canonical_path, normalize
 
@@ -26,6 +27,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from logarc.core.event import NormalizedEvent
+    from logarc.detect.crs import CrsDetection, DetectionIndex
     from logarc.detect.rules import Rule, WindowCondition
 
 __all__ = ["LabelledEvent", "RuleEngine"]
@@ -147,6 +149,15 @@ class LabelledEvent:
     event: NormalizedEvent
     label: ActivityLabel
     all_labels: list[ActivityLabel] = field(default_factory=list)
+    crs: tuple[CrsDetection, ...] = ()
+    """What OWASP CRS made of the same request, when the case was enriched.
+
+    Deliberately not folded into `all_labels`. That list feeds `_most_severe`,
+    so a CRS detection placed there could outrank a rule that actually examined
+    the request and asserted a category — and CRS asserts no category at all.
+    Held apart, it is corroborating evidence everywhere, and names the activity
+    only where nothing else did.
+    """
 
 
 class RuleEngine:
@@ -165,24 +176,51 @@ class RuleEngine:
             digest.update(rule.model_dump_json(exclude={"source_pack"}).encode())
         return digest.hexdigest()
 
-    def label_events(self, events: Sequence[NormalizedEvent]) -> list[LabelledEvent]:
+    def label_events(
+        self,
+        events: Sequence[NormalizedEvent],
+        *,
+        crs: DetectionIndex | None = None,
+    ) -> list[LabelledEvent]:
         """Label each request, then let window rules upgrade what they cover.
 
         Events are assumed to be in time order, as a session's are.
+
+        `crs` is the detection set a case was enriched with, keyed the way
+        `EvidenceRef` identifies a line. Omitted, every request is labelled
+        exactly as it was before CRS existed.
         """
-        labelled = [self._label_one(event) for event in events]
+        labelled = [self._label_one(event, crs) for event in events]
         self._apply_windows(labelled)
         return labelled
 
-    def _label_one(self, event: NormalizedEvent) -> LabelledEvent:
+    def _label_one(self, event: NormalizedEvent, crs: DetectionIndex | None) -> LabelledEvent:
         view = RequestView(event)
         matches = [rule for rule in self._signatures if _matches(rule, view)]
-
-        if not matches:
-            return LabelledEvent(event=event, label=_classify_benign(view))
+        detections = _detections_for(crs, event)
 
         labels = [_to_label(rule) for rule in matches]
-        return LabelledEvent(event=event, label=_most_severe(labels), all_labels=labels)
+        label = _most_severe(labels) if labels else _classify_benign(view)
+
+        # INFO is this ruleset saying "I noticed something and I am not calling
+        # it an attack" — every benign classification, and `Scripted Client` on
+        # a curl user-agent. Such a request is still effectively unclassified,
+        # so CRS gets asked before it is reported as ordinary traffic.
+        #
+        # The first cut of this only asked when *nothing* matched, which read
+        # well and was wrong: a `curl` user-agent alone was enough to suppress a
+        # critical CRS detection on the same request, because a rule had
+        # technically fired. Anything LOW or above is a real claim about the
+        # request and still wins outright.
+        if label.severity is Severity.INFO and (rescued := _rescue(detections)) is not None:
+            return LabelledEvent(
+                event=event,
+                label=rescued,
+                all_labels=[*labels, rescued],
+                crs=detections,
+            )
+
+        return LabelledEvent(event=event, label=label, all_labels=labels, crs=detections)
 
     def _apply_windows(self, labelled: list[LabelledEvent]) -> None:
         """Fire window rules, then settle each request's primary label.
@@ -321,6 +359,62 @@ def _condition_holds(condition: Condition, view: RequestView) -> bool:
     if condition.min is not None:
         return numeric >= condition.min
     return condition.max is not None and numeric <= condition.max
+
+
+def _detections_for(crs: DetectionIndex | None, event: NormalizedEvent) -> tuple[CrsDetection, ...]:
+    if not crs:
+        return ()
+    key = (event.evidence.source_file_id, event.evidence.line_no)
+    return tuple(crs.get(key, ()))
+
+
+def _rescue(detections: Sequence[CrsDetection]) -> ActivityLabel | None:
+    """Name an activity from CRS, for a request no rule packed here recognised.
+
+    Only detections whose family this project has an opinion about can do this;
+    see `detect/crs/mapping.py` for which, and why the rest are withheld. When
+    several qualify the most severe wins, matching how competing rule matches
+    are already resolved.
+
+    Returns None when nothing qualifies, which is the ordinary case and means
+    the caller should fall through to benign classification as before.
+    """
+    candidates = [
+        (detection, category)
+        for detection in detections
+        if (category := category_for_family(detection.attack_family)) is not None
+    ]
+    if not candidates:
+        return None
+
+    # Severity first, then the *lowest* paranoia level, then rule id.
+    #
+    # The middle term is what stops an arbitrary number deciding what an analyst
+    # reads. Ranking on rule id alone means 942 (SQLi) always outranks 932 (RCE),
+    # which always outranks 930 (LFI), and at PL2 that showed: two SQLi rules
+    # fire alongside 932140 on `for %variable in (set) do command`, all three
+    # critical, and the episode came out named "SQL Injection Attack" for a
+    # Windows command payload. CRS's paranoia levels encode how readily a rule
+    # fires, so the lowest one present is the most confident account of the
+    # request. Rule id remains only as a tie-break with no meaning of its own,
+    # so that equally severe and equally confident detections still resolve the
+    # same way every run rather than by dictionary order.
+    detection, category = max(
+        candidates,
+        key=lambda pair: (
+            severity_for(pair[0].severity),
+            -(pair[0].paranoia_level or 0),
+            pair[0].rule_id,
+        ),
+    )
+    return ActivityLabel(
+        rule_id=detection.label_id,
+        name=detection.msg or f"CRS rule {detection.rule_id}",
+        category=category,
+        severity=severity_for(detection.severity),
+        confidence=RESCUE_CONFIDENCE,
+        references=detection.capec,
+    )
 
 
 def _to_label(rule: Rule) -> ActivityLabel:

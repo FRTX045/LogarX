@@ -9,6 +9,7 @@ import tempfile
 from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
+from time import perf_counter
 from typing import Annotated, Final
 
 import typer
@@ -19,6 +20,14 @@ from logarc import __version__
 from logarc.analysis import AnalysisPolicy, analyse_ip
 from logarc.case import Case, CaseError
 from logarc.core.activity import Severity
+from logarc.detect.crs import (
+    CrsUnavailableError,
+    SidecarConfig,
+    is_enriched,
+    load_detections,
+    run_sidecar,
+    write_detections,
+)
 from logarc.detect.engine import RuleEngine
 from logarc.detect.rulepacks import default_rules
 from logarc.detect.rules import RulePackError, load_rules
@@ -82,6 +91,22 @@ RULES_OPTION = typer.Option(
     "-r",
     help="Extra rule pack (file or directory). Repeatable. Adds to the bundled packs.",
 )
+
+
+def _crs_fingerprint(case: Case) -> str | None:
+    """Which CRS configuration actually contributed to this analysis.
+
+    Read from the case directory rather than the manifest alone. The manifest
+    records that `enrich` once ran; only the presence of the detection file says
+    it still applies. A case whose `crs.jsonl` was deleted would otherwise
+    analyse on the bundled rules while reporting a CRS fingerprint — a result
+    naming something that did not produce it, which is the exact failure the
+    fingerprint exists to prevent.
+    """
+    if not is_enriched(case.root):
+        return None
+    fingerprint = case.manifest.config.get("crs_fingerprint")
+    return str(fingerprint) if fingerprint is not None else None
 
 
 def _rule_engine(rules: list[Path] | None) -> RuleEngine | None:
@@ -217,9 +242,26 @@ def analyze(
     try:
         engine = _rule_engine(rules)
         with Case.open(case) as opened:
-            result = analyse_ip(opened.store, ip, engine=engine)
+            crs = load_detections(opened.root)
+            result = analyse_ip(
+                opened.store,
+                ip,
+                engine=engine,
+                crs=crs or None,
+                crs_fingerprint=_crs_fingerprint(opened),
+            )
     except USER_ERRORS as exc:
         raise _fail(str(exc)) from exc
+
+    if result.crs_fingerprint is None:
+        # Said out loud on every run, not once at enrich time. The same log
+        # analysed on a machine without the sidecar yields a different answer,
+        # and a forensic result that does not say so is the failure mode this
+        # warning exists to prevent.
+        console.print(
+            "[yellow]CRS not consulted[/yellow] — signature coverage is the bundled rules "
+            f"alone. Run [bold]logarc enrich --case {case}[/bold] to add it."
+        )
 
     if not result.episodes:
         console.print(f"[yellow]No activity found for {ip} in this case.[/yellow]")
@@ -272,7 +314,13 @@ def evidence(
     try:
         engine = _rule_engine(rules)
         with Case.open(case) as opened:
-            result = analyse_ip(opened.store, ip, engine=engine)
+            result = analyse_ip(
+                opened.store,
+                ip,
+                engine=engine,
+                crs=load_detections(opened.root) or None,
+                crs_fingerprint=_crs_fingerprint(opened),
+            )
             episodes = result.episodes
             if episode is not None:
                 episodes = tuple(item for item in episodes if item.episode_id == episode)
@@ -326,7 +374,13 @@ def export(
     try:
         engine = _rule_engine(rules)
         with Case.open(case) as opened:
-            result = analyse_ip(opened.store, ip, engine=engine)
+            result = analyse_ip(
+                opened.store,
+                ip,
+                engine=engine,
+                crs=load_detections(opened.root) or None,
+                crs_fingerprint=_crs_fingerprint(opened),
+            )
             manifest = opened.manifest
     except USER_ERRORS as exc:
         raise _fail(str(exc)) from exc
@@ -424,6 +478,7 @@ def evaluate(
                 opened.store,
                 loaded,
                 policy=policy,
+                crs=load_detections(opened.root) or None,
                 on_client=lambda client: status.update(f"Scoring {client}…"),
             )
     except USER_ERRORS as exc:
@@ -557,6 +612,79 @@ def convert_csic_command(
     console.print(
         "\nThe traces carry no responses, so status is written as 200 throughout: "
         "outcome cannot be evaluated on this dataset."
+    )
+
+
+@app.command()
+def enrich(
+    case: Annotated[Path, typer.Option("--case", "-c", help="Case directory to enrich.")],
+    paranoia: Annotated[
+        int, typer.Option("--paranoia", min=1, max=4, help="CRS paranoia level.")
+    ] = 2,
+    rules_dir: Annotated[
+        Path | None,
+        typer.Option("--crs-rules", help="Path to a coreruleset clone."),
+    ] = None,
+    binary: Annotated[
+        Path | None, typer.Option("--sidecar", help="Path to a built crs-sidecar binary.")
+    ] = None,
+) -> None:
+    """Add OWASP CRS detections to a case.
+
+    The bundled rules classify behaviour; CRS enumerates payload syntax, which
+    is a different job and one it does far better. Enriching runs every stored
+    request past CRS once and keeps the result in the case, so later analyses
+    read it rather than paying for it again.
+
+    A CRS detection never overrides a rule packed here. It only names requests
+    that would otherwise be reported as ordinary traffic.
+    """
+    defaults = SidecarConfig()
+    config = SidecarConfig(
+        binary=binary or defaults.binary,
+        rules=rules_dir or defaults.rules,
+        paranoia=paranoia,
+    )
+
+    try:
+        with Case.open(case) as opened:
+            with console.status("Reading events…"):
+                events = list(opened.store.all_events())
+            if not events:
+                raise _fail(f"no events in {case}; ingest a log first")
+
+            with console.status(f"Replaying {len(events):,} requests through CRS…"):
+                started = perf_counter()
+                detections = run_sidecar(events, config=config)
+                elapsed = perf_counter() - started
+
+            path = write_detections(opened.root, detections)
+            opened.manifest.config.update(config.as_config())
+            opened.manifest.save(opened.root)
+    except (CrsUnavailableError, *USER_ERRORS) as exc:
+        raise _fail(str(exc)) from exc
+
+    covered = len({(item.source_file_id, item.line_no) for item in detections})
+    rate = len(events) / elapsed if elapsed else 0.0
+
+    table = Table(title="CRS enrichment")
+    table.add_column("Requests", justify="right")
+    table.add_column("With a detection", justify="right")
+    table.add_column("Detections", justify="right")
+    table.add_column("Paranoia", justify="right")
+    table.add_column("Rules/s", justify="right")
+    table.add_row(
+        f"{len(events):,}",
+        f"{covered:,}",
+        f"{len(detections):,}",
+        str(config.paranoia),
+        f"{rate:,.0f}",
+    )
+    console.print(table)
+    console.print(f"\nWritten to {path}")
+    console.print(
+        f"CRS {config.revision() or 'unknown'}, configuration {config.fingerprint()} — "
+        "recorded in the case manifest so a finding can name what produced it."
     )
 
 

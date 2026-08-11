@@ -27,7 +27,7 @@ from logarc.core.evidence import EvidenceRef
 from logarc.storage.base import IpSummary
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Iterator
 
 __all__ = ["ParquetEventStore", "StoreStateError"]
 
@@ -40,6 +40,11 @@ class StoreStateError(RuntimeError):
 #: touches one of these, so the constant trades write-side file count against
 #: read-side selectivity.
 BUCKETS: Final = 64
+
+#: Rows pulled from the query engine per fetch when streaming the whole
+#: case. Large enough that the round trip is not the cost, small enough that
+#: a 12M-line case never has more than this resident.
+_STREAM_CHUNK: Final = 50_000
 
 #: How much memory the query engine may use. Deliberately modest: `finalize`
 #: sorts the whole corpus, and left to its own devices DuckDB claims most of the
@@ -297,6 +302,32 @@ class ParquetEventStore:
             .fetchall()
         )
         return [_to_event(row) for row in rows]
+
+    def all_events(self) -> Iterator[NormalizedEvent]:
+        """Every event in the case, in source order, streamed in chunks.
+
+        Ordered by source file and line rather than by timestamp: the consumer
+        is enrichment, which cares only that a detection can be tied back to the
+        line it came from, and this ordering lets the sidecar receive one
+        source's requests contiguously.
+        """
+        self._require_finalized()
+        pattern = self._events / "**" / "*.parquet"
+        if not any(self._events.rglob("*.parquet")):
+            return
+
+        cursor = self._connect().execute(
+            f"""
+            SELECT timestamp, client_ip, method, path, query, protocol, status,
+                   bytes_sent, referer, user_agent, host, source_file_id,
+                   source_line_no, extra
+            FROM read_parquet({self._sql_path(pattern)}, hive_partitioning = true)
+            ORDER BY source_file_id, source_line_no
+            """
+        )
+        while rows := cursor.fetchmany(_STREAM_CHUNK):
+            for row in rows:
+                yield _to_event(row)
 
     def ip_summaries(
         self, *, limit: int | None = None, order_by: str = "requests"

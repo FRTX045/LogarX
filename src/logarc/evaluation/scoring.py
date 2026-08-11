@@ -23,6 +23,7 @@ from logarc.evaluation.metrics import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from logarc.detect.crs import DetectionIndex
     from logarc.evaluation.metrics import (
         BinaryScore,
         ClassificationReport,
@@ -134,9 +135,16 @@ def evaluate(
     *,
     engine: RuleEngine | None = None,
     policy: AnalysisPolicy | None = None,
+    crs: DetectionIndex | None = None,
     on_client: Callable[[str], None] | None = None,
 ) -> EvaluationReport:
-    """Reconstruct every client the truth knows about, and score the result."""
+    """Reconstruct every client the truth knows about, and score the result.
+
+    `crs` is passed through so the same corpus can be scored with and without
+    enrichment. That comparison is the guard on the whole CRS integration:
+    recall may rise, but precision on traffic the rules already read correctly
+    must not fall.
+    """
     # Built once. Left to default, `analyse_ip` compiles the whole ruleset from
     # YAML for every client it is given, which on a corpus with two thousand of
     # them is two thousand identical rule compilations.
@@ -150,7 +158,7 @@ def evaluate(
 
     grouped = truth.by_client()
     for client_ip, records in grouped.items():
-        result = analyse_ip(store, client_ip, engine=engine, policy=policy)
+        result = analyse_ip(store, client_ip, engine=engine, policy=policy, crs=crs)
 
         found = {
             item.evidence.line_no: item

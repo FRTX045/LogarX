@@ -142,6 +142,19 @@ logarc convert-csic --normal normalTrafficTest.txt --anomalous anomalousTrafficT
     -o csic.log -t csic.truth.jsonl
 ```
 
+### OWASP CRS
+
+The bundled rules classify *behaviour*; OWASP CRS enumerates payload *syntax*, which is a different
+job and one it does far better. Both run, and CRS never overrides a rule that examined the request —
+it names the ones nothing else recognised.
+
+```bash
+cd crs && go build -o crs-sidecar .    # once; see crs/README.md
+logarc enrich --case ./case            # replay the case past CRS
+```
+
+Optional. Without it a case analyses on the bundled rules alone, and says so on every run.
+
 Measured results, and what they do and do not establish, are in
 [docs/evaluation.md](docs/evaluation.md).
 

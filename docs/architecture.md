@@ -25,7 +25,7 @@ Dependencies point inward. `core/` is the centre and imports nothing else.
 | `ingest/` | Streaming read → parse → batch → write. Bounded memory. |
 | `storage/` | Event store (Parquet + DuckDB), case manifest, integrity hashes. |
 | `sessionize/` | Splits an IP's event stream into sessions. |
-| `detect/` | Declarative rule engine; labels each request. |
+| `detect/` | Declarative rule engine; labels each request. `detect/crs/` drives the optional OWASP CRS sidecar. |
 | `episode/` | Merges labelled runs into activity episodes. |
 | `graphbuild/` | Builds trace and behaviour graphs; computes layout. |
 | `report/` | Self-contained HTML export. |
@@ -94,6 +94,15 @@ evades every signature. Decoding is bounded to 3 iterations and the depth is rec
 depth greater than 1 is itself an evasion signal. Both raw and decoded forms are exposed as
 separate match fields.
 
+**OWASP CRS is a third, optional source of signature matches**, run through Coraza in a Go sidecar
+by `logarc enrich` and read from the case thereafter. It supplies breadth the packs above do not —
+they catch 12.3% of the payload syntax CRS enumerates — and nothing else: CRS is stateless per
+request, so it expresses no behavioural rule, and it emits rule ids and tags rather than an
+`ActivityCategory`. A CRS detection is attached as evidence wherever it matched, and names the
+activity only where the packs reached INFO, meaning either nothing matched or the only match was
+an observation like `Scripted Client`. Anything LOW or above is a real claim and keeps precedence.
+See [ADR-0008](adr/0008-crs-as-a-signature-layer-beside-the-rule-packs.md).
+
 When several rules match, the highest severity becomes the primary label; all matches are kept as
 evidence. Unmatched requests fall through to benign classification (static asset, page view, API
 call, auth attempt).
@@ -118,7 +127,9 @@ For Apache- and nginx-style formats there is usually no new code at all: `parser
 compiles a `LogFormat` directive string directly into a matcher.
 
 **Adding a detection.** Write YAML in `detect/rulepacks/`. No Python. Rule packs are versioned and
-hashed into the case manifest, so a report states exactly which ruleset produced it.
+hashed into the case manifest, so a report states exactly which ruleset produced it — as is the CRS
+revision and paranoia level when a case was enriched, and an analysis that ran without CRS says so
+on every run rather than quietly reporting less.
 
 **Replacing storage.** Implement `storage.base.EventStore`.
 

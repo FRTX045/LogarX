@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Iterator
     from datetime import datetime
 
     from logarc.core.event import NormalizedEvent
@@ -49,6 +49,17 @@ class EventStore(Protocol):
 
     def events_for_ip(self, client_ip: str) -> list[NormalizedEvent]:
         """All events for one client, in time order."""
+        ...
+
+    def all_events(self) -> Iterator[NormalizedEvent]:
+        """Every event in the case, streamed.
+
+        The one whole-case read, and it exists for enrichment: sending each
+        client's requests to the CRS sidecar separately would pay process
+        startup per client and re-read the same partitions. Streamed rather
+        than returned as a list, because a case can hold millions of events and
+        the caller batches them anyway.
+        """
         ...
 
     def ip_summaries(

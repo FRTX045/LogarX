@@ -5,59 +5,45 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Removed
-
-- **`logarc score-crs`**, added earlier in this same unreleased cycle, is removed along with
-  `evaluation/crs.py` and its tests. CRS is being adopted as the signature layer, at which point
-  scoring against CRS's own regression corpus grades the rules with the suite their project
-  maintains — a number that cannot mean anything and would still be quoted. The measurement it
-  produced is kept in `docs/evaluation.md` and ADR-0007, because it is the evidence for the
-  adoption decision. The code is recoverable from git history; ADR-0007's postscript names the
-  commits.
-
-### Evaluation
-
-- `logarc score-crs` scores the bundled rules against the **OWASP CRS regression corpus** — 4,224
-  cases written by the Core Rule Set project, each a payload with an assertion naming which of
-  their rules must fire. The first external check of the signature layer; the existing figures all
-  come from traffic this project wrote, graded against rules this project wrote. The corpus is not
-  vendored: `--corpus` takes a clone path, and its git revision is recorded next to the ruleset
-  fingerprint so a rate stays re-derivable as CRS gains cases.
-- **The measured result is 12.3%** — 140 of the 1,138 payloads an access log can carry. Reported
-  here because a changelog that quotes only favourable numbers is worse than none. Part of the gap
-  is that CRS grades payload syntax while these rules classify behaviour, and part is genuinely
-  uncovered ground: 933 (PHP) scores 0.012 over 173 cases against no PHP rule at all, and 932 (RCE)
-  scores 0.079 over 406 against one. Three qualifications travel with the figure and the command
-  prints all three: the ceiling is 27%, because three cases in five put their payload in a request
-  body no access log records; it is a floor within that, because status is synthesised as 200 and
-  one bundled rule needs a 4xx; and CRS's own 341 false-positive tests are held out of the rate and
-  reported separately (a rule fired on 13, 3.8%).
-- No mapping between CRS families and this tool's activity categories is asserted. The categories
-  that fired are printed descriptively and never scored — see
-  [ADR-0007](docs/adr/0007-scoring-detection-against-the-crs-regression-corpus.md).
-- `--out` writes every uncaught payload with its source file, test id and URI. The rate is the
-  summary; that list is what can inform which rules to write next.
-- **The CRS gap is expressiveness, not decoding**, and that is now measured rather than assumed.
-  Adding HTML entity decoding, JavaScript escape decoding and null removal moved the rate from
-  12.0% to 12.3% — three cases, all Log4Shell in a `User-Agent`. Of the 1,001 missed payloads, five
-  contain an HTML entity, one a JavaScript escape and none a null byte; the rest arrive in plain
-  text and no rule expresses their syntax (`for %variable in (set) do`, `while(!false)`,
-  Postgres `::jsonb` operators). See the follow-up in
-  [ADR-0007](docs/adr/0007-scoring-detection-against-the-crs-regression-corpus.md).
-
 ### Detection
 
-- **HTML entity, JavaScript escape and null-byte normalisation.** `&#60;script&#62;`,
-  `<script>` and `/etc/passwd%00.jpg` now reach the rules in the form the server acts on.
-  The three decoders run in one loop with percent-decoding rather than in sequence, because they
-  nest in both directions — `%26lt%3B` is percent-then-entity and `&#x25;3C` is entity-then-percent.
-  Entity decoding is deliberately stricter than `html.unescape`, which resolves unterminated named
-  entities and would invent payloads in ordinary query strings.
+- **OWASP CRS runs beside the bundled rules**, through Coraza in a Go sidecar. `logarc enrich`
+  replays a case's requests past CRS once and stores the result; `analyze`, `evidence`, `export`
+  and `evaluate` read it. This is the real CRS, not a copy of its patterns: the transformation
+  chains, per-`ARGS` targeting, rule chaining and libinjection are what a regex port would lose.
+  Optional, and a case without it analyses natively and says so on every run. See
+  [ADR-0008](docs/adr/0008-crs-as-a-signature-layer-beside-the-rule-packs.md); build instructions
+  are in `crs/README.md`.
+- **Every native rule is kept.** CRS does one of the four jobs the detection layer performs — the
+  signature matching — and cannot do the others: it is stateless per request, so it expresses none
+  of the five window rules; it emits rule ids and tags rather than an `ActivityCategory`; and it
+  says nothing at all about the traffic no rule matched.
+- A CRS detection names a request **only where the rule packs reached INFO** — nothing matched, or
+  the only match was an observation like `Scripted Client`. Anything LOW or above is a real claim
+  and keeps precedence. CRS is attached as evidence either way, with `crs:942100`-style rule ids.
+- **Paranoia level 2 by default**, chosen by measurement. Across CRS's own 1,194 access-log-visible
+  regression payloads, PL1 classifies 67% as hostile and PL2 reaches 90%. PL2 is also the ceiling:
+  20,000 requests of generated benign traffic yield zero detections at every level, and on 365
+  lines of real 2010 WordPress traffic PL1 and PL2 leave the hostile-episode count untouched while
+  PL3 flags a plain `GET /` as "Unix Shell Code Found in Request".
+- The CRS revision, configuration fingerprint and paranoia level are written into the case
+  manifest, and reported beside the ruleset fingerprint.
+- **HTML entity, JavaScript escape and null-byte normalisation.** `&#60;script&#62;` and
+  `/etc/passwd%00.jpg` now reach the rules in the form the server acts on. The three decoders run
+  in one loop with percent-decoding rather than in sequence, because they nest in both directions —
+  `%26lt%3B` is percent-then-entity and `&#x25;3C` is entity-then-percent. Entity decoding is
+  deliberately stricter than `html.unescape`, which resolves unterminated named entities and would
+  invent payloads in ordinary query strings.
 - A null byte is now stripped from the matched text but recorded on the result as `had_null`, and
   exposed as a `had_null` match field. This reverses an earlier decision to keep the null in the
   text: the reasoning behind it — that sending one is never accidental — was right, but keeping it
   in the text meant `sensitive_file_access` never saw the path the server actually opens. Both are
   satisfiable at once.
+
+### Added
+
+- `EventStore.all_events()`, a streamed whole-case read. Enrichment needs one pass over everything
+  rather than a lookup per client.
 
 ### Fixed
 
@@ -67,6 +53,22 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   enumeration. Paths are now counted canonically while `top_targets` still reports what was
   actually requested. Note this changes window-rule firing, not only accuracy: episodes whose
   detection depended on the inflated count will no longer be labelled.
+
+### Evaluation
+
+- **The bundled rules were measured against the OWASP CRS regression corpus at 12.3%** — 140 of the
+  1,138 payloads an access log can carry, against a ceiling of 27% because three cases in five ride
+  in a request body. Reported because a changelog quoting only favourable numbers is worse than
+  none, and because it is the evidence for adopting CRS rather than writing more signatures.
+- **That gap is expressiveness, not decoding**, and it was measured rather than assumed. Adding the
+  three transforms above moved the rate by three cases. Of the 1,001 missed payloads, five carry an
+  HTML entity, one a JavaScript escape and none a null byte; the rest arrive in plain text with no
+  rule expressing them — `for %variable in (set) do`, `while(!false)`, Postgres `::jsonb`
+  operators. See [ADR-0007](docs/adr/0007-scoring-detection-against-the-crs-regression-corpus.md).
+- The `logarc score-crs` command that produced those figures was added and then removed within this
+  same unreleased cycle, so it never shipped: once CRS supplies detection, scoring against CRS's own
+  corpus grades the rules with the suite their project maintains. ADR-0007's postscript names the
+  commits, and reverting the removal restores it.
 
 ## [0.1.0] — 2026-08-09
 

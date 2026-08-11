@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from logarc.core.evidence import EvidenceRef
     from logarc.core.graph import ActivityGraph
     from logarc.core.session import Session
+    from logarc.detect.crs import DetectionIndex
     from logarc.detect.engine import LabelledEvent
     from logarc.storage.base import EventStore
 
@@ -92,6 +93,12 @@ class AnalysisResult:
     behaviour: ActivityGraph
     ruleset_fingerprint: str
     policy: AnalysisPolicy
+    crs_fingerprint: str | None = None
+    """Which CRS configuration contributed, or None when the case was not enriched.
+
+    Recorded beside the ruleset fingerprint for the same reason: a finding is
+    only reproducible if everything that produced it is named, and "CRS was not
+    consulted" is as much a part of a result as which rules were."""
 
     @property
     def request_count(self) -> int:
@@ -109,6 +116,7 @@ class AnalysisResult:
             "episode_count": len(self.episodes),
             "request_count": self.request_count,
             "ruleset_fingerprint": self.ruleset_fingerprint,
+            "crs_fingerprint": self.crs_fingerprint,
             "policy": self.policy.as_config(),
             "trace": self.trace.to_dict(),
             "behaviour": self.behaviour.to_dict(),
@@ -121,8 +129,15 @@ def analyse_ip(
     *,
     engine: RuleEngine | None = None,
     policy: AnalysisPolicy | None = None,
+    crs: DetectionIndex | None = None,
+    crs_fingerprint: str | None = None,
 ) -> AnalysisResult:
-    """Reconstruct what one client did."""
+    """Reconstruct what one client did.
+
+    `crs` is the detection set from `logarc enrich`, if the case has one. It
+    never changes a label a rule packed here asserted; it only names requests
+    that would otherwise fall through to ordinary traffic.
+    """
     engine = engine or RuleEngine(default_rules())
     policy = policy or AnalysisPolicy()
 
@@ -133,7 +148,7 @@ def analyse_ip(
     episodes: list[Episode] = []
     assignments: list[RequestAssignment] = []
     for session in sessions:
-        labelled = engine.label_events(session.events)
+        labelled = engine.label_events(session.events, crs=crs)
         for part in segment(labelled, session_id=session.session_id, policy=policy.episode):
             episodes.append(part.episode)
             assignments.extend(
@@ -150,4 +165,5 @@ def analyse_ip(
         behaviour=build_behaviour_map(episodes, client_ip=client_ip),
         ruleset_fingerprint=engine.fingerprint,
         policy=policy,
+        crs_fingerprint=crs_fingerprint,
     )
