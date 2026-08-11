@@ -34,6 +34,7 @@ from logarc import __version__
 from logarc.analysis import analyse_ip
 from logarc.case import Case
 from logarc.core.graph import GraphKind
+from logarc.detect.crs import CrsEvidence
 from logarc.gui._qt import required
 from logarc.gui.canvas import ActivityCanvas
 from logarc.gui.panels import ClientTable, EvidencePanel
@@ -42,11 +43,12 @@ from logarc.ingest.pipeline import IngestCancelled
 from logarc.report.html import render_report
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from logarc.analysis import AnalysisResult
+    from logarc.storage.base import IpSummary
 
-__all__ = ["MainWindow", "main"]
+__all__ = ["MainWindow", "main", "read_case", "reconstruct_client"]
 
 #: Clients listed at once. The table is for choosing from, not for reading in
 #: full; a case with a third of a million clients would otherwise freeze the
@@ -56,6 +58,36 @@ _CLIENT_LIMIT = 500
 #: Source lines fetched for a selected activity. The episode keeps a bounded
 #: sample of references anyway; this bounds what is read off disk per click.
 _EVIDENCE_LIMIT = 25
+
+
+# Module-level and Qt-free on purpose. These are the two decisions the window
+# makes about a case, and while they lived inside worker closures the GUI could
+# — and did — quietly disagree with the CLI about what a case contains. Out
+# here they are callable without a display, so a test can hold both front ends
+# to the same answer.
+def read_case(path: Path) -> tuple[Sequence[IpSummary], CrsEvidence]:
+    """Everything a freshly opened case needs, gathered in one visit.
+
+    The CRS evidence is read here rather than per reconstruction because it is a
+    property of the case, not of the client being looked at, and a case is
+    opened once against many clicks.
+    """
+    with Case.open(path) as case:
+        return (
+            case.store.ip_summaries(limit=_CLIENT_LIMIT, order_by="requests"),
+            case.crs_evidence(),
+        )
+
+
+def reconstruct_client(path: Path, client_ip: str, crs: CrsEvidence) -> AnalysisResult:
+    """Reconstruct one client, applying whatever CRS contributed to the case."""
+    with Case.open(path) as case:
+        return analyse_ip(
+            case.store,
+            client_ip,
+            crs=crs.index,
+            crs_fingerprint=crs.fingerprint,
+        )
 
 
 class MainWindow(QMainWindow):
@@ -68,6 +100,9 @@ class MainWindow(QMainWindow):
 
         self._case_path: Path | None = None
         self._result: AnalysisResult | None = None
+        #: What CRS contributed to the open case. Empty until one is opened, so
+        #: a reconstruction before then applies nothing rather than failing.
+        self._crs = CrsEvidence(index=None, fingerprint=None)
         self._kind = GraphKind.TRACE
         self._stop: threading.Event | None = None
 
@@ -213,19 +248,23 @@ class MainWindow(QMainWindow):
     def _load_case(self, path: Path) -> None:
         def work(report: Callable[[str], None]) -> Any:
             report(f"Opening {path}…")
-            with Case.open(path) as case:
-                return case.store.ip_summaries(limit=_CLIENT_LIMIT, order_by="requests")
+            return read_case(path)
 
         self._busy(f"Opening {path}…")
 
-        def done(summaries: Any) -> None:
+        def done(loaded: Any) -> None:
+            summaries, crs = loaded
             self._case_path = path
+            self._crs = crs
             self._result = None
             self._canvas.show_graph_placeholder()
             self._evidence.clear()
             self._heading.setText("No client selected.")
             self._clients.show_clients(summaries)
-            self._idle(f"{path} — {len(summaries):,} client(s) listed")
+            self._idle(
+                f"{path} — {len(summaries):,} client(s) listed"
+                + (", CRS applied" if crs.fingerprint else "")
+            )
 
         run_job(work, on_done=done, on_error=self._report_error, on_progress=self._status.setText)
 
@@ -235,11 +274,14 @@ class MainWindow(QMainWindow):
         if self._case_path is None:
             return
         path = self._case_path
+        # Read once here, on the interface thread, rather than from inside the
+        # worker: the job must not reach back into window state while the window
+        # is free to change it.
+        crs = self._crs
 
         def work(report: Callable[[str], None]) -> AnalysisResult:
             report(f"Reconstructing {client_ip}…")
-            with Case.open(path) as case:
-                return analyse_ip(case.store, client_ip)
+            return reconstruct_client(path, client_ip, crs)
 
         self._busy(f"Reconstructing {client_ip}…")
 

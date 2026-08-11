@@ -11,6 +11,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import TYPE_CHECKING
 
+from logarc.detect.crs.store import CrsEvidence
 from logarc.evidence import EvidenceLine, read_evidence
 from logarc.ingest.pipeline import DEFAULT_BATCH_SIZE, IngestResult, ingest_file
 from logarc.ingest.quarantine import Quarantine
@@ -64,6 +65,18 @@ class Case:
         self.store.close()
 
     # -- evidence ----------------------------------------------------------
+
+    def crs_evidence(self) -> CrsEvidence:
+        """What CRS contributed to this case, if it was enriched.
+
+        Here rather than in the interface layers for the same reason
+        `read_evidence` is: both the CLI and the GUI need it, and when each
+        worked it out for itself the GUI got it wrong — it passed no CRS at all,
+        so the same case answered differently depending on which front end
+        asked. One accessor makes that particular disagreement impossible
+        rather than merely fixed.
+        """
+        return CrsEvidence.of(self.root, self.manifest.config)
 
     def read_evidence(self, refs: Sequence[EvidenceRef]) -> list[EvidenceLine]:
         """Fetch the raw source lines behind a set of references.

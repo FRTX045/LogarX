@@ -26,6 +26,7 @@ from logarc.detect.crs.sidecar import (
 )
 from logarc.detect.crs.store import (
     CRS_FILE,
+    CrsEvidence,
     DetectionIndex,
     is_enriched,
     load_detections,
@@ -37,6 +38,7 @@ __all__ = [
     "KNOWN_FAMILIES",
     "RESCUE_CONFIDENCE",
     "CrsDetection",
+    "CrsEvidence",
     "CrsUnavailableError",
     "DetectionIndex",
     "SidecarConfig",

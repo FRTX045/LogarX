@@ -27,7 +27,13 @@ from logarc.detect.crs.sidecar import (
     default_binary,
     run_sidecar,
 )
-from logarc.detect.crs.store import is_enriched, load_detections, write_detections
+from logarc.detect.crs.store import (
+    CRS_FILE,
+    CrsEvidence,
+    is_enriched,
+    load_detections,
+    write_detections,
+)
 
 START = datetime(2024, 5, 1, tzinfo=UTC)
 
@@ -197,6 +203,49 @@ def test_an_enriched_case_is_distinguishable_from_one_with_no_findings(
 
     assert is_enriched(tmp_path) is True
     assert load_detections(tmp_path) == {}
+
+
+def test_an_unenriched_case_carries_no_crs_evidence(tmp_path: Path) -> None:
+    evidence = CrsEvidence.of(tmp_path, {})
+
+    assert evidence.index is None
+    assert evidence.fingerprint is None
+
+
+def test_an_enriched_case_carries_both_its_index_and_its_fingerprint(tmp_path: Path) -> None:
+    write_detections(tmp_path, [detection()])
+
+    evidence = CrsEvidence.of(tmp_path, {"crs_fingerprint": "abc123"})
+
+    assert evidence.fingerprint == "abc123"
+    assert evidence.index is not None
+    assert evidence.index[("access.log", 7)][0].rule_id == 942100
+
+
+def test_deleting_the_detections_withdraws_the_fingerprint(tmp_path: Path) -> None:
+    """The manifest records that `enrich` once ran; only the detection file says
+    it still applies. Reading the manifest alone would let a case whose
+    `crs.jsonl` was deleted analyse on the bundled rules while still naming a
+    CRS configuration — a result crediting something that did not produce it,
+    which is the one failure the fingerprint exists to prevent."""
+    write_detections(tmp_path, [detection()])
+    config = {"crs_fingerprint": "abc123"}
+    (tmp_path / CRS_FILE).unlink()
+
+    assert CrsEvidence.of(tmp_path, config).fingerprint is None
+
+
+def test_an_enrichment_that_found_nothing_still_counts_as_applied(tmp_path: Path) -> None:
+    """A clean corpus is exactly what CRS should return nothing for. Reporting
+    it as un-enriched would say CRS was never consulted, which is false."""
+    write_detections(tmp_path, [])
+
+    evidence = CrsEvidence.of(tmp_path, {"crs_fingerprint": "abc123"})
+
+    assert evidence.fingerprint == "abc123"
+    # No detections is not the same as no enrichment, but `analyse_ip` wants
+    # `None` for "nothing to apply" either way.
+    assert evidence.index is None
 
 
 def _fake_run(stdout: str = "", stderr: str = "", returncode: int = 0):
