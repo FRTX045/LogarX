@@ -112,8 +112,26 @@ def _storable(text: str | None) -> str | None:
 class ParquetEventStore:
     """A case directory on disk, holding ingested events."""
 
-    def __init__(self, root: Path | str, *, memory_limit: str = DEFAULT_MEMORY_LIMIT) -> None:
+    def __init__(
+        self,
+        root: Path | str,
+        *,
+        memory_limit: str = DEFAULT_MEMORY_LIMIT,
+        shard: str | None = None,
+    ) -> None:
+        """`shard` names this writer apart from any other writing the same case.
+
+        Parallel ingest gives each worker its own store over one case directory,
+        and the staged file names are numbered per instance — so without a name
+        every worker writes `part-000000.parquet` and all but the last are
+        replaced. The case then finalises, the counts look plausible, and the
+        lost evidence is the evidence nobody knows to look for.
+
+        `None` for a single writer, which keeps the sequential path writing
+        exactly where it always did.
+        """
         self.root = Path(root)
+        self._shard = shard
         self._staging = self.root / "staging"
         self._events = self.root / "events"
         self._ip_index = self.root / "ip_index.parquet"
@@ -156,7 +174,10 @@ class ParquetEventStore:
             },
             schema=SCHEMA,
         )
-        path = self._staging / f"part-{self._batch:06d}.parquet"
+        # `finalize` globs the directory, so any name it can read will do; what
+        # matters is only that two writers cannot choose the same one.
+        stem = "part" if self._shard is None else f"part-{self._shard}"
+        path = self._staging / f"{stem}-{self._batch:06d}.parquet"
         self._batch += 1
         pq.write_table(table, path, compression="zstd")
 

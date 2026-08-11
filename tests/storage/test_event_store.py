@@ -321,3 +321,37 @@ def test_finalize_survives_a_sort_that_does_not_fit_in_memory(tmp_path: Path) ->
     assert not (tmp_path / "case" / "tmp").exists()
     assert len(store.events_for_ip("203.0.113.1")) == len(range(1, 120_000, 251))
     store.close()
+
+
+def test_two_writers_on_one_case_do_not_overwrite_each_other(tmp_path: Path) -> None:
+    """Parallel ingest gives each worker its own store over the same case, and
+    the staged shards used to be numbered per instance — so every worker wrote
+    `part-000000.parquet` and all but the last were silently replaced.
+
+    Silently is the whole problem: the case finalises, the counts look
+    plausible, and the missing evidence is the evidence nobody knows to miss.
+    """
+    root = tmp_path / "case"
+    first = ParquetEventStore(root, shard="w0")
+    second = ParquetEventStore(root, shard="w1")
+
+    first.write([event("1.1.1.1", path="/from-first", line_no=1)])
+    second.write([event("2.2.2.2", path="/from-second", line_no=2)])
+    first.finalize()
+
+    assert [e.path for e in first.events_for_ip("1.1.1.1")] == ["/from-first"]
+    assert [e.path for e in first.events_for_ip("2.2.2.2")] == ["/from-second"]
+    first.close()
+    second.close()
+
+
+def test_a_store_without_a_shard_name_keeps_writing_where_it_always_did(
+    tmp_path: Path,
+) -> None:
+    """The sequential path is the common one and must not change shape."""
+    store = ParquetEventStore(tmp_path / "case")
+
+    store.write([event("1.1.1.1", path="/a", line_no=1)])
+
+    assert (tmp_path / "case" / "staging" / "part-000000.parquet").exists()
+    store.close()
