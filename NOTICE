@@ -1,0 +1,30 @@
+logarc
+Copyright (c) 2026 the logarc authors
+Licensed under the MIT License; see LICENSE.
+
+------------------------------------------------------------------------------
+
+This product optionally builds and runs `crs/crs-sidecar`, which links against
+and loads third-party components licensed under the Apache License, Version 2.0.
+Neither is redistributed in this repository: the Go module is fetched at build
+time and the ruleset is cloned separately (see crs/README.md). This notice is
+carried because a built sidecar, or any distribution containing one, does
+include them.
+
+  OWASP Coraza Web Application Firewall
+  Copyright the Coraza authors
+  https://github.com/corazawaf/coraza
+  Licensed under the Apache License, Version 2.0
+
+  libinjection-go
+  https://github.com/corazawaf/libinjection-go
+  Licensed under the Apache License, Version 2.0
+
+  OWASP CRS (Core Rule Set)
+  Copyright the OWASP CRS project
+  https://github.com/coreruleset/coreruleset
+  Licensed under the Apache License, Version 2.0
+
+You may obtain a copy of the Apache License, Version 2.0 at
+
+    http://www.apache.org/licenses/LICENSE-2.0
