@@ -37,7 +37,14 @@ from PyQt6.QtWidgets import (
 )
 
 from logarc.graphbuild.layout import Point, layout_graph
-from logarc.gui.style import CAPTION_COLOUR, edge_label, style_for, summarise
+from logarc.gui.style import (
+    CAPTION_COLOUR,
+    SELECTION_COLOUR,
+    SELECTION_WIDTH,
+    edge_label,
+    style_for,
+    summarise,
+)
 
 if TYPE_CHECKING:
     from PyQt6.QtGui import QMouseEvent
@@ -95,6 +102,8 @@ class ActivityCanvas(QGraphicsView):
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setBackgroundBrush(QBrush(QColor("#f5f7fa")))
         self._graph: ActivityGraph | None = None
+        self._nodes: dict[str, _NodeItem] = {}
+        self._halo: QGraphicsEllipseItem | None = None
 
     @property
     def graph_scene(self) -> QGraphicsScene:
@@ -103,10 +112,40 @@ class ActivityCanvas(QGraphicsView):
 
     # -- drawing -----------------------------------------------------------
 
+    def highlight(self, node_id: str) -> None:
+        """Ring the activity whose evidence is being read.
+
+        One ring at a time, moved rather than added to: drawn per click and left
+        behind, every node ever clicked would look selected, which is worse than
+        marking none of them.
+        """
+        if self._halo is not None:
+            self._scene.removeItem(self._halo)
+            self._halo = None
+
+        item = self._nodes.get(node_id)
+        if item is None:
+            return
+
+        radius = item.rect().width() / 2 + SELECTION_WIDTH + 2.0
+        halo = QGraphicsEllipseItem(QRectF(-radius, -radius, radius * 2, radius * 2))
+        halo.setPos(item.pos())
+        pen = QPen(QColor(SELECTION_COLOUR))
+        pen.setWidthF(SELECTION_WIDTH)
+        halo.setPen(pen)
+        halo.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+        # Under the node so the outcome border stays the outermost thing read,
+        # and above the edges so the ring is not cut by an arrow passing behind.
+        halo.setZValue(0.5)
+        self._scene.addItem(halo)
+        self._halo = halo
+
     def show_graph(self, graph: ActivityGraph) -> None:
         """Replace whatever is on the canvas with `graph`."""
         self._graph = graph
         self._scene.clear()
+        self._nodes.clear()
+        self._halo = None
 
         positions = layout_graph(graph)
         if not positions:
@@ -134,6 +173,8 @@ class ActivityCanvas(QGraphicsView):
         """Clear the canvas back to its waiting state."""
         self._graph = None
         self._scene.clear()
+        self._nodes.clear()
+        self._halo = None
         self._show_message("Select a client to reconstruct what it did.")
 
     def _show_message(self, text: str) -> None:
@@ -154,6 +195,7 @@ class ActivityCanvas(QGraphicsView):
         item.setPos(position.x, position.y)
         item.setToolTip(_tooltip(node))
         self._scene.addItem(item)
+        self._nodes[node.node_id] = item
 
         # Below the circle, not inside it. An activity name long enough to mean
         # something does not fit in a node sized by request count, and the

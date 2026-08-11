@@ -101,15 +101,18 @@ logarc-gui
 
 ![The logarc window: client list, session trace, and the log lines behind the selected activity](docs/images/screenshot-trace.png)
 
-*Session trace — what happened, in order. A scanner's 69 requests reduced to 7 activities. The
-panel on the right holds the raw log lines the selected node was built from; every finding traces
-back to a line.*
+*Session trace — what happened, in order. A scanner's 61 requests reduced to 10 activities. Long
+chains wrap onto further rows, alternating direction, because a trace drawn on one line is as wide
+as it is long and shrinks to an unreadable smudge when fitted to the window. The panel on the right
+holds the raw log lines the selected node was built from; every finding traces back to a line.*
 
 ![The same client drawn as a behaviour map](docs/images/screenshot-behaviour.png)
 
 *Behaviour map — the same reconstruction folded by activity type, so repetition becomes structure.
-The two `Directory Enumeration` episodes in the trace, 5 requests and 48, are one 53-request node
-here. Colour is severity, border is outcome: every dashed node above was refused.*
+The four `Directory Enumeration` episodes of the trace are one 45-request node here, and the `x3` on
+each arrow says the scanner went round that loop three times — the thing the trace cannot show. The
+ring marks the activity whose evidence is open; the key along the bottom says what colour, outline
+and size each mean.*
 
 A Windows GUI (PyQt6) wraps the same engine — the CLI and the GUI share one code path, so
 anything the GUI can do is scriptable. Pick a client from the table, read the activity graph,

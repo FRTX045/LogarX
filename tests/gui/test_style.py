@@ -10,12 +10,15 @@ from logarc.core.activity import ActivityCategory, Outcome, Severity
 from logarc.core.evidence import EvidenceRef
 from logarc.core.graph import GraphKind, GraphNode
 from logarc.gui.style import (
+    SIZE_NOTE,
     NodeStyle,
     edge_label,
     format_gap,
     node_radius,
     outcome_border,
+    outcome_legend,
     severity_colour,
+    severity_legend,
     style_for,
     summarise,
 )
@@ -159,3 +162,39 @@ def test_a_trace_never_shows_a_weight() -> None:
 
 def test_a_transition_with_no_recorded_gap_still_reports_its_weight() -> None:
     assert "3" in edge_label(GraphKind.BEHAVIOUR, weight=3, gap_seconds=None)
+
+
+def test_the_legend_explains_every_severity_the_taxonomy_has() -> None:
+    """The encoding is the product: colour is severity, border is outcome, size
+    is volume. None of that was written anywhere a user could see it, so a
+    dotted grey circle meant nothing to whoever was looking at one.
+
+    Read from the same tables the renderer draws from, so adding a severity
+    without explaining it fails here rather than quietly producing a colour
+    nobody can name."""
+    explained = {item.label for item in severity_legend()}
+
+    assert explained == {level.name.title() for level in Severity}
+
+
+def test_the_legend_explains_every_outcome() -> None:
+    explained = {item.label for item in outcome_legend()}
+
+    assert explained == {outcome.value.title() for outcome in Outcome}
+
+
+def test_a_legend_entry_carries_what_it_takes_to_draw_the_sample() -> None:
+    """A legend that describes a colour in words rather than showing it asks the
+    reader to match a name against a picture, which is the work it exists to
+    save."""
+    for item in severity_legend():
+        assert item.colour.startswith("#")
+    for item in outcome_legend():
+        assert item.border is not None
+        assert item.border.style in {"solid", "dashed", "dotted"}
+
+
+def test_the_legend_says_what_size_means() -> None:
+    """Volume is the third channel and the only one with no swatch, so it has to
+    be said in words or it is not explained at all."""
+    assert "request" in SIZE_NOTE.lower()

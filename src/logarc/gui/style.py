@@ -28,13 +28,17 @@ if TYPE_CHECKING:
 
 __all__ = [
     "CAPTION_COLOUR",
+    "SIZE_NOTE",
     "Border",
+    "LegendItem",
     "NodeStyle",
     "edge_label",
     "format_gap",
     "node_radius",
     "outcome_border",
+    "outcome_legend",
     "severity_colour",
+    "severity_legend",
     "style_for",
     "summarise",
 ]
@@ -76,6 +80,15 @@ class Border:
 #: by request count, and shrinking it until it did was making the graph
 #: unreadable at the scale it is first shown at.
 CAPTION_COLOUR: Final = "#1f2933"
+
+#: The ring drawn around the activity whose evidence is on screen.
+#:
+#: Added *outside* the node rather than replacing its outline, because the
+#: outline is the outcome and overwriting it would trade one piece of
+#: information for another. Without it the evidence panel fills and the canvas
+#: says nothing about which of a dozen nodes it belongs to.
+SELECTION_COLOUR: Final = "#2c6ea8"
+SELECTION_WIDTH: Final = 3.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,6 +147,46 @@ def summarise(node: GraphNode) -> str:
     label = node.label if len(node.label) <= _LABEL_LIMIT else node.label[: _LABEL_LIMIT - 1] + "…"
     requests = "1 request" if node.request_count == 1 else f"{node.request_count:,} requests"
     return f"{label}\n{requests} · {node.outcome.value}"
+
+
+@dataclass(frozen=True, slots=True)
+class LegendItem:
+    """One row of the key: a sample to draw, and what it means."""
+
+    label: str
+    colour: str
+    border: Border | None = None
+    """Set for outcome rows, where the outline carries the meaning rather than
+    the fill."""
+
+
+#: What the third channel means. Size has no swatch — it is a comparison, not a
+#: value — so it has to be said in words or it is not explained at all.
+SIZE_NOTE: Final = "Node size grows with the request count, by square root."
+
+
+def severity_legend() -> tuple[LegendItem, ...]:
+    """The colour ramp, read from the table the renderer draws from.
+
+    Generated rather than written out, so a severity added to the taxonomy
+    cannot end up on the canvas as a colour the key does not name.
+    """
+    return tuple(
+        LegendItem(label=level.name.title(), colour=_SEVERITY_COLOURS[level])
+        for level in sorted(Severity)
+    )
+
+
+def outcome_legend() -> tuple[LegendItem, ...]:
+    """The border styles, likewise read from the table that draws them."""
+    return tuple(
+        LegendItem(
+            label=outcome.value.title(),
+            colour=_OUTCOME_BORDERS[outcome].colour,
+            border=_OUTCOME_BORDERS[outcome],
+        )
+        for outcome in Outcome
+    )
 
 
 def format_gap(seconds: float | None) -> str:

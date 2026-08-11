@@ -52,6 +52,7 @@ def render_report(result: AnalysisResult, manifest: CaseManifest | None = None) 
         ip=html.escape(result.client_ip),
         style=_STYLE,
         summary=_summary(result),
+        legend=_legend(),
         trace=_svg(result.trace),
         behaviour=_svg(result.behaviour),
         episodes=_episode_table(result),
@@ -77,6 +78,36 @@ def _summary(result: AnalysisResult) -> str:
         f'<div class="card"><div class="card-label">{label}</div>'
         f'<div class="card-value">{value}</div></div>'
         for label, value in cards
+    )
+
+
+def _legend() -> str:
+    """The key to the drawing: what colour, outline and size each mean.
+
+    A report is read by someone who never opened the application and cannot ask
+    it. Left unexplained, the encoding that makes the graph worth drawing —
+    colour is severity, a dashed outline means refused, size is volume — is
+    decoration the reader has to guess at.
+
+    Built from the tables the SVG is drawn from, so it cannot name a colour the
+    drawing no longer uses.
+    """
+    severities = "".join(
+        f'<span class="key"><i style="background:{colour}"></i>'
+        f"{html.escape(level.name.title())}</span>"
+        for level, colour in _SEVERITY_COLOUR.items()
+    )
+    outcomes = "".join(
+        f'<span class="key"><i class="outline'
+        f'{" dashed" if outcome is Outcome.BLOCKED else ""}"></i>'
+        f"{html.escape(note)}</span>"
+        for outcome, note in _OUTCOME_NOTE.items()
+    )
+    return (
+        f'<p class="legend"><b>Severity</b> {severities}'
+        f"<b>Outcome</b> {outcomes}"
+        '<span class="key">Box size is fixed here; the request count is printed '
+        "inside each one.</span></p>"
     )
 
 
@@ -272,6 +303,12 @@ tr:last-child td { border-bottom: none; }
 .empty { color: #64748b; font-style: italic; }
 .node-title { font: 600 14px system-ui, sans-serif; fill: #0f172a; }
 .node-meta { font: 12px system-ui, sans-serif; fill: #64748b; }
+.legend{font-size:12px;color:#475569;margin:0 0 10px}
+.legend b{color:#0f172a;margin-right:6px}
+.key{display:inline-flex;align-items:center;gap:5px;margin-right:12px}
+.key i{width:14px;height:11px;display:inline-block;border-radius:2px}
+.key i.outline{background:#fff;border:2px solid #64748b}
+.key i.outline.dashed{border-style:dashed}
 .edge-label { font: 11px ui-monospace, monospace; fill: #94a3b8; }
 details { margin-top: 2.5rem; }
 pre { background: #0f172a; color: #e2e8f0; padding: 1rem; border-radius: 10px;
@@ -292,7 +329,7 @@ links back to the log lines that produced it.</p>
 <div class="cards">{summary}</div>
 
 <h2>What happened, in order</h2>
-<div class="panel">{trace}</div>
+<div class="panel">{legend}{trace}</div>
 
 <h2>How this client behaved</h2>
 <div class="panel">{behaviour}</div>
