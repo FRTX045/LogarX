@@ -5,6 +5,28 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Interface
+
+- **A long trace wraps instead of running off the canvas.** Laid out on one row
+  it was as wide as it was long and barely taller than a node, so fitting it
+  shrank the scene to 0.64 on seven episodes and 0.15 on thirty — correct, and
+  no longer legible. Rows now wrap and alternate direction; seven episodes fit
+  at 1.16 and thirty at 0.75. Short traces keep their straight line.
+  See [ADR-0009](docs/adr/0009-parallel-ingest-rather-than-a-native-parser.md)'s
+  neighbour, and the numbers in the commit.
+- **A key to the drawing**, under the canvas and in the HTML report. Colour is
+  severity, the outline is outcome, size is volume — none of which was written
+  anywhere a reader could see it. Built from the tables the renderers draw from,
+  so it cannot describe a colour no longer in use.
+- **The activity being read is ringed on the canvas.** Clicking a node filled
+  the evidence panel and left nothing saying which node it belonged to.
+- **The behaviour map says how often a transition was seen** (`x3`), rather than
+  carrying it in line thickness alone — which cannot be read as a number or
+  compared between two clients' maps, and which is the finding on that view.
+- **All six client-table columns fit.** Three of them sat behind a scrollbar,
+  including the 4xx ratio the table is sorted by when looking for something
+  worth opening.
+
 ### Performance
 
 - **Ingest can parse a log across worker processes** — `logarc ingest --workers N`. Measured on

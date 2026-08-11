@@ -37,7 +37,7 @@ from logarc.core.graph import GraphKind
 from logarc.detect.crs import CrsEvidence
 from logarc.gui._qt import required
 from logarc.gui.canvas import ActivityCanvas
-from logarc.gui.panels import ClientTable, EvidencePanel
+from logarc.gui.panels import ClientTable, EvidencePanel, LegendBar
 from logarc.gui.workers import run_job
 from logarc.ingest.pipeline import IngestCancelled
 from logarc.report.html import render_report
@@ -108,6 +108,7 @@ class MainWindow(QMainWindow):
 
         self._clients = ClientTable()
         self._canvas = ActivityCanvas()
+        self._legend = LegendBar()
         self._evidence = EvidencePanel()
         self._clients.client_chosen.connect(self._reconstruct)
         self._canvas.node_selected.connect(self._show_evidence)
@@ -138,12 +139,20 @@ class MainWindow(QMainWindow):
         column.setContentsMargins(0, 0, 0, 0)
         column.addWidget(self._heading)
         column.addWidget(self._canvas)
+        column.addWidget(self._legend)
+
+        # A floor, not just an opening size. `setSizes` is a suggestion the
+        # splitter drops as soon as a child's size hint disagrees, and the
+        # table's hint is small enough that the six columns were squeezed
+        # back behind a scrollbar however wide the initial share was set.
+        self._clients.setMinimumWidth(430)
+        self._evidence.setMinimumWidth(330)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(self._clients)
         splitter.addWidget(centre)
         splitter.addWidget(self._evidence)
-        splitter.setSizes([330, 720, 350])
+        splitter.setSizes([440, 560, 400])
         self.setCentralWidget(splitter)
 
     def _build_menu(self) -> None:
@@ -321,6 +330,9 @@ class MainWindow(QMainWindow):
     def _show_evidence(self, node_id: str) -> None:
         if self._result is None or self._case_path is None:
             return
+        # Ringed before the lookup, so the canvas answers the click even when
+        # the episode behind it cannot be found and nothing fills the panel.
+        self._canvas.highlight(node_id)
         graph = self._result.trace if self._kind is GraphKind.TRACE else self._result.behaviour
         node = next((item for item in graph.nodes if item.node_id == node_id), None)
         if node is None:

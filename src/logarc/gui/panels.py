@@ -13,6 +13,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QPalette, QTextCursor
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QHBoxLayout,
     QHeaderView,
     QLabel,
     QTableWidget,
@@ -23,23 +24,46 @@ from PyQt6.QtWidgets import (
 )
 
 from logarc.gui._qt import required
-from logarc.gui.style import severity_colour
+from logarc.gui.style import (
+    SIZE_NOTE,
+    outcome_legend,
+    severity_colour,
+    severity_legend,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from datetime import datetime
 
     from logarc.core.episode import Episode
     from logarc.evidence import EvidenceLine
     from logarc.storage.base import IpSummary
 
-__all__ = ["ClientTable", "EvidencePanel"]
+__all__ = ["ClientTable", "EvidencePanel", "LegendBar"]
 
-_COLUMNS = ("Client", "Requests", "Paths", "4xx", "First seen", "Last seen")
+#: Headers kept short because a header wider than its values sets the column
+#: width, and six columns of prose did not fit the panel however the values
+#: were sized. "Requests" alone was wider than any count it ever holds.
+_COLUMNS = ("Client", "Reqs", "Paths", "4xx", "First", "Last")
 
 #: The evidence surface. Matches the canvas ground and the exported report, so
 #: the same finding reads the same way on screen and on paper.
 _PAPER = "#f5f7fa"
 _INK = "#1f2933"
+
+
+def format_seen(when: datetime) -> str:
+    """A timestamp for the client table, short enough to leave room beside it.
+
+    The year and the seconds both go. Two full timestamps took about 280px of
+    a 330px panel between them, which is what pushed the 4xx ratio — the
+    column this table is sorted by when looking for something worth opening —
+    off the edge entirely.
+
+    Nothing is lost by it. This column is for ordering and orientation; the
+    exact times, to the second, are in the evidence panel beside every line.
+    """
+    return when.strftime("%d %b %H:%M")
 
 
 class ClientTable(QWidget):
@@ -57,7 +81,16 @@ class ClientTable(QWidget):
         self._table.setSortingEnabled(True)
         required(self._table.verticalHeader(), "row header").setVisible(False)
         header = required(self._table.horizontalHeader(), "column header")
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        # Every column sized to what it holds, and none of them stretched.
+        #
+        # Stretching the address column was what hid the rest: it claims the
+        # space left over, and with five other columns at a default width the
+        # panel could not afford, three of the six sat behind a scrollbar —
+        # including the 4xx ratio, which is the column the table is sorted by
+        # when looking for something worth opening. Sizing every column to its
+        # content and shortening the timestamps fits all six instead.
+        header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        header.setStretchLastSection(True)
         self._table.itemSelectionChanged.connect(self._emit_choice)
 
         self._caption = QLabel("No case open.")
@@ -76,8 +109,8 @@ class ClientTable(QWidget):
             self._set(
                 row, 3, f"{summary.client_error_ratio:.0%}", sort_key=summary.client_error_ratio
             )
-            self._set(row, 4, summary.first_seen.strftime("%Y-%m-%d %H:%M:%S"))
-            self._set(row, 5, summary.last_seen.strftime("%Y-%m-%d %H:%M:%S"))
+            self._set(row, 4, format_seen(summary.first_seen))
+            self._set(row, 5, format_seen(summary.last_seen))
         self._table.setSortingEnabled(True)
         self._caption.setText(
             f"{len(summaries):,} client(s). Select one to reconstruct what it did."
@@ -98,6 +131,68 @@ class ClientTable(QWidget):
             cell = self._table.item(rows[0].row(), 0)
             if cell is not None:
                 self.client_chosen.emit(cell.text())
+
+
+class LegendBar(QWidget):
+    """The key to the canvas: what colour, outline and size each mean.
+
+    None of it was written anywhere a user could see, so a dotted grey circle
+    meant nothing to whoever was looking at one. The encoding is what makes the
+    graph more than a picture, and an unexplained encoding is decoration.
+
+    Built from `gui.style`, which is the same source the canvas draws from, so
+    the key cannot describe a colour the canvas no longer uses.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        row = QHBoxLayout(self)
+        row.setContentsMargins(4, 2, 4, 2)
+        row.setSpacing(10)
+
+        row.addWidget(self._caption("Severity:"))
+        for item in severity_legend():
+            row.addWidget(self._swatch(item.colour, filled=True))
+            row.addWidget(self._caption(item.label))
+
+        row.addSpacing(12)
+        row.addWidget(self._caption("Outcome:"))
+        for item in outcome_legend():
+            border = item.border
+            row.addWidget(
+                self._swatch(item.colour, filled=False, style=border.style if border else None)
+            )
+            row.addWidget(self._caption(item.label))
+
+        row.addSpacing(12)
+        row.addWidget(self._caption(SIZE_NOTE))
+        row.addStretch(1)
+
+    @staticmethod
+    def _caption(text: str) -> QLabel:
+        label = QLabel(text)
+        font = label.font()
+        font.setPointSizeF(max(font.pointSizeF() - 1.0, 7.0))
+        label.setFont(font)
+        return label
+
+    @staticmethod
+    def _swatch(colour: str, *, filled: bool, style: str | None = None) -> QLabel:
+        """A drawn sample rather than a colour named in words.
+
+        Naming it would ask the reader to match a word against a picture, which
+        is the work the key exists to save.
+        """
+        sample = QLabel()
+        sample.setFixedSize(16, 12)
+        if filled:
+            sample.setStyleSheet(f"background:{colour};border:1px solid #616e7c;")
+        else:
+            pen = {"solid": "solid", "dashed": "dashed", "dotted": "dotted"}.get(
+                style or "", "solid"
+            )
+            sample.setStyleSheet(f"border:2px {pen} {colour};")
+        return sample
 
 
 class EvidencePanel(QWidget):

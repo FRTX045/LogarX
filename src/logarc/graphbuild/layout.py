@@ -26,6 +26,22 @@ __all__ = ["Point", "layout_graph"]
 _COLUMN: Final = 220.0
 _ROW: Final = 130.0
 
+#: Gap between one session's block and the next, as a multiple of the row height.
+#: Larger than a wrap on purpose: once a trace wraps, a session boundary drawn at
+#: the same spacing is indistinguishable from a line break, and the graph would
+#: report two visits where the log holds one.
+_SESSION_GAP: Final = 2
+
+#: Shortest chain that is allowed to wrap, and the narrowest a wrap may be.
+#: Below this a trace already fits, and wrapping would cost the straight timeline
+#: while buying no readability.
+#:
+#: Four rather than five because width is what binds. Five columns span 1,040
+#: units, which a ~950px canvas can only fit at 0.91; four span 820 and fit at
+#: 1.16. The difference is a 7.5pt caption drawn at 6.8pt against 8.7pt — the
+#: line between squinting and reading.
+_MIN_WRAP: Final = 4
+
 
 @dataclass(frozen=True, slots=True)
 class Point:
@@ -47,24 +63,57 @@ def layout_graph(graph: ActivityGraph) -> dict[str, Point]:
     return _radial_layout(graph)
 
 
+def _wrap_width(count: int) -> int:
+    """How many nodes to put on a row before starting the next.
+
+    A chain drawn on one row is as wide as it is long and barely taller than one
+    node, so fitting it to a roughly square canvas shrinks the whole scene until
+    the captions stop being legible — measured at 0.64 on a seven-episode trace,
+    which renders a 7.5pt caption at under 5pt.
+
+    The width that fixes it is the one that makes the block roughly square in
+    drawn units, and since a row is about half the width of a column that is
+    near enough the square root of the count. Never below `_MIN_WRAP`: a short
+    trace already fits, and breaking it would give up the straight timeline for
+    nothing.
+    """
+    if count <= _MIN_WRAP:
+        return count or 1
+    return max(_MIN_WRAP, math.ceil(math.sqrt(count)))
+
+
 def _chronological_layout(graph: ActivityGraph) -> dict[str, Point]:
-    """One row per session, running left to right in time.
+    """Each session in its own block, running left to right in time.
 
     The trace is already in chronological order, and its only edges are between
     consecutive episodes of one session, so position follows directly from
     order — no topological sort required.
+
+    A long chain wraps onto further rows, and those rows alternate direction.
+    Serpentine rather than every row left to right: a chain that always restarts
+    at the left sends one line the full width of the block backwards on every
+    wrap, crossing everything between. Alternating keeps every join short, and
+    the eye follows a fold naturally.
     """
     positions: dict[str, Point] = {}
-    rows: dict[str, int] = {}
-    column = 0
+    by_session: dict[str, list[str]] = {}
 
     for node in graph.nodes:
         session = node.episode_ids[0].split("/")[0] if node.episode_ids else ""
-        if session not in rows:
-            rows[session] = len(rows)
-            column = 0
-        positions[node.node_id] = Point(x=column * _COLUMN, y=rows[session] * _ROW)
-        column += 1
+        by_session.setdefault(session, []).append(node.node_id)
+
+    row = 0
+    for index, node_ids in enumerate(by_session.values()):
+        if index:
+            row += _SESSION_GAP
+        width = _wrap_width(len(node_ids))
+        for position, node_id in enumerate(node_ids):
+            line, offset = divmod(position, width)
+            # Odd rows run right to left, so the last node of one row sits above
+            # the first of the next.
+            column = offset if line % 2 == 0 else width - 1 - offset
+            positions[node_id] = Point(x=column * _COLUMN, y=(row + line) * _ROW)
+        row += (len(node_ids) - 1) // width
 
     return positions
 

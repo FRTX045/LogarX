@@ -21,7 +21,7 @@ from logarc.graphbuild.layout import layout_graph
 
 if TYPE_CHECKING:
     from logarc.analysis import AnalysisResult
-    from logarc.core.graph import ActivityGraph
+    from logarc.core.graph import ActivityGraph, GraphEdge
     from logarc.storage.case import CaseManifest
 
 __all__ = ["render_report"]
@@ -52,6 +52,7 @@ def render_report(result: AnalysisResult, manifest: CaseManifest | None = None) 
         ip=html.escape(result.client_ip),
         style=_STYLE,
         summary=_summary(result),
+        legend=_legend(),
         trace=_svg(result.trace),
         behaviour=_svg(result.behaviour),
         episodes=_episode_table(result),
@@ -80,6 +81,54 @@ def _summary(result: AnalysisResult) -> str:
     )
 
 
+def _legend() -> str:
+    """The key to the drawing: what colour, outline and size each mean.
+
+    A report is read by someone who never opened the application and cannot ask
+    it. Left unexplained, the encoding that makes the graph worth drawing —
+    colour is severity, a dashed outline means refused, size is volume — is
+    decoration the reader has to guess at.
+
+    Built from the tables the SVG is drawn from, so it cannot name a colour the
+    drawing no longer uses.
+    """
+    severities = "".join(
+        f'<span class="key"><i style="background:{colour}"></i>'
+        f"{html.escape(level.name.title())}</span>"
+        for level, colour in _SEVERITY_COLOUR.items()
+    )
+    outcomes = "".join(
+        f'<span class="key"><i class="outline'
+        f'{" dashed" if outcome is Outcome.BLOCKED else ""}"></i>'
+        f"{html.escape(note)}</span>"
+        for outcome, note in _OUTCOME_NOTE.items()
+    )
+    return (
+        f'<p class="legend"><b>Severity</b> {severities}'
+        f"<b>Outcome</b> {outcomes}"
+        '<span class="key">Box size is fixed here; the request count is printed '
+        "inside each one.</span></p>"
+    )
+
+
+def _edge_label(kind: GraphKind, edge: GraphEdge) -> str:
+    """What to write beside an arrow.
+
+    On a behaviour map the weight is the finding — a transition seen twice is a
+    habit, one seen once is an incident — and it used to be carried here by line
+    thickness alone, which a reader cannot turn back into a number. The report
+    is read by someone who never opened the application, so it is the copy that
+    most needs an arrow to say what it means.
+
+    A weight of one is left off: every step of a trace has one by construction,
+    so it would print a column of identical numbers.
+    """
+    gap = _duration(edge.gap_seconds) if edge.gap_seconds is not None else ""
+    if kind is GraphKind.TRACE or edge.weight <= 1:
+        return gap
+    return f"x{edge.weight:,}" + (f" · {gap}" if gap else "")
+
+
 def _svg(graph: ActivityGraph) -> str:
     if not graph.nodes:
         return '<p class="empty">No activity to draw.</p>'
@@ -104,9 +153,19 @@ def _svg(graph: ActivityGraph) -> str:
         start, end = positions.get(edge.source), positions.get(edge.target)
         if start is None or end is None:  # pragma: no cover - edges follow nodes
             continue
-        x1 = start.x + offset_x + _NODE_WIDTH
+        # Anchored on the side each box faces the other from. A trace wraps onto
+        # further rows and those rows alternate direction, so an edge may run
+        # right to left; anchoring both ends as though it always ran left to
+        # right sends the line back across the two boxes it connects.
+        if end.x > start.x:
+            x1 = start.x + offset_x + _NODE_WIDTH
+            x2 = end.x + offset_x
+        elif end.x < start.x:
+            x1 = start.x + offset_x
+            x2 = end.x + offset_x + _NODE_WIDTH
+        else:  # directly below: leave from the middle rather than either side
+            x1 = x2 = start.x + offset_x + _NODE_WIDTH / 2
         y1 = start.y + offset_y + _NODE_HEIGHT / 2
-        x2 = end.x + offset_x
         y2 = end.y + offset_y + _NODE_HEIGHT / 2
         thickness = min(1 + edge.weight * 0.6, 6)
         if edge.source == edge.target:
@@ -121,10 +180,10 @@ def _svg(graph: ActivityGraph) -> str:
             f'{midpoint:.0f},{y2:.0f} {x2:.0f},{y2:.0f}" fill="none" stroke="#94a3b8" '
             f'stroke-width="{thickness:.1f}" marker-end="url(#arrow)"/>'
         )
-        if edge.gap_seconds is not None and graph.kind is GraphKind.TRACE:
+        if label := _edge_label(graph.kind, edge):
             parts.append(
                 f'<text x="{midpoint:.0f}" y="{(y1 + y2) / 2 - 6:.0f}" class="edge-label" '
-                f'text-anchor="middle">{_duration(edge.gap_seconds)}</text>'
+                f'text-anchor="middle">{html.escape(label)}</text>'
             )
 
     for node in graph.nodes:
@@ -244,6 +303,12 @@ tr:last-child td { border-bottom: none; }
 .empty { color: #64748b; font-style: italic; }
 .node-title { font: 600 14px system-ui, sans-serif; fill: #0f172a; }
 .node-meta { font: 12px system-ui, sans-serif; fill: #64748b; }
+.legend{font-size:12px;color:#475569;margin:0 0 10px}
+.legend b{color:#0f172a;margin-right:6px}
+.key{display:inline-flex;align-items:center;gap:5px;margin-right:12px}
+.key i{width:14px;height:11px;display:inline-block;border-radius:2px}
+.key i.outline{background:#fff;border:2px solid #64748b}
+.key i.outline.dashed{border-style:dashed}
 .edge-label { font: 11px ui-monospace, monospace; fill: #94a3b8; }
 details { margin-top: 2.5rem; }
 pre { background: #0f172a; color: #e2e8f0; padding: 1rem; border-radius: 10px;
@@ -264,7 +329,7 @@ links back to the log lines that produced it.</p>
 <div class="cards">{summary}</div>
 
 <h2>What happened, in order</h2>
-<div class="panel">{trace}</div>
+<div class="panel">{legend}{trace}</div>
 
 <h2>How this client behaved</h2>
 <div class="panel">{behaviour}</div>

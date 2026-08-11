@@ -293,3 +293,47 @@ def test_the_evidence_panel_reports_an_unreadable_source(
     panel.show_evidence(result.episodes[0], missing)
 
     assert "unavailable" in panel._body.toPlainText()
+
+
+def test_the_canvas_rings_the_activity_being_read(qt_app: QApplication, campaign: Path) -> None:
+    """Clicking a node filled the evidence panel and left the canvas saying
+    nothing about which of a dozen nodes it belonged to."""
+    with Case.open(campaign) as case:
+        result = analyse_ip(case.store, CLIENT)
+    canvas = ActivityCanvas()
+    canvas.show_graph(result.trace)
+    before = len(canvas.graph_scene.items())
+
+    canvas.highlight(result.trace.nodes[0].node_id)
+
+    assert len(canvas.graph_scene.items()) == before + 1
+
+
+def test_only_the_last_activity_clicked_stays_ringed(qt_app: QApplication, campaign: Path) -> None:
+    """Drawn per click and left behind, every node ever clicked would look
+    selected — worse than marking none of them."""
+    with Case.open(campaign) as case:
+        result = analyse_ip(case.store, CLIENT)
+    canvas = ActivityCanvas()
+    canvas.show_graph(result.trace)
+    before = len(canvas.graph_scene.items())
+
+    for node in result.trace.nodes[:3]:
+        canvas.highlight(node.node_id)
+
+    assert len(canvas.graph_scene.items()) == before + 1
+
+
+def test_redrawing_the_graph_forgets_the_ring(qt_app: QApplication, campaign: Path) -> None:
+    """The scene is cleared on redraw, so a kept reference would point at a
+    deleted item and the next highlight would try to remove it."""
+    with Case.open(campaign) as case:
+        result = analyse_ip(case.store, CLIENT)
+    canvas = ActivityCanvas()
+    canvas.show_graph(result.trace)
+    canvas.highlight(result.trace.nodes[0].node_id)
+
+    canvas.show_graph(result.behaviour)
+    canvas.highlight(result.behaviour.nodes[0].node_id)
+
+    assert canvas.graph_scene.items()

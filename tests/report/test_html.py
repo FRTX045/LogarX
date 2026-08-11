@@ -12,11 +12,14 @@ import json
 import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
 from logarc.analysis import analyse_ip
 from logarc.case import Case
+from logarc.core.activity import ActivityCategory, Outcome, Severity
+from logarc.graphbuild.layout import Point
 from logarc.report.html import render_report
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
@@ -126,3 +129,65 @@ def test_the_report_renders_without_a_manifest(campaign: Case) -> None:
     page = render_report(result)
 
     assert ATTACKER in page
+
+
+def test_an_edge_that_runs_backwards_leaves_from_the_left_of_its_node(tmp_path: Path) -> None:
+    """A wrapped trace alternates direction, so on odd rows the target sits to
+    the *left* of its source. Anchoring every line to the right edge regardless
+    would draw it back across both nodes it connects.
+    """
+    from logarc.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
+    from logarc.report.html import _NODE_WIDTH, _svg
+
+    def node(node_id: str) -> GraphNode:
+        return GraphNode(
+            node_id=node_id,
+            label="Directory Enumeration",
+            category=ActivityCategory.ENUMERATION,
+            severity=Severity.MEDIUM,
+            outcome=Outcome.BLOCKED,
+            request_count=5,
+            distinct_paths=5,
+            start=START,
+            end=START + timedelta(seconds=5),
+            episode_ids=("s/1",),
+            bytes_total=0,
+            owasp=None,
+            top_targets=(),
+            rule_ids=(),
+            evidence=(),
+            evidence_total=5,
+        )
+
+    # `right` sits further along the x axis; the edge runs from it back to `left`.
+    graph = ActivityGraph(
+        kind=GraphKind.TRACE,
+        client_ip="1.2.3.4",
+        nodes=(node("right"), node("left")),
+        edges=(GraphEdge(source="right", target="left"),),
+    )
+    positions = {"right": Point(x=440.0, y=0.0), "left": Point(x=0.0, y=0.0)}
+
+    with mock.patch("logarc.report.html.layout_graph", return_value=positions):
+        svg = _svg(graph)
+
+    # Anchored on the cubic, not on any `<path>`: the arrowhead in `<defs>` is
+    # also a path and starts at M0,0, which would satisfy any bound asked of it.
+    path = re.search(r'<path d="M([\d.]+),[\d.]+ C', svg)
+    assert path is not None
+    # 440 + offset is the source's own x — its left edge, facing the target.
+    # Adding _NODE_WIDTH would anchor the line to the right edge, pointing away.
+    assert float(path.group(1)) < 440.0 + _NODE_WIDTH
+
+
+def test_the_report_writes_how_often_a_transition_was_seen(campaign: Case) -> None:
+    """The behaviour map's weights carried no label at all in the report — only
+    line thickness, which a reader cannot turn back into a number. A report is
+    read by someone who never opened the application, so it is the copy that
+    most needs the arrow to say what it means."""
+    from logarc.core.graph import GraphEdge, GraphKind
+    from logarc.report.html import _edge_label
+
+    assert "x2" in _edge_label(GraphKind.BEHAVIOUR, GraphEdge("a", "b", weight=2, gap_seconds=9.0))
+    assert "x" not in _edge_label(GraphKind.BEHAVIOUR, GraphEdge("a", "b", weight=1, gap_seconds=9))
+    assert "x" not in _edge_label(GraphKind.TRACE, GraphEdge("a", "b", weight=1, gap_seconds=9.0))
