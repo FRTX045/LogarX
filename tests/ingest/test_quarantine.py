@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from logarc.ingest.quarantine import Quarantine
+from logarc.ingest.quarantine import DIRECTORY_NAME, FILE_NAME, Quarantine
 
 
 def test_nothing_is_written_when_no_lines_are_quarantined(tmp_path: Path) -> None:
@@ -60,3 +60,35 @@ def read_records(case_root: Path) -> list[dict[str, object]]:
     path = case_root / "quarantine" / "unparsed.jsonl"
     lines = path.read_text(encoding="utf-8").splitlines()
     return [json.loads(line) for line in lines if line]
+
+
+def test_workers_write_to_separate_files_that_merge_into_one(tmp_path: Path) -> None:
+    """Parallel ingest runs several quarantines over one case. Appending to a
+    shared file from several processes is not guaranteed atomic on Windows, and
+    a torn write would corrupt the record of exactly the lines that were already
+    too damaged to parse.
+    """
+    first = Quarantine(tmp_path, shard="w0")
+    second = Quarantine(tmp_path, shard="w1")
+
+    first.record("access.log", 1, "broken one", reason="unparseable")
+    second.record("access.log", 900, "broken two", reason="unparseable")
+    first.close()
+    second.close()
+
+    assert first.path != second.path
+    merged = Quarantine.merge(tmp_path)
+
+    assert merged == 2
+    lines = (tmp_path / DIRECTORY_NAME / FILE_NAME).read_text(encoding="utf-8").splitlines()
+    assert {json.loads(line)["line_no"] for line in lines} == {1, 900}
+    # The per-worker parts are cleaned up; two records of the same lines in the
+    # same directory would double every count read back from it.
+    assert not list((tmp_path / DIRECTORY_NAME).glob("unparsed-*.jsonl"))
+
+
+def test_merging_a_clean_ingest_leaves_no_artefact(tmp_path: Path) -> None:
+    """A case with nothing quarantined must not grow an empty file that reads
+    like a problem."""
+    assert Quarantine.merge(tmp_path) == 0
+    assert not (tmp_path / DIRECTORY_NAME / FILE_NAME).exists()

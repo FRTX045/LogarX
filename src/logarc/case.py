@@ -13,8 +13,10 @@ from typing import TYPE_CHECKING
 
 from logarc.detect.crs.store import CrsEvidence
 from logarc.evidence import EvidenceLine, read_evidence
+from logarc.ingest.parallel import ingest_file_parallel, worth_splitting
 from logarc.ingest.pipeline import DEFAULT_BATCH_SIZE, IngestResult, ingest_file
 from logarc.ingest.quarantine import Quarantine
+from logarc.ingest.reader import Compression
 from logarc.storage.case import MANIFEST_NAME, CaseManifest, SourceRecord
 from logarc.storage.event_store import ParquetEventStore
 
@@ -112,12 +114,24 @@ class Case:
         batch_size: int = DEFAULT_BATCH_SIZE,
         on_progress: Callable[[int, int], None] | None = None,
         should_cancel: Callable[[], bool] | None = None,
+        workers: int = 1,
     ) -> list[IngestResult]:
         """Read logs into the case and record them in the manifest.
 
         `should_cancel` lets a caller stop a long ingest; it raises
         `IngestCancelled` and the case is left un-finalised, so a stopped run
         cannot be mistaken for a complete one.
+
+        `workers` above one parses the file in byte ranges across processes.
+        It is silently ignored for a file that cannot benefit — a compressed log
+        has no random access, and a small one is finished before the workers
+        have started. Falling back rather than refusing keeps `--workers` from
+        being a flag that breaks on files the tool otherwise reads happily.
+
+        Cancellation is not offered on the parallel path. A stop would have to
+        reach several processes and leave the case in a state each of them
+        agreed on, and claiming a cancel that only sometimes arrives is worse
+        than not offering one; the sequential path keeps it.
         """
         if self.store.is_finalized:
             raise CaseError(
@@ -128,16 +142,28 @@ class Case:
         try:
             with Quarantine(self.root) as quarantine:
                 for path in paths:
-                    result = ingest_file(
-                        Path(path),
-                        self.store,
-                        quarantine,
-                        file_id=self._allocate_file_id(Path(path)),
-                        log_format=log_format,
-                        batch_size=batch_size,
-                        on_progress=on_progress,
-                        should_cancel=should_cancel,
-                    )
+                    source = Path(path)
+                    file_id = self._allocate_file_id(source)
+                    if should_cancel is None and worth_splitting(source, workers=workers):
+                        result = self._ingest_in_parallel(
+                            source,
+                            file_id=file_id,
+                            log_format=log_format,
+                            batch_size=batch_size,
+                            workers=workers,
+                            on_progress=on_progress,
+                        )
+                    else:
+                        result = ingest_file(
+                            source,
+                            self.store,
+                            quarantine,
+                            file_id=file_id,
+                            log_format=log_format,
+                            batch_size=batch_size,
+                            on_progress=on_progress,
+                            should_cancel=should_cancel,
+                        )
                     results.append(result)
                     self.manifest.sources.append(_to_source_record(result))
         finally:
@@ -146,6 +172,44 @@ class Case:
             # custody, which is the one thing the manifest exists to prevent.
             self.manifest.save(self.root)
         return results
+
+    def _ingest_in_parallel(
+        self,
+        path: Path,
+        *,
+        file_id: str,
+        log_format: str | None,
+        batch_size: int,
+        workers: int,
+        on_progress: Callable[[int, int], None] | None,
+    ) -> IngestResult:
+        """Run the parallel path and shape its counts into an `IngestResult`.
+
+        The store this case holds stays out of it: workers open their own,
+        because a `ParquetEventStore` carries a database connection and cannot
+        cross a process boundary.
+        """
+        counts, sha256, size_bytes, resolved, duration = ingest_file_parallel(
+            path,
+            self.root,
+            file_id=file_id,
+            log_format=log_format,
+            workers=workers,
+            batch_size=batch_size,
+            on_progress=on_progress,
+        )
+        return IngestResult(
+            file_id=file_id,
+            original_path=str(path),
+            sha256=sha256,
+            size_bytes=size_bytes,
+            compression=Compression.NONE.value,
+            log_format=resolved,
+            lines_read=counts.lines_read,
+            events_parsed=counts.events_parsed,
+            lines_quarantined=counts.lines_quarantined,
+            duration_seconds=duration,
+        )
 
     def finalize(self) -> None:
         """Close ingest and build the read-side structures."""

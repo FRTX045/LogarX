@@ -149,11 +149,27 @@ def ingest(
         str | None,
         typer.Option("--format", "-f", help="Log format name. Detected automatically if omitted."),
     ] = None,
+    workers: Annotated[
+        int,
+        typer.Option(
+            "--workers",
+            "-w",
+            min=1,
+            help="Processes to parse with. Trades memory for speed; ignored for "
+            "compressed or small logs, which cannot benefit.",
+        ),
+    ] = 1,
 ) -> None:
-    """Read logs into a new case."""
+    """Read logs into a new case.
+
+    `--workers` above one parses the file in byte ranges across processes.
+    Parsing is where ingest spends its time, and it parallelises cleanly, but
+    each worker holds a batch of its own — so memory rises roughly in step with
+    the count. It defaults to one because the memory is the user's to spend.
+    """
     try:
         with Case.create(case) as opened:
-            results = opened.ingest(logs, log_format=log_format)
+            results = opened.ingest(logs, log_format=log_format, workers=workers)
     except USER_ERRORS as exc:
         raise _fail(str(exc)) from exc
 
