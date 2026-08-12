@@ -189,18 +189,28 @@ other rejects.
 
 ```bash
 pip install -e ".[gui,package]"
-pyinstaller --clean --noconfirm packaging/logarc.spec
+python packaging/rebuild.py
 ```
 
 Produces `dist/logarc/` (~250 MB), which runs without Python installed. One folder rather than
 one file: a one-file build unpacks the whole bundle to `%TEMP%` on every launch, which with Qt
 and Arrow in it costs seconds each time and leaves copies of the tool behind.
 
-Two things a freezer drops silently, and the spec therefore carries explicitly: the rule packs,
-which are data that nothing imports, and the package metadata, which is where the case manifest
-gets the tool version it records. Both fail at runtime rather than at build time, and the first
-one fails *quietly* — no rules means every request reads as benign. Check 7 of the manual test
-plan exists to catch it.
+`rebuild.py` rather than `pyinstaller` directly, because **PyInstaller exits 0 on a bundle that is
+missing what it could not see.** Two things a freezer drops silently, and the spec therefore
+carries explicitly: the rule packs, which are data that nothing imports, and the package metadata,
+which is where the case manifest gets the tool version it records. Both fail at runtime rather than
+at build time, and the first fails *quietly* — no rules means every request reads as benign. The
+script runs the tests, builds into a staging directory, checks for both of those and for a browser
+engine that ADR-0006 says must not be there, and only then swaps the result into place. A red suite
+or a failed check leaves the working bundle exactly where it was.
+
+```bash
+cat dist/BUILD-STATUS.txt      # what the last build did, and to which commit
+pyinstaller --clean --noconfirm packaging/logarc.spec   # the raw build, unchecked
+```
+
+Check 7 of the manual test plan covers the same ground on the packaged result.
 
 ## Documentation
 
