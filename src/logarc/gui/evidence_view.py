@@ -34,7 +34,11 @@ from logarc.gui.style import (
 if TYPE_CHECKING:
     from logarc.evidence import EvidenceLine
 
-__all__ = ["COLUMNS", "Cell", "cells_for"]
+__all__ = ["ALERT_COLOUR", "COLUMNS", "Cell", "cells_for"]
+
+#: Something is wrong with this piece of evidence, and the reader has to see
+#: that rather than an empty row.
+ALERT_COLOUR: Final = "#b5273a"
 
 #: Headings, in order. `Target` is the one that grows: every other value is a
 #: handful of characters and a payload is sixty.
@@ -92,8 +96,24 @@ def cells_for(line: EvidenceLine, *, decode: bool) -> tuple[Cell, ...]:
 
 
 def _target_cell(line: EvidenceLine, *, decode: bool) -> Cell:
-    """The request, which is the column the reader came for."""
-    event = line.event
-    target = event.target if event else ""
+    """The request, which is the column the reader came for.
+
+    Three cases, and each is worth telling apart: a request, a line the parser
+    would not read, and a line that could not be read at all. The last two get
+    a row like any other — a gap in the evidence with nothing to say a gap is
+    there would be the worst of the three.
+    """
+    if line.text is None:
+        return Cell(
+            text=f"unavailable — {display_safe(line.note or 'source not readable')}",
+            colour=ALERT_COLOUR,
+        )
+    if line.event is None:
+        # No fields to lay out, so the line stands as it is — made safe for a
+        # single-line cell. The original is in the detail pane, untouched.
+        safe = display_safe(line.text)
+        return Cell(text=safe, tooltip=safe, colour=EVIDENCE_MUTED)
+
+    target = line.event.target
     shown = decode_target(target) if decode else display_safe(target)
     return Cell(text=shown, tooltip=shown, bold=True)

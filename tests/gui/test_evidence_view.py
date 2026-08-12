@@ -98,3 +98,45 @@ def test_the_time_is_the_one_the_request_arrived() -> None:
 def test_the_full_target_is_available_as_a_tooltip() -> None:
     """The column will be too narrow for a long payload however it is sized."""
     assert cell(line(), "Target").tooltip == "/search?q=' OR '1'='1"
+
+
+def unparsed(text: str = "!! not a log line !!") -> EvidenceLine:
+    return EvidenceLine(ref=EvidenceRef("access.log", 4), source_path="access.log", text=text)
+
+
+def missing() -> EvidenceLine:
+    return EvidenceLine(
+        ref=EvidenceRef("gone.log", 9),
+        source_path="gone.log",
+        note="cannot open log file gone.log",
+    )
+
+
+def test_a_line_the_parser_rejects_still_gets_a_row() -> None:
+    """A request that will not parse is itself a finding, and dropping it would
+    leave a gap in the evidence with nothing to say a gap is there."""
+    cells = cells_for(unparsed(), decode=True)
+
+    assert len(cells) == len(COLUMNS)
+    assert cells[COLUMNS.index("Source")].text == "access.log:4"
+    assert "not a log line" in cells[COLUMNS.index("Target")].text
+
+
+def test_an_unreadable_source_says_so_in_the_row() -> None:
+    """A case outlives its logs. The row must report that, not look empty."""
+    from logarc.gui.evidence_view import ALERT_COLOUR
+
+    target = cells_for(missing(), decode=True)[COLUMNS.index("Target")]
+
+    assert "unavailable" in target.text
+    assert "gone.log" in target.text
+    assert target.colour == ALERT_COLOUR
+
+
+def test_a_control_character_in_a_raw_line_cannot_break_the_row() -> None:
+    """A cell is one line. A log line carrying a newline — however it got
+    there — would otherwise draw over the row beneath it."""
+    target = cells_for(unparsed("before\nafter"), decode=True)[COLUMNS.index("Target")]
+
+    assert "\n" not in target.text
+    assert "<U+000A>" in target.text
