@@ -26,6 +26,24 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   shared out, and panels no longer collapse to an invisible handle against the
   window edge. The 430px floor put on the client table to stop its columns
   hiding is gone — it was the wrong tool, and it was half of what wedged this.
+- **The evidence is a sortable table.** One row per request — source, time,
+  the request, status, size — with the selected row shown in full beneath it.
+  Twenty-five pieces of evidence were 175 rows of wrapped text readable only in
+  the order they arrived; they are twenty-five rows now, and can be **sorted by
+  size to find the request that got data out** or by status to find what was
+  served rather than refused. Those are the two questions a blue team asks of an
+  episode and neither could be answered before without reading every line.
+  The detail pane carries the whole payload, the agent at full length, and the
+  source line **exactly as the log holds it** — so nothing is summarised away,
+  only moved to where there is room for it. `View → Show raw log lines` is
+  retired: the pane shows the original for the selected row always, which is
+  strictly more than a global on-or-off could give.
+- **Both tables were showing raw numbers in place of their formatted values.**
+  Qt keeps `DisplayRole` and `EditRole` in one slot on a table item, so a sort
+  key written to `EditRole` replaces the text. The client list has shown
+  `0.8888888888888888` where it formats `89%` since it was written — in the
+  column an investigator sorts by when looking for something worth opening. The
+  key now lives in a role of its own, in one shared item both tables use.
 - **The evidence panel showed everything except the evidence.** It printed the
   raw source line and nothing else. A Combined line is 293 characters, of which
   **53% is the user agent** and 15% is the client address and timestamp already

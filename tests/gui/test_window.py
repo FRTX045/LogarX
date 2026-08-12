@@ -32,7 +32,9 @@ from logarc.detect.crs import CrsDetection, write_detections
 from logarc.gui import app
 from logarc.gui.app import MainWindow, read_case, reconstruct_client
 from logarc.gui.canvas import MIN_FIT_SCALE, ActivityCanvas
-from logarc.gui.panels import ClientTable, EvidencePanel
+from logarc.gui.evidence_panel import EvidencePanel
+from logarc.gui.panels import ClientTable
+from logarc.gui.style import format_bytes
 from logarc.storage.case import CaseManifest
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
@@ -358,48 +360,6 @@ def test_the_client_table_lists_and_sorts_by_number(qt_app: QApplication, campai
     assert table._table.rowCount() == len(summaries)
 
 
-def test_the_evidence_panel_shows_what_each_request_was(
-    qt_app: QApplication, campaign: Path
-) -> None:
-    """This used to assert the client address appeared, back when the panel
-    printed the whole source line. It is deliberately gone now: it is the
-    address the reader picked from the table themselves, it is in the heading
-    above, and it is identical on every line of a per-client reconstruction —
-    45 characters of a 50-character panel spent saying nothing new.
-
-    What must be there is the reference, and the request it points at. The
-    address comes back with the raw line, which the test below covers.
-    """
-    with Case.open(campaign) as case:
-        result = analyse_ip(case.store, CLIENT)
-        episode = result.episodes[0]
-        lines = case.read_evidence(episode.evidence[:5])
-    panel = EvidencePanel()
-
-    panel.show_evidence(episode, lines)
-
-    shown = panel._body.toPlainText()
-    assert "access.log:" in shown
-    assert "GET" in shown
-    assert CLIENT not in shown
-
-
-def test_the_raw_line_brings_back_everything_the_summary_leaves_out(
-    qt_app: QApplication, campaign: Path
-) -> None:
-    """Nothing is lost by summarising, only moved behind a toggle."""
-    with Case.open(campaign) as case:
-        result = analyse_ip(case.store, CLIENT)
-        episode = result.episodes[0]
-        lines = case.read_evidence(episode.evidence[:5])
-    panel = EvidencePanel()
-    panel.show_evidence(episode, lines)
-
-    panel.set_show_raw(True)
-
-    assert CLIENT in panel._body.toPlainText()
-
-
 #: A real Combined line. Its first 45 characters are the client address and the
 #: timestamp — the address the reader chose from the table themselves, and a
 #: time already printed in the heading — and the payload sits past character 60.
@@ -408,67 +368,6 @@ LONG_LINE = (
     '"GET /product.php?id=1%27%20UNION%20SELECT%20pw%20FROM%20users-- HTTP/1.1" 200 1400 '
     '"-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"'
 )
-
-
-def _panel_showing(episode: object, text: str = LONG_LINE) -> EvidencePanel:
-    from logarc.evidence import EvidenceLine
-
-    panel = EvidencePanel()
-    panel.resize(330, 600)
-    panel.show()
-    QApplication.processEvents()
-    panel.show_evidence(
-        episode,  # type: ignore[arg-type]
-        [EvidenceLine(ref=EvidenceRef("access.log", 1), source_path="a.log", text=text)],
-    )
-    QApplication.processEvents()
-    return panel
-
-
-def test_a_long_evidence_line_needs_no_sideways_scrolling(
-    qt_app: QApplication, campaign: Path
-) -> None:
-    """The panel is ~330px, about fifty characters, and a Combined line spends
-    its first forty-five on the address and the timestamp. Unwrapped, every
-    line of evidence read `... "GET` with the payload — the thing the panel
-    exists to show — off the right-hand edge."""
-    with Case.open(campaign) as case:
-        result = analyse_ip(case.store, CLIENT)
-
-    panel = _panel_showing(result.episodes[0])
-
-    assert len(LONG_LINE) > 150, "premise: far wider than the panel"
-    assert panel._body.horizontalScrollBar().maximum() == 0
-
-
-def test_the_evidence_is_the_bytes_the_log_holds(qt_app: QApplication, campaign: Path) -> None:
-    """Marking parts of the line must never rewrite it. The whole claim of this
-    tool is that a finding traces back to a source line, so the panel formats
-    the string it was handed rather than building a tidier one from it."""
-    with Case.open(campaign) as case:
-        result = analyse_ip(case.store, CLIENT)
-
-    panel = _panel_showing(result.episodes[0])
-
-    assert LONG_LINE in panel._body.toPlainText()
-
-
-def test_the_heading_says_one_request_not_one_requests(
-    qt_app: QApplication, campaign: Path
-) -> None:
-    """The panel formatted the count itself and always wrote the plural, while
-    the node caption beside it, which uses the shared helper, wrote "1 request"
-    for the same episode."""
-    from dataclasses import replace
-
-    with Case.open(campaign) as case:
-        result = analyse_ip(case.store, CLIENT)
-    panel = EvidencePanel()
-
-    panel.show_evidence(replace(result.episodes[0], request_count=1), [])
-
-    assert "1 request " in panel._heading.text()
-    assert "1 requests" not in panel._heading.text()
 
 
 def _injection_evidence(campaign: Path) -> tuple[object, list[object]]:
@@ -480,117 +379,6 @@ def _injection_evidence(campaign: Path) -> tuple[object, list[object]]:
             if any("%27" in (line.text or "") for line in lines):
                 return episode, lines
     raise AssertionError("the fixture no longer contains an encoded payload")
-
-
-def test_the_panel_reads_the_payload_out_as_the_attack_it_is(
-    qt_app: QApplication, campaign: Path
-) -> None:
-    """`%27%20OR%20%271%27%3D%271` is a textbook tautology and reads as line
-    noise. An analyst should not have to decode that in their head once per
-    piece of evidence to work out what they are looking at."""
-    episode, lines = _injection_evidence(campaign)
-    panel = EvidencePanel()
-
-    panel.show_evidence(episode, lines)  # type: ignore[arg-type]
-
-    assert "' OR '1'='1" in panel._body.toPlainText()
-
-
-def test_the_raw_line_is_not_shown_until_it_is_asked_for(
-    qt_app: QApplication, campaign: Path
-) -> None:
-    """The whole point of the structured view: 85% of a Combined line is the
-    agent, and the address and timestamp already printed in the heading."""
-    episode, lines = _injection_evidence(campaign)
-    panel = EvidencePanel()
-
-    panel.show_evidence(episode, lines)  # type: ignore[arg-type]
-
-    assert "%27%20OR" not in panel._body.toPlainText()
-
-
-def test_asking_for_the_raw_line_gives_the_bytes_the_log_holds(
-    qt_app: QApplication, campaign: Path
-) -> None:
-    """The proof, verbatim, whenever it is wanted. Structuring the reading
-    surface must not put the evidence itself out of reach."""
-    episode, lines = _injection_evidence(campaign)
-    panel = EvidencePanel()
-    panel.show_evidence(episode, lines)  # type: ignore[arg-type]
-
-    panel.set_show_raw(True)
-
-    assert lines[0].text in panel._body.toPlainText()  # type: ignore[attr-defined]
-
-
-def test_decoding_can_be_turned_off_to_see_what_was_on_the_wire(
-    qt_app: QApplication, campaign: Path
-) -> None:
-    """Sometimes the encoding is the finding, and an analyst wants the exact
-    bytes to quote in a report or feed to another tool."""
-    episode, lines = _injection_evidence(campaign)
-    panel = EvidencePanel()
-    panel.show_evidence(episode, lines)  # type: ignore[arg-type]
-
-    panel.set_decode(False)
-
-    shown = panel._body.toPlainText()
-    assert "%27%20OR%20%271%27%3D%271" in shown
-    assert "' OR '1'='1" not in shown
-
-
-def test_a_line_the_parser_rejects_falls_back_to_its_raw_text(
-    qt_app: QApplication, campaign: Path
-) -> None:
-    """There are no fields to lay out, and the line is worth seeing anyway —
-    a request the parser cannot read is itself a finding."""
-    from logarc.evidence import EvidenceLine
-
-    episode, _ = _injection_evidence(campaign)
-    panel = EvidencePanel()
-    odd = EvidenceLine(
-        ref=EvidenceRef("access.log", 1), source_path="a.log", text="!! not a log line !!"
-    )
-
-    panel.show_evidence(episode, [odd])  # type: ignore[arg-type]
-
-    assert "!! not a log line !!" in panel._body.toPlainText()
-
-
-def test_the_evidence_view_choices_outlive_the_window(qt_app: QApplication) -> None:
-    """Two more reading preferences, remembered the same way the wrap is."""
-    app._settings().clear()
-    first = MainWindow()
-    assert first._decode_action.isChecked(), "decoding is the default"
-    assert not first._raw_action.isChecked(), "raw lines are not"
-
-    first._decode_action.trigger()
-    first._raw_action.trigger()
-    first.close()
-    second = MainWindow()
-
-    assert not second._decode_action.isChecked()
-    assert second._raw_action.isChecked()
-    second.close()
-
-
-def test_the_evidence_panel_does_not_depend_on_the_system_theme(qt_app: QApplication) -> None:
-    """The panel writes dark text. If it also inherits the window background, a
-    machine themed dark renders the evidence dark-on-dark — the one panel an
-    investigator cannot do without, invisible, with nothing to indicate why.
-
-    Asserts the exact colour rather than "light enough". The offscreen platform
-    this suite runs under always supplies a light default palette, so a
-    brightness check would pass whether or not the panel set anything, and this
-    fault would stay invisible to CI exactly as it is invisible on screen.
-    """
-    from logarc.gui.panels import _INK, _PAPER
-
-    panel = EvidencePanel()
-    palette = panel._body.palette()
-
-    assert palette.color(QPalette.ColorRole.Base).name() == _PAPER
-    assert palette.color(QPalette.ColorRole.Text).name() == _INK
 
 
 def test_the_canvas_will_not_shrink_a_graph_out_of_legibility(
@@ -607,47 +395,6 @@ def test_the_canvas_will_not_shrink_a_graph_out_of_legibility(
     canvas.show_graph(result.trace)
 
     assert canvas.transform().m11() >= MIN_FIT_SCALE
-
-
-def test_the_evidence_panel_opens_at_the_start_of_the_lines(
-    qt_app: QApplication, campaign: Path
-) -> None:
-    """Appending leaves the view at the end of the last line written, which for
-    a log line is the tail of a user agent. The investigator would be looking at
-    "Safari/537.36" where the address and the request should be."""
-    with Case.open(campaign) as case:
-        result = analyse_ip(case.store, CLIENT)
-        episode = result.episodes[0]
-        lines = case.read_evidence(episode.evidence[:5])
-    panel = EvidencePanel()
-
-    panel.show_evidence(episode, lines)
-
-    assert panel._body.textCursor().position() == 0
-    assert panel._body.horizontalScrollBar().value() == 0
-
-
-def test_the_evidence_panel_reports_an_unreadable_source(
-    qt_app: QApplication, campaign: Path
-) -> None:
-    """A case outlives its logs; the panel must say so rather than look empty."""
-    from logarc.core.evidence import EvidenceRef
-    from logarc.evidence import EvidenceLine
-
-    with Case.open(campaign) as case:
-        result = analyse_ip(case.store, CLIENT)
-    panel = EvidencePanel()
-    missing = [
-        EvidenceLine(
-            ref=EvidenceRef("access.log", 1),
-            source_path="gone.log",
-            note="cannot open log file gone.log",
-        )
-    ]
-
-    panel.show_evidence(result.episodes[0], missing)
-
-    assert "unavailable" in panel._body.toPlainText()
 
 
 def test_the_canvas_rings_the_activity_being_read(qt_app: QApplication, campaign: Path) -> None:
@@ -797,64 +544,229 @@ def test_redrawing_the_graph_forgets_the_ring(qt_app: QApplication, campaign: Pa
     assert canvas.graph_scene.items()
 
 
-def _line_with_agent(number: int, agent: str) -> object:
+def test_the_evidence_table_has_a_row_for_every_piece_of_evidence(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    """Twenty-five pieces of evidence were 175 rows of wrapped text that could
+    only be read in the order they arrived. They are twenty-five rows now."""
+    with Case.open(campaign) as case:
+        result = analyse_ip(case.store, CLIENT)
+        episode = result.episodes[0]
+        lines = case.read_evidence(episode.evidence[:5])
+    panel = EvidencePanel()
+
+    panel.show_evidence(episode, lines)
+
+    assert panel._table.rowCount() == len(lines)
+
+
+def test_choosing_a_row_shows_that_request_in_full(qt_app: QApplication, campaign: Path) -> None:
+    """The table truncates a payload however wide it is. This is where the
+    reader goes for all of it — and for the original line."""
+    episode, lines = _injection_evidence(campaign)
+    panel = EvidencePanel()
+    panel.show_evidence(episode, lines)  # type: ignore[arg-type]
+
+    panel.select_row(0)
+
+    detail = panel._detail.toPlainText()
+    assert str(lines[0].ref) in detail  # type: ignore[attr-defined]
+    assert lines[0].text in detail  # type: ignore[attr-defined]
+
+
+def test_the_detail_follows_the_row_after_the_table_is_sorted(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    """Sorting moves rows; the mapping from a row to its evidence must move
+    with them, or the detail describes a different request from the one
+    highlighted — which is worse than showing nothing."""
+    from PyQt6.QtCore import Qt as QtNS
+
+    from logarc.gui.evidence_view import COLUMNS
+
+    episode, lines = _injection_evidence(campaign)
+    panel = EvidencePanel()
+    panel.show_evidence(episode, lines)  # type: ignore[arg-type]
+
+    panel._table.sortItems(COLUMNS.index("Size"), QtNS.SortOrder.DescendingOrder)
+    panel.select_row(0)
+
+    shown_source = panel._table.item(0, COLUMNS.index("Source"))
+    assert shown_source is not None
+    assert shown_source.text() in panel._detail.toPlainText()
+
+
+def test_a_payload_cannot_forge_a_row_or_render_as_markup(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    """Everything in this table came out of a request. A decoded newline would
+    draw over the row beneath it; a tooltip taken as rich text would render an
+    attacker's markup inside the panel their case is read from."""
     from logarc.core.event import NormalizedEvent
     from logarc.evidence import EvidenceLine
+    from logarc.gui.evidence_view import COLUMNS
 
-    ref = EvidenceRef("access.log", number)
-    return EvidenceLine(
+    episode, _ = _injection_evidence(campaign)
+    ref = EvidenceRef("access.log", 1)
+    hostile = EvidenceLine(
         ref=ref,
         source_path="a.log",
-        text=f"raw line {number}",
+        text="raw",
         event=NormalizedEvent(
             timestamp=START,
             client_ip=CLIENT,
             evidence=ref,
             method="GET",
-            path=f"/a{number}",
+            path="/a",
+            query="q=%0Aforged&t=%3Cimg%20src%3Dx%20onerror%3Dboom%3E",
             status=200,
-            user_agent=agent,
         ),
     )
-
-
-def test_an_unchanged_user_agent_is_stated_once_rather_than_every_line(
-    qt_app: QApplication, campaign: Path
-) -> None:
-    """Six identical agents filled twelve of twenty-six rows — nearly half the
-    panel restating the same string, in a panel whose whole problem was that
-    the interesting 15% was crowded out by the rest."""
-    with Case.open(campaign) as case:
-        episode = analyse_ip(case.store, CLIENT).episodes[0]
-    panel = EvidencePanel()
-    same = "Mozilla/5.0 (X11; Linux x86_64)"
-
-    panel.show_evidence(  # type: ignore[arg-type]
-        episode, [_line_with_agent(n, same) for n in range(1, 5)]
-    )
-
-    assert panel._body.toPlainText().count(same) == 1
-
-
-def test_an_agent_that_changes_mid_episode_is_shown_where_it_changes(
-    qt_app: QApplication, campaign: Path
-) -> None:
-    """And this is why it is worth showing at all. A client that switches tool
-    part way through an episode has told you something; repeating an identical
-    string on every line only hides it."""
-    with Case.open(campaign) as case:
-        episode = analyse_ip(case.store, CLIENT).episodes[0]
     panel = EvidencePanel()
 
-    panel.show_evidence(  # type: ignore[arg-type]
-        episode,
-        [
-            _line_with_agent(1, "Mozilla/5.0 (X11; Linux x86_64)"),
-            _line_with_agent(2, "Mozilla/5.0 (X11; Linux x86_64)"),
-            _line_with_agent(3, "sqlmap/1.5.2#stable"),
-        ],
-    )
+    panel.show_evidence(episode, [hostile])  # type: ignore[arg-type]
 
-    shown = panel._body.toPlainText()
-    assert shown.count("Mozilla/5.0") == 1
-    assert "sqlmap/1.5.2#stable" in shown
+    assert panel._table.rowCount() == 1
+    target = panel._table.item(0, COLUMNS.index("Request"))
+    assert target is not None
+    assert "\n" not in target.text()
+    assert "<U+000A>" in target.text()
+    assert "&lt;img" in target.toolTip()
+
+
+def test_the_evidence_detail_does_not_depend_on_the_system_theme(
+    qt_app: QApplication,
+) -> None:
+    """The panel writes dark text. If it also inherited the window background,
+    a machine themed dark renders the evidence dark-on-dark — the one panel an
+    investigator cannot do without, invisible, with nothing to indicate why."""
+    from logarc.gui.evidence_panel import _INK, _PAPER
+
+    # Held in a name: chaining off the constructor lets Python drop the panel
+    # before the palette is read, and Qt deletes the widget underneath it.
+    panel = EvidencePanel()
+    palette = panel._detail.palette()
+
+    assert palette.color(QPalette.ColorRole.Base).name() == _PAPER
+    assert palette.color(QPalette.ColorRole.Text).name() == _INK
+
+
+def test_the_decode_choice_outlives_the_window(qt_app: QApplication) -> None:
+    """The one evidence preference left. `Show raw log lines` is retired: the
+    detail pane prints the original line for the selected row always, which is
+    strictly more than a global on-or-off could give."""
+    app._settings().clear()
+    first = MainWindow()
+    assert first._decode_action.isChecked(), "decoding is the default"
+    assert not hasattr(first, "_raw_action"), "the raw toggle is retired"
+
+    first._decode_action.trigger()
+    first.close()
+    second = MainWindow()
+
+    assert not second._decode_action.isChecked()
+    second.close()
+
+
+def test_a_cell_shows_its_text_and_still_sorts_on_its_number(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    """Qt keeps DisplayRole and EditRole in the same slot on a table item, so
+    putting a sort key in EditRole replaces the text with the raw number: a
+    timestamp rendered as `1.71454e+09` and a size as `512.0`. The key has to
+    live somewhere else and the comparison has to be done by hand.
+
+    The client table beside this one has carried the same fault unnoticed —
+    its 4xx ratio shows `0` where it formats `0%` — because whole numbers look
+    the same either way.
+    """
+    from logarc.gui.evidence_view import COLUMNS
+
+    episode, lines = _injection_evidence(campaign)
+    panel = EvidencePanel()
+    panel.show_evidence(episode, lines)  # type: ignore[arg-type]
+
+    shown = panel._table.item(0, COLUMNS.index("Time"))
+    assert shown is not None
+    assert ":" in shown.text(), f"a time of day, not {shown.text()!r}"
+    assert "e+" not in shown.text()
+
+    size = panel._table.item(0, COLUMNS.index("Size"))
+    assert size is not None
+    assert size.text().endswith(("B", "KB", "MB"))
+
+
+def test_sorting_by_size_puts_the_largest_response_on_top(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    """The blue-team move this table exists for: which request got data out.
+    Asserted on the resulting order rather than on a stored key, because the
+    order is what the reader sees."""
+    from PyQt6.QtCore import Qt as QtNS
+
+    from logarc.gui.evidence_view import COLUMNS
+
+    episode, lines = _injection_evidence(campaign)
+    panel = EvidencePanel()
+    panel.show_evidence(episode, lines)  # type: ignore[arg-type]
+
+    panel._table.sortItems(COLUMNS.index("Size"), QtNS.SortOrder.DescendingOrder)
+
+    biggest = max(line.event.bytes_sent or 0 for line in lines if line.event is not None)  # type: ignore[attr-defined]
+    top = panel._table.item(0, COLUMNS.index("Size"))
+    assert top is not None
+    assert top.text() == format_bytes(biggest)
+
+
+def test_the_evidence_table_does_not_depend_on_the_system_theme(
+    qt_app: QApplication,
+) -> None:
+    """The detail pane is pinned to a pale ground for a reason; the table above
+    it is read the same way and needs the same treatment, or a dark theme puts
+    muted grey on dark grey."""
+    from logarc.gui.evidence_panel import _INK, _PAPER
+
+    panel = EvidencePanel()
+    palette = panel._table.palette()
+
+    assert palette.color(QPalette.ColorRole.Base).name() == _PAPER
+    assert palette.color(QPalette.ColorRole.Text).name() == _INK
+
+
+def test_the_client_table_shows_a_percentage_not_a_bare_number(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    """A fault this table has carried since it was written, found while giving
+    the evidence table the same treatment.
+
+    The 4xx column formats a ratio as `13%` and then puts the raw ratio in
+    EditRole to sort on. On a table item EditRole and DisplayRole are one slot,
+    so the number replaces the text and the column reads `0` — in the column an
+    investigator sorts by when looking for something worth opening.
+    """
+    with Case.open(campaign) as case:
+        summaries = case.store.ip_summaries(limit=50, order_by="requests")
+    table = ClientTable()
+
+    table.show_clients(summaries)
+
+    ratio = table._table.item(0, 3)
+    assert ratio is not None
+    assert ratio.text().endswith("%"), f"a ratio, not {ratio.text()!r}"
+
+
+def test_the_client_table_still_sorts_by_the_number(qt_app: QApplication, campaign: Path) -> None:
+    """ "1,000" sorts before "9" as text. Showing the formatted value must not
+    cost the numeric ordering."""
+    from PyQt6.QtCore import Qt as QtNS
+
+    with Case.open(campaign) as case:
+        summaries = case.store.ip_summaries(limit=50, order_by="requests")
+    table = ClientTable()
+    table.show_clients(summaries)
+
+    table._table.sortItems(1, QtNS.SortOrder.DescendingOrder)
+
+    top = table._table.item(0, 1)
+    assert top is not None
+    assert top.text() == f"{max(s.request_count for s in summaries):,}"

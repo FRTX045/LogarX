@@ -37,7 +37,8 @@ from logarc.core.graph import GraphKind
 from logarc.detect.crs import CrsEvidence
 from logarc.gui._qt import required
 from logarc.gui.canvas import ActivityCanvas
-from logarc.gui.panels import ClientTable, EvidencePanel, LegendBar
+from logarc.gui.evidence_panel import EvidencePanel
+from logarc.gui.panels import ClientTable, LegendBar
 from logarc.gui.workers import run_job
 from logarc.ingest.pipeline import IngestCancelled
 from logarc.report.html import render_report
@@ -66,7 +67,6 @@ _EVIDENCE_LIMIT = 25
 _SETTINGS = ("logarc", "logarc")
 _WRAP_KEY = "view/wrap_traces"
 _DECODE_KEY = "view/decode_targets"
-_RAW_KEY = "view/show_raw_lines"
 
 
 def _settings() -> QSettings:
@@ -247,13 +247,6 @@ class MainWindow(QMainWindow):
             "reads as ' OR '1'='1 — or exactly as the log holds them."
         )
 
-        self._raw_action = self._add(view_menu, "Show &raw log lines", self._apply_evidence_view)
-        self._raw_action.setCheckable(True)
-        self._raw_action.setChecked(_remembered(_RAW_KEY, default=False))
-        self._raw_action.setShortcut(QKeySequence("Ctrl+R"))
-        self._raw_action.setStatusTip(
-            "Print the whole source line under each piece of evidence, verbatim."
-        )
         self._apply_evidence_view()
 
         export_menu = required(menu_bar.addMenu("&Export"))
@@ -421,14 +414,15 @@ class MainWindow(QMainWindow):
         _settings().setValue(_WRAP_KEY, wrap)
 
     def _apply_evidence_view(self) -> None:
-        """How the evidence panel reads, and remember it."""
+        """How targets are shown in the evidence panel, and remember it.
+
+        The `Show raw log lines` toggle that used to live beside this is gone:
+        the detail pane prints the original line for the selected row always,
+        which is strictly more than a global on-or-off could give.
+        """
         decode = self._decode_action.isChecked()
-        raw = self._raw_action.isChecked()
         self._evidence.set_decode(decode)
-        self._evidence.set_show_raw(raw)
-        settings = _settings()
-        settings.setValue(_DECODE_KEY, decode)
-        settings.setValue(_RAW_KEY, raw)
+        _settings().setValue(_DECODE_KEY, decode)
 
     # -- evidence ----------------------------------------------------------
 

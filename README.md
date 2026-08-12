@@ -106,10 +106,11 @@ chains wrap onto further rows, alternating direction, because a trace drawn on o
 as it is long and shrinks to an unreadable smudge when fitted to the window. **View → Wrap long
 traces** (Alt+Z) turns the fold off when the straight timeline is worth more than legible captions;
 the graph is then panned rather than fitted, opening on its first activity, and the choice is
-remembered between launches. The panel on the right holds the raw log lines the selected node was
-built from; every finding traces back to a line. The lines are shown exactly as the log holds them,
-wrapped rather than run off the edge, with the request target marked and the response status with
-it — a served status stands out, because on a hostile request that is the alarming one.*
+remembered between launches. The panel on the right is the evidence the selected node was built
+from, a row per request: sort it by size to find the one that got data out, or by status to find
+what was served rather than refused. Payloads are decoded, so `' OR '1'='1` reads as the tautology
+it is instead of `%27+OR+%271%27%3D%271`. The pane beneath holds the selected request in full,
+including the source line exactly as the log holds it — every finding traces back to a line.*
 
 ![The same client drawn as a behaviour map](docs/images/screenshot-behaviour.png)
 

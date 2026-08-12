@@ -1,0 +1,250 @@
+"""The evidence beside the graph: a table of requests, and one of them in full.
+
+A column of text turned twenty-five pieces of evidence into 175 wrapped rows
+that could only be read in the order they arrived. A table can be scanned, and
+sorted — by size to find what returned the most data, by status to find what was
+served rather than refused. Those are the two questions a blue team asks of an
+episode, and neither could be answered before without reading every line.
+
+What each cell says is decided in `gui.evidence_view`, which has no Qt in it and
+is tested without a display. This file only draws.
+"""
+
+from __future__ import annotations
+
+import html
+from typing import TYPE_CHECKING
+
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor, QFont, QPalette, QTextCursor, QTextOption
+from PyQt6.QtWidgets import (
+    QAbstractItemView,
+    QHeaderView,
+    QLabel,
+    QSplitter,
+    QTableWidget,
+    QTableWidgetItem,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
+
+from logarc.gui._qt import SORT_KEY, SortableItem, required
+from logarc.gui.evidence_view import ALERT_COLOUR, COLUMNS, Cell, Detail, cells_for, detail_for
+from logarc.gui.style import format_requests, severity_colour
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from logarc.core.episode import Episode
+    from logarc.evidence import EvidenceLine
+
+__all__ = ["EvidencePanel"]
+
+#: The evidence surface. Matches the canvas ground and the exported report, so
+#: the same finding reads the same way on screen and on paper.
+_PAPER = "#f5f7fa"
+_STRIPE = "#eaeef3"
+_INK = "#1f2933"
+_REFERENCE = "#616e7c"
+
+
+class EvidencePanel(QWidget):
+    """What the selected activity is made of, one row per request."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._decode = True
+        self._shown: tuple[Episode, Sequence[EvidenceLine]] | None = None
+
+        self._heading = QLabel("Select an activity to see the lines behind it.")
+        self._heading.setWordWrap(True)
+
+        font = QFont("Consolas")
+        font.setStyleHint(QFont.StyleHint.Monospace)
+        font.setPointSizeF(8.5)
+
+        self._table = _build_table(font)
+        self._table.itemSelectionChanged.connect(self._selection_changed)
+        self._detail = _build_detail(font)
+
+        # Split, so the reader decides how much of each they want: a wide
+        # episode wants more table, a long payload more detail.
+        split = QSplitter(Qt.Orientation.Vertical)
+        split.addWidget(self._table)
+        split.addWidget(self._detail)
+        split.setStretchFactor(0, 3)
+        split.setStretchFactor(1, 2)
+        split.setChildrenCollapsible(False)
+        self._table.setMinimumHeight(80)
+        self._detail.setMinimumHeight(70)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self._heading)
+        layout.addWidget(split)
+
+    # -- what is on show -----------------------------------------------------
+
+    def clear(self) -> None:
+        self._shown = None
+        self._heading.setText("Select an activity to see the lines behind it.")
+        self._table.setRowCount(0)
+        self._detail.clear()
+
+    def set_decode(self, decode: bool) -> None:
+        """Show targets decoded, or exactly as the log holds them."""
+        if decode != self._decode:
+            self._decode = decode
+            if self._shown is not None:
+                self.show_evidence(*self._shown)
+
+    def show_evidence(self, episode: Episode, lines: Sequence[EvidenceLine]) -> None:
+        self._shown = (episode, lines)
+        colour = severity_colour(episode.severity)
+        owasp = episode.activity.owasp
+        self._heading.setText(
+            f'<span style="color:{colour}"><b>{html.escape(episode.label)}</b></span><br>'
+            f"{format_requests(episode.request_count)} · outcome {episode.outcome.value} · "
+            f"{episode.start:%Y-%m-%d %H:%M:%S} → {episode.end:%H:%M:%S}"
+            + (f"<br>OWASP {html.escape(owasp)}" if owasp else "")
+            + f"<br>matched by: {html.escape(', '.join(episode.rule_ids))}"
+        )
+
+        # Sorting off while filling. With it on, each row is re-sorted against
+        # the rows already placed and the remaining values land in other rows.
+        self._table.setSortingEnabled(False)
+        self._table.setRowCount(len(lines))
+        for row, line in enumerate(lines):
+            for column, cell in enumerate(cells_for(line, decode=self._decode)):
+                self._table.setItem(row, column, _item(cell, index=row))
+        self._table.setSortingEnabled(True)
+        # Opened in the order the log holds, not in whatever order the widget
+        # last happened to be sorted by. Evidence is a sequence of events and
+        # the first thing a reader wants is the sequence; sorting by size or
+        # status is a question they ask afterwards.
+        self._table.sortItems(COLUMNS.index("Source"), Qt.SortOrder.AscendingOrder)
+
+        if lines:
+            self.select_row(0)
+        else:
+            self._detail.clear()
+
+    def select_row(self, row: int) -> None:
+        """Select a table row and show its evidence in full."""
+        self._table.selectRow(row)
+
+    # -- the detail ----------------------------------------------------------
+
+    def _selection_changed(self) -> None:
+        rows = required(self._table.selectionModel(), "selection model").selectedRows()
+        if not rows or self._shown is None:
+            self._detail.clear()
+            return
+        marker = self._table.item(rows[0].row(), 0)
+        if marker is None:  # pragma: no cover - a selected row always has one
+            return
+        # Where this row sits in the evidence, read back from the item rather
+        # than from its position: sorting moves rows, and a detail that
+        # described a different request from the highlighted one would be worse
+        # than showing nothing at all.
+        index = marker.data(_INDEX)
+        _episode, lines = self._shown
+        if not isinstance(index, int) or not 0 <= index < len(lines):  # pragma: no cover
+            return
+        self._show_detail(detail_for(lines[index], decode=self._decode))
+
+    def _show_detail(self, detail: Detail) -> None:
+        self._detail.clear()
+        self._write(detail.source, _REFERENCE, bold=True)
+        for label, value, colour in detail.fields:
+            self._write(f"{label:<4} {value}" if label else value, colour)
+        if detail.note:
+            self._write(f"! {detail.note}", ALERT_COLOUR)
+        if detail.raw is not None:
+            self._write("")
+            self._write("as logged", _REFERENCE)
+            self._write(detail.raw, _INK)
+        self._detail.moveCursor(QTextCursor.MoveOperation.Start)
+        self._detail.ensureCursorVisible()
+
+    def _write(self, text: str, colour: str = _INK, *, bold: bool = False) -> None:
+        self._detail.setTextColor(QColor(colour))
+        self._detail.setFontWeight(QFont.Weight.Bold if bold else QFont.Weight.Normal)
+        self._detail.append(text)
+
+
+def _build_table(font: QFont) -> QTableWidget:
+    table = QTableWidget(0, len(COLUMNS))
+    table.setHorizontalHeaderLabels(list(COLUMNS))
+    table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+    table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+    table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+    table.setSortingEnabled(True)
+    table.setAlternatingRowColors(True)
+    table.setFont(font)
+    required(table.verticalHeader(), "row header").setVisible(False)
+    # Pinned light for the same reason the detail below it is: the cell colours
+    # are chosen against a pale ground, and on a machine themed dark a muted
+    # grey lands on dark grey. Evidence nobody can read is the one failure this
+    # panel cannot have, and it would not look like a fault.
+    paper = table.palette()
+    paper.setColor(QPalette.ColorRole.Base, QColor(_PAPER))
+    paper.setColor(QPalette.ColorRole.AlternateBase, QColor(_STRIPE))
+    paper.setColor(QPalette.ColorRole.Text, QColor(_INK))
+    table.setPalette(paper)
+
+    header = required(table.horizontalHeader(), "column header")
+    header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+    # `Target` takes whatever is left over. It is the only column whose content
+    # is unbounded, and the only one worth widening the panel for.
+    header.setSectionResizeMode(COLUMNS.index("Request"), QHeaderView.ResizeMode.Stretch)
+    return table
+
+
+def _build_detail(font: QFont) -> QTextEdit:
+    detail = QTextEdit()
+    detail.setReadOnly(True)
+    detail.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+    # Break mid-token where there is nothing to break at: a 59-character
+    # injection payload is one unbroken word, and wrapping politely would send
+    # exactly the line worth reading off the edge.
+    detail.setWordWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+    detail.setFont(font)
+    # Pinned light, not inherited. The colours written here are chosen against a
+    # pale ground, so on a machine themed dark an inherited background renders
+    # the evidence dark on dark — illegible evidence is the one failure this
+    # panel cannot have, and it would not look like a fault. Set on the palette
+    # rather than through a stylesheet so it stays inspectable: a stylesheet
+    # leaves `palette()` reporting the inherited colour, which would make a test
+    # of this pass while the panel is unreadable.
+    paper = detail.palette()
+    paper.setColor(QPalette.ColorRole.Base, QColor(_PAPER))
+    paper.setColor(QPalette.ColorRole.Text, QColor(_INK))
+    detail.setPalette(paper)
+    return detail
+
+
+#: Where a row keeps its place in the evidence, so sorting cannot move it.
+_INDEX = Qt.ItemDataRole.UserRole
+
+
+def _item(cell: Cell, *, index: int) -> QTableWidgetItem:
+    item = SortableItem(cell.text)
+    if cell.sort_key is not None:
+        item.setData(SORT_KEY, cell.sort_key)
+    item.setForeground(QColor(cell.colour))
+    if cell.bold:
+        font = item.font()
+        font.setBold(True)
+        item.setFont(font)
+    if cell.tooltip:
+        # Escaped and wrapped so Qt cannot read it as markup. A tooltip is rich
+        # text whenever it looks like it, and this text came out of a request:
+        # `<img src=x onerror=…>` in a path would otherwise be rendered inside
+        # the panel the case is read from rather than shown as what it is.
+        item.setToolTip(f"<span style='white-space:pre-wrap'>{html.escape(cell.tooltip)}</span>")
+    # Kept where sorting cannot move it, so a selection still finds the line it
+    # belongs to after the table has been re-ordered.
+    item.setData(_INDEX, index)
+    return item
