@@ -104,11 +104,41 @@ class ActivityCanvas(QGraphicsView):
         self._graph: ActivityGraph | None = None
         self._nodes: dict[str, _NodeItem] = {}
         self._halo: QGraphicsEllipseItem | None = None
+        self._selected: str | None = None
+        self._wrap = True
 
     @property
     def graph_scene(self) -> QGraphicsScene:
         """The scene, without the optionality the stubs put on `scene()`."""
         return self._scene
+
+    @property
+    def wrap(self) -> bool:
+        """Whether a long trace is folded onto further rows."""
+        return self._wrap
+
+    def set_wrap(self, wrap: bool) -> None:
+        """Fold long traces onto further rows, or lay each one out on one line.
+
+        Redraws at once, and puts the ring back on whatever was being read — at
+        the coordinates the node has moved to. The evidence panel beside the
+        canvas goes on showing that episode across the redraw, so a canvas that
+        stopped pointing at it, or pointed at where it used to be, would leave
+        the two halves of the window describing different activities.
+
+        Safe to call before anything is drawn: the window applies the remembered
+        setting while it is still being built, which is long before a case has
+        been opened.
+        """
+        if wrap == self._wrap:
+            return
+        self._wrap = wrap
+        if self._graph is None:
+            return
+        selected = self._selected
+        self.show_graph(self._graph)
+        if selected is not None:
+            self.highlight(selected)
 
     # -- drawing -----------------------------------------------------------
 
@@ -125,7 +155,9 @@ class ActivityCanvas(QGraphicsView):
 
         item = self._nodes.get(node_id)
         if item is None:
+            self._selected = None
             return
+        self._selected = node_id
 
         radius = item.rect().width() / 2 + SELECTION_WIDTH + 2.0
         halo = QGraphicsEllipseItem(QRectF(-radius, -radius, radius * 2, radius * 2))
@@ -146,8 +178,9 @@ class ActivityCanvas(QGraphicsView):
         self._scene.clear()
         self._nodes.clear()
         self._halo = None
+        self._selected = None
 
-        positions = layout_graph(graph)
+        positions = layout_graph(graph, wrap=self._wrap)
         if not positions:
             self._show_message("This client has no reconstructed activity.")
             return
@@ -175,6 +208,7 @@ class ActivityCanvas(QGraphicsView):
         self._scene.clear()
         self._nodes.clear()
         self._halo = None
+        self._selected = None
         self._show_message("Select a client to reconstruct what it did.")
 
     def _show_message(self, text: str) -> None:
