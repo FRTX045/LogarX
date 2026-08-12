@@ -34,7 +34,7 @@ from logarc.gui.style import (
 if TYPE_CHECKING:
     from logarc.evidence import EvidenceLine
 
-__all__ = ["ALERT_COLOUR", "COLUMNS", "Cell", "cells_for"]
+__all__ = ["ALERT_COLOUR", "COLUMNS", "Cell", "Detail", "cells_for", "detail_for"]
 
 #: Something is wrong with this piece of evidence, and the reader has to see
 #: that rather than an empty row.
@@ -92,6 +92,67 @@ def cells_for(line: EvidenceLine, *, decode: bool) -> tuple[Cell, ...]:
             sort_key=float(event.bytes_sent) if event and event.bytes_sent is not None else None,
             colour=EVIDENCE_MUTED,
         ),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class Detail:
+    """Everything known about one piece of evidence."""
+
+    source: str
+
+    fields: tuple[tuple[str, str, str], ...]
+    """`(label, value, colour)`. The label carries the emphasis for the status,
+    which is where a served response has to catch the eye."""
+
+    raw: str | None
+    """The source line, exactly as the log holds it.
+
+    Deliberately *not* passed through `display_safe`: this is the proof, and the
+    proof has to be the bytes. It is safe to print as one block because a line
+    is what the reader split the file on — by construction it holds no newline.
+    """
+
+    note: str | None
+
+
+def detail_for(line: EvidenceLine, *, decode: bool) -> Detail:
+    """The full record for one piece of evidence.
+
+    The table shows what fits; this shows everything, including the agent at
+    full length — the table has no room for one and this has plenty, and a
+    scanner signature must not be cut in the one place it can be read whole.
+    """
+    fields: list[tuple[str, str, str]] = []
+    event = line.event
+
+    if event is not None:
+        target = event.target
+        shown = decode_target(target) if decode else display_safe(target)
+        fields.append((display_safe(event.method or "?"), shown, EVIDENCE_INK))
+        if event.status is not None:
+            served = 200 <= event.status < 400
+            size = format_bytes(event.bytes_sent) if event.bytes_sent is not None else ""
+            fields.append(
+                (
+                    str(event.status),
+                    f"{size} {'served' if served else 'refused'}".strip(),
+                    status_colour(str(event.status)),
+                )
+            )
+        if event.referer and event.referer != "-":
+            fields.append(("ref", display_safe(event.referer), EVIDENCE_MUTED))
+        if event.user_agent and event.user_agent != "-":
+            fields.append(("ua", display_safe(event.user_agent), EVIDENCE_MUTED))
+    elif line.text is None:
+        note = display_safe(line.note or "source not readable")
+        fields.append(("", f"unavailable — {note}", ALERT_COLOUR))
+
+    return Detail(
+        source=str(line.ref),
+        fields=tuple(fields),
+        raw=line.text,
+        note=None if line.verified else line.note,
     )
 
 

@@ -140,3 +140,53 @@ def test_a_control_character_in_a_raw_line_cannot_break_the_row() -> None:
 
     assert "\n" not in target.text
     assert "<U+000A>" in target.text
+
+
+def test_the_detail_carries_the_whole_request() -> None:
+    """The table truncates; this is where the reader goes for all of it."""
+    from logarc.gui.evidence_view import detail_for
+
+    detail = detail_for(line(), decode=True)
+    labels = {label for label, _value, _colour in detail.fields}
+
+    assert detail.source == "access.log:36"
+    assert labels >= {"GET", "200", "ua"}
+    assert any("' OR '1'='1" in value for _l, value, _c in detail.fields)
+
+
+def test_the_detail_holds_the_original_line_byte_for_byte() -> None:
+    """The proof. Everything else here is a reading of it, and a reading is
+    only allowed while the thing it reads stays reachable and unaltered."""
+    from logarc.gui.evidence_view import detail_for
+
+    evidence = line()
+
+    assert detail_for(evidence, decode=True).raw == evidence.text
+
+
+def test_the_detail_shows_the_full_agent_not_a_shortened_one() -> None:
+    """The table has no room and the detail has plenty. A scanner signature
+    must never be cut in the one place it can be read in full."""
+    from logarc.gui.evidence_view import detail_for
+
+    agent = "Mozilla/5.0 " + "x" * 200
+
+    detail = detail_for(line(agent=agent), decode=True)
+
+    assert any(value == agent for _l, value, _c in detail.fields)
+
+
+def test_an_integrity_warning_reaches_the_detail() -> None:
+    """A source that changed size since ingest may not hold the line that
+    produced the finding, and that has to be said next to the line."""
+    from logarc.gui.evidence_view import detail_for
+
+    evidence = EvidenceLine(
+        ref=EvidenceRef("access.log", 1),
+        source_path="access.log",
+        text="raw",
+        note="access.log has changed size since ingest",
+        verified=False,
+    )
+
+    assert "changed size" in (detail_for(evidence, decode=True).note or "")
