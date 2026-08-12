@@ -335,6 +335,12 @@ class ActivityCanvas(QGraphicsView):
         if scale < MIN_FIT_SCALE:
             self.resetTransform()
             self.scale(MIN_FIT_SCALE, MIN_FIT_SCALE)
+            # Clamped, so the graph is wider than the window and something has
+            # to be off screen. Open on the beginning rather than on whatever
+            # the view was centred over: with an unwrapped trace that clamps on
+            # every draw, centring hides both ends and starts the reader in the
+            # middle of a chronology.
+            self.centerOn(self._scene.sceneRect().topLeft())
 
 
 def _tooltip(node: GraphNode) -> str:

@@ -432,6 +432,23 @@ def test_the_ring_follows_the_node_across_a_wrap_toggle(qt_app: QApplication) ->
     assert canvas._halo.pos() == canvas._nodes[ringed].pos()
 
 
+def test_a_trace_too_wide_to_fit_opens_at_its_beginning(qt_app: QApplication) -> None:
+    """Laid out straight, a long trace is wider than the window, so the fit
+    clamps at the legibility floor and something has to be off screen. Left
+    centred, what is off screen is both ends and the view opens midway through
+    the timeline — there is only one place to start reading a chronology.
+    """
+    canvas = ActivityCanvas()
+    canvas.resize(400, 300)
+    canvas.set_wrap(False)
+
+    canvas.show_graph(_long_trace(12))
+
+    bar = canvas.horizontalScrollBar()
+    assert bar.maximum() > bar.minimum(), "premise: it does not fit"
+    assert bar.value() == bar.minimum()
+
+
 def test_the_wrap_toggle_is_offered_only_where_it_does_something(qt_app: QApplication) -> None:
     """A behaviour map is a circle and has no rows to fold. A live control that
     does nothing reads as a fault in the tool."""
