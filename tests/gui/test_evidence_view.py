@@ -60,12 +60,15 @@ def test_the_source_reference_is_a_column_of_its_own() -> None:
     assert cell(line(), "Source").text == "access.log:36"
 
 
-def test_the_target_reads_as_the_attack_it_is() -> None:
-    assert cell(line(), "Target").text == "/search?q=' OR '1'='1"
+def test_the_request_reads_as_the_attack_it_is() -> None:
+    """Written the way a request is written: the method is three characters and
+    a column of its own costs its heading's width, which at a 400px panel left
+    the payload 80px — the very fault this table exists to fix."""
+    assert cell(line(), "Request").text == "GET /search?q=' OR '1'='1"
 
 
 def test_the_target_can_be_shown_as_the_log_holds_it() -> None:
-    assert cell(line(), "Target", decode=False).text == "/search?q=%27+OR+%271%27%3D%271"
+    assert cell(line(), "Request", decode=False).text == "GET /search?q=%27+OR+%271%27%3D%271"
 
 
 def test_a_served_status_stands_out_and_a_refused_one_recedes() -> None:
@@ -80,7 +83,7 @@ def test_a_served_status_stands_out_and_a_refused_one_recedes() -> None:
 
 
 def test_numbers_sort_as_numbers() -> None:
-    """"1,000" sorts before "9" as text, which would mis-rank the table — and
+    """ "1,000" sorts before "9" as text, which would mis-rank the table — and
     sorting by size is how an analyst finds what returned the most data."""
     assert cell(line(size=1_400_000), "Size").sort_key == 1_400_000
     assert cell(line(status=404), "Status").sort_key == 404
@@ -97,7 +100,7 @@ def test_the_time_is_the_one_the_request_arrived() -> None:
 
 def test_the_full_target_is_available_as_a_tooltip() -> None:
     """The column will be too narrow for a long payload however it is sized."""
-    assert cell(line(), "Target").tooltip == "/search?q=' OR '1'='1"
+    assert cell(line(), "Request").tooltip == "GET /search?q=' OR '1'='1"
 
 
 def unparsed(text: str = "!! not a log line !!") -> EvidenceLine:
@@ -119,14 +122,14 @@ def test_a_line_the_parser_rejects_still_gets_a_row() -> None:
 
     assert len(cells) == len(COLUMNS)
     assert cells[COLUMNS.index("Source")].text == "access.log:4"
-    assert "not a log line" in cells[COLUMNS.index("Target")].text
+    assert "not a log line" in cells[COLUMNS.index("Request")].text
 
 
 def test_an_unreadable_source_says_so_in_the_row() -> None:
     """A case outlives its logs. The row must report that, not look empty."""
     from logarc.gui.evidence_view import ALERT_COLOUR
 
-    target = cells_for(missing(), decode=True)[COLUMNS.index("Target")]
+    target = cells_for(missing(), decode=True)[COLUMNS.index("Request")]
 
     assert "unavailable" in target.text
     assert "gone.log" in target.text
@@ -136,7 +139,7 @@ def test_an_unreadable_source_says_so_in_the_row() -> None:
 def test_a_control_character_in_a_raw_line_cannot_break_the_row() -> None:
     """A cell is one line. A log line carrying a newline — however it got
     there — would otherwise draw over the row beneath it."""
-    target = cells_for(unparsed("before\nafter"), decode=True)[COLUMNS.index("Target")]
+    target = cells_for(unparsed("before\nafter"), decode=True)[COLUMNS.index("Request")]
 
     assert "\n" not in target.text
     assert "<U+000A>" in target.text

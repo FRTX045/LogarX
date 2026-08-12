@@ -40,9 +40,15 @@ __all__ = ["ALERT_COLOUR", "COLUMNS", "Cell", "Detail", "cells_for", "detail_for
 #: that rather than an empty row.
 ALERT_COLOUR: Final = "#b5273a"
 
-#: Headings, in order. `Target` is the one that grows: every other value is a
+#: Headings, in order. `Request` is the one that grows: every other value is a
 #: handful of characters and a payload is sixty.
-COLUMNS: Final[tuple[str, ...]] = ("Source", "Time", "Method", "Target", "Status", "Size")
+#:
+#: The method lives inside `Request` rather than in a column of its own. It is
+#: three characters and almost always the same three, but a column costs its
+#: heading's width whatever it holds — and at a 400px panel the five other
+#: columns left the payload 80px, which is the fault this table was built to
+#: fix. `GET /search?q=…` is also simply how a request is written.
+COLUMNS: Final[tuple[str, ...]] = ("Source", "Time", "Request", "Status", "Size")
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,8 +85,7 @@ def cells_for(line: EvidenceLine, *, decode: bool) -> tuple[Cell, ...]:
             sort_key=event.timestamp.timestamp() if event else None,
             colour=EVIDENCE_MUTED,
         ),
-        Cell(text=display_safe(event.method or "") if event else ""),
-        _target_cell(line, decode=decode),
+        _request_cell(line, decode=decode),
         Cell(
             text=str(status) if status is not None else "",
             sort_key=float(status) if status is not None else None,
@@ -156,7 +161,7 @@ def detail_for(line: EvidenceLine, *, decode: bool) -> Detail:
     )
 
 
-def _target_cell(line: EvidenceLine, *, decode: bool) -> Cell:
+def _request_cell(line: EvidenceLine, *, decode: bool) -> Cell:
     """The request, which is the column the reader came for.
 
     Three cases, and each is worth telling apart: a request, a line the parser
@@ -177,4 +182,6 @@ def _target_cell(line: EvidenceLine, *, decode: bool) -> Cell:
 
     target = line.event.target
     shown = decode_target(target) if decode else display_safe(target)
-    return Cell(text=shown, tooltip=shown, bold=True)
+    method = display_safe(line.event.method or "")
+    written = f"{method} {shown}".strip()
+    return Cell(text=written, tooltip=written, bold=True)
