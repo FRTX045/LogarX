@@ -14,7 +14,7 @@ import traceback
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QSettings, Qt
 from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
@@ -58,6 +58,39 @@ _CLIENT_LIMIT = 500
 #: Source lines fetched for a selected activity. The episode keeps a bounded
 #: sample of references anyway; this bounds what is read off disk per click.
 _EVIDENCE_LIMIT = 25
+
+#: Where the window remembers how it was left. One key so far: whether long
+#: traces are folded. Worth persisting for the same reason an editor persists
+#: word wrap — it is a reading preference, and being asked for it again every
+#: launch is the annoyance the setting exists to remove.
+_SETTINGS = ("logarc", "logarc")
+_WRAP_KEY = "view/wrap_traces"
+
+
+def _settings() -> QSettings:
+    """Where the window's preferences live — the one place that decides.
+
+    A function rather than the constructor spelled out at each call site, so
+    there is a single seam a test can point somewhere harmless. `QSettings`
+    resolves to `HKCU\\Software` on Windows, and a suite that wrote real
+    preferences onto the machine running it would both dirty that machine and
+    read its own leftovers back on the next run.
+    """
+    return QSettings(*_SETTINGS)
+
+
+def _remembered_wrap() -> bool:
+    """How traces were laid out last time, defaulting to folded.
+
+    Normalised rather than trusted. Both stores hand this back as text — the
+    registry keeps it as the `REG_SZ` "false", an ini file as the characters
+    `false` — and a non-empty string is truthy, so reading it at face value
+    turns wrapping back on for everyone who ever turned it off.
+    """
+    value = _settings().value(_WRAP_KEY, True)
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() not in {"false", "0", ""}
 
 
 # Module-level and Qt-free on purpose. These are the two decisions the window
@@ -170,6 +203,20 @@ class MainWindow(QMainWindow):
             action.setCheckable(True)
         self._trace_action.setChecked(True)
         view_menu.addSeparator()
+
+        # Alt+Z, because that is what an editor uses for word wrap and this is
+        # the same choice about the same trade: fold the long line and read it,
+        # or keep it straight and scroll.
+        self._wrap_action = self._add(view_menu, "&Wrap long traces", self._apply_wrap)
+        self._wrap_action.setCheckable(True)
+        self._wrap_action.setChecked(_remembered_wrap())
+        self._wrap_action.setShortcut(QKeySequence("Alt+Z"))
+        self._wrap_action.setStatusTip(
+            "Fold a long session onto further rows so the captions stay readable, "
+            "or lay it out on one line and pan along it."
+        )
+        self._canvas.set_wrap(self._wrap_action.isChecked())
+
         self._add(view_menu, "&Fit to window", self._canvas.fit)
 
         export_menu = required(menu_bar.addMenu("&Export"))
@@ -317,13 +364,24 @@ class MainWindow(QMainWindow):
         self._kind = GraphKind.TRACE
         self._trace_action.setChecked(True)
         self._behaviour_action.setChecked(False)
+        # Greyed out on the other view rather than hidden: a behaviour map is a
+        # circle and has nothing to fold, and a live control that does nothing
+        # reads as a fault. The choice itself is kept, and applies again here.
+        self._wrap_action.setEnabled(True)
         self._redraw()
 
     def _show_behaviour(self) -> None:
         self._kind = GraphKind.BEHAVIOUR
         self._trace_action.setChecked(False)
         self._behaviour_action.setChecked(True)
+        self._wrap_action.setEnabled(False)
         self._redraw()
+
+    def _apply_wrap(self) -> None:
+        """Fold long traces or stop folding them, and remember which."""
+        wrap = self._wrap_action.isChecked()
+        self._canvas.set_wrap(wrap)
+        _settings().setValue(_WRAP_KEY, wrap)
 
     # -- evidence ----------------------------------------------------------
 

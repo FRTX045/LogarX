@@ -9,7 +9,9 @@ Those are the failures that would otherwise be found by opening the app.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
+from itertools import pairwise
 from pathlib import Path
 
 import pytest
@@ -23,8 +25,11 @@ from PyQt6.QtWidgets import QApplication
 
 from logarc.analysis import analyse_ip
 from logarc.case import Case
-from logarc.core.graph import GraphKind
+from logarc.core.activity import ActivityCategory, Outcome, Severity
+from logarc.core.evidence import EvidenceRef
+from logarc.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
 from logarc.detect.crs import CrsDetection, write_detections
+from logarc.gui import app
 from logarc.gui.app import MainWindow, read_case, reconstruct_client
 from logarc.gui.canvas import MIN_FIT_SCALE, ActivityCanvas
 from logarc.gui.panels import ClientTable, EvidencePanel
@@ -37,6 +42,62 @@ CLIENT = "203.0.113.66"
 @pytest.fixture(scope="module")
 def qt_app() -> QApplication:
     return QApplication.instance() or QApplication([])
+
+
+@pytest.fixture(scope="module", autouse=True)
+def settings_in_a_temp_file(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
+    """Point the window's preferences at a file nobody has to live with.
+
+    `QSettings` resolves to `HKCU\\Software` on Windows, so without this the
+    suite writes real preferences onto whichever machine ran it and reads its
+    own leftovers back on the next run — which would make these tests pass or
+    fail according to what a previous run happened to leave behind.
+
+    Substituting the factory, not `QSettings.setDefaultFormat` and `setPath`:
+    those were tried first and do not redirect the `QSettings(org, app)`
+    constructor at all. It goes on resolving to the registry, and the isolation
+    is imaginary while looking completely convincing.
+    """
+    from PyQt6.QtCore import QSettings
+
+    ini = tmp_path_factory.mktemp("settings") / "logarc.ini"
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(app, "_settings", lambda: QSettings(str(ini), QSettings.Format.IniFormat))
+        yield ini
+
+
+def _long_trace(count: int) -> ActivityGraph:
+    """A trace long enough that a wrap has something to fold.
+
+    Built directly rather than segmented out of a log, so the premise this test
+    rests on — that this graph wraps — cannot be quietly changed by a detection
+    rule or a threshold somewhere else in the tree.
+    """
+    nodes = tuple(
+        GraphNode(
+            node_id=f"1.2.3.4#1/{index}",
+            label="directory enumeration",
+            category=ActivityCategory.ENUMERATION,
+            severity=Severity.MEDIUM,
+            outcome=Outcome.BLOCKED,
+            request_count=5,
+            distinct_paths=5,
+            bytes_total=1,
+            start=START + timedelta(minutes=index),
+            end=START + timedelta(minutes=index, seconds=30),
+            owasp=None,
+            top_targets=("/a",),
+            rule_ids=("r",),
+            evidence=(EvidenceRef("access.log", index),),
+            evidence_total=5,
+            episode_ids=(f"1.2.3.4#1/{index}",),
+        )
+        for index in range(1, count + 1)
+    )
+    edges = tuple(
+        GraphEdge(source=first.node_id, target=second.node_id) for first, second in pairwise(nodes)
+    )
+    return ActivityGraph(kind=GraphKind.TRACE, client_ip="1.2.3.4", nodes=nodes, edges=edges)
 
 
 @pytest.fixture(scope="module")
@@ -322,6 +383,109 @@ def test_only_the_last_activity_clicked_stays_ringed(qt_app: QApplication, campa
         canvas.highlight(node.node_id)
 
     assert len(canvas.graph_scene.items()) == before + 1
+
+
+def test_turning_wrap_off_redraws_the_trace_on_one_row(qt_app: QApplication) -> None:
+    """The setting has to reach the layout, not merely be stored. A toggle that
+    records a preference and leaves the canvas exactly as it was is broken in
+    the one way the user can see."""
+    canvas = ActivityCanvas()
+    canvas.show_graph(_long_trace(12))
+    assert len({item.pos().y() for item in canvas._nodes.values()}) > 1, "premise: it wrapped"
+
+    canvas.set_wrap(False)
+
+    assert len({item.pos().y() for item in canvas._nodes.values()}) == 1
+
+
+def test_wrap_can_be_set_before_anything_is_drawn(qt_app: QApplication) -> None:
+    """The window applies the remembered setting while it is being built, which
+    is long before a case has been opened. It also has to still be in force for
+    the graph drawn after that, rather than only triggering one redraw."""
+    canvas = ActivityCanvas()
+
+    canvas.set_wrap(False)
+    canvas.show_graph(_long_trace(12))
+
+    assert len({item.pos().y() for item in canvas._nodes.values()}) == 1
+
+
+def test_the_ring_follows_the_node_across_a_wrap_toggle(qt_app: QApplication) -> None:
+    """The evidence panel goes on showing the same episode across the redraw, so
+    the canvas has to go on pointing at it — and at where it has moved to. A ring
+    left at the old coordinates marks whichever node landed there instead, which
+    is worse than marking none."""
+    canvas = ActivityCanvas()
+    graph = _long_trace(12)
+    canvas.show_graph(graph)
+    # The sixth, deliberately. A node on the first row of the fold keeps the
+    # same coordinates when the fold is removed, so ringing one of those would
+    # let a ring left at the old position pass as a ring that followed.
+    ringed = graph.nodes[5].node_id
+    canvas.highlight(ringed)
+    was_at = canvas._nodes[ringed].pos()
+
+    canvas.set_wrap(False)
+
+    assert canvas._nodes[ringed].pos() != was_at, "premise: this node moved"
+    assert canvas._halo is not None
+    assert canvas._halo.pos() == canvas._nodes[ringed].pos()
+
+
+def test_a_trace_too_wide_to_fit_opens_at_its_beginning(qt_app: QApplication) -> None:
+    """Laid out straight, a long trace is wider than the window, so the fit
+    clamps at the legibility floor and something has to be off screen. Left
+    centred, what is off screen is both ends and the view opens midway through
+    the timeline — there is only one place to start reading a chronology.
+    """
+    canvas = ActivityCanvas()
+    canvas.resize(400, 300)
+    canvas.set_wrap(False)
+
+    canvas.show_graph(_long_trace(12))
+
+    bar = canvas.horizontalScrollBar()
+    assert bar.maximum() > bar.minimum(), "premise: it does not fit"
+    assert bar.value() == bar.minimum()
+
+
+def test_the_wrap_toggle_is_offered_only_where_it_does_something(qt_app: QApplication) -> None:
+    """A behaviour map is a circle and has no rows to fold. A live control that
+    does nothing reads as a fault in the tool."""
+    window = MainWindow()
+
+    window._show_behaviour()
+    assert not window._wrap_action.isEnabled()
+
+    window._show_trace()
+    assert window._wrap_action.isEnabled()
+    window.close()
+
+
+def test_the_wrap_choice_outlives_the_window(
+    qt_app: QApplication, settings_in_a_temp_file: Path
+) -> None:
+    """Checked by opening a second window rather than by reading the setting
+    back: a preference that is stored and never applied is the failure worth
+    catching, and reading the file would not catch it.
+
+    The file is checked too, but for a different reason — that the window is
+    still writing through the seam these tests substitute. Inline a `QSettings`
+    at either call site and this file stays empty while the preference quietly
+    goes to the real registry of whoever ran the suite.
+    """
+    app._settings().clear()
+    first = MainWindow()
+    assert first._wrap_action.isChecked(), "wrapping is the default"
+
+    first._wrap_action.trigger()
+    first.close()
+    second = MainWindow()
+
+    assert not second._wrap_action.isChecked()
+    assert not second._canvas.wrap
+    assert "false" in settings_in_a_temp_file.read_text(encoding="utf-8").lower()
+    second.close()
 
 
 def test_redrawing_the_graph_forgets_the_ring(qt_app: QApplication, campaign: Path) -> None:

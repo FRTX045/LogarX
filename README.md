@@ -103,8 +103,11 @@ logarc-gui
 
 *Session trace — what happened, in order. A scanner's 61 requests reduced to 10 activities. Long
 chains wrap onto further rows, alternating direction, because a trace drawn on one line is as wide
-as it is long and shrinks to an unreadable smudge when fitted to the window. The panel on the right
-holds the raw log lines the selected node was built from; every finding traces back to a line.*
+as it is long and shrinks to an unreadable smudge when fitted to the window. **View → Wrap long
+traces** (Alt+Z) turns the fold off when the straight timeline is worth more than legible captions;
+the graph is then panned rather than fitted, opening on its first activity, and the choice is
+remembered between launches. The panel on the right holds the raw log lines the selected node was
+built from; every finding traces back to a line.*
 
 ![The same client drawn as a behaviour map](docs/images/screenshot-behaviour.png)
 

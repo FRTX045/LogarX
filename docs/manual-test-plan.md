@@ -218,6 +218,40 @@ QGraphicsView specifically so no browser engine ships (ADR-0006).
 
 ---
 
+## 8. The trace wrap can be turned off, and the choice is remembered
+
+**Why:** this is the only setting the application persists, and persistence is
+the half that cannot be seen by opening the window once. A preference that is
+written but never read back looks correct until the next launch — and one that
+is read but never written looks correct until the one after that.
+
+1. Reconstruct a client whose trace has more than four activities, so the fold
+   has something to fold. Note which node is ringed, if any.
+2. **View → Wrap long traces**, or Alt+Z.
+
+**Pass:** the trace redraws on a single row. It is wider than the window, so it
+opens on its *first* activity with a scrollbar to pan rightwards along it —
+not part-way through. Any ring is still on the same activity, at the position
+that activity has moved to.
+
+3. Switch to **View → Behaviour map**.
+
+**Pass:** the wrap item is greyed out — a circle has no rows to fold — and still
+shows its tick, so the remembered choice is visible rather than merely stored.
+
+4. Close the application and start it again. Reconstruct the same client.
+
+**Pass:** the trace is still unwrapped and the menu item still unticked. This is
+the step that cannot be replaced by an automated check on this machine: the
+suite substitutes the settings store precisely so it does *not* write to the
+registry, so nothing but a real launch exercises the real one.
+
+5. Turn it back on.
+
+**Pass:** the trace folds again, and stays folded across a restart.
+
+---
+
 ## Recording a run
 
 | # | Check | Result | Notes |
@@ -229,5 +263,6 @@ QGraphicsView specifically so no browser engine ships (ADR-0006).
 | 5 | Export matches the screen and the CLI | | |
 | 6 | Failures are visible | | |
 | 7 | Packaged build finds its rules and knows its version | | |
+| 8 | Wrap toggles, greys out off-view, and survives a restart | | |
 
 Version tested: ______  ·  Date: ______  ·  Machine: ______
