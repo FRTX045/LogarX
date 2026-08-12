@@ -107,7 +107,9 @@ as it is long and shrinks to an unreadable smudge when fitted to the window. **V
 traces** (Alt+Z) turns the fold off when the straight timeline is worth more than legible captions;
 the graph is then panned rather than fitted, opening on its first activity, and the choice is
 remembered between launches. The panel on the right holds the raw log lines the selected node was
-built from; every finding traces back to a line.*
+built from; every finding traces back to a line. The lines are shown exactly as the log holds them,
+wrapped rather than run off the edge, with the request target marked and the response status with
+it — a served status stands out, because on a hostile request that is the alarming one.*
 
 ![The same client drawn as a behaviour map](docs/images/screenshot-behaviour.png)
 

@@ -280,6 +280,77 @@ def test_the_evidence_panel_shows_the_raw_lines(qt_app: QApplication, campaign: 
     assert CLIENT in shown
 
 
+#: A real Combined line. Its first 45 characters are the client address and the
+#: timestamp — the address the reader chose from the table themselves, and a
+#: time already printed in the heading — and the payload sits past character 60.
+LONG_LINE = (
+    "100.66.0.118 - - [01/May/2024:04:06:02 +0000] "
+    '"GET /product.php?id=1%27%20UNION%20SELECT%20pw%20FROM%20users-- HTTP/1.1" 200 1400 '
+    '"-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"'
+)
+
+
+def _panel_showing(episode: object, text: str = LONG_LINE) -> EvidencePanel:
+    from logarc.evidence import EvidenceLine
+
+    panel = EvidencePanel()
+    panel.resize(330, 600)
+    panel.show()
+    QApplication.processEvents()
+    panel.show_evidence(
+        episode,  # type: ignore[arg-type]
+        [EvidenceLine(ref=EvidenceRef("access.log", 1), source_path="a.log", text=text)],
+    )
+    QApplication.processEvents()
+    return panel
+
+
+def test_a_long_evidence_line_needs_no_sideways_scrolling(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    """The panel is ~330px, about fifty characters, and a Combined line spends
+    its first forty-five on the address and the timestamp. Unwrapped, every
+    line of evidence read `... "GET` with the payload — the thing the panel
+    exists to show — off the right-hand edge."""
+    with Case.open(campaign) as case:
+        result = analyse_ip(case.store, CLIENT)
+
+    panel = _panel_showing(result.episodes[0])
+
+    assert len(LONG_LINE) > 150, "premise: far wider than the panel"
+    assert panel._body.horizontalScrollBar().maximum() == 0
+
+
+def test_the_evidence_is_the_bytes_the_log_holds(qt_app: QApplication, campaign: Path) -> None:
+    """Marking parts of the line must never rewrite it. The whole claim of this
+    tool is that a finding traces back to a source line, so the panel formats
+    the string it was handed rather than building a tidier one from it."""
+    with Case.open(campaign) as case:
+        result = analyse_ip(case.store, CLIENT)
+
+    panel = _panel_showing(result.episodes[0])
+
+    assert LONG_LINE in panel._body.toPlainText()
+
+
+def test_the_heading_says_one_request_not_one_requests(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    """The panel formatted the count itself and always wrote the plural, while
+    the node caption beside it, which uses the shared helper, wrote "1 request"
+    for the same episode."""
+    from dataclasses import replace
+
+    with Case.open(campaign) as case:
+        result = analyse_ip(case.store, CLIENT)
+    panel = EvidencePanel()
+
+    panel.show_evidence(replace(result.episodes[0], request_count=1), [])
+
+    assert "1 request " in panel._heading.text()
+    assert "1 requests" not in panel._heading.text()
+
+
 def test_the_evidence_panel_does_not_depend_on_the_system_theme(qt_app: QApplication) -> None:
     """The panel writes dark text. If it also inherits the window background, a
     machine themed dark renders the evidence dark-on-dark — the one panel an

@@ -14,6 +14,24 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   at 1.16 and thirty at 0.75. Short traces keep their straight line.
   See [ADR-0009](docs/adr/0009-parallel-ingest-rather-than-a-native-parser.md)'s
   neighbour, and the numbers in the commit.
+- **The evidence panel showed everything except the evidence.** Lines were not
+  wrapped, and a Combined line spends its first forty-five characters on the
+  client address and the timestamp — an address the reader picked from the table
+  themselves, a time already printed in the heading above. In a ~330px panel
+  that is the entire visible width, so every line ended at `"GET` and the
+  payload sat off the right-hand edge; six lines of proof, and not one of them
+  showed any. They now wrap, breaking mid-token because an injection payload is
+  a single 59-character word with nowhere to break politely.
+  The request target is marked, and the response status with it — **not** as a
+  traffic light. A 2xx on an injection is the alarm, since it says the payload
+  was served, so served stands out and refused recedes, matching the
+  distinction `Outcome` already draws on the canvas. Unrecognised log shapes get
+  no marks at all rather than marks in the wrong place.
+  The text is written as consecutive slices of the original line, so what
+  reaches the panel is what came out of the log: marking decides appearance and
+  cannot decide content.
+- **The evidence panel said "1 requests"** while the node caption beside it said
+  "1 request", because each formatted the count itself. One shared helper now.
 - **The wrap can be turned off** — **View → Wrap long traces**, Alt+Z, as an
   editor spells it, because it is the same choice about the same trade: fold the
   long line and read it, or keep it straight and scroll. Folding stays the
