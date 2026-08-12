@@ -252,6 +252,48 @@ registry, so nothing but a real launch exercises the real one.
 
 ---
 
+## 9. The evidence panel reads as the request, and can still prove itself
+
+**Why:** the panel is where a finding stops being an assertion. It now shows the
+request as the engine parsed it rather than the raw line, and that is only
+acceptable while the raw line remains one keystroke away and identical to the
+file it came from.
+
+1. Reconstruct a client with an injection episode and click that node.
+
+**Pass:** each entry shows `file:line` and a time, then the target, then the
+status with its size. The payload is readable — `' OR '1'='1`, not
+`%27+OR+%271%27%3D%271`. A served response stands out from refused ones.
+
+2. **View → Show raw log lines** (Ctrl+R).
+
+**Pass:** the whole source line appears under each entry. Compare one against
+the file itself:
+
+```powershell
+Get-Content <log> | Select-Object -Index (<line> - 1)
+```
+
+They must be identical, character for character, including the parts the
+summary leaves out.
+
+3. **View → Decode URL escapes**, off.
+
+**Pass:** targets are shown exactly as the log holds them, percent escapes and
+all.
+
+4. Close the application and reopen it.
+
+**Pass:** both choices are as they were left.
+
+5. Find or craft a request containing `%0A` and click its episode.
+
+**Pass:** it is printed as `<U+000A>` on one line. **It must not produce a line
+break.** A decoded newline would let whoever is being investigated compose what
+looks like another log entry inside the panel their case is read from.
+
+---
+
 ## Recording a run
 
 | # | Check | Result | Notes |
@@ -264,5 +306,6 @@ registry, so nothing but a real launch exercises the real one.
 | 6 | Failures are visible | | |
 | 7 | Packaged build finds its rules and knows its version | | |
 | 8 | Wrap toggles, greys out off-view, and survives a restart | | |
+| 9 | Evidence reads as the request; raw line matches the file byte for byte | | |
 
 Version tested: ______  ·  Date: ______  ·  Machine: ______

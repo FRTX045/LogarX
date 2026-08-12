@@ -65,6 +65,8 @@ _EVIDENCE_LIMIT = 25
 #: launch is the annoyance the setting exists to remove.
 _SETTINGS = ("logarc", "logarc")
 _WRAP_KEY = "view/wrap_traces"
+_DECODE_KEY = "view/decode_targets"
+_RAW_KEY = "view/show_raw_lines"
 
 
 def _settings() -> QSettings:
@@ -79,15 +81,15 @@ def _settings() -> QSettings:
     return QSettings(*_SETTINGS)
 
 
-def _remembered_wrap() -> bool:
-    """How traces were laid out last time, defaulting to folded.
+def _remembered(key: str, *, default: bool) -> bool:
+    """A remembered yes/no, normalised rather than trusted.
 
-    Normalised rather than trusted. Both stores hand this back as text — the
-    registry keeps it as the `REG_SZ` "false", an ini file as the characters
-    `false` — and a non-empty string is truthy, so reading it at face value
-    turns wrapping back on for everyone who ever turned it off.
+    Both stores hand these back as text — the registry keeps `REG_SZ "false"`,
+    an ini file the characters `false` — and a non-empty string is truthy, so
+    reading one at face value turns every setting back on for anyone who ever
+    turned it off.
     """
-    value = _settings().value(_WRAP_KEY, True)
+    value = _settings().value(key, default)
     if isinstance(value, bool):
         return value
     return str(value).strip().lower() not in {"false", "0", ""}
@@ -223,7 +225,7 @@ class MainWindow(QMainWindow):
         # or keep it straight and scroll.
         self._wrap_action = self._add(view_menu, "&Wrap long traces", self._apply_wrap)
         self._wrap_action.setCheckable(True)
-        self._wrap_action.setChecked(_remembered_wrap())
+        self._wrap_action.setChecked(_remembered(_WRAP_KEY, default=True))
         self._wrap_action.setShortcut(QKeySequence("Alt+Z"))
         self._wrap_action.setStatusTip(
             "Fold a long session onto further rows so the captions stay readable, "
@@ -232,6 +234,27 @@ class MainWindow(QMainWindow):
         self._canvas.set_wrap(self._wrap_action.isChecked())
 
         self._add(view_menu, "&Fit to window", self._canvas.fit)
+        view_menu.addSeparator()
+
+        # How the evidence beside the graph is read. Both are preferences about
+        # presentation, never about which evidence is shown: the `file:line`
+        # reference is printed whatever either of these is set to.
+        self._decode_action = self._add(view_menu, "&Decode URL escapes", self._apply_evidence_view)
+        self._decode_action.setCheckable(True)
+        self._decode_action.setChecked(_remembered(_DECODE_KEY, default=True))
+        self._decode_action.setStatusTip(
+            "Show request targets as the attacker wrote them — %27+OR+%271%27%3D%271 "
+            "reads as ' OR '1'='1 — or exactly as the log holds them."
+        )
+
+        self._raw_action = self._add(view_menu, "Show &raw log lines", self._apply_evidence_view)
+        self._raw_action.setCheckable(True)
+        self._raw_action.setChecked(_remembered(_RAW_KEY, default=False))
+        self._raw_action.setShortcut(QKeySequence("Ctrl+R"))
+        self._raw_action.setStatusTip(
+            "Print the whole source line under each piece of evidence, verbatim."
+        )
+        self._apply_evidence_view()
 
         export_menu = required(menu_bar.addMenu("&Export"))
         self._add(export_menu, "&HTML report…", lambda: self._export("html"))
@@ -396,6 +419,16 @@ class MainWindow(QMainWindow):
         wrap = self._wrap_action.isChecked()
         self._canvas.set_wrap(wrap)
         _settings().setValue(_WRAP_KEY, wrap)
+
+    def _apply_evidence_view(self) -> None:
+        """How the evidence panel reads, and remember it."""
+        decode = self._decode_action.isChecked()
+        raw = self._raw_action.isChecked()
+        self._evidence.set_decode(decode)
+        self._evidence.set_show_raw(raw)
+        settings = _settings()
+        settings.setValue(_DECODE_KEY, decode)
+        settings.setValue(_RAW_KEY, raw)
 
     # -- evidence ----------------------------------------------------------
 

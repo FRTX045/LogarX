@@ -18,8 +18,10 @@ from __future__ import annotations
 
 import math
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
+from urllib.parse import unquote, unquote_plus
 
 from logarc.core.activity import Outcome, Severity
 from logarc.core.graph import GraphKind
@@ -36,7 +38,10 @@ __all__ = [
     "LegendItem",
     "NodeStyle",
     "Span",
+    "decode_target",
+    "display_safe",
     "edge_label",
+    "format_bytes",
     "format_gap",
     "format_requests",
     "highlight_spans",
@@ -45,6 +50,7 @@ __all__ = [
     "outcome_legend",
     "severity_colour",
     "severity_legend",
+    "shorten_agent",
     "status_colour",
     "style_for",
     "summarise",
@@ -255,6 +261,80 @@ def status_colour(code: str) -> str:
     `Outcome` already draws on the canvas.
     """
     return EVIDENCE_INK if code[:1] in {"2", "3"} and code.isdigit() else EVIDENCE_MUTED
+
+
+def display_safe(text: str) -> str:
+    """Replace anything that could forge what the reader sees.
+
+    Everything drawn in the evidence panel came out of a request, and the
+    request was written by whoever is being investigated. Decoding turns their
+    percent escapes back into the characters they stand for, and some of those
+    characters do not merely *say* something — they *do* something:
+
+    * `%0A` becomes a line break, and a line break lets an attacker compose
+      what looks like a second log entry, complete with a status of their
+      choosing, inside the panel a forensic finding is read from.
+    * `%E2%80%AE` is a right-to-left override, which reverses how everything
+      after it is drawn. A hostile path can be made to read as an innocent one
+      while remaining exactly what it is.
+
+    So every control and format character is replaced by its codepoint spelled
+    out. Verbose on purpose: `<U+000A>` tells an analyst precisely what was in
+    the request, which a blank space or a dropped character would not.
+    """
+    return "".join(
+        f"<U+{ord(char):04X}>" if unicodedata.category(char) in {"Cc", "Cf"} else char
+        for char in text
+    )
+
+
+def decode_target(target: str) -> str:
+    """A request target as the attacker wrote it, readable and inert.
+
+    `%27+OR+%271%27%3D%271` is a textbook tautology and reads as line noise;
+    `' OR '1'='1` is the same thing and reads as the attack. Nobody should have
+    to decode that in their head twenty-five times to work through one episode.
+
+    The path and the query are decoded under different rules, because `+` means
+    a space in a query string and means `+` in a path — one rule over the whole
+    target corrupts whichever side it is wrong about. A malformed escape is left
+    exactly as it was logged rather than guessed at, and one pass of decoding is
+    all that happens, so a doubly-encoded payload keeps the percent signs that
+    give the evasion away.
+    """
+    path, question, query = target.partition("?")
+    decoded = unquote(path) + (question + unquote_plus(query) if question else "")
+    return display_safe(decoded)
+
+
+def format_bytes(count: int) -> str:
+    """A response size, written the way someone would say it out loud.
+
+    Worth the trouble because on a hostile request the size *is* a finding: a
+    large body returned to an injection says data left the building. "10648" is
+    a number to work out; "10.4 KB" is a size to recognise.
+    """
+    if count < 1024:
+        return f"{count} B"
+    if count < 1024 * 1024:
+        return f"{count / 1024:.1f} KB"
+    return f"{count / (1024 * 1024):.1f} MB"
+
+
+def shorten_agent(agent: str, limit: int = 64) -> str:
+    """A user agent with its middle taken out.
+
+    The agent is more than half the width of a Combined line and is almost
+    never what is being looked at — except when it is the entire finding, and
+    those are short: `sqlmap/1.5.2` survives this untouched. What gets cut is
+    the middle of a long browser string, which is boilerplate; what identifies
+    the client sits at the ends. The whole value is a keystroke away in the raw
+    line either way.
+    """
+    if len(agent) <= limit:
+        return agent
+    head, tail = (limit - 1) * 2 // 3, (limit - 1) // 3
+    return f"{agent[:head]}…{agent[-tail:]}"
 
 
 def format_requests(count: int) -> str:
