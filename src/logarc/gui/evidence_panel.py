@@ -29,7 +29,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from logarc.gui._qt import required
+from logarc.gui._qt import SORT_KEY, SortableItem, required
 from logarc.gui.evidence_view import ALERT_COLOUR, COLUMNS, Cell, Detail, cells_for, detail_for
 from logarc.gui.style import format_requests, severity_colour
 
@@ -225,33 +225,14 @@ def _build_detail(font: QFont) -> QTextEdit:
     return detail
 
 
-#: Where a cell keeps what it is sorted on, and where it sits in the evidence.
-#: Both past `UserRole`, because the roles below it are Qt's own.
-_SORT_KEY = Qt.ItemDataRole.UserRole + 1
+#: Where a row keeps its place in the evidence, so sorting cannot move it.
 _INDEX = Qt.ItemDataRole.UserRole
 
 
-class _Item(QTableWidgetItem):
-    """A cell that shows its text and sorts on its number.
-
-    Qt keeps `DisplayRole` and `EditRole` in one slot on a table item, so
-    putting a sort key in `EditRole` **replaces the text with the raw number**:
-    a timestamp renders as `1714564875` instead of `04:06:02`, and `10.4 KB`
-    becomes `10648.0`. The key therefore lives in a role of its own and the
-    comparison is made here.
-    """
-
-    def __lt__(self, other: QTableWidgetItem) -> bool:
-        mine, theirs = self.data(_SORT_KEY), other.data(_SORT_KEY)
-        if mine is None or theirs is None:
-            return super().__lt__(other)
-        return float(mine) < float(theirs)
-
-
 def _item(cell: Cell, *, index: int) -> QTableWidgetItem:
-    item = _Item(cell.text)
+    item = SortableItem(cell.text)
     if cell.sort_key is not None:
-        item.setData(_SORT_KEY, cell.sort_key)
+        item.setData(SORT_KEY, cell.sort_key)
     item.setForeground(QColor(cell.colour))
     if cell.bold:
         font = item.font()

@@ -17,12 +17,11 @@ from PyQt6.QtWidgets import (
     QLayout,
     QLayoutItem,
     QTableWidget,
-    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
-from logarc.gui._qt import required
+from logarc.gui._qt import SORT_KEY, SortableItem, required
 from logarc.gui.style import (
     SIZE_NOTE,
     outcome_legend,
@@ -108,12 +107,16 @@ class ClientTable(QWidget):
         )
 
     def _set(self, row: int, column: int, text: str, *, sort_key: float | None = None) -> None:
-        item = QTableWidgetItem(text)
+        item = SortableItem(text)
         if sort_key is not None:
             # Sort on the number, not on the formatted text: "1,000" sorts
             # before "9" as a string, which would silently mis-rank the table.
-            item.setData(Qt.ItemDataRole.UserRole, sort_key)
-            item.setData(Qt.ItemDataRole.EditRole, sort_key)
+            #
+            # In a role of its own. This used to go in `EditRole`, which on a
+            # table item is the same slot as the text — so the 4xx column, the
+            # one this table is sorted by when looking for something worth
+            # opening, was showing `0.8888888888888888` instead of `89%`.
+            item.setData(SORT_KEY, sort_key)
         self._table.setItem(row, column, item)
 
     def _emit_choice(self) -> None:

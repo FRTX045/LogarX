@@ -731,3 +731,42 @@ def test_the_evidence_table_does_not_depend_on_the_system_theme(
 
     assert palette.color(QPalette.ColorRole.Base).name() == _PAPER
     assert palette.color(QPalette.ColorRole.Text).name() == _INK
+
+
+def test_the_client_table_shows_a_percentage_not_a_bare_number(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    """A fault this table has carried since it was written, found while giving
+    the evidence table the same treatment.
+
+    The 4xx column formats a ratio as `13%` and then puts the raw ratio in
+    EditRole to sort on. On a table item EditRole and DisplayRole are one slot,
+    so the number replaces the text and the column reads `0` — in the column an
+    investigator sorts by when looking for something worth opening.
+    """
+    with Case.open(campaign) as case:
+        summaries = case.store.ip_summaries(limit=50, order_by="requests")
+    table = ClientTable()
+
+    table.show_clients(summaries)
+
+    ratio = table._table.item(0, 3)
+    assert ratio is not None
+    assert ratio.text().endswith("%"), f"a ratio, not {ratio.text()!r}"
+
+
+def test_the_client_table_still_sorts_by_the_number(qt_app: QApplication, campaign: Path) -> None:
+    """ "1,000" sorts before "9" as text. Showing the formatted value must not
+    cost the numeric ordering."""
+    from PyQt6.QtCore import Qt as QtNS
+
+    with Case.open(campaign) as case:
+        summaries = case.store.ip_summaries(limit=50, order_by="requests")
+    table = ClientTable()
+    table.show_clients(summaries)
+
+    table._table.sortItems(1, QtNS.SortOrder.DescendingOrder)
+
+    top = table._table.item(0, 1)
+    assert top is not None
+    assert top.text() == f"{max(s.request_count for s in summaries):,}"

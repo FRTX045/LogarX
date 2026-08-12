@@ -261,36 +261,43 @@ file it came from.
 
 1. Reconstruct a client with an injection episode and click that node.
 
-**Pass:** each entry shows `file:line` and a time, then the target, then the
-status with its size. The payload is readable — `' OR '1'='1`, not
-`%27+OR+%271%27%3D%271`. A served response stands out from refused ones.
+**Pass:** a table with a row per request — `Source`, `Time`, `Request`,
+`Status`, `Size`. The payload is readable: `GET /product?id=1' OR '1'='1`, not
+`%27+OR+%271%27%3D%271`. A served response stands out from refused ones. Values
+read as values: a time of day rather than `1714564875`, `1.3 MB` rather than
+`1400000.0`. The same goes for the client table on the left, whose `4xx` column
+must show a percentage.
 
-2. **View → Show raw log lines** (Ctrl+R).
+2. Click the `Size` heading twice to sort descending.
 
-**Pass:** the whole source line appears under each entry. Compare one against
-the file itself:
+**Pass:** the largest response is on top — the request that got data out. Click
+that row.
+
+**Pass:** the detail beneath names the same `Source` as the highlighted row.
+Sorting must never leave the detail describing a different request from the one
+selected.
+
+3. Read the `as logged` block in the detail and compare it with the file:
 
 ```powershell
 Get-Content <log> | Select-Object -Index (<line> - 1)
 ```
 
-They must be identical, character for character, including the parts the
-summary leaves out.
+They must be identical, character for character, including everything the table
+leaves out. This is the check that makes summarising permissible at all.
 
-3. **View → Decode URL escapes**, off.
+4. **View → Decode URL escapes**, off.
 
-**Pass:** targets are shown exactly as the log holds them, percent escapes and
-all.
-
-4. Close the application and reopen it.
-
-**Pass:** both choices are as they were left.
+**Pass:** requests are shown exactly as the log holds them, percent escapes and
+all. Close the application and reopen it: the choice is as it was left.
 
 5. Find or craft a request containing `%0A` and click its episode.
 
-**Pass:** it is printed as `<U+000A>` on one line. **It must not produce a line
-break.** A decoded newline would let whoever is being investigated compose what
-looks like another log entry inside the panel their case is read from.
+**Pass:** it is printed as `<U+000A>` and occupies **one row**. A decoded
+newline would let whoever is being investigated draw over the row beneath — a
+fabricated request, with a status of their choosing, in the table their case is
+read from. Hover the row: the tooltip shows any `<` or `>` in the payload as
+characters, never as markup.
 
 ---
 
