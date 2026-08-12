@@ -14,6 +14,15 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   at 1.16 and thirty at 0.75. Short traces keep their straight line.
   See [ADR-0009](docs/adr/0009-parallel-ingest-rather-than-a-native-parser.md)'s
   neighbour, and the numbers in the commit.
+- **The wrap can be turned off** — **View → Wrap long traces**, Alt+Z, as an
+  editor spells it, because it is the same choice about the same trade: fold the
+  long line and read it, or keep it straight and scroll. Folding stays the
+  default. An unwrapped trace no longer opens half way along itself: once the
+  fit clamps at the legibility floor the view starts at the first activity,
+  which is the only place to begin reading a chronology. The setting is
+  remembered between launches, which means the desktop application now writes
+  one key to `HKCU\Software\logarc`; nothing else about it leaves the machine.
+  It is greyed out on the behaviour map, where a circle has no rows to fold.
 - **A key to the drawing**, under the canvas and in the HTML report. Colour is
   severity, the outline is outcome, size is volume — none of which was written
   anywhere a reader could see it. Built from the tables the renderers draw from,
