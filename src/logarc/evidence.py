@@ -26,10 +26,13 @@ from typing import TYPE_CHECKING
 
 from logarc.core.evidence import EvidenceRef
 from logarc.ingest.reader import LogSourceError, open_log
+from logarc.parsers.registry import UnknownFormatError, get_parser
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from logarc.core.event import NormalizedEvent
+    from logarc.parsers.base import LogParser
     from logarc.storage.case import CaseManifest, SourceRecord
 
 __all__ = ["EvidenceLine", "read_evidence"]
@@ -43,6 +46,20 @@ class EvidenceLine:
     source_path: str
     text: str | None = None
     note: str | None = None
+
+    event: NormalizedEvent | None = None
+    """The line as the case's own parser reads it, or `None` when that parser
+    cannot make sense of it.
+
+    Parsed here rather than wherever it is displayed, and with the parser the
+    manifest records for this file — the one that produced the finding in the
+    first place. An interface that re-read the same bytes its own way could
+    disagree with the engine about what the request was, and a reader looking
+    at the two would have nothing to tell them which was which.
+
+    `None` is not a failure to report: a line the parser rejects is itself
+    worth seeing, so the text survives and the fields are simply absent.
+    """
 
     verified: bool = False
     """The source is still the size it was when ingested.
@@ -107,6 +124,19 @@ def _read_source(
         }
 
 
+def _parser_for(record: SourceRecord) -> LogParser | None:
+    """The parser this file was ingested with, if it can still be resolved.
+
+    A case can outlive the plugin that read it — a custom `LogFormat` registered
+    by a script that is no longer on the path — so this returns `None` rather
+    than raising. The line is still shown; only its fields are missing.
+    """
+    try:
+        return get_parser(record.log_format)
+    except (UnknownFormatError, KeyError):
+        return None
+
+
 def _scan(
     record: SourceRecord,
     path: Path,
@@ -118,16 +148,19 @@ def _scan(
     found: dict[tuple[str, int], EvidenceLine] = {}
     highest = max(line_numbers)
     seen = 0
+    parser = _parser_for(record)
 
     with open_log(path) as stream:
         for number, text in stream:
             seen = number
             if number in line_numbers:
+                ref = EvidenceRef(record.file_id, number)
                 found[record.file_id, number] = EvidenceLine(
-                    ref=EvidenceRef(record.file_id, number),
+                    ref=ref,
                     source_path=record.original_path,
                     text=text,
                     note=drift,
+                    event=parser.parse_line(text, ref) if parser else None,
                     verified=verified,
                 )
             if number >= highest:

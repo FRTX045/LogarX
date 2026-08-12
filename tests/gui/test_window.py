@@ -358,7 +358,18 @@ def test_the_client_table_lists_and_sorts_by_number(qt_app: QApplication, campai
     assert table._table.rowCount() == len(summaries)
 
 
-def test_the_evidence_panel_shows_the_raw_lines(qt_app: QApplication, campaign: Path) -> None:
+def test_the_evidence_panel_shows_what_each_request_was(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    """This used to assert the client address appeared, back when the panel
+    printed the whole source line. It is deliberately gone now: it is the
+    address the reader picked from the table themselves, it is in the heading
+    above, and it is identical on every line of a per-client reconstruction —
+    45 characters of a 50-character panel spent saying nothing new.
+
+    What must be there is the reference, and the request it points at. The
+    address comes back with the raw line, which the test below covers.
+    """
     with Case.open(campaign) as case:
         result = analyse_ip(case.store, CLIENT)
         episode = result.episodes[0]
@@ -369,7 +380,24 @@ def test_the_evidence_panel_shows_the_raw_lines(qt_app: QApplication, campaign: 
 
     shown = panel._body.toPlainText()
     assert "access.log:" in shown
-    assert CLIENT in shown
+    assert "GET" in shown
+    assert CLIENT not in shown
+
+
+def test_the_raw_line_brings_back_everything_the_summary_leaves_out(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    """Nothing is lost by summarising, only moved behind a toggle."""
+    with Case.open(campaign) as case:
+        result = analyse_ip(case.store, CLIENT)
+        episode = result.episodes[0]
+        lines = case.read_evidence(episode.evidence[:5])
+    panel = EvidencePanel()
+    panel.show_evidence(episode, lines)
+
+    panel.set_show_raw(True)
+
+    assert CLIENT in panel._body.toPlainText()
 
 
 #: A real Combined line. Its first 45 characters are the client address and the
@@ -441,6 +469,109 @@ def test_the_heading_says_one_request_not_one_requests(
 
     assert "1 request " in panel._heading.text()
     assert "1 requests" not in panel._heading.text()
+
+
+def _injection_evidence(campaign: Path) -> tuple[object, list[object]]:
+    """The episode whose evidence actually carries an encoded payload."""
+    with Case.open(campaign) as case:
+        result = analyse_ip(case.store, CLIENT)
+        for episode in result.episodes:
+            lines = case.read_evidence(episode.evidence[:4])
+            if any("%27" in (line.text or "") for line in lines):
+                return episode, lines
+    raise AssertionError("the fixture no longer contains an encoded payload")
+
+
+def test_the_panel_reads_the_payload_out_as_the_attack_it_is(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    """`%27%20OR%20%271%27%3D%271` is a textbook tautology and reads as line
+    noise. An analyst should not have to decode that in their head once per
+    piece of evidence to work out what they are looking at."""
+    episode, lines = _injection_evidence(campaign)
+    panel = EvidencePanel()
+
+    panel.show_evidence(episode, lines)  # type: ignore[arg-type]
+
+    assert "' OR '1'='1" in panel._body.toPlainText()
+
+
+def test_the_raw_line_is_not_shown_until_it_is_asked_for(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    """The whole point of the structured view: 85% of a Combined line is the
+    agent, and the address and timestamp already printed in the heading."""
+    episode, lines = _injection_evidence(campaign)
+    panel = EvidencePanel()
+
+    panel.show_evidence(episode, lines)  # type: ignore[arg-type]
+
+    assert "%27%20OR" not in panel._body.toPlainText()
+
+
+def test_asking_for_the_raw_line_gives_the_bytes_the_log_holds(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    """The proof, verbatim, whenever it is wanted. Structuring the reading
+    surface must not put the evidence itself out of reach."""
+    episode, lines = _injection_evidence(campaign)
+    panel = EvidencePanel()
+    panel.show_evidence(episode, lines)  # type: ignore[arg-type]
+
+    panel.set_show_raw(True)
+
+    assert lines[0].text in panel._body.toPlainText()  # type: ignore[attr-defined]
+
+
+def test_decoding_can_be_turned_off_to_see_what_was_on_the_wire(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    """Sometimes the encoding is the finding, and an analyst wants the exact
+    bytes to quote in a report or feed to another tool."""
+    episode, lines = _injection_evidence(campaign)
+    panel = EvidencePanel()
+    panel.show_evidence(episode, lines)  # type: ignore[arg-type]
+
+    panel.set_decode(False)
+
+    shown = panel._body.toPlainText()
+    assert "%27%20OR%20%271%27%3D%271" in shown
+    assert "' OR '1'='1" not in shown
+
+
+def test_a_line_the_parser_rejects_falls_back_to_its_raw_text(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    """There are no fields to lay out, and the line is worth seeing anyway —
+    a request the parser cannot read is itself a finding."""
+    from logarc.evidence import EvidenceLine
+
+    episode, _ = _injection_evidence(campaign)
+    panel = EvidencePanel()
+    odd = EvidenceLine(
+        ref=EvidenceRef("access.log", 1), source_path="a.log", text="!! not a log line !!"
+    )
+
+    panel.show_evidence(episode, [odd])  # type: ignore[arg-type]
+
+    assert "!! not a log line !!" in panel._body.toPlainText()
+
+
+def test_the_evidence_view_choices_outlive_the_window(qt_app: QApplication) -> None:
+    """Two more reading preferences, remembered the same way the wrap is."""
+    app._settings().clear()
+    first = MainWindow()
+    assert first._decode_action.isChecked(), "decoding is the default"
+    assert not first._raw_action.isChecked(), "raw lines are not"
+
+    first._decode_action.trigger()
+    first._raw_action.trigger()
+    first.close()
+    second = MainWindow()
+
+    assert not second._decode_action.isChecked()
+    assert second._raw_action.isChecked()
+    second.close()
 
 
 def test_the_evidence_panel_does_not_depend_on_the_system_theme(qt_app: QApplication) -> None:
@@ -664,3 +795,66 @@ def test_redrawing_the_graph_forgets_the_ring(qt_app: QApplication, campaign: Pa
     canvas.highlight(result.behaviour.nodes[0].node_id)
 
     assert canvas.graph_scene.items()
+
+
+def _line_with_agent(number: int, agent: str) -> object:
+    from logarc.core.event import NormalizedEvent
+    from logarc.evidence import EvidenceLine
+
+    ref = EvidenceRef("access.log", number)
+    return EvidenceLine(
+        ref=ref,
+        source_path="a.log",
+        text=f"raw line {number}",
+        event=NormalizedEvent(
+            timestamp=START,
+            client_ip=CLIENT,
+            evidence=ref,
+            method="GET",
+            path=f"/a{number}",
+            status=200,
+            user_agent=agent,
+        ),
+    )
+
+
+def test_an_unchanged_user_agent_is_stated_once_rather_than_every_line(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    """Six identical agents filled twelve of twenty-six rows — nearly half the
+    panel restating the same string, in a panel whose whole problem was that
+    the interesting 15% was crowded out by the rest."""
+    with Case.open(campaign) as case:
+        episode = analyse_ip(case.store, CLIENT).episodes[0]
+    panel = EvidencePanel()
+    same = "Mozilla/5.0 (X11; Linux x86_64)"
+
+    panel.show_evidence(  # type: ignore[arg-type]
+        episode, [_line_with_agent(n, same) for n in range(1, 5)]
+    )
+
+    assert panel._body.toPlainText().count(same) == 1
+
+
+def test_an_agent_that_changes_mid_episode_is_shown_where_it_changes(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    """And this is why it is worth showing at all. A client that switches tool
+    part way through an episode has told you something; repeating an identical
+    string on every line only hides it."""
+    with Case.open(campaign) as case:
+        episode = analyse_ip(case.store, CLIENT).episodes[0]
+    panel = EvidencePanel()
+
+    panel.show_evidence(  # type: ignore[arg-type]
+        episode,
+        [
+            _line_with_agent(1, "Mozilla/5.0 (X11; Linux x86_64)"),
+            _line_with_agent(2, "Mozilla/5.0 (X11; Linux x86_64)"),
+            _line_with_agent(3, "sqlmap/1.5.2#stable"),
+        ],
+    )
+
+    shown = panel._body.toPlainText()
+    assert shown.count("Mozilla/5.0") == 1
+    assert "sqlmap/1.5.2#stable" in shown

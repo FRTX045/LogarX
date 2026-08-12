@@ -123,3 +123,39 @@ def test_the_line_names_the_file_it_came_from(case: Case, tmp_path: Path) -> Non
     (line,) = case.read_evidence([EvidenceRef("access.log", 1)])
 
     assert Path(line.source_path) == tmp_path / "access.log"
+
+
+def test_a_line_comes_back_parsed_by_the_case_s_own_parser(case: Case) -> None:
+    """The panel needs fields, not a string to re-parse by eye.
+
+    Parsed here rather than in the interface, with the parser the manifest
+    records for that file — the same one that produced the finding. A second,
+    interface-side reading of the same bytes could disagree with the engine
+    about what the request was, and the reader would have no way to tell which
+    of the two they were looking at.
+    """
+    (line,) = case.read_evidence([EvidenceRef("access.log", 2)])
+
+    assert line.event is not None
+    assert line.event.method == "GET"
+    assert line.event.path == "/.env"
+    assert line.event.status == 404
+    assert line.event.user_agent == "curl/8.0"
+
+
+def test_a_line_the_parser_cannot_read_still_comes_back(case: Case, tmp_path: Path) -> None:
+    """Partial evidence is still evidence, and a line the parser rejects is
+    itself worth seeing — so the raw text survives and the fields are simply
+    absent, rather than the lookup failing."""
+    root = tmp_path / "broken"
+    log = root / "access.log"
+    root.mkdir()
+    log.write_text("\n".join([*LINES, "this is not a log line at all"]) + "\n", encoding="utf-8")
+    with Case.create(root / "case") as opened:
+        opened.ingest([log])
+    with Case.open(root / "case") as opened:
+        (line,) = opened.read_evidence([EvidenceRef("access.log", 4)])
+
+    assert line.available
+    assert line.text == "this is not a log line at all"
+    assert line.event is None

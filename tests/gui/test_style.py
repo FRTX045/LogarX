@@ -15,7 +15,9 @@ from logarc.gui.style import (
     EVIDENCE_MUTED,
     SIZE_NOTE,
     NodeStyle,
+    decode_target,
     edge_label,
+    format_bytes,
     format_gap,
     format_requests,
     highlight_spans,
@@ -24,6 +26,7 @@ from logarc.gui.style import (
     outcome_legend,
     severity_colour,
     severity_legend,
+    shorten_agent,
     status_colour,
     style_for,
     summarise,
@@ -280,3 +283,102 @@ def test_a_served_request_stands_out_and_a_refused_one_recedes() -> None:
 
 def test_an_unreadable_status_is_not_guessed_at() -> None:
     assert status_colour("abc") == EVIDENCE_MUTED
+
+
+# -- making an attacker-controlled string safe to look at --------------------
+
+
+def test_an_encoded_newline_cannot_forge_a_second_log_line() -> None:
+    """The attack this guard exists for. Everything drawn here comes from the
+    request, which the attacker wrote. Decode `%0A` into a real newline and they
+    can compose a line that looks like another entry — a fabricated request,
+    with a fabricated status, sitting in the evidence panel of a forensic tool.
+
+    Nothing decoded may introduce a line break, at any width, ever.
+    """
+    forged = decode_target("/a%0A127.0.0.1 - - [x] %22GET /innocent%22 200 0")
+
+    assert "\n" not in forged
+    assert "\r" not in forged
+    assert "<U+000A>" in forged
+
+
+def test_a_direction_override_cannot_disguise_the_path() -> None:
+    """U+202E reverses how the rest of the text is drawn, so a hostile path can
+    be made to read as an innocent one while remaining exactly what it is."""
+    disguised = decode_target("/admin%E2%80%AEcod.exe")
+
+    assert "\u202e" not in disguised
+    assert "<U+202E>" in disguised
+
+
+def test_control_characters_are_named_rather_than_drawn() -> None:
+    assert decode_target("/a%00b") == "/a<U+0000>b"
+    assert decode_target("/a%1Bb") == "/a<U+001B>b"
+
+
+def test_the_payload_reads_as_the_attack_it_is() -> None:
+    """The reason for the whole exercise: an analyst should not have to decode
+    a textbook tautology in their head."""
+    assert decode_target("/search?q=%27+OR+%271%27%3D%271") == "/search?q=' OR '1'='1"
+
+
+def test_a_plus_is_a_space_only_in_the_query() -> None:
+    """`+` means space in a query string and means `+` in a path. Decoding the
+    whole target with one rule corrupts one side or the other."""
+    assert decode_target("/a+b?q=c+d") == "/a+b?q=c d"
+
+
+def test_a_broken_escape_is_left_exactly_as_it_was_logged() -> None:
+    """Guessing at what a malformed sequence meant would be inventing evidence."""
+    assert decode_target("/a%ZZb") == "/a%ZZb"
+    assert decode_target("/a%2") == "/a%2"
+
+
+def test_a_double_encoded_payload_still_shows_its_percent_signs() -> None:
+    """Decoding once is the honest reading of one pass of encoding. What is
+    left over says the payload was encoded twice, which is the evasion — so
+    the residue must survive rather than being decoded away."""
+    assert decode_target("/search?q=%2527+OR+1%3D1") == "/search?q=%27 OR 1=1"
+
+
+def test_a_target_with_nothing_to_decode_is_unchanged() -> None:
+    assert decode_target("/products/shoes") == "/products/shoes"
+
+
+@pytest.mark.parametrize(
+    ("count", "expected"),
+    [(0, "0 B"), (512, "512 B"), (10_648, "10.4 KB"), (1_400_000, "1.3 MB")],
+)
+def test_a_response_size_is_written_the_way_a_person_would_say_it(
+    count: int, expected: str
+) -> None:
+    """A large response to an injection is the finding. "10648" is a number to
+    decipher; "10.4 KB" is a size to recognise."""
+    assert format_bytes(count) == expected
+
+
+def test_a_scanner_signature_is_never_shortened_away() -> None:
+    """The agent is usually noise and occasionally the whole finding. Scanner
+    agents are short, so keeping the ends keeps them whole."""
+    assert shorten_agent("sqlmap/1.5.2#stable (http://sqlmap.org)") == (
+        "sqlmap/1.5.2#stable (http://sqlmap.org)"
+    )
+
+
+def test_a_long_browser_agent_keeps_its_head_and_tail() -> None:
+    """The middle of a browser agent is boilerplate; what identifies the client
+    sits at either end, and the whole string is one keystroke away in the raw
+    line."""
+    agent = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Claude/1.24012.9 Chrome/148.0.7778.280 "
+        "Electron/42.7.0 Safari/537.36 MSIX"
+    )
+
+    short = shorten_agent(agent)
+
+    assert len(short) < len(agent)
+    assert short.startswith("Mozilla/5.0")
+    assert short.endswith("MSIX")
+    assert "…" in short

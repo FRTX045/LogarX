@@ -26,22 +26,35 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   shared out, and panels no longer collapse to an invisible handle against the
   window edge. The 430px floor put on the client table to stop its columns
   hiding is gone — it was the wrong tool, and it was half of what wedged this.
-- **The evidence panel showed everything except the evidence.** Lines were not
-  wrapped, and a Combined line spends its first forty-five characters on the
-  client address and the timestamp — an address the reader picked from the table
-  themselves, a time already printed in the heading above. In a ~330px panel
-  that is the entire visible width, so every line ended at `"GET` and the
-  payload sat off the right-hand edge; six lines of proof, and not one of them
-  showed any. They now wrap, breaking mid-token because an injection payload is
-  a single 59-character word with nowhere to break politely.
-  The request target is marked, and the response status with it — **not** as a
-  traffic light. A 2xx on an injection is the alarm, since it says the payload
-  was served, so served stands out and refused recedes, matching the
-  distinction `Outcome` already draws on the canvas. Unrecognised log shapes get
-  no marks at all rather than marks in the wrong place.
-  The text is written as consecutive slices of the original line, so what
-  reaches the panel is what came out of the log: marking decides appearance and
-  cannot decide content.
+- **The evidence panel showed everything except the evidence.** It printed the
+  raw source line and nothing else. A Combined line is 293 characters, of which
+  **53% is the user agent** and 15% is the client address and timestamp already
+  printed in the heading above — leaving **15% carrying the whole finding**, and
+  that 15% written as `%27+OR+%271%27%3D%271`. Unwrapped in a ~330px panel every
+  line ended at `"GET` with the payload off the right-hand edge; six pieces of
+  proof on screen and not one of them showed any.
+  Each piece of evidence is now laid out as the request it was — target, status,
+  size, referer, agent — **parsed by the same parser that ingested the file**,
+  so what is shown is what the detection actually ran against rather than a
+  second reading that could disagree with it. nginx, IIS and JSON cases get this
+  for nothing. A line the parser cannot read falls back to its raw text, because
+  a request that will not parse is itself worth seeing.
+  Targets are URL-decoded, so `' OR '1'='1` reads as the tautology it is.
+  **Every decoded string is neutralised first**: an attacker controls the URL,
+  and `%0A` would otherwise let them compose what looks like a second log entry
+  inside the panel, while `%E2%80%AE` would let them reverse how a hostile path
+  is drawn. Control and format characters are printed as `<U+000A>` instead.
+  Decoding is one pass, so a doubly-encoded payload keeps the percent signs that
+  give the evasion away.
+  Response sizes read as sizes (`1.3 MB`), a served status stands out while a
+  refused one recedes — a 2xx on an injection is the alarm, not the reassurance
+  — and an agent identical to the one above is stated once, which turns a field
+  that filled twelve of twenty-six rows into a signal that a client changed tool
+  mid-episode. Measured on six requests: **489 characters in place of 1,170**.
+  Two menu items, both remembered: **View → Decode URL escapes** for when the
+  encoding itself is the finding, and **View → Show raw log lines** (Ctrl+R),
+  which prints the whole source line verbatim beneath each entry. The
+  `file:line` reference is printed whatever either is set to.
 - **The evidence panel said "1 requests"** while the node caption beside it said
   "1 request", because each formatted the count itself. One shared helper now.
 - **The wrap can be turned off** — **View → Wrap long traces**, Alt+Z, as an
