@@ -21,7 +21,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from PyQt6.QtGui import QPalette
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QSplitter
 
 from logarc.analysis import analyse_ip
 from logarc.case import Case
@@ -193,6 +193,98 @@ def test_the_window_constructs(qt_app: QApplication) -> None:
     window = MainWindow()
 
     assert window.windowTitle().startswith("logarc")
+    window.close()
+
+
+def _laid_out(width: int = 1400) -> tuple[MainWindow, QSplitter]:
+    """A shown window, with its splitter sized directly.
+
+    `window.resize` does not reach the central widget under the offscreen
+    platform this suite runs on — it reports the same width before and after,
+    which makes a resize test look like it passed while measuring nothing.
+    Sizing the splitter itself does work, and is what these tests are about.
+    """
+    window = MainWindow()
+    window.show()
+    splitter = window.centralWidget()
+    assert isinstance(splitter, QSplitter)
+    splitter.resize(width, 880)
+    QApplication.processEvents()
+    return window, splitter
+
+
+def test_the_legend_does_not_dictate_how_wide_the_window_must_be(
+    qt_app: QApplication,
+) -> None:
+    """The root of the frozen splitter. Laid out as one unbroken row, the key
+    demanded 1,729px — wider than the 1,725px window it was sitting in. The
+    centre column inherited that minimum, so both side panels were pinned at
+    theirs, and with no slack anywhere a drag had nothing to give: the client
+    panel could only be its minimum or collapsed, never anything between.
+
+    A key is a set of small independent items. It should take as many rows as
+    it needs and demand no more width than its widest single entry.
+    """
+    from logarc.gui.panels import LegendBar
+
+    assert LegendBar().minimumSizeHint().width() < 320
+
+
+def test_the_legend_uses_more_rows_when_it_is_given_less_width(
+    qt_app: QApplication,
+) -> None:
+    """Wrapping, not clipping — every entry stays readable at any width."""
+    from logarc.gui.panels import LegendBar
+
+    bar = LegendBar()
+
+    assert bar.heightForWidth(400) > bar.heightForWidth(1400)
+
+
+def test_the_side_panels_resize_continuously_rather_than_snapping(qt_app: QApplication) -> None:
+    """A minimum wide enough to hold every column also forbids every width
+    below it. With collapsing still allowed the panel could reach 0 or 430 and
+    nothing in between, so dragging it either did nothing or jumped the whole
+    way — which is what "stuck" means here.
+    """
+    window, splitter = _laid_out()
+
+    reachable = set()
+    for want in range(240, 520, 20):
+        splitter.setSizes([want, 1400 - want - 320, 320])
+        QApplication.processEvents()
+        reachable.add(splitter.sizes()[0])
+
+    assert len(reachable) >= 10, f"only these widths are reachable: {sorted(reachable)}"
+    window.close()
+
+
+def test_the_client_table_still_opens_wide_enough_for_every_column(
+    qt_app: QApplication,
+) -> None:
+    """The regression this must not cause. A large minimum was what guaranteed
+    the six columns fitted; with the minimum lowered so the panel can be
+    resized, the opening size has to carry that guarantee instead."""
+    window, splitter = _laid_out()
+
+    assert splitter.sizes()[0] >= 420
+    window.close()
+
+
+def test_a_wider_window_gives_the_extra_room_to_the_graph(qt_app: QApplication) -> None:
+    """Without stretch factors the splitter shares new space out proportionally,
+    so widening the window fattens the side panels and the graph — the thing
+    being read — gains almost nothing."""
+    window, splitter = _laid_out(1400)
+    before = splitter.sizes()
+
+    splitter.resize(2000, 880)
+    QApplication.processEvents()
+    after = splitter.sizes()
+
+    assert after[1] - before[1] > 500, "the canvas should take nearly all of the extra 600"
+    assert abs(after[0] - before[0]) <= 20, "the client panel should keep its width"
+    assert abs(after[2] - before[2]) <= 20, "the evidence panel should keep its width"
     window.close()
 
 
