@@ -10,7 +10,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QPalette, QTextCursor
+from PyQt6.QtGui import (
+    QColor,
+    QFont,
+    QPalette,
+    QTextBlockFormat,
+    QTextCharFormat,
+    QTextCursor,
+    QTextOption,
+)
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
@@ -25,10 +33,15 @@ from PyQt6.QtWidgets import (
 
 from logarc.gui._qt import required
 from logarc.gui.style import (
+    EVIDENCE_INK,
+    EVIDENCE_MUTED,
     SIZE_NOTE,
+    format_requests,
+    highlight_spans,
     outcome_legend,
     severity_colour,
     severity_legend,
+    status_colour,
 )
 
 if TYPE_CHECKING:
@@ -195,6 +208,27 @@ class LegendBar(QWidget):
         return sample
 
 
+def _char_format(colour: str, *, bold: bool = False) -> QTextCharFormat:
+    fmt = QTextCharFormat()
+    fmt.setForeground(QColor(colour))
+    if bold:
+        fmt.setFontWeight(QFont.Weight.Bold)
+    return fmt
+
+
+def _source_block() -> QTextBlockFormat:
+    """Indented under its `file:line` reference, with room beneath it.
+
+    The indent is a block margin rather than spaces in the text, so a wrapped
+    line keeps its shape and the characters in the document stay exactly the
+    characters the log holds.
+    """
+    block = QTextBlockFormat()
+    block.setLeftMargin(12.0)
+    block.setBottomMargin(7.0)
+    return block
+
+
 class EvidencePanel(QWidget):
     """What the selected activity is made of, down to the raw lines."""
 
@@ -205,7 +239,22 @@ class EvidencePanel(QWidget):
 
         self._body = QTextEdit()
         self._body.setReadOnly(True)
-        self._body.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        # Wrapped, not scrolled sideways. The panel is about fifty characters
+        # wide and a Combined line spends its first forty-five on the client
+        # address and the timestamp — an address the reader picked from the
+        # table themselves and a time already printed in the heading. Unwrapped,
+        # every line of evidence ended at `"GET` and the payload, which is the
+        # thing this panel exists to show, sat off the right-hand edge.
+        #
+        # Vertical space is what this panel has spare; horizontal space is what
+        # it has none of.
+        self._body.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        # Break mid-token where there is no space to break at. Wrapping on word
+        # boundaries alone leaves a URL untouched, and a URL is precisely what
+        # the interesting evidence is: a 59-character injection payload has no
+        # spaces in it, so word wrapping would send exactly the line worth
+        # reading back off the edge it was just rescued from.
+        self._body.setWordWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
         font = QFont("Consolas")
         font.setStyleHint(QFont.StyleHint.Monospace)
         font.setPointSizeF(8.5)
@@ -238,7 +287,7 @@ class EvidencePanel(QWidget):
         colour = severity_colour(episode.severity)
         self._heading.setText(
             f'<span style="color:{colour}"><b>{episode.label}</b></span><br>'
-            f"{episode.request_count:,} requests · outcome {episode.outcome.value} · "
+            f"{format_requests(episode.request_count)} · outcome {episode.outcome.value} · "
             f"{episode.start:%Y-%m-%d %H:%M:%S} → {episode.end:%H:%M:%S}"
             + (f"<br>OWASP {episode.activity.owasp}" if episode.activity.owasp else "")
             + f"<br>matched by: {', '.join(episode.rule_ids)}"
@@ -247,8 +296,8 @@ class EvidencePanel(QWidget):
         self._body.clear()
         for line in lines:
             self._append(f"{line.ref}", "#616e7c")
-            if line.available:
-                self._append(f"  {line.text}", "#1f2933")
+            if line.available and line.text is not None:
+                self._append_source_line(line.text)
                 if not line.verified and line.note:
                     self._append(f"  ! {line.note}", "#b5273a")
             else:
@@ -272,3 +321,32 @@ class EvidencePanel(QWidget):
     def _append(self, text: str, colour: str) -> None:
         self._body.setTextColor(QColor(colour))
         self._body.append(text)
+
+    def _append_source_line(self, text: str) -> None:
+        """One raw log line, with the parts worth reading marked in place.
+
+        Written as consecutive slices of `text`, in order, with nothing between
+        them: what reaches the document is the string that came out of the log,
+        so the marking decides appearance and cannot decide content. Building a
+        tidier line to display would make this panel a paraphrase of the
+        evidence rather than the evidence.
+
+        A line whose shape is not recognised gets no marks and is drawn in full
+        strength rather than dimmed — the dimming is only meaningful next to
+        something brighter, and a JSON log would otherwise be uniformly faint.
+        """
+        spans = highlight_spans(text)
+        plain = EVIDENCE_MUTED if spans else EVIDENCE_INK
+
+        cursor = self._body.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        cursor.insertBlock(_source_block())
+
+        at = 0
+        for span in spans:
+            marked = text[span.start : span.end]
+            colour = EVIDENCE_INK if span.role == "target" else status_colour(marked)
+            cursor.insertText(text[at : span.start], _char_format(plain))
+            cursor.insertText(marked, _char_format(colour, bold=True))
+            at = span.end
+        cursor.insertText(text[at:], _char_format(plain))

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from itertools import pairwise
 
 import pytest
 
@@ -10,20 +11,31 @@ from logarc.core.activity import ActivityCategory, Outcome, Severity
 from logarc.core.evidence import EvidenceRef
 from logarc.core.graph import GraphKind, GraphNode
 from logarc.gui.style import (
+    EVIDENCE_INK,
+    EVIDENCE_MUTED,
     SIZE_NOTE,
     NodeStyle,
     edge_label,
     format_gap,
+    format_requests,
+    highlight_spans,
     node_radius,
     outcome_border,
     outcome_legend,
     severity_colour,
     severity_legend,
+    status_colour,
     style_for,
     summarise,
 )
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
+
+COMBINED = (
+    "100.66.0.118 - - [01/May/2024:04:06:02 +0000] "
+    '"GET /product.php?id=1%27%20UNION%20SELECT%20pw%20FROM%20users-- HTTP/1.1" 200 1400 '
+    '"-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"'
+)
 
 
 def node(
@@ -198,3 +210,73 @@ def test_the_legend_says_what_size_means() -> None:
     """Volume is the third channel and the only one with no swatch, so it has to
     be said in words or it is not explained at all."""
     assert "request" in SIZE_NOTE.lower()
+
+
+# -- reading the raw evidence line ------------------------------------------
+
+
+def _text_of(line: str, role: str) -> str:
+    """The characters a span of this role covers, taken from the line itself."""
+    span = next(s for s in highlight_spans(line) if s.role == role)
+    return line[span.start : span.end]
+
+
+def test_the_request_target_is_marked() -> None:
+    """The payload is the evidence. In a 330px panel the line is cut off at
+    `"GET` and every visible character is boilerplate the reader already knows —
+    the client they picked and the time already in the heading."""
+    assert _text_of(COMBINED, "target") == (
+        "/product.php?id=1%27%20UNION%20SELECT%20pw%20FROM%20users--"
+    )
+
+
+def test_the_status_is_marked() -> None:
+    assert _text_of(COMBINED, "status") == "200"
+
+
+def test_spans_stay_inside_the_line_and_never_overlap() -> None:
+    """They are offsets into the original text, applied to it rather than to a
+    string rebuilt from it. An overlap or an out-of-range span would mean the
+    panel is formatting something other than what it was handed."""
+    spans = sorted(highlight_spans(COMBINED), key=lambda s: s.start)
+
+    assert spans
+    for span in spans:
+        assert 0 <= span.start < span.end <= len(COMBINED)
+    for earlier, later in pairwise(spans):
+        assert earlier.end <= later.start
+
+
+def test_a_line_in_an_unrecognised_shape_is_left_plain() -> None:
+    """logarc reads nginx, IIS and JSON too. A highlight guessed wrong is worse
+    than none: it would point the eye at the wrong part of the evidence."""
+    assert highlight_spans('{"remote_addr":"10.0.0.1","request":"GET / HTTP/1.1"}') == ()
+    assert highlight_spans("") == ()
+    assert highlight_spans("not a log line at all") == ()
+
+
+def test_a_request_with_no_status_after_it_is_left_plain() -> None:
+    """A truncated line must not have its user agent marked as a status code."""
+    assert highlight_spans('1.2.3.4 - - [x] "GET /a HTTP/1.1"') == ()
+
+
+def test_one_request_is_not_one_requests() -> None:
+    """The panel wrote "1 requests" while the canvas beside it wrote "1 request",
+    because each formatted the count itself."""
+    assert format_requests(1) == "1 request"
+    assert format_requests(0) == "0 requests"
+    assert format_requests(1000) == "1,000 requests"
+
+
+def test_a_served_request_stands_out_and_a_refused_one_recedes() -> None:
+    """Traffic-light colours would invert the meaning here. A 200 on an
+    injection is the alarm — it says the payload was served — and the 403 is
+    the reassurance. Green-for-200 would tell the reader the opposite."""
+    assert status_colour("200") == EVIDENCE_INK
+    assert status_colour("302") == EVIDENCE_INK
+    assert status_colour("403") == EVIDENCE_MUTED
+    assert status_colour("500") == EVIDENCE_MUTED
+
+
+def test_an_unreadable_status_is_not_guessed_at() -> None:
+    assert status_colour("abc") == EVIDENCE_MUTED
