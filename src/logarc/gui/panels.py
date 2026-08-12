@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import QPoint, QRect, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import (
     QColor,
     QFont,
@@ -21,9 +21,10 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import (
     QAbstractItemView,
-    QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLayout,
+    QLayoutItem,
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
@@ -146,6 +147,87 @@ class ClientTable(QWidget):
                 self.client_chosen.emit(cell.text())
 
 
+class _FlowLayout(QLayout):
+    """Items in a row that wraps onto further rows when the width runs out.
+
+    Qt ships nothing like it, and the legend needs one. Laid out as a single
+    horizontal row the key reported a minimum width of **1,729px** — wider than
+    the window it sits in — and a minimum is a demand, not a preference. The
+    centre column inherited it, both side panels were pinned at their own
+    minimums to pay for it, and with no slack left anywhere the splitter handles
+    stopped moving: the client panel could be its minimum or collapsed, and
+    nothing in between.
+
+    A key is a set of small independent items. It should take as many rows as it
+    needs and ask for no more width than its widest single entry.
+    """
+
+    def __init__(self, parent: QWidget | None = None, spacing: int = 10) -> None:
+        super().__init__(parent)
+        self._items: list[QLayoutItem] = []
+        self.setSpacing(spacing)
+
+    # -- the five methods QLayout requires a subclass to provide -------------
+
+    def addItem(self, item: QLayoutItem | None) -> None:  # noqa: N802 - Qt's naming
+        if item is not None:
+            self._items.append(item)
+
+    def count(self) -> int:
+        return len(self._items)
+
+    def itemAt(self, index: int) -> QLayoutItem | None:  # noqa: N802 - Qt's naming
+        return self._items[index] if 0 <= index < len(self._items) else None
+
+    def takeAt(self, index: int) -> QLayoutItem | None:  # noqa: N802 - Qt's naming
+        return self._items.pop(index) if 0 <= index < len(self._items) else None
+
+    # -- how it sizes --------------------------------------------------------
+
+    def expandingDirections(self) -> Qt.Orientation:  # noqa: N802 - Qt's naming
+        return Qt.Orientation(0)
+
+    def hasHeightForWidth(self) -> bool:  # noqa: N802 - Qt's naming
+        return True
+
+    def heightForWidth(self, width: int) -> int:  # noqa: N802 - Qt's naming
+        return self._lay_out(QRect(0, 0, width, 0), place=False)
+
+    def setGeometry(self, rect: QRect) -> None:  # noqa: N802 - Qt's naming
+        super().setGeometry(rect)
+        self._lay_out(rect, place=True)
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt's naming
+        return self.minimumSize()
+
+    def minimumSize(self) -> QSize:  # noqa: N802 - Qt's naming
+        """One item wide. This is the number the whole window was hostage to."""
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        margins = self.contentsMargins()
+        return size + QSize(margins.left() + margins.right(), margins.top() + margins.bottom())
+
+    def _lay_out(self, rect: QRect, *, place: bool) -> int:
+        """Place each item, wrapping at the edge; returns the height used."""
+        margins = self.contentsMargins()
+        left = rect.x() + margins.left()
+        right = rect.right() - margins.right()
+        x, y, row_height = left, rect.y() + margins.top(), 0
+
+        for item in self._items:
+            hint = item.sizeHint()
+            if x > left and x + hint.width() > right:
+                x, y = left, y + row_height + self.spacing()
+                row_height = 0
+            if place:
+                item.setGeometry(QRect(QPoint(x, y), hint))
+            x += hint.width() + self.spacing()
+            row_height = max(row_height, hint.height())
+
+        return y + row_height + margins.bottom() - rect.y()
+
+
 class LegendBar(QWidget):
     """The key to the canvas: what colour, outline and size each mean.
 
@@ -159,16 +241,16 @@ class LegendBar(QWidget):
 
     def __init__(self) -> None:
         super().__init__()
-        row = QHBoxLayout(self)
-        row.setContentsMargins(4, 2, 4, 2)
-        row.setSpacing(10)
+        column = QVBoxLayout(self)
+        column.setContentsMargins(4, 2, 4, 2)
+        column.setSpacing(2)
 
+        row = _FlowLayout(spacing=8)
         row.addWidget(self._caption("Severity:"))
         for item in severity_legend():
             row.addWidget(self._swatch(item.colour, filled=True))
             row.addWidget(self._caption(item.label))
 
-        row.addSpacing(12)
         row.addWidget(self._caption("Outcome:"))
         for item in outcome_legend():
             border = item.border
@@ -177,9 +259,21 @@ class LegendBar(QWidget):
             )
             row.addWidget(self._caption(item.label))
 
-        row.addSpacing(12)
-        row.addWidget(self._caption(SIZE_NOTE))
-        row.addStretch(1)
+        column.addLayout(row)
+
+        # On its own line, and wrapped. It is a sentence rather than a swatch,
+        # and as one item in the flow its 600px was the whole key's minimum —
+        # a wrapping row is only as narrow as its widest single entry.
+        note = self._caption(SIZE_NOTE)
+        note.setWordWrap(True)
+        column.addWidget(note)
+
+        # Tell the parent layout that this widget's height depends on the width
+        # it is given, or it is asked for one height, keeps it, and the wrapped
+        # rows are drawn outside the space reserved for them.
+        policy = self.sizePolicy()
+        policy.setHeightForWidth(True)
+        self.setSizePolicy(policy)
 
     @staticmethod
     def _caption(text: str) -> QLabel:

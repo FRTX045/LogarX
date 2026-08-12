@@ -14,6 +14,18 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   at 1.16 and thirty at 0.75. Short traces keep their straight line.
   See [ADR-0009](docs/adr/0009-parallel-ingest-rather-than-a-native-parser.md)'s
   neighbour, and the numbers in the commit.
+- **The side panels could not be resized at all.** The key added below the
+  canvas was one unbroken row and reported a minimum width of **1,729px** —
+  wider than the window it sat in. A minimum is a demand, so the centre column
+  inherited it and both side panels were pinned at their own minimums to pay for
+  it; with no slack anywhere, a splitter handle had nothing to give. Measured on
+  the client panel: **one** reachable width, or zero if collapsed. Dragging it
+  therefore did nothing until it jumped the whole way.
+  The key now wraps onto as many rows as it needs (107px minimum, 23 reachable
+  widths on the same panel), extra width goes to the graph rather than being
+  shared out, and panels no longer collapse to an invisible handle against the
+  window edge. The 430px floor put on the client table to stop its columns
+  hiding is gone — it was the wrong tool, and it was half of what wedged this.
 - **The evidence panel showed everything except the evidence.** Lines were not
   wrapped, and a Combined line spends its first forty-five characters on the
   client address and the timestamp — an address the reader picked from the table

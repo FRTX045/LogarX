@@ -174,17 +174,31 @@ class MainWindow(QMainWindow):
         column.addWidget(self._canvas)
         column.addWidget(self._legend)
 
-        # A floor, not just an opening size. `setSizes` is a suggestion the
-        # splitter drops as soon as a child's size hint disagrees, and the
-        # table's hint is small enough that the six columns were squeezed
-        # back behind a scrollbar however wide the initial share was set.
-        self._clients.setMinimumWidth(430)
-        self._evidence.setMinimumWidth(330)
+        # Small enough to leave the panel adjustable, which is the whole point
+        # of a splitter. A floor of 430 was set here to stop the client table
+        # being squeezed until three of its six columns hid — it worked, and it
+        # also meant the panel could be 430 or, by collapsing, 0, and nothing
+        # in between. Dragging it therefore did nothing until it jumped the
+        # whole way, which reads as a broken handle rather than a wide minimum.
+        self._clients.setMinimumWidth(220)
+        self._evidence.setMinimumWidth(200)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(self._clients)
         splitter.addWidget(centre)
         splitter.addWidget(self._evidence)
+
+        # What should actually have been protecting the table: extra width goes
+        # to the graph, and the side panels keep whatever the investigator set
+        # them to. That holds the columns open without forbidding any width.
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setStretchFactor(2, 0)
+        # No collapsing to nothing. A panel dragged to zero leaves a handle
+        # against the window edge that is hard to find and harder to explain,
+        # and with a minimum in place the last part of that drag was a jump
+        # anyway. Continuous down to the minimum, and no further.
+        splitter.setChildrenCollapsible(False)
         splitter.setSizes([440, 560, 400])
         self.setCentralWidget(splitter)
 
