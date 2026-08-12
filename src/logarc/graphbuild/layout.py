@@ -49,17 +49,23 @@ class Point:
     y: float
 
 
-def layout_graph(graph: ActivityGraph) -> dict[str, Point]:
+def layout_graph(graph: ActivityGraph, *, wrap: bool = True) -> dict[str, Point]:
     """Position every node in `graph`.
 
     Deterministic by construction. A forensic tool that draws the same evidence
     differently on each run invites doubt about whether anything else changed,
     so no layout here depends on random state or dictionary ordering.
+
+    `wrap` folds a long trace onto further rows. It defaults to on because that
+    is the legible layout, and it is a parameter rather than a fixed rule because
+    the fold costs the straight timeline to buy those captions back — which of
+    the two matters more depends on the trace being read. It has no meaning for a
+    behaviour map: a circle has no rows to fold.
     """
     if not graph.nodes:
         return {}
     if graph.kind is GraphKind.TRACE:
-        return _chronological_layout(graph)
+        return _chronological_layout(graph, wrap=wrap)
     return _radial_layout(graph)
 
 
@@ -82,7 +88,7 @@ def _wrap_width(count: int) -> int:
     return max(_MIN_WRAP, math.ceil(math.sqrt(count)))
 
 
-def _chronological_layout(graph: ActivityGraph) -> dict[str, Point]:
+def _chronological_layout(graph: ActivityGraph, *, wrap: bool = True) -> dict[str, Point]:
     """Each session in its own block, running left to right in time.
 
     The trace is already in chronological order, and its only edges are between
@@ -94,6 +100,10 @@ def _chronological_layout(graph: ActivityGraph) -> dict[str, Point]:
     at the left sends one line the full width of the block backwards on every
     wrap, crossing everything between. Alternating keeps every join short, and
     the eye follows a fold naturally.
+
+    With `wrap` off a session is one unbroken row however long it runs, which is
+    what the reader asked for: the timeline stays straight and the graph is
+    panned rather than fitted.
     """
     positions: dict[str, Point] = {}
     by_session: dict[str, list[str]] = {}
@@ -106,7 +116,7 @@ def _chronological_layout(graph: ActivityGraph) -> dict[str, Point]:
     for index, node_ids in enumerate(by_session.values()):
         if index:
             row += _SESSION_GAP
-        width = _wrap_width(len(node_ids))
+        width = _wrap_width(len(node_ids)) if wrap else len(node_ids)
         for position, node_id in enumerate(node_ids):
             line, offset = divmod(position, width)
             # Odd rows run right to left, so the last node of one row sits above

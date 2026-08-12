@@ -158,6 +158,52 @@ def test_reading_the_serpentine_recovers_chronological_order() -> None:
     assert len(row_of) > 1  # otherwise this proves nothing about wrapping
 
 
+def test_turning_wrap_off_puts_the_whole_session_back_on_one_line() -> None:
+    """Wrapping buys readable captions and spends the straight timeline to do it.
+    Which of the two is worth more depends on the trace, so it is the reader's
+    call — the same trade an editor's word wrap offers."""
+    graph = _trace(12)
+
+    positions = layout_graph(graph, wrap=False)
+
+    assert len({point.y for point in positions.values()}) == 1
+    assert len({point.x for point in positions.values()}) == 12
+
+
+def test_an_unwrapped_trace_still_runs_left_to_right_in_time() -> None:
+    """Turning off the fold must not reorder the timeline, only straighten it."""
+    graph = _trace(12)
+
+    positions = layout_graph(graph, wrap=False)
+    xs = [positions[node.node_id].x for node in graph.nodes]
+
+    assert xs == sorted(xs)
+
+
+def test_wrapping_is_what_you_get_without_asking() -> None:
+    """The default is the legible one. An investigator who never opens the menu
+    should not be handed the layout that fits to an unreadable smudge."""
+    graph = _trace(12)
+
+    assert layout_graph(graph) == layout_graph(graph, wrap=True)
+    assert layout_graph(graph) != layout_graph(graph, wrap=False)
+
+
+def test_the_wrap_setting_does_not_reach_the_behaviour_map() -> None:
+    """A circle has no rows to fold. A control that quietly reshaped the other
+    view as well would be doing something other than what it says."""
+    graph = build_behaviour_map(
+        [
+            episode(ActivityCategory.INJECTION, index=1),
+            episode(ActivityCategory.RECONNAISSANCE, index=2),
+            episode(ActivityCategory.ENUMERATION, index=3),
+        ],
+        client_ip="1.2.3.4",
+    )
+
+    assert layout_graph(graph, wrap=False) == layout_graph(graph, wrap=True)
+
+
 def test_sessions_stay_further_apart_than_the_rows_within_one() -> None:
     """Otherwise a session boundary is indistinguishable from a wrap, and the
     graph says two visits where the log holds one."""
