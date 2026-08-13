@@ -20,6 +20,7 @@ from logarc.analysis import analyse_ip
 from logarc.case import Case
 from logarc.core.activity import ActivityCategory, Outcome, Severity
 from logarc.graphbuild.layout import Point
+from logarc.gui.style import severity_colour
 from logarc.report.html import render_report
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
@@ -191,3 +192,54 @@ def test_the_report_writes_how_often_a_transition_was_seen(campaign: Case) -> No
     assert "x2" in _edge_label(GraphKind.BEHAVIOUR, GraphEdge("a", "b", weight=2, gap_seconds=9.0))
     assert "x" not in _edge_label(GraphKind.BEHAVIOUR, GraphEdge("a", "b", weight=1, gap_seconds=9))
     assert "x" not in _edge_label(GraphKind.TRACE, GraphEdge("a", "b", weight=1, gap_seconds=9.0))
+
+
+def _relative_luminance(colour: str) -> float:
+    channels = [int(colour.lstrip("#")[at : at + 2], 16) / 255 for at in (0, 2, 4)]
+    linear = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+
+def contrast(one: str, other: str) -> float:
+    """WCAG contrast ratio between two hex colours."""
+    first, second = _relative_luminance(one), _relative_luminance(other)
+    lighter, darker = max(first, second), min(first, second)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def test_the_report_paints_a_finding_the_colour_the_window_paints_it(campaign: Case) -> None:
+    """Screen and paper must agree about what a severity looks like.
+
+    The two renderers are deliberately separate — ADR-0006 keeps a browser
+    engine out of the application — but `logarc.gui.style` says on its own face
+    that its judgements are "reused by the HTML report", and the report had
+    quietly grown a second table. Every colour in it differed, so a critical
+    finding was one red on screen and another in the file handed to someone who
+    never opened the tool.
+    """
+    result = analyse_ip(campaign.store, ATTACKER)
+
+    page = render_report(result, campaign.manifest)
+
+    assert result.episodes, "the fixture must produce something to colour"
+    for episode in result.episodes:
+        assert severity_colour(episode.severity) in page
+
+
+def test_the_report_never_prints_a_severity_on_a_colour_it_cannot_be_read_against(
+    campaign: Case,
+) -> None:
+    """The severity pill printed white on the severity colour, and three of the
+    five failed WCAG AA — medium was 2.94:1. The canvas has no such problem
+    because it stopped drawing text on the fill; the report should not
+    reintroduce the constraint the canvas dropped.
+    """
+    result = analyse_ip(campaign.store, ATTACKER)
+
+    page = render_report(result, campaign.manifest)
+
+    for painted in re.findall(r'<span class="pill"[^>]*background:(#[0-9a-f]{6})', page):
+        assert contrast("#ffffff", painted) >= 4.5, f"white on {painted} is unreadable"
+    # Non-vacuous: the severities must still be named, however they are drawn.
+    for episode in result.episodes:
+        assert episode.severity.name.title() in page

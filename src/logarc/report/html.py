@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Final
 from logarc.core.activity import Outcome, Severity
 from logarc.core.graph import GraphKind
 from logarc.graphbuild.layout import layout_graph
+from logarc.gui.style import severity_colour, severity_legend
 
 if TYPE_CHECKING:
     from logarc.analysis import AnalysisResult
@@ -26,13 +27,13 @@ if TYPE_CHECKING:
 
 __all__ = ["render_report"]
 
-_SEVERITY_COLOUR: Final[dict[Severity, str]] = {
-    Severity.INFO: "#64748b",
-    Severity.LOW: "#0891b2",
-    Severity.MEDIUM: "#ca8a04",
-    Severity.HIGH: "#ea580c",
-    Severity.CRITICAL: "#dc2626",
-}
+# Severity colours come from `logarc.gui.style`, which holds them as plain data
+# with no Qt import for exactly this reason — the module says on its own face
+# that its judgements are "reused by the HTML report". They were copied here
+# instead, and the copy drifted: every one of the five differed, so a critical
+# finding was one red on screen and a brighter one in the file handed to
+# somebody who never opened the application. Importing them makes the drift
+# impossible rather than merely discouraged.
 
 _OUTCOME_NOTE: Final[dict[Outcome, str]] = {
     Outcome.BLOCKED: "every request refused",
@@ -93,9 +94,9 @@ def _legend() -> str:
     drawing no longer uses.
     """
     severities = "".join(
-        f'<span class="key"><i style="background:{colour}"></i>'
-        f"{html.escape(level.name.title())}</span>"
-        for level, colour in _SEVERITY_COLOUR.items()
+        f'<span class="key"><i style="background:{item.colour}"></i>'
+        f"{html.escape(item.label)}</span>"
+        for item in severity_legend()
     )
     outcomes = "".join(
         f'<span class="key"><i class="outline'
@@ -189,7 +190,7 @@ def _svg(graph: ActivityGraph) -> str:
     for node in graph.nodes:
         point = positions[node.node_id]
         x, y = point.x + offset_x, point.y + offset_y
-        colour = _SEVERITY_COLOUR[node.severity]
+        colour = severity_colour(node.severity)
         dashed = ' stroke-dasharray="6 3"' if node.outcome is Outcome.BLOCKED else ""
         parts.append(
             f'<g><rect x="{x:.0f}" y="{y:.0f}" width="{_NODE_WIDTH:.0f}" '
@@ -215,7 +216,7 @@ def _episode_table(result: AnalysisResult) -> str:
 
     rows = []
     for episode in result.episodes:
-        colour = _SEVERITY_COLOUR[episode.severity]
+        colour = severity_colour(episode.severity)
         targets = ", ".join(html.escape(target) for target in episode.top_targets[:3])
         evidence = ", ".join(str(ref) for ref in episode.evidence[:5])
         if episode.evidence_total > len(episode.evidence[:5]):
@@ -225,7 +226,7 @@ def _episode_table(result: AnalysisResult) -> str:
             f'<td class="mono">{episode.start:%H:%M:%S}</td>'
             f"<td><strong>{html.escape(episode.label)}</strong><br>"
             f'<span class="muted">{html.escape(episode.category.value)}</span></td>'
-            f'<td><span class="pill" style="background:{colour}">'
+            f'<td><span class="pill"><i style="background:{colour}"></i>'
             f"{episode.severity.name.title()}</span></td>"
             f"<td>{html.escape(episode.activity.owasp or '—')}</td>"
             f"<td>{episode.request_count:,}</td>"
@@ -299,7 +300,13 @@ tr:last-child td { border-bottom: none; }
 .mono { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
 .small { font-size: .82rem; }
 .muted { color: #64748b; font-size: .85rem; }
-.pill { color: #fff; border-radius: 999px; padding: .1rem .55rem; font-size: .78rem; }
+/* A dot beside the word, not white text on the colour. Three of the five
+   severities failed contrast painted as a solid pill, and the canvas has no
+   such problem because it draws no text on the fill at all — the same
+   encoding, and one less thing a palette change can quietly break. */
+.pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px;
+  padding: .1rem .55rem; font-size: .78rem; background: #f1f5f9; color: #0f172a; }
+.pill i { width: 10px; height: 10px; border-radius: 999px; display: inline-block; }
 .empty { color: #64748b; font-style: italic; }
 .node-title { font: 600 14px system-ui, sans-serif; fill: #0f172a; }
 .node-meta { font: 12px system-ui, sans-serif; fill: #64748b; }
