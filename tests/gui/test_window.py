@@ -817,6 +817,39 @@ def test_a_single_activity_does_not_count_itself(qt_app: QApplication, campaign:
     assert "activities" not in panel._heading.text()
 
 
+def test_the_panel_says_how_much_of_the_evidence_is_on_screen(
+    qt_app: QApplication, recurring: Path
+) -> None:
+    """An episode keeps a bounded sample of its references — twenty, by
+    `DEFAULT_EVIDENCE_SAMPLE` — and the true count beside it. The table showed
+    the sample and said nothing, so twenty rows under a heading reading 51
+    requests left the reader to conclude either that thirty-one lines were
+    missing or that the count was wrong. It is neither.
+    """
+    node, lines = _merged(recurring)
+    panel = EvidencePanel()
+
+    panel.show_evidence(node, lines)  # type: ignore[arg-type]
+
+    assert f"showing {len(lines)} of {node.evidence_total} lines" in panel._heading.text()  # type: ignore[attr-defined]
+
+
+def test_a_complete_list_does_not_announce_itself(qt_app: QApplication, campaign: Path) -> None:
+    """Most activities are small enough to be shown whole. `showing 3 of 3
+    lines` on those is a caveat about nothing, on the view that opens first."""
+    with Case.open(campaign) as case:
+        result = analyse_ip(case.store, CLIENT)
+        node = next(
+            item for item in result.trace.nodes if len(item.evidence) == item.evidence_total
+        )
+        lines = case.read_evidence(node.evidence)
+    panel = EvidencePanel()
+
+    panel.show_evidence(node, lines)
+
+    assert "showing" not in panel._heading.text()
+
+
 def test_the_busiest_matching_activity_is_the_one_carried_across(
     qt_app: QApplication, recurring: Path
 ) -> None:

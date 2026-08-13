@@ -132,12 +132,24 @@ class EvidencePanel(QWidget):
         # always one, and saying "across 1 activities" on every node of the view
         # that opens by default would be noise.
         visits = f" across {node.episode_count:,} activities" if node.episode_count > 1 else ""
+        # An episode keeps a bounded sample of its references and the true count
+        # beside it, so the table below is often a part of the activity rather
+        # than all of it. Unsaid, twenty rows under a heading reading 51 requests
+        # leaves the reader to decide whether lines are missing or the count is
+        # wrong — and it is neither. Said only when the two differ: most
+        # activities are shown whole, and a caveat about nothing is noise.
+        shortfall = (
+            f"<br>showing {len(lines):,} of {node.evidence_total:,} lines"
+            if len(lines) < node.evidence_total
+            else ""
+        )
         self._heading.setText(
             f'<span style="color:{colour}"><b>{html.escape(node.label)}</b></span><br>'
             f"{format_requests(node.request_count)}{visits} · outcome {node.outcome.value} · "
             f"{node.start:%Y-%m-%d %H:%M:%S} → {node.end:%H:%M:%S}"
             + (f"<br>OWASP {html.escape(node.owasp)}" if node.owasp else "")
             + f"<br>matched by: {html.escape(', '.join(node.rule_ids))}"
+            + shortfall
         )
 
         # Sorting off while filling. With it on, each row is re-sorted against
