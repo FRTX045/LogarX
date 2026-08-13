@@ -82,6 +82,11 @@ class ClientTable(QWidget):
         # content and shortening the timestamps fits all six instead.
         header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         header.setStretchLastSection(True)
+        # Room for the sort chevron, which is drawn above the label. The header
+        # came out 16px tall for 12px of text, and the top edge cut the indicator
+        # in half — leaving the one thing this header says beyond its six words,
+        # which column the table is ordered by, half drawn.
+        header.setMinimumHeight(header.fontMetrics().height() + 14)
         self._table.itemSelectionChanged.connect(self._emit_choice)
 
         self._caption = QLabel("No case open.")

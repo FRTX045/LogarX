@@ -255,6 +255,28 @@ def test_no_panel_starts_its_text_against_the_frame(qt_app: QApplication) -> Non
     window.close()
 
 
+def test_the_client_header_leaves_room_for_the_sort_indicator(qt_app: QApplication) -> None:
+    """The chevron is drawn above the label, and the header was 16px tall for
+    12px of text — four pixels for something that needs about seven, so the top
+    edge cut it in half. Which column the table is sorted by is the one thing
+    this header has to say beyond the six words in it.
+
+    Height is what the widget can be asked for; that the chevron then lands
+    inside it is checked by eye against `ui-review/02-case-open.png`.
+    """
+    from logarc.gui._qt import required
+    from logarc.gui.panels import ClientTable
+
+    table = ClientTable()
+    table.resize(440, 600)
+    table.show()
+    QApplication.processEvents()
+    header = required(table._table.horizontalHeader(), "column header")
+
+    assert header.height() - header.fontMetrics().height() >= 12
+    table.close()
+
+
 def test_a_swatch_and_the_word_it_explains_cannot_be_split_across_rows(
     qt_app: QApplication,
 ) -> None:
