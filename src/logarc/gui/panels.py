@@ -86,7 +86,10 @@ class ClientTable(QWidget):
 
         self._caption = QLabel("No case open.")
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        # Not flush against the frame. At zero the caption and the first column
+        # both start at x=0, and the window edge cut the leading character off
+        # each: the panel opened on half a `5` of `500 client(s)`.
+        layout.setContentsMargins(8, 4, 6, 4)
         layout.addWidget(self._caption)
         layout.addWidget(self._table)
 

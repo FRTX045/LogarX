@@ -171,7 +171,9 @@ class MainWindow(QMainWindow):
 
         centre = QWidget()
         column = QVBoxLayout(centre)
-        column.setContentsMargins(0, 0, 0, 0)
+        # Matching the panels either side, and what lets the canvas read as a
+        # framed document rather than a hole cut in the window.
+        column.setContentsMargins(6, 4, 6, 4)
         column.addWidget(self._heading)
         column.addWidget(self._canvas)
         column.addWidget(self._legend)

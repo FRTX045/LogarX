@@ -243,6 +243,18 @@ def test_the_legend_uses_more_rows_when_it_is_given_less_width(
     assert bar.heightForWidth(400) > bar.heightForWidth(1400)
 
 
+def test_no_panel_starts_its_text_against_the_frame(qt_app: QApplication) -> None:
+    """Zero margins put every caption and the first table column at x=0, and
+    the frame cut the leading character off each: `500 client(s)…` opened with
+    half a `5`."""
+    window, _ = _laid_out()
+
+    assert window._clients._caption.x() > 0, "the client caption is against the edge"
+    assert window._evidence._heading.x() > 0, "the evidence heading is against the edge"
+    assert window._heading.x() > 0, "the graph heading is against the edge"
+    window.close()
+
+
 def test_a_swatch_and_the_word_it_explains_cannot_be_split_across_rows(
     qt_app: QApplication,
 ) -> None:

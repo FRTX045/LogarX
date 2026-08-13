@@ -80,7 +80,9 @@ class EvidencePanel(QWidget):
         self._detail.setMinimumHeight(70)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        # As on the client panel: at zero the heading sits against the window
+        # edge and loses its first character to the frame.
+        layout.setContentsMargins(6, 4, 6, 4)
         layout.addWidget(self._heading)
         layout.addWidget(split)
 
