@@ -55,6 +55,12 @@ _STRIPE = PAPER_STRIPE
 _INK = "#1f2933"
 _REFERENCE = "#616e7c"
 
+#: The two columns whose values are numbers, and the one of them that is often
+#: absent. Right-aligned so their digits line up under a heading wider than any
+#: of them.
+_STATUS = COLUMNS.index("Status")
+_SIZE = COLUMNS.index("Size")
+
 
 class EvidencePanel(QWidget):
     """What the selected activity is made of, one row per request."""
@@ -124,10 +130,17 @@ class EvidencePanel(QWidget):
         # the rows already placed and the remaining values land in other rows.
         self._table.setSortingEnabled(False)
         self._table.setRowCount(len(lines))
+        sizes = False
         for row, line in enumerate(lines):
             for column, cell in enumerate(cells_for(line, decode=self._decode)):
-                self._table.setItem(row, column, _item(cell, index=row))
+                self._table.setItem(row, column, _item(cell, index=row, column=column))
+                sizes = sizes or (column == _SIZE and bool(cell.text))
         self._table.setSortingEnabled(True)
+        # A column costs its heading's width whatever it holds, and several log
+        # formats carry no response size at all. Empty on every row it was taking
+        # that width from `Request`, which is where the payload goes. Hidden only
+        # while there is nothing in it — one size anywhere brings it back.
+        self._table.setColumnHidden(_SIZE, not sizes)
         # Opened in the order the log holds, not in whatever order the widget
         # last happened to be sorted by. Evidence is a sequence of events and
         # the first thing a reader wants is the sequence; sorting by size or
@@ -209,6 +222,11 @@ def _build_table(font: QFont) -> QTableWidget:
     table.setStyleSheet(f"QTableWidget {{ border: 1px solid {PAPER_EDGE}; }}")
 
     header = required(table.horizontalHeader(), "column header")
+    # The headings come off the monospace font the evidence itself is set in,
+    # and `Status` and `Size` in Consolas are wider than any value they ever
+    # hold — width taken from `Request`, where a payload was wrapping to two
+    # lines. Headings are not evidence, so they need not be monospace.
+    header.setFont(QFont())
     header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
     # `Target` takes whatever is left over. It is the only column whose content
     # is unbounded, and the only one worth widening the panel for.
@@ -244,11 +262,13 @@ def _build_detail(font: QFont) -> QTextEdit:
 _INDEX = Qt.ItemDataRole.UserRole
 
 
-def _item(cell: Cell, *, index: int) -> QTableWidgetItem:
+def _item(cell: Cell, *, index: int, column: int) -> QTableWidgetItem:
     item = SortableItem(cell.text)
     if cell.sort_key is not None:
         item.setData(SORT_KEY, cell.sort_key)
     item.setForeground(QColor(cell.colour))
+    if column in {_STATUS, _SIZE}:
+        item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
     if cell.bold:
         font = item.font()
         font.setBold(True)

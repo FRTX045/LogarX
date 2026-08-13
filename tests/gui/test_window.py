@@ -711,6 +711,41 @@ def test_the_detail_follows_the_row_after_the_table_is_sorted(
     assert shown_source.text() in panel._detail.toPlainText()
 
 
+def test_the_evidence_table_drops_a_size_column_it_has_no_sizes_for(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    """A column costs its heading's width whatever it holds, and plenty of log
+    formats carry no response size at all — so `Size` sat empty on every row
+    while `Request`, the column carrying the payload, wrapped to two lines.
+
+    It comes back the moment one row has a size: this is about an empty column,
+    not about hiding evidence.
+    """
+    from logarc.core.event import NormalizedEvent
+    from logarc.evidence import EvidenceLine
+    from logarc.gui.evidence_view import COLUMNS
+
+    episode, sized = _injection_evidence(campaign)
+    ref = EvidenceRef("access.log", 1)
+    sizeless = [
+        EvidenceLine(
+            ref=ref,
+            source_path="a.log",
+            text="raw",
+            event=NormalizedEvent(
+                timestamp=START, client_ip=CLIENT, evidence=ref, method="GET", path="/a", status=404
+            ),
+        )
+    ]
+    panel = EvidencePanel()
+
+    panel.show_evidence(episode, sizeless)  # type: ignore[arg-type]
+    assert panel._table.isColumnHidden(COLUMNS.index("Size"))
+
+    panel.show_evidence(episode, sized)  # type: ignore[arg-type]
+    assert not panel._table.isColumnHidden(COLUMNS.index("Size"))
+
+
 def test_a_payload_cannot_forge_a_row_or_render_as_markup(
     qt_app: QApplication, campaign: Path
 ) -> None:
