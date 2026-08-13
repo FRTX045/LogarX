@@ -16,6 +16,7 @@ from unittest import mock
 
 import pytest
 
+from conftest import contrast
 from logarc.analysis import analyse_ip
 from logarc.case import Case
 from logarc.core.activity import ActivityCategory, Outcome, Severity
@@ -192,19 +193,6 @@ def test_the_report_writes_how_often_a_transition_was_seen(campaign: Case) -> No
     assert "x2" in _edge_label(GraphKind.BEHAVIOUR, GraphEdge("a", "b", weight=2, gap_seconds=9.0))
     assert "x" not in _edge_label(GraphKind.BEHAVIOUR, GraphEdge("a", "b", weight=1, gap_seconds=9))
     assert "x" not in _edge_label(GraphKind.TRACE, GraphEdge("a", "b", weight=1, gap_seconds=9.0))
-
-
-def _relative_luminance(colour: str) -> float:
-    channels = [int(colour.lstrip("#")[at : at + 2], 16) / 255 for at in (0, 2, 4)]
-    linear = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
-    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
-
-
-def contrast(one: str, other: str) -> float:
-    """WCAG contrast ratio between two hex colours."""
-    first, second = _relative_luminance(one), _relative_luminance(other)
-    lighter, darker = max(first, second), min(first, second)
-    return (lighter + 0.05) / (darker + 0.05)
 
 
 def test_the_report_paints_a_finding_the_colour_the_window_paints_it(campaign: Case) -> None:

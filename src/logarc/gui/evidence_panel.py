@@ -35,6 +35,7 @@ from logarc.gui.style import (
     PAPER,
     PAPER_EDGE,
     PAPER_STRIPE,
+    SELECTION_TINT,
     format_requests,
     severity_colour,
 )
@@ -214,6 +215,13 @@ def _build_table(font: QFont) -> QTableWidget:
     paper.setColor(QPalette.ColorRole.Base, QColor(_PAPER))
     paper.setColor(QPalette.ColorRole.AlternateBase, QColor(_STRIPE))
     paper.setColor(QPalette.ColorRole.Text, QColor(_INK))
+    # The selected row, pinned for the same reason as the rest. Left to the
+    # system it was dark teal, and every cell in this table carries its own
+    # colour — chosen against pale paper — so the status on the selected row came
+    # out grey on teal at 2.25:1. `HighlightedText` cannot rescue it: an item's
+    # own foreground wins over the palette's.
+    paper.setColor(QPalette.ColorRole.Highlight, QColor(SELECTION_TINT))
+    paper.setColor(QPalette.ColorRole.HighlightedText, QColor(_INK))
     table.setPalette(paper)
     # Framed for the same reason the canvas is: the ground is pinned light
     # whatever the machine is themed, and an unframed sheet of it against dark

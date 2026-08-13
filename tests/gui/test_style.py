@@ -7,12 +7,16 @@ from itertools import pairwise
 
 import pytest
 
+from conftest import contrast
 from logarc.core.activity import ActivityCategory, Outcome, Severity
 from logarc.core.evidence import EvidenceRef
 from logarc.core.graph import GraphKind, GraphNode
 from logarc.gui.style import (
     EVIDENCE_INK,
     EVIDENCE_MUTED,
+    PAPER,
+    PAPER_STRIPE,
+    SELECTION_TINT,
     SIZE_NOTE,
     NodeStyle,
     decode_target,
@@ -303,6 +307,20 @@ def test_a_served_request_stands_out_and_a_refused_one_recedes() -> None:
 
 def test_an_unreadable_status_is_not_guessed_at() -> None:
     assert status_colour("abc") == EVIDENCE_MUTED
+
+
+@pytest.mark.parametrize("ground", [PAPER, PAPER_STRIPE, SELECTION_TINT])
+def test_receding_evidence_still_clears_wcag_aa_on_every_ground(ground: str) -> None:
+    """`Recedes` is a comparison, not permission to be unreadable. The muted
+    grey was 2.81:1 on the paper and 2.25:1 on a selected row — and what it
+    colours is the status, which is one of the two things a row exists to show.
+    A refused request is still evidence.
+
+    Three grounds because a row is drawn on any of them: the paper, the stripe
+    of an alternating row, and the tint under the selected one.
+    """
+    assert contrast(EVIDENCE_MUTED, ground) >= 4.5
+    assert contrast(EVIDENCE_INK, ground) >= 4.5
 
 
 # -- making an attacker-controlled string safe to look at --------------------

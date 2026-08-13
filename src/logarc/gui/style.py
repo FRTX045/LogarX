@@ -37,6 +37,7 @@ __all__ = [
     "PAPER",
     "PAPER_EDGE",
     "PAPER_STRIPE",
+    "SELECTION_TINT",
     "SIZE_NOTE",
     "Border",
     "LegendItem",
@@ -131,6 +132,17 @@ CAPTION_COLOUR: Final = "#1f2933"
 #: says nothing about which of a dozen nodes it belongs to.
 SELECTION_COLOUR: Final = "#2c6ea8"
 SELECTION_WIDTH: Final = 3.0
+
+#: The ground under the selected row of the evidence table.
+#:
+#: Pale, and deliberately so. Every cell in that table sets its own colour —
+#: that is how a served status is told from a refused one — and an item's own
+#: colour wins over the palette's `HighlightedText`, so a strong selection
+#: colour cannot bring its own legible text with it. The system's dark teal put
+#: grey `404` on it at 2.25:1. A tint the row's existing ink stays readable on
+#: marks the selection by hue instead, which is the same thing the alternating
+#: stripe does.
+SELECTION_TINT: Final = "#cfe0f5"
 
 
 @dataclass(frozen=True, slots=True)
@@ -254,8 +266,14 @@ def outcome_legend() -> tuple[LegendItem, ...]:
 #: So the line is wrapped and the parts worth reading are marked in place. The
 #: text is never rebuilt: these are offsets into the string the panel was
 #: handed, so the evidence stays the bytes that came out of the log.
+#: `Muted` is a comparison against the ink beside it, not permission to be
+#: unreadable. At `#8996a4` it was 2.81:1 on the paper and 2.25:1 on a selected
+#: row, and what it colours is the response status — one of the two things a row
+#: exists to show. A refused request is still evidence, so this clears WCAG AA
+#: on the paper, on the alternating stripe and on `SELECTION_TINT`, and recedes
+#: by being lighter than the ink rather than by being hard to read.
 EVIDENCE_INK: Final = "#1f2933"
-EVIDENCE_MUTED: Final = "#8996a4"
+EVIDENCE_MUTED: Final = "#566470"
 
 #: `"METHOD target PROTOCOL" status`. Deliberately strict: the closing quote
 #: must be followed by a three-digit status, which is what stops the `request`
