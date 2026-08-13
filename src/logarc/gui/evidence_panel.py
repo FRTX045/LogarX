@@ -136,20 +136,24 @@ class EvidencePanel(QWidget):
         # beside it, so the table below is often a part of the activity rather
         # than all of it. Unsaid, twenty rows under a heading reading 51 requests
         # leaves the reader to decide whether lines are missing or the count is
-        # wrong — and it is neither. Said only when the two differ: most
-        # activities are shown whole, and a caveat about nothing is noise.
-        shortfall = (
-            f"<br>showing {len(lines):,} of {node.evidence_total:,} lines"
-            if len(lines) < node.evidence_total
-            else ""
-        )
+        # wrong — and it is neither.
+        #
+        # Said every time, including `3 of 3`. Printed only on a shortfall, its
+        # absence would itself be a claim — that the table is complete — and one
+        # the reader has to know how to read. Always present, it is a fact about
+        # the table rather than a warning about it, and a complete list is
+        # confirmed rather than merely unremarked.
+        shown = f"{len(lines):,} of {node.evidence_total:,}"
+        # `1 of 1 lines` is the fault `format_requests` exists to stop, one noun
+        # along. The noun agrees with the total, which is what it counts.
+        noun = "line" if node.evidence_total == 1 else "lines"
         self._heading.setText(
             f'<span style="color:{colour}"><b>{html.escape(node.label)}</b></span><br>'
             f"{format_requests(node.request_count)}{visits} · outcome {node.outcome.value} · "
             f"{node.start:%Y-%m-%d %H:%M:%S} → {node.end:%H:%M:%S}"
             + (f"<br>OWASP {html.escape(node.owasp)}" if node.owasp else "")
             + f"<br>matched by: {html.escape(', '.join(node.rule_ids))}"
-            + shortfall
+            + f"<br>showing {shown} {noun}"
         )
 
         # Sorting off while filling. With it on, each row is re-sorted against

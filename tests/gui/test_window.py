@@ -834,9 +834,16 @@ def test_the_panel_says_how_much_of_the_evidence_is_on_screen(
     assert f"showing {len(lines)} of {node.evidence_total} lines" in panel._heading.text()  # type: ignore[attr-defined]
 
 
-def test_a_complete_list_does_not_announce_itself(qt_app: QApplication, campaign: Path) -> None:
-    """Most activities are small enough to be shown whole. `showing 3 of 3
-    lines` on those is a caveat about nothing, on the view that opens first."""
+def test_a_complete_list_says_so_rather_than_staying_silent(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    """`showing 3 of 3 lines` on a complete activity, not nothing.
+
+    Printed only when the two counts differ, silence has to be read as a claim —
+    and the reader has to know it is one. Saying it every time makes the line a
+    fact about the table rather than a warning about it, and `3 of 3` is then
+    positive confirmation that nothing is being held back.
+    """
     with Case.open(campaign) as case:
         result = analyse_ip(case.store, CLIENT)
         node = next(
@@ -847,7 +854,24 @@ def test_a_complete_list_does_not_announce_itself(qt_app: QApplication, campaign
 
     panel.show_evidence(node, lines)
 
-    assert "showing" not in panel._heading.text()
+    assert f"showing {len(lines)} of {node.evidence_total} lines" in panel._heading.text()
+
+
+def test_a_single_line_of_evidence_is_not_called_lines(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    """`showing 1 of 1 lines` is the same fault `format_requests` exists to
+    stop, one noun along."""
+    with Case.open(campaign) as case:
+        result = analyse_ip(case.store, CLIENT)
+        node = next(item for item in result.trace.nodes if item.evidence_total == 1)
+        lines = case.read_evidence(node.evidence)
+    panel = EvidencePanel()
+
+    panel.show_evidence(node, lines)
+
+    assert "showing 1 of 1 line" in panel._heading.text()
+    assert "1 lines" not in panel._heading.text()
 
 
 def test_the_busiest_matching_activity_is_the_one_carried_across(
