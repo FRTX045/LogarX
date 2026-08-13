@@ -31,7 +31,13 @@ from PyQt6.QtWidgets import (
 
 from logarc.gui._qt import SORT_KEY, SortableItem, required
 from logarc.gui.evidence_view import ALERT_COLOUR, COLUMNS, Cell, Detail, cells_for, detail_for
-from logarc.gui.style import format_requests, severity_colour
+from logarc.gui.style import (
+    PAPER,
+    PAPER_EDGE,
+    PAPER_STRIPE,
+    format_requests,
+    severity_colour,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -41,10 +47,11 @@ if TYPE_CHECKING:
 
 __all__ = ["EvidencePanel"]
 
-#: The evidence surface. Matches the canvas ground and the exported report, so
-#: the same finding reads the same way on screen and on paper.
-_PAPER = "#f5f7fa"
-_STRIPE = "#eaeef3"
+#: The evidence surface, taken from `gui.style` rather than restated here: it is
+#: the same paper the canvas draws on and the report prints, and a second copy of
+#: the colour is a second chance for one of them to move.
+_PAPER = PAPER
+_STRIPE = PAPER_STRIPE
 _INK = "#1f2933"
 _REFERENCE = "#616e7c"
 
@@ -195,6 +202,11 @@ def _build_table(font: QFont) -> QTableWidget:
     paper.setColor(QPalette.ColorRole.AlternateBase, QColor(_STRIPE))
     paper.setColor(QPalette.ColorRole.Text, QColor(_INK))
     table.setPalette(paper)
+    # Framed for the same reason the canvas is: the ground is pinned light
+    # whatever the machine is themed, and an unframed sheet of it against dark
+    # chrome reads as a hole rather than as a document. Border only — the ground
+    # and the ink stay on the palette above, where the theme tests read them.
+    table.setStyleSheet(f"QTableWidget {{ border: 1px solid {PAPER_EDGE}; }}")
 
     header = required(table.horizontalHeader(), "column header")
     header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
@@ -224,6 +236,7 @@ def _build_detail(font: QFont) -> QTextEdit:
     paper.setColor(QPalette.ColorRole.Base, QColor(_PAPER))
     paper.setColor(QPalette.ColorRole.Text, QColor(_INK))
     detail.setPalette(paper)
+    detail.setStyleSheet(f"QTextEdit {{ border: 1px solid {PAPER_EDGE}; }}")
     return detail
 
 

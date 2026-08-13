@@ -34,6 +34,9 @@ __all__ = [
     "CAPTION_COLOUR",
     "EVIDENCE_INK",
     "EVIDENCE_MUTED",
+    "PAPER",
+    "PAPER_EDGE",
+    "PAPER_STRIPE",
     "SIZE_NOTE",
     "Border",
     "LegendItem",
@@ -95,6 +98,24 @@ class Border:
     width: float
     colour: str
 
+
+#: The surfaces a finding is read on, and the line that frames them.
+#:
+#: Pinned rather than taken from the system palette. The canvas and the evidence
+#: colours are chosen against a pale ground, and the same finding should read the
+#: same way on screen and in the exported report — a deliberate trade, since it
+#: means the window does not follow the OS theme.
+#:
+#: What it cost was that hard light paper met dark chrome at a raw edge, which is
+#: what made an empty canvas read as broken rather than as empty. So the paper is
+#: framed: `PAPER_EDGE` draws a line around it and it sits as a document on the
+#: window rather than as a hole cut in it.
+#:
+#: Here rather than in either renderer because both draw it, and two copies of a
+#: colour are two chances for one of them to move.
+PAPER: Final = "#f5f7fa"
+PAPER_STRIPE: Final = "#eaeef3"
+PAPER_EDGE: Final = "#c3ccd6"
 
 #: Captions are drawn beneath the node, on the canvas ground rather than on the
 #: fill. A label long enough to be meaningful does not fit inside a circle sized

@@ -848,6 +848,41 @@ def test_the_evidence_table_does_not_depend_on_the_system_theme(
     assert palette.color(QPalette.ColorRole.Text).name() == _INK
 
 
+def test_the_framed_evidence_surface_is_still_paper_when_it_is_painted(
+    qt_app: QApplication,
+) -> None:
+    """The frame around the evidence is a stylesheet, and this file already
+    warns what that can cost: a stylesheet can replace what the palette says
+    while `palette()` goes on reporting the old colour, so the two tests above
+    would pass over an unreadable panel.
+
+    So this one reads the pixels, under a dark theme, which is the case where
+    losing the pinned ground would put muted grey on dark grey.
+    """
+    from PyQt6.QtGui import QColor
+
+    from logarc.gui.evidence_panel import _PAPER
+
+    was = qt_app.palette()
+    try:
+        dark = QPalette(was)
+        dark.setColor(QPalette.ColorRole.Base, QColor("#1e1e1e"))
+        dark.setColor(QPalette.ColorRole.Window, QColor("#1e1e1e"))
+        qt_app.setPalette(dark)
+
+        panel = EvidencePanel()
+        panel.resize(400, 600)
+        panel.show()
+        QApplication.processEvents()
+        painted = panel.grab().toImage()
+
+        assert painted.pixelColor(200, 200).name() == _PAPER, "the table lost its ground"
+        assert painted.pixelColor(200, 480).name() == _PAPER, "the detail lost its ground"
+        panel.close()
+    finally:
+        qt_app.setPalette(was)
+
+
 def test_the_client_table_shows_a_percentage_not_a_bare_number(
     qt_app: QApplication, campaign: Path
 ) -> None:

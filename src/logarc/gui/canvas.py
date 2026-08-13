@@ -41,6 +41,8 @@ from PyQt6.QtWidgets import (
 from logarc.graphbuild.layout import Point, layout_graph
 from logarc.gui.style import (
     CAPTION_COLOUR,
+    PAPER,
+    PAPER_EDGE,
     SELECTION_COLOUR,
     SELECTION_WIDTH,
     edge_label,
@@ -74,11 +76,6 @@ _PEN_STYLES: Final = {
     "dashed": Qt.PenStyle.DashLine,
     "dotted": Qt.PenStyle.DotLine,
 }
-
-#: The canvas ground. Pinned rather than taken from the palette so a finding
-#: reads the same on screen as in the exported report — see the evidence panel,
-#: which pins the same colour for the same reason.
-_PAPER: Final = "#f5f7fa"
 
 _EDGE_COLOUR: Final = "#616e7c"
 _ARROW_LENGTH: Final = 12.0
@@ -118,7 +115,11 @@ class ActivityCanvas(QGraphicsView):
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
-        self.setBackgroundBrush(QBrush(QColor("#f5f7fa")))
+        self.setBackgroundBrush(QBrush(QColor(PAPER)))
+        # Framed, so the pinned light ground reads as a document lying on the
+        # window rather than as a hole cut through it. Border only: the ground
+        # itself stays the background brush above, where a test can see it.
+        self.setStyleSheet(f"QGraphicsView {{ border: 1px solid {PAPER_EDGE}; }}")
         self._graph: ActivityGraph | None = None
         self._nodes: dict[str, _NodeItem] = {}
         self._halo: QGraphicsEllipseItem | None = None
@@ -301,7 +302,7 @@ class ActivityCanvas(QGraphicsView):
         """
         backdrop = QGraphicsRectItem(parent)
         backdrop.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
-        backdrop.setBrush(QBrush(QColor(_PAPER)))
+        backdrop.setBrush(QBrush(QColor(PAPER)))
         backdrop.setPen(QPen(Qt.PenStyle.NoPen))
         # Above the edges, below the nodes: the words survive an arrow passing
         # behind them without hiding the circle they describe.
