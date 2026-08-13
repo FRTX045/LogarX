@@ -531,6 +531,17 @@ def test_the_ring_follows_the_node_across_a_wrap_toggle(qt_app: QApplication) ->
     assert canvas._halo.pos() == canvas._nodes[ringed].pos()
 
 
+def test_the_canvas_says_what_to_do_before_a_case_is_open(qt_app: QApplication) -> None:
+    """`show_graph_placeholder` only ran when a case loaded, so on launch the
+    largest region of the window was empty white paper inside dark chrome and
+    only the status bar said anything. An empty screen reads as a rendering
+    failure, not as an invitation."""
+    window = MainWindow()
+
+    assert window._canvas.graph_scene.items(), "the canvas opens with nothing on it"
+    window.close()
+
+
 def test_a_caption_is_the_same_size_however_far_the_graph_is_scaled(
     qt_app: QApplication,
 ) -> None:

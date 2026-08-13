@@ -53,7 +53,13 @@ if TYPE_CHECKING:
 
     from logarc.core.graph import ActivityGraph, GraphNode
 
-__all__ = ["MIN_FIT_SCALE", "ActivityCanvas"]
+__all__ = ["MIN_FIT_SCALE", "STARTUP_MESSAGE", "WAITING_MESSAGE", "ActivityCanvas"]
+
+#: What the canvas says while it has no graph. Two waits, two questions: before
+#: a case is open there is no client to pick yet, and telling the reader to pick
+#: one would point at an empty table.
+STARTUP_MESSAGE: Final = "Open a case, or ingest logs into a new one."
+WAITING_MESSAGE: Final = "Select a client to reconstruct what it did."
 
 #: How far `fit` may shrink a graph. A long session trace is a wide, flat chain,
 #: and fitting one to the window scales the whole scene down until the captions
@@ -118,6 +124,11 @@ class ActivityCanvas(QGraphicsView):
         self._halo: QGraphicsEllipseItem | None = None
         self._selected: str | None = None
         self._wrap = True
+        # Something to read from the moment the window opens. Left to the case
+        # being loaded, the largest region of the window spent the whole of
+        # startup as blank paper inside dark chrome, which reads as a renderer
+        # that failed rather than as a tool waiting to be given something.
+        self.show_graph_placeholder(STARTUP_MESSAGE)
 
     @property
     def graph_scene(self) -> QGraphicsScene:
@@ -214,18 +225,22 @@ class ActivityCanvas(QGraphicsView):
         self._scene.setSceneRect(self._scene.itemsBoundingRect().adjusted(-80, -80, 80, 80))
         self.fit()
 
-    def show_graph_placeholder(self) -> None:
-        """Clear the canvas back to its waiting state."""
+    def show_graph_placeholder(self, text: str = WAITING_MESSAGE) -> None:
+        """Clear the canvas back to its waiting state.
+
+        The wording is a parameter because the two waits are different
+        questions: before a case is open there is no client to pick.
+        """
         self._graph = None
         self._scene.clear()
         self._nodes.clear()
         self._halo = None
         self._selected = None
-        self._show_message("Select a client to reconstruct what it did.")
+        self._show_message(text)
 
     def _show_message(self, text: str) -> None:
         item = QGraphicsSimpleTextItem(text)
-        item.setBrush(QBrush(QColor("#616e7c")))
+        item.setBrush(QBrush(QColor(_EDGE_COLOUR)))
         self._scene.addItem(item)
         self._scene.setSceneRect(item.boundingRect().adjusted(-40, -40, 40, 40))
         self.fit()
