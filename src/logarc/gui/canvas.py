@@ -24,6 +24,7 @@ from PyQt6.QtGui import (
     QPainterPath,
     QPen,
     QPolygonF,
+    QTransform,
     QWheelEvent,
 )
 from PyQt6.QtWidgets import (
@@ -31,6 +32,7 @@ from PyQt6.QtWidgets import (
     QGraphicsItem,
     QGraphicsPathItem,
     QGraphicsPolygonItem,
+    QGraphicsRectItem,
     QGraphicsScene,
     QGraphicsSimpleTextItem,
     QGraphicsView,
@@ -67,10 +69,20 @@ _PEN_STYLES: Final = {
     "dotted": Qt.PenStyle.DotLine,
 }
 
+#: The canvas ground. Pinned rather than taken from the palette so a finding
+#: reads the same on screen as in the exported report — see the evidence panel,
+#: which pins the same colour for the same reason.
+_PAPER: Final = "#f5f7fa"
+
 _EDGE_COLOUR: Final = "#616e7c"
 _ARROW_LENGTH: Final = 12.0
 _ARROW_WIDTH: Final = 7.0
+
+#: Both in screen pixels: text on this canvas is drawn at screen size, so the
+#: space around it has to be measured the same way or it closes up as the graph
+#: is scaled down.
 _CAPTION_GAP: Final = 6.0
+_TEXT_PADDING: Final = 2.0
 _ZOOM_STEP: Final = 1.15
 _MIN_SCALE: Final = 0.15
 _MAX_SCALE: Final = 6.0
@@ -234,13 +246,75 @@ class ActivityCanvas(QGraphicsView):
         # Below the circle, not inside it. An activity name long enough to mean
         # something does not fit in a node sized by request count, and the
         # version that did fit was a smudge at the scale the graph opens at.
-        caption = QGraphicsSimpleTextItem(summarise(node), item)
-        caption.setBrush(QBrush(QColor(CAPTION_COLOUR)))
+        #
+        # Anchored on the rim of the circle; the gap and the centring are applied
+        # in screen pixels by `_screen_text`, so they do not shrink with the zoom
+        # the way a scene-unit offset did — which is how a caption ended up drawn
+        # through the node it belongs to.
+        self._screen_text(
+            summarise(node),
+            colour=CAPTION_COLOUR,
+            point_size=7.5,
+            anchor=QPointF(0.0, style.radius),
+            gap=_CAPTION_GAP,
+            parent=item,
+        )
+
+    def _screen_text(
+        self,
+        text: str,
+        *,
+        colour: str,
+        point_size: float,
+        anchor: QPointF,
+        gap: float = 0.0,
+        parent: QGraphicsItem | None = None,
+    ) -> QGraphicsRectItem:
+        """Text on the canvas, at the size the screen draws it.
+
+        Everything written on this canvas used to scale with the scene, so
+        `fit()` — which exists to frame the whole graph — was also what made the
+        graph's labels unreadable, about five pixels tall on a wrapped trace.
+        The geometry is what carries the comparison and should scale; the words
+        are words at any zoom.
+
+        Flagged on the patch rather than the text, with the text as its child:
+        children of an item that ignores transformations share its unscaled
+        space, so one flag and one transform carry both the backdrop and the
+        centring. That patch is the second half of the fix — a caption used to
+        be crossed by whatever arrow passed behind it.
+        """
+        backdrop = QGraphicsRectItem(parent)
+        backdrop.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
+        backdrop.setBrush(QBrush(QColor(_PAPER)))
+        backdrop.setPen(QPen(Qt.PenStyle.NoPen))
+        # Above the edges, below the nodes: the words survive an arrow passing
+        # behind them without hiding the circle they describe.
+        backdrop.setZValue(0.6)
+        backdrop.setPos(anchor)
+        if parent is None:
+            self._scene.addItem(backdrop)
+
+        label = QGraphicsSimpleTextItem(text, backdrop)
+        label.setBrush(QBrush(QColor(colour)))
         font = QFont()
-        font.setPointSizeF(7.5)
-        caption.setFont(font)
-        bounds = caption.boundingRect()
-        caption.setPos(-bounds.width() / 2, style.radius + _CAPTION_GAP)
+        font.setPointSizeF(point_size)
+        label.setFont(font)
+        bounds = label.boundingRect()
+        label.setPos(_TEXT_PADDING, _TEXT_PADDING)
+        backdrop.setRect(
+            0.0,
+            0.0,
+            bounds.width() + _TEXT_PADDING * 2,
+            bounds.height() + _TEXT_PADDING * 2,
+        )
+
+        # In screen pixels, because the item ignores the view's transform: the
+        # centring and the gap hold at every zoom.
+        backdrop.setTransform(
+            QTransform().translate(-(bounds.width() + _TEXT_PADDING * 2) / 2, gap)
+        )
+        return backdrop
 
     def _draw_edge(
         self,
@@ -297,14 +371,13 @@ class ActivityCanvas(QGraphicsView):
         self._scene.addItem(arrow)
 
         if label:
-            text = QGraphicsSimpleTextItem(label)
-            text.setBrush(QBrush(QColor(_EDGE_COLOUR)))
-            font = QFont()
-            font.setPointSizeF(7.0)
-            text.setFont(font)
             middle = (begin + finish) / 2
-            text.setPos(middle.x() - text.boundingRect().width() / 2, middle.y() - _ARROW_WIDTH * 2)
-            self._scene.addItem(text)
+            self._screen_text(
+                label,
+                colour=_EDGE_COLOUR,
+                point_size=7.0,
+                anchor=QPointF(middle.x(), middle.y() - _ARROW_WIDTH * 2),
+            )
 
     # -- interaction -------------------------------------------------------
 

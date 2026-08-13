@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import math
 import re
+import textwrap
 import unicodedata
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
@@ -72,9 +73,16 @@ _SEVERITY_COLOURS: Final[dict[Severity, str]] = {
 _MIN_RADIUS: Final = 22.0
 _MAX_RADIUS: Final = 62.0
 
-#: Characters of an activity name shown before it is cut. Past this a node is
-#: wider than the space between columns and the graph stops being readable.
-_LABEL_LIMIT: Final = 34
+#: How a caption's label is broken up. Past this width a node is wider than the
+#: space between columns and the graph stops being readable, and past two lines
+#: the caption is taller than the node it belongs to.
+#:
+#: Wrapped rather than cut at a single limit. "Forced Browsing (repeated
+#: refusal)" ellipsed to "Forced Browsing (repeated refusal…", which loses
+#: exactly the words that tell it apart from the other Forced Browsing node two
+#: columns along; a second line costs six pixels and keeps the distinction.
+_LABEL_LINE: Final = 26
+_LABEL_LINES: Final = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,8 +165,21 @@ def style_for(node: GraphNode) -> NodeStyle:
 
 def summarise(node: GraphNode) -> str:
     """A short caption: what it was, how much of it, and whether it worked."""
-    label = node.label if len(node.label) <= _LABEL_LIMIT else node.label[: _LABEL_LIMIT - 1] + "…"
-    return f"{label}\n{format_requests(node.request_count)} · {node.outcome.value}"
+    lines = (
+        *_wrap_label(node.label),
+        f"{format_requests(node.request_count)} · {node.outcome.value}",
+    )
+    return "\n".join(lines)
+
+
+def _wrap_label(label: str) -> tuple[str, ...]:
+    """An activity name over at most two lines, cut only if it needs a third."""
+    lines = textwrap.wrap(label, width=_LABEL_LINE) or [""]
+    if len(lines) <= _LABEL_LINES:
+        return tuple(lines)
+    kept = lines[:_LABEL_LINES]
+    kept[-1] = kept[-1][: _LABEL_LINE - 1] + "…"
+    return tuple(kept)
 
 
 @dataclass(frozen=True, slots=True)

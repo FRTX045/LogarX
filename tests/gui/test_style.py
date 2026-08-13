@@ -136,6 +136,26 @@ def test_a_long_label_is_shortened_rather_than_overflowing() -> None:
     assert len(text.splitlines()[0]) < 60
 
 
+def test_a_long_label_wraps_rather_than_losing_the_end_that_identifies_it() -> None:
+    """`Forced Browsing (repeated refusal…` cut off at 34 characters, and what
+    it cut was the part telling two otherwise identical captions apart. A second
+    line costs six pixels of canvas; the distinction costs the reading."""
+    text = summarise(node(label="Forced Browsing (repeated refusal)"))
+
+    assert "refusal" in text
+    assert "…" not in text
+    assert len(text.splitlines()) == 3, "two lines of label, then the count"
+
+
+def test_a_label_too_long_for_two_lines_still_ends_somewhere() -> None:
+    """Wrapping is not licence to grow without limit — past two lines the
+    caption is taller than the node it belongs to."""
+    lines = summarise(node(label="A" * 200)).splitlines()
+
+    assert len(lines) == 3
+    assert lines[1].endswith("…")
+
+
 @pytest.mark.parametrize(
     ("seconds", "expected"),
     [

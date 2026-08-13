@@ -531,6 +531,52 @@ def test_the_ring_follows_the_node_across_a_wrap_toggle(qt_app: QApplication) ->
     assert canvas._halo.pos() == canvas._nodes[ringed].pos()
 
 
+def test_a_caption_is_the_same_size_however_far_the_graph_is_scaled(
+    qt_app: QApplication,
+) -> None:
+    """`fit()` scales the scene and the captions went with it — about five
+    pixels tall on a wrapped trace, smaller still on an unwrapped one. The graph
+    was legible and its labels were not, which leaves a picture of circles.
+
+    Every piece of text on the canvas is drawn at screen size instead, so only
+    the geometry scales.
+    """
+    from PyQt6.QtWidgets import QGraphicsItem, QGraphicsSimpleTextItem
+
+    canvas = ActivityCanvas()
+    canvas.show_graph(_long_trace(12))
+
+    texts = [
+        item for item in canvas.graph_scene.items() if isinstance(item, QGraphicsSimpleTextItem)
+    ]
+    assert texts, "a trace this long has captions and edge labels"
+    for text in texts:
+        ignoring = item = text
+        while item is not None:
+            ignoring = item
+            if item.flags() & QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations:
+                break
+            item = item.parentItem()
+        else:  # pragma: no cover - the loop breaks on the flag
+            raise AssertionError(f"{ignoring.text()!r} scales with the graph")
+
+
+def test_a_caption_is_not_crossed_by_the_arrows_behind_it(qt_app: QApplication) -> None:
+    """The 49-request node's caption was drawn through its own circle and cut
+    by an outgoing arrow. Each caption sits on a patch of the canvas ground,
+    above the edges, so the words survive whatever passes behind them."""
+    from PyQt6.QtWidgets import QGraphicsRectItem, QGraphicsSimpleTextItem
+
+    canvas = ActivityCanvas()
+    canvas.show_graph(_long_trace(12))
+
+    for item in canvas.graph_scene.items():
+        if isinstance(item, QGraphicsSimpleTextItem):
+            backdrop = item.parentItem()
+            assert isinstance(backdrop, QGraphicsRectItem), "text is drawn on a patch"
+            assert backdrop.brush().color().alpha() > 0, "the patch is opaque"
+
+
 def test_a_trace_too_wide_to_fit_opens_at_its_beginning(qt_app: QApplication) -> None:
     """Laid out straight, a long trace is wider than the window, so the fit
     clamps at the legibility floor and something has to be off screen. Left
