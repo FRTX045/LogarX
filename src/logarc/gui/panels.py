@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 from PyQt6.QtCore import QPoint, QRect, QSize, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QHBoxLayout,
     QHeaderView,
     QLabel,
     QLayout,
@@ -225,21 +226,23 @@ class LegendBar(QWidget):
         column.setContentsMargins(4, 2, 4, 2)
         column.setSpacing(2)
 
-        row = _FlowLayout(spacing=8)
-        row.addWidget(self._caption("Severity:"))
+        # One item per entry, not two. Added separately, a swatch and the word
+        # it explains are independent items in the flow and a row break can land
+        # between them — at 1500px it did, leaving `Unknown` on a row of its own.
+        # A colour on one line and its meaning on another is the one thing a key
+        # cannot do, so the pair is a single widget and wraps whole.
+        self.flow = _FlowLayout(spacing=8)
+        self.flow.addWidget(self._caption("Severity:"))
         for item in severity_legend():
-            row.addWidget(self._swatch(item.colour, filled=True))
-            row.addWidget(self._caption(item.label))
+            self.flow.addWidget(self._entry(self._swatch(item.colour, filled=True), item.label))
 
-        row.addWidget(self._caption("Outcome:"))
+        self.flow.addWidget(self._caption("Outcome:"))
         for item in outcome_legend():
             border = item.border
-            row.addWidget(
-                self._swatch(item.colour, filled=False, style=border.style if border else None)
-            )
-            row.addWidget(self._caption(item.label))
+            swatch = self._swatch(item.colour, filled=False, style=border.style if border else None)
+            self.flow.addWidget(self._entry(swatch, item.label))
 
-        column.addLayout(row)
+        column.addLayout(self.flow)
 
         # On its own line, and wrapped. It is a sentence rather than a swatch,
         # and as one item in the flow its 600px was the whole key's minimum —
@@ -254,6 +257,16 @@ class LegendBar(QWidget):
         policy = self.sizePolicy()
         policy.setHeightForWidth(True)
         self.setSizePolicy(policy)
+
+    def _entry(self, swatch: QLabel, label: str) -> QWidget:
+        """A swatch and its word as one thing the flow cannot take apart."""
+        entry = QWidget()
+        pair = QHBoxLayout(entry)
+        pair.setContentsMargins(0, 0, 0, 0)
+        pair.setSpacing(4)
+        pair.addWidget(swatch)
+        pair.addWidget(self._caption(label))
+        return entry
 
     @staticmethod
     def _caption(text: str) -> QLabel:

@@ -243,6 +243,30 @@ def test_the_legend_uses_more_rows_when_it_is_given_less_width(
     assert bar.heightForWidth(400) > bar.heightForWidth(1400)
 
 
+def test_a_swatch_and_the_word_it_explains_cannot_be_split_across_rows(
+    qt_app: QApplication,
+) -> None:
+    """Each was its own item in the flow, so a break could land between them —
+    and at 1500px it did: the `Unknown` swatch ended one row and the word sat
+    alone on the next. A colour on one line and its meaning on another is the
+    one thing a key cannot do."""
+    from logarc.gui.panels import LegendBar
+    from logarc.gui.style import outcome_legend, severity_legend
+
+    # Held, not discarded: a temporary bar takes its children with it and every
+    # item would report an empty widget for reasons that have nothing to do with
+    # what is being tested.
+    bar = LegendBar()
+    row = bar.flow
+
+    # Two group captions, then one indivisible item per entry.
+    assert row.count() == 2 + len(severity_legend()) + len(outcome_legend())
+    for index in range(row.count()):
+        item = row.itemAt(index)
+        assert item is not None
+        assert item.widget() is not None, "every item is one widget, so it wraps whole"
+
+
 def test_the_side_panels_resize_continuously_rather_than_snapping(qt_app: QApplication) -> None:
     """A minimum wide enough to hold every column also forbids every width
     below it. With collapsing still allowed the panel could reach 0 or 430 and
