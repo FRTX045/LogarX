@@ -817,6 +817,24 @@ def test_a_single_activity_does_not_count_itself(qt_app: QApplication, campaign:
     assert "activities" not in panel._heading.text()
 
 
+def test_the_heading_labels_each_fact_on_a_line_of_its_own(
+    qt_app: QApplication, recurring: Path
+) -> None:
+    """The heading grew a fact at a time and the outcome stayed buried in the
+    middle of the first line, between the request count and the timestamps —
+    the one field that says whether any of it worked, in the position the eye
+    reaches last. Labelled lines instead, each one a name and a value."""
+    node, lines = _merged(recurring)
+    panel = EvidencePanel()
+
+    panel.show_evidence(node, lines)  # type: ignore[arg-type]
+
+    heading = panel._heading.text()
+    assert "Outcome: blocked" in heading
+    assert "Matched by: directory_enumeration" in heading
+    assert "outcome blocked" not in heading, "the old inline form"
+
+
 def test_the_panel_says_how_much_of_the_evidence_is_on_screen(
     qt_app: QApplication, recurring: Path
 ) -> None:
@@ -831,13 +849,13 @@ def test_the_panel_says_how_much_of_the_evidence_is_on_screen(
 
     panel.show_evidence(node, lines)  # type: ignore[arg-type]
 
-    assert f"showing {len(lines)} of {node.evidence_total} lines" in panel._heading.text()  # type: ignore[attr-defined]
+    assert f"Showing {len(lines)} of {node.evidence_total} lines" in panel._heading.text()  # type: ignore[attr-defined]
 
 
 def test_a_complete_list_says_so_rather_than_staying_silent(
     qt_app: QApplication, campaign: Path
 ) -> None:
-    """`showing 3 of 3 lines` on a complete activity, not nothing.
+    """`Showing 3 of 3 lines` on a complete activity, not nothing.
 
     Printed only when the two counts differ, silence has to be read as a claim —
     and the reader has to know it is one. Saying it every time makes the line a
@@ -854,13 +872,13 @@ def test_a_complete_list_says_so_rather_than_staying_silent(
 
     panel.show_evidence(node, lines)
 
-    assert f"showing {len(lines)} of {node.evidence_total} lines" in panel._heading.text()
+    assert f"Showing {len(lines)} of {node.evidence_total} lines" in panel._heading.text()
 
 
 def test_a_single_line_of_evidence_is_not_called_lines(
     qt_app: QApplication, campaign: Path
 ) -> None:
-    """`showing 1 of 1 lines` is the same fault `format_requests` exists to
+    """`Showing 1 of 1 lines` is the same fault `format_requests` exists to
     stop, one noun along."""
     with Case.open(campaign) as case:
         result = analyse_ip(case.store, CLIENT)
@@ -870,7 +888,7 @@ def test_a_single_line_of_evidence_is_not_called_lines(
 
     panel.show_evidence(node, lines)
 
-    assert "showing 1 of 1 line" in panel._heading.text()
+    assert "Showing 1 of 1 line" in panel._heading.text()
     assert "1 lines" not in panel._heading.text()
 
 

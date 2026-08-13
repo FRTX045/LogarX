@@ -147,13 +147,28 @@ class EvidencePanel(QWidget):
         # `1 of 1 lines` is the fault `format_requests` exists to stop, one noun
         # along. The noun agrees with the total, which is what it counts.
         noun = "line" if node.evidence_total == 1 else "lines"
+
+        # One labelled fact per line. The heading grew a field at a time and the
+        # outcome ended up buried mid-sentence between the count and the
+        # timestamps — the field that says whether any of this worked, sitting
+        # where the eye arrives last. What is left on the first line is the
+        # activity's size and when it happened, which is what identifies it.
+        facts = [
+            f"{format_requests(node.request_count)}{visits} · "
+            f"{node.start:%Y-%m-%d %H:%M:%S} → {node.end:%H:%M:%S}",
+        ]
+        if node.owasp:
+            facts.append(f"OWASP: {html.escape(node.owasp)}")
+        # The value stays as the taxonomy spells it. Title case here would have
+        # the panel reading `Blocked` beside a canvas caption reading `blocked`
+        # for the same activity — one name for one thing, in one case.
+        facts.append(f"Outcome: {node.outcome.value}")
+        facts.append(f"Matched by: {html.escape(', '.join(node.rule_ids))}")
+        facts.append(f"Showing {shown} {noun}")
+
         self._heading.setText(
             f'<span style="color:{colour}"><b>{html.escape(node.label)}</b></span><br>'
-            f"{format_requests(node.request_count)}{visits} · outcome {node.outcome.value} · "
-            f"{node.start:%Y-%m-%d %H:%M:%S} → {node.end:%H:%M:%S}"
-            + (f"<br>OWASP {html.escape(node.owasp)}" if node.owasp else "")
-            + f"<br>matched by: {html.escape(', '.join(node.rule_ids))}"
-            + f"<br>showing {shown} {noun}"
+            + "<br>".join(facts)
         )
 
         # Sorting off while filling. With it on, each row is re-sorted against
