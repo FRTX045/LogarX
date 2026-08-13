@@ -955,6 +955,121 @@ def test_switching_view_leaves_the_panel_describing_what_is_ringed(
     window.close()
 
 
+def _reconstructed(qt_app: QApplication, case: Path) -> MainWindow:
+    """A window with the first client of `case` reconstructed."""
+    window = MainWindow()
+    window._load_case(case)
+    _settled(qt_app)
+    window._clients._table.selectRow(0)
+    _settled(qt_app)
+    assert window._result is not None
+    return window
+
+
+def test_an_activity_that_fits_is_shown_whole(qt_app: QApplication, campaign: Path) -> None:
+    """The panel showed twenty lines of a thirty-request sweep because an
+    episode keeps twenty references — a bound chosen to keep an *exported file*
+    small, paid by a window that exports nothing until asked.
+
+    And `events[:20]` is a prefix, not a sample: the reader saw the opening of
+    the sweep and never the end, which on an attack is where it starts working.
+    """
+    window = _reconstructed(qt_app, campaign)
+    biggest = max(window._result.trace.nodes, key=lambda item: item.request_count)
+
+    window._show_evidence(biggest.node_id)
+    _settled(qt_app)
+
+    assert window._evidence._table.rowCount() == biggest.evidence_total
+    assert (
+        f"Showing {biggest.evidence_total} of {biggest.evidence_total} lines"
+        in window._evidence._heading.text()
+    )
+    window.close()
+
+
+def test_a_merged_activity_shows_every_episode_not_just_the_first(
+    qt_app: QApplication, recurring: Path
+) -> None:
+    """`graphbuild.build` cuts a behaviour node's merged references at twenty,
+    and the merge runs in episode order — so the rows came from the earliest
+    burst and the latest one was invisible however long it ran.
+
+    The window gathers from the episodes the node names instead of from the
+    trimmed tuple the graph carries, so nothing about the exported graph has to
+    change for the panel to show the whole activity.
+    """
+    from logarc.gui.evidence_view import COLUMNS
+
+    window = _reconstructed(qt_app, recurring)
+    merged = max(window._result.behaviour.nodes, key=lambda item: item.episode_count)
+    window._show_behaviour()
+    _settled(qt_app)
+
+    window._show_evidence(merged.node_id)
+    _settled(qt_app)
+
+    table = window._evidence._table
+    assert table.rowCount() == merged.evidence_total
+    shown = {
+        table.item(row, COLUMNS.index("Request")).text()
+        for row in range(table.rowCount())
+        if table.item(row, COLUMNS.index("Request")) is not None
+    }
+    assert any("b2-" in request for request in shown), "the last burst is still missing"
+    window.close()
+
+
+def test_the_table_stops_at_what_it_can_draw_and_says_so(
+    qt_app: QApplication, campaign: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Filling the table runs on the interface thread — twenty thousand rows is
+    a three-second freeze, which is the hang `workers.py` exists to prevent. So
+    there is a ceiling, and it is a limit on what can be *drawn* rather than on
+    what is kept. Reached, it is stated rather than passed over in silence.
+    """
+    monkeypatch.setattr(app, "_EVIDENCE_LIMIT", 5)
+    window = _reconstructed(qt_app, campaign)
+    biggest = max(window._result.trace.nodes, key=lambda item: item.request_count)
+
+    window._show_evidence(biggest.node_id)
+    _settled(qt_app)
+
+    assert window._evidence._table.rowCount() == 5
+    assert f"Showing 5 of {biggest.evidence_total} lines" in window._evidence._heading.text()
+    window.close()
+
+
+def test_an_exported_graph_keeps_the_bounded_sample(
+    qt_app: QApplication, campaign: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The window now reconstructs with every reference it can draw, and
+    `_export` serialises what the window is holding — so without care the
+    exported graph, and the report that embeds it, grow with the log.
+
+    The deliverables keep the sample the engine's own default defines.
+    """
+    import json
+
+    from logarc.episode.builder import DEFAULT_EVIDENCE_SAMPLE
+
+    written = tmp_path / "graph.json"
+    monkeypatch.setattr(
+        "PyQt6.QtWidgets.QFileDialog.getSaveFileName",
+        lambda *args, **kwargs: (str(written), ""),
+    )
+    window = _reconstructed(qt_app, campaign)
+
+    window._export("json")
+    _settled(qt_app)
+
+    exported = json.loads(written.read_text(encoding="utf-8"))
+    counts = [len(node["evidence"]) for node in exported["trace"]["nodes"]]
+    assert counts, "the export drew no nodes"
+    assert max(counts) <= DEFAULT_EVIDENCE_SAMPLE
+    window.close()
+
+
 def test_the_evidence_table_drops_a_size_column_it_has_no_sizes_for(
     qt_app: QApplication, campaign: Path
 ) -> None:

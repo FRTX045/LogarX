@@ -31,10 +31,11 @@ from PyQt6.QtWidgets import (
 )
 
 from logarc import __version__
-from logarc.analysis import analyse_ip
+from logarc.analysis import AnalysisPolicy, analyse_ip
 from logarc.case import Case
 from logarc.core.graph import GraphKind
 from logarc.detect.crs import CrsEvidence
+from logarc.episode.builder import DEFAULT_EVIDENCE_SAMPLE, EpisodePolicy
 from logarc.gui._qt import required
 from logarc.gui.canvas import ActivityCanvas
 from logarc.gui.evidence_panel import EvidencePanel
@@ -57,9 +58,24 @@ __all__ = ["MainWindow", "main", "read_case", "reconstruct_client"]
 #: window building rows nobody scrolls to.
 _CLIENT_LIMIT = 500
 
-#: Source lines fetched for a selected activity. The episode keeps a bounded
-#: sample of references anyway; this bounds what is read off disk per click.
-_EVIDENCE_LIMIT = 25
+#: Source lines the window will put on screen for one activity.
+#:
+#: A limit on what can be *drawn*, which is the only limit this panel actually
+#: needs. It used to be 25, sitting above an episode's twenty-reference sample
+#: and therefore never binding — and that sample exists to keep an exported file
+#: small, a cost a window that exports nothing until asked was paying anyway.
+#: Worse, the sample is `events[:20]`, a prefix rather than a spread, so a
+#: fifty-request sweep was read from its opening and never its end.
+#:
+#: 2,000 because filling the table happens on the interface thread: measured at
+#: about 105ms for 500 rows, 670ms for 5,000 and 2.9s for 20,000, and a
+#: three-second freeze is the hang `gui.workers` exists to prevent. At this
+#: ceiling the fill takes about 500ms, and only for an activity holding two
+#: thousand requests or more; the 49-request node this was checked against goes
+#: from click to filled in 84ms. Reading the lines is not what costs —
+#: `read_evidence` makes one streaming pass per source whether it is asked for
+#: twenty lines or twenty thousand.
+_EVIDENCE_LIMIT = 2_000
 
 #: Where the window remembers how it was left. One key so far: whether long
 #: traces are folded. Worth persisting for the same reason an editor persists
@@ -134,12 +150,31 @@ def _node_for_episodes(graph: ActivityGraph, episode_ids: frozenset[str]) -> Gra
     return max(covering, key=lambda node: node.request_count)
 
 
-def reconstruct_client(path: Path, client_ip: str, crs: CrsEvidence) -> AnalysisResult:
-    """Reconstruct one client, applying whatever CRS contributed to the case."""
+def reconstruct_client(
+    path: Path,
+    client_ip: str,
+    crs: CrsEvidence,
+    *,
+    evidence_sample: int = _EVIDENCE_LIMIT,
+) -> AnalysisResult:
+    """Reconstruct one client, applying whatever CRS contributed to the case.
+
+    `evidence_sample` is how many source references each episode keeps. The
+    window asks for as many as it can draw, because the engine's own default of
+    twenty is a budget for an exported file rather than for a reading surface,
+    and asking for more costs nothing to produce — it is a list slice, measured
+    at the same 90ms either way. What it buys is an activity read to its end
+    rather than from its first twenty requests.
+
+    The default is not lowered anywhere else: the CLI, the benchmark and the
+    evaluation — which reconstructs every client in a corpus — go on using the
+    engine's, and `_export` asks for it back explicitly.
+    """
     with Case.open(path) as case:
         return analyse_ip(
             case.store,
             client_ip,
+            policy=AnalysisPolicy(episode=EpisodePolicy(evidence_sample=evidence_sample)),
             crs=crs.index,
             crs_fingerprint=crs.fingerprint,
         )
@@ -487,7 +522,17 @@ class MainWindow(QMainWindow):
         self._selected = node
 
         path = self._case_path
-        refs = node.evidence[:_EVIDENCE_LIMIT]
+        # Gathered from the episodes the node names, not from `node.evidence`.
+        # `graphbuild.build` cuts a behaviour node's merged references at twenty
+        # and merges in episode order, so that tuple holds the earliest burst
+        # and nothing of the latest however long it ran. The episodes still have
+        # the lot, and taking it here leaves the exported graph untouched.
+        refs = tuple(
+            ref
+            for episode in self._result.episodes
+            if episode.episode_id in node.episode_ids
+            for ref in episode.evidence
+        )[:_EVIDENCE_LIMIT]
 
         def work(_: Callable[[str], None]) -> Any:
             with Case.open(path) as case:
@@ -517,21 +562,35 @@ class MainWindow(QMainWindow):
             return
 
         target = Path(chosen)
-        result = self._result
+        client_ip = self._result.client_ip
         case_path = self._case_path
+        crs = self._crs
 
         if kind == "png":
             self._export_png(target)
             return
 
         def work(_: Callable[[str], None]) -> str:
+            # Reconstructed again at the engine's own sample rather than
+            # serialising what the window is holding. The window asks for every
+            # reference it can draw, and both of these carry those references
+            # into a file — the JSON directly, the report by embedding it — so
+            # writing what is on screen would grow a deliverable by the size of
+            # the log it came from.
+            #
+            # The same pipeline, on the same case, at the same policy but for
+            # this one number: the graph written is the graph drawn, and only
+            # its list of references is shorter.
+            bounded = reconstruct_client(
+                case_path, client_ip, crs, evidence_sample=DEFAULT_EVIDENCE_SAMPLE
+            )
             if kind == "json":
                 import json
 
-                target.write_text(json.dumps(result.to_dict(), indent=2), encoding="utf-8")
+                target.write_text(json.dumps(bounded.to_dict(), indent=2), encoding="utf-8")
             else:
                 with Case.open(case_path) as case:
-                    target.write_text(render_report(result, case.manifest), encoding="utf-8")
+                    target.write_text(render_report(bounded, case.manifest), encoding="utf-8")
             return str(target)
 
         run_job(
