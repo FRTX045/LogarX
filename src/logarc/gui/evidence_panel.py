@@ -43,7 +43,7 @@ from logarc.gui.style import (
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from logarc.core.episode import Episode
+    from logarc.core.graph import GraphNode
     from logarc.evidence import EvidenceLine
 
 __all__ = ["EvidencePanel"]
@@ -69,7 +69,7 @@ class EvidencePanel(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self._decode = True
-        self._shown: tuple[Episode, Sequence[EvidenceLine]] | None = None
+        self._shown: tuple[GraphNode, Sequence[EvidenceLine]] | None = None
 
         self._heading = QLabel("Select an activity to see the lines behind it.")
         self._heading.setWordWrap(True)
@@ -115,16 +115,29 @@ class EvidencePanel(QWidget):
             if self._shown is not None:
                 self.show_evidence(*self._shown)
 
-    def show_evidence(self, episode: Episode, lines: Sequence[EvidenceLine]) -> None:
-        self._shown = (episode, lines)
-        colour = severity_colour(episode.severity)
-        owasp = episode.activity.owasp
+    def show_evidence(self, node: GraphNode, lines: Sequence[EvidenceLine]) -> None:
+        """Describe one activity on the canvas, and list what it is made of.
+
+        The node, not an episode of it. The rows below have always come from
+        `node.evidence`, while this heading was built from the first episode the
+        node happened to name — which on the behaviour map, where a node is
+        every visit to one activity, meant a 35-request circle captioned with
+        the 12 of its first burst, above evidence drawn from all 35. A summary
+        that understates the evidence beneath it is worse than no summary, and
+        this panel is what gets read into a case file.
+        """
+        self._shown = (node, lines)
+        colour = severity_colour(node.severity)
+        # A behaviour node is several visits to one activity; a trace node is
+        # always one, and saying "across 1 activities" on every node of the view
+        # that opens by default would be noise.
+        visits = f" across {node.episode_count:,} activities" if node.episode_count > 1 else ""
         self._heading.setText(
-            f'<span style="color:{colour}"><b>{html.escape(episode.label)}</b></span><br>'
-            f"{format_requests(episode.request_count)} · outcome {episode.outcome.value} · "
-            f"{episode.start:%Y-%m-%d %H:%M:%S} → {episode.end:%H:%M:%S}"
-            + (f"<br>OWASP {html.escape(owasp)}" if owasp else "")
-            + f"<br>matched by: {html.escape(', '.join(episode.rule_ids))}"
+            f'<span style="color:{colour}"><b>{html.escape(node.label)}</b></span><br>'
+            f"{format_requests(node.request_count)}{visits} · outcome {node.outcome.value} · "
+            f"{node.start:%Y-%m-%d %H:%M:%S} → {node.end:%H:%M:%S}"
+            + (f"<br>OWASP {html.escape(node.owasp)}" if node.owasp else "")
+            + f"<br>matched by: {html.escape(', '.join(node.rule_ids))}"
         )
 
         # Sorting off while filling. With it on, each row is re-sorted against

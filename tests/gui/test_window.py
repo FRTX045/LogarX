@@ -68,6 +68,21 @@ def settings_in_a_temp_file(tmp_path_factory: pytest.TempPathFactory) -> Iterato
         yield ini
 
 
+def _settled(qt_app: QApplication, timeout: float = 30.0) -> None:
+    """Wait for the window's background work, then let its results land.
+
+    Everything the window does off the interface thread comes back as a queued
+    signal, so waiting for the pool is only half of it: without pumping the
+    event loop afterwards the job has finished and nothing has been told.
+    """
+    from PyQt6.QtCore import QThreadPool
+
+    pool = QThreadPool.globalInstance()
+    assert pool is not None
+    assert pool.waitForDone(int(timeout * 1000)), "background work did not finish"
+    qt_app.processEvents()
+
+
 def _long_trace(count: int) -> ActivityGraph:
     """A trace long enough that a wrap has something to fold.
 
@@ -118,6 +133,36 @@ def campaign(tmp_path_factory: pytest.TempPathFactory) -> Path:
         lines.append(_line(at, f"/product?{payload}", status=403))
         at += 3
     lines.append(_line(at, "/product?id=1%20UNION%20SELECT%20pw%20FROM%20users", size=1_400_000))
+
+    log = root / "access.log"
+    log.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    with Case.create(root / "case") as case:
+        case.ingest([log])
+    return root / "case"
+
+
+@pytest.fixture(scope="module")
+def recurring(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """A client that returns to the same activity between other things.
+
+    The `campaign` fixture cannot show what the behaviour map is for: every one
+    of its categories happens once, so each behaviour node holds exactly one
+    episode and reads the same as its trace node. That is why nothing caught the
+    panel describing an episode while listing a node's evidence.
+
+    Here enumeration is interrupted twice, which is what a scanner working
+    through a wordlist actually looks like: three enumeration episodes on the
+    trace, one 35-request node on the behaviour map.
+    """
+    root = tmp_path_factory.mktemp("recurring")
+    lines = [_line(0, "/")]
+    at = 10
+    for burst, count in enumerate((12, 3, 20)):
+        for index in range(count):
+            lines.append(_line(at, f"/admin/b{burst}-{index}", status=404))
+            at += 1
+        lines.append(_line(at, "/.env", status=404))
+        at += 2
 
     log = root / "access.log"
     log.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -429,13 +474,17 @@ LONG_LINE = (
 
 
 def _injection_evidence(campaign: Path) -> tuple[object, list[object]]:
-    """The episode whose evidence actually carries an encoded payload."""
+    """The activity whose evidence actually carries an encoded payload.
+
+    A trace node rather than an episode: the panel is handed what the canvas
+    drew, so that its heading and its rows cannot describe different things.
+    """
     with Case.open(campaign) as case:
         result = analyse_ip(case.store, CLIENT)
-        for episode in result.episodes:
-            lines = case.read_evidence(episode.evidence[:4])
+        for node in result.trace.nodes:
+            lines = case.read_evidence(node.evidence[:4])
             if any("%27" in (line.text or "") for line in lines):
-                return episode, lines
+                return node, lines
     raise AssertionError("the fixture no longer contains an encoded payload")
 
 
@@ -666,11 +715,11 @@ def test_the_evidence_table_has_a_row_for_every_piece_of_evidence(
     only be read in the order they arrived. They are twenty-five rows now."""
     with Case.open(campaign) as case:
         result = analyse_ip(case.store, CLIENT)
-        episode = result.episodes[0]
-        lines = case.read_evidence(episode.evidence[:5])
+        node = result.trace.nodes[0]
+        lines = case.read_evidence(node.evidence[:5])
     panel = EvidencePanel()
 
-    panel.show_evidence(episode, lines)
+    panel.show_evidence(node, lines)
 
     assert panel._table.rowCount() == len(lines)
 
@@ -678,9 +727,9 @@ def test_the_evidence_table_has_a_row_for_every_piece_of_evidence(
 def test_choosing_a_row_shows_that_request_in_full(qt_app: QApplication, campaign: Path) -> None:
     """The table truncates a payload however wide it is. This is where the
     reader goes for all of it — and for the original line."""
-    episode, lines = _injection_evidence(campaign)
+    node, lines = _injection_evidence(campaign)
     panel = EvidencePanel()
-    panel.show_evidence(episode, lines)  # type: ignore[arg-type]
+    panel.show_evidence(node, lines)  # type: ignore[arg-type]
 
     panel.select_row(0)
 
@@ -699,9 +748,9 @@ def test_the_detail_follows_the_row_after_the_table_is_sorted(
 
     from logarc.gui.evidence_view import COLUMNS
 
-    episode, lines = _injection_evidence(campaign)
+    node, lines = _injection_evidence(campaign)
     panel = EvidencePanel()
-    panel.show_evidence(episode, lines)  # type: ignore[arg-type]
+    panel.show_evidence(node, lines)  # type: ignore[arg-type]
 
     panel._table.sortItems(COLUMNS.index("Size"), QtNS.SortOrder.DescendingOrder)
     panel.select_row(0)
@@ -709,6 +758,126 @@ def test_the_detail_follows_the_row_after_the_table_is_sorted(
     shown_source = panel._table.item(0, COLUMNS.index("Source"))
     assert shown_source is not None
     assert shown_source.text() in panel._detail.toPlainText()
+
+
+def _merged(case: Path) -> tuple[object, object]:
+    """The behaviour node that merges several episodes, and its evidence."""
+    with Case.open(case) as opened:
+        result = analyse_ip(opened.store, CLIENT)
+        node = max(result.behaviour.nodes, key=lambda item: item.episode_count)
+        return node, opened.read_evidence(node.evidence)
+
+
+def test_the_panel_states_the_count_of_the_activity_it_is_drawn_beside(
+    qt_app: QApplication, recurring: Path
+) -> None:
+    """The heading was built from `next(episode for episode in ... )` — the
+    node's *first* episode — while the rows below it came from the whole node.
+    So a behaviour circle drawn as 35 requests was captioned with the 12 of the
+    first burst, above evidence drawn from all 35.
+
+    Wrong in the direction that matters: it understates a sweep as a fraction of
+    itself, and the panel is what gets quoted into a case file.
+    """
+    node, lines = _merged(recurring)
+    panel = EvidencePanel()
+
+    panel.show_evidence(node, lines)  # type: ignore[arg-type]
+
+    heading = panel._heading.text()
+    assert f"{node.request_count:,} requests" in heading  # type: ignore[attr-defined]
+    assert "12 requests" not in heading, "the first episode's count, not the activity's"
+
+
+def test_a_merged_activity_says_how_many_activities_it_merges(
+    qt_app: QApplication, recurring: Path
+) -> None:
+    """A behaviour node is several visits to one activity. Saying so is the
+    difference between `35 requests` and `35 requests across 3 activities`, and
+    the second is what the map is for."""
+    node, lines = _merged(recurring)
+    panel = EvidencePanel()
+
+    panel.show_evidence(node, lines)  # type: ignore[arg-type]
+
+    assert "across 3 activities" in panel._heading.text()
+
+
+def test_a_single_activity_does_not_count_itself(qt_app: QApplication, campaign: Path) -> None:
+    """Every trace node holds one episode, and `across 1 activities` on all of
+    them would be noise on the view that is open by default."""
+    with Case.open(campaign) as case:
+        result = analyse_ip(case.store, CLIENT)
+        node = result.trace.nodes[0]
+        lines = case.read_evidence(node.evidence)
+    panel = EvidencePanel()
+
+    panel.show_evidence(node, lines)  # type: ignore[arg-type]
+
+    assert "activities" not in panel._heading.text()
+
+
+def test_the_busiest_matching_activity_is_the_one_carried_across(
+    qt_app: QApplication, recurring: Path
+) -> None:
+    """Going back from the map to the trace, one behaviour node answers to
+    three trace nodes. The ring lands on the one that dominated what was being
+    read — and on the same one every run, because a forensic tool that ringed a
+    different node on each pass would invite doubt about what else moved."""
+    from logarc.gui.app import _node_for_episodes
+
+    with Case.open(recurring) as case:
+        result = analyse_ip(case.store, CLIENT)
+    behaviour = max(result.behaviour.nodes, key=lambda item: item.episode_count)
+
+    found = _node_for_episodes(result.trace, frozenset(behaviour.episode_ids))
+
+    assert found is not None
+    assert found.request_count == 20, "the busiest of the three enumeration episodes"
+
+
+def test_an_activity_with_no_counterpart_leaves_nothing_ringed(
+    qt_app: QApplication, recurring: Path
+) -> None:
+    """The other half of carrying a selection across: when the new graph has no
+    node for it, the answer is no ring and an empty panel — not the previous
+    graph's evidence left sitting beside a graph that does not show it."""
+    from logarc.gui.app import _node_for_episodes
+
+    with Case.open(recurring) as case:
+        result = analyse_ip(case.store, CLIENT)
+
+    assert _node_for_episodes(result.trace, frozenset({"nothing/1"})) is None
+
+
+def test_switching_view_leaves_the_panel_describing_what_is_ringed(
+    qt_app: QApplication, recurring: Path
+) -> None:
+    """The finding this began as. Trace → Behaviour redrew the canvas and left
+    the panel alone, so the two halves of the window described different
+    activities and nothing on screen said which one was being read.
+
+    The panel now re-reads whatever the ring lands on, so both halves agree.
+    """
+    window = MainWindow()
+    window._load_case(recurring)
+    _settled(qt_app)
+    window._clients._table.selectRow(0)
+    _settled(qt_app)
+    assert window._result is not None
+
+    enumeration = max(window._result.trace.nodes, key=lambda item: item.request_count)
+    window._show_evidence(enumeration.node_id)
+    _settled(qt_app)
+    assert f"{enumeration.request_count:,} requests" in window._evidence._heading.text()
+
+    window._show_behaviour()
+    _settled(qt_app)
+
+    merged = max(window._result.behaviour.nodes, key=lambda item: item.episode_count)
+    assert window._canvas._selected == merged.node_id, "the map is not ringing anything"
+    assert f"{merged.request_count:,} requests" in window._evidence._heading.text()
+    window.close()
 
 
 def test_the_evidence_table_drops_a_size_column_it_has_no_sizes_for(
@@ -725,7 +894,7 @@ def test_the_evidence_table_drops_a_size_column_it_has_no_sizes_for(
     from logarc.evidence import EvidenceLine
     from logarc.gui.evidence_view import COLUMNS
 
-    episode, sized = _injection_evidence(campaign)
+    node, sized = _injection_evidence(campaign)
     ref = EvidenceRef("access.log", 1)
     sizeless = [
         EvidenceLine(
@@ -739,10 +908,10 @@ def test_the_evidence_table_drops_a_size_column_it_has_no_sizes_for(
     ]
     panel = EvidencePanel()
 
-    panel.show_evidence(episode, sizeless)  # type: ignore[arg-type]
+    panel.show_evidence(node, sizeless)  # type: ignore[arg-type]
     assert panel._table.isColumnHidden(COLUMNS.index("Size"))
 
-    panel.show_evidence(episode, sized)  # type: ignore[arg-type]
+    panel.show_evidence(node, sized)  # type: ignore[arg-type]
     assert not panel._table.isColumnHidden(COLUMNS.index("Size"))
 
 
@@ -756,7 +925,7 @@ def test_a_payload_cannot_forge_a_row_or_render_as_markup(
     from logarc.evidence import EvidenceLine
     from logarc.gui.evidence_view import COLUMNS
 
-    episode, _ = _injection_evidence(campaign)
+    node, _ = _injection_evidence(campaign)
     ref = EvidenceRef("access.log", 1)
     hostile = EvidenceLine(
         ref=ref,
@@ -774,7 +943,7 @@ def test_a_payload_cannot_forge_a_row_or_render_as_markup(
     )
     panel = EvidencePanel()
 
-    panel.show_evidence(episode, [hostile])  # type: ignore[arg-type]
+    panel.show_evidence(node, [hostile])  # type: ignore[arg-type]
 
     assert panel._table.rowCount() == 1
     target = panel._table.item(0, COLUMNS.index("Request"))
@@ -832,9 +1001,9 @@ def test_a_cell_shows_its_text_and_still_sorts_on_its_number(
     """
     from logarc.gui.evidence_view import COLUMNS
 
-    episode, lines = _injection_evidence(campaign)
+    node, lines = _injection_evidence(campaign)
     panel = EvidencePanel()
-    panel.show_evidence(episode, lines)  # type: ignore[arg-type]
+    panel.show_evidence(node, lines)  # type: ignore[arg-type]
 
     shown = panel._table.item(0, COLUMNS.index("Time"))
     assert shown is not None
@@ -856,9 +1025,9 @@ def test_sorting_by_size_puts_the_largest_response_on_top(
 
     from logarc.gui.evidence_view import COLUMNS
 
-    episode, lines = _injection_evidence(campaign)
+    node, lines = _injection_evidence(campaign)
     panel = EvidencePanel()
-    panel.show_evidence(episode, lines)  # type: ignore[arg-type]
+    panel.show_evidence(node, lines)  # type: ignore[arg-type]
 
     panel._table.sortItems(COLUMNS.index("Size"), QtNS.SortOrder.DescendingOrder)
 

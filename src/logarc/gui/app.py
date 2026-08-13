@@ -47,6 +47,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
     from logarc.analysis import AnalysisResult
+    from logarc.core.graph import ActivityGraph, GraphNode
     from logarc.storage.base import IpSummary
 
 __all__ = ["MainWindow", "main", "read_case", "reconstruct_client"]
@@ -114,6 +115,25 @@ def read_case(path: Path) -> tuple[Sequence[IpSummary], CrsEvidence]:
         )
 
 
+def _node_for_episodes(graph: ActivityGraph, episode_ids: frozenset[str]) -> GraphNode | None:
+    """The activity in `graph` covering these episodes, if it draws one.
+
+    Out here with `read_case` and `reconstruct_client`, and Qt-free for the same
+    reason: which activity a view switch lands on is a decision about the
+    evidence, and it should be checkable without starting a window.
+
+    Going from the map back to the trace, one behaviour node answers to several
+    trace nodes — three enumeration episodes become one 35-request circle. The
+    busiest wins, because that is the one that dominated what was being read,
+    and `max` keeps the first of equals so two runs of the same case cannot ring
+    different nodes.
+    """
+    covering = [node for node in graph.nodes if episode_ids.intersection(node.episode_ids)]
+    if not covering:
+        return None
+    return max(covering, key=lambda node: node.request_count)
+
+
 def reconstruct_client(path: Path, client_ip: str, crs: CrsEvidence) -> AnalysisResult:
     """Reconstruct one client, applying whatever CRS contributed to the case."""
     with Case.open(path) as case:
@@ -139,6 +159,9 @@ class MainWindow(QMainWindow):
         #: a reconstruction before then applies nothing rather than failing.
         self._crs = CrsEvidence(index=None, fingerprint=None)
         self._kind = GraphKind.TRACE
+        #: The activity whose evidence is in the panel, so a redraw can put the
+        #: reader back on it in the graph that replaces this one.
+        self._selected: GraphNode | None = None
         self._stop: threading.Event | None = None
 
         self._clients = ClientTable()
@@ -345,6 +368,7 @@ class MainWindow(QMainWindow):
             self._case_path = path
             self._crs = crs
             self._result = None
+            self._selected = None
             self._canvas.show_graph_placeholder()
             self._evidence.clear()
             self._heading.setText("No client selected.")
@@ -375,6 +399,9 @@ class MainWindow(QMainWindow):
 
         def done(result: AnalysisResult) -> None:
             self._result = result
+            # Forgotten before the redraw below, or the new client's graph would
+            # be searched for the activity the last one was being read at.
+            self._selected = None
             self._evidence.clear()
             self._heading.setText(
                 f"<b>{result.client_ip}</b> — {result.request_count:,} requests across "
@@ -387,10 +414,29 @@ class MainWindow(QMainWindow):
         run_job(work, on_done=done, on_error=self._report_error, on_progress=self._status.setText)
 
     def _redraw(self) -> None:
+        """Draw the current view, and keep the reader's place across it.
+
+        `show_graph` drops the ring, so without this a view switch left the
+        evidence panel describing an activity from the graph that is no longer
+        on screen, with nothing marked to say so — the two halves of the window
+        describing different things, which is the hazard `ActivityCanvas.set_wrap`
+        already guards against for its own redraw.
+        """
         if self._result is None:
             return
         graph = self._result.trace if self._kind is GraphKind.TRACE else self._result.behaviour
+        was_reading = self._selected
         self._canvas.show_graph(graph)
+        if was_reading is None:
+            return
+        # Found by episode, not by node id: the two graphs number their nodes
+        # differently, and one behaviour node answers to several trace nodes.
+        carried = _node_for_episodes(graph, frozenset(was_reading.episode_ids))
+        if carried is None:
+            self._selected = None
+            self._evidence.clear()
+            return
+        self._show_evidence(carried.node_id)
 
     def _show_trace(self) -> None:
         self._kind = GraphKind.TRACE
@@ -438,13 +484,7 @@ class MainWindow(QMainWindow):
         node = next((item for item in graph.nodes if item.node_id == node_id), None)
         if node is None:
             return
-
-        episode = next(
-            (item for item in self._result.episodes if item.episode_id in node.episode_ids),
-            None,
-        )
-        if episode is None:
-            return
+        self._selected = node
 
         path = self._case_path
         refs = node.evidence[:_EVIDENCE_LIMIT]
@@ -455,7 +495,7 @@ class MainWindow(QMainWindow):
 
         run_job(
             work,
-            on_done=lambda lines: self._evidence.show_evidence(episode, lines),
+            on_done=lambda lines: self._evidence.show_evidence(node, lines),
             on_error=self._report_error,
         )
 
