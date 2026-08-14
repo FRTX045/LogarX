@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Final
 from logarc.gui.style import (
     EVIDENCE_INK,
     EVIDENCE_MUTED,
+    THEME,
     decode_target,
     display_safe,
     format_bytes,
@@ -37,8 +38,10 @@ if TYPE_CHECKING:
 __all__ = ["ALERT_COLOUR", "COLUMNS", "Cell", "Detail", "cells_for", "detail_for"]
 
 #: Something is wrong with this piece of evidence, and the reader has to see
-#: that rather than an empty row.
-ALERT_COLOUR: Final = "#b5273a"
+#: that rather than an empty row. From the theme, because a red chosen against
+#: pale paper is the wrong red on a dark one — and this is the colour that says
+#: a piece of evidence could not be read at all.
+ALERT_COLOUR: Final = THEME.alert
 
 #: Headings, in order. `Request` is the one that grows: every other value is a
 #: handful of characters and a payload is sixty.

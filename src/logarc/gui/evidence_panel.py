@@ -32,13 +32,17 @@ from PyQt6.QtWidgets import (
 from logarc.gui._qt import SORT_KEY, SortableItem, required
 from logarc.gui.evidence_view import ALERT_COLOUR, COLUMNS, Cell, Detail, cells_for, detail_for
 from logarc.gui.style import (
+    EVIDENCE_INK,
+    EVIDENCE_MUTED,
     PAPER,
     PAPER_EDGE,
     PAPER_STRIPE,
     SELECTION_TINT,
+    THEME,
     format_requests,
     severity_colour,
 )
+from logarc.gui.theme import PAD, TIGHT, caption_font, mono_font
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -49,12 +53,20 @@ if TYPE_CHECKING:
 __all__ = ["EvidencePanel"]
 
 #: The evidence surface, taken from `gui.style` rather than restated here: it is
-#: the same paper the canvas draws on and the report prints, and a second copy of
-#: the colour is a second chance for one of them to move.
+#: the same ground the canvas draws on, and a second copy of the colour is a
+#: second chance for one of them to move.
+#:
+#: `_INK` and `_REFERENCE` were the two that did move. They were written out as
+#: literals while everything around them came from `gui.style`, so when the
+#: window went dark the table above kept up and the detail pane below did not —
+#: and what it drew in `_INK` is `detail.raw`, the original log line, which is
+#: the one thing on screen that is evidence rather than a reading of it. Dark on
+#: dark, present and unreadable. The theme tests did not catch it because they
+#: compare a palette against these names, and it was the names that were stale.
 _PAPER = PAPER
 _STRIPE = PAPER_STRIPE
-_INK = "#1f2933"
-_REFERENCE = "#616e7c"
+_INK = EVIDENCE_INK
+_REFERENCE = EVIDENCE_MUTED
 
 #: The two columns whose values are numbers, and the one of them that is often
 #: absent. Right-aligned so their digits line up under a heading wider than any
@@ -71,12 +83,13 @@ class EvidencePanel(QWidget):
         self._decode = True
         self._shown: tuple[GraphNode, Sequence[EvidenceLine]] | None = None
 
-        self._heading = QLabel("Select an activity to see the lines behind it.")
+        # Empty, not inviting. At startup there is no case, no client and so no
+        # activity to select; the canvas is asking for a case and this panel
+        # asking for something two steps further on was noise over it.
+        self._heading = QLabel("")
         self._heading.setWordWrap(True)
 
-        font = QFont("Consolas")
-        font.setStyleHint(QFont.StyleHint.Monospace)
-        font.setPointSizeF(8.5)
+        font = mono_font(8.5)
 
         self._table = _build_table(font)
         self._table.itemSelectionChanged.connect(self._selection_changed)
@@ -96,15 +109,32 @@ class EvidencePanel(QWidget):
         layout = QVBoxLayout(self)
         # As on the client panel: at zero the heading sits against the window
         # edge and loses its first character to the frame.
-        layout.setContentsMargins(6, 4, 6, 4)
+        layout.setContentsMargins(PAD, TIGHT, PAD, TIGHT)
+        layout.setSpacing(PAD)
         layout.addWidget(self._heading)
         layout.addWidget(split)
 
     # -- what is on show -----------------------------------------------------
 
-    def clear(self) -> None:
+    def clear(self, *, prompt: bool = True) -> None:
+        """Empty the panel, and either invite a selection or say nothing.
+
+        `prompt` is false when there is nothing to select from yet — no case
+        open, or a case open and no client picked. The panel used to invite a
+        selection regardless, so a freshly opened window said "Open a case" on
+        the canvas, "No client selected" above it, and "Select an activity to
+        see the lines behind it" here: three instructions, two of them for steps
+        the reader cannot take, competing with the one they can.
+
+        The table and the detail stay up either way. Hiding them was tried and
+        is wrong: an empty table under its own headings reads as a panel waiting
+        for content, while an empty rectangle reads as a panel that failed to
+        draw one — and it takes the whole right-hand side of the window with it.
+        The headings also say what is coming, which is worth something before
+        anything has been chosen.
+        """
         self._shown = None
-        self._heading.setText("Select an activity to see the lines behind it.")
+        self._heading.setText("Select an activity to see the lines behind it." if prompt else "")
         self._table.setRowCount(0)
         self._detail.clear()
 
@@ -148,27 +178,36 @@ class EvidencePanel(QWidget):
         # along. The noun agrees with the total, which is what it counts.
         noun = "line" if node.evidence_total == 1 else "lines"
 
-        # One labelled fact per line. The heading grew a field at a time and the
-        # outcome ended up buried mid-sentence between the count and the
-        # timestamps — the field that says whether any of this worked, sitting
-        # where the eye arrives last. What is left on the first line is the
-        # activity's size and when it happened, which is what identifies it.
-        facts = [
-            f"{format_requests(node.request_count)}{visits} · "
-            f"{node.start:%Y-%m-%d %H:%M:%S} → {node.end:%H:%M:%S}",
-        ]
-        if node.owasp:
-            facts.append(f"OWASP: {html.escape(node.owasp)}")
+        # Three weights, not six identical lines. Every fact used to be set at
+        # the same size as every other, so the activity's name — the one thing
+        # that says what you are looking at — carried no more emphasis than the
+        # rule id that matched it, and the block had to be read start to finish
+        # to find anything in it.
+        #
+        # The labels stay. `Outcome: blocked` reads as a labelled fact and not
+        # as a loose word, which is what stopped the outcome being buried in a
+        # sentence in the first place; a chip that dropped the label would have
+        # undone that to gain a few pixels.
+        chips = []
+        chips.append(_chip(node.severity.name.title(), colour))
         # The value stays as the taxonomy spells it. Title case here would have
         # the panel reading `Blocked` beside a canvas caption reading `blocked`
         # for the same activity — one name for one thing, in one case.
-        facts.append(f"Outcome: {node.outcome.value}")
-        facts.append(f"Matched by: {html.escape(', '.join(node.rule_ids))}")
-        facts.append(f"Showing {shown} {noun}")
+        chips.append(_chip(f"Outcome: {node.outcome.value}"))
+        if node.owasp:
+            chips.append(_chip(f"OWASP: {html.escape(node.owasp)}"))
+        chips.append(_chip(f"Matched by: {html.escape(', '.join(node.rule_ids))}"))
 
+        base = self._heading.font().pointSizeF()
         self._heading.setText(
-            f'<span style="color:{colour}"><b>{html.escape(node.label)}</b></span><br>'
-            + "<br>".join(facts)
+            f'<div style="font-size:{base + 3.0:.1f}pt;color:{colour}">'
+            f"<b>{html.escape(node.label)}</b></div>"
+            f'<div style="color:{EVIDENCE_MUTED}">'
+            f"{format_requests(node.request_count)}{visits} · "
+            f"{node.start:%Y-%m-%d %H:%M:%S} → {node.end:%H:%M:%S}</div>"
+            f'<div style="font-size:{max(base - 1.0, 7.5):.1f}pt">{" ".join(chips)}</div>'
+            f'<div style="font-size:{max(base - 1.0, 7.5):.1f}pt;color:{THEME.faint}">'
+            f"Showing {shown} {noun}</div>"
         )
 
         # Sorting off while filling. With it on, each row is re-sorted against
@@ -249,6 +288,9 @@ def _build_table(font: QFont) -> QTableWidget:
     table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
     table.setSortingEnabled(True)
     table.setAlternatingRowColors(True)
+    # The stripe already carries the row across the panel; a grid on top of it
+    # boxes every cell and turns evidence into a spreadsheet. One or the other.
+    table.setShowGrid(False)
     table.setFont(font)
     required(table.verticalHeader(), "row header").setVisible(False)
     # Pinned light for the same reason the detail below it is: the cell colours
@@ -277,8 +319,10 @@ def _build_table(font: QFont) -> QTableWidget:
     # The headings come off the monospace font the evidence itself is set in,
     # and `Status` and `Size` in Consolas are wider than any value they ever
     # hold — width taken from `Request`, where a payload was wrapping to two
-    # lines. Headings are not evidence, so they need not be monospace.
-    header.setFont(QFont())
+    # lines. Headings are not evidence, so they need not be monospace — and
+    # being structure rather than content, they are set a step quieter than the
+    # rows they label rather than competing with them.
+    header.setFont(caption_font(QFont()))
     header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
     # `Target` takes whatever is left over. It is the only column whose content
     # is unbounded, and the only one worth widening the panel for.
@@ -308,6 +352,23 @@ def _build_detail(font: QFont) -> QTextEdit:
     detail.setPalette(paper)
     detail.setStyleSheet(f"QTextEdit {{ border: 1px solid {PAPER_EDGE}; }}")
     return detail
+
+
+def _chip(text: str, colour: str | None = None) -> str:
+    """One fact, drawn as a bounded thing rather than another line of prose.
+
+    A filled span rather than a bordered one: Qt's rich text honours
+    `background-color` on an inline element and ignores `padding` and `border`
+    there, so the box is made of the fill and the spaces are made of `&nbsp;`.
+    Cheaper than laying out real widgets, and it keeps the whole heading a
+    single `QLabel` — which is what the panel's tests read, and what makes the
+    heading one thing to clear rather than four.
+    """
+    tinted = f";color:{colour}" if colour else f";color:{EVIDENCE_MUTED}"
+    return (
+        f'<span style="background-color:{THEME.raised}{tinted}">'
+        f"&nbsp;{text}&nbsp;</span>"
+    )
 
 
 #: Where a row keeps its place in the evidence, so sorting cannot move it.

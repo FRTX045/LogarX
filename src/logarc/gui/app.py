@@ -26,6 +26,7 @@ from PyQt6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QSplitter,
+    QTabBar,
     QVBoxLayout,
     QWidget,
 )
@@ -40,6 +41,8 @@ from logarc.gui._qt import required
 from logarc.gui.canvas import ActivityCanvas
 from logarc.gui.evidence_panel import EvidencePanel
 from logarc.gui.panels import ClientTable, LegendBar
+from logarc.gui.style import THEME, format_requests, plural
+from logarc.gui.theme import MONO_FAMILIES, PAD, TIGHT, apply_theme, heading_font
 from logarc.gui.workers import run_job
 from logarc.ingest.pipeline import IngestCancelled
 from logarc.report.html import render_report
@@ -84,6 +87,16 @@ _EVIDENCE_LIMIT = 2_000
 _SETTINGS = ("logarc", "logarc")
 _WRAP_KEY = "view/wrap_traces"
 _DECODE_KEY = "view/decode_targets"
+
+#: The two views, in the order the tab bar shows them. One list rather than a
+#: pair of indices spelled out at each end, so a tab and the view it selects
+#: cannot drift apart.
+_TABS: tuple[GraphKind, ...] = (GraphKind.TRACE, GraphKind.BEHAVIOUR)
+_TAB_NAMES = {GraphKind.TRACE: "Trace", GraphKind.BEHAVIOUR: "Behaviour"}
+
+#: The evidence face, spelled for Qt's rich text rather than for `QFont`. The
+#: heading is a `QLabel` of markup, so the family list has to travel as CSS.
+_MONO_CSS = ",".join(f"'{family}'" for family in MONO_FAMILIES)
 
 
 def _settings() -> QSettings:
@@ -224,14 +237,39 @@ class MainWindow(QMainWindow):
     # -- construction ------------------------------------------------------
 
     def _build_layout(self) -> None:
-        self._heading = QLabel("No client selected.")
+        # Empty until there is a client to name. What goes here is the subject
+        # of the graph below it, and before a case is open the canvas itself is
+        # carrying the only instruction the window has to give.
+        self._heading = QLabel("")
         self._heading.setTextFormat(Qt.TextFormat.RichText)
+        self._heading.setFont(heading_font(self._heading.font()))
+
+        # Which view you are looking at, said on screen rather than only in a
+        # menu. Trace and behaviour are two readings of one reconstruction and
+        # the window drew them into the same rectangle with nothing to tell them
+        # apart, so the only way to know which was in front of you was to open
+        # the View menu and look at which entry was ticked.
+        self._tabs = QTabBar()
+        self._tabs.setDrawBase(False)
+        # Sized to their words, not to the column. Left to expand, two tabs
+        # split the whole width of the canvas into two half-window slabs, which
+        # reads as a pair of buttons rather than as a choice between two views —
+        # and at that size the selected one is not obviously selected.
+        self._tabs.setExpanding(False)
+        self._tabs.setDocumentMode(True)
+        for kind in _TABS:
+            self._tabs.addTab(_TAB_NAMES[kind])
+        self._tabs.currentChanged.connect(self._tab_chosen)
+        # Nothing to switch between until a client has been reconstructed.
+        self._tabs.setVisible(False)
 
         centre = QWidget()
         column = QVBoxLayout(centre)
         # Matching the panels either side, and what lets the canvas read as a
         # framed document rather than a hole cut in the window.
-        column.setContentsMargins(6, 4, 6, 4)
+        column.setContentsMargins(PAD, TIGHT, PAD, TIGHT)
+        column.setSpacing(TIGHT)
+        column.addWidget(self._tabs)
         column.addWidget(self._heading)
         column.addWidget(self._canvas)
         column.addWidget(self._legend)
@@ -352,7 +390,7 @@ class MainWindow(QMainWindow):
         stop = threading.Event()
 
         def work(report: Callable[[str], None]) -> IngestCancelled | None:
-            report(f"Ingesting {len(paths)} file(s)…")
+            report(f"Ingesting {plural(len(paths), 'file')}…")
             try:
                 with Case.create(case_dir) as case:
                     case.ingest(
@@ -405,11 +443,17 @@ class MainWindow(QMainWindow):
             self._result = None
             self._selected = None
             self._canvas.show_graph_placeholder()
-            self._evidence.clear()
-            self._heading.setText("No client selected.")
+            # The canvas is already saying "Select a client to reconstruct what
+            # it did" across the middle of the window. Repeating it above the
+            # canvas and inviting an activity selection beside it made three
+            # messages for one state, two of them about steps that cannot be
+            # taken yet.
+            self._evidence.clear(prompt=False)
+            self._heading.setText("")
+            self._tabs.setVisible(False)
             self._clients.show_clients(summaries)
             self._idle(
-                f"{path} — {len(summaries):,} client(s) listed"
+                f"{path} — {plural(len(summaries), 'client')} listed"
                 + (", CRS applied" if crs.fingerprint else "")
             )
 
@@ -438,13 +482,29 @@ class MainWindow(QMainWindow):
             # be searched for the activity the last one was being read at.
             self._selected = None
             self._evidence.clear()
+            self._tabs.setVisible(True)
+            # The address, then three counts. Not a sentence.
+            #
+            # `100.66.2.0 — 69 requests across 1 session, reduced to 9
+            # activities` reads as prose and is scanned as prose: the numbers
+            # are what the line is for, and they were buried among connectives
+            # at one weight with the address. Separated values put the three
+            # counts where the eye can take them one at a time, and dropping the
+            # address to monospace makes it an address rather than the first
+            # word of a sentence.
             self._heading.setText(
-                f"<b>{result.client_ip}</b> — {result.request_count:,} requests across "
-                f"{len(result.sessions)} session(s), reduced to "
-                f"{len(result.episodes)} activities"
+                f'<span style="font-family:{_MONO_CSS}">'
+                f"<b>{result.client_ip}</b></span>"
+                # Normal weight, explicitly: the label itself is set in the
+                # heading face, which is DemiBold, and without this the counts
+                # carry the same emphasis as the address they belong to.
+                f'<span style="color:{THEME.muted};font-weight:normal">&nbsp;&nbsp;'
+                f"{format_requests(result.request_count)}"
+                f" · {plural(len(result.sessions), 'session')}"
+                f" · {plural(len(result.episodes), 'activity', 'activities')}</span>"
             )
             self._redraw()
-            self._idle(f"{client_ip}: {len(result.episodes)} activities")
+            self._idle(f"{client_ip}: {plural(len(result.episodes), 'activity', 'activities')}")
 
         run_job(work, on_done=done, on_error=self._report_error, on_progress=self._status.setText)
 
@@ -477,6 +537,7 @@ class MainWindow(QMainWindow):
         self._kind = GraphKind.TRACE
         self._trace_action.setChecked(True)
         self._behaviour_action.setChecked(False)
+        self._sync_tabs()
         # Greyed out on the other view rather than hidden: a behaviour map is a
         # circle and has nothing to fold, and a live control that does nothing
         # reads as a fault. The choice itself is kept, and applies again here.
@@ -487,8 +548,33 @@ class MainWindow(QMainWindow):
         self._kind = GraphKind.BEHAVIOUR
         self._trace_action.setChecked(False)
         self._behaviour_action.setChecked(True)
+        self._sync_tabs()
         self._wrap_action.setEnabled(False)
         self._redraw()
+
+    def _sync_tabs(self) -> None:
+        """Move the tab bar to match the view, without it answering back.
+
+        The tab and the menu entry are two controls over one piece of state, so
+        each has to be able to set it without the other treating that as a fresh
+        instruction — otherwise selecting a tab calls `_show_behaviour`, which
+        moves the tab, which fires `currentChanged` again. Blocked rather than
+        guarded by a flag, because `blockSignals` says what it is doing at the
+        point it happens.
+        """
+        wanted = _TABS.index(self._kind)
+        if self._tabs.currentIndex() == wanted:
+            return
+        blocked = self._tabs.blockSignals(True)
+        self._tabs.setCurrentIndex(wanted)
+        self._tabs.blockSignals(blocked)
+
+    def _tab_chosen(self, index: int) -> None:
+        """The tab bar asking for a view."""
+        if _TABS[index] is GraphKind.TRACE:
+            self._show_trace()
+        else:
+            self._show_behaviour()
 
     def _apply_wrap(self) -> None:
         """Fold long traces or stop folding them, and remember which."""
@@ -601,14 +687,20 @@ class MainWindow(QMainWindow):
 
     def _export_png(self, target: Path) -> None:
         """Rendered here rather than on a worker: painting needs the GUI thread."""
-        from PyQt6.QtGui import QImage, QPainter
+        from PyQt6.QtGui import QColor, QImage, QPainter
 
         scene = self._canvas.graph_scene
         bounds = scene.sceneRect()
         image = QImage(
             int(bounds.width()) or 1, int(bounds.height()) or 1, QImage.Format.Format_ARGB32
         )
-        image.fill(Qt.GlobalColor.white)
+        # The canvas ground, not white. `scene.render` paints the items and not
+        # the view's background brush, so this fill *is* the exported image's
+        # ground — and the captions are drawn in the theme's ink, which on this
+        # theme is near-white. Filled white, every label on the exported graph
+        # would have been white on white: an export that silently loses half of
+        # what it is an export of, and looks fine until someone reads it.
+        image.fill(QColor(THEME.surface))
         painter = QPainter(image)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         scene.render(painter)
@@ -663,6 +755,7 @@ def main() -> int:
     """Entry point for the `logarc-gui` command."""
     app = QApplication(sys.argv)
     app.setApplicationName("logarc")
+    apply_theme(app)
     try:
         window = MainWindow()
     except Exception:

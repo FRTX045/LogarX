@@ -45,6 +45,7 @@ from logarc.gui.style import (
     PAPER_EDGE,
     SELECTION_COLOUR,
     SELECTION_WIDTH,
+    THEME,
     edge_label,
     style_for,
     summarise,
@@ -77,7 +78,10 @@ _PEN_STYLES: Final = {
     "dotted": Qt.PenStyle.DotLine,
 }
 
-_EDGE_COLOUR: Final = "#616e7c"
+#: The arrows between nodes, and the words on an empty canvas. From the theme:
+#: a grey picked to sit on pale paper is close to invisible on a dark ground,
+#: and these arrows are what make a trace a sequence rather than a scatter.
+_EDGE_COLOUR: Final = THEME.edge_ink
 _ARROW_LENGTH: Final = 12.0
 _ARROW_WIDTH: Final = 7.0
 
@@ -89,6 +93,38 @@ _TEXT_PADDING: Final = 2.0
 _ZOOM_STEP: Final = 1.15
 _MIN_SCALE: Final = 0.15
 _MAX_SCALE: Final = 6.0
+
+#: The canvas grid: how far apart the dots sit, in scene units, and how wide
+#: they are drawn on screen.
+#:
+#: A ground for the graph to sit on. Without one the largest region of the
+#: window is an unbroken rectangle of one colour, which reads as a surface that
+#: failed to draw rather than as a surface with nothing on it yet — the same
+#: complaint that made an empty canvas look broken when it was pale.
+#:
+#: The pitch is in scene units so the grid pans with the graph and belongs to
+#: it. The dot width is divided by the zoom before it is used, so a dot stays
+#: the same size on screen however far in the view is — a texture, not another
+#: thing that grows when the graph does.
+_GRID_PITCH: Final = 24.0
+_GRID_DOT: Final = 1.6
+
+#: Below this zoom the dots are closer together on screen than they are wide,
+#: and the grid stops reading as texture and starts reading as a wash over the
+#: evidence. Drawn only while it is still a grid.
+_GRID_MIN_SCALE: Final = 0.45
+
+
+def _steps(start: float, stop: float) -> list[float]:
+    """Grid lines from `start` up to `stop`, one pitch apart.
+
+    Bounded rather than a bare `while`: the visible rectangle grows without
+    limit as the view zooms out, and this is called on every repaint. The cap is
+    far past any sane viewport and exists so a stray transform cannot turn a
+    background paint into a hang.
+    """
+    count = min(int((stop - start) / _GRID_PITCH) + 1, 400)
+    return [start + index * _GRID_PITCH for index in range(max(count, 0))]
 
 
 class _NodeItem(QGraphicsEllipseItem):
@@ -130,6 +166,40 @@ class ActivityCanvas(QGraphicsView):
         # startup as blank paper inside dark chrome, which reads as a renderer
         # that failed rather than as a tool waiting to be given something.
         self.show_graph_placeholder(STARTUP_MESSAGE)
+
+    def drawBackground(self, painter: QPainter | None, rect: QRectF) -> None:  # noqa: N802
+        """The ground under the graph: the theme's colour, then its grid.
+
+        On the *view* rather than the scene, deliberately. `QGraphicsScene.render`
+        — which is what `Export ▸ PNG image` calls — paints the scene's
+        background and its items, and never the view's. So an exported graph
+        gets the flat fill `_export_png` gives it and none of this, which is the
+        right answer: a grid is an on-screen affordance for panning, and printing
+        it into a deliverable would put texture behind evidence.
+        """
+        super().drawBackground(painter, rect)
+        if painter is None:  # pragma: no cover - Qt always supplies one
+            return
+        scale = self.transform().m11()
+        if scale < _GRID_MIN_SCALE:
+            return
+
+        pen = QPen(QColor(THEME.grid_dot))
+        # In scene units, so the division cancels the zoom and the dot lands the
+        # same size on screen at every magnification.
+        pen.setWidthF(_GRID_DOT / scale)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+
+        first_x = math.floor(rect.left() / _GRID_PITCH) * _GRID_PITCH
+        first_y = math.floor(rect.top() / _GRID_PITCH) * _GRID_PITCH
+        points = [
+            QPointF(x, y)
+            for x in _steps(first_x, rect.right())
+            for y in _steps(first_y, rect.bottom())
+        ]
+        if points:
+            painter.drawPoints(*points)
 
     @property
     def graph_scene(self) -> QGraphicsScene:

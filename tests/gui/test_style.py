@@ -3,19 +3,21 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from itertools import pairwise
+from itertools import combinations, pairwise
 
 import pytest
 
-from conftest import contrast
+from conftest import apart, chroma, contrast, hue_apart
 from logarc.core.activity import ActivityCategory, Outcome, Severity
 from logarc.core.evidence import EvidenceRef
 from logarc.core.graph import GraphKind, GraphNode
 from logarc.gui.style import (
     EVIDENCE_INK,
     EVIDENCE_MUTED,
+    LIGHT,
     PAPER,
     PAPER_STRIPE,
+    SELECTION_COLOUR,
     SELECTION_TINT,
     SIZE_NOTE,
     NodeStyle,
@@ -28,6 +30,7 @@ from logarc.gui.style import (
     node_radius,
     outcome_border,
     outcome_legend,
+    plural,
     severity_colour,
     severity_legend,
     shorten_agent,
@@ -420,3 +423,166 @@ def test_a_long_browser_agent_keeps_its_head_and_tail() -> None:
     assert short.startswith("Mozilla/5.0")
     assert short.endswith("MSIX")
     assert "…" in short
+
+
+# -- the palette holds up ----------------------------------------------------
+#
+# The gap these close. The suite already held the evidence *ink* to a contrast
+# ratio against its ground, but nothing checked the node fills — so the ramp
+# could be retuned, or the ground moved under it, and the only thing that
+# noticed would have been an investigator missing a finding.
+
+
+@pytest.mark.parametrize("level", list(Severity))
+def test_a_finding_is_visible_against_the_canvas_it_is_drawn_on(level: Severity) -> None:
+    """WCAG 1.4.11: a graphical object carrying meaning needs 3:1 against what
+    is behind it. A node's fill *is* the finding, and on the ramp this replaced
+    `CRITICAL` sat at 3.02:1 on this ground — over the line by a hair while
+    being the faintest thing on a canvas, which is the wrong place to be for the
+    one severity that must not be missed.
+    """
+    assert contrast(severity_colour(level), PAPER) >= 3.0
+
+
+def test_no_two_severities_can_be_mistaken_for_each_other() -> None:
+    """Lightening a ramp is how two levels quietly become one colour.
+
+    Measured as a distance rather than a contrast ratio: contrast compares
+    luminance alone, so it reports two equally bright but differently coloured
+    fills as identical, which is exactly the pair this needs to tell apart. The
+    closest pair on this ramp is `High` and `Critical` at 0.096 — adjacent
+    levels, and adjacent hues, so it is the pair to hold the line at.
+    """
+    for one, other in combinations(sorted(Severity), 2):
+        distance = apart(severity_colour(one), severity_colour(other))
+        assert distance >= 0.08, f"{one.name} and {other.name} look alike at {distance:.3f}"
+
+
+#: Below this a colour has no hue worth comparing. `Info` is a near-grey at
+#: 0.022 and computes to a blue hue 3° off the selection blue while being
+#: obviously not blue; every severity that actually carries a hue is above 0.08.
+_HAS_A_HUE = 0.05
+
+
+@pytest.mark.parametrize("level", list(Severity))
+def test_the_selection_ring_cannot_be_read_as_a_finding(level: Severity) -> None:
+    """The ring says "this is the one you clicked" and is drawn immediately
+    outside a fill that says "this is how bad it is". Two blues touching is a
+    canvas where one colour means two things.
+
+    Not hypothetical: `LOW` was `#4c8dae`, a blue 16° from the selection blue,
+    and moved to teal at 58° for this reason. What found it was looking at a
+    mockup, which is not something that happens on every change.
+
+    Hue rather than overall distance, because overall distance does not see it:
+    old and new `LOW` sit 0.129 and 0.137 from the accent, near enough identical,
+    while being 16° and 58° away in hue. And hue only where there is enough
+    chroma to have one, or this would fail on the grey that is not blue.
+    """
+    colour = severity_colour(level)
+    if chroma(colour) < _HAS_A_HUE:
+        assert apart(SELECTION_COLOUR, colour) >= 0.10, f"{level.name} is close to the ring"
+        return
+    separation = hue_apart(SELECTION_COLOUR, colour)
+    assert separation >= 30.0, f"the ring is {separation:.0f}° from {level.name}"
+
+
+def test_the_worst_finding_is_never_the_faintest_thing_on_the_canvas() -> None:
+    """The defect that started this. On a dark ground the old `CRITICAL`
+    `#b5273a` came to 3.02:1 — past the 3:1 floor by a hair, and dimmer than
+    every other severity, so the one finding an investigator must not miss was
+    the hardest one on the canvas to see.
+
+    Stated as a rank rather than a ratio because that is the actual requirement.
+    A ramp can clear every threshold and still put critical at the bottom.
+    """
+    ranked = sorted(Severity, key=lambda level: contrast(severity_colour(level), PAPER))
+
+    assert ranked[0] is not Severity.CRITICAL, "critical is the faintest severity drawn"
+
+
+def test_the_light_theme_still_holds_the_colours_it_always_had() -> None:
+    """`LIGHT` is not live, and something not drawn is something free to rot.
+
+    It is kept so that going back is one line, which is only true while it still
+    holds what it held. These are the values logarc shipped with.
+    """
+    assert [severity_colour(level, theme=LIGHT) for level in sorted(Severity)] == [
+        "#9aa5b1",
+        "#4c8dae",
+        "#d8a33c",
+        "#d4693a",
+        "#b5273a",
+    ]
+
+
+# -- counting things ---------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("count", "expected"),
+    [
+        (0, "0 clients"),
+        (1, "1 client"),
+        (2, "2 clients"),
+        (1500, "1,500 clients"),
+    ],
+)
+def test_a_count_agrees_with_its_noun(count: int, expected: str) -> None:
+    """`1 client(s)` is what a program writes when nobody decided. This one had
+    decided — `format_requests` existed for exactly this — and then said
+    `client(s)`, `session(s)`, `path(s)` and `file(s)` anyway."""
+    assert plural(count, "client") == expected
+
+
+def test_a_noun_that_does_not_just_take_an_s() -> None:
+    """`activity` is counted in the status bar and the graph heading, and
+    `2 activitys` would be worse than the bracket it replaced."""
+    assert plural(2, "activity", "activities") == "2 activities"
+    assert plural(1, "activity", "activities") == "1 activity"
+
+
+def test_the_request_count_still_reads_the_way_it_did() -> None:
+    """`format_requests` is `plural` underneath now. The output must not move."""
+    assert format_requests(1) == "1 request"
+    assert format_requests(51) == "51 requests"
+    assert format_requests(1500) == "1,500 requests"
+
+
+@pytest.mark.parametrize("outcome", list(Outcome))
+def test_an_outcome_outline_reads_against_the_canvas_behind_it(outcome: Outcome) -> None:
+    """An outline is stroked *on* the edge of a fill, so half its width lies
+    inside the node and half lies on the canvas. It is the canvas half that
+    decides whether the line is there at all, because the canvas is one known
+    colour while the fill is whichever severity happened to occur.
+
+    This test had it the other way round first, and passed while the graph was
+    wrong: it held the outline to 3:1 against every *fill*, which a near-black
+    clears comfortably at 4.4:1 — and that same near-black measures 1.01:1
+    against the ground, so the outer half of every outline on the canvas was
+    drawn in the ground's own colour. A test can hold the wrong surface and look
+    thorough doing it.
+    """
+    assert contrast(outcome_border(outcome).colour, PAPER) >= 3.0
+
+
+@pytest.mark.parametrize("level", list(Severity))
+def test_an_outcome_outline_is_still_visible_where_it_crosses_the_fill(level: Severity) -> None:
+    """The other half of the same line. Weaker than the 3:1 asked of the canvas
+    side, because it does not have to carry the shape on its own — but a line
+    that vanished completely against some severity would leave that node looking
+    like it had no outcome at all.
+    """
+    assert contrast(outcome_border(Outcome.SUCCESS).colour, severity_colour(level)) >= 1.9
+
+
+def test_the_outcome_channel_does_not_lean_on_colour() -> None:
+    """`gui.style` says on its own face that an outline "must not be a shade of
+    the same colour that already means something else". Severity owns colour;
+    outcome owns line style and weight. Holding the dark theme to that is what
+    freed its outlines to be the one colour that reads on every fill.
+    """
+    borders = [outcome_border(outcome) for outcome in Outcome]
+
+    assert len({border.colour for border in borders}) == 1, "outcome is not carried by hue"
+    assert len({(border.style, border.width) for border in borders}) == len(borders)

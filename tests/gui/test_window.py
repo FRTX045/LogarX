@@ -23,6 +23,7 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 from PyQt6.QtGui import QPalette
 from PyQt6.QtWidgets import QApplication, QSplitter
 
+from conftest import contrast
 from logarc.analysis import analyse_ip
 from logarc.case import Case
 from logarc.core.activity import ActivityCategory, Outcome, Severity
@@ -1243,35 +1244,52 @@ def test_the_evidence_table_does_not_depend_on_the_system_theme(
 
 
 def test_the_framed_evidence_surface_is_still_paper_when_it_is_painted(
-    qt_app: QApplication,
+    qt_app: QApplication, campaign: Path
 ) -> None:
     """The frame around the evidence is a stylesheet, and this file already
     warns what that can cost: a stylesheet can replace what the palette says
     while `palette()` goes on reporting the old colour, so the two tests above
     would pass over an unreadable panel.
 
-    So this one reads the pixels, under a dark theme, which is the case where
-    losing the pinned ground would put muted grey on dark grey.
+    So this one reads the pixels, under a system palette set to something else
+    entirely — the case where losing the pinned ground would put the evidence on
+    a colour nothing here was chosen against.
+
+    Evidence is loaded first because an empty panel now hides its table and
+    detail rather than standing them up as furniture over nothing. The points
+    sampled are below the last row and below the last line, which is table and
+    detail ground rather than a row, a stripe, or the selected row's tint.
     """
+    from PyQt6.QtCore import QPoint
     from PyQt6.QtGui import QColor
 
     from logarc.gui.evidence_panel import _PAPER
 
+    node, lines = _injection_evidence(campaign)
+
     was = qt_app.palette()
     try:
-        dark = QPalette(was)
-        dark.setColor(QPalette.ColorRole.Base, QColor("#1e1e1e"))
-        dark.setColor(QPalette.ColorRole.Window, QColor("#1e1e1e"))
-        qt_app.setPalette(dark)
+        hostile = QPalette(was)
+        hostile.setColor(QPalette.ColorRole.Base, QColor("#1e1e1e"))
+        hostile.setColor(QPalette.ColorRole.Window, QColor("#1e1e1e"))
+        qt_app.setPalette(hostile)
 
         panel = EvidencePanel()
         panel.resize(400, 600)
+        panel.show_evidence(node, lines)  # type: ignore[arg-type]
         panel.show()
         QApplication.processEvents()
         painted = panel.grab().toImage()
 
-        assert painted.pixelColor(200, 200).name() == _PAPER, "the table lost its ground"
-        assert painted.pixelColor(200, 480).name() == _PAPER, "the detail lost its ground"
+        # Sampled through the viewport, which is the content area: measuring
+        # from the widget's own edge lands on a header, a frame or a scrollbar
+        # instead of on the ground being checked.
+        for widget, what in ((panel._table, "table"), (panel._detail, "detail")):
+            viewport = widget.viewport()
+            assert viewport is not None
+            inside = QPoint(viewport.width() // 2, viewport.height() - 4)
+            point = viewport.mapTo(panel, inside)
+            assert painted.pixelColor(point).name() == _PAPER, f"the {what} lost its ground"
         panel.close()
     finally:
         qt_app.setPalette(was)
@@ -1314,3 +1332,57 @@ def test_the_client_table_still_sorts_by_the_number(qt_app: QApplication, campai
     top = table._table.item(0, 1)
     assert top is not None
     assert top.text() == f"{max(s.request_count for s in summaries):,}"
+
+
+
+def test_every_outcome_sample_actually_draws_something(qt_app: QApplication) -> None:
+    """`Success` and `Mixed` were blank chips in the key.
+
+    Their outline is the window's own darkest colour — right against a bright
+    node, invisible against bare chrome — and the sample was a bordered box on
+    the panel, so the border and the ground behind it were the same colour. The
+    canvas was fine; only the thing explaining the canvas was wrong.
+
+    Then it was a dark ring on a pale fill — honest, and still unreadable:
+    twenty pixels of disc against two of edge, so all four read as a pale dot
+    and the styles could only be told apart by magnifying the window. Which is
+    how it survived a second round: it was checked at four times size.
+
+    So the check is not "is it the right colour" — it was the right colour every
+    time. It is whether enough of the sample stands out from the panel it sits
+    on. `3:1` is WCAG's floor for a graphical object, and twelve pixels is about
+    a fifth of the thinnest ring any outcome draws.
+    """
+    from PyQt6.QtWidgets import QLabel
+
+    from logarc.gui.panels import LegendBar
+    from logarc.gui.style import THEME, outcome_legend
+
+    bar = LegendBar()
+    samples = [
+        label
+        for label in bar.findChildren(QLabel)
+        if label.pixmap() is not None and not label.pixmap().isNull()
+    ]
+    assert len(samples) == len(outcome_legend()), "one painted sample per outcome"
+
+    for sample in samples:
+        image = sample.pixmap().toImage()
+        painted = [
+            (x, y)
+            for x in range(image.width())
+            for y in range(image.height())
+            if image.pixelColor(x, y).alpha() > 200
+        ]
+        legible = [
+            point
+            for point in painted
+            if contrast(image.pixelColor(*point).name(), THEME.chrome) >= 3.0
+        ]
+        assert len(legible) >= 12, "the sample does not stand out from the panel"
+        # And it is a ring, not a disc. This is the structural half of the fix:
+        # a filled sample is read as its fill, and the outline — the only part
+        # that differs between the four — becomes a detail on a boundary that
+        # already has a hard edge. Mostly-empty is what makes the line the
+        # subject.
+        assert len(painted) * 2 < image.width() * image.height(), "the sample is filled in"

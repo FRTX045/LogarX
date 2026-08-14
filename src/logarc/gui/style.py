@@ -12,6 +12,18 @@ Two channels, kept separate so neither has to carry two meanings:
 * **The border is outcome.** Whether the activity achieved anything is the
   difference between "someone tried" and "someone succeeded", and it must not be
   a shade of the same colour that already means something else.
+
+Both channels are drawn from a `Theme`. `DARK` is the active one; `LIGHT` is the
+palette logarc used to have, kept so that switching back is one line rather than
+an archaeology exercise.
+
+**One theme serves both renderers.** The window and the exported report take the
+same ramp, because a critical finding has to be the same red on screen as in the
+file handed to someone who never opened the tool — the fault
+`test_the_report_paints_a_finding_the_colour_the_window_paints_it` exists to
+catch. The functions here take a `theme` argument so a caller *can* ask for the
+other one, but nothing in the codebase does, and a renderer that starts to would
+be reintroducing exactly that bug.
 """
 
 from __future__ import annotations
@@ -28,21 +40,29 @@ from logarc.core.activity import Outcome, Severity
 from logarc.core.graph import GraphKind
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from logarc.core.graph import GraphNode
 
 __all__ = [
     "CAPTION_COLOUR",
+    "DARK",
     "EVIDENCE_INK",
     "EVIDENCE_MUTED",
+    "LIGHT",
     "PAPER",
     "PAPER_EDGE",
     "PAPER_STRIPE",
+    "SELECTION_COLOUR",
     "SELECTION_TINT",
+    "SELECTION_WIDTH",
     "SIZE_NOTE",
+    "THEME",
     "Border",
     "LegendItem",
     "NodeStyle",
     "Span",
+    "Theme",
     "decode_target",
     "display_safe",
     "edge_label",
@@ -53,6 +73,7 @@ __all__ = [
     "node_radius",
     "outcome_border",
     "outcome_legend",
+    "plural",
     "severity_colour",
     "severity_legend",
     "shorten_agent",
@@ -60,17 +81,6 @@ __all__ = [
     "style_for",
     "summarise",
 ]
-
-#: Severity as a colour ramp. Chosen to stay distinguishable in greyscale — a
-#: report gets printed, and a finding that only reads in colour does not survive
-#: the printer.
-_SEVERITY_COLOURS: Final[dict[Severity, str]] = {
-    Severity.INFO: "#9aa5b1",
-    Severity.LOW: "#4c8dae",
-    Severity.MEDIUM: "#d8a33c",
-    Severity.HIGH: "#d4693a",
-    Severity.CRITICAL: "#b5273a",
-}
 
 #: Radius bounds. The lower one keeps a single request clickable; the upper one
 #: keeps a busy episode from swallowing the canvas.
@@ -100,49 +110,215 @@ class Border:
     colour: str
 
 
-#: The surfaces a finding is read on, and the line that frames them.
-#:
-#: Pinned rather than taken from the system palette. The canvas and the evidence
-#: colours are chosen against a pale ground, and the same finding should read the
-#: same way on screen and in the exported report — a deliberate trade, since it
-#: means the window does not follow the OS theme.
-#:
-#: What it cost was that hard light paper met dark chrome at a raw edge, which is
-#: what made an empty canvas read as broken rather than as empty. So the paper is
-#: framed: `PAPER_EDGE` draws a line around it and it sits as a document on the
-#: window rather than as a hole cut in it.
-#:
-#: Here rather than in either renderer because both draw it, and two copies of a
-#: colour are two chances for one of them to move.
-PAPER: Final = "#f5f7fa"
-PAPER_STRIPE: Final = "#eaeef3"
-PAPER_EDGE: Final = "#c3ccd6"
+@dataclass(frozen=True, slots=True)
+class Theme:
+    """Every colour the interface draws with, as one swappable record.
 
-#: Captions are drawn beneath the node, on the canvas ground rather than on the
-#: fill. A label long enough to be meaningful does not fit inside a circle sized
-#: by request count, and shrinking it until it did was making the graph
-#: unreadable at the scale it is first shown at.
-CAPTION_COLOUR: Final = "#1f2933"
+    Two of these exist. `LIGHT` is what logarc always looked like — pale paper,
+    dark ink. `DARK` is what it looks like now, and is the one both the window
+    and the report draw from.
 
-#: The ring drawn around the activity whose evidence is on screen.
+    The surfaces are still *pinned* — a theme is chosen here, not taken from the
+    OS palette — for the reason the light one always was: the ink colours are
+    derived against a known ground, and a ground that varies by machine makes
+    those derivations meaningless. What changed is which ground is pinned.
+
+    The severity ramp is shared with the report, which is a light document, so
+    it has to survive both grounds. It does, and by a wider margin than the ramp
+    it replaced: against white the old ramp ran 2.50 / 3.67 / 2.28 / 3.57 / 6.33
+    and this one runs 4.39 / 2.77 / 2.37 / 3.26 / 3.87 — worse for critical,
+    better for info, a wash overall. Neither clears 3:1 for all five on white,
+    and neither needs to: in the report a severity is a swatch and a stroke
+    *beside* its own name, never a fill drawn underneath text. The report gave
+    that constraint up deliberately, which is what
+    `test_the_report_never_prints_a_severity_on_a_colour_it_cannot_be_read_against`
+    guards — dormant while the markup keeps the colour off the text, and armed
+    the moment anyone puts it back.
+    """
+
+    #: The window itself: menus, panels, status bar. Deepest of the three.
+    chrome: str
+    #: What a document is read on — the canvas, both tables, the detail pane.
+    surface: str
+    #: Panel headings and chips, lifted just off the surface.
+    raised: str
+    #: Alternating table rows.
+    stripe: str
+    #: Hairline between rows. Separates without drawing attention to itself.
+    line: str
+    #: The frame around a document surface, so it reads as a sheet laid on the
+    #: window rather than a hole cut through it.
+    edge: str
+
+    #: Primary text, and the captions drawn beneath a node.
+    #:
+    #: Captions sit on the canvas ground rather than on the node fill: a label
+    #: long enough to mean something does not fit inside a circle sized by
+    #: request count, and shrinking it until it did made the graph unreadable at
+    #: the scale it first opens at.
+    ink: str
+    #: Secondary text. A comparison against the ink beside it, not permission to
+    #: be unreadable — this clears WCAG AA on the surface, on the stripe and on
+    #: the selection tint, and recedes by being quieter rather than fainter.
+    muted: str
+    #: Structural labels: column headings, legend captions. The quietest text
+    #: that still has to be read, so it clears AA too.
+    faint: str
+
+    #: The ring drawn around the activity whose evidence is on screen, and the
+    #: colour of anything else that means "this is the one you chose".
+    #:
+    #: Added *outside* the node rather than replacing its outline, because the
+    #: outline carries the outcome and overwriting it would trade one piece of
+    #: information for another.
+    accent: str
+    #: Text on top of an accent fill.
+    on_accent: str
+    #: The ground under the selected row of the evidence table.
+    #:
+    #: Every cell in that table sets its own colour — that is how a served
+    #: status is told from a refused one — and an item's own colour wins over
+    #: the palette's `HighlightedText`, so a strong selection colour cannot
+    #: bring legible text with it. A tint the row's existing ink stays readable
+    #: on marks the selection without fighting it.
+    tint: str
+
+    #: The arrows between nodes, and the text of an empty canvas.
+    edge_ink: str
+    #: The canvas grid. Barely there on purpose: it gives an empty canvas a
+    #: ground so it reads as a workspace rather than a failed render.
+    grid_dot: str
+    #: Something is wrong with this piece of evidence and the reader has to see
+    #: that rather than an empty row.
+    alert: str
+
+    #: Severity as a colour ramp.
+    #:
+    #: On light it descends from grey to red and stays distinguishable in
+    #: greyscale, because a report gets printed. On dark that ordering cannot be
+    #: kept — amber is intrinsically brighter than red at any saturation that
+    #: still reads as red — so the dark ramp trades luminance ordering for hue
+    #: separation, and holds one guarantee instead: nothing falls below 3:1 on
+    #: the surface, and critical is never the faintest thing on the canvas.
+    severity: Mapping[Severity, str]
+    #: Outcome as an outline. A border is drawn at the fill's edge and its job
+    #: is to read *against that fill*, which is why the dark theme keeps dark
+    #: outlines: on dark every fill is bright.
+    outcomes: Mapping[Outcome, Border]
+
+
+#: What logarc always looked like. Nothing selects it now; it is kept so that
+#: going back is one line, and so the values it holds are not lost to history.
+LIGHT: Final = Theme(
+    chrome="#e4e7eb",
+    surface="#f5f7fa",
+    raised="#eaeef3",
+    stripe="#eaeef3",
+    line="#dde3ea",
+    edge="#c3ccd6",
+    ink="#1f2933",
+    muted="#566470",
+    faint="#616e7c",
+    accent="#2c6ea8",
+    on_accent="#ffffff",
+    tint="#cfe0f5",
+    edge_ink="#616e7c",
+    grid_dot="#e6eaef",
+    alert="#b5273a",
+    severity={
+        Severity.INFO: "#9aa5b1",
+        Severity.LOW: "#4c8dae",
+        Severity.MEDIUM: "#d8a33c",
+        Severity.HIGH: "#d4693a",
+        Severity.CRITICAL: "#b5273a",
+    },
+    outcomes={
+        # Solid and heavy: it worked. This is the one an investigator must not
+        # miss.
+        Outcome.SUCCESS: Border(style="solid", width=3.0, colour="#1f2933"),
+        # Dashed: some of it worked, which is its own finding.
+        Outcome.MIXED: Border(style="dashed", width=3.0, colour="#1f2933"),
+        # Dotted and light: every request was refused.
+        Outcome.BLOCKED: Border(style="dotted", width=1.5, colour="#616e7c"),
+        Outcome.UNKNOWN: Border(style="solid", width=1.0, colour="#9aa5b1"),
+    },
+)
+
+#: The window's theme. Neutrals sit at hue 70° carrying a fraction of its
+#: chroma — warm enough that the greys are not clinical, nowhere near enough to
+#: tint the evidence — against a blue accent that no severity colour comes near.
 #:
-#: Added *outside* the node rather than replacing its outline, because the
-#: outline is the outcome and overwriting it would trade one piece of
-#: information for another. Without it the evidence panel fills and the canvas
-#: says nothing about which of a dozen nodes it belongs to.
-SELECTION_COLOUR: Final = "#2c6ea8"
+#: Derived in OKLCH so the steps between surfaces are perceptually even, then
+#: resolved to sRGB. `LOW` is the one severity that moved hue rather than
+#: lightness: the old `#4c8dae` sat in the accent's own family, and a selection
+#: ring beside a Low node has to be unmistakably the ring.
+DARK: Final = Theme(
+    chrome="#080706",
+    surface="#100f0e",
+    raised="#191817",
+    stripe="#222120",
+    line="#2f2e2c",
+    edge="#413f3e",
+    ink="#efeeed",
+    muted="#b2b1af",
+    faint="#8a8987",
+    accent="#49a9ff",
+    on_accent="#001226",
+    tint="#0e2a45",
+    edge_ink="#8a8987",
+    grid_dot="#1b1a19",
+    alert="#e14d5f",
+    severity={
+        Severity.INFO: "#6e7a85",
+        Severity.LOW: "#4baaa5",
+        Severity.MEDIUM: "#d0a144",
+        Severity.HIGH: "#d47548",
+        Severity.CRITICAL: "#e14d5f",
+    },
+    outcomes={
+        # One colour for all four, light, and the style carries the meaning.
+        #
+        # An outline is stroked *on* the edge of a fill, so half its width lies
+        # inside the node and half lies on the canvas behind it. It therefore has
+        # to be seen against the canvas, and the canvas is the darkest surface in
+        # the window. Two earlier attempts here got that backwards: first the
+        # light theme's greys, carried over unchanged, which recede on paper and
+        # came to 2.32:1 on an amber node; then a near-black chosen to read
+        # against the fill, which does — 4.4:1 at worst — while measuring
+        # **1.01:1 against the ground**, so the outer half of every outline was
+        # drawn in the ground's own colour and simply was not there.
+        #
+        # The fill varies by severity and the ground does not, so the ground is
+        # what an outline must be legible against: at 16.5:1 this one is, on
+        # every node, whatever its severity. Recession is left to the two
+        # channels that still carry it here — dotted rather than solid, thin
+        # rather than heavy — which is also what this module says a border is
+        # for: the outline is the outcome, and it "must not be a shade of the
+        # same colour that already means something else".
+        Outcome.SUCCESS: Border(style="solid", width=3.0, colour="#efeeed"),
+        Outcome.MIXED: Border(style="dashed", width=3.0, colour="#efeeed"),
+        Outcome.BLOCKED: Border(style="dotted", width=1.5, colour="#efeeed"),
+        Outcome.UNKNOWN: Border(style="solid", width=1.0, colour="#efeeed"),
+    },
+)
+
+#: Which one the window is drawing in. Everything below reads through this, so
+#: switching back to light — or adding a runtime toggle — is this one line.
+THEME: Final = DARK
+
+#: The names the renderers already import, kept pointing at the active theme so
+#: no call site has to know a theme exists. `PAPER` is a light-theme name for
+#: what is now a dark surface; renaming it is a separate change from choosing a
+#: different colour, and doing both at once would bury one in the other.
+PAPER: Final = THEME.surface
+PAPER_STRIPE: Final = THEME.stripe
+PAPER_EDGE: Final = THEME.edge
+CAPTION_COLOUR: Final = THEME.ink
+SELECTION_COLOUR: Final = THEME.accent
+SELECTION_TINT: Final = THEME.tint
+
+#: How heavy the selection ring is. Not a colour, so it does not vary by theme.
 SELECTION_WIDTH: Final = 3.0
-
-#: The ground under the selected row of the evidence table.
-#:
-#: Pale, and deliberately so. Every cell in that table sets its own colour —
-#: that is how a served status is told from a refused one — and an item's own
-#: colour wins over the palette's `HighlightedText`, so a strong selection
-#: colour cannot bring its own legible text with it. The system's dark teal put
-#: grey `404` on it at 2.25:1. A tint the row's existing ink stays readable on
-#: marks the selection by hue instead, which is the same thing the alternating
-#: stripe does.
-SELECTION_TINT: Final = "#cfe0f5"
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,25 +330,19 @@ class NodeStyle:
     radius: float
 
 
-_OUTCOME_BORDERS: Final[dict[Outcome, Border]] = {
-    # Solid and heavy: it worked. This is the one an investigator must not miss.
-    Outcome.SUCCESS: Border(style="solid", width=3.0, colour="#1f2933"),
-    # Dashed: some of it worked, which is its own finding.
-    Outcome.MIXED: Border(style="dashed", width=3.0, colour="#1f2933"),
-    # Dotted and light: every request was refused.
-    Outcome.BLOCKED: Border(style="dotted", width=1.5, colour="#616e7c"),
-    Outcome.UNKNOWN: Border(style="solid", width=1.0, colour="#9aa5b1"),
-}
+def severity_colour(severity: Severity, *, theme: Theme = THEME) -> str:
+    """The fill for a finding of this severity.
+
+    `theme` exists so a caller *can* ask for the other palette; every caller
+    takes the default, and the report deliberately among them. Screen and paper
+    agreeing about what a severity looks like is an invariant with a test on it.
+    """
+    return theme.severity[severity]
 
 
-def severity_colour(severity: Severity) -> str:
-    """The fill for a finding of this severity."""
-    return _SEVERITY_COLOURS[severity]
-
-
-def outcome_border(outcome: Outcome) -> Border:
+def outcome_border(outcome: Outcome, *, theme: Theme = THEME) -> Border:
     """The outline for an activity that ended this way."""
-    return _OUTCOME_BORDERS[outcome]
+    return theme.outcomes[outcome]
 
 
 def node_radius(request_count: int) -> float:
@@ -187,11 +357,11 @@ def node_radius(request_count: int) -> float:
     return min(scaled, _MAX_RADIUS)
 
 
-def style_for(node: GraphNode) -> NodeStyle:
+def style_for(node: GraphNode, *, theme: Theme = THEME) -> NodeStyle:
     """The complete appearance of one node."""
     return NodeStyle(
-        fill=severity_colour(node.severity),
-        border=outcome_border(node.outcome),
+        fill=severity_colour(node.severity, theme=theme),
+        border=outcome_border(node.outcome, theme=theme),
         radius=node_radius(node.request_count),
     )
 
@@ -228,28 +398,35 @@ class LegendItem:
 
 #: What the third channel means. Size has no swatch — it is a comparison, not a
 #: value — so it has to be said in words or it is not explained at all.
-SIZE_NOTE: Final = "Node size grows with the request count, by square root."
+#:
+#: Phrased as a key entry rather than a sentence. As "Node size grows with the
+#: request count, by square root." it was 600px wide, and a flow layout asks for
+#: no less than its widest single item: one explanatory sentence was setting the
+#: minimum width of the whole legend, and through it the centre column. The
+#: square root is kept because it is the part that stops a reader inferring that
+#: a 1,000-request node is two hundred times a five-request one.
+SIZE_NOTE: Final = "Size = request count, by square root"
 
 
-def severity_legend() -> tuple[LegendItem, ...]:
+def severity_legend(*, theme: Theme = THEME) -> tuple[LegendItem, ...]:
     """The colour ramp, read from the table the renderer draws from.
 
     Generated rather than written out, so a severity added to the taxonomy
     cannot end up on the canvas as a colour the key does not name.
     """
     return tuple(
-        LegendItem(label=level.name.title(), colour=_SEVERITY_COLOURS[level])
+        LegendItem(label=level.name.title(), colour=theme.severity[level])
         for level in sorted(Severity)
     )
 
 
-def outcome_legend() -> tuple[LegendItem, ...]:
+def outcome_legend(*, theme: Theme = THEME) -> tuple[LegendItem, ...]:
     """The border styles, likewise read from the table that draws them."""
     return tuple(
         LegendItem(
             label=outcome.value.title(),
-            colour=_OUTCOME_BORDERS[outcome].colour,
-            border=_OUTCOME_BORDERS[outcome],
+            colour=theme.outcomes[outcome].colour,
+            border=theme.outcomes[outcome],
         )
         for outcome in Outcome
     )
@@ -267,13 +444,14 @@ def outcome_legend() -> tuple[LegendItem, ...]:
 #: text is never rebuilt: these are offsets into the string the panel was
 #: handed, so the evidence stays the bytes that came out of the log.
 #: `Muted` is a comparison against the ink beside it, not permission to be
-#: unreadable. At `#8996a4` it was 2.81:1 on the paper and 2.25:1 on a selected
-#: row, and what it colours is the response status — one of the two things a row
-#: exists to show. A refused request is still evidence, so this clears WCAG AA
-#: on the paper, on the alternating stripe and on `SELECTION_TINT`, and recedes
-#: by being lighter than the ink rather than by being hard to read.
-EVIDENCE_INK: Final = "#1f2933"
-EVIDENCE_MUTED: Final = "#566470"
+#: unreadable. What it colours is the response status — one of the two things a
+#: row exists to show — and a refused request is still evidence, so it clears
+#: WCAG AA on the surface, on the alternating stripe and on the selection tint,
+#: and recedes by being quieter than the ink rather than by being hard to read.
+#: `tests/gui/test_style.py` holds all three of those to 4.5:1 whichever theme
+#: is active, which is what stops a palette change from quietly breaking it.
+EVIDENCE_INK: Final = THEME.ink
+EVIDENCE_MUTED: Final = THEME.muted
 
 #: `"METHOD target PROTOCOL" status`. Deliberately strict: the closing quote
 #: must be followed by a three-digit status, which is what stops the `request`
@@ -309,7 +487,7 @@ def highlight_spans(text: str) -> tuple[Span, ...]:
     )
 
 
-def status_colour(code: str) -> str:
+def status_colour(code: str, *, theme: Theme = THEME) -> str:
     """How prominently to draw a response status.
 
     **Not a traffic light.** Here a 2xx on an injection is the alarm — it says
@@ -320,7 +498,7 @@ def status_colour(code: str) -> str:
     So served stands out and refused recedes, which is the same distinction
     `Outcome` already draws on the canvas.
     """
-    return EVIDENCE_INK if code[:1] in {"2", "3"} and code.isdigit() else EVIDENCE_MUTED
+    return theme.ink if code[:1] in {"2", "3"} and code.isdigit() else theme.muted
 
 
 def display_safe(text: str) -> str:
@@ -397,14 +575,33 @@ def shorten_agent(agent: str, limit: int = 64) -> str:
     return f"{agent[:head]}…{agent[-tail:]}"
 
 
+def plural(count: int, noun: str, many: str | None = None) -> str:
+    """A count with its noun agreeing with it.
+
+    The general form of `format_requests`, which existed first and for the same
+    reason: two call sites formatting the same number disagreed about it. That
+    fix stopped at one noun, and the window went on saying `500 client(s)`,
+    `1 session(s)`, `68 path(s)` and `3 file(s)` — a bracketed `(s)` being what
+    a program writes when nobody decided, and this one had decided.
+
+    `many` is for a noun whose plural is not the singular plus an `s`;
+    everything logarc counts so far is regular, but `activity` is one edit away
+    from being counted and would come out as `activities` here rather than
+    wrongly.
+    """
+    if count == 1:
+        return f"1 {noun}"
+    return f"{count:,} {many if many is not None else noun + 's'}"
+
+
 def format_requests(count: int) -> str:
     """A request count with its noun agreeing with it.
 
-    Shared rather than written out at each call site: the evidence panel said
-    "1 requests" while the caption on the node beside it said "1 request",
-    because each formatted the same number itself.
+    Kept as its own name because it is the one every renderer reaches for, and
+    a caption reading `plural(n, "request")` says less about what it is than
+    the call it replaced.
     """
-    return "1 request" if count == 1 else f"{count:,} requests"
+    return plural(count, "request")
 
 
 def format_gap(seconds: float | None) -> str:
