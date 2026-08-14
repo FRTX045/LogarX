@@ -133,7 +133,16 @@ class _NodeItem(QGraphicsEllipseItem):
     def __init__(self, node: GraphNode, radius: float) -> None:
         super().__init__(QRectF(-radius, -radius, radius * 2, radius * 2))
         self.node_id = node.node_id
-        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
+        # Deliberately *not* `ItemIsSelectable`.
+        #
+        # Nothing here ever asked Qt which item was selected — a click is read
+        # off `itemAt` in `mousePressEvent` and answered with `node_selected`,
+        # and the activity being read is marked by `highlight`, which draws its
+        # own ring. The flag bought nothing and cost a dashed rectangle: Qt
+        # paints one around a selected item, so the first click on an activity
+        # boxed it, and the box vanished on the next click somewhere else.
+        # Two marks for one selection, one of which looks like a rendering
+        # fault.
         self.setAcceptHoverEvents(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setZValue(1)

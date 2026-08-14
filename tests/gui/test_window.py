@@ -1420,3 +1420,38 @@ def test_every_outcome_sample_actually_draws_something(qt_app: QApplication) -> 
         # already has a hard edge. Mostly-empty is what makes the line the
         # subject.
         assert len(painted) * 2 < image.width() * image.height(), "the sample is filled in"
+
+
+def test_clicking_an_activity_leaves_only_the_ring_behind(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    """One mark per selection, and it is the canvas's own.
+
+    `_NodeItem` used to carry `ItemIsSelectable`, which nothing ever read: a
+    click is taken off `itemAt` and answered with `node_selected`, and the
+    activity being read is marked by `highlight`. What the flag did do was let
+    Qt paint its own dashed rectangle around the item it considered selected —
+    so the first click on an activity boxed it, and the box disappeared on the
+    next click elsewhere. Two marks for one selection, and the spare one looks
+    like the renderer going wrong.
+    """
+    from PyQt6.QtCore import Qt as QtNS
+    from PyQt6.QtTest import QTest
+
+    with Case.open(campaign) as case:
+        result = analyse_ip(case.store, CLIENT)
+    canvas = ActivityCanvas()
+    canvas.resize(600, 400)
+    canvas.show_graph(result.trace)
+    canvas.fit()
+
+    target = result.trace.nodes[0]
+    item = canvas._nodes[target.node_id]
+    QTest.mouseClick(
+        canvas.viewport(),
+        QtNS.MouseButton.LeftButton,
+        pos=canvas.mapFromScene(item.scenePos()),
+    )
+
+    assert canvas.graph_scene.selectedItems() == [], "Qt is marking the node as well"
+    canvas.close()
