@@ -378,10 +378,7 @@ def _chip(text: str, colour: str | None = None) -> str:
     heading one thing to clear rather than four.
     """
     tinted = f";color:{colour}" if colour else f";color:{EVIDENCE_MUTED}"
-    return (
-        f'<span style="background-color:{THEME.raised}{tinted}">'
-        f"&nbsp;{text}&nbsp;</span>"
-    )
+    return f'<span style="background-color:{THEME.raised}{tinted}">&nbsp;{text}&nbsp;</span>'
 
 
 #: Where a row keeps its place in the evidence, so sorting cannot move it.

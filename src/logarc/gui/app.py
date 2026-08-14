@@ -42,7 +42,7 @@ from logarc.gui.canvas import ActivityCanvas
 from logarc.gui.evidence_panel import EvidencePanel
 from logarc.gui.panels import ClientTable, LegendBar
 from logarc.gui.style import THEME, format_requests, plural
-from logarc.gui.theme import MONO_FAMILIES, PAD, TIGHT, apply_theme, heading_font
+from logarc.gui.theme import GAP, MONO_FAMILIES, PAD, TIGHT, apply_theme, heading_font
 from logarc.gui.workers import run_job
 from logarc.ingest.pipeline import IngestCancelled
 from logarc.report.html import render_report
@@ -256,7 +256,33 @@ class MainWindow(QMainWindow):
         # reads as a pair of buttons rather than as a choice between two views —
         # and at that size the selected one is not obviously selected.
         self._tabs.setExpanding(False)
-        self._tabs.setDocumentMode(True)
+        # Drawn here rather than left to the style, which had it backwards.
+        #
+        # Under Fusion in document mode the selected tab takes the page colour
+        # and the unselected one takes the button colour. On a light palette
+        # those differ and it reads correctly; on this one the page colour is
+        # the chrome the bar already sits on, so the selected tab vanished into
+        # the background and the *unselected* tab was the one drawn as a raised
+        # box. The bar was confidently indicating the view you were not looking
+        # at, which is worse than the menu-only state it replaced.
+        self._tabs.setStyleSheet(f"""
+            QTabBar::tab {{
+                background: transparent;
+                color: {THEME.muted};
+                border: 1px solid transparent;
+                border-top-left-radius: 3px;
+                border-top-right-radius: 3px;
+                padding: {TIGHT}px {GAP}px;
+                margin-right: 2px;
+            }}
+            QTabBar::tab:hover {{ color: {THEME.ink}; }}
+            QTabBar::tab:selected {{
+                background: {THEME.raised};
+                color: {THEME.ink};
+                border: 1px solid {THEME.edge};
+                border-top: 2px solid {THEME.accent};
+            }}
+        """)
         for kind in _TABS:
             self._tabs.addTab(_TAB_NAMES[kind])
         self._tabs.currentChanged.connect(self._tab_chosen)
