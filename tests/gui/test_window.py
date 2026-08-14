@@ -1334,6 +1334,40 @@ def test_the_client_table_still_sorts_by_the_number(qt_app: QApplication, campai
     assert top.text() == f"{max(s.request_count for s in summaries):,}"
 
 
+def test_the_detail_changes_when_a_different_activity_is_opened(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    """Clicking a second activity left the first one's request in the detail.
+
+    `show_evidence` fills the table and then calls `select_row(0)`, and relied on
+    `itemSelectionChanged` to carry that into the detail pane. Qt only emits
+    that when the selection actually *changes* — and row 0 of the outgoing
+    activity is row 0 of the incoming one, so on a panel that already had a row
+    selected, nothing changed and nothing was emitted. The rows were the new
+    activity's; the request printed beneath them was the old one's.
+
+    Worst on a single-request activity, which is where it was found: with one
+    row there is no other row to click, so the pane cannot be corrected and
+    simply describes the wrong request for as long as it is open.
+    """
+    with Case.open(campaign) as case:
+        result = analyse_ip(case.store, CLIENT)
+        nodes = [node for node in result.trace.nodes if node.evidence]
+        assert len(nodes) >= 2, "the fixture needs two activities to switch between"
+        first, second = nodes[0], nodes[-1]
+        first_lines = case.read_evidence(first.evidence)
+        second_lines = case.read_evidence(second.evidence)
+
+    panel = EvidencePanel()
+    panel.show_evidence(first, first_lines)
+    assert str(first_lines[0].ref) in panel._detail.toPlainText()
+
+    panel.show_evidence(second, second_lines)
+
+    detail = panel._detail.toPlainText()
+    assert str(second_lines[0].ref) in detail, "the detail still describes the old activity"
+    assert str(first_lines[0].ref) not in detail
+
 
 def test_every_outcome_sample_actually_draws_something(qt_app: QApplication) -> None:
     """`Success` and `Mixed` were blank chips in the key.

@@ -233,6 +233,19 @@ class EvidencePanel(QWidget):
 
         if lines:
             self.select_row(0)
+            # Then read that selection back into the detail, rather than waiting
+            # to be told about it.
+            #
+            # `selectRow` only emits `itemSelectionChanged` when the selection
+            # actually changes, and row 0 of the activity being left is row 0 of
+            # the activity being opened — so on a panel that already had a row
+            # selected, Qt saw no change, said nothing, and the detail went on
+            # describing the previous activity underneath the new one's rows.
+            #
+            # Worst where it was found: a one-request activity has no second row
+            # to click, so nothing could correct it and the pane simply showed
+            # the wrong request for as long as it was open.
+            self._selection_changed()
         else:
             self._detail.clear()
 
