@@ -24,6 +24,8 @@ from typing import TYPE_CHECKING, Final
 from logarc.core.event import NormalizedEvent
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from logarc.core.evidence import EvidenceRef
 
 __all__ = ["LogFormatError", "LogFormatParser"]
@@ -194,11 +196,67 @@ def _body_pattern(token: _Field, prev: str, nxt: str) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class _Slots:
+    """Where each promoted field sits in a match's tuple of groups.
+
+    A field this format does not write points at `absent` — one past the last
+    group, where a `None` sentinel is appended — so every read is an
+    unconditional index rather than a dict lookup that might miss.
+    """
+
+    absent: int
+    time: int
+    client_ip: int
+    remote_host: int
+    request_line: int
+    method: int
+    url_path: int
+    query_string: int
+    protocol: int
+    status: int
+    bytes_clf: int
+    bytes_sent: int
+    server_name: int
+    referer: int
+    user_agent: int
+
+
+@dataclass(frozen=True, slots=True)
 class _CompiledFormat:
     pattern: re.Pattern[str]
     quoted_fields: frozenset[str]
     """Group names that were delimited by quotes in the format, and therefore
     carry Apache's backslash escaping."""
+
+    slots: _Slots
+    quoted_slots: tuple[int, ...]
+    """The same set as `quoted_fields`, as indices into a match's groups."""
+
+    extra_slots: tuple[tuple[str, int], ...]
+    """Groups with no place in the canonical schema, as (field name, index)."""
+
+
+def _slots_for(pattern: re.Pattern[str]) -> _Slots:
+    """Resolve the promoted field names to group indices, once per format."""
+    index_of = {name: number - 1 for name, number in pattern.groupindex.items()}
+    absent = pattern.groups
+    return _Slots(
+        absent=absent,
+        time=index_of.get("time", absent),
+        client_ip=index_of.get("client_ip", absent),
+        remote_host=index_of.get("remote_host", absent),
+        request_line=index_of.get("request_line", absent),
+        method=index_of.get("method", absent),
+        url_path=index_of.get("url_path", absent),
+        query_string=index_of.get("query_string", absent),
+        protocol=index_of.get("protocol", absent),
+        status=index_of.get("status", absent),
+        bytes_clf=index_of.get("bytes_clf", absent),
+        bytes_sent=index_of.get("bytes_sent", absent),
+        server_name=index_of.get("server_name", absent),
+        referer=index_of.get("req_header_referer", absent),
+        user_agent=index_of.get("req_header_user_agent", absent),
+    )
 
 
 def _compile(log_format: str) -> _CompiledFormat:
@@ -233,13 +291,27 @@ def _compile(log_format: str) -> _CompiledFormat:
         pattern = re.compile("^" + "".join(parts) + r"\s*$")
     except re.error as exc:  # pragma: no cover - defensive; _field_name rejects bad names
         raise LogFormatError(f"could not compile log format {log_format!r}: {exc}") from exc
-    return _CompiledFormat(pattern=pattern, quoted_fields=frozenset(quoted))
+
+    index_of = {name: number - 1 for name, number in pattern.groupindex.items()}
+    return _CompiledFormat(
+        pattern=pattern,
+        quoted_fields=frozenset(quoted),
+        slots=_slots_for(pattern),
+        quoted_slots=tuple(sorted(index_of[name] for name in quoted)),
+        extra_slots=tuple(
+            (name, index) for name, index in index_of.items() if name not in _PROMOTED
+        ),
+    )
 
 
 # --------------------------------------------------------------------------
 # Field conversion
 # --------------------------------------------------------------------------
 
+
+#: Appended to every match's groups, so a field the format does not write has
+#: somewhere to point rather than needing a test of its own.
+_NOTHING: Final[tuple[None]] = (None,)
 
 _ESCAPE_RE: Final = re.compile(r'\\(x[0-9a-fA-F]{2}|[nrtvf"\\])')
 _SIMPLE_ESCAPES: Final[dict[str, str]] = {
@@ -380,31 +452,53 @@ class LogFormatParser:
         it. Lines that *are* in the format but have unusable individual fields
         are still returned, with those fields absent.
         """
-        match = self._compiled.pattern.match(line)
+        compiled = self._compiled
+        match = compiled.pattern.match(line)
         if match is None:
             return None
 
-        fields = match.groupdict()
-        for name in self._compiled.quoted_fields:
-            if value := fields.get(name):
-                fields[name] = _unescape(value)
+        slots = compiled.slots
+        # The groups the regex engine already has, plus one `None` past the end
+        # so a field this format does not write reads as absent without a
+        # branch. This replaced `groupdict()` and the sixteen dictionary lookups
+        # a line was then read back through — the same information, without
+        # building a dictionary per line to hold it.
+        values: Sequence[str | None] = match.groups() + _NOTHING
 
-        timestamp = _parse_timestamp(fields.get("time"))
+        # Apache escapes `"` and `\` inside quoted fields and writes control
+        # bytes as `\xHH`; a payload hidden behind that would slip past every
+        # signature, so it is undone before anything reads it. One scan of the
+        # whole line decides whether any of that is needed, and on ordinary
+        # traffic it is not — so the copy below is usually skipped entirely.
+        if compiled.quoted_slots and "\\" in line:
+            unescaped = list(values)
+            for index in compiled.quoted_slots:
+                text = unescaped[index]
+                if text is not None and "\\" in text:
+                    unescaped[index] = _unescape(text)
+            values = unescaped
+
+        timestamp = _parse_timestamp(values[slots.time])
         if timestamp is None:
             return None
 
-        client_ip = _clean(fields.get("client_ip")) or _clean(fields.get("remote_host"))
+        client_ip = _clean(values[slots.client_ip]) or _clean(values[slots.remote_host])
         if client_ip is None:
             return None
 
-        extra = {k: v for k, v in fields.items() if k not in _PROMOTED and v and v != "-"}
+        # Reads from `values`, so a quoted field here is already unescaped.
+        extra = {
+            name: text
+            for name, index in compiled.extra_slots
+            if (text := values[index]) and text != "-"
+        }
 
-        method = _clean(fields.get("method"))
-        path = _clean(fields.get("url_path"))
-        query = _clean(fields.get("query_string"))
-        protocol = _clean(fields.get("protocol"))
+        method = _clean(values[slots.method])
+        path = _clean(values[slots.url_path])
+        query = _clean(values[slots.query_string])
+        protocol = _clean(values[slots.protocol])
 
-        if (request_line := _clean(fields.get("request_line"))) is not None:
+        if (request_line := _clean(values[slots.request_line])) is not None:
             method, path, query, protocol = _split_request_line(request_line)
             if method is None:
                 extra["malformed_request_line"] = request_line
@@ -417,10 +511,10 @@ class LogFormatParser:
             path=path,
             query=query.lstrip("?") if query else None,
             protocol=protocol,
-            status=_as_int(fields.get("status")),
-            bytes_sent=_as_int(fields.get("bytes_clf") or fields.get("bytes_sent")),
-            referer=_clean(fields.get("req_header_referer")),
-            user_agent=_clean(fields.get("req_header_user_agent")),
-            host=_clean(fields.get("server_name")),
+            status=_as_int(values[slots.status]),
+            bytes_sent=_as_int(values[slots.bytes_clf] or values[slots.bytes_sent]),
+            referer=_clean(values[slots.referer]),
+            user_agent=_clean(values[slots.user_agent]),
+            host=_clean(values[slots.server_name]),
             extra=extra,
         )
