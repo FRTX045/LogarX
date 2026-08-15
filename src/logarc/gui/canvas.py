@@ -38,6 +38,7 @@ from PyQt6.QtWidgets import (
     QGraphicsView,
 )
 
+from logarc.core.graph import reciprocal_pairs
 from logarc.graphbuild.layout import Point, layout_graph
 from logarc.gui.style import (
     CAPTION_COLOUR,
@@ -84,6 +85,11 @@ _PEN_STYLES: Final = {
 _EDGE_COLOUR: Final = THEME.edge_ink
 _ARROW_LENGTH: Final = 12.0
 _ARROW_WIDTH: Final = 7.0
+
+#: How far a bowed edge leaves the straight line, in scene units. Only a pair
+#: that leads both ways is bowed, so the curve carries meaning of its own: it
+#: says *there are two arrows here*, and everywhere else the map stays straight.
+_BOW: Final = 34.0
 
 #: Both in screen pixels: text on this canvas is drawn at screen size, so the
 #: space around it has to be measured the same way or it closes up as the graph
@@ -289,6 +295,10 @@ class ActivityCanvas(QGraphicsView):
             return
 
         by_id = {node.node_id: node for node in graph.nodes}
+        # Resolved once for the whole graph rather than per edge: the question is
+        # about the graph, and asking it inside the loop would be quadratic in
+        # the edge count for an answer that cannot change while drawing.
+        paired = reciprocal_pairs(graph)
         for edge in graph.edges:
             if edge.source in positions and edge.target in positions:
                 self._draw_edge(
@@ -298,6 +308,7 @@ class ActivityCanvas(QGraphicsView):
                     by_id[edge.target],
                     label=edge_label(graph.kind, weight=edge.weight, gap_seconds=edge.gap_seconds),
                     weight=edge.weight,
+                    paired=frozenset((edge.source, edge.target)) in paired,
                 )
         for node in graph.nodes:
             self._draw_node(node, positions[node.node_id])
@@ -420,6 +431,7 @@ class ActivityCanvas(QGraphicsView):
         *,
         label: str,
         weight: int,
+        paired: bool = False,
     ) -> None:
         # Stop the line at each circle's edge rather than its centre, so the
         # arrowhead lands where the eye expects it.
@@ -433,8 +445,28 @@ class ActivityCanvas(QGraphicsView):
             math.cos(angle) * style_for(target).radius, math.sin(angle) * style_for(target).radius
         )
 
+        middle = (begin + finish) / 2
         path = QPainterPath(begin)
-        path.lineTo(finish)
+        arriving = angle
+        if paired:
+            # Perpendicular to the direction of travel, so A->B leaves one way
+            # and B->A the other, symmetrically, without either edge needing to
+            # know the other exists. A quadratic control point at twice the bow
+            # puts the apex of the curve at the bow itself, which is where the
+            # label goes — and is what separates the pair's two numbers.
+            away = QPointF(-math.sin(angle), math.cos(angle))
+            control = middle + away * (_BOW * 2)
+            path.quadTo(control, finish)
+            anchor = middle + away * _BOW
+            # A quadratic arrives along `finish - control`. Left pointing down
+            # the straight line instead, the head is turned about twenty degrees
+            # against the curve it caps — and the head is what says which way
+            # the transition ran.
+            approach = finish - control
+            arriving = math.atan2(approach.y(), approach.x())
+        else:
+            path.lineTo(finish)
+            anchor = middle
         line = QGraphicsPathItem(path)
         pen = QPen(QColor(_EDGE_COLOUR))
         # A transition seen many times is drawn heavier, which is the only thing
@@ -449,13 +481,13 @@ class ActivityCanvas(QGraphicsView):
                 finish,
                 finish
                 - QPointF(
-                    math.cos(angle - math.pi / 8) * _ARROW_LENGTH,
-                    math.sin(angle - math.pi / 8) * _ARROW_LENGTH,
+                    math.cos(arriving - math.pi / 8) * _ARROW_LENGTH,
+                    math.sin(arriving - math.pi / 8) * _ARROW_LENGTH,
                 ),
                 finish
                 - QPointF(
-                    math.cos(angle + math.pi / 8) * _ARROW_LENGTH,
-                    math.sin(angle + math.pi / 8) * _ARROW_LENGTH,
+                    math.cos(arriving + math.pi / 8) * _ARROW_LENGTH,
+                    math.sin(arriving + math.pi / 8) * _ARROW_LENGTH,
                 ),
             ]
         )
@@ -466,12 +498,11 @@ class ActivityCanvas(QGraphicsView):
         self._scene.addItem(arrow)
 
         if label:
-            middle = (begin + finish) / 2
             self._screen_text(
                 label,
                 colour=_EDGE_COLOUR,
                 point_size=7.0,
-                anchor=QPointF(middle.x(), middle.y() - _ARROW_WIDTH * 2),
+                anchor=QPointF(anchor.x(), anchor.y() - _ARROW_WIDTH * 2),
             )
 
     # -- interaction -------------------------------------------------------
