@@ -731,34 +731,154 @@ def test_the_canvas_says_what_to_do_before_a_case_is_open(qt_app: QApplication) 
     window.close()
 
 
-def test_a_caption_is_the_same_size_however_far_the_graph_is_scaled(
-    qt_app: QApplication,
-) -> None:
-    """`fit()` scales the scene and the captions went with it — about five
-    pixels tall on a wrapped trace, smaller still on an unwrapped one. The graph
-    was legible and its labels were not, which leaves a picture of circles.
+#: Activity names of the length real ones reach, with the request counts that
+#: set how wide a circle is drawn. `_long_trace` repeats one short label at one
+#: size, which no arrangement of spacing can overlap — a graph made of those
+#: cannot show whether captions collide.
+_REAL_LABELS = (
+    ("SQL Injection (always-true condition)", 3),
+    ("Request Without User-Agent", 4),
+    ("Non-idempotent Request", 1),
+    ("SQL Injection (UNION SELECT)", 15),
+    ("Static Asset", 4),
+    ("Authentication", 1),
+    ("Page View", 5),
+)
 
-    Every piece of text on the canvas is drawn at screen size instead, so only
-    the geometry scales.
+
+def _dense_trace(sessions: tuple[int, ...] = (2, 1, 3, 2, 6, 1, 37)) -> ActivityGraph:
+    """A trace shaped like the one in the reported screenshot.
+
+    Six short sessions and a long tail. The tail is what matters: it wraps onto
+    several rows, and a row's captions are what reach the next row's circles.
     """
-    from PyQt6.QtWidgets import QGraphicsItem, QGraphicsSimpleTextItem
+    nodes = []
+    edges = []
+    for session, length in enumerate(sessions, start=1):
+        previous = None
+        for step in range(length):
+            label, count = _REAL_LABELS[(session + step) % len(_REAL_LABELS)]
+            node_id = f"127.0.0.1#{session}/{step}"
+            nodes.append(
+                GraphNode(
+                    node_id=node_id,
+                    label=label,
+                    category=ActivityCategory.ENUMERATION,
+                    severity=Severity.MEDIUM,
+                    outcome=Outcome.BLOCKED if step % 2 else Outcome.MIXED,
+                    request_count=count,
+                    distinct_paths=count,
+                    bytes_total=1,
+                    start=START + timedelta(minutes=session * 10 + step),
+                    end=START + timedelta(minutes=session * 10 + step, seconds=30),
+                    owasp=None,
+                    top_targets=("/a",),
+                    rule_ids=("r",),
+                    evidence=(EvidenceRef("access.log", step + 1),),
+                    evidence_total=count,
+                    episode_ids=(node_id,),
+                )
+            )
+            if previous is not None:
+                edges.append(GraphEdge(previous, node_id, weight=1, gap_seconds=1.0))
+            previous = node_id
+    return ActivityGraph(
+        kind=GraphKind.TRACE, client_ip="127.0.0.1", nodes=tuple(nodes), edges=tuple(edges)
+    )
+
+
+def _texts(canvas: ActivityCanvas) -> list:
+    from PyQt6.QtWidgets import QGraphicsSimpleTextItem
+
+    return [
+        item for item in canvas.graph_scene.items() if isinstance(item, QGraphicsSimpleTextItem)
+    ]
+
+
+def test_the_whole_drawing_scales_together_like_a_picture(qt_app: QApplication) -> None:
+    """Text on this canvas used to be pinned to screen size, so that `fit()`
+    could not shrink it into a smudge. That fixed one fault and created
+    another: the geometry shrank while the words did not, so captions that
+    cleared each other at full zoom piled into each other further out — 117
+    overlapping pairs at 0.35 on a 52-activity trace, which is where a reader
+    goes to see the shape of a long session.
+
+    Scaling everything together is what removes the whole class: two things
+    that do not touch at one zoom cannot touch at another, so overlap stops
+    being a rendering problem and becomes a fixed property of the layout, fixed
+    once in `layout.py`.
+
+    The original fault is guarded by the test below instead, which is the
+    honest place for it: the risk was never that captions scaled, it was that
+    they ended up too small to read at the scale a graph opens at.
+    """
+    from PyQt6.QtWidgets import QGraphicsItem
 
     canvas = ActivityCanvas()
     canvas.show_graph(_long_trace(12))
 
-    texts = [
-        item for item in canvas.graph_scene.items() if isinstance(item, QGraphicsSimpleTextItem)
-    ]
-    assert texts, "a trace this long has captions and edge labels"
-    for text in texts:
-        ignoring = item = text
+    drawn = _texts(canvas)
+    assert drawn, "a trace this long has captions and edge labels"
+    for text in drawn:
+        item = text
         while item is not None:
-            ignoring = item
-            if item.flags() & QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations:
-                break
+            assert not (item.flags() & QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations), (
+                f"{text.text()!r} is pinned to screen size and will collide when zoomed out"
+            )
             item = item.parentItem()
-        else:  # pragma: no cover - the loop breaks on the flag
-            raise AssertionError(f"{ignoring.text()!r} scales with the graph")
+
+
+def test_a_caption_is_still_readable_at_the_scale_a_graph_opens_at(
+    qt_app: QApplication,
+) -> None:
+    """The fault that pinned captions to screen size in the first place: a
+    wrapped trace fitted to the window drew them about five pixels tall, and a
+    legible graph with illegible labels is a picture of circles.
+
+    Now they scale, so the guarantee has to be made where it matters — at the
+    scale a graph actually opens at. `fit()` will not go below `MIN_FIT_SCALE`,
+    and the caption is sized so that at exactly that scale it is drawn the size
+    it always was.
+    """
+    canvas = ActivityCanvas()
+    canvas.resize(900, 700)
+    canvas.show_graph(_long_trace(40))
+
+    scale = canvas.transform().m11()
+    assert scale <= MIN_FIT_SCALE + 0.01, "premise: a trace this long fits only at the floor"
+    on_screen = [text.font().pointSizeF() * scale for text in _texts(canvas)]
+    assert on_screen, "premise: something is captioned"
+    assert min(on_screen) >= 7.0, f"smallest caption is {min(on_screen):.1f}pt on screen"
+
+
+def test_nothing_written_on_the_canvas_lands_on_anything_else(
+    qt_app: QApplication,
+) -> None:
+    """The reported fault, stated as the property that prevents it.
+
+    Measured in scene coordinates, which is the whole point of the change: with
+    everything scaling together this holds at every zoom at once, so the test
+    does not have to enumerate zoom levels to be complete.
+    """
+    from PyQt6.QtWidgets import QGraphicsRectItem
+
+    canvas = ActivityCanvas()
+    canvas.show_graph(_dense_trace())
+
+    captions = [
+        child.sceneBoundingRect()
+        for node in canvas._nodes.values()
+        for child in node.childItems()
+        if isinstance(child, QGraphicsRectItem)
+    ]
+    circles = [node.sceneBoundingRect() for node in canvas._nodes.values()]
+    assert len(captions) >= 50, "premise: every activity is captioned"
+
+    for index, one in enumerate(captions):
+        for other in captions[index + 1 :]:
+            assert not one.intersects(other), "two captions overlap"
+        for circle in circles:
+            assert not one.intersects(circle), "a caption is drawn under a circle"
 
 
 def test_a_caption_is_not_crossed_by_the_arrows_behind_it(qt_app: QApplication) -> None:

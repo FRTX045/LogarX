@@ -23,8 +23,18 @@ if TYPE_CHECKING:
 __all__ = ["Point", "layout_graph"]
 
 #: Spacing in abstract units. Renderers scale from here.
-_COLUMN: Final = 220.0
-_ROW: Final = 130.0
+#:
+#: Wide enough for a caption, which is what makes them these numbers rather
+#: than rounder ones. Canvas text scales with the drawing, so whether two
+#: captions touch is a property of this spacing and not of the zoom — set it
+#: once here and the question cannot come back at some other magnification.
+#:
+#: Measured on a 52-activity trace by counting overlaps at each step, rather
+#: than picked. At 220x130 nothing hit another caption but fourteen captions
+#: were drawn under a circle; 260x150 left eight; 300x165 was the first with
+#: none of either. Larger steps were clear too and buy nothing but panning.
+_COLUMN: Final = 300.0
+_ROW: Final = 165.0
 
 #: Gap between one session's block and the next, as a multiple of the row height.
 #: Larger than a wrap on purpose: once a trace wraps, a session boundary drawn at
@@ -36,10 +46,9 @@ _SESSION_GAP: Final = 2
 #: Below this a trace already fits, and wrapping would cost the straight timeline
 #: while buying no readability.
 #:
-#: Four rather than five because width is what binds. Five columns span 1,040
-#: units, which a ~950px canvas can only fit at 0.91; four span 820 and fit at
-#: 1.16. The difference is a 7.5pt caption drawn at 6.8pt against 8.7pt — the
-#: line between squinting and reading.
+#: Four rather than five because width is what binds: at the spacing above,
+#: five columns span 1,500 units against four at 1,200, and the narrower block
+#: is the one a canvas can show without falling to the fit floor.
 _MIN_WRAP: Final = 4
 
 

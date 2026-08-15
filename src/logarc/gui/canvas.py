@@ -20,6 +20,7 @@ from PyQt6.QtGui import (
     QBrush,
     QColor,
     QFont,
+    QFontMetricsF,
     QPainter,
     QPainterPath,
     QPen,
@@ -39,7 +40,7 @@ from PyQt6.QtWidgets import (
 )
 
 from logarc.core.graph import reciprocal_pairs
-from logarc.graphbuild.layout import Point, layout_graph
+from logarc.graphbuild.layout import _COLUMN, _ROW, Point, layout_graph
 from logarc.gui.style import (
     CAPTION_COLOUR,
     PAPER,
@@ -73,6 +74,66 @@ WAITING_MESSAGE: Final = "Select a client to reconstruct what it did."
 #: presenting a picture nobody can read.
 MIN_FIT_SCALE: Final = 0.55
 
+#: The scale text is sized against. Every caption is drawn `1 / _LEGIBLE_AT`
+#: times larger in scene units, so that when the view sits at this scale the
+#: words come out at exactly the point size they are written as — and a graph
+#: that opens at the fit floor is captioned the size it always was.
+#:
+#: Tied to `MIN_FIT_SCALE` rather than chosen separately: the floor exists
+#: because below it a graph stops carrying what it exists to carry, and the
+#: captions are most of that.
+_LEGIBLE_AT: Final = MIN_FIT_SCALE
+
+#: How much clear ground a caption keeps around it, in scene units. Small: the
+#: point is that captions do not touch, not that they stand apart.
+_CAPTION_MARGIN: Final = 12.0
+
+#: The size an activity's caption is written at, before `_LEGIBLE_AT` turns it
+#: into scene units. Named because the layout has to measure the same text at
+#: the same size the canvas will draw it, and two literals would drift.
+_CAPTION_POINTS: Final = 7.5
+
+
+def _spread(positions: dict[str, Point], graph: ActivityGraph) -> dict[str, Point]:
+    """Stretch an abstract layout until this font's captions fit inside it.
+
+    `layout.py` positions nodes in abstract units and says renderers scale from
+    there. It cannot do better, because how wide a caption comes out is a fact
+    about the font the platform hands us — the same 26 characters measure about
+    190 units in Segoe UI and 475 under Qt's offscreen platform, which has no
+    fonts at all. A spacing constant chosen against one of those is wrong for
+    the other, and the failure it produces is captions written over each other.
+
+    So the constant states the intent and this measures the reality: whatever
+    the font, the columns end up at least a caption wide and the rows at least
+    a caption tall. On a display where the numbers in `layout.py` already
+    suffice this changes nothing, because the factor cannot go below one.
+    """
+    if not positions:
+        return positions
+
+    font = QFont()
+    font.setPointSizeF(_CAPTION_POINTS / _LEGIBLE_AT)
+    metrics = QFontMetricsF(font)
+    widest = tallest = 0.0
+    for node in graph.nodes:
+        # Line by line. `summarise` has already broken the caption where it
+        # wants it, and the single-argument `boundingRect` measures a newline
+        # as a character rather than as a break — which reports one long line
+        # and a stretch factor of 1.0, leaving the overlap it was meant to fix.
+        lines = summarise(node).split("\n")
+        widest = max(widest, max(metrics.horizontalAdvance(line) for line in lines))
+        tallest = max(tallest, len(lines) * metrics.lineSpacing() + style_for(node).radius)
+
+    across = max(1.0, (widest + _CAPTION_MARGIN) / _COLUMN)
+    down = max(1.0, (tallest + _CAPTION_MARGIN) / _ROW)
+    if across == 1.0 and down == 1.0:
+        return positions
+    return {
+        node_id: Point(x=point.x * across, y=point.y * down) for node_id, point in positions.items()
+    }
+
+
 _PEN_STYLES: Final = {
     "solid": Qt.PenStyle.SolidLine,
     "dashed": Qt.PenStyle.DashLine,
@@ -101,9 +162,9 @@ _BOW: Final = 34.0
 _LABEL_COLOUR: Final = THEME.muted
 _LABEL_SIZE: Final = 7.5
 
-#: Both in screen pixels: text on this canvas is drawn at screen size, so the
-#: space around it has to be measured the same way or it closes up as the graph
-#: is scaled down.
+#: Both written as pixels at `_LEGIBLE_AT`, and divided by it alongside the
+#: point size — the space around a caption has to scale with the caption, or it
+#: closes up at one zoom and gapes at another.
 _CAPTION_GAP: Final = 6.0
 _TEXT_PADDING: Final = 2.0
 _ZOOM_STEP: Final = 1.15
@@ -299,7 +360,7 @@ class ActivityCanvas(QGraphicsView):
         self._halo = None
         self._selected = None
 
-        positions = layout_graph(graph, wrap=self._wrap)
+        positions = _spread(layout_graph(graph, wrap=self._wrap), graph)
         if not positions:
             self._show_message("This client has no reconstructed activity.")
             return
@@ -363,20 +424,20 @@ class ActivityCanvas(QGraphicsView):
         # something does not fit in a node sized by request count, and the
         # version that did fit was a smudge at the scale the graph opens at.
         #
-        # Anchored on the rim of the circle; the gap and the centring are applied
-        # in screen pixels by `_screen_text`, so they do not shrink with the zoom
-        # the way a scene-unit offset did — which is how a caption ended up drawn
-        # through the node it belongs to.
-        self._screen_text(
+        # Anchored on the rim of the circle, and the room it needs is bought in
+        # `layout.py` rather than by exempting the words from the zoom: the
+        # spacing there is set so a caption of this size clears its neighbours
+        # and the circles either side of it.
+        self._canvas_text(
             summarise(node),
             colour=CAPTION_COLOUR,
-            point_size=7.5,
+            point_size=_CAPTION_POINTS,
             anchor=QPointF(0.0, style.radius),
             gap=_CAPTION_GAP,
             parent=item,
         )
 
-    def _screen_text(
+    def _canvas_text(
         self,
         text: str,
         *,
@@ -386,22 +447,33 @@ class ActivityCanvas(QGraphicsView):
         gap: float = 0.0,
         parent: QGraphicsItem | None = None,
     ) -> QGraphicsRectItem:
-        """Text on the canvas, at the size the screen draws it.
+        """Text on the canvas, scaling with the drawing it belongs to.
 
-        Everything written on this canvas used to scale with the scene, so
-        `fit()` — which exists to frame the whole graph — was also what made the
-        graph's labels unreadable, about five pixels tall on a wrapped trace.
-        The geometry is what carries the comparison and should scale; the words
-        are words at any zoom.
+        The whole picture grows and shrinks together, the way zooming a
+        photograph does. That is what makes overlap a property of the layout
+        rather than of the zoom: two captions that clear each other at one scale
+        clear each other at every scale, so the spacing in `layout.py` can be
+        set once and the question never comes back.
 
-        Flagged on the patch rather than the text, with the text as its child:
-        children of an item that ignores transformations share its unscaled
-        space, so one flag and one transform carry both the backdrop and the
-        centring. That patch is the second half of the fix — a caption used to
-        be crossed by whatever arrow passed behind it.
+        This is a reversal, and the reason is worth keeping. Text here used to
+        be pinned to screen size, because `fit()` — which exists to frame a
+        whole graph — drew captions about five pixels tall on a wrapped trace,
+        and a legible graph with illegible labels is a picture of circles.
+        Pinning fixed that and produced the opposite fault: the geometry shrank
+        while the words did not, so captions that were clear at full zoom piled
+        into one another further out — 117 overlapping pairs at 0.35 on a
+        52-activity trace, which is exactly the zoom someone uses to see the
+        shape of a long session.
+
+        The original fault is answered by `_LEGIBLE_AT` instead, which is where
+        it belongs: the risk was never that captions scaled, it was that they
+        became too small to read at the scale a graph opens at.
+
+        The backdrop stays. A caption used to be crossed by whatever arrow
+        passed behind it, and that is still true without a patch of ground
+        beneath the words.
         """
         backdrop = QGraphicsRectItem(parent)
-        backdrop.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
         backdrop.setBrush(QBrush(QColor(PAPER)))
         backdrop.setPen(QPen(Qt.PenStyle.NoPen))
         # Above the edges, below the nodes: the words survive an arrow passing
@@ -414,21 +486,22 @@ class ActivityCanvas(QGraphicsView):
         label = QGraphicsSimpleTextItem(text, backdrop)
         label.setBrush(QBrush(QColor(colour)))
         font = QFont()
-        font.setPointSizeF(point_size)
+        font.setPointSizeF(point_size / _LEGIBLE_AT)
         label.setFont(font)
         bounds = label.boundingRect()
-        label.setPos(_TEXT_PADDING, _TEXT_PADDING)
+        padding = _TEXT_PADDING / _LEGIBLE_AT
+        label.setPos(padding, padding)
         backdrop.setRect(
             0.0,
             0.0,
-            bounds.width() + _TEXT_PADDING * 2,
-            bounds.height() + _TEXT_PADDING * 2,
+            bounds.width() + padding * 2,
+            bounds.height() + padding * 2,
         )
 
-        # In screen pixels, because the item ignores the view's transform: the
-        # centring and the gap hold at every zoom.
+        # In scene units, like everything else here, so the centring and the gap
+        # hold at every zoom by scaling rather than by being exempt from it.
         backdrop.setTransform(
-            QTransform().translate(-(bounds.width() + _TEXT_PADDING * 2) / 2, gap)
+            QTransform().translate(-(bounds.width() + padding * 2) / 2, gap / _LEGIBLE_AT)
         )
         return backdrop
 
@@ -508,7 +581,7 @@ class ActivityCanvas(QGraphicsView):
         self._scene.addItem(arrow)
 
         if label:
-            self._screen_text(
+            self._canvas_text(
                 label,
                 colour=_LABEL_COLOUR,
                 point_size=_LABEL_SIZE,
