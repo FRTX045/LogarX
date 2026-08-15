@@ -52,6 +52,103 @@ def write_pack(tmp_path: Path, text: str, name: str = "pack.yaml") -> Path:
     return path
 
 
+def test_a_condition_with_no_predicate_says_what_one_needs(tmp_path: Path) -> None:
+    """A condition naming a field and testing nothing would match every request
+    that has that field at all — a rule that fires on everything, loaded without
+    complaint. The refusal lists the six predicates rather than only refusing."""
+    pack = write_pack(
+        tmp_path,
+        """
+version: 1
+rules:
+  - id: empty_condition
+    name: Tests Nothing
+    category: injection
+    severity: high
+    match:
+      any:
+        - field: target_decoded
+""",
+    )
+
+    with pytest.raises(RulePackError, match="exactly one of: regex, contains, equals"):
+        load_rules([pack])
+
+
+def test_a_condition_with_two_predicates_is_rejected(tmp_path: Path) -> None:
+    """The other half of the same rule. Which of the two would win is an
+    implementation detail nobody should have to know, so neither does."""
+    pack = write_pack(
+        tmp_path,
+        """
+version: 1
+rules:
+  - id: two_predicates
+    name: Tests Twice
+    category: injection
+    severity: high
+    match:
+      any:
+        - field: target_decoded
+          regex: 'union'
+          contains: 'select'
+""",
+    )
+
+    with pytest.raises(RulePackError, match="exactly one of"):
+        load_rules([pack])
+
+
+def test_a_match_block_must_choose_any_or_all(tmp_path: Path) -> None:
+    """`any` is or, `all` is and, and a block with both or neither has no
+    meaning. Silently picking one would change what every condition under it
+    does without the author having said so."""
+    pack = write_pack(
+        tmp_path,
+        """
+version: 1
+rules:
+  - id: both_combinators
+    name: Both At Once
+    category: injection
+    severity: high
+    match:
+      any:
+        - field: target_decoded
+          contains: 'union'
+      all:
+        - field: method
+          equals: 'POST'
+""",
+    )
+
+    with pytest.raises(RulePackError, match="exactly one of: any, all"):
+        load_rules([pack])
+
+
+def test_an_unknown_window_metric_lists_the_ones_that_exist(tmp_path: Path) -> None:
+    """A misspelt metric is the likeliest mistake in a window rule, and the
+    reader cannot guess the vocabulary — so the refusal carries it."""
+    pack = write_pack(
+        tmp_path,
+        WINDOW_PACK.replace("metric: distinct_paths", "metric: distinct_pathz"),
+    )
+
+    with pytest.raises(RulePackError, match="unknown window metric") as raised:
+        load_rules([pack])
+    assert "distinct_paths" in str(raised.value), "the refusal has to name the real one"
+
+
+def test_an_unknown_operator_lists_the_ones_that_exist(tmp_path: Path) -> None:
+    """`=>` for `>=` is a typo that reads as correct, and an operator that is
+    merely rejected leaves the author guessing which spelling is wanted."""
+    pack = write_pack(tmp_path, WINDOW_PACK.replace('op: ">="', 'op: "=>"'))
+
+    with pytest.raises(RulePackError, match="unknown operator") as raised:
+        load_rules([pack])
+    assert ">=" in str(raised.value)
+
+
 def test_a_signature_rule_loads_with_its_attributes(tmp_path: Path) -> None:
     (rule,) = load_rules([write_pack(tmp_path, SIGNATURE_PACK)])
 

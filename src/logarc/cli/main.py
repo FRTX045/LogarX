@@ -41,7 +41,7 @@ from logarc.ingest.reader import LogSourceError
 from logarc.parsers.registry import UnknownFormatError, registered_formats
 from logarc.report.html import render_report
 from logarc.sessionize.segmenter import SessionPolicy
-from logarc.storage.event_store import SORT_KEYS
+from logarc.storage.event_store import SORT_KEYS, StoreStateError
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -72,11 +72,18 @@ errors = Console(stderr=True)
 #: Errors that represent a bad request from the user rather than a defect. These
 #: are reported as a single line; anything else keeps its traceback, because an
 #: unexpected failure in a forensic tool should be loud.
+#:
+#: `StoreStateError` is here because an unfinished case is a situation, not a
+#: bug: cancelling an ingest leaves one deliberately, so that what was read is
+#: not thrown away, and the window tells the investigator it "cannot be
+#: analysed". Without it every command that reads a case — `list-ips`,
+#: `analyze`, `evidence`, `export`, `enrich` — answered that with a traceback.
 USER_ERRORS = (
     CaseError,
     FormatDetectionError,
     LogSourceError,
     RulePackError,
+    StoreStateError,
     TruthError,
     UnknownFormatError,
     ValueError,
