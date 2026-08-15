@@ -85,6 +85,27 @@ Reporting that plainly matters more than the improvement does. The remedy CHANGE
 now been implemented and measured, and it closes about two thirds of the gap. The rest is in the
 parse itself, and the profile above says where.
 
+### Follow-up: the marshalling was removed, and it was worth less than stated
+
+The fourth reason for rejecting a Go parser was that 40% of parse time was field marshalling
+removable within Python, and that doing it first was what would make "Python is too slow" an honest
+claim. It has since been done — positional groups resolved at compile time, and a timestamp shifted
+into UTC rather than converted into it.
+
+| | Parse only | End to end, 1M lines |
+|---|---:|---:|
+| Before | 51,268 lines/s | 28,772 lines/s |
+| After | **58,508** (+14.1%) | **33,435** (+16.2%) |
+
+**The 40% was an overstatement**, and the reason is worth keeping: it was `cProfile` self-time, and
+the profiler inflates exactly the per-call overhead that the change removes. The uninstrumented
+rate moved by a seventh, not a third.
+
+That makes the argument in this ADR *stronger*, not weaker. The work it said had to happen first
+has happened, and what remains is the regex at 30% and constructing the event at 10% — CPython
+doing what it was asked to do. If 100,000 lines/s is ever required rather than aspired to, this ADR
+should be revisited, because the cheap Python-side room named here is now spent.
+
 ### Costs accepted
 
 - **Memory rises with the worker count.** Each worker holds a batch of its own, so four cost
