@@ -229,13 +229,11 @@ class _Slots:
 @dataclass(frozen=True, slots=True)
 class _CompiledFormat:
     pattern: re.Pattern[str]
-    quoted_fields: frozenset[str]
-    """Group names that were delimited by quotes in the format, and therefore
-    carry Apache's backslash escaping."""
-
     slots: _Slots
+
     quoted_slots: tuple[int, ...]
-    """The same set as `quoted_fields`, as indices into a match's groups."""
+    """Groups the format wrapped in quotes, as indices into a match's groups.
+    Those carry Apache's backslash escaping and are the only ones unescaped."""
 
     extra_slots: tuple[tuple[str, int], ...]
     """Groups with no place in the canonical schema, as (field name, index)."""
@@ -300,7 +298,6 @@ def _compile(log_format: str) -> _CompiledFormat:
     index_of = {name: number - 1 for name, number in pattern.groupindex.items()}
     return _CompiledFormat(
         pattern=pattern,
-        quoted_fields=frozenset(quoted),
         slots=_slots_for(pattern),
         quoted_slots=tuple(sorted(index_of[name] for name in quoted)),
         extra_slots=tuple(

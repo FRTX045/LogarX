@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Final
 from logarc.core.activity import Outcome, Severity
 from logarc.core.graph import GraphKind, reciprocal_pairs
 from logarc.graphbuild.layout import layout_graph
-from logarc.gui.style import severity_colour, severity_legend
+from logarc.gui.style import edge_label, severity_colour, severity_legend
 
 if TYPE_CHECKING:
     from logarc.analysis import AnalysisResult
@@ -118,21 +118,19 @@ def _legend() -> str:
 
 
 def _edge_label(kind: GraphKind, edge: GraphEdge) -> str:
-    """What to write beside an arrow.
+    """What to write beside an arrow — the same words the window writes.
 
-    On a behaviour map the weight is the finding — a transition seen twice is a
-    habit, one seen once is an incident — and it used to be carried here by line
-    thickness alone, which a reader cannot turn back into a number. The report
-    is read by someone who never opened the application, so it is the copy that
-    most needs an arrow to say what it means.
+    A thin adapter over `gui.style.edge_label`, which takes the fields rather
+    than the edge. This file used to hold a second copy of the rule with a
+    duration formatter of its own, and the two had drifted: nine of eleven
+    sample gaps disagreed, so one transition read `1h 0m` in the window and
+    `60m` in the report, and half a second was reported as no gap at all.
 
-    A weight of one is left off: every step of a trace has one by construction,
-    so it would print a column of identical numbers.
+    `gui.style` says on its own face that its judgements are reused by the HTML
+    report. Reusing them is what makes screen and paper unable to disagree, the
+    same reason the severity colours are taken from there rather than restated.
     """
-    gap = _duration(edge.gap_seconds) if edge.gap_seconds is not None else ""
-    if kind is GraphKind.TRACE or edge.weight <= 1:
-        return gap
-    return f"x{edge.weight:,}" + (f" · {gap}" if gap else "")
+    return edge_label(kind, weight=edge.weight, gap_seconds=edge.gap_seconds)
 
 
 def _svg(graph: ActivityGraph) -> str:
@@ -280,14 +278,6 @@ def _provenance(result: AnalysisResult, manifest: CaseManifest | None) -> str:
         f'<tr><td>{html.escape(label)}</td><td class="mono small">{html.escape(value)}</td></tr>'
         for label, value in rows
     )
-
-
-def _duration(seconds: float) -> str:
-    if seconds < 90:
-        return f"{seconds:.0f}s"
-    if seconds < 5400:
-        return f"{seconds / 60:.0f}m"
-    return f"{seconds / 3600:.1f}h"
 
 
 def _truncate(text: str, limit: int) -> str:
