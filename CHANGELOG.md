@@ -7,6 +7,21 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Interface
 
+- **A case you have opened before is one click away.** Reopening yesterday's work
+  meant navigating a folder dialog to a path you had to remember. The last case
+  now reopens with the window — **View → Reopen the last case on start** turns
+  that off — and **Case → Recently opened…** (Ctrl+Shift+O) offers the rest as a
+  table: when each was opened, how many events it holds, which log it was built
+  from, and which folder it is. A submenu was drawn first and rejected against
+  it: two cases named `case-001` and `case-002` are not told apart by a name.
+  A case whose folder has moved stays listed, says so, and cannot be chosen —
+  offering it would send the reader into a failure the list already knew about.
+  A case is recorded only once it has opened, so the list never fills with
+  entries that lead nowhere.
+  **This is the first thing logarc stores that records what was investigated**
+  rather than how the window looked doing it: the folders, and when they were
+  opened, under `HKCU\Software\logarc`. The chooser carries **Forget these**,
+  and the README says what is kept.
 - **A long trace wraps instead of running off the canvas.** Laid out on one row
   it was as wide as it was long and barely taller than a node, so fitting it
   shrank the scene to 0.64 on seven episodes and 0.15 on thirty — correct, and

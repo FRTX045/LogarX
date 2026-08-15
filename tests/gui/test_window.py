@@ -1455,3 +1455,82 @@ def test_clicking_an_activity_leaves_only_the_ring_behind(
 
     assert canvas.graph_scene.selectedItems() == [], "Qt is marking the node as well"
     canvas.close()
+
+
+# -- picking up a case that has been opened before ---------------------------
+
+
+def test_opening_a_case_puts_it_at_the_top_of_the_list(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    """The whole point: yesterday's case is one click away rather than a folder
+    to go looking for."""
+    app._settings().clear()
+    window = MainWindow()
+
+    window._load_case(campaign)
+    _settled(qt_app)
+
+    remembered = window._recent_cases()
+    assert remembered
+    assert remembered[0].path == str(campaign)
+    assert remembered[0].events > 0, "the snapshot is what the chooser draws from"
+    window.close()
+
+
+def test_a_case_that_will_not_open_is_not_remembered(
+    qt_app: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A list of cases that cannot be opened is worse than a short one: every
+    entry in it is an invitation into the same failure.
+
+    The failure path ends in a modal `QMessageBox`, which in a test with nobody
+    to click it waits for ever — so the report is captured rather than shown.
+    """
+    app._settings().clear()
+    reported: list[str] = []
+    monkeypatch.setattr(
+        MainWindow, "_report_error", lambda _self, message, _detail="": reported.append(message)
+    )
+    window = MainWindow()
+    not_a_case = tmp_path / "just-a-folder"
+    not_a_case.mkdir()
+
+    window._load_case(not_a_case)
+    _settled(qt_app)
+
+    assert reported, "opening a folder that is not a case has to say so"
+    assert window._recent_cases() == ()
+    window.close()
+
+
+def test_the_reopen_choice_outlives_the_window(qt_app: QApplication) -> None:
+    app._settings().clear()
+    first = MainWindow()
+    assert first._reopen_action.isChecked(), "reopening the last case is the default"
+
+    first._reopen_action.trigger()
+    first.close()
+    second = MainWindow()
+
+    assert not second._reopen_action.isChecked()
+    second.close()
+
+
+def test_forgetting_the_list_leaves_nothing_on_the_machine(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    """This tool records which investigations were opened here. One action has
+    to take that back, and it has to reach the store rather than only the
+    dialog that offered it."""
+    app._settings().clear()
+    window = MainWindow()
+    window._load_case(campaign)
+    _settled(qt_app)
+    assert window._recent_cases()
+
+    window._forget_recent()
+
+    assert window._recent_cases() == ()
+    assert MainWindow()._recent_cases() == (), "and it is gone for the next window too"
+    window.close()

@@ -37,15 +37,19 @@ from logarc.case import Case
 from logarc.core.graph import GraphKind
 from logarc.detect.crs import CrsEvidence
 from logarc.episode.builder import DEFAULT_EVIDENCE_SAMPLE, EpisodePolicy
+from logarc.gui import recent
 from logarc.gui._qt import required
 from logarc.gui.canvas import ActivityCanvas
+from logarc.gui.case_chooser import CaseChooser
 from logarc.gui.evidence_panel import EvidencePanel
 from logarc.gui.panels import ClientTable, LegendBar
+from logarc.gui.recent import RecentCase
 from logarc.gui.style import THEME, format_requests, plural
 from logarc.gui.theme import GAP, MONO_FAMILIES, PAD, TIGHT, apply_theme, heading_font
 from logarc.gui.workers import run_job
 from logarc.ingest.pipeline import IngestCancelled
 from logarc.report.html import render_report
+from logarc.storage.case import CaseManifest
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -87,6 +91,14 @@ _EVIDENCE_LIMIT = 2_000
 _SETTINGS = ("logarc", "logarc")
 _WRAP_KEY = "view/wrap_traces"
 _DECODE_KEY = "view/decode_targets"
+
+#: The cases opened here, and whether to reopen the last one on start.
+#:
+#: Worth saying plainly: this is the first setting that records *what was
+#: investigated* rather than how the window looked doing it. `Forget these` in
+#: the chooser removes it, and the README says so.
+_RECENT_KEY = "cases/recent"
+_REOPEN_KEY = "cases/reopen_last"
 
 #: The two views, in the order the tab bar shows them. One list rather than a
 #: pair of indices spelled out at each end, so a tab and the view it selects
@@ -332,6 +344,9 @@ class MainWindow(QMainWindow):
         menu_bar = required(self.menuBar())
         case_menu = required(menu_bar.addMenu("&Case"))
         self._add(case_menu, "&Open case…", self._open_case, QKeySequence.StandardKey.Open)
+        recently = self._add(case_menu, "&Recently opened…", self._show_recent)
+        recently.setShortcut(QKeySequence("Ctrl+Shift+O"))
+        recently.setStatusTip("Pick up a case that has been opened on this machine before.")
         self._add(case_menu, "Ingest logs into a &new case…", self._ingest_new_case)
         case_menu.addSeparator()
         self._add(case_menu, "E&xit", self.close, QKeySequence.StandardKey.Quit)
@@ -372,6 +387,17 @@ class MainWindow(QMainWindow):
         )
 
         self._apply_evidence_view()
+        view_menu.addSeparator()
+
+        self._reopen_action = self._add(
+            view_menu, "Reopen the &last case on start", self._apply_reopen
+        )
+        self._reopen_action.setCheckable(True)
+        self._reopen_action.setChecked(_remembered(_REOPEN_KEY, default=True))
+        self._reopen_action.setStatusTip(
+            "Open the case you were last working on as soon as the window appears, "
+            "or start with the list of recent cases instead."
+        )
 
         export_menu = required(menu_bar.addMenu("&Export"))
         self._add(export_menu, "&HTML report…", lambda: self._export("html"))
@@ -455,15 +481,85 @@ class MainWindow(QMainWindow):
             "folder yourself if you want to start over.",
         )
 
+    # -- the cases opened before -------------------------------------------
+
+    def _recent_cases(self) -> tuple[RecentCase, ...]:
+        return recent.load(str(_settings().value(_RECENT_KEY, "")))
+
+    def _remember_case(self, entry: RecentCase) -> None:
+        """Record a case, having opened it.
+
+        Only ever called from the success path. A list of cases that cannot be
+        opened is worse than a short one — every entry in it invites the reader
+        into the same failure.
+        """
+        _settings().setValue(_RECENT_KEY, recent.dump(recent.remember(self._recent_cases(), entry)))
+
+    def _forget_recent(self) -> None:
+        _settings().remove(_RECENT_KEY)
+
+    def _show_recent(self) -> None:
+        """The chooser, on demand. With the last case reopening on start it
+        would otherwise only appear on a first run or after a folder moved."""
+        cases = self._recent_cases()
+        if not cases:
+            self._open_case()
+            return
+
+        chooser = CaseChooser(cases, exists=lambda path: Path(path).exists())
+        chooser.exec()
+        if chooser.forgotten:
+            self._forget_recent()
+            self._idle("Forgot the list of cases opened here.")
+        elif chooser.wants_other_case:
+            self._open_case()
+        elif chooser.wants_new_case:
+            self._ingest_new_case()
+        elif chooser.chosen_path:
+            self._load_case(Path(chooser.chosen_path))
+
+    def offer_start(self) -> None:
+        """What to do with the list when the window opens.
+
+        Called after `show()` rather than from `__init__`, so the window is on
+        screen before anything modal appears in front of it.
+        """
+        action, entry = recent.startup_action(
+            self._recent_cases(),
+            reopen_last=self._reopen_action.isChecked(),
+            exists=lambda path: Path(path).exists(),
+        )
+        if action is recent.Startup.OPEN_LAST and entry is not None:
+            self._load_case(Path(entry.path))
+        elif action is recent.Startup.CHOOSE:
+            self._show_recent()
+
+    def _apply_reopen(self) -> None:
+        _settings().setValue(_REOPEN_KEY, self._reopen_action.isChecked())
+
     def _load_case(self, path: Path) -> None:
         def work(report: Callable[[str], None]) -> Any:
             report(f"Opening {path}…")
-            return read_case(path)
+            summaries, crs = read_case(path)
+            # Snapshotted here, on the worker, and stored with the entry. The
+            # chooser has to draw before it has touched a disk: a case on a share
+            # that is no longer mounted would otherwise stall the list once per
+            # row before the window appeared.
+            manifest = CaseManifest.load(path)
+            snapshot = RecentCase(
+                path=str(path),
+                case_id=manifest.case_id,
+                opened_at=recent.now(),
+                events=manifest.total_events_parsed,
+                sources=tuple(source.file_id for source in manifest.sources),
+            )
+            return summaries, crs, snapshot
 
         self._busy(f"Opening {path}…")
 
         def done(loaded: Any) -> None:
-            summaries, crs = loaded
+            summaries, crs, snapshot = loaded
+            self._remember_case(snapshot)
             self._case_path = path
             self._crs = crs
             self._result = None
@@ -788,6 +884,7 @@ def main() -> int:
         traceback.print_exc()
         return 1
     window.show()
+    window.offer_start()
     return app.exec()
 
 
