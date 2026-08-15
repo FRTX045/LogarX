@@ -100,6 +100,119 @@ def test_reading_an_empty_file_is_an_error(tmp_path: Path) -> None:
         read_truth(path)
 
 
+HEADER = (
+    '{"kind": "logarc-truth", "version": 1, "scenario": "s", "seed": 1,'
+    ' "source_file_id": "a.log", "generated_at": "2024-01-01T00:00:00+00:00"}\n'
+)
+
+
+def written(path: Path, *body: str) -> Path:
+    path.write_text(HEADER + "".join(line + "\n" for line in body), encoding="utf-8")
+    return path
+
+
+def test_a_line_that_is_not_json_names_where_it_is(tmp_path: Path) -> None:
+    """Every accuracy figure this project publishes is measured against one of
+    these files, so a damaged one has to be refused rather than partly read. The
+    line number is what makes the refusal actionable on a ten-million-line
+    sidecar."""
+    path = written(tmp_path / "t.jsonl", "{not json at all")
+
+    with pytest.raises(TruthError, match="line 2 is not valid JSON"):
+        read_truth(path)
+
+
+def test_a_record_that_is_not_an_object_is_refused(tmp_path: Path) -> None:
+    path = written(tmp_path / "t.jsonl", "[1, 2, 3]")
+
+    with pytest.raises(TruthError, match="line 2 is not a JSON object"):
+        read_truth(path)
+
+
+def test_a_record_missing_a_field_names_the_field(tmp_path: Path) -> None:
+    """`category` is checked separately; this is everything after it. Without a
+    client the record cannot be attributed, and scoring would silently compare
+    one client's requests against another's."""
+    path = written(
+        tmp_path / "t.jsonl",
+        '{"line_no": 1, "category": "browsing", "instance_id": "a#0"}',
+    )
+
+    with pytest.raises(TruthError, match="line 2 is missing a field"):
+        read_truth(path)
+
+
+def test_an_unusable_line_number_is_refused(tmp_path: Path) -> None:
+    """A line number is the whole link back to the log. One that will not read
+    as a number cannot be quietly rounded or dropped."""
+    path = written(
+        tmp_path / "t.jsonl",
+        '{"line_no": "seventeenish", "client_ip": "10.0.0.1",'
+        ' "category": "browsing", "instance_id": "a#0"}',
+    )
+
+    with pytest.raises(TruthError, match="line 2 is missing a field"):
+        read_truth(path)
+
+
+def test_a_granularity_the_reader_does_not_know_is_refused(tmp_path: Path) -> None:
+    """Granularity decides whether the file can be scored per category or only
+    attack-or-not. Accepting an unknown one would score a binary file per
+    category and report the resulting nonsense as a measurement."""
+    path = tmp_path / "t.jsonl"
+    path.write_text(
+        '{"kind": "logarc-truth", "version": 1, "scenario": "s", "seed": 1,'
+        ' "source_file_id": "a.log", "granularity": "vibes"}\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(TruthError, match="unknown granularity"):
+        read_truth(path)
+
+
+def test_writing_a_granularity_the_reader_cannot_read_is_refused(tmp_path: Path) -> None:
+    """Refused at the writer too, so a file that cannot be read back is never
+    produced in the first place."""
+    with pytest.raises(TruthError, match="unknown granularity"):
+        TruthWriter(
+            tmp_path / "t.jsonl",
+            scenario="s",
+            seed=1,
+            source_file_id="a.log",
+            granularity="vibes",
+        )
+
+
+def test_a_writer_used_outside_its_context_refuses(tmp_path: Path) -> None:
+    """The handle is opened by `__enter__`. Writing without it would otherwise
+    fail on `None` with an AttributeError, which says nothing about what the
+    caller did wrong."""
+    writer = TruthWriter(tmp_path / "t.jsonl", scenario="s", seed=1, source_file_id="a.log")
+
+    with pytest.raises(TruthError, match="outside its context manager"):
+        writer.write(record(1, ActivityCategory.BROWSING, "a#0"))
+
+
+def test_an_unreadable_timestamp_does_not_invent_provenance(tmp_path: Path) -> None:
+    """`generated_at` says when the truth was written. A corrupt one currently
+    falls back to *now*, which reads as a file generated this second — the one
+    thing provenance must never do is make something up. Pinned here so the
+    behaviour is a decision on the record rather than an accident.
+    """
+    from datetime import UTC, datetime
+
+    path = tmp_path / "t.jsonl"
+    path.write_text(
+        '{"kind": "logarc-truth", "version": 1, "scenario": "s", "seed": 1,'
+        ' "source_file_id": "a.log", "generated_at": "not a timestamp"}\n',
+        encoding="utf-8",
+    )
+
+    truth = read_truth(path)
+
+    assert (datetime.now(UTC) - truth.generated_at).total_seconds() < 60
+
+
 def test_an_unknown_category_names_the_offending_line(tmp_path: Path) -> None:
     """A truth file edited by hand should fail loudly, pointing at the record."""
     path = tmp_path / "t.jsonl"
