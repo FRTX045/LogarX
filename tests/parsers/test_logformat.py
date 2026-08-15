@@ -32,6 +32,57 @@ def test_combined_format_parses_a_canonical_line() -> None:
     assert event.user_agent == "Mozilla/5.0 (X11; Linux x86_64)"
 
 
+def test_every_field_of_a_custom_format_reaches_the_event() -> None:
+    """Pins down the whole of one parse, because the promoted fields are only
+    part of it: a format with directives beyond the canonical set puts the rest
+    in `extra`, and `extra` is the half that a change to how fields are read
+    could drop while every combined-format test above stayed green.
+    """
+    parser = LogFormatParser(
+        '%h %l %u %t "%r" %>s %b "%{Referer}i" "%{User-Agent}i" %D %{X-Forwarded-For}i',
+        name="custom",
+    )
+    line = (
+        "203.0.113.5 - alice [01/May/2024:04:06:33 +0000] "
+        '"GET /a?b=%27 HTTP/1.1" 200 4523 "http://example.com/" '
+        '"curl/8.0 \\"probe\\"" 15342 198.51.100.9'
+    )
+
+    event = parser.parse_line(line, REF)
+
+    assert event is not None
+    assert event.timestamp == datetime(2024, 5, 1, 4, 6, 33, tzinfo=UTC)
+    assert event.client_ip == "203.0.113.5"
+    assert event.method == "GET"
+    assert event.path == "/a"
+    assert event.query == "b=%27"
+    assert event.protocol == "HTTP/1.1"
+    assert event.status == 200
+    assert event.bytes_sent == 4523
+    assert event.referer == "http://example.com/"
+    # Apache's escaping is undone: a payload hidden behind `\x` or `\"` would
+    # otherwise slip past every signature that reads the user agent.
+    assert event.user_agent == 'curl/8.0 "probe"'
+    assert event.extra == {
+        "remote_user": "alice",
+        "duration_us": "15342",
+        "req_header_x_forwarded_for": "198.51.100.9",
+    }
+
+
+def test_an_escaped_byte_in_a_bare_field_is_left_alone() -> None:
+    """Only fields the format wrapped in quotes carry Apache's escaping. A bare
+    one may hold a backslash that was never an escape, and expanding it would
+    rewrite evidence."""
+    parser = LogFormatParser("%h %t %U", name="bare")
+    line = "203.0.113.5 [01/May/2024:04:06:33 +0000] /c:\\x41windows"
+
+    event = parser.parse_line(line, REF)
+
+    assert event is not None
+    assert event.path == "/c:\\x41windows"
+
+
 def test_timestamp_is_normalised_to_utc() -> None:
     parser = LogFormatParser(COMBINED)
     line = '1.2.3.4 - - [10/Oct/2000:13:55:36 -0700] "GET / HTTP/1.1" 200 1 "-" "-"'
@@ -41,6 +92,47 @@ def test_timestamp_is_normalised_to_utc() -> None:
     assert event is not None
     # 13:55:36 at UTC-7 is 20:55:36 UTC.
     assert event.timestamp == datetime(2000, 10, 10, 20, 55, 36, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    ("offset", "expected"),
+    [
+        ("+0000", datetime(2024, 5, 1, 4, 6, 33, tzinfo=UTC)),
+        ("-0700", datetime(2024, 5, 1, 11, 6, 33, tzinfo=UTC)),
+        ("+0900", datetime(2024, 4, 30, 19, 6, 33, tzinfo=UTC)),
+        # Half-hour and three-quarter-hour zones exist and are the ones a
+        # whole-hour shortcut gets wrong: India, Nepal, the Chatham Islands.
+        ("+0530", datetime(2024, 4, 30, 22, 36, 33, tzinfo=UTC)),
+        ("-0330", datetime(2024, 5, 1, 7, 36, 33, tzinfo=UTC)),
+        ("+1245", datetime(2024, 4, 30, 15, 21, 33, tzinfo=UTC)),
+    ],
+)
+def test_every_kind_of_utc_offset_lands_on_the_right_instant(
+    offset: str, expected: datetime
+) -> None:
+    """Servers in different timezones have to sort against each other, so the
+    offset is not decoration — reading it wrong reorders the evidence."""
+    parser = LogFormatParser(COMBINED)
+    line = f'1.2.3.4 - - [01/May/2024:04:06:33 {offset}] "GET / HTTP/1.1" 200 1 "-" "-"'
+
+    event = parser.parse_line(line, REF)
+
+    assert event is not None
+    assert event.timestamp == expected
+
+
+def test_a_normalised_timestamp_is_in_utc_not_merely_equal_to_it() -> None:
+    """Two aware datetimes at the same instant compare equal whatever their
+    zones, so equality alone would pass on a timestamp left in the log's own
+    offset — and that is what gets written into the store and rendered."""
+    parser = LogFormatParser(COMBINED)
+    line = '1.2.3.4 - - [01/May/2024:04:06:33 +0530] "GET / HTTP/1.1" 200 1 "-" "-"'
+
+    event = parser.parse_line(line, REF)
+
+    assert event is not None
+    assert event.timestamp.tzinfo is UTC
+    assert event.timestamp.hour == 22
 
 
 def test_line_that_does_not_match_the_format_is_rejected() -> None:

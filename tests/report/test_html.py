@@ -182,6 +182,61 @@ def test_an_edge_that_runs_backwards_leaves_from_the_left_of_its_node(tmp_path: 
     assert float(path.group(1)) < 440.0 + _NODE_WIDTH
 
 
+def test_two_transitions_between_the_same_pair_are_drawn_apart(tmp_path: Path) -> None:
+    """A behaviour map folds by activity type, so a client alternating between
+    two of them has an edge each way. Drawn between the same two boxes, the
+    second cubic is the first traced backwards: one line, two arrowheads, and
+    two labels written on the same point. The report is the copy with no pan or
+    zoom to work around it.
+    """
+    from logarc.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
+    from logarc.report.html import _svg
+
+    def node(node_id: str) -> GraphNode:
+        return GraphNode(
+            node_id=node_id,
+            label=node_id,
+            category=ActivityCategory.ENUMERATION,
+            severity=Severity.MEDIUM,
+            outcome=Outcome.BLOCKED,
+            request_count=5,
+            distinct_paths=5,
+            start=START,
+            end=START + timedelta(seconds=5),
+            episode_ids=("s/1",),
+            bytes_total=0,
+            owasp=None,
+            top_targets=(),
+            rule_ids=(),
+            evidence=(),
+            evidence_total=5,
+        )
+
+    graph = ActivityGraph(
+        kind=GraphKind.BEHAVIOUR,
+        client_ip="1.2.3.4",
+        nodes=(node("enumeration"), node("injection")),
+        edges=(
+            GraphEdge("enumeration", "injection", weight=3, gap_seconds=1.0),
+            GraphEdge("injection", "enumeration", weight=2, gap_seconds=2.0),
+        ),
+    )
+    positions = {"enumeration": Point(x=0.0, y=0.0), "injection": Point(x=440.0, y=0.0)}
+
+    with mock.patch("logarc.report.html.layout_graph", return_value=positions):
+        svg = _svg(graph)
+
+    # Control points, not endpoints: reversing an edge already swaps the ends,
+    # so comparing whole `d` strings would pass on the very bug this is about.
+    controls = re.findall(r'<path d="M[\d.-]+,[\d.-]+ C[\d.-]+,([\d.-]+) ', svg)
+    assert len(controls) == 2, "premise: an edge each way is drawn"
+    assert controls[0] != controls[1]
+
+    labels = re.findall(r'<text x="[\d.-]+" y="([\d.-]+)" class="edge-label"', svg)
+    assert len(labels) == 2, "premise: both transitions are labelled"
+    assert labels[0] != labels[1], "and neither label is written over the other"
+
+
 def test_the_report_writes_how_often_a_transition_was_seen(campaign: Case) -> None:
     """The behaviour map's weights carried no label at all in the report — only
     line thickness, which a reader cannot turn back into a number. A report is

@@ -336,6 +336,10 @@ process of its own so peak memory is that run's and not the previous one's.
 | 1,000,000 | 198 MB | 34.5 s | 29,008 | 5.8 | 626 MB | 8.3 MB | 23.8× | 49,175 | 81 ms |
 | 10,000,000 | 1.99 GB | 321 s | 31,159 | 6.2 | 1,186 MB | 75.5 MB | 26.3× | 368,179 | 84 ms |
 
+Those are the rates before the parse path was reworked; see [Taking the marshalling
+out](#taking-the-marshalling-out) below, which re-measured 1,000,000 lines at 33,435. The rows are
+kept as they were taken rather than restated, because the comparison is the point.
+
 **Reconstruction stays flat while the corpus grows a hundredfold.** 64 ms against 84 ms, over a
 store that went from five thousand clients to three hundred and sixty-eight thousand. That is the
 two-pass architecture doing what it was chosen to do, and it is the number that matters most:
@@ -372,6 +376,9 @@ dictionaries — 800,000 `dict.get` calls for 50,000 lines, plus `groupdict` and
 That the regex is only a quarter is the useful finding. It rules out a faster pattern engine as the
 answer and points at either removing interpreter overhead or spreading the work.
 
+Both were then tried. The share attributed to marshalling here turned out to overstate what
+removing it was worth — see [Taking the marshalling out](#taking-the-marshalling-out).
+
 ### Parallel ingest
 
 Spreading it. 400,000 lines, 75 MB, ingest only with `finalize` excluded:
@@ -396,12 +403,40 @@ cores behind eight logical ones**, and hyperthreading adds perhaps a quarter to 
 rather than doubling it. 2.55× is close to what the hardware has to give, and adding workers past
 four buys almost nothing: 2.42× to 2.55×.
 
-What remains is in the parse itself. The profile above puts ~40% of it in field marshalling that
-could be removed without leaving Python — positional groups rather than `groupdict`, fewer
-`dict.get` calls per line. That is the honest next step, and it is not done.
-
 [ADR-0009](adr/0009-parallel-ingest-rather-than-a-native-parser.md) records why the parser was not
 rewritten in Go instead, given that the project already builds a Go binary for CRS.
+
+### Taking the marshalling out
+
+The step named above as "the honest next step" was then taken. Two changes to `parse_line`:
+positional groups resolved when the format is compiled, in place of `groupdict` and the sixteen
+`dict.get` calls a line was read back through; and a timestamp built in UTC and shifted, in place
+of one built in the log's zone and converted with `astimezone`.
+
+Parse only, `apache-combined`, best of three runs of 300,000 lines:
+
+| | Lines/s | Gain |
+|---|---:|---:|
+| Before | 51,268 | — |
+| Positional groups | 55,298 | +7.9% |
+| ...and the shifted timestamp | **58,508** | **+14.1%** |
+
+End to end, `logarc benchmark -n 1000000`, both runs on this machine minutes apart:
+
+| | Ingest | Lines/s |
+|---|---:|---:|
+| Before | 34.76 s | 28,772 |
+| After | 29.91 s | **33,435** |
+
+**+16.2%, and the 100,000 target is still not met.** The estimate that opened this work was wrong
+in the direction that matters: "~40% in field marshalling" implied roughly a third off the parse,
+and the measured figure is a seventh. The 40% was self-time in a `cProfile` run, which inflates
+what a call-heavy loop costs; the uninstrumented rate is the rate.
+
+What is left is not marshalling. After both changes the profile reads: regex match **30%**,
+`parse_line`'s own body 21%, `_parse_timestamp` 18%, constructing the `NormalizedEvent` 10%. The
+first and last of those are CPython doing the work it was asked to do, and no rearrangement of
+Python reaches 100,000 lines/s from here.
 
 ## What the evaluation found
 

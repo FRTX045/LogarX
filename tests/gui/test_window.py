@@ -638,6 +638,130 @@ def test_a_caption_is_not_crossed_by_the_arrows_behind_it(qt_app: QApplication) 
             assert backdrop.brush().color().alpha() > 0, "the patch is opaque"
 
 
+def _activity(name: str) -> GraphNode:
+    return GraphNode(
+        node_id=name,
+        label=name.replace("_", " "),
+        category=ActivityCategory.ENUMERATION,
+        severity=Severity.MEDIUM,
+        outcome=Outcome.BLOCKED,
+        request_count=9,
+        distinct_paths=9,
+        bytes_total=1,
+        start=START,
+        end=START + timedelta(seconds=30),
+        owasp=None,
+        top_targets=("/a",),
+        rule_ids=("r",),
+        evidence=(EvidenceRef("access.log", 1),),
+        evidence_total=9,
+        episode_ids=(f"1.2.3.4#1/{name}",),
+    )
+
+
+def _behaviour_map(*edges: GraphEdge) -> ActivityGraph:
+    """A behaviour map over whichever activities those edges mention."""
+    named = sorted({end for edge in edges for end in (edge.source, edge.target)})
+    return ActivityGraph(
+        kind=GraphKind.BEHAVIOUR,
+        client_ip="203.0.113.5",
+        nodes=tuple(_activity(name) for name in named),
+        edges=edges,
+    )
+
+
+def _drawn_edges(canvas: ActivityCanvas) -> list[object]:
+    from PyQt6.QtWidgets import QGraphicsPathItem
+
+    return [
+        item.path() for item in canvas.graph_scene.items() if isinstance(item, QGraphicsPathItem)
+    ]
+
+
+def test_two_transitions_between_the_same_pair_are_drawn_apart(qt_app: QApplication) -> None:
+    """Drawn straight, the second arrow lands exactly on the first and its
+    label is written over the one already there. The map showed one transition
+    where there were two, and which one survived was the order they were listed
+    in — on the view whose whole purpose is showing repetition."""
+    canvas = ActivityCanvas()
+    canvas.show_graph(
+        _behaviour_map(
+            GraphEdge("enumeration", "injection", weight=3, gap_seconds=1.0),
+            GraphEdge("injection", "enumeration", weight=2, gap_seconds=2.0),
+        )
+    )
+
+    one, other = _drawn_edges(canvas)
+
+    apart = one.pointAtPercent(0.5) - other.pointAtPercent(0.5)  # type: ignore[attr-defined]
+    assert apart.manhattanLength() > 20.0
+
+
+def test_an_arrowhead_points_the_way_its_own_curve_arrives(qt_app: QApplication) -> None:
+    """A head aimed down the straight line between the two circles is visibly
+    turned against the curve it caps, and it is the head that tells a reader
+    which way a transition ran."""
+    import math
+
+    from PyQt6.QtWidgets import QGraphicsPolygonItem
+
+    canvas = ActivityCanvas()
+    canvas.show_graph(
+        _behaviour_map(
+            GraphEdge("enumeration", "injection", weight=3, gap_seconds=1.0),
+            GraphEdge("injection", "enumeration", weight=2, gap_seconds=2.0),
+        )
+    )
+
+    curves = _drawn_edges(canvas)
+    heads = [
+        item.polygon()
+        for item in canvas.graph_scene.items()
+        if isinstance(item, QGraphicsPolygonItem)
+    ]
+    assert len(heads) == len(curves) == 2, "premise: two arrows, each with a head"
+
+    for curve in curves:
+        tip = curve.pointAtPercent(1.0)  # type: ignore[attr-defined]
+        head = min(heads, key=lambda shape: (shape[0] - tip).manhattanLength())
+        pointing = head[0] - (head[1] + head[2]) / 2
+        arriving = tip - curve.pointAtPercent(0.97)  # type: ignore[attr-defined]
+
+        between = abs(
+            math.atan2(pointing.y(), pointing.x()) - math.atan2(arriving.y(), arriving.x())
+        )
+        assert math.degrees(min(between, 2 * math.pi - between)) < 3.0
+
+
+def test_the_number_on_an_arrow_is_not_read_past(qt_app: QApplication) -> None:
+    """It was `edge_ink` at 7.0pt — 5.5:1 against the ground where the caption
+    beside it is 16.5:1, and half a point smaller. Legal by the 4.5:1 floor and
+    unreadable anyway, because the eye is calibrated by the brighter text next
+    to it. `muted` is 8.9:1: readable, and still one step below a caption, which
+    is right — the activity is the subject and the transition is the detail.
+    """
+    from logarc.gui import canvas as canvas_module
+    from logarc.gui.style import CAPTION_COLOUR, THEME
+
+    assert contrast(canvas_module._LABEL_COLOUR, THEME.chrome) >= 8.0
+    assert canvas_module._LABEL_SIZE >= 7.5
+    assert contrast(canvas_module._LABEL_COLOUR, THEME.chrome) < contrast(
+        CAPTION_COLOUR, THEME.chrome
+    ), "a transition is the detail, not the subject"
+
+
+def test_an_edge_with_no_counterpart_stays_straight(qt_app: QApplication) -> None:
+    """A curve means "there are two here". A solitary edge that bows says
+    something untrue about itself, and makes a calm map look busy."""
+    canvas = ActivityCanvas()
+    canvas.show_graph(_behaviour_map(GraphEdge("browsing", "enumeration", weight=1)))
+
+    (solitary,) = _drawn_edges(canvas)
+
+    straight = (solitary.pointAtPercent(0.0) + solitary.pointAtPercent(1.0)) / 2  # type: ignore[attr-defined]
+    assert (solitary.pointAtPercent(0.5) - straight).manhattanLength() < 0.5  # type: ignore[attr-defined]
+
+
 def test_a_trace_too_wide_to_fit_opens_at_its_beginning(qt_app: QApplication) -> None:
     """Laid out straight, a long trace is wider than the window, so the fit
     clamps at the legibility floor and something has to be off screen. Left
