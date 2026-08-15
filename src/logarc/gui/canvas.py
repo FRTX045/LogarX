@@ -91,6 +91,16 @@ _ARROW_WIDTH: Final = 7.0
 #: says *there are two arrows here*, and everywhere else the map stays straight.
 _BOW: Final = 34.0
 
+#: The numbers written on the arrows. Not `edge_ink`, which they were: at 5.5:1
+#: against the ground they were three times dimmer than the captions beside
+#: them and half a point smaller, and the eye — calibrated by the captions —
+#: read straight past them. `muted` is 8.9:1, a value the theme already defines
+#: rather than one invented here, sitting between the arrows' grey and the
+#: caption's ink. Still a step below a caption, which is right: the activity is
+#: the subject and the transition is the detail.
+_LABEL_COLOUR: Final = THEME.muted
+_LABEL_SIZE: Final = 7.5
+
 #: Both in screen pixels: text on this canvas is drawn at screen size, so the
 #: space around it has to be measured the same way or it closes up as the graph
 #: is scaled down.
@@ -500,8 +510,8 @@ class ActivityCanvas(QGraphicsView):
         if label:
             self._screen_text(
                 label,
-                colour=_EDGE_COLOUR,
-                point_size=7.0,
+                colour=_LABEL_COLOUR,
+                point_size=_LABEL_SIZE,
                 anchor=QPointF(anchor.x(), anchor.y() - _ARROW_WIDTH * 2),
             )
 

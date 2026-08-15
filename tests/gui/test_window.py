@@ -733,6 +733,23 @@ def test_an_arrowhead_points_the_way_its_own_curve_arrives(qt_app: QApplication)
         assert math.degrees(min(between, 2 * math.pi - between)) < 3.0
 
 
+def test_the_number_on_an_arrow_is_not_read_past(qt_app: QApplication) -> None:
+    """It was `edge_ink` at 7.0pt — 5.5:1 against the ground where the caption
+    beside it is 16.5:1, and half a point smaller. Legal by the 4.5:1 floor and
+    unreadable anyway, because the eye is calibrated by the brighter text next
+    to it. `muted` is 8.9:1: readable, and still one step below a caption, which
+    is right — the activity is the subject and the transition is the detail.
+    """
+    from logarc.gui import canvas as canvas_module
+    from logarc.gui.style import CAPTION_COLOUR, THEME
+
+    assert contrast(canvas_module._LABEL_COLOUR, THEME.chrome) >= 8.0
+    assert canvas_module._LABEL_SIZE >= 7.5
+    assert contrast(canvas_module._LABEL_COLOUR, THEME.chrome) < contrast(
+        CAPTION_COLOUR, THEME.chrome
+    ), "a transition is the detail, not the subject"
+
+
 def test_an_edge_with_no_counterpart_stays_straight(qt_app: QApplication) -> None:
     """A curve means "there are two here". A solitary edge that bows says
     something untrue about itself, and makes a calm map look busy."""
