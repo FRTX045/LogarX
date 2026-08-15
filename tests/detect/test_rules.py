@@ -139,6 +139,20 @@ def test_an_unknown_window_metric_lists_the_ones_that_exist(tmp_path: Path) -> N
     assert "distinct_paths" in str(raised.value), "the refusal has to name the real one"
 
 
+def test_an_unknown_severity_lists_the_levels_that_exist(tmp_path: Path) -> None:
+    """Completes the family: field, metric, operator and now severity all name
+    the vocabulary when they refuse. Severity is the one whose spelling a reader
+    is most likely to guess at — `warn`, `warning`, `major` — and the levels
+    are not written down anywhere they would look."""
+    pack = write_pack(tmp_path, SIGNATURE_PACK.replace("severity: high", "severity: severe"))
+
+    with pytest.raises(RulePackError, match="unknown severity") as raised:
+        load_rules([pack])
+    printed = str(raised.value)
+    assert "critical" in printed
+    assert "info" in printed
+
+
 def test_an_unknown_operator_lists_the_ones_that_exist(tmp_path: Path) -> None:
     """`=>` for `>=` is a typo that reads as correct, and an operator that is
     merely rejected leaves the author guessing which spelling is wanted."""
