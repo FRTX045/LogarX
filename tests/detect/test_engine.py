@@ -97,6 +97,128 @@ def event(
     )
 
 
+def test_every_matchable_field_reads_its_own_value() -> None:
+    """A rule names a field and gets its text. If an arm returns a neighbour's
+    value, every rule written against that field silently matches the wrong
+    data — and a detection tool that matches the wrong data is worse than one
+    that matches nothing, because it looks like it worked.
+
+    Driven from `MATCH_FIELDS` rather than a list written here, so a field added
+    to the rule schema without a way to read it fails this test instead of
+    quietly resolving to the empty string that the fallthrough returns. Each
+    value is distinct, so returning the wrong one cannot look right.
+    """
+    from logarc.detect.engine import RequestView
+    from logarc.detect.rules import MATCH_FIELDS
+
+    view = RequestView(
+        NormalizedEvent(
+            timestamp=START,
+            client_ip="203.0.113.5",
+            evidence=EvidenceRef("access.log", 1),
+            method="POST",
+            path="/downloads/report.pdf",
+            query="who=%2561dmin",
+            protocol="HTTP/1.1",
+            status=403,
+            bytes_sent=4523,
+            referer="http://referer.example/from",
+            user_agent="ScannerAgent/9.9",
+            host="shop.example.com",
+        )
+    )
+
+    expected = {
+        "method": "POST",
+        "path": "/downloads/report.pdf",
+        "query": "who=%2561dmin",
+        "target": "/downloads/report.pdf?who=%2561dmin",
+        "referer": "http://referer.example/from",
+        "user_agent": "ScannerAgent/9.9",
+        "protocol": "HTTP/1.1",
+        "host": "shop.example.com",
+        "extension": "pdf",
+        "path_decoded": "/downloads/report.pdf",
+        "query_decoded": "who=admin",
+        "target_decoded": "/downloads/report.pdf?who=admin",
+        "referer_decoded": "http://referer.example/from",
+        "user_agent_decoded": "scanneragent/9.9",
+        "status": "403",
+        "bytes_sent": "4523",
+        # Double-encoded above: `%2561dmin` is `%61dmin` is `admin`.
+        "decode_depth": "2",
+        "had_null": "0",
+    }
+    assert set(expected) == set(MATCH_FIELDS), "a field can be named but not read"
+    assert {name: view.value(name) for name in sorted(MATCH_FIELDS)} == expected
+
+
+def test_every_window_metric_measures_its_own_thing() -> None:
+    """The same hazard as the field mapping, one layer up: a window rule names a
+    metric and gets a number. If `client_error_ratio` were computing the 5xx
+    share, a rule tuned to fire at 0.8 would fire on traffic that never had a
+    4xx in it — and the finding would look ordinary.
+
+    The window below is chosen so no two metrics share an answer: four requests,
+    three distinct canonical paths, statuses 404, 403, 500 and 200 across two
+    seconds. Any arm returning a neighbour's value is a different number.
+    """
+    from logarc.detect.engine import _metric
+    from logarc.detect.rules import WINDOW_METRICS
+
+    window = [
+        event(0, path="/a", status=404),
+        event(1, path="/a//", status=403),
+        event(1, path="/b", status=500),
+        event(2, path="/c", status=200),
+    ]
+
+    expected = {
+        "request_count": 4.0,
+        # `/a` and `/a//` canonicalise to one path, so three rather than four.
+        "distinct_paths": 3.0,
+        "distinct_statuses": 4.0,
+        "not_found_ratio": 0.25,
+        "client_error_ratio": 0.5,
+        "server_error_ratio": 0.25,
+        "success_ratio": 0.25,
+        "requests_per_second": 2.0,
+    }
+    assert set(expected) == set(WINDOW_METRICS), "a metric can be named but not measured"
+    assert {name: _metric(name, window, 2) for name in sorted(WINDOW_METRICS)} == expected
+
+
+@pytest.mark.parametrize(
+    ("op", "target", "fires"),
+    [
+        (">=", 4.0, True), (">=", 5.0, False),
+        (">", 3.0, True), (">", 4.0, False),
+        ("<=", 4.0, True), ("<=", 3.0, False),
+        ("<", 5.0, True), ("<", 4.0, False),
+        ("==", 4.0, True), ("==", 3.0, False),
+        ("!=", 3.0, True), ("!=", 4.0, False),
+    ],
+)  # fmt: skip
+def test_every_threshold_operator_compares_the_way_it_reads(
+    op: str, target: float, fires: bool
+) -> None:
+    """Four of the six were never exercised. An operator that compares backwards
+    turns a rule meant to catch a burst into one that fires on quiet traffic,
+    and the rule pack would still load — these are validated by name at load
+    time, never by behaviour.
+
+    Both sides of each are asserted, because an arm hardwired to `True` passes
+    every test that only checks the firing case.
+    """
+    from logarc.detect.engine import _metric_holds
+    from logarc.detect.rules import WindowCondition
+
+    window = [event(index) for index in range(4)]
+    condition = WindowCondition(metric="request_count", op=op, value=target)
+
+    assert _metric_holds(condition, window, 2) is fires
+
+
 def test_a_matching_request_is_labelled(engine: RuleEngine) -> None:
     (labelled,) = engine.label_events([event(query="id=1 UNION SELECT password")])
 
