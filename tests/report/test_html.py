@@ -237,6 +237,18 @@ def test_two_transitions_between_the_same_pair_are_drawn_apart(tmp_path: Path) -
     assert labels[0] != labels[1], "and neither label is written over the other"
 
 
+def test_every_outcome_has_words_to_print_it_in() -> None:
+    """Indexed rather than `.get`, so an outcome missing from the table raises
+    `KeyError` while rendering — halfway through writing the artefact that
+    leaves the building. The same table also fills the report's key, so an
+    unlisted outcome would be drawn on the graph and absent from the legend
+    explaining it."""
+    from logarc.core.activity import Outcome
+    from logarc.report.html import _OUTCOME_NOTE
+
+    assert set(_OUTCOME_NOTE) == set(Outcome)
+
+
 def test_an_arrow_is_labelled_the_same_on_paper_as_on_screen(tmp_path: Path) -> None:
     """The report had grown its own copy of the label, and the two had drifted.
 
