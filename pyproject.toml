@@ -144,15 +144,27 @@ markers = [
 [tool.coverage.run]
 source = ["src/logarc"]
 branch = true
-# Only the modules that import Qt are excluded. They are kept deliberately thin
-# and are verified by hand against docs/manual-test-plan.md. Anything in the GUI
-# package that can be decided without a display — `style` — stays measured,
-# because those are the judgements that decide whether a graph misinforms.
+# Excluded because the number would be a lie, not because the code is unimportant.
+#
+# The four GUI modules are the ones that only a display can exercise — wiring,
+# painting and threading. They are kept deliberately thin and are checked by hand
+# against docs/manual-test-plan.md. Not every Qt module is here: `case_chooser`
+# and `evidence_panel` import Qt too and stay measured, because most of what they
+# do can be driven offscreen. Anything decidable without a display at all —
+# `style`, `client_filter`, `evidence_view`, `recent` — stays measured for the
+# same reason: those are the judgements that decide whether a graph misinforms.
+#
+# `bench_worker` is a `python -m` entry point that `benchmark` runs in a
+# subprocess, so coverage never sees it execute and reported 0%. It is exercised
+# by five tests in tests/cli/test_benchmark_command.py, which run real benchmarks
+# and would fail if it broke — a standing 0% invited someone to "fix" it with a
+# test that adds nothing.
 omit = [
     "src/logarc/gui/app.py",
     "src/logarc/gui/canvas.py",
     "src/logarc/gui/panels.py",
     "src/logarc/gui/workers.py",
+    "src/logarc/evaluation/bench_worker.py",
 ]
 
 [tool.coverage.report]

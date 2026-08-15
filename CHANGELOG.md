@@ -7,6 +7,14 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Interface
 
+- **Type an address to find one client among tens of thousands.** A filter box above the client
+  list, always visible rather than behind a keystroke — a control nobody can find is a control that
+  is not there. A complete address matches exactly, because substring matching answered
+  `203.0.3.9` with eleven rows: `203.0.3.90` through `.99` all contain it, and an investigator
+  copying an address out of a ticket could open the wrong one. Anything shorter stays a search, so
+  `203.0.3.` isolates a /24 and `113.66` finds a remembered tail. Every filtered caption names the
+  total — a narrowed list reading `9 clients` describes a case with nine clients in it — and an
+  empty result says which filter emptied it rather than leaving a blank table.
 - **A case you have opened before is one click away.** Opening the window puts
   the list in front of you — **View → Reopen the last case on start** skips it
   and goes straight to the case you were in — and **Case → Recently opened…**
@@ -131,11 +139,22 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Profiling drove the choice: parsing is 96% of ingest and the regex is only a quarter of *that*,
   so a faster pattern engine had little to give while the work parallelises cleanly.
   See [ADR-0009](docs/adr/0009-parallel-ingest-rather-than-a-native-parser.md).
-- **The 100,000 lines/s target is still not met.** The remedy named in 0.1.0 has now been
-  implemented and measured; it closes about two thirds of the gap. The prediction of 124,000
-  assumed throughput scales with the worker count, and it does not — the test machine has four
-  physical cores behind eight logical ones. The rest of the gap is in the parse, where 40% of the
-  time is field marshalling that could be removed without leaving Python.
+- **The parse path reads fields by group index rather than through a dictionary.** `parse_line`
+  called `groupdict()` and read the result back through sixteen `dict.get` calls per line; the
+  indices are fixed once a format is compiled, so they are resolved there. The timestamp is built
+  in UTC and shifted rather than built in the log's zone and converted, which drops an `astimezone`
+  and two allocations a line. Measured, best of three runs of 300,000 lines: **51,268 → 58,508
+  lines/s parsing, +14.1%**, and **28,772 → 33,435 lines/s ingesting a million lines end to end,
+  +16.2%** — both versions run on one machine minutes apart rather than compared against a figure
+  from another day.
+- **The 100,000 lines/s target is still not met**, and the estimate that was going to close it was
+  wrong. The remedy named in 0.1.0 — parallel ingest — closes about two thirds of the gap; the
+  prediction of 124,000 assumed throughput scales with the worker count, and it does not, because
+  the test machine has four physical cores behind eight logical ones. The remaining "40% of parse
+  time in field marshalling" recorded here was `cProfile` self-time, which inflates exactly the
+  per-call overhead that removing it takes away: the real rate moved by a seventh, not a third.
+  What is left is the regex at 30% of the parse and constructing the event at 10%, and no
+  rearrangement of Python reaches the target from there.
 - Parallel ingest is opt-in and defaults to off, because **each worker holds its own batch and
   memory rises roughly in step with the count.** Bounded memory is one of the design's stronger
   claims and is not spent without being asked. Compressed logs (no random access) and logs under
@@ -148,6 +167,29 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   design whose central claim is that memory follows the batch size.
 
 ### Fixed
+
+- **The behaviour map drew one arrow where there were two.** A map folds a trace by activity type,
+  so a client alternating between two of them produces an edge each way between the same circles —
+  and drawn straight, both are the same line. Measured, the two midpoints were `0.0` apart, so the
+  second label was written exactly over the first and which transition survived was the order the
+  edges happened to be listed in. Only a reciprocal pair now bows, so the curve means *there are
+  two arrows here* and the map stays straight everywhere else. The HTML report had the identical
+  fault — its cubic is symmetric under reversal — and is separated the same way.
+- **An arrow and the report disagreed about the same gap.** `report/html.py` had grown its own
+  duration formatter beside `gui.style`'s, and the two had drifted: nine of eleven sample gaps
+  differed. One transition read `1h 0m` in the window and `60m` in the report, `5h 33m` against
+  `5.6h`, and half a second was reported as `0s` — a gap presented as no gap. The report now uses
+  the window's own label, which is what the severity colours already do.
+- **Captions collided when the graph was zoomed out.** Text was pinned to screen size so `fit()`
+  could not shrink it into a smudge, which meant the geometry shrank while the words did not: on a
+  52-activity trace, overlapping caption pairs went from 7 at full zoom to **117 at 0.35** and 228
+  at 0.25. The whole drawing scales together again — so two captions that clear each other at one
+  zoom clear each other at every zoom — and the smudge is answered by sizing captions against the
+  fit floor instead, where they come out at the size they always were. Layout spacing widened to
+  suit, and is stretched further at draw time when the platform's font is wider than it assumes.
+- **The numbers on an arrow were three times dimmer than the captions beside them** — 5.5:1 against
+  a caption's 16.5:1, at half a point smaller. Legal by the 4.5:1 floor and unreadable in practice,
+  because the eye is calibrated by the brighter text next to it.
 
 - **The desktop application ignored CRS entirely.** `analyse_ip` has taken a detection index since
   CRS was added and the CLI passed one, but the window never did — so the same enriched case

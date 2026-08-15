@@ -237,6 +237,66 @@ def test_two_transitions_between_the_same_pair_are_drawn_apart(tmp_path: Path) -
     assert labels[0] != labels[1], "and neither label is written over the other"
 
 
+def test_an_arrow_is_labelled_the_same_on_paper_as_on_screen(tmp_path: Path) -> None:
+    """The report had grown its own copy of the label, and the two had drifted.
+
+    Nine of eleven sample gaps disagreed. The same transition read `1h 0m` in
+    the window and `60m` in the report; `5h 33m` against `5.6h`; half a second
+    was `0.5s` on screen and `0s` on paper, which is a gap reported as no gap.
+    Both describe one edge of one graph, and an investigator comparing what
+    they saw with what they attached to the case file finds two answers.
+
+    Asserted against the rendered document rather than against a helper, so it
+    keeps holding however the report chooses to produce the text.
+    """
+    from logarc.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
+    from logarc.gui.style import edge_label
+    from logarc.report.html import _svg
+
+    def node(node_id: str) -> GraphNode:
+        return GraphNode(
+            node_id=node_id,
+            label=node_id,
+            category=ActivityCategory.ENUMERATION,
+            severity=Severity.MEDIUM,
+            outcome=Outcome.BLOCKED,
+            request_count=5,
+            distinct_paths=5,
+            start=START,
+            end=START + timedelta(seconds=5),
+            episode_ids=("s/1",),
+            bytes_total=0,
+            owasp=None,
+            top_targets=(),
+            rule_ids=(),
+            evidence=(),
+            evidence_total=5,
+        )
+
+    gaps = (0.5, 65.0, 100.0, 900.0, 3600.0, 5000.0, 7200.0)
+    names = [f"a{index}" for index in range(len(gaps) + 1)]
+    graph = ActivityGraph(
+        kind=GraphKind.BEHAVIOUR,
+        client_ip="203.0.113.5",
+        nodes=tuple(node(name) for name in names),
+        edges=tuple(
+            GraphEdge(names[index], names[index + 1], weight=index + 2, gap_seconds=gap)
+            for index, gap in enumerate(gaps)
+        ),
+    )
+    positions = {name: Point(x=index * 400.0, y=0.0) for index, name in enumerate(names)}
+
+    with mock.patch("logarc.report.html.layout_graph", return_value=positions):
+        svg = _svg(graph)
+
+    drawn = re.findall(r'class="edge-label"[^>]*>([^<]+)</text>', svg)
+    expected = [
+        edge_label(GraphKind.BEHAVIOUR, weight=index + 2, gap_seconds=gap)
+        for index, gap in enumerate(gaps)
+    ]
+    assert drawn == expected
+
+
 def test_the_report_writes_how_often_a_transition_was_seen(campaign: Case) -> None:
     """The behaviour map's weights carried no label at all in the report — only
     line thickness, which a reader cannot turn back into a number. A report is
