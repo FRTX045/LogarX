@@ -126,8 +126,11 @@ click a node to see the raw log lines that node was built from, and export the s
 CLI produces. Long work runs on a worker thread and can be cancelled; a cancelled ingest leaves
 the case un-finalised, so a partial read can never be analysed as if it were complete.
 
-The case you were last working on reopens when the window does, and **Case → Recently opened…**
-(Ctrl+Shift+O) offers the others; **View → Reopen the last case on start** turns the first part off.
+Opening the window offers the cases you have worked on before; **Case → Recently opened…**
+(Ctrl+Shift+O) brings that list back at any time, and **View → Reopen the last case on start** skips
+it and goes straight to the one you were in. Right-click a row to pin it to the top, rename it in
+the list, show its folder, or drop that one entry. A rename is a label here only — `case.json` keeps
+the case id that every exported report prints.
 
 **That list is kept on the machine you are working at.** It records which cases were opened
 here — their folders, when, and how much was in them — under `HKCU\Software\logarc`, beside the

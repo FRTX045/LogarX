@@ -14,19 +14,23 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
-from PyQt6.QtGui import QColor
+from PyQt6.QtCore import QPoint, Qt, QUrl
+from PyQt6.QtGui import QColor, QDesktopServices
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QDialog,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
+    QMenu,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
 )
 
+from logarc.gui import recent
 from logarc.gui._qt import required
 from logarc.gui.style import EVIDENCE_MUTED, display_safe, format_requests
 from logarc.gui.theme import GAP, PAD, caption_font, heading_font, ui_font
@@ -38,7 +42,13 @@ if TYPE_CHECKING:
 
 __all__ = ["COLUMNS", "CaseChooser"]
 
-COLUMNS: Final[tuple[str, ...]] = ("Case", "Opened", "Events", "Source", "Folder")
+#: The first column is unnamed and holds only a pin mark. A heading over a
+#: column of glyphs is a word explaining a picture that is already clear.
+COLUMNS: Final[tuple[str, ...]] = ("", "Case", "Opened", "Events", "Source", "Folder")
+
+#: Drawn on a pinned row. A glyph rather than a word: it has to fit a column
+#: that is empty on most rows.
+PIN_MARK: Final = "📌"
 
 #: Said next to a case whose folder is no longer where it was. The entry stays —
 #: it is a record of what was worked on — but it cannot be opened.
@@ -58,8 +68,14 @@ class CaseChooser(QDialog):
         self.setWindowTitle("Open a case")
         self.setMinimumWidth(760)
 
-        self._cases = tuple(cases)
-        self._present = tuple(exists(case.path) for case in self._cases)
+        self.cases = tuple(cases)
+        self._exists = exists
+        self._present = tuple(exists(case.path) for case in self.cases)
+        self.changed = False
+        """Something in the list was pinned, renamed or dropped, so the window
+        has to store it. Kept apart from the dialog's result: a reader can pin a
+        case and then close without opening anything."""
+
         self.chosen_path: str | None = None
         self.forgotten = False
         self.wants_other_case = False
@@ -78,18 +94,18 @@ class CaseChooser(QDialog):
         column.addWidget(hint)
 
         self._table = self._build_table()
+        self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._table.customContextMenuRequested.connect(self._show_menu)
         column.addWidget(self._table)
         column.addLayout(self._build_buttons())
 
         self._table.itemSelectionChanged.connect(self._selection_changed)
-        if self._cases:
-            self._table.selectRow(0)
-            self._selection_changed()
+        self._refill()
 
     # -- construction ------------------------------------------------------
 
     def _build_table(self) -> QTableWidget:
-        table = QTableWidget(len(self._cases), len(COLUMNS))
+        table = QTableWidget(len(self.cases), len(COLUMNS))
         table.setHorizontalHeaderLabels(list(COLUMNS))
         table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -104,10 +120,16 @@ class CaseChooser(QDialog):
         # a fixed-height table left two thirds of it empty, which is what the
         # drawn demo of this showed and the one thing it needed fixing.
         table.setMinimumHeight(120)
+        return table
 
-        for row, (case, present) in enumerate(zip(self._cases, self._present, strict=True)):
-            name = display_safe(case.case_id) + ("" if present else MISSING_NOTE)
+    def _refill(self) -> None:
+        """Redraw every row from `self.cases`."""
+        table = self._table
+        table.setRowCount(len(self.cases))
+        for row, (case, present) in enumerate(zip(self.cases, self._present, strict=True)):
+            name = display_safe(case.display_name) + ("" if present else MISSING_NOTE)
             values = (
+                PIN_MARK if case.pinned else "",
                 name,
                 f"{case.opened_at:%d %b %H:%M}",
                 format_requests(case.events).replace("request", "event"),
@@ -120,7 +142,9 @@ class CaseChooser(QDialog):
                     item.setForeground(QColor(EVIDENCE_MUTED))
                 table.setItem(row, index, item)
         table.resizeRowsToContents()
-        return table
+        if self.cases:
+            table.selectRow(0)
+        self._selection_changed()
 
     def _build_buttons(self) -> QHBoxLayout:
         row = QHBoxLayout()
@@ -154,13 +178,16 @@ class CaseChooser(QDialog):
 
     def _selection_changed(self) -> None:
         row = self._selected_row()
-        self._open_button.setEnabled(row is not None and self._present[row])
+        # Bounds-checked: a row can be dropped while it is the selected one, and
+        # the selection signal arrives before the table has caught up.
+        present = row is not None and row < len(self._present) and self._present[row]
+        self._open_button.setEnabled(present)
 
     def _accept_selection(self) -> None:
         row = self._selected_row()
         if row is None or not self._present[row]:
             return
-        self.chosen_path = self._cases[row].path
+        self.chosen_path = self.cases[row].path
         self.accept()
 
     def _choose_other(self) -> None:
@@ -174,3 +201,79 @@ class CaseChooser(QDialog):
     def _forget(self) -> None:
         self.forgotten = True
         self.accept()
+
+    # -- one row at a time --------------------------------------------------
+
+    def _show_menu(self, where: QPoint) -> None:
+        row = self._table.rowAt(where.y())
+        if row < 0:
+            return
+        self._table.selectRow(row)
+
+        menu = QMenu(self)
+        pinned = self.cases[row].pinned
+        _entry(menu, "Unpin" if pinned else "Pin to the top", self._toggle_pin)
+        menu.addSeparator()
+        _entry(menu, "Rename in this list…", self._rename)
+        # Offered even when the folder has gone: the reader may be trying to
+        # work out where it went.
+        _entry(menu, "Show the folder", self._show_folder)
+        menu.addSeparator()
+        _entry(menu, "Remove from this list", self._remove)
+        menu.exec(required(self._table.viewport(), "table viewport").mapToGlobal(where))
+
+    def _amend(self, cases: tuple[RecentCase, ...]) -> None:
+        """Take the new list, redraw, and remember that it needs storing."""
+        self.cases = cases
+        self.changed = True
+        self._present = tuple(self._exists(case.path) for case in self.cases)
+        self._refill()
+
+    def _toggle_pin(self) -> None:
+        row = self._selected_row()
+        if row is None:
+            return
+        case = self.cases[row]
+        self._amend(recent.set_pinned(self.cases, case.path, pinned=not case.pinned))
+
+    def _rename(self) -> None:
+        row = self._selected_row()
+        if row is None:
+            return
+        case = self.cases[row]
+        name = _ask_for_a_name(self, case.display_name)
+        if name is None:
+            return
+        self._amend(recent.set_label(self.cases, case.path, name))
+
+    def _remove(self) -> None:
+        row = self._selected_row()
+        if row is None:
+            return
+        self._amend(recent.forget_one(self.cases, self.cases[row].path))
+
+    def _show_folder(self) -> None:
+        row = self._selected_row()
+        if row is None:
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(self.cases[row].path))
+
+
+def _entry(menu: QMenu, text: str, slot: Callable[[], None]) -> None:
+    """One menu entry. `addAction` is typed as optional; it never is here."""
+    required(menu.addAction(text), f"menu entry {text!r}").triggered.connect(slot)
+
+
+def _ask_for_a_name(parent: CaseChooser, current: str) -> str | None:
+    """The new name, or `None` if the reader thought better of it.
+
+    A function rather than the call spelled out inline, so a test has one seam
+    to substitute instead of a modal dialog that waits for a click nobody makes.
+    """
+    name, accepted = QInputDialog.getText(
+        parent,
+        "Rename in this list",
+        "Show this case as:",
+        text=current,
+    )
+    return name if accepted else None

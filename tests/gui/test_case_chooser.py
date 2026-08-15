@@ -62,7 +62,9 @@ def test_a_case_whose_folder_has_gone_cannot_be_opened(qt_app: QApplication) -> 
 
     assert chooser.chosen_path is None
     assert not chooser._open_button.isEnabled()
-    assert "missing" in chooser._table.item(0, 0).text().lower()  # type: ignore[union-attr]
+    name = chooser._table.item(0, COLUMNS.index("Case"))
+    assert name is not None
+    assert "missing" in name.text().lower()
 
 
 def test_choosing_a_row_yields_its_folder(qt_app: QApplication) -> None:
@@ -96,3 +98,107 @@ def test_text_from_the_case_file_cannot_smuggle_control_characters(
     shown = chooser._table.item(0, 0).text()  # type: ignore[union-attr]
 
     assert "\n" not in shown
+
+
+# -- pinning, renaming, and dropping one entry -------------------------------
+
+
+def pinned_case(path: str, case_id: str = "kept") -> RecentCase:
+    return RecentCase(
+        path=path,
+        case_id=case_id,
+        opened_at=WHEN,
+        events=120,
+        sources=("views.log",),
+        pinned=True,
+    )
+
+
+def test_a_pinned_case_is_marked_in_the_list(qt_app: QApplication) -> None:
+    chooser = CaseChooser((pinned_case(r"D:\a"), case(r"D:\b", "b")), exists=lambda _p: True)
+
+    marks = [chooser._table.item(row, 0).text() for row in range(2)]  # type: ignore[union-attr]
+
+    assert marks[0].strip(), "the pinned one carries a mark"
+    assert not marks[1].strip(), "and the other does not"
+
+
+def test_pinning_from_the_menu_moves_it_to_the_top(qt_app: QApplication) -> None:
+    chooser = CaseChooser((case(r"D:\a", "a"), case(r"D:\b", "b")), exists=lambda _p: True)
+
+    chooser._table.selectRow(1)
+    chooser._toggle_pin()
+
+    assert chooser.cases[0].case_id == "b"
+    assert chooser.cases[0].pinned
+    assert chooser.changed
+
+
+def test_renaming_shows_the_new_name_and_leaves_the_case_alone(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The name belongs to this list. `case.json` is not touched, so a report
+    exported before and one after agree about what the case is called."""
+    from logarc.gui import case_chooser
+
+    monkeypatch.setattr(case_chooser, "_ask_for_a_name", lambda *_a, **_k: "acme-breach (jan)")
+    chooser = CaseChooser((case(r"D:\a", "case-001"),), exists=lambda _p: True)
+
+    chooser._table.selectRow(0)
+    chooser._rename()
+
+    assert chooser.cases[0].display_name == "acme-breach (jan)"
+    assert chooser.cases[0].case_id == "case-001"
+    assert "acme-breach (jan)" in chooser._table.item(0, 1).text()  # type: ignore[union-attr]
+
+
+def test_a_cancelled_rename_changes_nothing(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from logarc.gui import case_chooser
+
+    monkeypatch.setattr(case_chooser, "_ask_for_a_name", lambda *_a, **_k: None)
+    chooser = CaseChooser((case(r"D:\a", "case-001"),), exists=lambda _p: True)
+
+    chooser._table.selectRow(0)
+    chooser._rename()
+
+    assert chooser.cases[0].display_name == "case-001"
+    assert not chooser.changed
+
+
+def test_a_name_cannot_smuggle_a_line_break_into_a_row(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Typed by the reader rather than an attacker, but a cell is still one line
+    and a pasted name can carry anything."""
+    from logarc.gui import case_chooser
+
+    monkeypatch.setattr(case_chooser, "_ask_for_a_name", lambda *_a, **_k: "before\nafter")
+    chooser = CaseChooser((case(r"D:\a", "a"),), exists=lambda _p: True)
+
+    chooser._table.selectRow(0)
+    chooser._rename()
+
+    assert "\n" not in chooser._table.item(0, 1).text()  # type: ignore[union-attr]
+
+
+def test_dropping_one_entry_leaves_the_others(qt_app: QApplication) -> None:
+    chooser = CaseChooser((case(r"D:\a", "a"), case(r"D:\b", "b")), exists=lambda _p: True)
+
+    chooser._table.selectRow(0)
+    chooser._remove()
+
+    assert [entry.case_id for entry in chooser.cases] == ["b"]
+    assert chooser._table.rowCount() == 1
+
+
+def test_a_missing_case_can_still_be_pinned_and_dropped(qt_app: QApplication) -> None:
+    """Its folder is gone, but the entry is a record of what was worked on and
+    the reader has to be able to tidy it away."""
+    chooser = CaseChooser((case(r"D:\gone", "gone"),), exists=lambda _p: False)
+
+    chooser._table.selectRow(0)
+    chooser._remove()
+
+    assert chooser.cases == ()

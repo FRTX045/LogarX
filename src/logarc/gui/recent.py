@@ -14,7 +14,7 @@ the one case being opened, not for the list.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Final
@@ -22,7 +22,18 @@ from typing import TYPE_CHECKING, Any, Final
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
 
-__all__ = ["LIMIT", "RecentCase", "Startup", "dump", "load", "remember", "startup_action"]
+__all__ = [
+    "LIMIT",
+    "RecentCase",
+    "Startup",
+    "dump",
+    "forget_one",
+    "load",
+    "remember",
+    "set_label",
+    "set_pinned",
+    "startup_action",
+]
 
 #: How many to keep. Long enough to cover the cases in play, short enough that
 #: the chooser stays a list rather than an archive to search.
@@ -42,6 +53,23 @@ class RecentCase:
     events: int
     sources: tuple[str, ...]
 
+    pinned: bool = False
+    """Held at the top of the list, and exempt from the cap. The cap exists to
+    stop the list becoming an archive; a pin says this one is not part of that."""
+
+    label: str = ""
+    """A name given to this entry *here*, or empty to use the case's own.
+
+    Deliberately not written back to `case.json`. The case id is printed in the
+    provenance table of every exported report, so renaming the case itself would
+    leave a report written yesterday and one written today disagreeing about
+    what the same case is called. This name belongs to the list, not the case.
+    """
+
+    @property
+    def display_name(self) -> str:
+        return self.label or self.case_id
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "path": self.path,
@@ -49,6 +77,8 @@ class RecentCase:
             "opened_at": self.opened_at.isoformat(),
             "events": self.events,
             "sources": list(self.sources),
+            "pinned": self.pinned,
+            "label": self.label,
         }
 
 
@@ -63,14 +93,52 @@ class Startup(StrEnum):
 
 
 def remember(cases: Iterable[RecentCase], entry: RecentCase) -> tuple[RecentCase, ...]:
-    """`entry` first, then the rest, deduplicated by path and capped.
+    """`entry` first, then the rest, deduplicated by path, pinned held on top.
 
-    By path rather than by case id: two cases may be named the same, and it is
-    the folder that gets reopened. Reopening yesterday's case should move it to
-    the top, not put the same folder in the list twice.
+    Deduplicated by path rather than by case id: two cases may be named the
+    same, and it is the folder that gets reopened.
+
+    `entry` arrives as a fresh snapshot read off the case, which knows nothing
+    about a pin or a name given here — so anything the list already knew about
+    that folder is carried across. Taking the snapshot at face value would
+    silently undo both the moment the case was opened again.
     """
-    rest = [case for case in cases if case.path != entry.path]
-    return (entry, *rest)[:LIMIT]
+    existing = tuple(cases)
+    previous = next((case for case in existing if case.path == entry.path), None)
+    if previous is not None:
+        entry = replace(entry, pinned=previous.pinned, label=previous.label)
+
+    rest = [case for case in existing if case.path != entry.path]
+    return _arrange((entry, *rest))
+
+
+def _arrange(cases: Iterable[RecentCase]) -> tuple[RecentCase, ...]:
+    """Pinned first, then the rest by recency, with only the rest capped."""
+    ordered = tuple(cases)
+    pinned = tuple(case for case in ordered if case.pinned)
+    loose = tuple(case for case in ordered if not case.pinned)
+    return pinned + loose[:LIMIT]
+
+
+def _amend(
+    cases: Iterable[RecentCase], path: str, change: Callable[[RecentCase], RecentCase]
+) -> tuple[RecentCase, ...]:
+    return _arrange(change(case) if case.path == path else case for case in cases)
+
+
+def set_pinned(cases: Iterable[RecentCase], path: str, *, pinned: bool) -> tuple[RecentCase, ...]:
+    """Hold a case at the top of the list, or stop holding it."""
+    return _amend(cases, path, lambda case: replace(case, pinned=pinned))
+
+
+def set_label(cases: Iterable[RecentCase], path: str, label: str) -> tuple[RecentCase, ...]:
+    """Name a case in this list. An empty name falls back to the case's own."""
+    return _amend(cases, path, lambda case: replace(case, label=label.strip()))
+
+
+def forget_one(cases: Iterable[RecentCase], path: str) -> tuple[RecentCase, ...]:
+    """Drop one entry, leaving the others. `Forget these` takes all of them."""
+    return _arrange(case for case in cases if case.path != path)
 
 
 def dump(cases: Iterable[RecentCase]) -> str:
@@ -109,6 +177,11 @@ def _one(item: object) -> RecentCase | None:
             opened_at=datetime.fromisoformat(str(item["opened_at"])),
             events=int(item["events"]),
             sources=tuple(str(name) for name in item["sources"]),
+            # Absent in anything written before pinning existed. Defaulted
+            # rather than required, so an older list opens instead of being
+            # dropped as unreadable.
+            pinned=bool(item.get("pinned", False)),
+            label=str(item.get("label", "")),
         )
     except (KeyError, TypeError, ValueError):
         return None

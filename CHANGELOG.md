@@ -7,7 +7,19 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Interface
 
-- **A case you have opened before is one click away.** Reopening yesterday's work
+- **A case you have opened before is one click away.** Opening the window puts
+  the list in front of you — **View → Reopen the last case on start** skips it
+  and goes straight to the case you were in — and **Case → Recently opened…**
+  (Ctrl+Shift+O) brings it back at any time.
+  Right-click a row to **pin** it, **rename it in this list**, show its folder,
+  or drop just that one. A pinned case holds the top and is exempt from the
+  ten-entry cap, so a busy week cannot push it off the end. A rename is a name
+  for *this list*: `case.json` is untouched, because the case id is printed in
+  the provenance table of every exported report and renaming the case itself
+  would leave a report written yesterday and one written today disagreeing about
+  what the same case is called. The folder column still shows what it really is.
+  Reopening a case keeps whatever pin and name the list already held for it —
+  the snapshot read off disk knows about neither. Reopening yesterday's work
   meant navigating a folder dialog to a path you had to remember. The last case
   now reopens with the window — **View → Reopen the last case on start** turns
   that off — and **Case → Recently opened…** (Ctrl+Shift+O) offers the rest as a
