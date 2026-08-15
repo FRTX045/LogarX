@@ -25,7 +25,13 @@ if TYPE_CHECKING:
     from logarc.parsers.base import LogParser
     from logarc.storage.base import EventStore
 
-__all__ = ["FormatDetectionError", "IngestCancelled", "IngestResult", "ingest_file"]
+__all__ = [
+    "FormatDetectionError",
+    "IngestCancelled",
+    "IngestResult",
+    "ingest_file",
+    "resolve_parser",
+]
 
 #: Events buffered before a write. Large enough that Parquet row groups are
 #: worth having, small enough that memory stays flat on a huge log.
@@ -111,7 +117,7 @@ def ingest_file(
     with open_log(path) as stream:
         lines = iter(stream)
         sample = list(islice(lines, DEFAULT_SAMPLE_SIZE))
-        parser = _resolve_parser(path, log_format, [text for _, text in sample])
+        parser = resolve_parser(path, log_format, [text for _, text in sample])
 
         batch: list[NormalizedEvent] = []
         lines_read = 0
@@ -163,7 +169,14 @@ def ingest_file(
         )
 
 
-def _resolve_parser(path: Path, log_format: str | None, sample: list[str]) -> LogParser:
+def resolve_parser(path: Path, log_format: str | None, sample: list[str]) -> LogParser:
+    """Decide which parser reads `path`, or refuse and say how to fix it.
+
+    Shared with the parallel path rather than copied into it. Both must refuse
+    in the same words: the sentence names the flag that resolves the problem,
+    and two copies of it are one edit away from an investigator being given
+    advice that only one of them still offers.
+    """
     if log_format is not None:
         return get_parser(log_format)
 

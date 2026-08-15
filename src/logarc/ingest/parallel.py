@@ -30,14 +30,16 @@ from __future__ import annotations
 import time
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
+from itertools import islice
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from logarc.core.evidence import EvidenceRef
+from logarc.ingest.pipeline import resolve_parser
 from logarc.ingest.quarantine import Quarantine
 from logarc.ingest.reader import Compression, open_log
 from logarc.ingest.scan import Chunk, read_range, scan_chunks
-from logarc.parsers.registry import DEFAULT_SAMPLE_SIZE, detect_format, get_parser
+from logarc.parsers.registry import DEFAULT_SAMPLE_SIZE, get_parser
 from logarc.storage.event_store import ParquetEventStore
 
 if TYPE_CHECKING:
@@ -195,23 +197,21 @@ def ingest_file_parallel(
 
 
 def _resolve_format(path: Path, log_format: str | None) -> str:
+    """The name of the format every worker will be told to use.
+
+    Resolved here rather than per worker, so two ranges of one file cannot
+    disagree about what they are reading — and resolved by the same function the
+    sequential path uses, so an unreadable log is refused in the same words
+    whichever path was taken. Both used to hold a copy of that sentence.
+
+    A named format is looked up rather than trusted, because failing here is a
+    message; failing inside a worker is a traceback out of a subprocess. It is
+    looked up without reading the file at all — detection is the only reason to
+    open one, and a named format has nothing to detect.
+    """
     if log_format is not None:
-        get_parser(log_format)  # fail here rather than inside a worker
-        return log_format
+        return resolve_parser(path, log_format, []).name
 
     with open_log(path) as stream:
-        sample = [text for _, text in _head(stream, DEFAULT_SAMPLE_SIZE)]
-    detection = detect_format(sample)
-    if detection is None:
-        from logarc.ingest.pipeline import FormatDetectionError
-
-        raise FormatDetectionError(
-            f"could not identify the log format of {path}; pass one explicitly with --format"
-        )
-    return detection.parser.name
-
-
-def _head(stream: object, count: int) -> list[tuple[int, str]]:
-    from itertools import islice
-
-    return list(islice(iter(stream), count))  # type: ignore[call-overload]
+        sample = [text for _, text in islice(stream, DEFAULT_SAMPLE_SIZE)]
+    return resolve_parser(path, log_format, sample).name
