@@ -1507,14 +1507,31 @@ def test_a_case_that_will_not_open_is_not_remembered(
 def test_the_reopen_choice_outlives_the_window(qt_app: QApplication) -> None:
     app._settings().clear()
     first = MainWindow()
-    assert first._reopen_action.isChecked(), "reopening the last case is the default"
+    assert not first._reopen_action.isChecked(), (
+        "the chooser is what a launch opens on; reopening the last case is opt-in"
+    )
 
     first._reopen_action.trigger()
     first.close()
     second = MainWindow()
 
-    assert not second._reopen_action.isChecked()
+    assert second._reopen_action.isChecked()
     second.close()
+
+
+def test_a_launch_opens_on_the_chooser_rather_than_the_last_case(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    """What the chooser was picked for. Reopening the last case straight away
+    is useful, and it is also a way to never see the list that was the point of
+    building it — so it is offered, not assumed."""
+    from logarc.gui.recent import RecentCase, Startup, now, startup_action
+
+    entry = RecentCase(str(campaign), "case", now(), 10, ("access.log",))
+
+    action, _ = startup_action((entry,), reopen_last=False, exists=lambda _p: True)
+
+    assert action is Startup.CHOOSE
 
 
 def test_forgetting_the_list_leaves_nothing_on_the_machine(
@@ -1533,4 +1550,32 @@ def test_forgetting_the_list_leaves_nothing_on_the_machine(
 
     assert window._recent_cases() == ()
     assert MainWindow()._recent_cases() == (), "and it is gone for the next window too"
+    window.close()
+
+
+def test_a_pin_survives_closing_the_chooser_without_opening_anything(
+    qt_app: QApplication, campaign: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tidying the list is a thing you do on its own. A pin that only stuck when
+    a case happened to be opened afterwards would look like it had not worked."""
+    from logarc.gui import app as app_module
+    from logarc.gui import recent
+    from logarc.gui.case_chooser import CaseChooser
+
+    app._settings().clear()
+    window = MainWindow()
+    window._load_case(campaign)
+    _settled(qt_app)
+    assert window._recent_cases()
+
+    def pin_then_close(self: CaseChooser) -> int:
+        self._amend(recent.set_pinned(self.cases, str(campaign), pinned=True))
+        return 0
+
+    monkeypatch.setattr(app_module.CaseChooser, "exec", pin_then_close)
+    window._show_recent()
+
+    remembered = window._recent_cases()
+    assert remembered[0].pinned
+    assert MainWindow()._recent_cases()[0].pinned, "and the next window sees it too"
     window.close()

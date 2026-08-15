@@ -393,7 +393,10 @@ class MainWindow(QMainWindow):
             view_menu, "Reopen the &last case on start", self._apply_reopen
         )
         self._reopen_action.setCheckable(True)
-        self._reopen_action.setChecked(_remembered(_REOPEN_KEY, default=True))
+        # Off by default: a launch opens on the list. Reopening the last case
+        # straight away is genuinely useful and is also a way never to see the
+        # chooser at all, which is the thing it was built to be.
+        self._reopen_action.setChecked(_remembered(_REOPEN_KEY, default=False))
         self._reopen_action.setStatusTip(
             "Open the case you were last working on as soon as the window appears, "
             "or start with the list of recent cases instead."
@@ -508,6 +511,14 @@ class MainWindow(QMainWindow):
 
         chooser = CaseChooser(cases, exists=lambda path: Path(path).exists())
         chooser.exec()
+
+        # Stored before anything else is decided. A pin, a name or a removal is
+        # worth keeping whether or not a case was opened afterwards — closing
+        # the chooser without opening anything is a perfectly ordinary way to
+        # tidy the list.
+        if chooser.changed and not chooser.forgotten:
+            _settings().setValue(_RECENT_KEY, recent.dump(chooser.cases))
+
         if chooser.forgotten:
             self._forget_recent()
             self._idle("Forgot the list of cases opened here.")
