@@ -464,6 +464,145 @@ def test_the_client_table_lists_and_sorts_by_number(qt_app: QApplication, campai
     assert table._table.rowCount() == len(summaries)
 
 
+def _summaries(*addresses: str) -> list[object]:
+    """Client summaries with chosen addresses, built rather than ingested.
+
+    The premise these tests rest on is which addresses are in the table, and
+    reading them out of a generated case would let a change to the generator
+    quietly empty the assertions.
+    """
+    from logarc.storage.base import IpSummary
+
+    return [
+        IpSummary(
+            client_ip=address,
+            request_count=index * 7 + 3,
+            first_seen=START,
+            last_seen=START + timedelta(minutes=index + 1),
+            distinct_paths=index + 1,
+            client_error_ratio=index / 10,
+            bytes_total=index * 1000 + 1,
+        )
+        for index, address in enumerate(addresses)
+    ]
+
+
+def _on_screen(table: ClientTable) -> list[str]:
+    """The addresses a reader can actually see, in the order they are drawn."""
+    seen = []
+    for row in range(table._table.rowCount()):
+        cell = table._table.item(row, 0)
+        if cell is not None and not table._table.isRowHidden(row):
+            seen.append(cell.text())
+    return seen
+
+
+def test_typing_an_address_narrows_the_client_list(qt_app: QApplication) -> None:
+    """Sorting answers "which client is worth opening". It cannot answer "where
+    is 203.0.113.66", which is the question a ticket or an abuse report brings."""
+    table = ClientTable()
+    table.show_clients(_summaries("203.0.3.9", "203.0.3.8", "198.51.100.4", "203.0.30.5"))
+
+    table._filter.setText("203.0.3.")
+
+    assert _on_screen(table) == ["203.0.3.9", "203.0.3.8"]
+
+
+def test_a_neighbouring_block_is_not_swept_in(qt_app: QApplication) -> None:
+    """`203.0.30.5` is a different /24 from `203.0.3.x`. A filter typed to
+    isolate one block must not answer with another block's traffic."""
+    table = ClientTable()
+    table.show_clients(_summaries("203.0.3.9", "203.0.30.5"))
+
+    table._filter.setText("203.0.3.")
+
+    assert "203.0.30.5" not in _on_screen(table)
+
+
+def test_clearing_the_filter_puts_the_whole_case_back(qt_app: QApplication) -> None:
+    table = ClientTable()
+    table.show_clients(_summaries("203.0.3.9", "198.51.100.4"))
+    table._filter.setText("203.0.3.")
+
+    table._filter.clear()
+
+    assert _on_screen(table) == ["203.0.3.9", "198.51.100.4"]
+
+
+def test_the_caption_keeps_the_size_of_the_case_on_screen(qt_app: QApplication) -> None:
+    """A filtered list captioned "1 client" describes a case with one client in
+    it. That is a lie about the evidence, and the panel is the only place the
+    size of the case is stated."""
+    table = ClientTable()
+    table.show_clients(_summaries("203.0.3.9", "198.51.100.4", "198.51.100.7"))
+
+    table._filter.setText("203.0.3.")
+
+    assert table._caption.text() == "1 of 3 clients matches 203.0.3."
+
+
+def test_filtering_does_not_reconstruct_a_different_client(qt_app: QApplication) -> None:
+    """`client_chosen` starts a reconstruction. Hiding rows moves Qt's
+    selection about, so a filter that let the signal through would abandon the
+    client being read and start analysing whoever happened to survive the
+    filter — triggered by typing."""
+    table = ClientTable()
+    table.show_clients(_summaries("203.0.3.9", "203.0.3.8", "198.51.100.4"))
+    table._table.selectRow(0)
+
+    chosen: list[str] = []
+    table.client_chosen.connect(chosen.append)
+    table._filter.setText("198.51")
+    table._filter.setText("203.0.3.")
+    table._filter.clear()
+
+    assert chosen == [], f"typing in the filter reconstructed {chosen}"
+
+
+def test_sorting_after_filtering_still_hides_the_right_rows(qt_app: QApplication) -> None:
+    """Filtering and sorting are used together — narrow to a subnet, then order
+    it by 4xx — so the two must not undo each other.
+
+    Written expecting a bug that is not there: `setRowHidden` takes a row index,
+    so sorting looked certain to leave the holes behind while the items moved
+    through them. Probed rather than assumed, and QTableWidget carries the
+    hidden flag along with the item it belongs to. The defensive re-apply this
+    test was written to prove was removed once the probe showed it was dead
+    code. The test stays: the property is one a reader depends on, and it would
+    stop holding the moment this panel moved to a proxy model or rebuilt its
+    rows on sort.
+    """
+    from PyQt6.QtCore import Qt
+
+    table = ClientTable()
+    table.show_clients(_summaries("203.0.3.9", "198.51.100.4", "203.0.3.8", "198.51.100.7"))
+    table._filter.setText("203.0.3.")
+    assert len(_on_screen(table)) == 2, "premise: the filter hides two of the four"
+
+    # Descending, so every item actually changes row. Ascending left this data
+    # in the order it was already in, and the test passed with the fix removed
+    # — a sort that moves nothing cannot catch a bug about rows moving.
+    table._table.sortItems(1, Qt.SortOrder.DescendingOrder)
+    assert _on_screen(table)[0] != "203.0.3.9", "premise: the sort reordered the table"
+
+    assert set(_on_screen(table)) == {"203.0.3.9", "203.0.3.8"}
+
+
+def test_opening_another_case_does_not_carry_the_filter_across(qt_app: QApplication) -> None:
+    """A filter left over from the last case hides most of the new one, and the
+    reader has no reason to suspect a box they filled in for something else."""
+    table = ClientTable()
+    table.show_clients(_summaries("203.0.3.9", "198.51.100.4"))
+    table._filter.setText("203.0.3.")
+
+    table.show_clients(_summaries("10.1.1.1", "10.1.1.2"))
+
+    assert table._filter.text() == ""
+    # A set, because the table keeps whatever sort order it was left in and the
+    # claim here is about what is visible, not about what order it is in.
+    assert set(_on_screen(table)) == {"10.1.1.1", "10.1.1.2"}
+
+
 #: A real Combined line. Its first 45 characters are the client address and the
 #: timestamp — the address the reader chose from the table themselves, and a
 #: time already printed in the heading — and the payload sits past character 60.

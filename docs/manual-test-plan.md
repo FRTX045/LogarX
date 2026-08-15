@@ -301,6 +301,52 @@ characters, never as markup.
 
 ---
 
+## 10. The client filter finds one address without hiding the size of the case
+
+**Why:** sorting answers *which client is worth opening*; it cannot answer
+*where is 203.0.113.66*, which is the address an abuse report or a colleague
+arrives with. On a case with tens of thousands of clients the only previous
+answer was to scroll. The risk the filter introduces is the opposite one — a
+narrowed list that no longer says how large the case really is.
+
+1. Open a case with several thousand clients. Type part of an address —
+   `203.0.113.` — into the box above the table.
+
+**Pass:** the list narrows as you type, and the caption reads `N of TOTAL
+clients match 203.0.113.` The total must stay on screen: a filtered list
+captioned `9 clients` describes a case containing nine clients.
+
+2. Type a **complete** address that exists in the case.
+
+**Pass:** exactly one row. If several appear, the exact-match rule has been
+lost — `203.0.3.9` is a substring of `203.0.3.90`, and an investigator copying
+an address out of a ticket could open the wrong client and write it up.
+
+3. Type an address that is not in the case at all.
+
+**Pass:** the table is empty *and says why* — `No client matches 10.9.9.9.
+1,200 in the case.` An empty table with no explanation reads as a broken tool.
+
+4. Select a client and reconstruct it. Now type a filter that excludes it.
+
+**Pass:** the canvas goes on showing the reconstruction you opened. Filtering
+changes what is listed, not what is being read, and it must never start
+analysing whoever happened to survive the filter. Clear the box: the row is
+back, still selected.
+
+5. With a filter applied, click a column heading to sort.
+
+**Pass:** the same clients are on screen afterwards — sorting reorders what the
+filter kept, it does not readmit what the filter excluded.
+
+6. Open a different case.
+
+**Pass:** the box is empty and the whole of the new case is listed. A filter
+carried across would make a full case look nearly empty, and nothing on screen
+would explain it.
+
+---
+
 ## Recording a run
 
 | # | Check | Result | Notes |
@@ -314,5 +360,6 @@ characters, never as markup.
 | 7 | Packaged build finds its rules and knows its version | | |
 | 8 | Wrap toggles, greys out off-view, and survives a restart | | |
 | 9 | Evidence reads as the request; raw line matches the file byte for byte | | |
+| 10 | Filter finds one address, states the total, survives a sort | | |
 
 Version tested: ______  ·  Date: ______  ·  Machine: ______

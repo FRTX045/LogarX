@@ -18,17 +18,19 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLayout,
     QLayoutItem,
+    QLineEdit,
     QTableWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from logarc.gui._qt import SORT_KEY, SortableItem, required
+from logarc.gui.client_filter import caption as filter_caption
+from logarc.gui.client_filter import matches
 from logarc.gui.style import (
     SIZE_NOTE,
     THEME,
     outcome_legend,
-    plural,
     severity_legend,
 )
 from logarc.gui.theme import PAD, TIGHT, caption_font, mono_font
@@ -115,6 +117,16 @@ class ClientTable(QWidget):
         header.setMinimumHeight(header.fontMetrics().height() + 14)
         self._table.itemSelectionChanged.connect(self._emit_choice)
 
+        self._filter = QLineEdit()
+        self._filter.setPlaceholderText("Filter clients…")
+        self._filter.setClearButtonEnabled(True)
+        # Monospace to match the column it searches: an address is a column of
+        # digits pretending to be a word, and what is typed should look like
+        # what it is being compared against.
+        self._filter.setFont(mono_font(self._filter.font().pointSizeF()))
+        self._filter.setAccessibleName("Filter clients by address")
+        self._filter.textChanged.connect(self._apply_filter)
+
         self._caption = QLabel("No case open.")
         self._caption.setFont(caption_font(self._caption.font()))
         self._caption.setStyleSheet(f"color:{THEME.muted};")
@@ -124,10 +136,17 @@ class ClientTable(QWidget):
         # each: the panel opened on half a `5` of `500 clients`.
         layout.setContentsMargins(PAD, TIGHT, PAD, TIGHT)
         layout.setSpacing(TIGHT)
+        layout.addWidget(self._filter)
         layout.addWidget(self._caption)
         layout.addWidget(self._table)
 
     def show_clients(self, summaries: Sequence[IpSummary]) -> None:
+        # A filter typed for the last case would hide most of this one, and the
+        # reader has no reason to suspect a box they filled in for something
+        # else — the table would simply look like a case with almost nothing in
+        # it. Cleared here rather than carried across.
+        self._filter.clear()
+
         self._table.setSortingEnabled(False)
         self._table.setRowCount(len(summaries))
         for row, summary in enumerate(summaries):
@@ -140,8 +159,39 @@ class ClientTable(QWidget):
             self._set(row, 4, format_seen(summary.first_seen))
             self._set(row, 5, format_seen(summary.last_seen))
         self._table.setSortingEnabled(True)
+        for row in range(self._table.rowCount()):
+            self._table.setRowHidden(row, False)
+        self._write_caption(shown=len(summaries))
+
+    def _apply_filter(self) -> None:
+        """Hide the rows that do not match what has been typed.
+
+        Hiding rows deliberately leaves the selection where it is, even when
+        the selected client is the one hidden. Filtering is a change to what is
+        listed, not to what is being read: the canvas goes on showing the
+        reconstruction the investigator opened, and clearing the box brings its
+        row back still selected.
+
+        That holds without help here — measured rather than assumed. Qt neither
+        moves the selection off a hidden row nor emits `itemSelectionChanged`
+        for one, so the guards first written around this loop (blocking the
+        table's signals, restoring the selected row afterwards) were defending
+        against nothing and were removed. `test_filtering_does_not_reconstruct_a
+        _different_client` still holds the property, because it is Qt's promise
+        and not ours.
+        """
+        query = self._filter.text()
+        shown = 0
+        for row in range(self._table.rowCount()):
+            cell = self._table.item(row, _ADDRESS)
+            keep = cell is not None and matches(cell.text(), query)
+            self._table.setRowHidden(row, not keep)
+            shown += keep
+        self._write_caption(shown=shown)
+
+    def _write_caption(self, *, shown: int) -> None:
         self._caption.setText(
-            f"{plural(len(summaries), 'client')}. Select one to reconstruct what it did."
+            filter_caption(shown=shown, total=self._table.rowCount(), query=self._filter.text())
         )
 
     def _set(self, row: int, column: int, text: str, *, sort_key: float | None = None) -> None:
