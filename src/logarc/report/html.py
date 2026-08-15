@@ -16,7 +16,7 @@ import json
 from typing import TYPE_CHECKING, Final
 
 from logarc.core.activity import Outcome, Severity
-from logarc.core.graph import GraphKind
+from logarc.core.graph import GraphKind, reciprocal_pairs
 from logarc.graphbuild.layout import layout_graph
 from logarc.gui.style import severity_colour, severity_legend
 
@@ -45,6 +45,11 @@ _OUTCOME_NOTE: Final[dict[Outcome, str]] = {
 _NODE_WIDTH: Final = 180.0
 _NODE_HEIGHT: Final = 74.0
 _MARGIN: Final = 60.0
+
+#: How far apart the two halves of a reciprocal pair are pushed, in SVG units.
+#: Applied to the control points rather than the ends, so both arrows still meet
+#: the boxes they join.
+_PAIR_BOW: Final = 40.0
 
 
 def render_report(result: AnalysisResult, manifest: CaseManifest | None = None) -> str:
@@ -142,6 +147,10 @@ def _svg(graph: ActivityGraph) -> str:
     width = max(xs) - min(xs) + _NODE_WIDTH + 2 * _MARGIN
     height = max(ys) - min(ys) + _NODE_HEIGHT + 2 * _MARGIN
 
+    # Resolved once for the graph: the answer cannot change while drawing it,
+    # and asking per edge would be quadratic in the edge count.
+    paired = reciprocal_pairs(graph)
+
     parts = [
         f'<svg viewBox="0 0 {width:.0f} {height:.0f}" '
         f'style="max-width:100%;height:auto" role="img">',
@@ -176,15 +185,26 @@ def _svg(graph: ActivityGraph) -> str:
             )
             continue
         midpoint = (x1 + x2) / 2
+        # An edge each way between the same two boxes is one cubic traced
+        # backwards, so the second drawn lands exactly on the first and its
+        # label is written over the first's. Pushing the control points aside in
+        # the direction of travel separates them symmetrically, without either
+        # edge needing to know the other exists. The sign comes from the
+        # endpoints rather than from the order the graph lists its edges, so two
+        # renders of one case do not differ.
+        bow = _PAIR_BOW if frozenset((edge.source, edge.target)) in paired else 0.0
+        bow *= 1.0 if (x2, y2) > (x1, y1) else -1.0
         parts.append(
-            f'<path d="M{x1:.0f},{y1:.0f} C{midpoint:.0f},{y1:.0f} '
-            f'{midpoint:.0f},{y2:.0f} {x2:.0f},{y2:.0f}" fill="none" stroke="#94a3b8" '
+            f'<path d="M{x1:.0f},{y1:.0f} C{midpoint:.0f},{y1 + bow:.0f} '
+            f'{midpoint:.0f},{y2 + bow:.0f} {x2:.0f},{y2:.0f}" fill="none" stroke="#94a3b8" '
             f'stroke-width="{thickness:.1f}" marker-end="url(#arrow)"/>'
         )
         if label := _edge_label(graph.kind, edge):
+            # Three quarters of the way out to the control points, which is
+            # close to where a cubic actually passes at its midpoint.
             parts.append(
-                f'<text x="{midpoint:.0f}" y="{(y1 + y2) / 2 - 6:.0f}" class="edge-label" '
-                f'text-anchor="middle">{html.escape(label)}</text>'
+                f'<text x="{midpoint:.0f}" y="{(y1 + y2) / 2 + bow * 0.75 - 6:.0f}" '
+                f'class="edge-label" text-anchor="middle">{html.escape(label)}</text>'
             )
 
     for node in graph.nodes:
