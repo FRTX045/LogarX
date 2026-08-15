@@ -91,8 +91,22 @@ USER_ERRORS = (
 
 
 def _fail(message: str) -> typer.Exit:
-    errors.print(f"[red]error:[/red] {message}")
+    errors.print(f"[red]error:[/red] {message}", soft_wrap=True)
     return typer.Exit(code=1)
+
+
+def _path_line(message: str) -> None:
+    """Print a line carrying a path, without breaking the path.
+
+    Rich wraps to the console width, and a path offers no spaces to break at, so
+    a long one is cut mid-word — `...Desktop-BlackHa` on one line and `t\\...` on
+    the next. Every path this tool prints is the argument to the next command,
+    and one that cannot be copied out of the terminal is one the reader has to
+    retype. `soft_wrap` leaves the line whole and lets the terminal fold it,
+    which is the difference between a display that wraps and text that has had
+    newlines put through it.
+    """
+    console.print(message, soft_wrap=True)
 
 
 #: Shared by every command that applies rules, so a report cannot disagree with
@@ -180,7 +194,11 @@ def ingest(
     except USER_ERRORS as exc:
         raise _fail(str(exc)) from exc
 
-    table = Table(title=f"Ingested into {case}")
+    # The path goes under the table rather than in its title: a title is centred
+    # and wrapped, so a long path arrived as three fragments padded with spaces.
+    # This is the path every later command is given, so it is the one that most
+    # needs to survive being copied.
+    table = Table(title="Ingested")
     for column in ("Source", "Format", "Lines", "Events", "Quarantined", "Lines/s"):
         table.add_column(column, justify="right" if column != "Source" else "left")
     for result in results:
@@ -193,10 +211,11 @@ def ingest(
             f"{result.lines_per_second:,.0f}",
         )
     console.print(table)
+    _path_line(f"Case: {case}")
 
     quarantined = sum(result.lines_quarantined for result in results)
     if quarantined:
-        console.print(
+        _path_line(
             f"[yellow]{quarantined:,} line(s) could not be parsed[/yellow] — "
             f"see {case / 'quarantine' / 'unparsed.jsonl'}"
         )
@@ -302,7 +321,7 @@ def analyze(
 
     if out is not None:
         out.write_text(json.dumps(result.to_dict(), indent=2), encoding="utf-8")
-        console.print(f"Graph written to {out}")
+        _path_line(f"Graph written to {out}")
 
 
 @app.command()
@@ -402,7 +421,7 @@ def export(
         out.write_text(json.dumps(result.to_dict(), indent=2), encoding="utf-8")
     else:
         out.write_text(render_report(result, manifest), encoding="utf-8")
-    console.print(f"Report written to {out}")
+    _path_line(f"Report written to {out}")
 
 
 @app.command()
@@ -453,7 +472,7 @@ def generate(
         f"in {result.elapsed_seconds:.1f}s (seed {result.seed})"
     )
     if result.truth_path is not None:
-        console.print(f"Ground truth written to {result.truth_path}")
+        _path_line(f"Ground truth written to {result.truth_path}")
 
 
 @app.command()
@@ -567,7 +586,7 @@ def evaluate(
 
     if out is not None:
         out.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
-        console.print(f"\nFull numbers written to {out}")
+        _path_line(f"\nFull numbers written to {out}")
 
 
 @app.command("convert-csic")
@@ -613,7 +632,7 @@ def convert_csic_command(
         f"{result.sessions:,} sessions)"
     )
     if result.truth_path is not None:
-        console.print(f"Ground truth written to {result.truth_path}")
+        _path_line(f"Ground truth written to {result.truth_path}")
     if result.attacks_hidden_in_bodies and not include_bodies:
         console.print(
             f"[yellow]{result.attacks_hidden_in_bodies:,} attacks "
@@ -709,7 +728,7 @@ def enrich(
         f"{rate:,.0f}",
     )
     console.print(table)
-    console.print(f"\nWritten to {path}")
+    _path_line(f"\nWritten to {path}")
     console.print(
         f"CRS {config.revision() or 'unknown'}, configuration {config.fingerprint()} — "
         "recorded in the case manifest so a finding can name what produced it."
@@ -807,7 +826,7 @@ def benchmark(
             ),
             encoding="utf-8",
         )
-        console.print(f"Measurements written to {out}")
+        _path_line(f"Measurements written to {out}")
 
 
 @app.command()
