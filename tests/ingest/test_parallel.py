@@ -65,6 +65,30 @@ def ingest(root: Path, log: Path, *, workers: int) -> tuple[list[tuple[str, int,
     return stored(root), results[0]
 
 
+def test_an_unrecognisable_log_fails_the_same_way_on_both_paths(tmp_path: Path) -> None:
+    """Format detection is resolved before any worker starts, and it must refuse
+    in the same words the sequential path refuses in.
+
+    Untested until now, and the two paths held a copy each of the message. Two
+    copies of a sentence are one edit away from disagreeing, and this one names
+    the flag that fixes the problem — an investigator following the parallel
+    path's advice would be following whatever it happened to still say.
+    """
+    from logarc.ingest.parallel import ingest_file_parallel
+    from logarc.ingest.pipeline import FormatDetectionError
+
+    log = tmp_path / "not-a-log.txt"
+    log.write_text("this is prose\nand so is this\n", encoding="utf-8")
+
+    with pytest.raises(FormatDetectionError) as raised:
+        ingest_file_parallel(
+            log, tmp_path / "case", file_id="not-a-log.txt", workers=2, batch_size=10
+        )
+
+    assert "--format" in str(raised.value), "the refusal has to name the way out"
+    assert str(log) in str(raised.value)
+
+
 @pytest.mark.slow
 @pytest.mark.parametrize("workers", [2, 3])
 def test_parallel_ingest_stores_exactly_what_sequential_does(tmp_path: Path, workers: int) -> None:
