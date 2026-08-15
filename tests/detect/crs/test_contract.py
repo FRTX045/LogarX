@@ -64,9 +64,11 @@ def test_a_known_payload_still_fires_the_rule_it_is_famous_for() -> None:
 
 
 def test_ordinary_traffic_produces_nothing() -> None:
-    """At paranoia level 1 a plain page request must be silent. If this starts
-    failing, the paranoia level is wrong for a tool where a false positive
-    splits an episode."""
+    """At the paranoia level this runs — 2, see `crs/main.go` — a plain page
+    request must be silent. If this starts failing, the level is wrong for a
+    tool where a false positive splits an episode: a detection can name an
+    activity, and naming one starts a new episode. PL3 is where that happens;
+    it reads a plain `GET /` as "Unix Shell Code Found in Request"."""
     assert run_sidecar([event("/index.html", 1)], config=CONFIG) == []
 
 
