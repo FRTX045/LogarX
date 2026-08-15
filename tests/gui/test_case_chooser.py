@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
@@ -28,6 +29,79 @@ def case(path: str, case_id: str = "case-001", events: int = 120) -> RecentCase:
     return RecentCase(
         path=path, case_id=case_id, opened_at=WHEN, events=events, sources=("views.log",)
     )
+
+
+def test_the_two_other_ways_out_are_not_mixed_up(qt_app: QApplication) -> None:
+    """Each button sets one flag, and the window opens a different dialog for
+    each — a folder picker for a case that already exists, an ingest for a new
+    one. Swapping them sends the reader to the wrong dialog, and nothing else
+    would notice: both flags are booleans on the same object."""
+    chooser = CaseChooser((case("/a"),), exists=lambda _p: True)
+
+    chooser._choose_other()
+
+    assert chooser.wants_other_case
+    assert not chooser.wants_new_case
+    assert chooser.chosen_path is None
+
+    again = CaseChooser((case("/a"),), exists=lambda _p: True)
+    again._choose_new()
+
+    assert again.wants_new_case
+    assert not again.wants_other_case
+
+
+@pytest.mark.parametrize("action", ["_toggle_pin", "_rename", "_remove", "_show_folder"])
+def test_a_row_action_with_nothing_selected_does_nothing(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch, action: str
+) -> None:
+    """The menu is opened by right-clicking a row, so a selection normally
+    exists — but the same slots are reachable with none, and every one of them
+    indexes `self.cases[row]`. Without the guard that is an exception out of a
+    context menu; with it, nothing happens, which is the right nothing."""
+    from logarc.gui import case_chooser
+
+    monkeypatch.setattr(case_chooser, "_ask_for_a_name", lambda *_a, **_k: "new name")
+    chooser = CaseChooser((case("/a"), case("/b")), exists=lambda _p: True)
+    chooser._table.clearSelection()
+    before = chooser.cases
+
+    getattr(chooser, action)()
+
+    assert chooser.cases == before
+    assert not chooser.changed
+
+
+def test_the_menu_offers_to_undo_what_is_already_done(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A pinned case is offered "Unpin", not "Pin to the top". Inverted, the
+    entry describes the state rather than the action, and clicking what reads as
+    "pin this" unpins it."""
+    from PyQt6.QtCore import QPoint
+    from PyQt6.QtWidgets import QMenu
+
+    labels: list[str] = []
+    monkeypatch.setattr(QMenu, "exec", lambda self, *_a: None)
+    monkeypatch.setattr(
+        QMenu,
+        "addAction",
+        lambda self, text: (labels.append(text), QMenu.__bases__[0].addAction(self, text))[1],
+    )
+
+    chooser = CaseChooser((case("/a"), replace(case("/b"), pinned=True)), exists=lambda _p: True)
+    chooser._table.selectRow(0)
+    chooser._show_menu(QPoint(1, 1))
+    unpinned_first = labels[0]
+
+    labels.clear()
+    # The pinned one sorts to the top, so row 0 is the pinned case there.
+    pinned = CaseChooser((replace(case("/b"), pinned=True),), exists=lambda _p: True)
+    pinned._table.selectRow(0)
+    pinned._show_menu(QPoint(1, 1))
+
+    assert unpinned_first == "Pin to the top"
+    assert labels[0] == "Unpin"
 
 
 def test_every_case_gets_a_row(qt_app: QApplication, tmp_path) -> None:
