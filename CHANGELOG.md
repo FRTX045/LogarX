@@ -168,6 +168,20 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Every command that reads a case crashed on one whose ingest never finished** —
+  `list-ips`, `analyze`, `evidence`, `export`, `enrich`, all with an unhandled
+  exception and no message at all. That state is not a corner case: cancelling an
+  ingest leaves one deliberately so the part already read is not thrown away, and
+  the window says as much. Someone told a case "cannot be analysed" and then
+  trying a command against the folder got a stack trace. It now says which case
+  was never finalised.
+- **Paths printed to the terminal could not be copied.** Rich wraps to the console
+  width and a path offers no spaces to break at, so a long one was cut mid-word —
+  and the case folder, which every later command takes as `--case`, was in a table
+  title, where it arrived as three centred fragments padded with spaces. It now
+  sits under the table as `Case: <path>`, on one line. The same applied to the
+  error naming a file that could not be parsed, which was breaking that filename
+  across five lines.
 - **The behaviour map drew one arrow where there were two.** A map folds a trace by activity type,
   so a client alternating between two of them produces an edge each way between the same circles —
   and drawn straight, both are the same line. Measured, the two midpoints were `0.0` apart, so the
