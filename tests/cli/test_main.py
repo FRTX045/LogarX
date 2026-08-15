@@ -29,6 +29,17 @@ def log(tmp_path: Path) -> Path:
     return path
 
 
+def test_every_severity_has_a_colour_to_print_it_in() -> None:
+    """The table is indexed, not `.get`, so a severity missing from it raises
+    `KeyError` — and it raises in `analyze` and `list-ips`, at the moment there
+    is finally something to report. Adding a level to the enum should fail here
+    instead, where it costs a line."""
+    from logarc.cli.main import _SEVERITY_STYLE
+    from logarc.core.activity import Severity
+
+    assert set(_SEVERITY_STYLE) == set(Severity)
+
+
 def test_ingest_reports_what_it_stored(log: Path, tmp_path: Path) -> None:
     result = runner.invoke(app, ["ingest", str(log), "--case", str(tmp_path / "case")])
 
