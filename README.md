@@ -126,6 +126,14 @@ click a node to see the raw log lines that node was built from, and export the s
 CLI produces. Long work runs on a worker thread and can be cancelled; a cancelled ingest leaves
 the case un-finalised, so a partial read can never be analysed as if it were complete.
 
+The case you were last working on reopens when the window does, and **Case → Recently opened…**
+(Ctrl+Shift+O) offers the others; **View → Reopen the last case on start** turns the first part off.
+
+**That list is kept on the machine you are working at.** It records which cases were opened
+here — their folders, when, and how much was in them — under `HKCU\Software\logarc`, beside the
+view preferences. That is a record of what was investigated, not merely of how the window looked,
+so the chooser carries a **Forget these** button that removes it.
+
 It is verified by hand against [docs/manual-test-plan.md](docs/manual-test-plan.md) — whether the
 node you clicked is the one whose evidence appeared is a judgement about what a person sees.
 The decisions that determine whether a graph *misinforms* are kept out of Qt, in
