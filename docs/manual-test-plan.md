@@ -347,6 +347,44 @@ would explain it.
 
 ---
 
+## 11. Zooming behaves like zooming a picture
+
+**Why:** canvas text used to be pinned to screen size so `fit()` could not
+shrink it into a smudge. That produced the opposite fault — the geometry shrank
+while the words did not, so on a 52-activity trace the captions went from 7
+overlapping pairs at full zoom to 117 at 0.35, which is the zoom someone uses to
+see the shape of a long session. Everything scales together now, so the check is
+that nothing has quietly gone back to being exempt.
+
+1. Reconstruct a client with a long, wrapped trace — 40 activities or more.
+   Read the captions at the scale it opens at.
+
+**Pass:** they are the size they always were. `fit()` stops at
+`MIN_FIT_SCALE`, and captions are sized so that at exactly that scale they come
+out at their written point size.
+
+2. Zoom out with the wheel, well past the opening scale.
+
+**Pass:** the whole drawing shrinks together — circles, arrows, words. Text gets
+small, which is expected and is the honest half of the trade; what must **not**
+happen is captions sliding into each other or across the circles. If two
+captions touch at one zoom they will touch at every zoom, so one clean zoom
+level is not evidence — check a far one.
+
+3. Zoom back in past 1:1.
+
+**Pass:** captions grow with the graph. A caption that stays the same size while
+the circles grow is the old behaviour returning, and the overlap comes back with
+it at the other end.
+
+4. Compare against the exported HTML report of the same client.
+
+**Pass:** the report's boxes are spaced from the same layout module, so a change
+to canvas spacing shows up there as more room between boxes — never as boxes
+overlapping or an SVG wider than the page.
+
+---
+
 ## Recording a run
 
 | # | Check | Result | Notes |
@@ -361,5 +399,6 @@ would explain it.
 | 8 | Wrap toggles, greys out off-view, and survives a restart | | |
 | 9 | Evidence reads as the request; raw line matches the file byte for byte | | |
 | 10 | Filter finds one address, states the total, survives a sort | | |
+| 11 | Zoom scales the whole drawing; captions never touch at any zoom | | |
 
 Version tested: ______  ·  Date: ______  ·  Machine: ______
