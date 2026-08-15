@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Final
 
 from logarc.core.event import NormalizedEvent
@@ -105,6 +105,11 @@ _BARE_BODY: Final = r"\S+"
 #: `%q` is the exception: it is genuinely empty when a request has no query
 #: string, and Apache writes no placeholder for it.
 _OPTIONAL_BARE_BODY: Final = r"\S*"
+
+#: UTC offsets already worked out, keyed on the five characters that spell one
+#: (`+0000`, `-0330`). Unbounded by type and bounded in fact: there are fewer
+#: than forty in use worldwide, and a single log almost always has one.
+_OFFSETS: dict[str, timedelta] = {}
 
 _MONTHS: Final[dict[str, int]] = {
     "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6,
@@ -356,17 +361,29 @@ def _parse_timestamp(raw: str | None) -> datetime | None:
         return None
     text = raw[1:-1] if raw.startswith("[") and raw.endswith("]") else raw
     try:
-        offset_sign = 1 if text[21] == "+" else -1
-        offset = timedelta(hours=int(text[22:24]), minutes=int(text[24:26])) * offset_sign
-        return datetime(
-            year=int(text[7:11]),
-            month=_MONTHS[text[3:6]],
-            day=int(text[0:2]),
-            hour=int(text[12:14]),
-            minute=int(text[15:17]),
-            second=int(text[18:20]),
-            tzinfo=timezone(offset),
-        ).astimezone(UTC)
+        # Built in UTC and shifted, rather than built in the log's own zone and
+        # converted. `astimezone` is the expensive half of this and it needs a
+        # `timezone` object to convert from, which was one more allocation per
+        # line; subtracting the offset from a UTC datetime reaches the same
+        # instant with neither. A log usually has one offset throughout, so the
+        # shift itself is cached on the five characters that spell it.
+        offset = _OFFSETS.get(zone := text[21:26])
+        if offset is None:
+            offset = _OFFSETS[zone] = timedelta(hours=int(zone[1:3]), minutes=int(zone[3:5])) * (
+                1 if zone[0] == "+" else -1
+            )
+        return (
+            datetime(
+                year=int(text[7:11]),
+                month=_MONTHS[text[3:6]],
+                day=int(text[0:2]),
+                hour=int(text[12:14]),
+                minute=int(text[15:17]),
+                second=int(text[18:20]),
+                tzinfo=UTC,
+            )
+            - offset
+        )
     except (ValueError, KeyError, IndexError):
         return _parse_timestamp_fallback(text)
 

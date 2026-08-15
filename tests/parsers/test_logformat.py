@@ -94,6 +94,47 @@ def test_timestamp_is_normalised_to_utc() -> None:
     assert event.timestamp == datetime(2000, 10, 10, 20, 55, 36, tzinfo=UTC)
 
 
+@pytest.mark.parametrize(
+    ("offset", "expected"),
+    [
+        ("+0000", datetime(2024, 5, 1, 4, 6, 33, tzinfo=UTC)),
+        ("-0700", datetime(2024, 5, 1, 11, 6, 33, tzinfo=UTC)),
+        ("+0900", datetime(2024, 4, 30, 19, 6, 33, tzinfo=UTC)),
+        # Half-hour and three-quarter-hour zones exist and are the ones a
+        # whole-hour shortcut gets wrong: India, Nepal, the Chatham Islands.
+        ("+0530", datetime(2024, 4, 30, 22, 36, 33, tzinfo=UTC)),
+        ("-0330", datetime(2024, 5, 1, 7, 36, 33, tzinfo=UTC)),
+        ("+1245", datetime(2024, 4, 30, 15, 21, 33, tzinfo=UTC)),
+    ],
+)
+def test_every_kind_of_utc_offset_lands_on_the_right_instant(
+    offset: str, expected: datetime
+) -> None:
+    """Servers in different timezones have to sort against each other, so the
+    offset is not decoration — reading it wrong reorders the evidence."""
+    parser = LogFormatParser(COMBINED)
+    line = f'1.2.3.4 - - [01/May/2024:04:06:33 {offset}] "GET / HTTP/1.1" 200 1 "-" "-"'
+
+    event = parser.parse_line(line, REF)
+
+    assert event is not None
+    assert event.timestamp == expected
+
+
+def test_a_normalised_timestamp_is_in_utc_not_merely_equal_to_it() -> None:
+    """Two aware datetimes at the same instant compare equal whatever their
+    zones, so equality alone would pass on a timestamp left in the log's own
+    offset — and that is what gets written into the store and rendered."""
+    parser = LogFormatParser(COMBINED)
+    line = '1.2.3.4 - - [01/May/2024:04:06:33 +0530] "GET / HTTP/1.1" 200 1 "-" "-"'
+
+    event = parser.parse_line(line, REF)
+
+    assert event is not None
+    assert event.timestamp.tzinfo is UTC
+    assert event.timestamp.hour == 22
+
+
 def test_line_that_does_not_match_the_format_is_rejected() -> None:
     parser = LogFormatParser(COMBINED)
 
