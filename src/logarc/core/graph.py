@@ -108,3 +108,30 @@ class ActivityGraph:
             "nodes": [node.to_dict() for node in self.nodes],
             "edges": [edge.to_dict() for edge in self.edges],
         }
+
+
+def reciprocal_pairs(graph: ActivityGraph) -> frozenset[frozenset[str]]:
+    """Node pairs joined by an edge each way.
+
+    A behaviour map folds a trace by activity type, so a client that goes
+    enumeration -> injection -> enumeration produces an edge in each direction
+    between the same two nodes. Drawn between the same two points, both are the
+    same line, and the second one drawn hides the first along with its label —
+    so the map shows one transition where there are two, and the one it hides is
+    whichever was drawn first, not the lighter one.
+
+    Both renderers need the answer and neither should work it out for itself:
+    the report cannot import the Qt canvas's module, and two copies of a rule
+    about what a picture means is how the picture starts to disagree with
+    itself. It is a fact about the graph, so it lives with the graph.
+
+    A self-loop is excluded. `a -> a` is its own reverse, so it satisfies the
+    rule read literally, and separating it would move a loop off the node it
+    loops on.
+    """
+    directed = {(edge.source, edge.target) for edge in graph.edges}
+    return frozenset(
+        frozenset((source, target))
+        for source, target in directed
+        if source != target and (target, source) in directed
+    )
