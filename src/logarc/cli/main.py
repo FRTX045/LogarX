@@ -240,7 +240,7 @@ def list_ips(
         console.print("[yellow]No events in this case.[/yellow]")
         return
 
-    table = Table(title=f"Clients in {case}")
+    table = Table(title="Clients")
     table.add_column("IP")
     for column in ("Requests", "Paths", "4xx", "Bytes"):
         table.add_column(column, justify="right")
@@ -257,6 +257,7 @@ def list_ips(
             summary.last_seen.strftime("%Y-%m-%d %H:%M:%S"),
         )
     console.print(table)
+    _path_line(f"Case: {case}")
 
 
 @app.command()

@@ -83,14 +83,31 @@ logarc ingest access.log --case ./case-001
 # the worker count — which is why it is opt-in rather than the default.
 logarc ingest access.log --case ./case-001 --workers 4
 
-# List the IPs seen, ranked by how suspicious their traffic looks
-logarc list-ips --case ./case-001 --sort suspicion
+# List the IPs seen. `--sort errors` ranks by the share of 4xx responses, which
+# is what a client probing for things that are not there looks like.
+# Also: requests, recent, bytes, paths.
+logarc list-ips --case ./case-001 --sort errors
 
 # Reconstruct one IP's activity graph
 logarc analyze --case ./case-001 --ip 203.0.113.45 --out graph.json
 
+# Read the raw log lines a finding rests on — the other half of the chain of
+# custody. `analyze` says what happened; this says which lines say so.
+logarc evidence --case ./case-001 --ip 203.0.113.45
+
 # Produce a self-contained HTML report for the case file
 logarc export --case ./case-001 --ip 203.0.113.45 --format html --out report.html
+```
+
+The format is detected from the first lines of a log. When it cannot be — a
+custom `LogFormat`, or a file that is not an access log — ingest refuses rather
+than guessing, because the wrong parser quarantines everything and presents as
+an empty result. `logarc formats` lists the names `--format` accepts, and the
+directive behind each:
+
+```bash
+logarc formats
+logarc ingest access.log --case ./case-001 --format apache-common
 ```
 
 ### The desktop application
