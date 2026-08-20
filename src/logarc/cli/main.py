@@ -36,6 +36,7 @@ from logarc.evaluation.csic import CsicError, convert_csic
 from logarc.evaluation.generator import DEFAULT_SEED, describe_scenarios, write_log
 from logarc.evaluation.scoring import evaluate as score_case
 from logarc.evaluation.truth import TruthError, read_truth
+from logarc.gui.style import plural
 from logarc.ingest.pipeline import FormatDetectionError
 from logarc.ingest.reader import LogSourceError
 from logarc.parsers.registry import UnknownFormatError, registered_formats
@@ -216,7 +217,7 @@ def ingest(
     quarantined = sum(result.lines_quarantined for result in results)
     if quarantined:
         _path_line(
-            f"[yellow]{quarantined:,} line(s) could not be parsed[/yellow] — "
+            f"[yellow]{plural(quarantined, 'line')} could not be parsed[/yellow] — "
             f"see {case / 'quarantine' / 'unparsed.jsonl'}"
         )
 
@@ -316,7 +317,7 @@ def analyze(
         )
     console.print(table)
     console.print(
-        f"{result.request_count:,} requests across {len(result.sessions)} session(s) "
+        f"{result.request_count:,} requests across {plural(len(result.sessions), 'session')} "
         f"reduced to {len(result.episodes)} activities."
     )
 
