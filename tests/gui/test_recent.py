@@ -13,6 +13,7 @@ from logarc.gui.recent import (
     RecentCase,
     Startup,
     dump,
+    forget,
     forget_one,
     load,
     remember,
@@ -195,3 +196,33 @@ def test_a_stored_entry_from_before_pinning_still_loads() -> None:
     assert entry.case_id == "a"
     assert not entry.pinned
     assert entry.display_name == "a"
+
+
+def test_forget_drops_every_path_it_is_given() -> None:
+    cases = (case("a", "a"), case("b", "b"), case("c", "c"), case("d", "d"))
+
+    left = forget(cases, {"a", "c"})
+
+    assert [item.path for item in left] == ["b", "d"]
+
+
+def test_forget_given_nothing_changes_nothing() -> None:
+    """The button is disabled on an empty selection, but a list helper that
+    quietly emptied itself when asked for nothing would be a bad surprise."""
+    cases = (case("a", "a"), case("b", "b"))
+
+    assert forget(cases, ()) == cases
+
+
+def test_forget_ignores_a_path_that_is_not_in_the_list() -> None:
+    cases = (case("a", "a"), case("b", "b"))
+
+    assert [item.path for item in forget(cases, {"a", "z"})] == ["b"]
+
+
+def test_forget_everything_leaves_an_empty_list() -> None:
+    """Ctrl+A, then the button. This is how the whole list is still wiped, and
+    the README's promise that the record can be removed rests on it."""
+    cases = (case("a", "a"), case("b", "b"))
+
+    assert forget(cases, {"a", "b"}) == ()
