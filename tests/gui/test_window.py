@@ -246,21 +246,32 @@ def test_the_window_constructs(qt_app: QApplication) -> None:
     window.close()
 
 
-def _laid_out(width: int = 1400) -> tuple[MainWindow, QSplitter]:
-    """A shown window, with its splitter sized directly.
+def _widen(window: MainWindow, width: int) -> None:
+    """Give the window's contents a width, under the offscreen platform.
 
-    `window.resize` does not reach the central widget under the offscreen
-    platform this suite runs on — it reports the same width before and after,
-    which makes a resize test look like it passed while measuring nothing.
-    Sizing the splitter itself does work, and is what these tests are about.
+    `window.resize` does not reach the central widget here — it reports the same
+    width before and after, which makes a resize test look like it passed while
+    measuring nothing. Resizing the central widget does work, and the layout
+    inside it hands the width down to the splitter.
+
+    Sizing the splitter *directly* used to work and no longer does: the notice
+    strip put it inside a `QVBoxLayout`, and a layout re-imposes its own
+    geometry on the next event pass, so the resize is silently undone. That is
+    the failure this helper exists to keep from coming back — a test measuring
+    552px before and 552px after, and calling it a pass.
     """
+    frame = window.centralWidget()
+    assert frame is not None
+    frame.resize(width, 880)
+    QApplication.processEvents()
+
+
+def _laid_out(width: int = 1400) -> tuple[MainWindow, QSplitter]:
+    """A shown window, with its contents sized to `width`."""
     window = MainWindow()
     window.show()
-    splitter = window.centralWidget()
-    assert isinstance(splitter, QSplitter)
-    splitter.resize(width, 880)
-    QApplication.processEvents()
-    return window, splitter
+    _widen(window, width)
+    return window, window._splitter
 
 
 def test_the_legend_does_not_dictate_how_wide_the_window_must_be(
@@ -386,8 +397,7 @@ def test_a_wider_window_gives_the_extra_room_to_the_graph(qt_app: QApplication) 
     window, splitter = _laid_out(1400)
     before = splitter.sizes()
 
-    splitter.resize(2000, 880)
-    QApplication.processEvents()
+    _widen(window, 2000)
     after = splitter.sizes()
 
     assert after[1] - before[1] > 500, "the canvas should take nearly all of the extra 600"
@@ -2059,3 +2069,174 @@ def test_every_ink_on_the_banner_can_be_read_against_its_ground(
     """
     for ink in (THEME.ink, THEME.muted, THEME.faint, THEME.severity[Severity.MEDIUM]):
         assert contrast(ink, NOTICE_TINT) >= 4.5, f"{ink} on {NOTICE_TINT}"
+
+
+def test_opening_a_case_reports_its_unparsed_lines(
+    qt_app: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The point of the whole feature: the count reaches the window from the
+    manifest, on open, without anyone having watched the ingest happen.
+
+    That is the case a colleague opens a week later, and until now it drew
+    exactly like a case that had lost nothing.
+    """
+    good = (
+        '203.0.113.5 - - [10/Oct/2020:13:55:36 +0000] "GET /?q=1 HTTP/1.1" 200 2326 "-" "curl/8.0"'
+    )
+    log = tmp_path / "access.log"
+    # Six good lines so the format can be detected, one that cannot parse.
+    log.write_text("\n".join([good] * 6 + ["this is not a log line"]) + "\n", encoding="utf-8")
+
+    case_dir = tmp_path / "case"
+    with Case.create(case_dir) as case:
+        case.ingest([log])
+
+    # Premise: the manifest really did record the damage. Without this the test
+    # could pass by the strip staying hidden for entirely the wrong reason.
+    assert CaseManifest.load(case_dir).total_lines_quarantined == 1
+
+    # Substituted so this test can never hang. `QMessageBox.exec` blocks, so a
+    # regression that raised the dialog on an ordinary damaged case would stop
+    # the suite dead rather than fail it — and a hung suite reports nothing.
+    raised: list[str] = []
+    monkeypatch.setattr(
+        app, "warn_about_dead_files", lambda _parent, notice: raised.append(notice.headline)
+    )
+
+    window = MainWindow()
+    window.show()
+    window._load_case(case_dir)
+    _settled(qt_app)
+
+    assert window._notice.isVisible()
+    assert "1 line could not be parsed" in window._notice.text()
+    assert raised == [], "damage inside a log is a strip, never an interruption"
+    window.close()
+
+
+def test_opening_a_clean_case_leaves_the_window_quiet(
+    qt_app: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other half, and the one that decides whether the strip means
+    anything: a case with nothing quarantined must not show it."""
+    good = (
+        '203.0.113.5 - - [10/Oct/2020:13:55:36 +0000] "GET /?q=1 HTTP/1.1" 200 2326 "-" "curl/8.0"'
+    )
+    log = tmp_path / "clean.log"
+    log.write_text("\n".join([good] * 6) + "\n", encoding="utf-8")
+
+    case_dir = tmp_path / "case"
+    with Case.create(case_dir) as case:
+        case.ingest([log])
+
+    assert CaseManifest.load(case_dir).total_lines_quarantined == 0, "premise: nothing failed"
+
+    # Substituted so this test can never hang. `QMessageBox.exec` blocks, so a
+    # regression that raised the dialog on an ordinary damaged case would stop
+    # the suite dead rather than fail it — and a hung suite reports nothing.
+    raised: list[str] = []
+    monkeypatch.setattr(
+        app, "warn_about_dead_files", lambda _parent, notice: raised.append(notice.headline)
+    )
+
+    window = MainWindow()
+    window.show()
+    window._load_case(case_dir)
+    _settled(qt_app)
+
+    assert not window._notice.isVisible()
+    assert raised == []
+    window.close()
+
+
+GOOD_LINE = (
+    '203.0.113.5 - - [10/Oct/2020:13:55:36 +0000] "GET /?q=1 HTTP/1.1" 200 2326 "-" "curl/8.0"'
+)
+
+
+def _case_with_a_dead_log(tmp_path: Path) -> Path:
+    """A case where one log produced events and the other produced none.
+
+    How a dead file actually arises: an explicit `--format` skips detection, so
+    a log that is not that format is not refused up front — every one of its
+    lines is quarantined instead, and the case is left holding half of what was
+    handed to it. Detection would have caught this file on its own; naming a
+    format is precisely what turns the refusal into silence.
+    """
+    apache = tmp_path / "access.log"
+    apache.write_text("\n".join([GOOD_LINE] * 8) + "\n", encoding="utf-8")
+    syslog = tmp_path / "system.log"
+    syslog.write_text(
+        "\n".join(["<134>Oct 10 13:55:36 web01 httpd: request served"] * 8) + "\n",
+        encoding="utf-8",
+    )
+
+    case_dir = tmp_path / "case"
+    with Case.create(case_dir) as case:
+        case.ingest([apache, syslog], log_format="apache-combined")
+    return case_dir
+
+
+def test_a_log_that_produced_nothing_interrupts(
+    qt_app: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A strip is not enough for this one. With no events from a whole log the
+    window behind shows a short client list — which is exactly what a quiet day
+    of traffic looks like, so nothing on screen separates a working case from a
+    broken ingest.
+
+    The dialog is substituted rather than shown: `QMessageBox.exec` blocks, and
+    a test that opens a real modal hangs until the suite is killed. What is
+    being checked here is the wiring — that the window raises it, and for the
+    right case.
+    """
+    case_dir = _case_with_a_dead_log(tmp_path)
+    manifest = CaseManifest.load(case_dir)
+    # Premise, and the whole reason the rule is per file: this case is only
+    # half damaged, so a case-level test of "every line failed" stays silent
+    # while a whole log contributes nothing.
+    lines_read = sum(source.lines_read for source in manifest.sources)
+    assert 0 < manifest.total_lines_quarantined < lines_read
+    assert any(source.events_parsed == 0 for source in manifest.sources)
+
+    raised: list[str] = []
+    monkeypatch.setattr(
+        app, "warn_about_dead_files", lambda _parent, notice: raised.append(notice.headline)
+    )
+
+    window = MainWindow()
+    window.show()
+    window._load_case(case_dir)
+    _settled(qt_app)
+
+    assert raised == ["system.log could not be read"]
+    # And the strip is up behind it, so the case still says so once the dialog
+    # has been dismissed.
+    assert window._notice.isVisible()
+    window.close()
+
+
+def test_a_merely_damaged_case_does_not_interrupt(
+    qt_app: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The escalation has to have a floor, or every damaged case becomes a
+    modal and the modal stops meaning anything."""
+    log = tmp_path / "access.log"
+    log.write_text("\n".join([GOOD_LINE] * 6 + ["this is not a log line"]) + "\n", encoding="utf-8")
+    case_dir = tmp_path / "case"
+    with Case.create(case_dir) as case:
+        case.ingest([log])
+
+    raised: list[str] = []
+    monkeypatch.setattr(
+        app, "warn_about_dead_files", lambda _parent, notice: raised.append(notice.headline)
+    )
+
+    window = MainWindow()
+    window.show()
+    window._load_case(case_dir)
+    _settled(qt_app)
+
+    assert raised == [], "a damaged log is a strip, not an interruption"
+    assert window._notice.isVisible(), "premise: the strip still reported the damage"
+    window.close()
