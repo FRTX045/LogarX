@@ -7,7 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from logarc.ingest.pipeline import FormatDetectionError, IngestCancelled, ingest_file
+from logarc.ingest.pipeline import (
+    PROGRESS_STRIDE,
+    FormatDetectionError,
+    IngestCancelled,
+    ingest_file,
+)
 from logarc.ingest.quarantine import Quarantine
 from logarc.storage.event_store import ParquetEventStore
 
@@ -207,3 +212,83 @@ def test_progress_is_reported_while_reading(log: Path, case: Path) -> None:
         )
 
     assert seen == [1, 2, 3]
+
+
+def test_progress_is_reported_far_more_often_than_batches_are_written(
+    tmp_path: Path, case: Path
+) -> None:
+    """A batch is a hundred thousand lines, and reporting only when one is
+    written meant the window heard once every few seconds — measured at one
+    update per 2.7s on a real ingest, which is what made it look stuck.
+
+    The stride is a line count rather than a clock, so this can be asserted
+    exactly rather than by waiting and hoping.
+    """
+    line = (
+        '203.0.113.5 - - [10/Oct/2020:13:55:36 +0000] "GET /?q=1 HTTP/1.1" 200 2326 "-" "curl/8.0"'
+    )
+    log = tmp_path / "many.log"
+    log.write_text("\n".join([line] * 20_000) + "\n", encoding="utf-8")
+
+    seen: list[int] = []
+    store = ParquetEventStore(case)
+    with Quarantine(case) as quarantine:
+        result = ingest_file(log, store, quarantine, on_progress=lambda done, _: seen.append(done))
+    store.close()
+
+    assert result.lines_read == 20_000
+    # One batch would have been written, so the old code reported once.
+    assert len(seen) >= 10, f"only {len(seen)} reports for 20,000 lines"
+    assert seen == sorted(seen), "the count went backwards"
+    assert seen[-1] == 20_000, "the last report is the whole file"
+
+
+def test_a_progress_report_is_not_sent_twice_for_the_same_line(tmp_path: Path, case: Path) -> None:
+    """The stride and the batch boundary can land on the same line. Reporting
+    from both would send that line's figures twice, and a rate worked out from
+    two reports an instant apart is a division by very nearly nothing."""
+    line = (
+        '203.0.113.5 - - [10/Oct/2020:13:55:36 +0000] "GET /?q=1 HTTP/1.1" 200 2326 "-" "curl/8.0"'
+    )
+    log = tmp_path / "aligned.log"
+    log.write_text("\n".join([line] * 8_000) + "\n", encoding="utf-8")
+
+    seen: list[int] = []
+    store = ParquetEventStore(case)
+    with Quarantine(case) as quarantine:
+        # A batch size that is a multiple of the stride, so every batch
+        # boundary is also a stride boundary.
+        ingest_file(
+            log, store, quarantine, batch_size=4_000, on_progress=lambda done, _: seen.append(done)
+        )
+    store.close()
+
+    assert len(seen) == len(set(seen)), f"a line reported twice: {seen}"
+
+
+NEWLINE = chr(10)
+
+
+def test_the_last_report_is_the_whole_file_even_off_the_stride(tmp_path: Path, case: Path) -> None:
+    """A file whose length is not a multiple of the stride, which is almost
+    every file. Without a report after the loop the last few thousand lines are
+    never announced and the window stops at 99% on a finished read.
+
+    Found by mutation: dropping the final report left the suite green, because
+    the test beside this one happened to use a round twenty thousand lines.
+    """
+    line = (
+        '203.0.113.5 - - [10/Oct/2020:13:55:36 +0000] "GET /?q=1 HTTP/1.1" 200 2326 "-" "curl/8.0"'
+    )
+    lines = 20_500
+    assert lines % PROGRESS_STRIDE, "premise: the file does not end on a stride boundary"
+    log = tmp_path / "ragged.log"
+    log.write_text(NEWLINE.join([line] * lines) + NEWLINE, encoding="utf-8")
+
+    seen: list[int] = []
+    store = ParquetEventStore(case)
+    with Quarantine(case) as quarantine:
+        ingest_file(log, store, quarantine, on_progress=lambda done, _: seen.append(done))
+    store.close()
+
+    assert seen[-1] == lines, f"the read finished at {seen[-1]} of {lines}"

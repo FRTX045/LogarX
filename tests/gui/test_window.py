@@ -2408,7 +2408,10 @@ def test_the_card_shows_the_figures_it_is_given(qt_app: QApplication) -> None:
     card.update_progress(_reading(file_index=2, file_count=3))
 
     said = card.text()
-    assert "access.log (2 of 3)" in said
+    # The readout names the log on its own row and puts which-of-how-many in
+    # the head, rather than folding both into one heading.
+    assert "access.log" in said
+    assert "2/3" in said
     assert "62%" in said
     assert "1,482,119" in said
     assert "about" in said, "thirty seconds in, the estimate is worth showing"
@@ -2468,7 +2471,7 @@ def test_cancelling_says_it_is_waiting(qt_app: QApplication) -> None:
 
     assert asked == [True]
     assert not card._cancel.isEnabled(), "asking a second time cannot help"
-    assert "Stopping" in card.text()
+    assert "STOPPING" in card.text(), "the state in the head has to change"
     card.close()
 
 
@@ -2477,7 +2480,11 @@ def test_the_card_names_the_cost_of_cancelling(qt_app: QApplication) -> None:
     analysed. That belongs beside the button, not in the documentation."""
     card = IngestCard(None, on_cancel=lambda: None)
 
+    # On the face, not in a tooltip. A tooltip is shown only if somebody rests
+    # the pointer on the control, and this sentence exists to be read *before*
+    # that control is pressed.
     assert "un-finalised" in card._consequence.text()
+    assert card._consequence.isVisibleTo(card)
     card.close()
 
 

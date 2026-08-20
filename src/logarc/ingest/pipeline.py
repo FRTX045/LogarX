@@ -37,6 +37,19 @@ __all__ = [
 #: worth having, small enough that memory stays flat on a huge log.
 DEFAULT_BATCH_SIZE: Final = 100_000
 
+#: How often progress is reported, in lines.
+#:
+#: Reporting was tied to the batch write, which meant once per hundred thousand
+#: lines — measured at one update every 2.7 seconds on a real ingest, which is
+#: what made a working window look like a stuck one. A batch is sized for how
+#: much is worth holding in memory before a write; how often somebody watching
+#: wants to hear is a different question and now has its own answer.
+#:
+#: A line count rather than a clock, so the cadence is the same on every machine
+#: and can be asserted exactly rather than waited for. At the forty thousand
+#: lines a second this parses at, it is about twenty reports a second.
+PROGRESS_STRIDE: Final = 2_000
+
 _UNPARSEABLE: Final = "line does not match the log format"
 
 
@@ -124,8 +137,21 @@ def ingest_file(
         events_parsed = 0
         lines_quarantined = 0
 
+        reported_at = 0
+
+        def report() -> None:
+            nonlocal reported_at
+            # Guarded against reporting the same line twice: a stride boundary
+            # and a batch boundary can land together, and a rate worked out
+            # from two reports an instant apart divides by nearly nothing.
+            if on_progress and lines_read != reported_at:
+                reported_at = lines_read
+                on_progress(lines_read, stream.bytes_read)
+
         for line_no, text in chain(sample, lines):
             lines_read += 1
+            if lines_read % PROGRESS_STRIDE == 0:
+                report()
             # Blank lines are padding, not damage: they are neither parsed nor
             # quarantined, so the two counts plus blanks account for every line.
             if not text.strip():
@@ -142,8 +168,7 @@ def ingest_file(
             if len(batch) >= batch_size:
                 store.write(batch)
                 batch = []
-                if on_progress:
-                    on_progress(lines_read, stream.bytes_read)
+                report()
                 # After the write, never before: whatever has been read is real
                 # evidence, and a cancel should shorten the ingest rather than
                 # throw away the part that already succeeded.
@@ -152,8 +177,10 @@ def ingest_file(
 
         if batch:
             store.write(batch)
-            if on_progress:
-                on_progress(lines_read, stream.bytes_read)
+        # Always, batch or no batch: the last stride boundary is almost never
+        # the last line, and a read that stopped short of its own total would
+        # leave the window at 99%.
+        report()
 
         return IngestResult(
             file_id=file_id,
