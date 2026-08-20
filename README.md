@@ -154,6 +154,16 @@ here — their folders, when, and how much was in them — under `HKCU\Software\
 view preferences. That is a record of what was investigated, not merely of how the window looked,
 so the chooser carries a **Forget these** button that removes it.
 
+A case that could not read all of its logs says so, every time it is opened — an
+amber strip naming how many lines were refused and what share of the file that
+was. When a whole log produced *no* events, that is not damage but the wrong
+parser, so it interrupts instead, naming the file and the format it was read as;
+that name is the part that separates a wrong parser from a log that genuinely
+holds nothing. The counts come from the case manifest rather than from having
+watched the ingest, so they are still there when a colleague opens the case a
+week later. Nothing is shown when nothing was quarantined — silence means the
+case holds everything its logs did.
+
 It is verified by hand against [docs/manual-test-plan.md](docs/manual-test-plan.md) — whether the
 node you clicked is the one whose evidence appeared is a judgement about what a person sees.
 The decisions that determine whether a graph *misinforms* are kept out of Qt, in

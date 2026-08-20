@@ -42,12 +42,15 @@ from logarc.gui._qt import required
 from logarc.gui.canvas import ActivityCanvas
 from logarc.gui.case_chooser import CaseChooser
 from logarc.gui.evidence_panel import EvidencePanel
+from logarc.gui.notice_bar import QuarantineBanner, warn_about_dead_files
 from logarc.gui.panels import ClientTable, LegendBar
+from logarc.gui.quarantine_notice import notice_for
 from logarc.gui.recent import RecentCase
 from logarc.gui.style import THEME, format_requests, plural
 from logarc.gui.theme import GAP, MONO_FAMILIES, PAD, TIGHT, apply_theme, heading_font
 from logarc.gui.workers import run_job
 from logarc.ingest.pipeline import IngestCancelled
+from logarc.ingest.quarantine import DIRECTORY_NAME as QUARANTINE_DIR
 from logarc.report.html import render_report
 from logarc.storage.case import CaseManifest
 
@@ -224,6 +227,7 @@ class MainWindow(QMainWindow):
         self._selected: GraphNode | None = None
         self._stop: threading.Event | None = None
 
+        self._notice = QuarantineBanner()
         self._clients = ClientTable()
         self._canvas = ActivityCanvas()
         self._legend = LegendBar()
@@ -338,7 +342,19 @@ class MainWindow(QMainWindow):
         # anyway. Continuous down to the minimum, and no further.
         splitter.setChildrenCollapsible(False)
         splitter.setSizes([440, 560, 400])
-        self.setCentralWidget(splitter)
+        # Kept as an attribute for the tests that size it directly, now that
+        # the strip sits between it and the window.
+        self._splitter = splitter
+
+        # Above the splitter rather than inside a panel: the strip is about the
+        # whole case, and every panel beneath it is about one part of one.
+        frame = QWidget()
+        stack = QVBoxLayout(frame)
+        stack.setContentsMargins(0, 0, 0, 0)
+        stack.setSpacing(0)
+        stack.addWidget(self._notice)
+        stack.addWidget(splitter, 1)
+        self.setCentralWidget(frame)
 
     def _build_menu(self) -> None:
         menu_bar = required(self.menuBar())
@@ -564,12 +580,15 @@ class MainWindow(QMainWindow):
                 events=manifest.total_events_parsed,
                 sources=tuple(source.file_id for source in manifest.sources),
             )
-            return summaries, crs, snapshot
+            # Built here, on the worker: it is arithmetic over the source
+            # records, and the manifest is already in hand. `done` only shows it.
+            notice = notice_for(manifest.sources)
+            return summaries, crs, snapshot, notice
 
         self._busy(f"Opening {path}…")
 
         def done(loaded: Any) -> None:
-            summaries, crs, snapshot = loaded
+            summaries, crs, snapshot, notice = loaded
             self._remember_case(snapshot)
             self._case_path = path
             self._crs = crs
@@ -582,6 +601,7 @@ class MainWindow(QMainWindow):
             # messages for one state, two of them about steps that cannot be
             # taken yet.
             self._evidence.clear(prompt=False)
+            self._notice.show_notice(notice, quarantine_dir=path / QUARANTINE_DIR)
             self._heading.setText("")
             self._tabs.setVisible(False)
             self._clients.show_clients(summaries)
@@ -589,6 +609,11 @@ class MainWindow(QMainWindow):
                 f"{path} — {plural(len(summaries), 'client')} listed"
                 + (", CRS applied" if crs.fingerprint else "")
             )
+            # Last, after the window has finished loading, never before. A modal
+            # raised mid-load sits over a half-drawn case, so the reader has to
+            # dismiss it before they can see the thing it is talking about.
+            if notice is not None and notice.is_blocking:
+                warn_about_dead_files(self, notice)
 
         run_job(work, on_done=done, on_error=self._report_error, on_progress=self._status.setText)
 

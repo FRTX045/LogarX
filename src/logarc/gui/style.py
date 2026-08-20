@@ -50,6 +50,7 @@ __all__ = [
     "EVIDENCE_INK",
     "EVIDENCE_MUTED",
     "LIGHT",
+    "NOTICE_TINT",
     "PAPER",
     "PAPER_EDGE",
     "PAPER_STRIPE",
@@ -319,6 +320,19 @@ SELECTION_TINT: Final = THEME.tint
 
 #: How heavy the selection ring is. Not a colour, so it does not vary by theme.
 SELECTION_WIDTH: Final = 3.0
+
+#: The ground a warning strip is painted on: the MEDIUM severity amber sunk
+#: almost to the chrome, so that a band of it across the window does not
+#: out-shout the evidence beneath. Here rather than in the widget for the reason
+#: every other colour is — `THEME` is meant to be every colour the interface
+#: draws with, and a hex literal inside a widget is one no theme can reach.
+#:
+#: Measured against this ground: ink 14.4:1, muted 7.8:1, MEDIUM amber 7.0:1,
+#: faint 4.8:1 — the four inks the strip actually uses, all clear of WCAG AA.
+#: The obvious first choice, `#2a2113`, put faint at 4.53:1, which passes and
+#: leaves nothing in hand; this one is a shade deeper and costs nothing.
+#: `test_every_ink_on_the_banner_can_be_read_against_its_ground` holds all four.
+NOTICE_TINT: Final = "#241d11"
 
 
 @dataclass(frozen=True, slots=True)
