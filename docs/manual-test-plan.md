@@ -418,17 +418,17 @@ mid-word, and no scrollbar appears across the strip.
 **Pass:** the case's `quarantine` folder opens, holding `unparsed.jsonl` with
 those lines and the reason each was refused.
 
-5. Dismiss the strip with ✕, close the case, then open it again from
-   **Case → Recently opened…**.
-
-**Pass:** the strip is back. This is the property the automated tests cannot
-reach and the reason the count is read from the manifest rather than from the
-ingest — it is what a colleague sees on a case they did not build.
-
-6. Ingest a clean log into a second case.
+5. Ingest a clean log into a second case.
 
 **Pass:** no strip at all. Silence has to mean something, or the strip means
 nothing.
+
+**Not here, because it is automated:** that a dismissed strip comes back when
+the case is opened again. That was on this list until it was pointed out that
+the window can be driven without a person —
+`test_a_dismissed_strip_returns_when_the_case_is_opened_again` loads a damaged
+case, dismisses the strip, loads a clean one, and loads the damaged one back.
+Making the strip remember having been dismissed fails that test and no other.
 
 ## 13. A log the parser could not read interrupts
 
@@ -494,7 +494,7 @@ where it was asserted — and neither silently swallows a file.
 | 9 | Evidence reads as the request; raw line matches the file byte for byte | | |
 | 10 | Filter finds one address, states the total, survives a sort | | |
 | 11 | Zoom scales the whole drawing; captions never touch at any zoom | | |
-| 12 | A damaged case reports its unparsed lines, on every open | | |
+| 12 | A damaged case reports its unparsed lines legibly, without squeezing the table | | |
 | 13 | A log that produced no events interrupts, and names the format | | |
 
 Version tested: ______  ·  Date: ______  ·  Machine: ______

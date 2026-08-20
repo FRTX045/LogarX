@@ -2240,3 +2240,68 @@ def test_a_merely_damaged_case_does_not_interrupt(
     assert raised == [], "a damaged log is a strip, not an interruption"
     assert window._notice.isVisible(), "premise: the strip still reported the damage"
     window.close()
+
+
+def test_a_dismissed_strip_returns_when_the_case_is_opened_again(
+    qt_app: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The property the whole feature rests on, and the reason the count is read
+    from the manifest rather than remembered from the ingest.
+
+    Dismissal is for the reading you are in, not for the case. An investigator
+    who closes the strip, works on something else and comes back has to be told
+    again — otherwise the second reading of an incomplete case looks exactly
+    like a complete one, which is the fault this was built to remove.
+
+    Written after handing this to a person as a manual step. It is about what
+    the window does, not about what a person perceives, so it belongs here.
+    """
+    good = (
+        '203.0.113.5 - - [10/Oct/2020:13:55:36 +0000] "GET /?q=1 HTTP/1.1" 200 2326 "-" "curl/8.0"'
+    )
+
+    damaged_log = tmp_path / "damaged.log"
+    damaged_log.write_text(
+        "\n".join([good] * 6 + ["this is not a log line"]) + "\n", encoding="utf-8"
+    )
+    damaged = tmp_path / "damaged-case"
+    with Case.create(damaged) as case:
+        case.ingest([damaged_log])
+
+    clean_log = tmp_path / "clean.log"
+    clean_log.write_text("\n".join([good] * 6) + "\n", encoding="utf-8")
+    clean = tmp_path / "clean-case"
+    with Case.create(clean) as case:
+        case.ingest([clean_log])
+
+    raised: list[str] = []
+    monkeypatch.setattr(
+        app, "warn_about_dead_files", lambda _parent, notice: raised.append(notice.headline)
+    )
+
+    window = MainWindow()
+    window.show()
+
+    window._load_case(damaged)
+    _settled(qt_app)
+    assert window._notice.isVisible(), "premise: the damaged case put the strip up"
+
+    window._notice.dismiss()
+    assert not window._notice.isVisible(), "premise: dismissing hid it"
+
+    # Somewhere else entirely, and that case is clean — so the strip staying
+    # down here proves nothing on its own.
+    window._load_case(clean)
+    _settled(qt_app)
+    assert not window._notice.isVisible()
+
+    window._load_case(damaged)
+    _settled(qt_app)
+
+    assert window._notice.isVisible(), (
+        "a dismissed strip must come back: the case is still incomplete, and the "
+        "next reader did not watch the ingest"
+    )
+    assert "1 line could not be parsed" in window._notice.text()
+    assert raised == []
+    window.close()
