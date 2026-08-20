@@ -1976,6 +1976,83 @@ def test_a_pin_survives_closing_the_chooser_without_opening_anything(
     window.close()
 
 
+def test_forgetting_every_case_removes_the_key_rather_than_emptying_it(
+    qt_app: QApplication, campaign: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`Forget these` is the privacy control the README leans on: the list
+    "records which cases were opened here", and the button takes that back.
+
+    It used to say so through a flag the window read as "wipe everything". Now
+    it removes what is highlighted, so wiping the list is Ctrl+A and the same
+    button — and the window has to notice that an emptied list means the key
+    goes, not that an empty value gets stored in it. Storing one would satisfy
+    every visible symptom and leave the record on the machine.
+    """
+    from logarc.gui import app as app_module
+    from logarc.gui.case_chooser import CaseChooser
+
+    app._settings().clear()
+    window = MainWindow()
+    window._load_case(campaign)
+    _settled(qt_app)
+    assert window._recent_cases(), "premise: something was recorded"
+    assert app._settings().contains(app._RECENT_KEY), "premise: it reached the key"
+
+    def select_all_and_forget(self: CaseChooser) -> int:
+        self._table.selectAll()
+        self._forget()
+        assert self.cases == (), "premise: the chooser emptied itself"
+        return 0
+
+    monkeypatch.setattr(app_module.CaseChooser, "exec", select_all_and_forget)
+    window._show_recent()
+
+    assert not app._settings().contains(app._RECENT_KEY), (
+        "an emptied list has to remove the key, not store an empty one"
+    )
+    assert not MainWindow()._recent_cases(), "and the next window sees nothing"
+    window.close()
+
+
+def test_forgetting_some_cases_keeps_the_rest_on_the_machine(
+    qt_app: QApplication, campaign: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other half: a partial removal is stored, not treated as a wipe."""
+    from logarc.gui import app as app_module
+    from logarc.gui import recent
+    from logarc.gui.case_chooser import CaseChooser
+
+    app._settings().clear()
+    window = MainWindow()
+    window._load_case(campaign)
+    _settled(qt_app)
+
+    kept = recent.RecentCase(
+        path="D:/cases/kept",
+        case_id="kept",
+        opened_at=recent.now(),
+        events=99,
+        sources=("access.log",),
+    )
+    app._settings().setValue(
+        app._RECENT_KEY, recent.dump(recent.remember(window._recent_cases(), kept))
+    )
+    assert len(MainWindow()._recent_cases()) == 2, "premise: two are recorded"
+
+    def forget_the_first(self: CaseChooser) -> int:
+        self._table.selectRow(0)
+        self._forget()
+        return 0
+
+    monkeypatch.setattr(app_module.CaseChooser, "exec", forget_the_first)
+    window._show_recent()
+
+    remaining = MainWindow()._recent_cases()
+    assert len(remaining) == 1
+    assert app._settings().contains(app._RECENT_KEY)
+    window.close()
+
+
 # -- the strip that reports a case's unparsed lines ------------------------
 
 

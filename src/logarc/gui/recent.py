@@ -27,6 +27,7 @@ __all__ = [
     "RecentCase",
     "Startup",
     "dump",
+    "forget",
     "forget_one",
     "load",
     "remember",
@@ -136,9 +137,21 @@ def set_label(cases: Iterable[RecentCase], path: str, label: str) -> tuple[Recen
     return _amend(cases, path, lambda case: replace(case, label=label.strip()))
 
 
+def forget(cases: Iterable[RecentCase], paths: Iterable[str]) -> tuple[RecentCase, ...]:
+    """Drop every entry whose path is in `paths`, leaving the rest in order.
+
+    Takes a set of paths rather than one, because `Forget these` acts on a
+    selection: removing them one at a time would re-sort and re-cap the list
+    between each, so which entries survived would depend on the order they
+    happened to be taken out in.
+    """
+    unwanted = set(paths)
+    return _arrange(case for case in cases if case.path not in unwanted)
+
+
 def forget_one(cases: Iterable[RecentCase], path: str) -> tuple[RecentCase, ...]:
-    """Drop one entry, leaving the others. `Forget these` takes all of them."""
-    return _arrange(case for case in cases if case.path != path)
+    """Drop one entry, leaving the others."""
+    return forget(cases, (path,))
 
 
 def dump(cases: Iterable[RecentCase]) -> str:

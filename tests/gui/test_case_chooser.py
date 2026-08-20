@@ -12,10 +12,12 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QDialog
 
+from conftest import contrast
 from logarc.gui.case_chooser import COLUMNS, CaseChooser
 from logarc.gui.recent import RecentCase
+from logarc.gui.style import PIN_COLOUR, PIN_MARK, THEME
 
 WHEN = datetime(2026, 8, 15, 13, 4, tzinfo=UTC)
 
@@ -153,12 +155,18 @@ def test_choosing_a_row_yields_its_folder(qt_app: QApplication) -> None:
 
 def test_forgetting_clears_the_list(qt_app: QApplication) -> None:
     """A forensic tool records which investigations were opened on this machine.
-    There has to be one action that takes that back."""
+    There has to be one action that takes that back.
+
+    It used to be a flag the window read as "wipe everything". It is now the
+    ordinary path — remove what is highlighted — reaching the same end, because
+    `_refill` selects the only row there is.
+    """
     chooser = CaseChooser((case(r"D:\cases\a", "a"),), exists=lambda _p: True)
 
     chooser._forget()
 
-    assert chooser.forgotten
+    assert chooser.cases == ()
+    assert chooser.changed
     assert chooser.chosen_path is None
 
 
@@ -276,3 +284,196 @@ def test_a_missing_case_can_still_be_pinned_and_dropped(qt_app: QApplication) ->
     chooser._remove()
 
     assert chooser.cases == ()
+
+
+# -- forgetting several at a time ------------------------------------------
+
+
+def five() -> tuple[RecentCase, ...]:
+    return tuple(case(rf"D:\cases\{name}", name) for name in ("a", "b", "c", "d", "e"))
+
+
+def _select(chooser: CaseChooser, *rows: int) -> None:
+    """Highlight several rows, the way Ctrl-click does.
+
+    Not `selectRow` in a loop: that clears the previous selection each time and
+    leaves exactly one row highlighted, which would let a test claiming three
+    pass while exercising one. Found while drawing the demo for this.
+    """
+    table = chooser._table
+    model = table.model()
+    selection = table.selectionModel()
+    assert model is not None and selection is not None
+    table.clearSelection()
+    for row in rows:
+        selection.select(
+            model.index(row, 0),
+            selection.SelectionFlag.Select | selection.SelectionFlag.Rows,
+        )
+    assert len(selection.selectedRows()) == len(rows), "premise: all of them are selected"
+
+
+def test_forgetting_several_leaves_the_others(qt_app: QApplication) -> None:
+    chooser = CaseChooser(five(), exists=lambda _p: True)
+    _select(chooser, 0, 2, 3)
+
+    chooser._forget()
+
+    assert [entry.case_id for entry in chooser.cases] == ["b", "e"]
+    assert chooser.changed
+
+
+def test_forgetting_does_not_close_the_chooser(qt_app: QApplication) -> None:
+    """The whole point. A reader with several unwanted entries had to reopen
+    this dialog once per entry, because the only visible control shut it."""
+    chooser = CaseChooser(five(), exists=lambda _p: True)
+    chooser.show()
+    _select(chooser, 0)
+
+    chooser._forget()
+
+    assert chooser.isVisible()
+    assert chooser.result() == QDialog.DialogCode.Rejected, "nothing was accepted"
+
+    # Again, without reopening anything, which was impossible before.
+    _select(chooser, 0)
+    chooser._forget()
+
+    assert len(chooser.cases) == 3
+    assert chooser.isVisible()
+    chooser.close()
+
+
+def test_forgetting_every_row_empties_the_list(qt_app: QApplication) -> None:
+    """Ctrl+A then the button. This is what keeps the promise that the record of
+    what was investigated here can be taken off the machine — the button no
+    longer wipes the list on its own, so the gesture has to reach the same end."""
+    chooser = CaseChooser(five(), exists=lambda _p: True)
+    chooser._table.selectAll()
+
+    chooser._forget()
+
+    assert chooser.cases == ()
+    assert chooser.changed
+
+
+def test_the_button_refuses_an_empty_selection(qt_app: QApplication) -> None:
+    chooser = CaseChooser(five(), exists=lambda _p: True)
+    chooser._table.clearSelection()
+
+    assert not chooser._forget_button.isEnabled()
+
+    chooser._forget()
+
+    assert len(chooser.cases) == 5, "nothing selected, nothing removed"
+
+
+def test_open_wants_exactly_one_case(qt_app: QApplication) -> None:
+    """Selecting several is now ordinary, and `Open` has no answer for two.
+    Disabled rather than opening the first, which would be a guess presented as
+    a choice."""
+    chooser = CaseChooser(five(), exists=lambda _p: True)
+
+    _select(chooser, 1)
+    assert chooser._open_button.isEnabled()
+
+    _select(chooser, 1, 2)
+    assert not chooser._open_button.isEnabled()
+
+    chooser._accept_selection()
+    assert chooser.chosen_path is None
+
+
+def test_a_right_click_inside_a_selection_keeps_it(qt_app: QApplication) -> None:
+    """Right-clicking one of several highlighted rows must not throw the rest
+    away — the reader has just built that selection and is about to act on it.
+    Outside the selection it replaces it, which is what every file list does."""
+    chooser = CaseChooser(five(), exists=lambda _p: True)
+    _select(chooser, 0, 1, 2)
+
+    chooser._aim_menu_at(1)
+    assert chooser._selected_rows() == (0, 1, 2)
+
+    chooser._aim_menu_at(4)
+    assert chooser._selected_rows() == (4,)
+
+
+def test_the_per_row_commands_want_one_row(qt_app: QApplication) -> None:
+    """Pin, rename and show-the-folder act on one case and have no meaning for
+    three. They ask for one and get nothing rather than silently taking the
+    first, which would act on a case the reader never singled out."""
+    chooser = CaseChooser(five(), exists=lambda _p: True)
+    _select(chooser, 1, 3)
+
+    assert chooser._selected_row() is None
+
+    before = chooser.cases
+    chooser._toggle_pin()
+
+    assert chooser.cases == before, "an ambiguous selection pins nothing"
+
+
+def test_the_pin_mark_is_drawn_in_the_theme_rather_than_by_the_font(
+    qt_app: QApplication,
+) -> None:
+    """An emoji is painted by the font, in its own colours, so the palette has
+    no say over it. The pushpin arrived red — the one hue this interface
+    reserves for `THEME.alert`, meaning something is wrong with the evidence —
+    on a row that is merely being held at the top.
+    """
+    assert not any(0x1F300 <= ord(char) <= 0x1FAFF for char in PIN_MARK), (
+        "a pictographic emoji brings its own colour and ignores PIN_COLOUR"
+    )
+    # Asserted against the palette, not against PIN_COLOUR: comparing the cell
+    # to the constant that set it passes whatever that constant becomes, so it
+    # proves the wiring and says nothing about the colour. Red is reserved.
+    assert THEME.alert != PIN_COLOUR, (
+        "red means something is wrong with this evidence; a pinned case is not that"
+    )
+    assert contrast(PIN_COLOUR, THEME.surface) >= 3.0, "the mark has to be visible"
+
+    cases = list(five())
+    cases[1] = replace(cases[1], pinned=True)
+    chooser = CaseChooser(tuple(cases), exists=lambda _p: True)
+
+    marked = chooser._table.item(1, 0)
+    assert marked is not None
+    assert marked.text() == PIN_MARK
+    assert marked.foreground().color().name() == PIN_COLOUR
+
+    unmarked = chooser._table.item(0, 0)
+    assert unmarked is not None
+    assert unmarked.text() == "", "premise: only the pinned row carries the mark"
+
+
+def test_the_rows_keep_the_height_the_header_asks_for(qt_app: QApplication) -> None:
+    """Forgetting a case redraws the table, and it used to come back tighter:
+    33px rows becoming 20px on a redraw that removed nothing.
+    `resizeRowsToContents` sizes to the text, and every row here is a single
+    line of it, so it bought nothing and cost the dialog its proportions.
+
+    Latent while the only way to trigger a redraw was a right-click command few
+    people found. `Forget these` makes it the ordinary path.
+
+    **Asserted against the header's own default rather than against the height
+    before the redraw**, because the before-and-after form cannot see this
+    fault. The suite runs offscreen, where there are no fonts and text measures
+    97px whatever it says — so the rows were 97 before and 97 after, unchanged
+    and wrong, while a real window went 33 to 20. Compared with the default,
+    both platforms fail while the resize is there and both pass without it.
+    """
+    chooser = CaseChooser(five(), exists=lambda _p: True)
+    chooser.show()
+    qt_app.processEvents()
+
+    header = chooser._table.verticalHeader()
+    assert header is not None
+    wanted = header.defaultSectionSize()
+
+    for stage in ("on opening", "after a redraw"):
+        heights = {chooser._table.rowHeight(row) for row in range(chooser._table.rowCount())}
+        assert heights == {wanted}, f"{stage}: rows are {heights}, header asks for {wanted}"
+        chooser._refill()
+        qt_app.processEvents()
+
+    chooser.close()

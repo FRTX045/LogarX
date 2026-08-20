@@ -54,6 +54,8 @@ __all__ = [
     "PAPER",
     "PAPER_EDGE",
     "PAPER_STRIPE",
+    "PIN_COLOUR",
+    "PIN_MARK",
     "SELECTION_COLOUR",
     "SELECTION_TINT",
     "SELECTION_WIDTH",
@@ -333,6 +335,19 @@ SELECTION_WIDTH: Final = 3.0
 #: leaves nothing in hand; this one is a shade deeper and costs nothing.
 #: `test_every_ink_on_the_banner_can_be_read_against_its_ground` holds all four.
 NOTICE_TINT: Final = "#241d11"
+
+#: Drawn beside a case held at the top of the recent list.
+#:
+#: A star rather than a pushpin, and a text glyph rather than an emoji. `📌` is
+#: pictographic, so the font paints it in its own colours and the palette has no
+#: say — it arrived as the only saturated red in that dialog, in an interface
+#: where red is `THEME.alert` and means something is wrong with the evidence. A
+#: case someone chose to keep at the top is not a problem.
+PIN_MARK: Final = "★"
+
+#: The accent, because pinning is a choice the reader made — the same thing the
+#: ring around a selected node says elsewhere.
+PIN_COLOUR: Final = THEME.accent
 
 
 @dataclass(frozen=True, slots=True)

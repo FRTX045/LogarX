@@ -532,13 +532,18 @@ class MainWindow(QMainWindow):
         # worth keeping whether or not a case was opened afterwards — closing
         # the chooser without opening anything is a perfectly ordinary way to
         # tidy the list.
-        if chooser.changed and not chooser.forgotten:
-            _settings().setValue(_RECENT_KEY, recent.dump(chooser.cases))
+        if chooser.changed:
+            if chooser.cases:
+                _settings().setValue(_RECENT_KEY, recent.dump(chooser.cases))
+            else:
+                # Removed, not stored empty. This list is a record of what was
+                # investigated on this machine and `Forget these` is what takes
+                # it back; an empty value would satisfy every visible symptom
+                # and leave the key sitting there.
+                self._forget_recent()
+                self._idle("Forgot the list of cases opened here.")
 
-        if chooser.forgotten:
-            self._forget_recent()
-            self._idle("Forgot the list of cases opened here.")
-        elif chooser.wants_other_case:
+        if chooser.wants_other_case:
             self._open_case()
         elif chooser.wants_new_case:
             self._ingest_new_case()
