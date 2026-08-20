@@ -44,6 +44,8 @@ from logarc.gui.case_chooser import CaseChooser
 from logarc.gui.evidence_panel import EvidencePanel
 from logarc.gui.notice_bar import QuarantineBanner, warn_about_dead_files
 from logarc.gui.panels import ClientTable, LegendBar
+from logarc.gui.progress import Progress, Reading
+from logarc.gui.progress_card import IngestCard
 from logarc.gui.quarantine_notice import notice_for
 from logarc.gui.recent import RecentCase
 from logarc.gui.style import THEME, format_requests, plural
@@ -226,6 +228,8 @@ class MainWindow(QMainWindow):
         #: reader back on it in the graph that replaces this one.
         self._selected: GraphNode | None = None
         self._stop: threading.Event | None = None
+        #: Up only while an ingest is running.
+        self._ingest_card: IngestCard | None = None
 
         self._notice = QuarantineBanner()
         self._clients = ClientTable()
@@ -459,16 +463,32 @@ class MainWindow(QMainWindow):
         paths = [Path(item) for item in logs]
         case_dir = Path(target)
         stop = threading.Event()
+        sizes = [path.stat().st_size for path in paths]
 
-        def work(report: Callable[[str], None]) -> IngestCancelled | None:
+        def work(report: Callable[[object], None]) -> IngestCancelled | None:
             report(f"Ingesting {plural(len(paths), 'file')}…")
+            reading = Reading([path.name for path in paths], sizes)
             try:
                 with Case.create(case_dir) as case:
-                    case.ingest(
-                        paths,
-                        on_progress=lambda lines, _: report(f"{lines:,} lines read"),
-                        should_cancel=stop.is_set,
-                    )
+                    # One call per file rather than one call for all of them.
+                    # `Case.ingest` reports progress per file and never says
+                    # which, so a caller drawing a whole-ingest figure would
+                    # have to guess where each one ended — and the obvious
+                    # guess, the byte count falling, misses a small log
+                    # followed by a large one entirely. Looping here means the
+                    # boundary is known rather than inferred, and the two forms
+                    # are otherwise identical: same manifest, same digests,
+                    # same stored events.
+                    for index, path in enumerate(paths):
+                        if index:
+                            reading.next_file()
+                        case.ingest(
+                            [path],
+                            on_progress=lambda lines, read: report(
+                                reading.advance(lines=lines, bytes_read=read)
+                            ),
+                            should_cancel=stop.is_set,
+                        )
             except IngestCancelled as cancelled:
                 # Caught outside the `with`, so the case still sees the failure
                 # on the way out and leaves itself un-finalised. Returned rather
@@ -477,15 +497,38 @@ class MainWindow(QMainWindow):
                 return cancelled
             return None
 
+        self._ingest_card = IngestCard(self, on_cancel=self._request_cancel)
+        self._ingest_card.show()
         self._busy(f"Ingesting into {case_dir}…", stop=stop)
         run_job(
             work,
             on_done=lambda outcome: self._ingest_finished(case_dir, outcome),
-            on_error=self._report_error,
+            on_error=self._ingest_failed,
             on_progress=self._status.setText,
+            on_advance=self._show_ingest_progress,
         )
 
+    def _show_ingest_progress(self, snapshot: object) -> None:
+        if self._ingest_card is not None and isinstance(snapshot, Progress):
+            self._ingest_card.update_progress(snapshot)
+            self._status.setText(f"{snapshot.lines:,} lines parsed")
+
+    def _close_ingest_card(self) -> None:
+        """Take the card down. Called on every way out of an ingest.
+
+        A card left standing after a failure is worse than never having shown
+        one: it says the read is still going while nothing is running.
+        """
+        if self._ingest_card is not None:
+            self._ingest_card.close()
+            self._ingest_card = None
+
+    def _ingest_failed(self, message: str, detail: str) -> None:
+        self._close_ingest_card()
+        self._report_error(message, detail)
+
     def _ingest_finished(self, case_dir: Path, outcome: object) -> None:
+        self._close_ingest_card()
         if not isinstance(outcome, IngestCancelled):
             self._load_case(case_dir)
             return
@@ -896,6 +939,8 @@ class MainWindow(QMainWindow):
         # Disabled rather than hidden: the ingest keeps running until the batch
         # in flight finishes, and a button that vanishes would suggest otherwise.
         self._cancel.setEnabled(False)
+        if self._ingest_card is not None:
+            self._ingest_card.stopping()
         self._status.setText("Stopping after the batch in flight…")
 
     def _report_error(self, message: str, detail: str) -> None:

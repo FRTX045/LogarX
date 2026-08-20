@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from logarc.gui.progress import SETTLE_SECONDS, Progress
+from logarc.gui.progress import SETTLE_SECONDS, Progress, Reading
 
 
 def reading(**over: Any) -> Progress:
@@ -87,3 +87,77 @@ def test_one_file_is_named_without_a_count() -> None:
 
 def test_several_files_say_which_one_this_is() -> None:
     assert reading(file_index=2, file_count=3).subject == "access.log (2 of 3)"
+
+
+# -- carrying the counts across files ---------------------------------------
+
+
+class FakeClock:
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def test_a_reading_names_the_file_it_is_on() -> None:
+    clock = FakeClock()
+    reading_of = Reading(["a.log", "b.log"], [1_000, 3_000], clock=clock)
+
+    clock.now = 1.0
+    first = reading_of.advance(lines=100, bytes_read=500)
+
+    assert first.subject == "a.log (1 of 2)"
+    assert first.bytes_total == 4_000
+
+
+def test_the_counts_carry_across_a_file_boundary() -> None:
+    """`Case.ingest` restarts its counts at every log. A reader watching this
+    would see the numbers fall back to nothing part-way through and read it as
+    an ingest starting over — so what is finished has to be carried."""
+    clock = FakeClock()
+    reading_of = Reading(["a.log", "b.log"], [1_000, 3_000], clock=clock)
+
+    clock.now = 1.0
+    reading_of.advance(lines=400, bytes_read=1_000)
+    reading_of.next_file()
+    clock.now = 2.0
+    second = reading_of.advance(lines=50, bytes_read=200)
+
+    assert second.lines == 450, "the first file's 400 lines did not vanish"
+    assert second.bytes_done == 1_200
+    assert second.subject == "b.log (2 of 2)"
+
+
+def test_a_boundary_credits_the_whole_file_not_the_last_report() -> None:
+    """The final batch of a file reports fewer bytes than the file holds — the
+    reader stops at the last line, and a compressed stream's count is its own.
+    Crediting the last report would leave a shortfall on every boundary, and a
+    ten-file ingest would finish reading well short of 100%."""
+    clock = FakeClock()
+    reading_of = Reading(["a.log", "b.log"], [1_000, 1_000], clock=clock)
+
+    clock.now = 1.0
+    reading_of.advance(lines=400, bytes_read=940)
+    reading_of.next_file()
+    clock.now = 2.0
+    second = reading_of.advance(lines=400, bytes_read=1_000)
+
+    assert second.bytes_done == 2_000, "the whole of a.log counts once it is done"
+    assert second.fraction == 1.0
+
+
+def test_the_elapsed_time_is_the_whole_read() -> None:
+    clock = FakeClock()
+    reading_of = Reading(["a.log"], [1_000], clock=clock)
+
+    clock.now = 12.5
+    assert reading_of.advance(lines=1, bytes_read=1).seconds == 12.5
+
+
+def test_a_reading_of_one_file_does_not_count_them() -> None:
+    clock = FakeClock()
+    reading_of = Reading(["a.log"], [1_000], clock=clock)
+
+    clock.now = 1.0
+    assert reading_of.advance(lines=1, bytes_read=1).subject == "a.log"

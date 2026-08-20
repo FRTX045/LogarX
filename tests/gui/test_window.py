@@ -2479,3 +2479,87 @@ def test_the_card_names_the_cost_of_cancelling(qt_app: QApplication) -> None:
 
     assert "un-finalised" in card._consequence.text()
     card.close()
+
+
+def test_a_real_ingest_reports_progress_that_only_goes_forwards(
+    qt_app: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End to end: real files, the real pipeline, real signals.
+
+    A small log followed by a large one on purpose. That is the pair the first
+    design got wrong — it inferred the file boundary from the byte count
+    falling, and the whole of a tiny log reports fewer bytes than the first
+    batch of a big one, so the boundary never showed up as a fall and the
+    counts silently restarted.
+    """
+    from logarc.gui import app as app_module
+
+    good = (
+        '203.0.113.5 - - [10/Oct/2020:13:55:36 +0000] "GET /?q=1 HTTP/1.1" 200 2326 "-" "curl/8.0"'
+    )
+    small = tmp_path / "small.log"
+    small.write_text("\n".join([good] * 30) + "\n", encoding="utf-8")
+    large = tmp_path / "large.log"
+    large.write_text("\n".join([good] * 120_000) + "\n", encoding="utf-8")
+    case_dir = tmp_path / "case"
+
+    monkeypatch.setattr(
+        app_module.QFileDialog,
+        "getOpenFileNames",
+        lambda *_a, **_k: ([str(small), str(large)], ""),
+    )
+    monkeypatch.setattr(
+        app_module.QFileDialog, "getExistingDirectory", lambda *_a, **_k: str(case_dir)
+    )
+
+    seen: list[Progress] = []
+    window = MainWindow()
+    original = window._show_ingest_progress
+
+    def watch(snapshot: object) -> None:
+        if isinstance(snapshot, Progress):
+            seen.append(snapshot)
+        original(snapshot)
+
+    monkeypatch.setattr(window, "_show_ingest_progress", watch)
+
+    window._ingest_new_case()
+    _settled(qt_app)
+
+    assert seen, "no progress was reported at all"
+    lines = [item.lines for item in seen]
+    assert lines == sorted(lines), f"the count went backwards: {lines[:12]}"
+    assert seen[-1].lines >= 120_030, "the last report is short of what was read"
+    assert {item.file_count for item in seen} == {2}
+    assert {item.file_name for item in seen} == {"small.log", "large.log"}
+    # Every snapshot is a whole-ingest figure, so none may exceed the whole.
+    assert all(item.bytes_done <= item.bytes_total for item in seen)
+    assert window._ingest_card is None, "the card has to go when the read ends"
+    window.close()
+
+
+def test_a_failed_ingest_takes_the_card_down_with_it(
+    qt_app: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A card left standing after a failure says the read is still going while
+    nothing is running — worse than never having shown one."""
+    from logarc.gui import app as app_module
+
+    missing = tmp_path / "not-a-log.log"
+    missing.write_text("nothing here parses as a log line\n" * 20, encoding="utf-8")
+    case_dir = tmp_path / "case"
+
+    monkeypatch.setattr(
+        app_module.QFileDialog, "getOpenFileNames", lambda *_a, **_k: ([str(missing)], "")
+    )
+    monkeypatch.setattr(
+        app_module.QFileDialog, "getExistingDirectory", lambda *_a, **_k: str(case_dir)
+    )
+    monkeypatch.setattr(MainWindow, "_report_error", lambda *_a, **_k: None)
+
+    window = MainWindow()
+    window._ingest_new_case()
+    _settled(qt_app)
+
+    assert window._ingest_card is None
+    window.close()

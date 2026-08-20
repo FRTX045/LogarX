@@ -12,10 +12,14 @@ never appears without the word `about`.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
-__all__ = ["SETTLE_SECONDS", "Progress"]
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+
+__all__ = ["SETTLE_SECONDS", "Progress", "Reading"]
 
 #: How long a read must have been going before it may say what is left.
 #:
@@ -100,3 +104,63 @@ def _span(seconds: float) -> str:
         return f"{minutes}m {rest}s"
     hours, minutes = divmod(minutes, 60)
     return f"{hours}h {minutes}m"
+
+
+class Reading:
+    """Turns one file's reports into a snapshot of the whole ingest.
+
+    `Case.ingest` reports per file and restarts its counts at each one. A reader
+    watching the window would see the numbers fall back to nothing part-way
+    through a multi-log ingest, which reads as a run starting over rather than
+    continuing — so what is already finished is carried.
+
+    The caller says when a file is done, because it is the caller that decides
+    which log to read next. Inferring the boundary from the byte count dropping
+    was the first design, and it is wrong: a small log followed by a large one
+    reports fewer bytes for the whole of the first than for the first batch of
+    the second, so the boundary never shows up as a fall.
+    """
+
+    def __init__(
+        self,
+        names: Sequence[str],
+        sizes: Sequence[int],
+        *,
+        clock: Callable[[], float] = time.perf_counter,
+    ) -> None:
+        self._names = tuple(names)
+        self._sizes = tuple(sizes)
+        self._clock = clock
+        self._started = clock()
+        self._index = 0
+        self._done_lines = 0
+        self._done_bytes = 0
+        #: The whole-ingest line count as of the last report, so that
+        #: `next_file` can credit it without being told again.
+        self._lines = 0
+
+    def next_file(self) -> None:
+        """The file being read is finished; move to the one after it.
+
+        The whole of the finished file is credited, not the last figure it
+        reported. A final batch stops at the last line rather than the last
+        byte, and a compressed stream counts its own way — crediting the report
+        would leave a shortfall at every boundary, and a ten-file ingest would
+        finish reading visibly short of the end.
+        """
+        self._done_lines = self._lines
+        self._done_bytes += self._sizes[self._index]
+        self._index = min(self._index + 1, len(self._names) - 1)
+
+    def advance(self, lines: int, bytes_read: int) -> Progress:
+        """One report from the file being read, as a whole-ingest snapshot."""
+        self._lines = self._done_lines + lines
+        return Progress(
+            file_name=self._names[self._index],
+            file_index=self._index + 1,
+            file_count=len(self._names),
+            lines=self._lines,
+            bytes_done=self._done_bytes + bytes_read,
+            bytes_total=sum(self._sizes),
+            seconds=self._clock() - self._started,
+        )
