@@ -104,3 +104,25 @@ def test_the_quarantine_path_can_be_copied(narrow_console: None, tmp_path: Path)
     assert result.exit_code == 0, result.output
     assert "could not be parsed" in " ".join(result.output.split()), "premise: a line failed"
     assert str(case / "quarantine" / "unparsed.jsonl") in result.output
+
+
+def test_the_cli_does_not_write_a_bracketed_plural(narrow_console: None, tmp_path: Path) -> None:
+    """`style.plural` exists because two call sites disagreed about a count, and
+    its own docstring calls a bracketed `(s)` "what a program writes when nobody
+    decided, and this one had decided". The CLI went on writing `line(s)` in the
+    quarantine message — the one the window now reports as "94 lines", so the
+    two interfaces described the same case in two voices.
+    """
+    damaged = tmp_path / "damaged.log"
+    damaged.write_text(
+        "\n".join([LINE] * 6 + ["this line is not a log line"]) + "\n", encoding="utf-8"
+    )
+    case = tmp_path / "case"
+
+    result = CliRunner().invoke(app, ["ingest", str(damaged), "--case", str(case)])
+
+    assert result.exit_code == 0, result.output
+    flat = " ".join(result.output.split())
+    assert "could not be parsed" in flat, "premise: the quarantine message was printed"
+    assert "(s)" not in flat, flat
+    assert "1 line could not be parsed" in flat
