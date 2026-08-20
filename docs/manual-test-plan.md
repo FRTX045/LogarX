@@ -438,10 +438,21 @@ short client list, which is exactly what a quiet day of traffic looks like. With
 only a strip there is nothing on screen separating a working case from a broken
 ingest.
 
-1. Ingest two files together, naming the format explicitly: one real access log,
-   and one file that is not an access log at all — `docs/architecture.md` will
-   do. `--format` is what makes this reachable: detection would have refused the
-   second file up front, and naming a format turns that refusal into silence.
+**Build this case at the command line, not in the window.** The window never
+passes a format — `_ingest_new_case` always lets one be detected — so it cannot
+produce this state itself, and detection would refuse the second file up front
+rather than quarantine it. `--format` is what turns that refusal into silence,
+and the CLI is the only place it can be given:
+
+```bash
+logarc ingest access.log notes.txt --case ./case-dead --format apache-combined
+```
+
+where `notes.txt` is any file that is not an access log. That the case has to
+arrive from elsewhere is the realistic shape of it anyway: this is what an
+investigator opens when a colleague did the ingest.
+
+1. Open `case-dead` in the window through **Case → Open case…**.
 
 **Pass:** a dialog appears. It names the file, the format it was read as, and
 how many of its lines were refused — the format is the part that tells you the
@@ -458,12 +469,13 @@ dialog is gone.
 what was handed to it, and both the dialog and the strip said so before you
 worked that out for yourself.
 
-4. Re-ingest the same two files into a fresh case, letting the format be
-   detected instead of naming it.
+4. Now ingest the same two files through the window, which cannot name a
+   format.
 
-**Pass:** ingest refuses the second file outright rather than quarantining it —
-this check and the tool's refusal are two halves of the same guard, and neither
-one silently swallows a file.
+**Pass:** ingest refuses the second file outright rather than quarantining it,
+and says which formats it accepts. The refusal and this dialog are two halves of
+the same guard — one for the case where a format was guessed, one for the case
+where it was asserted — and neither silently swallows a file.
 
 ---
 
