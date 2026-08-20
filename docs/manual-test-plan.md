@@ -383,6 +383,88 @@ it at the other end.
 to canvas spacing shows up there as more room between boxes — never as boxes
 overlapping or an SVG wider than the page.
 
+## 12. A case that lost evidence says so, on every open
+
+**Why:** the window used to say nothing at all. `case.ingest()` returned the
+quarantine counts and the window discarded them, so a case that had lost 6.7% of
+its lines drew exactly like one that had lost none — the failure
+`ingest/quarantine.py` opens by calling this tool's worst. The CLI reported it
+and the desktop application did not.
+
+The automated tests can check that the strip appears. They cannot check that it
+is legible, that it does not squeeze the client table, or — the point of the
+whole feature — that it is still there for someone who never watched the ingest.
+
+1. Take a log of a few thousand lines and corrupt a scattering of them: delete
+   the timestamp from some, truncate the request on others. Ingest it through
+   **Case → Ingest logs into a new case…**.
+
+**Pass:** an amber strip appears beneath the menu bar naming how many lines were
+refused and what share of the file that was. The share and the two counts
+reconcile — divide them yourself.
+
+2. Read the client table beside it.
+
+**Pass:** all six columns are still visible. The strip takes height from the
+window and must not take it from the table's width.
+
+3. Narrow the window to around 1,000px.
+
+**Pass:** the strip's text wraps onto a further line. Nothing is cut off
+mid-word, and no scrollbar appears across the strip.
+
+4. Click **Show the quarantined lines**.
+
+**Pass:** the case's `quarantine` folder opens, holding `unparsed.jsonl` with
+those lines and the reason each was refused.
+
+5. Dismiss the strip with ✕, close the case, then open it again from
+   **Case → Recently opened…**.
+
+**Pass:** the strip is back. This is the property the automated tests cannot
+reach and the reason the count is read from the manifest rather than from the
+ingest — it is what a colleague sees on a case they did not build.
+
+6. Ingest a clean log into a second case.
+
+**Pass:** no strip at all. Silence has to mean something, or the strip means
+nothing.
+
+## 13. A log the parser could not read interrupts
+
+**Why:** damage inside a log is a strip. A log that produced *no* events is a
+different thing — nothing from it is in the case, and the window behind shows a
+short client list, which is exactly what a quiet day of traffic looks like. With
+only a strip there is nothing on screen separating a working case from a broken
+ingest.
+
+1. Ingest two files together, naming the format explicitly: one real access log,
+   and one file that is not an access log at all — `docs/architecture.md` will
+   do. `--format` is what makes this reachable: detection would have refused the
+   second file up front, and naming a format turns that refusal into silence.
+
+**Pass:** a dialog appears. It names the file, the format it was read as, and
+how many of its lines were refused — the format is the part that tells you the
+parser was wrong rather than the log being empty.
+
+2. Dismiss it.
+
+**Pass:** the amber strip is behind it, so the case still says so once the
+dialog is gone.
+
+3. Read the client list.
+
+**Pass:** it holds only the good log's clients. The case is genuinely short of
+what was handed to it, and both the dialog and the strip said so before you
+worked that out for yourself.
+
+4. Re-ingest the same two files into a fresh case, letting the format be
+   detected instead of naming it.
+
+**Pass:** ingest refuses the second file outright rather than quarantining it —
+this check and the tool's refusal are two halves of the same guard, and neither
+one silently swallows a file.
+
 ---
 
 ## Recording a run
@@ -400,5 +482,7 @@ overlapping or an SVG wider than the page.
 | 9 | Evidence reads as the request; raw line matches the file byte for byte | | |
 | 10 | Filter finds one address, states the total, survives a sort | | |
 | 11 | Zoom scales the whole drawing; captions never touch at any zoom | | |
+| 12 | A damaged case reports its unparsed lines, on every open | | |
+| 13 | A log that produced no events interrupts, and names the format | | |
 
 Version tested: ______  ·  Date: ______  ·  Machine: ______
