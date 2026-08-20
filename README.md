@@ -140,8 +140,14 @@ and size each mean.*
 A Windows GUI (PyQt6) wraps the same engine — the CLI and the GUI share one code path, so
 anything the GUI can do is scriptable. Pick a client from the table, read the activity graph,
 click a node to see the raw log lines that node was built from, and export the same report the
-CLI produces. Long work runs on a worker thread and can be cancelled; a cancelled ingest leaves
-the case un-finalised, so a partial read can never be analysed as if it were complete.
+CLI produces. Long work runs on a worker thread and can be cancelled. A running ingest says how
+far it has got — the log being read, a real percentage of the bytes, the lines
+parsed so far and the rate — because reading a gigabyte takes minutes and a busy
+tool is otherwise indistinguishable from a hung one. The estimate of what is left
+is withheld until the read has settled and always reads *about*: the first
+seconds are the least representative, and a confident figure drawn from them is
+the kind of number this tool is built not to print. A cancelled ingest leaves the
+case un-finalised, so a partial read can never be analysed as if it were complete.
 
 Opening the window offers the cases you have worked on before; **Case → Recently opened…**
 (Ctrl+Shift+O) brings that list back at any time, and **View → Reopen the last case on start** skips

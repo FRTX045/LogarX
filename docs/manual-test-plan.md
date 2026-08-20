@@ -48,10 +48,37 @@ hung one, which is how an investigator ends up killing a run that was working.
 2. While it runs: drag the window, resize it, drag the splitter between the
    panels, open the **View** menu.
 
-**Pass:** the window redraws throughout. The status bar line-count keeps
-climbing. Windows never greys the title bar or offers to close the program.
+**Pass:** the window redraws throughout. The card's line count keeps climbing.
+Windows never greys the title bar or offers to close the program.
 
 **Fail:** any pause longer than about a second where the window does not repaint.
+
+3. Watch the card itself, with **two logs — a small one first, then a large
+   one**. That pair matters: the counts restart at every file, and inferring
+   the boundary from the byte count falling misses it entirely when the whole
+   of a small log is smaller than one batch of a large one.
+
+**Pass:** the percentage only ever climbs, and the line count carries straight
+through the change of file rather than dropping back to nothing. The heading
+changes from the first log's name to the second's.
+
+4. Look at the estimate in the first two seconds.
+
+**Pass:** there is a dash, not a figure. It appears once the read has settled
+and always reads *about*. Watch it for a while: it should narrow steadily rather
+than swing between wildly different answers.
+
+5. Press **Cancel**.
+
+**Pass:** the button greys out and the card says it is stopping after the batch
+in flight, *before* anything actually stops. Then check 2 takes over.
+
+6. Let a clean ingest finish.
+
+**Pass:** the card goes on its own. It must not be left standing over a window
+that has finished working — and the same holds for a failed ingest, so repeat
+with a file that is not a log at all and confirm the card goes before the error
+appears.
 
 ---
 

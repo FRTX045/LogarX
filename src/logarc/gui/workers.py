@@ -33,6 +33,15 @@ class JobSignals(QObject):
     """Message for the user, and the traceback for the log."""
 
     progress = pyqtSignal(str)
+    """A sentence about what is being done."""
+
+    advanced = pyqtSignal(object)
+    """A structured snapshot — figures a reader can draw rather than read.
+
+    Separate from `progress` rather than widening it, because the two have
+    different readers: a sentence belongs in the status bar, a snapshot in
+    whatever is showing the numbers. Widening `progress` to `object` would send
+    both to both and leave every reader testing the type."""
 
 
 class Job(QRunnable):
@@ -42,14 +51,21 @@ class Job(QRunnable):
     is doing; anything it returns is delivered to `finished`.
     """
 
-    def __init__(self, work: Callable[[Callable[[str], None]], Any]) -> None:
+    def __init__(self, work: Callable[[Callable[[object], None]], Any]) -> None:
         super().__init__()
         self._work = work
         self.signals = JobSignals()
 
+    def _report(self, payload: object) -> None:
+        """Send a sentence one way and anything else the other."""
+        if isinstance(payload, str):
+            self.signals.progress.emit(payload)
+        else:
+            self.signals.advanced.emit(payload)
+
     def run(self) -> None:
         try:
-            result = self._work(self.signals.progress.emit)
+            result = self._work(self._report)
         except Exception as exc:
             # Both halves matter: the window needs a sentence a person can act
             # on, and the terminal needs the traceback. Swallowing either is how
@@ -60,11 +76,12 @@ class Job(QRunnable):
 
 
 def run_job(
-    work: Callable[[Callable[[str], None]], Any],
+    work: Callable[[Callable[[object], None]], Any],
     *,
     on_done: Callable[[Any], None],
     on_error: Callable[[str, str], None],
     on_progress: Callable[[str], None] | None = None,
+    on_advance: Callable[[Any], None] | None = None,
     pool: QThreadPool | None = None,
 ) -> Job:
     """Start `work` on the thread pool and wire its results up."""
@@ -73,6 +90,8 @@ def run_job(
     job.signals.failed.connect(on_error)
     if on_progress is not None:
         job.signals.progress.connect(on_progress)
+    if on_advance is not None:
+        job.signals.advanced.connect(on_advance)
     target = pool or required(QThreadPool.globalInstance(), "thread pool")
     target.start(job)
     return job
