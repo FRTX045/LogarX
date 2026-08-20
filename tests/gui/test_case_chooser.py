@@ -12,7 +12,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QDialog
 
 from logarc.gui.case_chooser import COLUMNS, CaseChooser
 from logarc.gui.recent import RecentCase
@@ -153,12 +153,18 @@ def test_choosing_a_row_yields_its_folder(qt_app: QApplication) -> None:
 
 def test_forgetting_clears_the_list(qt_app: QApplication) -> None:
     """A forensic tool records which investigations were opened on this machine.
-    There has to be one action that takes that back."""
+    There has to be one action that takes that back.
+
+    It used to be a flag the window read as "wipe everything". It is now the
+    ordinary path — remove what is highlighted — reaching the same end, because
+    `_refill` selects the only row there is.
+    """
     chooser = CaseChooser((case(r"D:\cases\a", "a"),), exists=lambda _p: True)
 
     chooser._forget()
 
-    assert chooser.forgotten
+    assert chooser.cases == ()
+    assert chooser.changed
     assert chooser.chosen_path is None
 
 
@@ -276,3 +282,130 @@ def test_a_missing_case_can_still_be_pinned_and_dropped(qt_app: QApplication) ->
     chooser._remove()
 
     assert chooser.cases == ()
+
+
+# -- forgetting several at a time ------------------------------------------
+
+
+def five() -> tuple[RecentCase, ...]:
+    return tuple(case(rf"D:\cases\{name}", name) for name in ("a", "b", "c", "d", "e"))
+
+
+def _select(chooser: CaseChooser, *rows: int) -> None:
+    """Highlight several rows, the way Ctrl-click does.
+
+    Not `selectRow` in a loop: that clears the previous selection each time and
+    leaves exactly one row highlighted, which would let a test claiming three
+    pass while exercising one. Found while drawing the demo for this.
+    """
+    table = chooser._table
+    model = table.model()
+    selection = table.selectionModel()
+    assert model is not None and selection is not None
+    table.clearSelection()
+    for row in rows:
+        selection.select(
+            model.index(row, 0),
+            selection.SelectionFlag.Select | selection.SelectionFlag.Rows,
+        )
+    assert len(selection.selectedRows()) == len(rows), "premise: all of them are selected"
+
+
+def test_forgetting_several_leaves_the_others(qt_app: QApplication) -> None:
+    chooser = CaseChooser(five(), exists=lambda _p: True)
+    _select(chooser, 0, 2, 3)
+
+    chooser._forget()
+
+    assert [entry.case_id for entry in chooser.cases] == ["b", "e"]
+    assert chooser.changed
+
+
+def test_forgetting_does_not_close_the_chooser(qt_app: QApplication) -> None:
+    """The whole point. A reader with several unwanted entries had to reopen
+    this dialog once per entry, because the only visible control shut it."""
+    chooser = CaseChooser(five(), exists=lambda _p: True)
+    chooser.show()
+    _select(chooser, 0)
+
+    chooser._forget()
+
+    assert chooser.isVisible()
+    assert chooser.result() == QDialog.DialogCode.Rejected, "nothing was accepted"
+
+    # Again, without reopening anything, which was impossible before.
+    _select(chooser, 0)
+    chooser._forget()
+
+    assert len(chooser.cases) == 3
+    assert chooser.isVisible()
+    chooser.close()
+
+
+def test_forgetting_every_row_empties_the_list(qt_app: QApplication) -> None:
+    """Ctrl+A then the button. This is what keeps the promise that the record of
+    what was investigated here can be taken off the machine — the button no
+    longer wipes the list on its own, so the gesture has to reach the same end."""
+    chooser = CaseChooser(five(), exists=lambda _p: True)
+    chooser._table.selectAll()
+
+    chooser._forget()
+
+    assert chooser.cases == ()
+    assert chooser.changed
+
+
+def test_the_button_refuses_an_empty_selection(qt_app: QApplication) -> None:
+    chooser = CaseChooser(five(), exists=lambda _p: True)
+    chooser._table.clearSelection()
+
+    assert not chooser._forget_button.isEnabled()
+
+    chooser._forget()
+
+    assert len(chooser.cases) == 5, "nothing selected, nothing removed"
+
+
+def test_open_wants_exactly_one_case(qt_app: QApplication) -> None:
+    """Selecting several is now ordinary, and `Open` has no answer for two.
+    Disabled rather than opening the first, which would be a guess presented as
+    a choice."""
+    chooser = CaseChooser(five(), exists=lambda _p: True)
+
+    _select(chooser, 1)
+    assert chooser._open_button.isEnabled()
+
+    _select(chooser, 1, 2)
+    assert not chooser._open_button.isEnabled()
+
+    chooser._accept_selection()
+    assert chooser.chosen_path is None
+
+
+def test_a_right_click_inside_a_selection_keeps_it(qt_app: QApplication) -> None:
+    """Right-clicking one of several highlighted rows must not throw the rest
+    away — the reader has just built that selection and is about to act on it.
+    Outside the selection it replaces it, which is what every file list does."""
+    chooser = CaseChooser(five(), exists=lambda _p: True)
+    _select(chooser, 0, 1, 2)
+
+    chooser._aim_menu_at(1)
+    assert chooser._selected_rows() == (0, 1, 2)
+
+    chooser._aim_menu_at(4)
+    assert chooser._selected_rows() == (4,)
+
+
+def test_the_per_row_commands_want_one_row(qt_app: QApplication) -> None:
+    """Pin, rename and show-the-folder act on one case and have no meaning for
+    three. They ask for one and get nothing rather than silently taking the
+    first, which would act on a case the reader never singled out."""
+    chooser = CaseChooser(five(), exists=lambda _p: True)
+    _select(chooser, 1, 3)
+
+    assert chooser._selected_row() is None
+
+    before = chooser.cases
+    chooser._toggle_pin()
+
+    assert chooser.cases == before, "an ambiguous selection pins nothing"

@@ -77,7 +77,6 @@ class CaseChooser(QDialog):
         case and then close without opening anything."""
 
         self.chosen_path: str | None = None
-        self.forgotten = False
         self.wants_other_case = False
         self.wants_new_case = False
 
@@ -89,7 +88,10 @@ class CaseChooser(QDialog):
         title.setFont(heading_font(ui_font()))
         column.addWidget(title)
 
-        hint = QLabel("Pick up where you left off, or open something that is not here.")
+        hint = QLabel(
+            "Pick up where you left off, or open something that is not here. "
+            "Ctrl-click to choose several, then Forget these."
+        )
         hint.setFont(caption_font(ui_font()))
         column.addWidget(hint)
 
@@ -108,7 +110,10 @@ class CaseChooser(QDialog):
         table = QTableWidget(len(self.cases), len(COLUMNS))
         table.setHorizontalHeaderLabels(list(COLUMNS))
         table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        # Several at a time, because forgetting is what is done in bulk here: a
+        # list holding seven unwanted entries was seven openings of this dialog,
+        # one per entry, since the only visible control shut it.
+        table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         required(table.verticalHeader(), "row header").setVisible(False)
         header = required(table.horizontalHeader(), "column header")
@@ -162,26 +167,38 @@ class CaseChooser(QDialog):
         row.addWidget(fresh)
 
         row.addStretch(1)
-        forget = QPushButton("Forget these")
-        forget.setToolTip(
-            "Remove this list from this machine. It records which cases were opened here."
+        self._forget_button = QPushButton("Forget these")
+        self._forget_button.setToolTip(
+            "Take the highlighted cases off this list, which records which cases were "
+            "opened on this machine. Ctrl+A selects all of them."
         )
-        forget.clicked.connect(self._forget)
-        row.addWidget(forget)
+        self._forget_button.clicked.connect(self._forget)
+        row.addWidget(self._forget_button)
         return row
 
     # -- what the reader chose ---------------------------------------------
 
-    def _selected_row(self) -> int | None:
+    def _selected_rows(self) -> tuple[int, ...]:
         rows = required(self._table.selectionModel(), "selection model").selectedRows()
-        return rows[0].row() if rows else None
+        return tuple(sorted(index.row() for index in rows))
+
+    def _selected_row(self) -> int | None:
+        """The one selected row, or None when that is not what is selected.
+
+        The per-row commands — pin, rename, show the folder — act on one case
+        and have no meaning for three. They ask for one and get nothing rather
+        than taking the first, which would act on a case nobody singled out.
+        """
+        rows = self._selected_rows()
+        return rows[0] if len(rows) == 1 else None
 
     def _selection_changed(self) -> None:
-        row = self._selected_row()
+        rows = self._selected_rows()
         # Bounds-checked: a row can be dropped while it is the selected one, and
         # the selection signal arrives before the table has caught up.
-        present = row is not None and row < len(self._present) and self._present[row]
-        self._open_button.setEnabled(present)
+        openable = len(rows) == 1 and rows[0] < len(self._present) and self._present[rows[0]]
+        self._open_button.setEnabled(openable)
+        self._forget_button.setEnabled(bool(rows))
 
     def _accept_selection(self) -> None:
         row = self._selected_row()
@@ -199,16 +216,36 @@ class CaseChooser(QDialog):
         self.accept()
 
     def _forget(self) -> None:
-        self.forgotten = True
-        self.accept()
+        """Drop the highlighted cases. The dialog stays open.
+
+        It used to wipe the whole list and close, which made the one visible
+        control in this dialog both wider in effect than its name suggested and
+        usable exactly once per opening. Ctrl+A still reaches the old effect,
+        and now the name is true: `these` are the ones highlighted.
+        """
+        rows = self._selected_rows()
+        if not rows:
+            return
+        self._amend(recent.forget(self.cases, [self.cases[row].path for row in rows]))
 
     # -- one row at a time --------------------------------------------------
+
+    def _aim_menu_at(self, row: int) -> None:
+        """Point the per-row commands at `row`, keeping a selection it is in.
+
+        Right-clicking one of several highlighted rows must not throw the rest
+        away: the reader has just built that selection and is about to act on
+        it. Outside the selection it replaces it, which is what every file list
+        does.
+        """
+        if row not in self._selected_rows():
+            self._table.selectRow(row)
 
     def _show_menu(self, where: QPoint) -> None:
         row = self._table.rowAt(where.y())
         if row < 0:
             return
-        self._table.selectRow(row)
+        self._aim_menu_at(row)
 
         menu = QMenu(self)
         pinned = self.cases[row].pinned
