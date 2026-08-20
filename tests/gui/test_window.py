@@ -36,6 +36,8 @@ from logarc.gui.canvas import MIN_FIT_SCALE, ActivityCanvas
 from logarc.gui.evidence_panel import EvidencePanel
 from logarc.gui.notice_bar import QuarantineBanner
 from logarc.gui.panels import ClientTable
+from logarc.gui.progress import Progress
+from logarc.gui.progress_card import IngestCard
 from logarc.gui.quarantine_notice import notice_for
 from logarc.gui.style import NOTICE_TINT, THEME, format_bytes
 from logarc.storage.case import CaseManifest, SourceRecord
@@ -2382,3 +2384,98 @@ def test_a_dismissed_strip_returns_when_the_case_is_opened_again(
     assert "1 line could not be parsed" in window._notice.text()
     assert raised == []
     window.close()
+
+
+# -- the card that reports a long ingest -----------------------------------
+
+
+def _reading(**over: object) -> Progress:
+    fields: dict[str, object] = {
+        "file_name": "access.log",
+        "file_index": 1,
+        "file_count": 1,
+        "lines": 1_482_119,
+        "bytes_done": 1_432_000_000,
+        "bytes_total": 2_310_000_000,
+        "seconds": 30.0,
+    }
+    fields.update(over)
+    return Progress(**fields)  # type: ignore[arg-type]
+
+
+def test_the_card_shows_the_figures_it_is_given(qt_app: QApplication) -> None:
+    card = IngestCard(None, on_cancel=lambda: None)
+    card.update_progress(_reading(file_index=2, file_count=3))
+
+    said = card.text()
+    assert "access.log (2 of 3)" in said
+    assert "62%" in said
+    assert "1,482,119" in said
+    assert "about" in said, "thirty seconds in, the estimate is worth showing"
+    # The bar agrees with the number printed beside it. An `or` here would let
+    # the printed text carry the whole assertion and never test the bar at all.
+    assert card._bar.maximum() > 0, "a measurable read draws a position"
+    assert abs(card._bar.value() / card._bar.maximum() - 0.62) < 0.005
+    card.close()
+
+
+def test_the_card_invents_no_estimate_the_seam_withheld(qt_app: QApplication) -> None:
+    """Half a second in, `Progress.remaining` is None on purpose. The card has
+    to leave the gap rather than fill it — putting a number back here is exactly
+    what the guard exists to prevent."""
+    card = IngestCard(None, on_cancel=lambda: None)
+    card.update_progress(_reading(lines=900, bytes_done=1_000, seconds=0.5))
+
+    assert "about" not in card.text()
+    card.close()
+
+
+def test_a_log_of_unknown_size_leaves_the_bar_moving(qt_app: QApplication) -> None:
+    """No position to draw, so the bar goes back to the indeterminate kind.
+    Sitting at zero would read as an ingest that had stalled."""
+    card = IngestCard(None, on_cancel=lambda: None)
+    card.update_progress(_reading(bytes_done=0, bytes_total=0, lines=50, seconds=1.0))
+
+    assert card._bar.maximum() == 0, "range (0, 0) is Qt's moving bar"
+    assert "%" not in card.text()
+    card.close()
+
+
+def test_the_card_stops_claiming_a_position_when_the_size_becomes_unknown(
+    qt_app: QApplication,
+) -> None:
+    """A measurable file followed by an unmeasurable one. A card that only ever
+    learned to set a value would leave the last file's percentage standing over
+    the next one's read."""
+    card = IngestCard(None, on_cancel=lambda: None)
+    card.update_progress(_reading())
+    assert "62%" in card.text(), "premise: it had a position to show"
+
+    card.update_progress(_reading(bytes_done=0, bytes_total=0))
+
+    assert card._bar.maximum() == 0
+    assert "62%" not in card.text()
+    card.close()
+
+
+def test_cancelling_says_it_is_waiting(qt_app: QApplication) -> None:
+    """The read runs to the end of the batch in flight, which can take seconds.
+    A card that changed nothing would read as a button that did nothing."""
+    asked: list[bool] = []
+    card = IngestCard(None, on_cancel=lambda: asked.append(True))
+
+    card._cancel.click()
+
+    assert asked == [True]
+    assert not card._cancel.isEnabled(), "asking a second time cannot help"
+    assert "Stopping" in card.text()
+    card.close()
+
+
+def test_the_card_names_the_cost_of_cancelling(qt_app: QApplication) -> None:
+    """Cancelling is not free — the case is left un-finalised and cannot be
+    analysed. That belongs beside the button, not in the documentation."""
+    card = IngestCard(None, on_cancel=lambda: None)
+
+    assert "un-finalised" in card._consequence.text()
+    card.close()
