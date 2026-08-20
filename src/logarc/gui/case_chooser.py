@@ -32,7 +32,13 @@ from PyQt6.QtWidgets import (
 
 from logarc.gui import recent
 from logarc.gui._qt import required
-from logarc.gui.style import EVIDENCE_MUTED, display_safe, format_requests
+from logarc.gui.style import (
+    EVIDENCE_MUTED,
+    PIN_COLOUR,
+    PIN_MARK,
+    display_safe,
+    format_requests,
+)
 from logarc.gui.theme import GAP, PAD, caption_font, heading_font, ui_font
 
 if TYPE_CHECKING:
@@ -45,10 +51,6 @@ __all__ = ["COLUMNS", "CaseChooser"]
 #: The first column is unnamed and holds only a pin mark. A heading over a
 #: column of glyphs is a word explaining a picture that is already clear.
 COLUMNS: Final[tuple[str, ...]] = ("", "Case", "Opened", "Events", "Source", "Folder")
-
-#: Drawn on a pinned row. A glyph rather than a word: it has to fit a column
-#: that is empty on most rows.
-PIN_MARK: Final = "📌"
 
 #: Said next to a case whose folder is no longer where it was. The entry stays —
 #: it is a record of what was worked on — but it cannot be opened.
@@ -145,6 +147,10 @@ class CaseChooser(QDialog):
                 item = QTableWidgetItem(value)
                 if not present:
                     item.setForeground(QColor(EVIDENCE_MUTED))
+                elif index == 0 and value:
+                    # The pin mark, coloured by the palette rather than by
+                    # whatever the font decides a glyph should look like.
+                    item.setForeground(QColor(PIN_COLOUR))
                 table.setItem(row, index, item)
         table.resizeRowsToContents()
         if self.cases:

@@ -14,8 +14,10 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from PyQt6.QtWidgets import QApplication, QDialog
 
+from conftest import contrast
 from logarc.gui.case_chooser import COLUMNS, CaseChooser
 from logarc.gui.recent import RecentCase
+from logarc.gui.style import PIN_COLOUR, PIN_MARK, THEME
 
 WHEN = datetime(2026, 8, 15, 13, 4, tzinfo=UTC)
 
@@ -409,3 +411,36 @@ def test_the_per_row_commands_want_one_row(qt_app: QApplication) -> None:
     chooser._toggle_pin()
 
     assert chooser.cases == before, "an ambiguous selection pins nothing"
+
+
+def test_the_pin_mark_is_drawn_in_the_theme_rather_than_by_the_font(
+    qt_app: QApplication,
+) -> None:
+    """An emoji is painted by the font, in its own colours, so the palette has
+    no say over it. The pushpin arrived red — the one hue this interface
+    reserves for `THEME.alert`, meaning something is wrong with the evidence —
+    on a row that is merely being held at the top.
+    """
+    assert not any(0x1F300 <= ord(char) <= 0x1FAFF for char in PIN_MARK), (
+        "a pictographic emoji brings its own colour and ignores PIN_COLOUR"
+    )
+    # Asserted against the palette, not against PIN_COLOUR: comparing the cell
+    # to the constant that set it passes whatever that constant becomes, so it
+    # proves the wiring and says nothing about the colour. Red is reserved.
+    assert THEME.alert != PIN_COLOUR, (
+        "red means something is wrong with this evidence; a pinned case is not that"
+    )
+    assert contrast(PIN_COLOUR, THEME.surface) >= 3.0, "the mark has to be visible"
+
+    cases = list(five())
+    cases[1] = replace(cases[1], pinned=True)
+    chooser = CaseChooser(tuple(cases), exists=lambda _p: True)
+
+    marked = chooser._table.item(1, 0)
+    assert marked is not None
+    assert marked.text() == PIN_MARK
+    assert marked.foreground().color().name() == PIN_COLOUR
+
+    unmarked = chooser._table.item(0, 0)
+    assert unmarked is not None
+    assert unmarked.text() == "", "premise: only the pinned row carries the mark"
