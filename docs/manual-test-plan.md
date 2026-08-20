@@ -477,6 +477,46 @@ and says which formats it accepts. The refusal and this dialog are two halves of
 the same guard — one for the case where a format was guessed, one for the case
 where it was asserted — and neither silently swallows a file.
 
+## 14. Several cases can be taken off the list in one pass
+
+**Why:** the only visible control in the chooser was `Forget these`, and it wiped
+the whole list and shut the dialog — so a reader tidying ten entries reopened it
+ten times, and the button's name described the selection while its behaviour
+ignored it. Removing one entry worked, and was hidden behind a right-click.
+
+What the suite cannot judge: whether the star reads as *pinned* rather than as a
+rating, and whether the rows still look right after several redraws.
+
+1. Open **Case → Recently opened…** with five or more entries. Ctrl-click three.
+
+**Pass:** three rows highlight. **Open** greys out — it has no answer for three.
+
+2. Press **Forget these**.
+
+**Pass:** those three go, the other rows stay, and *the dialog is still open*.
+The rows are the same height they were before the redraw.
+
+3. Ctrl-click two more and press it again, without reopening anything.
+
+**Pass:** they go too. This is the pass that was impossible before.
+
+4. Right-click one row of a multi-selection.
+
+**Pass:** the rest stay highlighted. Right-click a row *outside* the selection
+and it becomes the only one selected, as in any file list.
+
+5. Look at a pinned row.
+
+**Pass:** the mark is a star in the interface blue, not a red pushpin. Red in
+this application means something is wrong with the evidence, and a pinned case
+is not that.
+
+6. Press **Ctrl+A**, then **Forget these**. Close the window and open it again.
+
+**Pass:** the chooser does not appear at all — there is nothing to offer. Check
+`HKCU\Software\logarc` with `regedit`: the recent-cases value is **gone**, not
+present and empty. That distinction is the whole promise of this control.
+
 ---
 
 ## Recording a run
@@ -496,5 +536,6 @@ where it was asserted — and neither silently swallows a file.
 | 11 | Zoom scales the whole drawing; captions never touch at any zoom | | |
 | 12 | A damaged case reports its unparsed lines legibly, without squeezing the table | | |
 | 13 | A log that produced no events interrupts, and names the format | | |
+| 14 | Several cases forgotten in one pass; Ctrl+A removes the key itself | | |
 
 Version tested: ______  ·  Date: ______  ·  Machine: ______

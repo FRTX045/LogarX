@@ -145,14 +145,16 @@ the case un-finalised, so a partial read can never be analysed as if it were com
 
 Opening the window offers the cases you have worked on before; **Case → Recently opened…**
 (Ctrl+Shift+O) brings that list back at any time, and **View → Reopen the last case on start** skips
-it and goes straight to the one you were in. Right-click a row to pin it to the top, rename it in
-the list, show its folder, or drop that one entry. A rename is a label here only — `case.json` keeps
-the case id that every exported report prints.
+it and goes straight to the one you were in. Ctrl-click chooses several rows and **Forget these**
+takes them off the list, which stays open — so tidying a list of ten is one pass rather than ten
+openings. Right-click a row to pin it to the top, rename it in the list, or show its folder. A
+rename is a label here only — `case.json` keeps the case id that every exported report prints.
 
 **That list is kept on the machine you are working at.** It records which cases were opened
 here — their folders, when, and how much was in them — under `HKCU\Software\logarc`, beside the
 view preferences. That is a record of what was investigated, not merely of how the window looked,
-so the chooser carries a **Forget these** button that removes it.
+so it has to be removable: **Ctrl+A** then **Forget these** takes every entry, and an emptied list
+removes the registry key rather than storing an empty one in it.
 
 A case that could not read all of its logs says so, every time it is opened — an
 amber strip naming how many lines were refused and what share of the file that
