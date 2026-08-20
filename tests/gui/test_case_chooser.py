@@ -444,3 +444,36 @@ def test_the_pin_mark_is_drawn_in_the_theme_rather_than_by_the_font(
     unmarked = chooser._table.item(0, 0)
     assert unmarked is not None
     assert unmarked.text() == "", "premise: only the pinned row carries the mark"
+
+
+def test_the_rows_keep_the_height_the_header_asks_for(qt_app: QApplication) -> None:
+    """Forgetting a case redraws the table, and it used to come back tighter:
+    33px rows becoming 20px on a redraw that removed nothing.
+    `resizeRowsToContents` sizes to the text, and every row here is a single
+    line of it, so it bought nothing and cost the dialog its proportions.
+
+    Latent while the only way to trigger a redraw was a right-click command few
+    people found. `Forget these` makes it the ordinary path.
+
+    **Asserted against the header's own default rather than against the height
+    before the redraw**, because the before-and-after form cannot see this
+    fault. The suite runs offscreen, where there are no fonts and text measures
+    97px whatever it says — so the rows were 97 before and 97 after, unchanged
+    and wrong, while a real window went 33 to 20. Compared with the default,
+    both platforms fail while the resize is there and both pass without it.
+    """
+    chooser = CaseChooser(five(), exists=lambda _p: True)
+    chooser.show()
+    qt_app.processEvents()
+
+    header = chooser._table.verticalHeader()
+    assert header is not None
+    wanted = header.defaultSectionSize()
+
+    for stage in ("on opening", "after a redraw"):
+        heights = {chooser._table.rowHeight(row) for row in range(chooser._table.rowCount())}
+        assert heights == {wanted}, f"{stage}: rows are {heights}, header asks for {wanted}"
+        chooser._refill()
+        qt_app.processEvents()
+
+    chooser.close()

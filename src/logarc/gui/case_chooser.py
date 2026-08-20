@@ -152,7 +152,10 @@ class CaseChooser(QDialog):
                     # whatever the font decides a glyph should look like.
                     item.setForeground(QColor(PIN_COLOUR))
                 table.setItem(row, index, item)
-        table.resizeRowsToContents()
+        # Not `resizeRowsToContents()`. Every row here is one line, so sizing
+        # to the text bought nothing and made the table come back tighter on
+        # every redraw — 33px rows becoming 20px on a redraw that removed
+        # nothing. The header's default section size is what the rows keep.
         if self.cases:
             table.selectRow(0)
         self._selection_changed()
