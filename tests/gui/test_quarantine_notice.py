@@ -152,3 +152,27 @@ def test_a_file_of_only_blank_lines_is_not_called_dead() -> None:
     assert not notice.is_blocking
     assert notice.dead_files == ()
     assert "8 lines could not be parsed" in notice.headline
+
+
+def test_the_dead_file_wording_agrees_with_how_many_there_are() -> None:
+    """One file is "it", several are "them". Caught by reading the sentence the
+    real window produced, not by any test that existed at the time."""
+    one = notice_for(
+        [
+            source("access.log", read=900, quarantined=0),
+            source("system.log", read=640, quarantined=640),
+        ]
+    )
+    assert one is not None
+    assert "Nothing from it is in this case." in one.detail
+    assert "Nothing from them" not in one.detail
+
+    several = notice_for(
+        [
+            source("a.log", read=500, quarantined=500),
+            source("b.log", read=700, quarantined=700),
+        ]
+    )
+    assert several is not None
+    assert "Nothing from them is in this case." in several.detail
+    assert "2 logs produced no events at all" in several.detail

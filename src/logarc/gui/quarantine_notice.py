@@ -75,17 +75,20 @@ def _dead_file_detail(dead: Sequence[SourceRecord]) -> str:
         only = dead[0]
         opening = (
             f"{only.file_id} was read as {only.log_format}, and not one of its "
-            f"{only.lines_read:,} lines parsed."
+            f"{only.lines_read:,} lines parsed. Nothing from it is in this case."
         )
     else:
         named = ", ".join(
             f"{record.file_id} ({record.lines_read:,} lines, read as {record.log_format})"
             for record in dead
         )
-        opening = f"{len(dead)} files produced no events at all: {named}."
+        opening = (
+            f"{len(dead)} logs produced no events at all: {named}. "
+            "Nothing from them is in this case."
+        )
 
     return (
-        f"{opening} Nothing from them is in this case.\n\n"
+        f"{opening}\n\n"
         "Every line being refused is what reading a log with the wrong parser looks "
         "like. Re-ingest naming the format explicitly — `logarc formats` lists the "
         "names it accepts, and the directive behind each."
