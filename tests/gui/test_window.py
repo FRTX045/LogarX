@@ -34,9 +34,11 @@ from logarc.gui import app
 from logarc.gui.app import MainWindow, read_case, reconstruct_client
 from logarc.gui.canvas import MIN_FIT_SCALE, ActivityCanvas
 from logarc.gui.evidence_panel import EvidencePanel
+from logarc.gui.notice_bar import QuarantineBanner
 from logarc.gui.panels import ClientTable
-from logarc.gui.style import format_bytes
-from logarc.storage.case import CaseManifest
+from logarc.gui.quarantine_notice import notice_for
+from logarc.gui.style import NOTICE_TINT, THEME, format_bytes
+from logarc.storage.case import CaseManifest, SourceRecord
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 CLIENT = "203.0.113.66"
@@ -1962,3 +1964,98 @@ def test_a_pin_survives_closing_the_chooser_without_opening_anything(
     assert remembered[0].pinned
     assert MainWindow()._recent_cases()[0].pinned, "and the next window sees it too"
     window.close()
+
+
+# -- the strip that reports a case's unparsed lines ------------------------
+
+
+def _one_source(name: str, *, read: int, quarantined: int) -> SourceRecord:
+    return SourceRecord(
+        file_id=name,
+        original_path=f"/logs/{name}",
+        sha256="0" * 64,
+        size_bytes=read * 200,
+        compression="none",
+        log_format="apache-combined",
+        lines_read=read,
+        events_parsed=read - quarantined,
+        lines_quarantined=quarantined,
+    )
+
+
+def test_a_clean_case_gets_no_banner(qt_app: QApplication) -> None:
+    """Silence means the case holds everything its logs did."""
+    banner = QuarantineBanner()
+    banner.show_notice(notice_for([_one_source("a.log", read=1_000, quarantined=0)]))
+
+    assert not banner.isVisible()
+
+
+def test_a_damaged_case_gets_a_banner_that_names_the_count(qt_app: QApplication) -> None:
+    banner = QuarantineBanner()
+    banner.show_notice(notice_for([_one_source("a.log", read=51_268, quarantined=3_412)]))
+    banner.show()
+
+    assert banner.isVisible()
+    assert "3,412" in banner.text()
+
+
+def test_the_banner_can_be_dismissed(qt_app: QApplication) -> None:
+    """It takes real estate in a window that needs it, so it has to close.
+
+    Dismissal lasts until the case is opened again — the count is read from the
+    manifest every time, so nothing has to remember the choice, and a case that
+    is still incomplete says so again the next time it is looked at.
+    """
+    banner = QuarantineBanner()
+    banner.show_notice(notice_for([_one_source("a.log", read=900, quarantined=12)]))
+    banner.show()
+    assert banner.isVisible(), "premise: the strip was up before it was dismissed"
+
+    banner.dismiss()
+
+    assert not banner.isVisible()
+
+
+def test_a_second_case_replaces_what_the_banner_said(qt_app: QApplication) -> None:
+    """The failure this guards: show a damaged case, then a clean one, and a
+    strip that only ever learned to appear goes on reporting the first case's
+    damage over the second case's evidence."""
+    banner = QuarantineBanner()
+    banner.show_notice(notice_for([_one_source("a.log", read=51_268, quarantined=3_412)]))
+    banner.show()
+    assert banner.isVisible(), "premise: the first case put the strip up"
+
+    banner.show_notice(notice_for([_one_source("b.log", read=2_000, quarantined=0)]))
+
+    assert not banner.isVisible()
+
+
+def test_the_banner_shows_one_sentence_not_the_whole_paragraph(
+    qt_app: QApplication,
+) -> None:
+    """The dead-file wording runs to a paragraph, because the dialog has room
+    for it. A strip that took all of it would be five lines tall and take a
+    third of the window; it takes the first sentence and leaves the rest to the
+    dialog raised beside it."""
+    notice = notice_for([_one_source("system.log", read=11_268, quarantined=11_268)])
+    assert notice is not None
+    assert "\n\n" in notice.detail, "premise: the dead-file detail is a paragraph"
+
+    banner = QuarantineBanner()
+    banner.show_notice(notice)
+
+    assert "logarc formats" not in banner.text()
+    assert "not one of its 11,268 lines parsed" in banner.text()
+
+
+def test_every_ink_on_the_banner_can_be_read_against_its_ground(
+    qt_app: QApplication,
+) -> None:
+    """An amber strip is worth nothing if the words on it are not legible.
+
+    All four inks the strip actually paints, not just the headline: the caption
+    beneath it carries the numbers, and the dismiss control has to be findable.
+    """
+    for ink in (THEME.ink, THEME.muted, THEME.faint, THEME.severity[Severity.MEDIUM]):
+        assert contrast(ink, NOTICE_TINT) >= 4.5, f"{ink} on {NOTICE_TINT}"
