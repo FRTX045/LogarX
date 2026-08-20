@@ -7,15 +7,28 @@ from the snapshot it was handed, so the figures the window shows and the figures
 It sits over the window rather than in a corner of it. Reading a gigabyte takes
 minutes, and for all of them the window behind has nothing to show — its canvas
 is still inviting you to open a case while one is being built.
+
+**Drawn as a readout rather than a dashboard card.** The first version led with
+a large accent-coloured percentage over a rounded bar, with three statistics
+under small capitalised labels beneath it — a shape common enough in generated
+interfaces that this project's own design notes name it as one to avoid, and it
+was picked up here without that being checked. What replaced it is a
+fixed-width readout: one figure per row, every value starting at the same
+column, square corners, hairline rules. Digits that line up under one another
+are read at a glance, which is the entire job of a panel somebody watches for
+several minutes and does nothing with.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QDialog,
+    QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QProgressBar,
@@ -25,7 +38,7 @@ from PyQt6.QtWidgets import (
 )
 
 from logarc.gui.style import THEME
-from logarc.gui.theme import GAP, PAD, STEP, caption_font, heading_font, title_font, ui_font
+from logarc.gui.theme import MONO_FAMILIES, PAD, ROOM, TIGHT, ui_font
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -34,29 +47,41 @@ if TYPE_CHECKING:
 
 __all__ = ["IngestCard"]
 
-_UNKNOWN = "—"
+#: Shown where a figure is not available. An em dash rather than a zero: nothing
+#: is known yet, which is a different statement from nothing having happened.
+UNKNOWN: Final = "—"
+
+#: The rows of the readout, in the order they are read. The keys are what each
+#: line is called; the values are filled in from a `Progress`.
+_ROWS: Final = ("source", "read", "parsed", "rate", "remaining")
 
 
-def _figure(value: str, note: str) -> tuple[QWidget, QLabel]:
-    """One number with its label beneath, and a handle on the number."""
-    holder = QWidget()
-    holder.setStyleSheet("background: transparent;")
-    column = QVBoxLayout(holder)
-    column.setContentsMargins(0, 0, 0, 0)
-    column.setSpacing(2)
+def _mono(step: float = 0.0, *, bold: bool = False) -> QFont:
+    """The evidence face, which is also the right face for a readout.
 
-    number = QLabel(value)
-    number.setFont(heading_font(ui_font()))
-    number.setStyleSheet(
-        f"color: {THEME.ink}; background: transparent; font-variant-numeric: tabular-nums;"
-    )
-    caption = QLabel(note.upper())
-    caption.setFont(caption_font(ui_font()))
-    caption.setStyleSheet(f"color: {THEME.faint}; background: transparent;")
+    A column of figures only lines up if the digits are the same width, and
+    lining up is what makes five numbers readable without reading them.
+    """
+    font = QFont()
+    font.setFamilies(list(MONO_FAMILIES))
+    font.setPointSizeF(max(7.5, ui_font().pointSizeF() + step))
+    if bold:
+        font.setWeight(QFont.Weight.DemiBold)
+    return font
 
-    column.addWidget(number)
-    column.addWidget(caption)
-    return holder, number
+
+def _label(text: str, font: QFont, colour: str) -> QLabel:
+    item = QLabel(text)
+    item.setFont(font)
+    item.setStyleSheet(f"color: {colour}; background: transparent;")
+    return item
+
+
+def _rule(colour: str) -> QFrame:
+    line = QFrame()
+    line.setFixedHeight(1)
+    line.setStyleSheet(f"background: {colour}; border: none;")
+    return line
 
 
 class IngestCard(QDialog):
@@ -76,103 +101,137 @@ class IngestCard(QDialog):
             Qt.WindowType.Dialog | Qt.WindowType.CustomizeWindowHint | Qt.WindowType.WindowTitleHint
         )
         self.setStyleSheet(
-            f"QDialog#ingestCard {{ background: {THEME.raised}; border: 1px solid {THEME.edge}; }}"
+            f"QDialog#ingestCard {{ background: {THEME.chrome}; border: 1px solid {THEME.edge}; }}"
         )
-        self.setFixedWidth(560)
+        self.setFixedWidth(600)
 
         column = QVBoxLayout(self)
-        column.setContentsMargins(STEP, STEP, STEP, STEP)
-        column.setSpacing(GAP)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(0)
 
-        self._subject = QLabel("")
-        self._subject.setFont(title_font(ui_font()))
-        self._subject.setStyleSheet(f"color: {THEME.ink}; background: transparent;")
-        column.addWidget(self._subject)
+        column.addWidget(self._build_head())
+        column.addWidget(_rule(THEME.edge))
+        column.addWidget(self._build_readout())
+        column.addWidget(self._build_track())
+        column.addWidget(self._build_consequence())
+        column.addWidget(_rule(THEME.line))
+        column.addWidget(self._build_foot())
 
-        self._note = QLabel("Reading…")
-        self._note.setFont(caption_font(ui_font()))
-        self._note.setStyleSheet(f"color: {THEME.muted}; background: transparent;")
-        column.addWidget(self._note)
+    # -- construction ------------------------------------------------------
 
-        headline = QHBoxLayout()
-        headline.setSpacing(PAD)
-        self._percent = QLabel("")
-        self._percent.setStyleSheet(
-            f"color: {THEME.accent}; background: transparent; font-size: 30pt;"
-            " font-variant-numeric: tabular-nums;"
-        )
-        headline.addWidget(self._percent)
-        headline.addStretch(1)
-        self._volume = QLabel("")
-        self._volume.setFont(caption_font(ui_font()))
-        self._volume.setStyleSheet(f"color: {THEME.muted}; background: transparent;")
-        headline.addWidget(self._volume)
-        column.addLayout(headline)
+    def _build_head(self) -> QWidget:
+        head = QWidget()
+        head.setStyleSheet(f"background: {THEME.surface};")
+        row = QHBoxLayout(head)
+        row.setContentsMargins(ROOM, PAD + 2, ROOM, PAD + 2)
+        self._state = _label("READING", _mono(-0.5, bold=True), THEME.faint)
+        row.addWidget(self._state)
+        row.addStretch(1)
+        self._which = _label("", _mono(-0.5), THEME.faint)
+        row.addWidget(self._which)
+        return head
+
+    def _build_readout(self) -> QWidget:
+        body = QWidget()
+        body.setStyleSheet("background: transparent;")
+        grid = QGridLayout(body)
+        grid.setContentsMargins(ROOM, ROOM, ROOM, ROOM)
+        grid.setHorizontalSpacing(ROOM)
+        grid.setVerticalSpacing(TIGHT + 1)
+
+        self._values: dict[str, QLabel] = {}
+        for index, key in enumerate(_ROWS):
+            grid.addWidget(_label(key, _mono(-0.5), THEME.faint), index, 0)
+            # `read` carries the weight: it is the one figure the whole panel
+            # exists to report, and the others explain it.
+            value = _label(UNKNOWN, _mono(bold=key == "read"), THEME.ink)
+            grid.addWidget(value, index, 1)
+            self._values[key] = value
+        grid.setColumnStretch(1, 1)
+        return body
+
+    def _build_track(self) -> QWidget:
+        holder = QWidget()
+        holder.setStyleSheet("background: transparent;")
+        row = QHBoxLayout(holder)
+        row.setContentsMargins(ROOM, 0, ROOM, ROOM)
 
         self._bar = QProgressBar()
         self._bar.setRange(0, 0)
         self._bar.setTextVisible(False)
         self._bar.setFixedHeight(10)
+        # Square, like everything else on the face. A rounded pill would be the
+        # only soft edge in the panel, and it would be the loudest thing in it.
         self._bar.setStyleSheet(
-            f"QProgressBar {{ background: {THEME.surface}; border: 1px solid {THEME.line};"
-            " border-radius: 5px; }"
-            f"QProgressBar::chunk {{ background: {THEME.accent}; border-radius: 5px; }}"
+            f"QProgressBar {{ background: {THEME.stripe}; border: none; }}"
+            f"QProgressBar::chunk {{ background: {THEME.accent}; }}"
         )
-        column.addWidget(self._bar)
+        row.addWidget(self._bar)
+        return holder
 
-        figures = QHBoxLayout()
-        figures.setSpacing(STEP)
-        lines_box, self._lines = _figure("0", "lines parsed")
-        rate_box, self._rate = _figure(_UNKNOWN, "rate")
-        left_box, self._left = _figure(_UNKNOWN, "left")
-        for box in (lines_box, rate_box, left_box):
-            figures.addWidget(box)
-        figures.addStretch(1)
-        column.addLayout(figures)
+    def _build_consequence(self) -> QWidget:
+        """What cancelling costs, said where it can be read without hovering.
 
-        column.addSpacing(PAD)
-        buttons = QHBoxLayout()
-        buttons.addStretch(1)
+        It nearly became a tooltip on the Cancel button. A tooltip appears only
+        if somebody happens to rest the pointer on the control, and the whole
+        point of this sentence is to be read *before* that control is pressed.
+        """
+        holder = QWidget()
+        holder.setStyleSheet("background: transparent;")
+        row = QHBoxLayout(holder)
+        row.setContentsMargins(ROOM, 0, ROOM, PAD)
+        self._consequence = _label(
+            "cancelling leaves the case un-finalised", _mono(-1.5), THEME.edge_ink
+        )
+        row.addWidget(self._consequence)
+        row.addStretch(1)
+        return holder
+
+    def _build_foot(self) -> QWidget:
+        foot = QWidget()
+        foot.setStyleSheet("background: transparent;")
+        row = QHBoxLayout(foot)
+        row.setContentsMargins(ROOM, PAD, ROOM, PAD)
+
+        self._percent = _label("", _mono(1, bold=True), THEME.accent)
+        row.addWidget(self._percent)
+        row.addStretch(1)
+
         self._cancel = QPushButton("Cancel")
-        self._cancel.setFont(caption_font(ui_font()))
+        self._cancel.setFont(_mono(-0.5))
         self._cancel.clicked.connect(self._cancelled)
-        buttons.addWidget(self._cancel)
-        column.addLayout(buttons)
-
-        self._consequence = QLabel(
-            "A cancelled ingest leaves the case un-finalised, so a partial read can "
-            "never be analysed as if it were complete."
+        self._cancel.setStyleSheet(
+            f"QPushButton {{ color: {THEME.muted}; background: transparent;"
+            f" border: 1px solid {THEME.edge}; border-radius: 0; padding: 5px 18px; }}"
+            f"QPushButton:disabled {{ color: {THEME.edge_ink}; }}"
         )
-        self._consequence.setFont(caption_font(ui_font()))
-        self._consequence.setStyleSheet(f"color: {THEME.faint}; background: transparent;")
-        self._consequence.setWordWrap(True)
-        column.addWidget(self._consequence)
+        self._cancel.setToolTip(
+            "Stop reading. The case is left un-finalised, so a partial read can never "
+            "be analysed as if it were complete."
+        )
+        row.addWidget(self._cancel)
+        return foot
+
+    # -- what it says ------------------------------------------------------
 
     def text(self) -> str:
-        """Everything the card says, for tests and for anything reading it whole."""
-        return " ".join(
-            part
-            for part in (
-                self._subject.text(),
-                self._note.text(),
-                self._percent.text(),
-                self._volume.text(),
-                self._lines.text(),
-                self._rate.text(),
-                self._left.text(),
-            )
-            if part
-        )
+        """Everything the card says, for tests and anything reading it whole."""
+        parts = [self._state.text(), self._which.text(), self._percent.text()]
+        parts.extend(f"{key} {self._values[key].text()}" for key in _ROWS)
+        return " ".join(part for part in parts if part)
 
     def update_progress(self, progress: Progress) -> None:
         """Draw `progress`. Nothing here is worked out, only shown."""
-        self._subject.setText(progress.subject)
-        self._lines.setText(f"{progress.lines:,}")
-        self._rate.setText(progress.rate or _UNKNOWN)
+        self._values["source"].setText(progress.file_name)
+        self._values["parsed"].setText(f"{progress.lines:,} lines")
+        self._values["rate"].setText(progress.rate or UNKNOWN)
         # `remaining` is None until the read has settled and again once it is
         # done. A dash rather than a guess: the seam withheld it on purpose, and
-        # inventing one here would put the number back that it exists to keep out.
-        self._left.setText(progress.remaining or _UNKNOWN)
+        # inventing one here puts back the number that guard exists to keep out.
+        self._values["remaining"].setText(progress.remaining or UNKNOWN)
+        self._which.setText(
+            f"{progress.file_index}/{progress.file_count}" if progress.file_count > 1 else ""
+        )
 
         fraction = progress.fraction
         if fraction is None:
@@ -180,20 +239,20 @@ class IngestCard(QDialog):
             # bar, which says "working" without claiming to know where it is.
             self._bar.setRange(0, 0)
             self._percent.setText("")
-            self._volume.setText("")
+            self._values["read"].setText(UNKNOWN)
             return
 
         self._bar.setRange(0, 1000)
         self._bar.setValue(int(fraction * 1000))
         self._percent.setText(progress.percent or "")
-        self._volume.setText(
-            f"{_megabytes(progress.bytes_done)} of {_megabytes(progress.bytes_total)}"
+        self._values["read"].setText(
+            f"{_megabytes(progress.bytes_done)} / {_megabytes(progress.bytes_total)} MB"
         )
 
     def stopping(self) -> None:
         """Say the cancel has been heard and is being waited on."""
         self._cancel.setEnabled(False)
-        self._note.setText("Stopping after the batch in flight…")
+        self._state.setText("STOPPING")
 
     def _cancelled(self) -> None:
         self.stopping()
@@ -201,4 +260,5 @@ class IngestCard(QDialog):
 
 
 def _megabytes(count: int) -> str:
-    return f"{count / 1_000_000:,.0f} MB"
+    """Megabytes without their unit, so a pair of them can share one."""
+    return f"{count / 1_000_000:,.0f}"
