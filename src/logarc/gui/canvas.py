@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from PyQt6.QtCore import QPointF, QRectF, Qt, pyqtSignal
 from PyQt6.QtGui import (
@@ -36,6 +36,7 @@ from PyQt6.QtWidgets import (
     QGraphicsPolygonItem,
     QGraphicsRectItem,
     QGraphicsScene,
+    QGraphicsSceneMouseEvent,
     QGraphicsSimpleTextItem,
     QGraphicsView,
 )
@@ -55,6 +56,8 @@ from logarc.gui.style import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from PyQt6.QtGui import QMouseEvent
 
     from logarc.core.graph import ActivityGraph, GraphNode
@@ -191,6 +194,11 @@ _GRID_DOT: Final = 1.6
 #: and the grid stops reading as texture and starts reading as a wash over the
 #: evidence. Drawn only while it is still a grid.
 _GRID_MIN_SCALE: Final = 0.45
+
+#: Clear ground kept around the graph, in scene units. The view clamps
+#: scrolling to the scene rectangle, so this is also the room a node has to be
+#: dragged into before the rectangle has to grow to hold it.
+_SCENE_MARGIN: Final = 80.0
 
 
 def _steps(start: float, stop: float) -> list[float]:
@@ -355,11 +363,26 @@ class _EdgeArt:
 
 
 class _NodeItem(QGraphicsEllipseItem):
-    """One activity. Carries its node id so a click can be traced back."""
+    """One activity. Carries its node id so a click can be traced back.
 
-    def __init__(self, node: GraphNode, radius: float) -> None:
+    Movable. `QGraphicsView.mousePressEvent` offers the press to the scene
+    first and only starts hand-scrolling if nothing took it, so a movable item
+    and `ScrollHandDrag` do not fight: a press on an activity drags the
+    activity, and a press on the ground pans the view.
+    """
+
+    def __init__(
+        self,
+        node: GraphNode,
+        radius: float,
+        *,
+        on_move: Callable[[str], None],
+        on_drop: Callable[[str], None],
+    ) -> None:
         super().__init__(QRectF(-radius, -radius, radius * 2, radius * 2))
         self.node_id = node.node_id
+        self._on_move = on_move
+        self._on_drop = on_drop
         # Deliberately *not* `ItemIsSelectable`.
         #
         # Nothing here ever asked Qt which item was selected — a click is read
@@ -370,9 +393,34 @@ class _NodeItem(QGraphicsEllipseItem):
         # boxed it, and the box vanished on the next click somewhere else.
         # Two marks for one selection, one of which looks like a rendering
         # fault.
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges, True)
         self.setAcceptHoverEvents(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setZValue(1)
+
+    def itemChange(self, change: QGraphicsItem.GraphicsItemChange, value: Any) -> Any:  # noqa: N802 - Qt's naming
+        """Tell the canvas, so the arrows and the ring can keep up.
+
+        On `HasChanged` rather than `Change`: the position is already the new
+        one, so everything that reads it agrees with what is on screen. On
+        `Change` the item has not moved yet and every arrow would be reshaped
+        one mouse-move behind the node it is attached to.
+        """
+        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
+            self._on_move(self.node_id)
+        return super().itemChange(change, value)
+
+    def mousePressEvent(self, event: QGraphicsSceneMouseEvent | None) -> None:  # noqa: N802 - Qt's naming
+        # Not the closed hand: `ScrollHandDrag` already shows that for panning,
+        # so the two gestures would look identical while doing different things.
+        self.setCursor(Qt.CursorShape.SizeAllCursor)
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent | None) -> None:  # noqa: N802 - Qt's naming
+        super().mouseReleaseEvent(event)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._on_drop(self.node_id)
 
 
 class ActivityCanvas(QGraphicsView):
@@ -399,6 +447,12 @@ class ActivityCanvas(QGraphicsView):
         self._halo: QGraphicsEllipseItem | None = None
         self._selected: str | None = None
         self._wrap = True
+        # Nodes are placed with `setPos` while a graph is being drawn, and every
+        # one of those is a position change. Without this the first node placed
+        # would ask for arrows that are not on the canvas yet, and the scene
+        # rectangle would be stretched by each node in turn before `show_graph`
+        # sets the one it wants.
+        self._drawing = False
         # Something to read from the moment the window opens. Left to the case
         # being loaded, the largest region of the window spent the whole of
         # startup as blank paper inside dark chrome, which reads as a renderer
@@ -472,6 +526,72 @@ class ActivityCanvas(QGraphicsView):
         if selected is not None:
             self.highlight(selected)
 
+    # -- moving ------------------------------------------------------------
+
+    def _node_moved(self, node_id: str) -> None:
+        """Bring everything attached to an activity along with it.
+
+        Called on every mouse-move event of a drag, so it touches only what
+        moved: the arrows filed under this node, and the ring if this is the
+        node being read. Reshaping the whole graph here is what would turn a
+        long trace into a slideshow.
+        """
+        if self._drawing:
+            return
+        item = self._nodes.get(node_id)
+        if item is None:  # pragma: no cover - a moved node is always a drawn one
+            return
+
+        for art in self._edges_by_node.get(node_id, ()):
+            source = self._nodes.get(art.source_id)
+            target = self._nodes.get(art.target_id)
+            if source is not None and target is not None:
+                art.reshape(QPointF(source.pos()), QPointF(target.pos()))
+
+        if self._halo is not None and self._selected == node_id:
+            self._halo.setPos(item.pos())
+
+        self._grow_scene_for(item)
+
+    def _node_dropped(self, node_id: str) -> None:
+        """Settle the scene once the hand lets go.
+
+        `_grow_scene_for` only ever grows, because shrinking under a moving
+        hand throws the graph away from the cursor. But grown and never given
+        back, the empty ground a node was dragged across stays in the scene for
+        the rest of the session — and `Fit to window` frames the emptiness
+        along with the graph. Between drags there is no hand to disturb, so
+        this is where the room comes back.
+        """
+        if self._drawing:  # pragma: no cover - nothing is dropped while drawing
+            return
+        self._frame_scene()
+
+    def _frame_scene(self) -> None:
+        """Fit the scene rectangle to what is on it, with room to breathe."""
+        self._scene.setSceneRect(
+            self._scene.itemsBoundingRect().adjusted(
+                -_SCENE_MARGIN, -_SCENE_MARGIN, _SCENE_MARGIN, _SCENE_MARGIN
+            )
+        )
+
+    def _grow_scene_for(self, item: QGraphicsItem) -> None:
+        """Make room for an activity dragged past the edge of the scene.
+
+        The view clamps scrolling to the scene rectangle, so a node dragged
+        beyond it cannot be followed — it is simply gone, with no way to bring
+        it back.
+
+        Grows and never shrinks. Shrinking as a node is dragged back would move
+        the scrollbars under the hand that is holding it, and the graph would
+        jump away from the cursor.
+        """
+        reach = item.sceneBoundingRect().united(item.mapRectToScene(item.childrenBoundingRect()))
+        reach = reach.adjusted(-_SCENE_MARGIN, -_SCENE_MARGIN, _SCENE_MARGIN, _SCENE_MARGIN)
+        rect = self._scene.sceneRect()
+        if not rect.contains(reach):
+            self._scene.setSceneRect(rect.united(reach))
+
     # -- drawing -----------------------------------------------------------
 
     def highlight(self, node_id: str) -> None:
@@ -498,6 +618,11 @@ class ActivityCanvas(QGraphicsView):
         pen.setWidthF(SELECTION_WIDTH)
         halo.setPen(pen)
         halo.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+        # Transparent to the mouse. The ring stands outside the circle it marks,
+        # and an unfilled ellipse is still hit along its stroke — so without
+        # this, a press that lands on the ring is taken by the ring, which is
+        # not movable, and the canvas pans instead of the node moving.
+        halo.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
         # Under the node so the outcome border stays the outermost thing read,
         # and above the edges so the ring is not cut by an arrow passing behind.
         halo.setZValue(0.5)
@@ -521,6 +646,18 @@ class ActivityCanvas(QGraphicsView):
             self._show_message("This client has no reconstructed activity.")
             return
 
+        self._drawing = True
+        try:
+            self._draw(graph, positions)
+        finally:
+            self._drawing = False
+
+    def _draw(self, graph: ActivityGraph, positions: dict[str, Point]) -> None:
+        """Put the arrows down, then the activities on top of them.
+
+        Separated from `show_graph` so the guard around it is one statement and
+        cannot be left half applied by an early return added later.
+        """
         by_id = {node.node_id: node for node in graph.nodes}
         # Resolved once for the whole graph rather than per edge: the question is
         # about the graph, and asking it inside the loop would be quadratic in
@@ -540,7 +677,7 @@ class ActivityCanvas(QGraphicsView):
         for node in graph.nodes:
             self._draw_node(node, positions[node.node_id])
 
-        self._scene.setSceneRect(self._scene.itemsBoundingRect().adjusted(-80, -80, 80, 80))
+        self._frame_scene()
         self.fit()
 
     def show_graph_placeholder(self, text: str = WAITING_MESSAGE) -> None:
@@ -569,7 +706,7 @@ class ActivityCanvas(QGraphicsView):
 
     def _draw_node(self, node: GraphNode, position: Point) -> None:
         style = style_for(node)
-        item = _NodeItem(node, style.radius)
+        item = _NodeItem(node, style.radius, on_move=self._node_moved, on_drop=self._node_dropped)
         item.setBrush(QBrush(QColor(style.fill)))
         pen = QPen(QColor(style.border.colour))
         pen.setStyle(_PEN_STYLES[style.border.style])
