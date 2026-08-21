@@ -13,6 +13,7 @@ can run it without installing anything. See ADR-0006.
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
 from PyQt6.QtCore import QPointF, QRectF, Qt, pyqtSignal
@@ -204,6 +205,155 @@ def _steps(start: float, stop: float) -> list[float]:
     return [start + index * _GRID_PITCH for index in range(max(count, 0))]
 
 
+@dataclass(frozen=True, slots=True)
+class _EdgeShape:
+    """Where one arrow goes, as geometry, before anything is drawn.
+
+    Separated from the drawing because two code paths now need it: the one that
+    puts a graph on the canvas, and the one that follows a node being dragged.
+    Left to compute their own, they drift — and the drift shows as arrows that
+    snap into a different shape the moment the mouse is let go.
+    """
+
+    path: QPainterPath
+    head: QPolygonF
+    anchor: QPointF
+    """The point the transition is *about*: the middle of a straight arrow, the
+    apex of a bowed one."""
+
+    @property
+    def label_at(self) -> QPointF:
+        """Where the number sits: clear of the arrow, not on top of it."""
+        return QPointF(self.anchor.x(), self.anchor.y() - _ARROW_WIDTH * 2)
+
+
+def _edge_width(weight: int) -> float:
+    """How heavy an arrow is drawn.
+
+    A transition seen many times is drawn heavier, which is the only thing
+    separating a habit from a one-off on the behaviour map. Named because the
+    pen is also *rebuilt* — after a drag puts the accent on it — and a second
+    copy of this expression would let a dragged arrow come back thinner than it
+    went in.
+    """
+    return min(1.0 + math.log1p(weight), 5.0)
+
+
+def _edge_shape(
+    start: QPointF,
+    end: QPointF,
+    *,
+    source_radius: float,
+    target_radius: float,
+    paired: bool,
+) -> _EdgeShape:
+    """One arrow between two centres, stopped at the rims.
+
+    Against the circles rather than through them, so the arrowhead lands where
+    the eye expects it.
+    """
+    angle = math.atan2(end.y() - start.y(), end.x() - start.x())
+    begin = start + QPointF(math.cos(angle) * source_radius, math.sin(angle) * source_radius)
+    finish = end - QPointF(math.cos(angle) * target_radius, math.sin(angle) * target_radius)
+
+    middle = (begin + finish) / 2
+    path = QPainterPath(begin)
+    arriving = angle
+    if paired:
+        # Perpendicular to the direction of travel, so A->B leaves one way and
+        # B->A the other, symmetrically, without either edge needing to know the
+        # other exists. A quadratic control point at twice the bow puts the apex
+        # of the curve at the bow itself, which is where the label goes — and is
+        # what separates the pair's two numbers.
+        away = QPointF(-math.sin(angle), math.cos(angle))
+        control = middle + away * (_BOW * 2)
+        path.quadTo(control, finish)
+        anchor = middle + away * _BOW
+        # A quadratic arrives along `finish - control`. Left pointing down the
+        # straight line instead, the head is turned about twenty degrees against
+        # the curve it caps — and the head is what says which way it ran.
+        approach = finish - control
+        arriving = math.atan2(approach.y(), approach.x())
+    else:
+        path.lineTo(finish)
+        anchor = middle
+
+    head = QPolygonF(
+        [
+            finish,
+            finish
+            - QPointF(
+                math.cos(arriving - math.pi / 8) * _ARROW_LENGTH,
+                math.sin(arriving - math.pi / 8) * _ARROW_LENGTH,
+            ),
+            finish
+            - QPointF(
+                math.cos(arriving + math.pi / 8) * _ARROW_LENGTH,
+                math.sin(arriving + math.pi / 8) * _ARROW_LENGTH,
+            ),
+        ]
+    )
+    return _EdgeShape(path=path, head=head, anchor=anchor)
+
+
+class _EdgeArt:
+    """One arrow already on the canvas, and what it takes to move it.
+
+    The items are *reshaped*, not replaced. A node with three arrows on it would
+    otherwise create and destroy nine scene items on every mouse-move event, and
+    that is the difference between a drag that glides and one that stutters.
+    """
+
+    __slots__ = (
+        "head",
+        "label",
+        "line",
+        "paired",
+        "source_id",
+        "source_radius",
+        "target_id",
+        "target_radius",
+        "weight",
+    )
+
+    def __init__(
+        self,
+        *,
+        source_id: str,
+        target_id: str,
+        source_radius: float,
+        target_radius: float,
+        line: QGraphicsPathItem,
+        head: QGraphicsPolygonItem,
+        label: QGraphicsRectItem | None,
+        weight: int,
+        paired: bool,
+    ) -> None:
+        self.source_id = source_id
+        self.target_id = target_id
+        self.source_radius = source_radius
+        self.target_radius = target_radius
+        self.line = line
+        self.head = head
+        self.label = label
+        self.weight = weight
+        self.paired = paired
+
+    def reshape(self, start: QPointF, end: QPointF) -> None:
+        """Redraw this arrow between two centres it has moved to."""
+        shape = _edge_shape(
+            start,
+            end,
+            source_radius=self.source_radius,
+            target_radius=self.target_radius,
+            paired=self.paired,
+        )
+        self.line.setPath(shape.path)
+        self.head.setPolygon(shape.head)
+        if self.label is not None:
+            self.label.setPos(shape.label_at)
+
+
 class _NodeItem(QGraphicsEllipseItem):
     """One activity. Carries its node id so a click can be traced back."""
 
@@ -244,6 +394,8 @@ class ActivityCanvas(QGraphicsView):
         self.setStyleSheet(f"QGraphicsView {{ border: 1px solid {PAPER_EDGE}; }}")
         self._graph: ActivityGraph | None = None
         self._nodes: dict[str, _NodeItem] = {}
+        self._edge_art: list[_EdgeArt] = []
+        self._edges_by_node: dict[str, list[_EdgeArt]] = {}
         self._halo: QGraphicsEllipseItem | None = None
         self._selected: str | None = None
         self._wrap = True
@@ -357,6 +509,10 @@ class ActivityCanvas(QGraphicsView):
         self._graph = graph
         self._scene.clear()
         self._nodes.clear()
+        # `QGraphicsScene.clear` deletes the items these hold. Left behind, the
+        # next drag would reshape arrows whose C++ side is already gone.
+        self._edge_art.clear()
+        self._edges_by_node.clear()
         self._halo = None
         self._selected = None
 
@@ -396,6 +552,10 @@ class ActivityCanvas(QGraphicsView):
         self._graph = None
         self._scene.clear()
         self._nodes.clear()
+        # `QGraphicsScene.clear` deletes the items these hold. Left behind, the
+        # next drag would reshape arrows whose C++ side is already gone.
+        self._edge_art.clear()
+        self._edges_by_node.clear()
         self._halo = None
         self._selected = None
         self._show_message(text)
@@ -516,77 +676,56 @@ class ActivityCanvas(QGraphicsView):
         weight: int,
         paired: bool = False,
     ) -> None:
-        # Stop the line at each circle's edge rather than its centre, so the
-        # arrowhead lands where the eye expects it.
-        begin = QPointF(start.x, start.y)
-        finish = QPointF(end.x, end.y)
-        angle = math.atan2(finish.y() - begin.y(), finish.x() - begin.x())
-        begin += QPointF(
-            math.cos(angle) * style_for(source).radius, math.sin(angle) * style_for(source).radius
-        )
-        finish -= QPointF(
-            math.cos(angle) * style_for(target).radius, math.sin(angle) * style_for(target).radius
+        source_radius = style_for(source).radius
+        target_radius = style_for(target).radius
+        shape = _edge_shape(
+            QPointF(start.x, start.y),
+            QPointF(end.x, end.y),
+            source_radius=source_radius,
+            target_radius=target_radius,
+            paired=paired,
         )
 
-        middle = (begin + finish) / 2
-        path = QPainterPath(begin)
-        arriving = angle
-        if paired:
-            # Perpendicular to the direction of travel, so A->B leaves one way
-            # and B->A the other, symmetrically, without either edge needing to
-            # know the other exists. A quadratic control point at twice the bow
-            # puts the apex of the curve at the bow itself, which is where the
-            # label goes — and is what separates the pair's two numbers.
-            away = QPointF(-math.sin(angle), math.cos(angle))
-            control = middle + away * (_BOW * 2)
-            path.quadTo(control, finish)
-            anchor = middle + away * _BOW
-            # A quadratic arrives along `finish - control`. Left pointing down
-            # the straight line instead, the head is turned about twenty degrees
-            # against the curve it caps — and the head is what says which way
-            # the transition ran.
-            approach = finish - control
-            arriving = math.atan2(approach.y(), approach.x())
-        else:
-            path.lineTo(finish)
-            anchor = middle
-        line = QGraphicsPathItem(path)
         pen = QPen(QColor(_EDGE_COLOUR))
-        # A transition seen many times is drawn heavier, which is the only thing
-        # separating a habit from a one-off on the behaviour map.
-        pen.setWidthF(min(1.0 + math.log1p(weight), 5.0))
+        pen.setWidthF(_edge_width(weight))
+        line = QGraphicsPathItem(shape.path)
         line.setPen(pen)
         line.setZValue(0)
         self._scene.addItem(line)
 
-        head = QPolygonF(
-            [
-                finish,
-                finish
-                - QPointF(
-                    math.cos(arriving - math.pi / 8) * _ARROW_LENGTH,
-                    math.sin(arriving - math.pi / 8) * _ARROW_LENGTH,
-                ),
-                finish
-                - QPointF(
-                    math.cos(arriving + math.pi / 8) * _ARROW_LENGTH,
-                    math.sin(arriving + math.pi / 8) * _ARROW_LENGTH,
-                ),
-            ]
-        )
-        arrow = QGraphicsPolygonItem(head)
+        arrow = QGraphicsPolygonItem(shape.head)
         arrow.setPen(pen)
         arrow.setBrush(QBrush(QColor(_EDGE_COLOUR)))
         arrow.setZValue(0)
         self._scene.addItem(arrow)
 
-        if label:
+        backdrop = (
             self._canvas_text(
                 label,
                 colour=_LABEL_COLOUR,
                 point_size=_LABEL_SIZE,
-                anchor=QPointF(anchor.x(), anchor.y() - _ARROW_WIDTH * 2),
+                anchor=shape.label_at,
             )
+            if label
+            else None
+        )
+
+        art = _EdgeArt(
+            source_id=source.node_id,
+            target_id=target.node_id,
+            source_radius=source_radius,
+            target_radius=target_radius,
+            line=line,
+            head=arrow,
+            label=backdrop,
+            weight=weight,
+            paired=paired,
+        )
+        self._edge_art.append(art)
+        # Under both ends, so a node being dragged finds its own arrows without
+        # walking the whole graph on every mouse-move event.
+        self._edges_by_node.setdefault(source.node_id, []).append(art)
+        self._edges_by_node.setdefault(target.node_id, []).append(art)
 
     # -- interaction -------------------------------------------------------
 
