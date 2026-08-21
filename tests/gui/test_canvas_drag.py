@@ -21,13 +21,14 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from PyQt6.QtCore import QEvent, QPoint, QPointF, Qt
-from PyQt6.QtGui import QMouseEvent, QPainterPath
+from PyQt6.QtGui import QColor, QMouseEvent, QPainterPath
 from PyQt6.QtWidgets import QApplication
 
 from logarc.core.activity import ActivityCategory, Outcome, Severity
 from logarc.core.evidence import EvidenceRef
 from logarc.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
-from logarc.gui.canvas import ActivityCanvas, _edge_shape, _EdgeArt
+from logarc.gui.canvas import _EDGE_COLOUR, ActivityCanvas, _edge_shape, _EdgeArt
+from logarc.gui.style import SELECTION_COLOUR
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 
@@ -78,6 +79,17 @@ def both_ways() -> ActivityGraph:
     edges = (
         GraphEdge(source="n0", target="n1", weight=3, gap_seconds=12.0),
         GraphEdge(source="n1", target="n0", weight=2, gap_seconds=40.0),
+    )
+    return ActivityGraph(kind=GraphKind.BEHAVIOUR, client_ip="1.2.3.4", nodes=nodes, edges=edges)
+
+
+def two_weights() -> ActivityGraph:
+    """One node carrying a one-off and a habit, so the two come out at widths
+    the floor for a lit arrow sits between."""
+    nodes = (node(0), node(1), node(2))
+    edges = (
+        GraphEdge(source="n0", target="n1", weight=1, gap_seconds=12.0),
+        GraphEdge(source="n0", target="n2", weight=12, gap_seconds=40.0),
     )
     return ActivityGraph(kind=GraphKind.BEHAVIOUR, client_ip="1.2.3.4", nodes=nodes, edges=edges)
 
@@ -478,3 +490,101 @@ def test_the_scene_settles_once_the_hand_lets_go(qt_app: QApplication) -> None:
     assert canvas.graph_scene.sceneRect().width() == pytest.approx(
         canvas.graph_scene.itemsBoundingRect().width() + 160.0
     )
+
+
+# -- what lights up while a node is moving --------------------------------
+
+
+def pen_colour(art: _EdgeArt) -> str:
+    return art.line.pen().color().name()
+
+
+def test_the_arrows_on_a_node_light_up_while_it_is_moving(qt_app: QApplication) -> None:
+    """On a branching behaviour map it is not obvious which transitions a node
+    carries until it is picked up. Lit, the answer is the thing being moved."""
+    canvas = ready(4)
+    near, far = canvas._edge_art[0], canvas._edge_art[2]
+
+    hold(canvas, "n0", QPoint(60, 40))
+
+    assert pen_colour(near) == QColor(SELECTION_COLOUR).name()
+    assert pen_colour(far) == QColor(_EDGE_COLOUR).name()
+
+
+def test_the_arrowhead_lights_up_with_its_line(qt_app: QApplication) -> None:
+    """Filled, not stroked. A head left grey on a lit line reads as a rendering
+    fault rather than as an arrow."""
+    canvas = ready(2)
+    art = canvas._edge_art[0]
+
+    hold(canvas, "n0", QPoint(60, 40))
+
+    assert art.head.brush().color().name() == QColor(SELECTION_COLOUR).name()
+    assert art.head.pen().color().name() == QColor(SELECTION_COLOUR).name()
+
+
+def test_the_light_goes_out_when_the_hand_lets_go(qt_app: QApplication) -> None:
+    canvas = ready(2)
+    art = canvas._edge_art[0]
+
+    at = hold(canvas, "n0", QPoint(60, 40))
+    assert pen_colour(art) == QColor(SELECTION_COLOUR).name(), "premise: it lit"
+    let_go(canvas, at)
+
+    assert pen_colour(art) == QColor(_EDGE_COLOUR).name()
+    assert art.head.brush().color().name() == QColor(_EDGE_COLOUR).name()
+
+
+def test_each_arrow_comes_back_at_the_width_its_own_weight_earned(
+    qt_app: QApplication,
+) -> None:
+    """A transition seen many times is drawn heavier, and that is the only thing
+    separating a habit from a one-off on the behaviour map. Given back a single
+    width, a dragged node quietly rewrites how often its transitions happened.
+
+    Two weights, one either side of the floor a lit arrow gets: the light has to
+    thicken the thin one and leave the heavy one alone, and the release has to
+    put both back where they were.
+    """
+    canvas = ActivityCanvas()
+    canvas.resize(600, 480)
+    canvas.show_graph(two_weights())
+    once, often = canvas._edge_art[0], canvas._edge_art[1]
+    at_rest = (once.line.pen().widthF(), often.line.pen().widthF())
+    assert at_rest[0] < at_rest[1], "premise: weight decides the width"
+
+    at = hold(canvas, "n0", QPoint(60, 40))
+    assert once.line.pen().widthF() > at_rest[0], "premise: the light thickens the thin one"
+    assert often.line.pen().widthF() == at_rest[1], "premise: and leaves the heavy one"
+    let_go(canvas, at)
+
+    assert (once.line.pen().widthF(), often.line.pen().widthF()) == at_rest
+
+
+def test_a_click_that_moves_nothing_lights_nothing(qt_app: QApplication) -> None:
+    """Otherwise every click on an activity flashes the arrows around it, and
+    the light stops meaning "this is what you are moving"."""
+    canvas = ready(2)
+    art = canvas._edge_art[0]
+
+    press_on(canvas, "n0")
+
+    assert pen_colour(art) == QColor(_EDGE_COLOUR).name()
+
+
+def test_picking_up_a_second_node_puts_out_the_first(qt_app: QApplication) -> None:
+    """A release that never arrives — the window losing focus mid-drag will do
+    it — leaves an activity lit with nothing holding it. The next thing picked
+    up is where that gets noticed, so it is where it gets cleared."""
+    canvas = ready(4)
+    first, second = canvas._edge_art[0], canvas._edge_art[2]
+    hold(canvas, "n0", QPoint(60, 40))
+    assert pen_colour(first) == QColor(SELECTION_COLOUR).name(), "premise: the first lit"
+    # What losing the window mid-drag does: the grab goes, and the release that
+    # would have put the light out never arrives.
+    canvas._nodes["n0"].ungrabMouse()
+
+    hold(canvas, "n3", QPoint(60, 40))
+
+    assert pen_colour(second) == QColor(SELECTION_COLOUR).name()
+    assert pen_colour(first) == QColor(_EDGE_COLOUR).name()
