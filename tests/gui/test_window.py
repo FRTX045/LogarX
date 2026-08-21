@@ -9,6 +9,7 @@ Those are the failures that would otherwise be found by opening the app.
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from itertools import pairwise
@@ -20,7 +21,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
-from PyQt6.QtGui import QPalette
+from PyQt6.QtGui import QFontMetrics, QPalette
 from PyQt6.QtWidgets import QApplication, QSplitter
 
 from conftest import contrast
@@ -40,8 +41,10 @@ from logarc.gui.progress import Progress
 from logarc.gui.progress_card import IngestCard
 from logarc.gui.quarantine_notice import notice_for
 from logarc.gui.style import NOTICE_TINT, THEME, format_bytes
+from logarc.storage.base import IpSummary
 from logarc.storage.case import CaseManifest, SourceRecord
 
+NEWLINE = chr(10)
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 CLIENT = "203.0.113.66"
 
@@ -2569,4 +2572,195 @@ def test_a_failed_ingest_takes_the_card_down_with_it(
     _settled(qt_app)
 
     assert window._ingest_card is None
+    window.close()
+
+
+# -- filling the client table a second time --------------------------------
+
+
+def _client_summaries(count: int) -> list[IpSummary]:
+    return [
+        IpSummary(
+            client_ip=f"203.0.113.{index % 250}",
+            request_count=1_000 - index,
+            first_seen=START,
+            last_seen=START + timedelta(minutes=index),
+            distinct_paths=index % 90,
+            client_error_ratio=(index % 100) / 100,
+            bytes_total=2_326 * index,
+        )
+        for index in range(count)
+    ]
+
+
+def test_showing_clients_again_is_not_hundreds_of_times_slower(
+    qt_app: QApplication,
+) -> None:
+    """Opening a case that is already open froze the window for over a minute.
+
+    The window was reloading it — which it should not — but reloading was never
+    supposed to be expensive, and it was: `show_clients` took 63.99s of a 65.56s
+    reopen, filling the same 500 rows it had filled in a fraction of a second
+    the first time.
+
+    The header sizes every column to its contents, and that mode re-measures the
+    whole column on each cell that changes. Into an empty table Qt takes a fast
+    path; replacing 3,000 cells that already exist it does not, and the cost goes
+    quadratic. Measured at 0.20s for the first fill and 66.54s for the second.
+
+    So this is about the second fill, not the first. The bound is deliberately
+    loose — the gap being guarded is roughly three hundred-fold, and a slow
+    machine moving 0.1s to 1s must not turn the suite red.
+    """
+    summaries = _client_summaries(500)
+    table = ClientTable()
+    table.resize(440, 800)
+    table.show()
+    qt_app.processEvents()
+
+    table.show_clients(summaries)
+    qt_app.processEvents()
+
+    started = time.perf_counter()
+    table.show_clients(summaries)
+    qt_app.processEvents()
+    again = time.perf_counter() - started
+
+    assert again < 5.0, f"refilling the client table took {again:.1f}s"
+    table.close()
+
+
+def test_the_columns_are_still_sized_to_what_they_hold(qt_app: QApplication) -> None:
+    """The reason the header sizes itself: with default widths three of the six
+    columns hid behind a scrollbar, including the 4xx ratio the table is sorted
+    by. Speeding the fill up must not give that back.
+
+    Asserted against the width of the text, not against a total. The first
+    version of this test compared the sum of the widths to the panel width, and
+    it passed with the address column at 70px where it needs 162 — a sum can
+    stay respectable while one column is squeezed and another balloons, which
+    is exactly what happens here, because the last section stretches. Measured:
+    correct gives [162, 66, 76, 54, 150, 100]; leaving the header in its
+    fast-fill mode gives [70, 48, 59, 37, 59, 272].
+    """
+    summaries = _client_summaries(500)
+    table = ClientTable()
+    table.resize(440, 800)
+    table.show()
+    table.show_clients(summaries)
+    qt_app.processEvents()
+
+    widest_address = max((summary.client_ip for summary in summaries), key=len)
+    metrics = QFontMetrics(table._table.font())
+    needed = metrics.horizontalAdvance(widest_address)
+
+    assert table._table.columnWidth(0) >= needed, (
+        f"the address column is {table._table.columnWidth(0)}px for "
+        f"{widest_address!r}, which needs {needed}px"
+    )
+    # And the timestamps, which are the other pair that hid.
+    for column in (4, 5):
+        assert table._table.columnWidth(column) >= 90, (
+            f"column {column} is {table._table.columnWidth(column)}px, too narrow for a date"
+        )
+    table.close()
+
+
+def test_choosing_the_case_already_open_does_not_read_it_again(
+    qt_app: QApplication, campaign: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Picking the open case from the recent list re-read the whole thing.
+
+    A finalised case cannot change, so the second read produces byte-for-byte
+    what the first did. All it costs is time and the loss of whatever was on
+    screen — the reconstruction being read is thrown away and the canvas goes
+    back to inviting a client to be picked.
+    """
+    from logarc.gui import app as app_module
+    from logarc.gui.case_chooser import CaseChooser
+
+    app._settings().clear()
+    window = MainWindow()
+    window._load_case(campaign)
+    _settled(qt_app)
+    assert window._case_path == campaign, "premise: the case is open"
+
+    reads: list[Path] = []
+    original = app_module.read_case
+    monkeypatch.setattr(app_module, "read_case", lambda path: reads.append(path) or original(path))
+
+    def pick_the_open_one(self: CaseChooser) -> int:
+        self.chosen_path = str(campaign)
+        return 1
+
+    monkeypatch.setattr(app_module.CaseChooser, "exec", pick_the_open_one)
+    window._show_recent()
+    _settled(qt_app)
+
+    assert reads == [], f"the open case was read again: {reads}"
+    window.close()
+
+
+def test_choosing_the_case_already_open_says_so(
+    qt_app: QApplication, campaign: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Doing nothing quietly is indistinguishable from a control that is
+    broken. It has to say why nothing happened — and `logarc enrich` can add
+    CRS evidence to an open case from a terminal, so a reader who came here to
+    pick that up needs to know they did not."""
+    from logarc.gui import app as app_module
+    from logarc.gui.case_chooser import CaseChooser
+
+    app._settings().clear()
+    window = MainWindow()
+    window._load_case(campaign)
+    _settled(qt_app)
+
+    def pick_the_open_one(self: CaseChooser) -> int:
+        self.chosen_path = str(campaign)
+        return 1
+
+    monkeypatch.setattr(app_module.CaseChooser, "exec", pick_the_open_one)
+    window._show_recent()
+    _settled(qt_app)
+
+    assert "already open" in window._status.text().lower(), window._status.text()
+    window.close()
+
+
+def test_choosing_a_different_case_still_reads_it(
+    qt_app: QApplication, campaign: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The guard must not be a blanket refusal to load anything twice."""
+    from logarc.gui import app as app_module
+    from logarc.gui.case_chooser import CaseChooser
+
+    good = (
+        '203.0.113.5 - - [10/Oct/2020:13:55:36 +0000] "GET /?q=1 HTTP/1.1" 200 2326 "-" "curl/8.0"'
+    )
+    other_log = tmp_path / "other.log"
+    other_log.write_text(NEWLINE.join([good] * 6) + NEWLINE, encoding="utf-8")
+    other = tmp_path / "other-case"
+    with Case.create(other) as case:
+        case.ingest([other_log])
+
+    app._settings().clear()
+    window = MainWindow()
+    window._load_case(campaign)
+    _settled(qt_app)
+
+    reads: list[Path] = []
+    original = app_module.read_case
+    monkeypatch.setattr(app_module, "read_case", lambda path: reads.append(path) or original(path))
+
+    def pick_the_other(self: CaseChooser) -> int:
+        self.chosen_path = str(other)
+        return 1
+
+    monkeypatch.setattr(app_module.CaseChooser, "exec", pick_the_other)
+    window._show_recent()
+    _settled(qt_app)
+
+    assert reads == [other]
+    assert window._case_path == other
     window.close()
