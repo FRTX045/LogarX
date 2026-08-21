@@ -591,7 +591,25 @@ class MainWindow(QMainWindow):
         elif chooser.wants_new_case:
             self._ingest_new_case()
         elif chooser.chosen_path:
-            self._load_case(Path(chooser.chosen_path))
+            self._open_from_chooser(Path(chooser.chosen_path))
+
+    def _open_from_chooser(self, path: Path) -> None:
+        """Load `path`, unless it is the case already open.
+
+        A finalised case cannot change, so reading it again produces exactly
+        what is already on screen — at the cost of the reconstruction being
+        read, which is thrown away, and of the wait.
+
+        Said rather than done silently. Nothing happening is indistinguishable
+        from a control that does not work, and there is one reason somebody
+        might mean it: `logarc enrich` can add CRS evidence to a case from a
+        terminal while the window holds it, and reopening is how that gets
+        picked up. A reader who came here for that has to learn they did not.
+        """
+        if self._case_path is not None and path == self._case_path:
+            self._idle(f"{path} is already open.")
+            return
+        self._load_case(path)
 
     def offer_start(self) -> None:
         """What to do with the list when the window opens.
