@@ -794,7 +794,15 @@ class MainWindow(QMainWindow):
         def done(loaded: Any) -> None:
             summaries, _, _, _ = loaded
             self._listed = len(summaries)
+            # Blocked while the table is rebuilt. Refilling it moves what is
+            # selected, and that is a selection signal like any other — so a
+            # reconstruction starts for whatever row happens to land selected,
+            # and can finish after the one asked for below and overwrite it. The
+            # graph then describes a client the reader never chose.
+            table = self._clients._table
+            blocked = table.blockSignals(True)
             self._clients.show_clients(summaries)
+            table.blockSignals(blocked)
             self._say_what_is_left()
             if not summaries:
                 # An answer, not a failure, and often the one being looked for.
@@ -878,6 +886,16 @@ class MainWindow(QMainWindow):
         self._busy(f"Reconstructing {client_ip}…")
 
         def done(result: AnalysisResult) -> None:
+            # A reconstruction that describes a range no longer in force is
+            # thrown away. Jobs finish in whatever order they finish, and a
+            # second one can be started by something as ordinary as refilling
+            # the client table — so without this, the graph and the client list
+            # can end up describing different ranges, or different clients.
+            #
+            # A guard on arrival rather than only on departure: it holds however
+            # the stale job was started, which is what makes it worth having.
+            if result.window != self._window:
+                return
             self._result = result
             # Forgotten before the redraw below, or the new client's graph would
             # be searched for the activity the last one was being read at.

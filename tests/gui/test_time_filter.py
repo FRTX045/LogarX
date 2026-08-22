@@ -11,6 +11,7 @@ import os
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -30,6 +31,7 @@ FIRST = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 LAST = datetime(2024, 5, 2, 12, 0, tzinfo=UTC)
 
 BUSY = "203.0.113.9"
+BUSIEST = "203.0.113.7"
 LATECOMER = "203.0.113.44"
 EARLY = datetime(2024, 5, 1, 3, 0, tzinfo=UTC)
 LATE = datetime(2024, 5, 1, 4, 0, tzinfo=UTC)
@@ -152,12 +154,20 @@ def settings_in_a_temp_file(tmp_path_factory: pytest.TempPathFactory) -> Iterato
 
 @pytest.fixture(scope="module")
 def two_bursts(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """One client working in two bursts an hour apart, and a second client who
-    only shows up in the later one."""
+    """Three clients, arranged so a wrong one is visible if it gets picked.
+
+    `BUSIEST` is busier than `BUSY` and is present in both bursts, so it sorts
+    above it and takes the first row whatever the range. A reconstruction that
+    lands on whatever row the rebuilt table happens to select would therefore
+    come back describing `BUSIEST` — which is what makes that fault visible here
+    rather than intermittent.
+    """
     root = tmp_path_factory.mktemp("windowed")
     lines = []
     for offset in range(12):
         lines.append(_line(EARLY + timedelta(seconds=offset * 5), f"/admin/{offset}", BUSY))
+    for offset in range(30):
+        lines.append(_line(EARLY + timedelta(seconds=offset * 2), f"/a/{offset}", BUSIEST))
     for offset in range(8):
         lines.append(_line(LATE + timedelta(seconds=offset * 5), f"/wp/{offset}", BUSY))
         lines.append(_line(LATE + timedelta(seconds=offset * 5), f"/x/{offset}", LATECOMER))
@@ -310,7 +320,7 @@ def test_the_line_beside_the_control_carries_both_counts(
     window._apply_window(EARLY_ONLY)
     settled(qt_app)
 
-    assert window._time_filter._summary.text() == "1 of 2 clients · 12 of 20 requests"
+    assert window._time_filter._summary.text() == "2 of 3 clients · 12 of 20 requests"
     window.close()
 
 
@@ -342,7 +352,7 @@ def test_the_line_speaks_before_any_client_has_been_picked(
     window._apply_window(EARLY_ONLY)
     settled(qt_app)
 
-    assert window._time_filter._summary.text() == "1 of 2 clients"
+    assert window._time_filter._summary.text() == "2 of 3 clients"
     window.close()
 
 
@@ -416,3 +426,61 @@ def test_the_band_is_given_the_cases_own_traffic(
 
     assert window._time_filter._band._bars
     window.close()
+
+
+def test_the_reader_stays_on_their_own_client_across_a_range_change(
+    qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
+) -> None:
+    """Rebuilding the client list changes what the table has selected, and that
+    is a selection signal like any other — so a reconstruction started for
+    whatever row landed selected can finish after the one that was asked for and
+    overwrite it. The graph then describes a client the reader never chose.
+
+    Caught only because `BUSIEST` sorts above `BUSY` and survives the range.
+    """
+    window = reading(qt_app, two_bursts, BUSY)
+    assert window._result is not None
+    assert window._result.client_ip == BUSY
+
+    window._apply_window(EARLY_ONLY)
+    settled(qt_app)
+
+    assert window._result is not None
+    assert window._result.client_ip == BUSY
+    assert window._result.request_count == 12
+    window.close()
+
+
+def test_a_reconstruction_of_a_range_no_longer_in_force_is_discarded(
+    qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
+) -> None:
+    """Jobs finish in whatever order they finish, and a second one can be
+    started by something as ordinary as refilling the client table. A late
+    result describing the wrong range would leave the graph and the list saying
+    different things — the failure this whole feature exists to prevent, arrived
+    at from the other direction.
+
+    Forced here rather than raced for: the race needs a client table of
+    thousands to show up, and a test that only sometimes reproduces guards
+    nothing.
+    """
+    window = reading(qt_app, two_bursts, BUSY)
+    window._apply_window(EARLY_ONLY)
+    settled(qt_app)
+    assert window._result is not None
+    kept = window._result
+
+    with patch.object(app, "reconstruct_client", side_effect=_answers_for_the_whole_case):
+        window._reconstruct(BUSY)
+        settled(qt_app)
+
+    assert window._result is kept, "a result for the wrong range was allowed in"
+    window.close()
+
+
+def _answers_for_the_whole_case(path: Path, client_ip: str, crs: object, **kw: object) -> object:
+    """A reconstruction that arrives late, describing the whole case."""
+    from logarc.analysis import analyse_ip
+
+    with Case.open(path) as case:
+        return analyse_ip(case.store, client_ip, crs=crs.index)  # type: ignore[attr-defined]
