@@ -17,6 +17,7 @@ relied on.
 
 from __future__ import annotations
 
+from itertools import pairwise
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import QRect, Qt, pyqtSignal
@@ -27,7 +28,7 @@ from logarc.core.window import EVERYTHING, TimeWindow
 from logarc.gui.style import THEME
 
 if TYPE_CHECKING:
-    from datetime import datetime
+    from datetime import datetime, timedelta
 
     from PyQt6.QtGui import QMouseEvent, QPaintEvent
 
@@ -62,6 +63,7 @@ class Timeline(QWidget):
         self._bars: list[TimeSlot] = []
         self._first: datetime | None = None
         self._last: datetime | None = None
+        self._step: timedelta | None = None
         self._window: TimeWindow = EVERYTHING
         self._from_x: int | None = None
         self._to_x: int | None = None
@@ -76,11 +78,16 @@ class Timeline(QWidget):
         # it. Taking its start as the end of the case would leave the final
         # step unreachable — the busiest minutes of an attack are often there.
         if len(bars) > 1:
-            step = bars[1].start - bars[0].start
-            self._last = bars[-1].start + step
+            # The narrowest gap, not the first one. Only buckets holding
+            # something come back, so consecutive entries can be several steps
+            # apart — and the gap between two of those is not the step.
+            self._step = min(b.start - a.start for a, b in pairwise(bars))
+            self._last = bars[-1].start + self._step
         elif bars:
+            self._step = None
             self._last = bars[0].start
         else:
+            self._step = None
             self._last = None
         self.update()
 
@@ -129,6 +136,19 @@ class Timeline(QWidget):
             return track.left()
         share = (when - self._first).total_seconds() / span
         return track.left() + int(track.width() * min(max(share, 0.0), 1.0))
+
+    def bar_width(self) -> int:
+        """How wide one bucket is drawn, in pixels.
+
+        From the time a bucket *stands for*, not from how many came back. The
+        store returns only the buckets holding something — a quiet hour is
+        absent, not zero — so `1 / len(bars)` draws a client with a handful of
+        requests as a row of blocks. The case-wide histogram is dense enough
+        that this never showed there.
+        """
+        if self._first is None or self._step is None:
+            return 1
+        return max(self.pixel_for(self._first + self._step) - self.pixel_for(self._first) - 1, 1)
 
     # -- picking a stretch -------------------------------------------------
 
@@ -182,7 +202,7 @@ class Timeline(QWidget):
         painter.drawRect(QRect(left, track.top(), max(right - left, 2), track.height()))
 
         peak = max(slot.request_count for slot in self._bars) or 1
-        width = max(track.width() // max(len(self._bars), 1) - 1, 1)
+        width = self.bar_width()
         for slot in self._bars:
             x = self.pixel_for(slot.start)
             lit = left <= x <= right
