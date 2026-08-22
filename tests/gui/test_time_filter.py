@@ -484,3 +484,83 @@ def _answers_for_the_whole_case(path: Path, client_ip: str, crs: object, **kw: o
 
     with Case.open(path) as case:
         return analyse_ip(case.store, client_ip, crs=crs.index)  # type: ignore[attr-defined]
+
+
+# -- turning the bars off --------------------------------------------------
+
+
+def test_the_bars_are_shown_until_someone_turns_them_off(
+    qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
+) -> None:
+    app._settings().clear()
+    window = reading(qt_app, two_bursts, BUSY)
+
+    assert window._band_action.isChecked()
+    # `isHidden`, not `isVisible`: the second asks whether the widget is on
+    # screen, which is false for every child of a window nobody showed. The
+    # toggle controls the first.
+    assert not window._time_filter._band.isHidden()
+    window.close()
+
+
+def test_turning_the_bars_off_leaves_the_filter_behind(
+    qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
+) -> None:
+    """Only the picture goes. The fields are the precise control and the one a
+    reader falls back on for a stretch too narrow to drag onto."""
+    window = reading(qt_app, two_bursts, BUSY)
+
+    window._band_action.trigger()
+
+    assert window._time_filter._band.isHidden()
+    assert not window._time_filter._from.isHidden()
+    assert not window._time_filter._clear.isHidden()
+    window.close()
+
+
+def test_the_filter_still_works_with_the_bars_off(
+    qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
+) -> None:
+    window = reading(qt_app, two_bursts, BUSY)
+    window._band_action.trigger()
+
+    window._apply_window(EARLY_ONLY)
+    settled(qt_app)
+
+    assert window._result is not None
+    assert window._result.request_count == 12
+    window.close()
+
+
+def test_the_bars_come_back_when_they_are_turned_on(
+    qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
+) -> None:
+    window = reading(qt_app, two_bursts, BUSY)
+    window._band_action.trigger()
+
+    window._band_action.trigger()
+
+    # `isHidden`, not `isVisible`: the second asks whether the widget is on
+    # screen, which is false for every child of a window nobody showed. The
+    # toggle controls the first.
+    assert not window._time_filter._band.isHidden()
+    window.close()
+
+
+def test_the_choice_outlives_the_window(
+    qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
+) -> None:
+    """Checked by opening a second window rather than by reading the setting
+    back: a preference stored and never applied is the failure worth catching,
+    and reading the file would not catch it."""
+    app._settings().clear()
+    first = MainWindow()
+    first._band_action.trigger()
+    first.close()
+
+    second = MainWindow()
+
+    assert not second._band_action.isChecked()
+    assert second._time_filter._band.isHidden()
+    assert "false" in settings_in_a_temp_file.read_text(encoding="utf-8").lower()
+    second.close()

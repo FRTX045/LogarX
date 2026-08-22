@@ -110,6 +110,7 @@ _WRAP_KEY = "view/wrap_traces"
 #: reader, which is the control they have over it.
 _LAYOUT_KEY = "view/arrangements"
 _DECODE_KEY = "view/decode_targets"
+_BAND_KEY = "view/traffic_band"
 
 #: The cases opened here, and whether to reopen the last one on start.
 #:
@@ -441,6 +442,15 @@ class MainWindow(QMainWindow):
             "or lay it out on one line and pan along it."
         )
         self._canvas.set_wrap(self._wrap_action.isChecked())
+
+        # Beside the wrap toggle: both answer *what is shown*, and both are
+        # reading preferences worth remembering rather than asking for again
+        # every launch.
+        self._band_action = self._add(view_menu, "Show the traffic &band", self._apply_band)
+        self._band_action.setCheckable(True)
+        self._band_action.setChecked(_remembered(_BAND_KEY, default=True))
+        self._band_action.setStatusTip("Draw where the case's traffic sits, above the date fields.")
+        self._time_filter.show_band(self._band_action.isChecked())
 
         self._add(view_menu, "&Fit to window", self._canvas.fit)
         view_menu.addSeparator()
@@ -1061,6 +1071,12 @@ class MainWindow(QMainWindow):
         self._undo_action.setEnabled(drawn and self._canvas.can_undo)
         self._save_layout_action.setEnabled(drawn)
         self._reset_layout_action.setEnabled(drawn)
+
+    def _apply_band(self) -> None:
+        """Draw the traffic above the fields, or stop drawing it."""
+        showing = self._band_action.isChecked()
+        self._time_filter.show_band(showing)
+        _settings().setValue(_BAND_KEY, showing)
 
     def _apply_wrap(self) -> None:
         """Fold long traces or stop folding them, and remember which."""

@@ -656,6 +656,15 @@ Open both and search for the same activity id: they must not share one.
 **Pass:** the full client list is back, and the graph is the whole reconstruction
 again.
 
+9. **View → Show the traffic band**, to turn the drawing off.
+
+**Pass:** the bars go and the date fields stay. The graph gains the height —
+measured at 62 pixels. Set a range with the fields: it still narrows both halves.
+
+10. Close the application and open it again.
+
+**Pass:** the band is still off. Turn it back on and it draws as before.
+
 ---
 
 ## Recording a run
@@ -677,6 +686,6 @@ again.
 | 13 | A log that produced no events interrupts, and names the format | | |
 | 14 | Several cases forgotten in one pass; Ctrl+A removes the key itself | | |
 | 15 | Activities drag smoothly; undo, save and reset behave | | |
-| 16 | A time range narrows both halves, and the two agree | | |
+| 16 | A time range narrows both halves; the band can be turned off | | |
 
 Version tested: ______  ·  Date: ______  ·  Machine: ______
