@@ -546,6 +546,66 @@ present and empty. That distinction is the whole promise of this control.
 
 ---
 
+## 15. Activities can be rearranged, and the arrangement kept
+
+**Why:** the arrows and the selection ring were drawn once from the layout and
+knew nothing about a node that had moved since. The suite checks that they
+follow, that the scene makes room, and that the number on an arrow gives way
+when the arrow gets too short to carry it.
+
+What the suite cannot judge: whether the drag *feels* attached to the cursor,
+and whether the lit arrows read as "this is what is moving" rather than as a
+rendering fault. One mouse-move event of a drag measured 0.30 ms on a 50-node
+trace and 0.34 ms on 600, against a 16 ms frame — so if it feels heavy, the
+cause is somewhere else and worth finding.
+
+1. Open a case, pick a client, and drag an activity across the canvas.
+
+**Pass:** the circle stays under the cursor. Its caption comes with it. The
+arrows either side stretch to follow rather than lagging a frame behind, and
+they are the interface blue while the button is down. The cursor is the
+four-way arrow, not the closed hand — the closed hand means panning.
+
+2. Let go, then drag on empty ground.
+
+**Pass:** the arrows go grey again, at the weights their counts earned — a
+heavier transition is still heavier. The canvas pans as it always did.
+
+3. Drag one activity almost on top of the one it points at.
+
+**Pass:** the arrow between them stays visible as an arrow. The number on it
+disappears rather than covering it, and comes back when they are pulled apart.
+
+4. Press **Ctrl+Z**.
+
+**Pass:** that activity goes back exactly where it was, arrows and ring with
+it. Press it again with nothing left to undo: the menu entry is greyed out and
+nothing moves.
+
+5. Move three activities, then **View → Save this arrangement**. Switch to
+   **Behaviour map** and back to **Trace**.
+
+**Pass:** the three are where you left them. The behaviour map is laid out
+normally — its arrangement is its own.
+
+6. Close the application and open the same case and client again.
+
+**Pass:** the arrangement is still there.
+
+7. **View → Reset layout**, then close and reopen the case.
+
+**Pass:** the computed layout, both times. The saved arrangement is gone, not
+merely overridden — reset that only moved the nodes would let it come back on
+the next open, which reads as the reset having failed.
+
+8. Drag an activity far off the edge of the graph, then pan after it.
+
+**Pass:** you can follow it; the scene made room. Drag it back and let go: the
+scene settles, and **View → Fit to window** frames the graph rather than the
+empty ground it was dragged across.
+
+---
+
 ## Recording a run
 
 | # | Check | Result | Notes |
@@ -564,5 +624,6 @@ present and empty. That distinction is the whole promise of this control.
 | 12 | A damaged case reports its unparsed lines legibly, without squeezing the table | | |
 | 13 | A log that produced no events interrupts, and names the format | | |
 | 14 | Several cases forgotten in one pass; Ctrl+A removes the key itself | | |
+| 15 | Activities drag smoothly; undo, save and reset behave | | |
 
 Version tested: ______  ·  Date: ______  ·  Machine: ______

@@ -37,7 +37,7 @@ from logarc.case import Case
 from logarc.core.graph import GraphKind
 from logarc.detect.crs import CrsEvidence
 from logarc.episode.builder import DEFAULT_EVIDENCE_SAMPLE, EpisodePolicy
-from logarc.gui import recent
+from logarc.gui import arrangement, recent
 from logarc.gui._qt import required
 from logarc.gui.canvas import ActivityCanvas
 from logarc.gui.case_chooser import CaseChooser
@@ -95,6 +95,11 @@ _EVIDENCE_LIMIT = 2_000
 #: launch is the annoyance the setting exists to remove.
 _SETTINGS = ("logarc", "logarc")
 _WRAP_KEY = "view/wrap_traces"
+
+#: Where the arrangements the reader saved are kept. One value holding all
+#: of them, capped in `gui.arrangement`, so a single read on open answers for
+#: every graph rather than one read per case in the settings tree.
+_LAYOUT_KEY = "view/arrangements"
 _DECODE_KEY = "view/decode_targets"
 
 #: The cases opened here, and whether to reopen the last one on start.
@@ -393,6 +398,29 @@ class MainWindow(QMainWindow):
         self._canvas.set_wrap(self._wrap_action.isChecked())
 
         self._add(view_menu, "&Fit to window", self._canvas.fit)
+        view_menu.addSeparator()
+
+        # Where an activity was dragged to, and how to be rid of it. In the menu
+        # with every other control rather than on the canvas: a strip floating
+        # over the graph covers a patch of it, has to be moved on every resize,
+        # and swallows clicks meant for whatever node is underneath.
+        self._undo_action = self._add(view_menu, "&Undo node move", self._undo_move)
+        self._undo_action.setShortcut(QKeySequence.StandardKey.Undo)
+        self._undo_action.setStatusTip("Put the last activity you moved back where it was.")
+        self._save_layout_action = self._add(
+            view_menu, "&Save this arrangement", self._save_arrangement
+        )
+        self._save_layout_action.setShortcut(QKeySequence.StandardKey.Save)
+        self._save_layout_action.setStatusTip(
+            "Remember where you have put the activities on this graph."
+        )
+        self._reset_layout_action = self._add(view_menu, "&Reset layout", self._reset_layout)
+        self._reset_layout_action.setShortcut(QKeySequence("Ctrl+Shift+R"))
+        self._reset_layout_action.setStatusTip(
+            "Put every activity back where it was laid out, and forget the saved arrangement."
+        )
+        self._canvas.arrangement_changed.connect(self._sync_arrangement_actions)
+        self._sync_arrangement_actions()
         view_menu.addSeparator()
 
         # How the evidence beside the graph is read. Both are preferences about
@@ -745,7 +773,8 @@ class MainWindow(QMainWindow):
             return
         graph = self._result.trace if self._kind is GraphKind.TRACE else self._result.behaviour
         was_reading = self._selected
-        self._canvas.show_graph(graph)
+        self._canvas.show_graph(graph, positions=self._saved_arrangement())
+        self._sync_arrangement_actions()
         if was_reading is None:
             return
         # Found by episode, not by node id: the two graphs number their nodes
@@ -800,10 +829,78 @@ class MainWindow(QMainWindow):
         else:
             self._show_behaviour()
 
+    # -- where the reader put the activities --------------------------------
+
+    def _arrangement_key(self, *, wrap: bool | None = None) -> str | None:
+        """Which saved arrangement belongs to what is on the canvas now.
+
+        `None` before there is a graph, which is also when the menu entries are
+        dead — so nothing downstream has to guess what an arrangement for no
+        client would even mean.
+        """
+        if self._case_path is None or self._result is None:
+            return None
+        return arrangement.key(
+            str(self._case_path),
+            self._result.client_ip,
+            self._kind,
+            wrap=self._canvas.wrap if wrap is None else wrap,
+        )
+
+    def _arrangements(self) -> arrangement.Store:
+        return arrangement.load(str(_settings().value(_LAYOUT_KEY, "")))
+
+    def _saved_arrangement(self, *, wrap: bool | None = None) -> arrangement.Positions | None:
+        name = self._arrangement_key(wrap=wrap)
+        return None if name is None else self._arrangements().get(name)
+
+    def _undo_move(self) -> None:
+        self._canvas.undo_move()
+
+    def _save_arrangement(self) -> None:
+        """Remember where the activities have been put on this graph."""
+        name = self._arrangement_key()
+        if name is None:  # pragma: no cover - the entry is dead without a graph
+            return
+        store = arrangement.remember(self._arrangements(), name, self._canvas.positions)
+        _settings().setValue(_LAYOUT_KEY, arrangement.dump(store))
+        self._idle("Arrangement saved.")
+
+    def _reset_layout(self) -> None:
+        """Put every activity back, and forget the arrangement that was saved.
+
+        Both, because otherwise there is no way to be rid of a saved
+        arrangement: reset, reopen the case, and it is back — which reads as the
+        reset having failed rather than as having done half of what it says.
+        """
+        self._canvas.reset_layout()
+        name = self._arrangement_key()
+        if name is not None:
+            _settings().setValue(
+                _LAYOUT_KEY, arrangement.dump(arrangement.forget(self._arrangements(), name))
+            )
+        self._idle("Layout reset.")
+
+    def _sync_arrangement_actions(self) -> None:
+        """Grey out what there is nothing to do with.
+
+        A live control that does nothing reads as a fault in the tool, and
+        `Undo` is the one that changes most: it comes alive on the first drag
+        and goes back out when the stack empties.
+        """
+        drawn = self._result is not None and bool(self._canvas._nodes)
+        self._undo_action.setEnabled(drawn and self._canvas.can_undo)
+        self._save_layout_action.setEnabled(drawn)
+        self._reset_layout_action.setEnabled(drawn)
+
     def _apply_wrap(self) -> None:
         """Fold long traces or stop folding them, and remember which."""
         wrap = self._wrap_action.isChecked()
-        self._canvas.set_wrap(wrap)
+        # The arrangement for the wrap being switched *to*, handed over with the
+        # instruction. `set_wrap` redraws once; asking it to redraw and then
+        # redrawing again to place the nodes would double the cost of a toggle
+        # on the graphs where it is already slowest.
+        self._canvas.set_wrap(wrap, positions=self._saved_arrangement(wrap=wrap))
         _settings().setValue(_WRAP_KEY, wrap)
 
     def _apply_evidence_view(self) -> None:
