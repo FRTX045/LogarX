@@ -25,7 +25,7 @@ import pyarrow.parquet as pq
 from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
 from logarc.core.window import TimeWindow
-from logarc.storage.base import IpSummary
+from logarc.storage.base import IpSummary, TimeSlot
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -399,6 +399,42 @@ class ParquetEventStore:
         ]
 
     # -- plumbing ----------------------------------------------------------
+
+    def activity_over_time(self, *, buckets: int = 200) -> list[TimeSlot]:
+        self._require_finalized()
+        pattern = self._events / "**" / "*.parquet"
+        if not any(self._events.rglob("*.parquet")):
+            return []
+
+        connection = self._connect()
+        span = connection.execute(
+            f"""
+            SELECT min(timestamp), max(timestamp)
+            FROM read_parquet({self._sql_path(pattern)}, hive_partitioning = true)
+            """
+        ).fetchone()
+        if span is None or span[0] is None:  # pragma: no cover - see above
+            # Unreachable while the guard above holds: a case with no event
+            # files never gets here. Kept because it is the difference between
+            # an empty band and a TypeError on the line below if that ever
+            # stops being true.
+            return []
+
+        # At least a second. A case whose events share one instant has a span of
+        # zero, and the width is that span divided by the bucket count — which
+        # is a division by zero, and the band never draws at all.
+        seconds = max(int((span[1] - span[0]).total_seconds() // max(buckets, 1)), 1)
+        rows = connection.execute(
+            f"""
+            SELECT time_bucket(INTERVAL '{seconds} seconds', timestamp) AS slot, count(*)
+            FROM read_parquet({self._sql_path(pattern)}, hive_partitioning = true)
+            GROUP BY slot
+            ORDER BY slot
+            """
+        ).fetchall()
+        return [
+            TimeSlot(start=row[0].replace(tzinfo=UTC), request_count=int(row[1])) for row in rows
+        ]
 
     def _summary_source(self, window: TimeWindow | None) -> tuple[str, list[datetime]]:
         """Where the per-client figures come from.

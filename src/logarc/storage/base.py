@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
-    from datetime import datetime
 
     from logarc.core.event import NormalizedEvent
     from logarc.core.window import TimeWindow
@@ -30,6 +30,19 @@ class IpSummary:
     """Share of responses in the 4xx range. High values suggest probing for
     resources that are not there."""
     bytes_total: int
+
+
+@dataclass(frozen=True, slots=True)
+class TimeSlot:
+    """How much traffic the case carried over one stretch of it.
+
+    What the band above the graph is drawn from: enough to show where the busy
+    hours are, and nothing more. Whose requests they were is a different
+    question, answered by `ip_summaries`.
+    """
+
+    start: datetime
+    request_count: int
 
 
 class EventStore(Protocol):
@@ -83,6 +96,16 @@ class EventStore(Protocol):
         first and last sighting, the error share. Not a filter over whole-case
         summaries: a client half inside the window would then be listed with
         numbers describing the half that is not shown.
+        """
+        ...
+
+    def activity_over_time(self, *, buckets: int = 200) -> list[TimeSlot]:
+        """Request volume across the case, in roughly `buckets` steps.
+
+        Roughly, because the step is the case's own span divided by `buckets`
+        and stretches of it may carry nothing at all. A case covering minutes
+        and one covering a month both come back filled, which is what lets one
+        band serve either.
         """
         ...
 

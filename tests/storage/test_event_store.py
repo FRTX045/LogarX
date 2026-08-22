@@ -530,3 +530,72 @@ def test_a_window_still_honours_the_order_and_the_limit(store: ParquetEventStore
     busiest = store.ip_summaries(window=wide, order_by="requests", limit=2)
 
     assert [s.client_ip for s in busiest] == ["2.2.2.2", "1.1.1.1"]
+
+
+# -- where the traffic sits, for the band ----------------------------------
+
+
+def test_the_buckets_account_for_every_event(store: ParquetEventStore) -> None:
+    """The band is drawn from these. A bucketing that loses events would draw a
+    quiet stretch where the case is busy, and the reader would select the wrong
+    window because of it."""
+    store.write([event(offset_seconds=n * 7, line_no=n + 1) for n in range(50)])
+    store.finalize()
+
+    slots = store.activity_over_time(buckets=10)
+
+    assert sum(slot.request_count for slot in slots) == 50
+
+
+def test_the_band_starts_at_the_case_and_ends_at_the_case(store: ParquetEventStore) -> None:
+    store.write([event(offset_seconds=n * 60, line_no=n + 1) for n in range(20)])
+    store.finalize()
+
+    slots = store.activity_over_time(buckets=8)
+
+    assert slots[0].start <= START
+    assert slots[-1].start <= START + timedelta(seconds=19 * 60)
+
+
+def test_the_band_is_filled_to_roughly_the_width_asked_for(store: ParquetEventStore) -> None:
+    """A case covering a few minutes has to fill the band too, or the control
+    that exists to show where the traffic is shows one block.
+
+    Roughly, and checked as a share rather than exactly: the step is the span
+    divided by the count, and `time_bucket` aligns to whole steps from the
+    epoch, so the ends can spill by one. Asserting merely "more than one" was
+    too loose to notice a step as wide as the entire case.
+    """
+    store.write([event(offset_seconds=n * 10, line_no=n + 1) for n in range(30)])
+    store.finalize()
+
+    slots = store.activity_over_time(buckets=10)
+
+    assert len(slots) >= 8
+
+
+def test_a_case_with_one_event_does_not_fall_over(store: ParquetEventStore) -> None:
+    """Span zero. Divided by it, the bucket width is undefined and the band
+    never draws."""
+    store.write([event(offset_seconds=0)])
+    store.finalize()
+
+    slots = store.activity_over_time(buckets=10)
+
+    assert len(slots) == 1
+    assert slots[0].request_count == 1
+
+
+def test_an_empty_case_has_an_empty_band(store: ParquetEventStore) -> None:
+    store.finalize()
+
+    assert store.activity_over_time() == []
+
+
+def test_the_buckets_come_back_in_time_order(store: ParquetEventStore) -> None:
+    store.write([event(offset_seconds=n * 13, line_no=n + 1) for n in (7, 1, 4, 9, 0)])
+    store.finalize()
+
+    slots = store.activity_over_time(buckets=5)
+
+    assert [s.start for s in slots] == sorted(s.start for s in slots)
