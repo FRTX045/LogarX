@@ -128,6 +128,11 @@ class AnalysisResult:
             "ruleset_fingerprint": self.ruleset_fingerprint,
             "crs_fingerprint": self.crs_fingerprint,
             "policy": self.policy.as_config(),
+            # Empty for the whole case, which is what every report written
+            # before this existed already means. A tool reading two of these has
+            # the same problem a person does: without it, one client's two
+            # reports differ in their numbers and agree in everything else.
+            "window": self.window.tag,
             "trace": self.trace.to_dict(),
             "behaviour": self.behaviour.to_dict(),
         }

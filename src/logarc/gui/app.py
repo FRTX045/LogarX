@@ -991,6 +991,7 @@ class MainWindow(QMainWindow):
             self._result.client_ip,
             self._kind,
             wrap=self._canvas.wrap if wrap is None else wrap,
+            window=self._window.tag,
         )
 
     def _arrangements(self) -> arrangement.Store:

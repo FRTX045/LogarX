@@ -228,3 +228,21 @@ def test_forgetting_something_never_saved_is_not_an_error() -> None:
     store = remember({}, "keep", {"a": (1.0, 2.0)})
 
     assert forget(store, "absent") == store
+
+
+def test_two_time_ranges_file_their_arrangements_apart() -> None:
+    """A graph read over one stretch has different activities in it from the
+    same graph read over another — different names, different counts. Filed
+    together, saving one would replace the other and neither would find its own
+    nodes on the way back."""
+    early = key(CASE, "10.0.0.1", GraphKind.TRACE, wrap=True, window="20240502T012530-025700")
+    late = key(CASE, "10.0.0.1", GraphKind.TRACE, wrap=True, window="20240502T030000-040000")
+
+    assert early != late
+
+
+def test_the_whole_case_keeps_the_key_it_always_had() -> None:
+    """An arrangement saved before ranges existed has to still be found."""
+    assert key(CASE, "10.0.0.1", GraphKind.TRACE, wrap=True) == key(
+        CASE, "10.0.0.1", GraphKind.TRACE, wrap=True, window=""
+    )
