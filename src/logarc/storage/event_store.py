@@ -400,18 +400,27 @@ class ParquetEventStore:
 
     # -- plumbing ----------------------------------------------------------
 
-    def activity_over_time(self, *, buckets: int = 200) -> list[TimeSlot]:
+    def activity_over_time(
+        self, *, buckets: int = 200, client_ip: str | None = None
+    ) -> list[TimeSlot]:
         self._require_finalized()
         pattern = self._events / "**" / "*.parquet"
         if not any(self._events.rglob("*.parquet")):
             return []
+
+        # Constraining `bucket` as well lets DuckDB skip whole partition files,
+        # the same way a single client's events are read.
+        whose = f" WHERE bucket = hash(?) % {BUCKETS} AND client_ip = ?" if client_ip else ""
+        who = [client_ip, client_ip] if client_ip else []
 
         connection = self._connect()
         span = connection.execute(
             f"""
             SELECT min(timestamp), max(timestamp)
             FROM read_parquet({self._sql_path(pattern)}, hive_partitioning = true)
-            """
+            {whose}
+            """,
+            who,
         ).fetchone()
         if span is None or span[0] is None:  # pragma: no cover - see above
             # Unreachable while the guard above holds: a case with no event
@@ -428,9 +437,11 @@ class ParquetEventStore:
             f"""
             SELECT time_bucket(INTERVAL '{seconds} seconds', timestamp) AS slot, count(*)
             FROM read_parquet({self._sql_path(pattern)}, hive_partitioning = true)
+            {whose}
             GROUP BY slot
             ORDER BY slot
-            """
+            """,
+            who,
         ).fetchall()
         return [
             TimeSlot(start=row[0].replace(tzinfo=UTC), request_count=int(row[1])) for row in rows

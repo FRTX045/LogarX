@@ -564,3 +564,110 @@ def test_the_choice_outlives_the_window(
     assert second._time_filter._band.isHidden()
     assert "false" in settings_in_a_temp_file.read_text(encoding="utf-8").lower()
     second.close()
+
+
+# -- the band following the client being read ------------------------------
+
+
+def band_span(window: MainWindow) -> tuple[datetime, datetime] | None:
+    strip = window._time_filter._band
+    return None if strip._first is None else (strip._first, strip._last)
+
+
+def test_the_band_opens_on_the_whole_case(
+    qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
+) -> None:
+    """Before a client is picked the question is still *when was this case
+    busy*."""
+    window = MainWindow()
+    window._load_case(two_bursts)
+    settled(qt_app)
+
+    span = band_span(window)
+    assert span is not None
+    assert span[0] <= EARLY
+    assert span[1] >= LATE
+    window.close()
+
+
+def test_picking_a_client_narrows_the_band_to_that_client(
+    qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
+) -> None:
+    """The whole reason for it: a client alive for an hour fills the band
+    instead of being a hairline in the middle of the case."""
+    window = MainWindow()
+    window._load_case(two_bursts)
+    settled(qt_app)
+    whole = band_span(window)
+
+    row = _row_for(window, LATECOMER)
+    assert row is not None
+    window._clients._table.selectRow(row)
+    settled(qt_app)
+
+    theirs = band_span(window)
+    assert theirs is not None and whole is not None
+    assert theirs[0] >= LATE, "the band starts where this client did"
+    assert theirs[1] - theirs[0] < whole[1] - whole[0], "and is narrower than the case"
+    window.close()
+
+
+def test_the_bars_are_that_clients_own_requests(
+    qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
+) -> None:
+    """Chosen over counting everyone's: the band becomes that client's history —
+    when it worked, when it went quiet."""
+    window = reading(qt_app, two_bursts, LATECOMER)
+
+    counted = sum(slot.request_count for slot in window._time_filter._band._bars)
+
+    assert counted == 8, "the eight requests this client made, and nobody else's"
+    window.close()
+
+
+def test_the_band_shows_the_clients_whole_life_not_just_the_range(
+    qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
+) -> None:
+    """Built from the reconstruction it would only ever cover the range in
+    force, so the whole band would be lit and there would be nothing to see
+    outside the selection — which is the one thing a reader needs to see."""
+    window = reading(qt_app, two_bursts, BUSY)
+    whole_life = band_span(window)
+
+    window._apply_window(EARLY_ONLY)
+    settled(qt_app)
+
+    assert band_span(window) == whole_life
+    window.close()
+
+
+def test_letting_go_of_a_client_gives_the_case_back(
+    qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
+) -> None:
+    window = reading(qt_app, two_bursts, LATECOMER)
+    theirs = band_span(window)
+
+    window._load_case(two_bursts)
+    settled(qt_app)
+
+    assert band_span(window) != theirs
+    window.close()
+
+
+def test_a_client_dropped_by_the_range_gives_the_band_back_to_the_case(
+    qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
+) -> None:
+    """The other way to stop reading a client: narrow to a stretch it was not
+    there for. Nobody is being read, so the question is the case's again — and a
+    band still drawn against a client no longer on screen answers a question
+    nobody asked."""
+    window = reading(qt_app, two_bursts, LATECOMER)
+    theirs = band_span(window)
+    assert theirs is not None
+
+    window._apply_window(EARLY_ONLY)
+    settled(qt_app)
+
+    assert window._result is None, "premise: this client is not in that stretch"
+    assert band_span(window) != theirs
+    window.close()

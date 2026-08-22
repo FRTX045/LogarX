@@ -599,3 +599,53 @@ def test_the_buckets_come_back_in_time_order(store: ParquetEventStore) -> None:
     slots = store.activity_over_time(buckets=5)
 
     assert [s.start for s in slots] == sorted(s.start for s in slots)
+
+
+def test_the_band_can_be_asked_about_one_client(store: ParquetEventStore) -> None:
+    """Asked about a client, the buckets hold only that client's requests."""
+    store.write(
+        [
+            event("1.1.1.1", offset_seconds=0, line_no=1),
+            event("1.1.1.1", offset_seconds=10, line_no=2),
+            event("2.2.2.2", offset_seconds=5, line_no=3),
+        ]
+    )
+    store.finalize()
+
+    slots = store.activity_over_time(buckets=4, client_ip="1.1.1.1")
+
+    assert sum(slot.request_count for slot in slots) == 2
+
+
+def test_a_clients_band_spans_that_clients_own_life(store: ParquetEventStore) -> None:
+    """Not the case's. The whole point of asking per client is that a client
+    alive for ninety minutes fills the band instead of being a hairline in the
+    middle of two days."""
+    store.write(
+        [
+            event("1.1.1.1", offset_seconds=100, line_no=1),
+            event("1.1.1.1", offset_seconds=200, line_no=2),
+            event("2.2.2.2", offset_seconds=0, line_no=3),
+            event("2.2.2.2", offset_seconds=9_000, line_no=4),
+        ]
+    )
+    store.finalize()
+
+    slots = store.activity_over_time(buckets=10, client_ip="1.1.1.1")
+
+    assert slots[0].start >= START + timedelta(seconds=100 - 30)
+    assert slots[-1].start <= START + timedelta(seconds=200)
+
+
+def test_a_client_with_nothing_has_an_empty_band(store: ParquetEventStore) -> None:
+    store.write([event("1.1.1.1", offset_seconds=0)])
+    store.finalize()
+
+    assert store.activity_over_time(client_ip="9.9.9.9") == []
+
+
+def test_asking_about_nobody_is_the_whole_case(store: ParquetEventStore) -> None:
+    store.write([event("1.1.1.1", line_no=1), event("2.2.2.2", offset_seconds=60, line_no=2)])
+    store.finalize()
+
+    assert store.activity_over_time(client_ip=None) == store.activity_over_time()
