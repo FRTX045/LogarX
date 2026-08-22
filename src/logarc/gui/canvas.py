@@ -543,7 +543,7 @@ class ActivityCanvas(QGraphicsView):
         """Whether a long trace is folded onto further rows."""
         return self._wrap
 
-    def set_wrap(self, wrap: bool) -> None:
+    def set_wrap(self, wrap: bool, positions: Positions | None = None) -> None:
         """Fold long traces onto further rows, or lay each one out on one line.
 
         Redraws at once, and puts the ring back on whatever was being read — at
@@ -555,6 +555,12 @@ class ActivityCanvas(QGraphicsView):
         Safe to call before anything is drawn: the window applies the remembered
         setting while it is still being built, which is long before a case has
         been opened.
+
+        `positions` is the arrangement saved for the wrap being switched *to*,
+        handed over with the instruction. A wrapped trace folds onto rows an
+        unwrapped one does not have, so each has its own; and redrawing here and
+        then again to place the nodes would double the cost of a toggle on the
+        graphs where it is already slowest.
         """
         if wrap == self._wrap:
             return
@@ -562,7 +568,7 @@ class ActivityCanvas(QGraphicsView):
         if self._graph is None:
             return
         selected = self._selected
-        self.show_graph(self._graph)
+        self.show_graph(self._graph, positions=positions)
         if selected is not None:
             self.highlight(selected)
 

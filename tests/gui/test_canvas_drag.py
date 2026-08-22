@@ -20,8 +20,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
+from dragging import drag, hold, let_go, mouse, press_on
 from PyQt6.QtCore import QEvent, QPoint, QPointF, Qt
-from PyQt6.QtGui import QColor, QMouseEvent, QPainterPath
+from PyQt6.QtGui import QColor, QPainterPath
 from PyQt6.QtWidgets import QApplication
 
 from logarc.core.activity import ActivityCategory, Outcome, Severity
@@ -199,55 +200,6 @@ def test_a_reciprocal_pair_files_two_arrows_under_each_node(qt_app: QApplication
 # -- dragging a node ------------------------------------------------------
 
 
-def _mouse(canvas: ActivityCanvas, kind: QEvent.Type, at: QPoint, *, held: bool) -> None:
-    button = Qt.MouseButton.LeftButton
-    QApplication.sendEvent(
-        canvas.viewport(),
-        QMouseEvent(
-            kind,
-            QPointF(at),
-            canvas.viewport().mapToGlobal(at).toPointF(),
-            Qt.MouseButton.NoButton if kind == QEvent.Type.MouseMove else button,
-            button if held else Qt.MouseButton.NoButton,
-            Qt.KeyboardModifier.NoModifier,
-        ),
-    )
-
-
-def press_on(canvas: ActivityCanvas, node_id: str) -> QPoint:
-    """Put the mouse down on a node, and prove that is where it landed.
-
-    Checked rather than assumed: the viewport is inset from the view by the
-    canvas border, so a point mapped from the scene can miss by a pixel or two.
-    A press that lands on empty ground pans instead of dragging, and every test
-    below would then pass while testing nothing.
-    """
-    item = canvas._nodes[node_id]
-    at = canvas.viewport().mapFrom(canvas, canvas.mapFromScene(item.scenePos()))
-    assert canvas.itemAt(at) in (item, *item.childItems()), "premise: the press lands on the node"
-    _mouse(canvas, QEvent.Type.MouseButtonPress, at, held=True)
-    return at
-
-
-def hold(canvas: ActivityCanvas, node_id: str, by: QPoint) -> QPoint:
-    """Press and move, without letting go. Returns where the mouse now is."""
-    at = press_on(canvas, node_id)
-    _mouse(canvas, QEvent.Type.MouseMove, at + by, held=True)
-    return at + by
-
-
-def let_go(canvas: ActivityCanvas, at: QPoint) -> None:
-    _mouse(canvas, QEvent.Type.MouseButtonRelease, at, held=False)
-
-
-def drag(canvas: ActivityCanvas, node_id: str, by: QPoint) -> QPointF:
-    """Press, move, release. Returns how far that is in scene units."""
-    at = press_on(canvas, node_id)
-    _mouse(canvas, QEvent.Type.MouseMove, at + by, held=True)
-    _mouse(canvas, QEvent.Type.MouseButtonRelease, at + by, held=False)
-    return canvas.mapToScene(at + by) - canvas.mapToScene(at)
-
-
 def ready(count: int = 4) -> ActivityCanvas:
     canvas = ActivityCanvas()
     canvas.resize(600, 480)
@@ -394,9 +346,9 @@ def test_dragging_empty_ground_still_pans_the_canvas(qt_app: QApplication) -> No
     assert canvas.itemAt(at) is None, "premise: there is nothing here"
     before = canvas.horizontalScrollBar().value()
 
-    _mouse(canvas, QEvent.Type.MouseButtonPress, at, held=True)
-    _mouse(canvas, QEvent.Type.MouseMove, at + QPoint(90, 0), held=True)
-    _mouse(canvas, QEvent.Type.MouseButtonRelease, at + QPoint(90, 0), held=False)
+    mouse(canvas, QEvent.Type.MouseButtonPress, at, held=True)
+    mouse(canvas, QEvent.Type.MouseMove, at + QPoint(90, 0), held=True)
+    mouse(canvas, QEvent.Type.MouseButtonRelease, at + QPoint(90, 0), held=False)
 
     assert canvas.horizontalScrollBar().value() != before
 
@@ -422,7 +374,7 @@ def test_holding_a_node_says_so_with_the_cursor(qt_app: QApplication) -> None:
     press_on(canvas, "n1")
 
     assert item.cursor().shape() == Qt.CursorShape.SizeAllCursor
-    _mouse(canvas, QEvent.Type.MouseButtonRelease, QPoint(0, 0), held=False)
+    mouse(canvas, QEvent.Type.MouseButtonRelease, QPoint(0, 0), held=False)
     assert item.cursor().shape() != Qt.CursorShape.SizeAllCursor
 
 
@@ -465,10 +417,10 @@ def test_the_scene_does_not_shrink_while_the_hand_is_still_down(
     """
     canvas = ready(2)
     at = press_on(canvas, "n1")
-    _mouse(canvas, QEvent.Type.MouseMove, at + QPoint(400, 340), held=True)
+    mouse(canvas, QEvent.Type.MouseMove, at + QPoint(400, 340), held=True)
     stretched = canvas.graph_scene.sceneRect()
 
-    _mouse(canvas, QEvent.Type.MouseMove, at, held=True)
+    mouse(canvas, QEvent.Type.MouseMove, at, held=True)
 
     assert canvas.graph_scene.sceneRect() == stretched
 
@@ -480,8 +432,8 @@ def test_the_scene_settles_once_the_hand_lets_go(qt_app: QApplication) -> None:
     """
     canvas = ready(2)
     at = press_on(canvas, "n1")
-    _mouse(canvas, QEvent.Type.MouseMove, at + QPoint(400, 340), held=True)
-    _mouse(canvas, QEvent.Type.MouseMove, at, held=True)
+    mouse(canvas, QEvent.Type.MouseMove, at + QPoint(400, 340), held=True)
+    mouse(canvas, QEvent.Type.MouseMove, at, held=True)
     assert canvas.graph_scene.sceneRect() != canvas.graph_scene.itemsBoundingRect()
 
     let_go(canvas, at)

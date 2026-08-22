@@ -21,6 +21,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
+from dragging import drag
+from PyQt6.QtCore import QPoint
 from PyQt6.QtGui import QFontMetrics, QPalette
 from PyQt6.QtWidgets import QApplication, QSplitter
 
@@ -2763,4 +2765,207 @@ def test_choosing_a_different_case_still_reads_it(
 
     assert reads == [other]
     assert window._case_path == other
+    window.close()
+
+
+# -- keeping an arrangement -----------------------------------------------
+
+
+def _nudged(window: MainWindow) -> str:
+    """Drag the first activity on the canvas, and say which one it was."""
+    node_id = next(iter(window._canvas._nodes))
+    drag(window._canvas, node_id, QPoint(70, -40))
+    return node_id
+
+
+def _where(window: MainWindow, node_id: str) -> tuple[float, float]:
+    item = window._canvas._nodes[node_id]
+    return (item.pos().x(), item.pos().y())
+
+
+def test_the_arrangement_entries_are_dead_before_a_graph_is_drawn(
+    qt_app: QApplication,
+) -> None:
+    """A live control that does nothing reads as a fault in the tool."""
+    window = MainWindow()
+
+    assert not window._undo_action.isEnabled()
+    assert not window._save_layout_action.isEnabled()
+    assert not window._reset_layout_action.isEnabled()
+    window.close()
+
+
+def test_saving_and_resetting_come_alive_with_the_graph(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    window = _reconstructed(qt_app, campaign)
+
+    assert window._save_layout_action.isEnabled()
+    assert window._reset_layout_action.isEnabled()
+    assert not window._undo_action.isEnabled(), "nothing has been moved yet"
+    window.close()
+
+
+def test_undo_comes_alive_once_something_has_been_moved(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    window = _reconstructed(qt_app, campaign)
+
+    _nudged(window)
+
+    assert window._undo_action.isEnabled()
+    window._undo_action.trigger()
+    assert not window._undo_action.isEnabled(), "and goes back out when the stack empties"
+    window.close()
+
+
+def test_a_saved_arrangement_comes_back_on_the_next_open(
+    qt_app: QApplication, campaign: Path, settings_in_a_temp_file: Path
+) -> None:
+    """Checked by opening a second window rather than by reading the setting
+    back: an arrangement that is stored and never applied is the failure worth
+    catching, and reading the file would not catch it."""
+    app._settings().clear()
+    first = _reconstructed(qt_app, campaign)
+    moved = _nudged(first)
+    placed = _where(first, moved)
+    first._save_layout_action.trigger()
+    first.close()
+
+    second = _reconstructed(qt_app, campaign)
+
+    assert _where(second, moved) == placed
+    second.close()
+
+
+def test_an_arrangement_that_was_not_saved_does_not_come_back(
+    qt_app: QApplication, campaign: Path, settings_in_a_temp_file: Path
+) -> None:
+    """Saving is a thing the reader does. Keeping every drag would make the
+    canvas remember experiments they abandoned."""
+    app._settings().clear()
+    first = _reconstructed(qt_app, campaign)
+    moved = _nudged(first)
+    placed = _where(first, moved)
+    first.close()
+
+    second = _reconstructed(qt_app, campaign)
+
+    assert _where(second, moved) != placed
+    second.close()
+
+
+def test_saving_on_the_behaviour_map_does_not_overwrite_the_trace(
+    qt_app: QApplication, campaign: Path, settings_in_a_temp_file: Path
+) -> None:
+    """The two views file under different keys, and this is what that buys.
+
+    Filed together, saving on the second view replaces what the first one saved.
+    The nodes are named differently in each graph, so the trace would then find
+    nothing of its own in the arrangement and quietly revert to the layout — the
+    reader's work gone, with the save that destroyed it looking like a success.
+    """
+    app._settings().clear()
+    window = _reconstructed(qt_app, campaign)
+    moved = _nudged(window)
+    placed = _where(window, moved)
+    window._save_layout_action.trigger()
+
+    window._show_behaviour()
+    _settled(qt_app)
+    _nudged(window)
+    window._save_layout_action.trigger()
+    window._show_trace()
+    _settled(qt_app)
+
+    assert _where(window, moved) == placed
+    window.close()
+
+
+def test_an_arrangement_saved_with_wrap_on_is_not_applied_with_it_off(
+    qt_app: QApplication, campaign: Path, settings_in_a_temp_file: Path
+) -> None:
+    """A wrapped trace folds onto rows an unwrapped one does not have, so the
+    saved coordinates put nodes where no row exists."""
+    app._settings().clear()
+    window = _reconstructed(qt_app, campaign)
+    assert window._wrap_action.isChecked(), "premise: wrapping is on"
+    moved = _nudged(window)
+    placed = _where(window, moved)
+    window._save_layout_action.trigger()
+
+    window._wrap_action.trigger()
+    _settled(qt_app)
+
+    assert _where(window, moved) != placed
+    window.close()
+
+
+def test_a_saved_arrangement_survives_a_trip_through_the_other_view(
+    qt_app: QApplication, campaign: Path, settings_in_a_temp_file: Path
+) -> None:
+    """Going to the behaviour map and back redraws the trace from the layout.
+    Without the arrangement being reapplied, the reader's work is gone and
+    nothing said so."""
+    app._settings().clear()
+    window = _reconstructed(qt_app, campaign)
+    moved = _nudged(window)
+    placed = _where(window, moved)
+    window._save_layout_action.trigger()
+
+    window._show_behaviour()
+    _settled(qt_app)
+    window._show_trace()
+    _settled(qt_app)
+
+    assert _where(window, moved) == placed
+    window.close()
+
+
+def test_reset_forgets_the_saved_arrangement_as_well(
+    qt_app: QApplication, campaign: Path, settings_in_a_temp_file: Path
+) -> None:
+    """Otherwise there is no way to be rid of one: reset, reopen, and it is back,
+    which reads as the reset having failed."""
+    app._settings().clear()
+    window = _reconstructed(qt_app, campaign)
+    moved = _nudged(window)
+    placed = _where(window, moved)
+    window._save_layout_action.trigger()
+
+    window._reset_layout_action.trigger()
+    window._show_behaviour()
+    _settled(qt_app)
+    window._show_trace()
+    _settled(qt_app)
+
+    assert _where(window, moved) != placed
+    window.close()
+
+
+def test_reset_puts_the_nodes_back_where_the_layout_had_them(
+    qt_app: QApplication, campaign: Path, settings_in_a_temp_file: Path
+) -> None:
+    app._settings().clear()
+    window = _reconstructed(qt_app, campaign)
+    home = dict(window._canvas.positions)
+    _nudged(window)
+
+    window._reset_layout_action.trigger()
+
+    assert window._canvas.positions == home
+    window.close()
+
+
+def test_a_settings_value_nobody_can_read_still_opens_the_case(
+    qt_app: QApplication, campaign: Path, settings_in_a_temp_file: Path
+) -> None:
+    """A view preference, not evidence. A window that will not open a case
+    because of one is a far worse failure than a lost arrangement."""
+    app._settings().clear()
+    app._settings().setValue(app._LAYOUT_KEY, "{not json at all")
+
+    window = _reconstructed(qt_app, campaign)
+
+    assert window._canvas._nodes, "the graph is on the canvas"
     window.close()
