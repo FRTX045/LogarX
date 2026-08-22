@@ -15,6 +15,7 @@ import pytest
 from logarc.analysis import analyse_ip
 from logarc.case import Case
 from logarc.core.activity import ActivityCategory, Outcome
+from logarc.core.window import EVERYTHING, TimeWindow
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 ATTACKER = "203.0.113.66"
@@ -238,3 +239,72 @@ def test_a_session_break_splits_the_reconstruction(tmp_path: Path) -> None:
     assert result.trace.edges == () or all(
         edge.source.split("/")[0] == edge.target.split("/")[0] for edge in result.trace.edges
     )
+
+
+# -- reconstructing one stretch of time -------------------------------------
+
+
+def window_of(case: Case, client: str, keep: int) -> TimeWindow:
+    """A window over the first `keep` requests this client made."""
+    events = case.store.events_for_ip(client)
+    return TimeWindow(events[0].timestamp, events[keep - 1].timestamp)
+
+
+def test_without_a_window_nothing_about_the_result_changes(campaign: Case) -> None:
+    """The contract that keeps every case and report already on disk valid."""
+    plain = analyse_ip(campaign.store, ATTACKER)
+    open_window = analyse_ip(campaign.store, ATTACKER, window=EVERYTHING)
+
+    assert [n.node_id for n in open_window.trace.nodes] == [n.node_id for n in plain.trace.nodes]
+    assert open_window.request_count == plain.request_count
+
+
+def test_a_window_reconstructs_only_what_happened_inside_it(campaign: Case) -> None:
+    """Not a graph with parts hidden — a reconstruction of fewer requests. The
+    count on the nodes has to be the count of what is in the window, or an
+    activity straddling the edge reports requests that are not there."""
+    whole = analyse_ip(campaign.store, ATTACKER)
+    window = window_of(campaign, ATTACKER, keep=4)
+
+    narrow = analyse_ip(campaign.store, ATTACKER, window=window)
+
+    assert narrow.request_count == 4
+    assert narrow.request_count < whole.request_count
+    assert sum(n.request_count for n in narrow.trace.nodes) == 4
+
+
+def test_a_window_names_every_node_after_itself(campaign: Case) -> None:
+    window = window_of(campaign, ATTACKER, keep=4)
+
+    narrow = analyse_ip(campaign.store, ATTACKER, window=window)
+
+    assert narrow.trace.nodes, "premise: something was reconstructed"
+    assert all(f"@{window.tag}" in node.node_id for node in narrow.trace.nodes)
+
+
+def test_two_windows_never_name_a_node_the_same(campaign: Case) -> None:
+    """The failure that decided this design: two reports for one client sharing
+    an identifier while describing different content."""
+    first = analyse_ip(campaign.store, ATTACKER, window=window_of(campaign, ATTACKER, keep=4))
+    second = analyse_ip(campaign.store, ATTACKER, window=window_of(campaign, ATTACKER, keep=6))
+
+    assert {n.node_id for n in first.trace.nodes}.isdisjoint(n.node_id for n in second.trace.nodes)
+
+
+def test_the_result_carries_the_window_it_was_made_with(campaign: Case) -> None:
+    """The report has to be able to say what it covers."""
+    window = window_of(campaign, ATTACKER, keep=4)
+
+    assert analyse_ip(campaign.store, ATTACKER, window=window).window == window
+    assert analyse_ip(campaign.store, ATTACKER).window == EVERYTHING
+
+
+def test_a_window_holding_nothing_reconstructs_nothing_without_falling_over(
+    campaign: Case,
+) -> None:
+    empty = TimeWindow(datetime(2099, 1, 1, tzinfo=UTC), datetime(2099, 1, 2, tzinfo=UTC))
+
+    result = analyse_ip(campaign.store, ATTACKER, window=empty)
+
+    assert result.episodes == ()
+    assert result.trace.nodes == ()

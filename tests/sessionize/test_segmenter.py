@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
+from logarc.core.window import EVERYTHING, TimeWindow
 from logarc.sessionize.segmenter import SessionPolicy, sessionize
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
@@ -134,3 +135,46 @@ def test_events_from_several_clients_are_grouped_per_client() -> None:
     by_ip = {s.client_ip: s for s in sessions}
     assert set(by_ip) == {"1.1.1.1", "2.2.2.2"}
     assert by_ip["1.1.1.1"].request_count == 2
+
+
+# -- naming what was reconstructed inside a window -------------------------
+
+
+def test_without_a_window_a_session_is_named_exactly_as_it_always_was() -> None:
+    """The contract that keeps every case and report already on disk valid.
+
+    Written as a literal rather than derived, so a change to how names are built
+    has to come here and be argued for, instead of quietly agreeing with itself.
+    """
+    sessions = sessionize([event(0), event(10)])
+
+    assert [s.session_id for s in sessions] == ["203.0.113.5#1"]
+
+
+def test_a_window_puts_its_own_name_on_the_session() -> None:
+    """Two reconstructions of one client over two windows describe different
+    things. Sharing a name, the reports would say so using the same identifiers
+    and a folder holding both would have nothing in it to tell them apart."""
+    window = TimeWindow(START, START + timedelta(minutes=30))
+
+    sessions = sessionize([event(0), event(10)], window=window)
+
+    assert [s.session_id for s in sessions] == [f"203.0.113.5@{window.tag}#1"]
+
+
+def test_an_open_window_names_a_session_as_if_there_were_none() -> None:
+    plain = sessionize([event(0), event(10)])
+    open_window = sessionize([event(0), event(10)], window=EVERYTHING)
+
+    assert [s.session_id for s in open_window] == [s.session_id for s in plain]
+
+
+def test_the_window_in_a_name_reads_back_as_the_window_that_made_it() -> None:
+    """An identifier that carries a range has to give it up again, or it says
+    which report it belongs to without saying what that report covers."""
+    window = TimeWindow(START, START + timedelta(minutes=30))
+
+    session_id = sessionize([event(0)], window=window)[0].session_id
+
+    _, _, tail = session_id.partition("@")
+    assert TimeWindow.from_tag(tail.partition("#")[0]) == window
