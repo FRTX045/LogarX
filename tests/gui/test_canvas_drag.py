@@ -588,3 +588,228 @@ def test_picking_up_a_second_node_puts_out_the_first(qt_app: QApplication) -> No
 
     assert pen_colour(second) == QColor(SELECTION_COLOUR).name()
     assert pen_colour(first) == QColor(_EDGE_COLOUR).name()
+
+
+# -- taking it back -------------------------------------------------------
+
+
+def test_nothing_to_undo_before_anything_has_been_moved(qt_app: QApplication) -> None:
+    canvas = ready(2)
+
+    assert not canvas.can_undo
+
+
+def test_a_click_is_not_something_to_undo(qt_app: QApplication) -> None:
+    """A drag of zero distance. Recorded, `Undo` would look broken until it had
+    been pressed as many times as the reader had clicked."""
+    canvas = ready(2)
+
+    drag(canvas, "n1", QPoint(0, 0))
+
+    assert not canvas.can_undo
+
+
+def test_undo_puts_a_node_back_exactly_where_it_was(qt_app: QApplication) -> None:
+    canvas = ready(2)
+    was = QPointF(canvas._nodes["n1"].pos())
+    drag(canvas, "n1", QPoint(70, -40))
+    assert canvas._nodes["n1"].pos() != was, "premise: it moved"
+
+    canvas.undo_move()
+
+    assert canvas._nodes["n1"].pos() == was
+    assert not canvas.can_undo
+
+
+def test_undo_brings_the_arrows_and_the_ring_back_with_it(qt_app: QApplication) -> None:
+    """Undo that moves the circle and leaves everything else where the drag put
+    it is worse than no undo at all: the reader now has two wrong pictures to
+    reconcile instead of one arrangement they chose."""
+    canvas = ready(2)
+    canvas.highlight("n1")
+    art = canvas._edge_art[0]
+    at_rest = points(art.line.path())
+    drag(canvas, "n1", QPoint(70, -40))
+
+    canvas.undo_move()
+
+    assert points(art.line.path()) == at_rest
+    assert canvas._halo is not None
+    assert canvas._halo.pos() == canvas._nodes["n1"].pos()
+
+
+def test_undo_goes_back_one_drag_at_a_time(qt_app: QApplication) -> None:
+    canvas = ready(4)
+    home = {node_id: QPointF(item.pos()) for node_id, item in canvas._nodes.items()}
+    for node_id in ("n0", "n1", "n2"):
+        drag(canvas, node_id, QPoint(40, 30))
+
+    canvas.undo_move()
+    assert canvas._nodes["n2"].pos() == home["n2"]
+    assert canvas._nodes["n1"].pos() != home["n1"], "and no further"
+    canvas.undo_move()
+    canvas.undo_move()
+
+    assert {node_id: QPointF(item.pos()) for node_id, item in canvas._nodes.items()} == home
+
+
+def test_undoing_past_the_beginning_does_nothing_and_does_not_raise(
+    qt_app: QApplication,
+) -> None:
+    canvas = ready(2)
+    drag(canvas, "n1", QPoint(40, 30))
+    canvas.undo_move()
+    settled = QPointF(canvas._nodes["n1"].pos())
+
+    canvas.undo_move()
+
+    assert canvas._nodes["n1"].pos() == settled
+
+
+# -- back to the beginning ------------------------------------------------
+
+
+def test_reset_returns_every_node_to_the_layout(qt_app: QApplication) -> None:
+    canvas = ready(4)
+    home = {node_id: QPointF(item.pos()) for node_id, item in canvas._nodes.items()}
+    for node_id in ("n0", "n2", "n3"):
+        drag(canvas, node_id, QPoint(40, 30))
+
+    canvas.reset_layout()
+
+    assert {node_id: QPointF(item.pos()) for node_id, item in canvas._nodes.items()} == home
+
+
+def test_reset_leaves_nothing_to_undo(qt_app: QApplication) -> None:
+    """Undoing back across a reset would step through arrangements the reader
+    has just said they are finished with."""
+    canvas = ready(2)
+    drag(canvas, "n1", QPoint(40, 30))
+
+    canvas.reset_layout()
+
+    assert not canvas.can_undo
+
+
+def test_reset_goes_to_the_layout_not_to_what_was_opened(qt_app: QApplication) -> None:
+    """A saved arrangement is applied when the graph is drawn. Reset that only
+    reached back that far could not undo the arrangement itself, and there
+    would be no way to get the computed layout again."""
+    canvas = ActivityCanvas()
+    canvas.resize(600, 480)
+    canvas.show_graph(chain(2))
+    layout = {node_id: QPointF(item.pos()) for node_id, item in canvas._nodes.items()}
+
+    canvas.show_graph(chain(2), positions={"n1": (900.0, -400.0)})
+    canvas.reset_layout()
+
+    assert {node_id: QPointF(item.pos()) for node_id, item in canvas._nodes.items()} == layout
+
+
+# -- opening a graph somewhere other than the layout ----------------------
+
+
+def test_a_graph_can_be_opened_at_positions_it_is_given(qt_app: QApplication) -> None:
+    canvas = ActivityCanvas()
+    canvas.resize(600, 480)
+
+    canvas.show_graph(chain(2), positions={"n1": (900.0, -400.0)})
+
+    assert canvas._nodes["n1"].pos() == QPointF(900.0, -400.0)
+
+
+def test_a_node_the_saved_arrangement_never_heard_of_keeps_its_place(
+    qt_app: QApplication,
+) -> None:
+    """A case re-ingested with a different rule pack has different activities in
+    it. The arrangement saved against the old ones must not leave the new ones
+    stacked on the origin."""
+    canvas = ActivityCanvas()
+    canvas.resize(600, 480)
+    canvas.show_graph(chain(4))
+    # The third, deliberately. The layout puts the first node of a trace on the
+    # origin, so a node dropped there for want of a saved position is
+    # indistinguishable from one that kept its place.
+    layout = QPointF(canvas._nodes["n2"].pos())
+    assert layout != QPointF(0.0, 0.0), "premise: this node is not laid out on the origin"
+
+    canvas.show_graph(chain(4), positions={"n1": (900.0, -400.0), "gone": (5.0, 5.0)})
+
+    assert canvas._nodes["n2"].pos() == layout
+
+
+def test_the_arrows_are_drawn_where_the_given_positions_put_the_nodes(
+    qt_app: QApplication,
+) -> None:
+    """Drawn at the layout and reshaped afterwards would look the same at rest
+    and cost a full second pass over every arrow on every open."""
+    canvas = ActivityCanvas()
+    canvas.resize(600, 480)
+
+    canvas.show_graph(chain(2), positions={"n1": (900.0, -400.0)})
+
+    art = canvas._edge_art[0]
+    assert gap(path_end(art), QPointF(900.0, -400.0)) == pytest.approx(art.target_radius, abs=0.5)
+
+
+def test_what_the_canvas_reports_is_what_it_can_be_reopened_with(
+    qt_app: QApplication,
+) -> None:
+    """The window saves `positions` and hands it back on the next open. If the
+    two disagree, a saved arrangement comes back as a different picture."""
+    canvas = ready(4)
+    drag(canvas, "n1", QPoint(70, -40))
+    saved = canvas.positions
+
+    again = ActivityCanvas()
+    again.resize(600, 480)
+    again.show_graph(chain(4), positions=saved)
+
+    assert {node_id: QPointF(item.pos()) for node_id, item in again._nodes.items()} == {
+        node_id: QPointF(item.pos()) for node_id, item in canvas._nodes.items()
+    }
+
+
+def test_a_new_graph_leaves_nothing_to_undo(qt_app: QApplication) -> None:
+    """The nodes the history names are gone. Undoing onto their replacements
+    would move whichever activity happened to inherit the id."""
+    canvas = ready(2)
+    drag(canvas, "n1", QPoint(40, 30))
+
+    canvas.show_graph(chain(4))
+
+    assert not canvas.can_undo
+
+
+# -- telling the window ---------------------------------------------------
+
+
+def test_the_window_is_told_when_the_arrangement_changes(qt_app: QApplication) -> None:
+    """`Undo` and `Reset` are menu entries that have to grey out when there is
+    nothing for them to do, and the canvas is the only thing that knows."""
+    canvas = ready(2)
+    told: list[int] = []
+    canvas.arrangement_changed.connect(lambda: told.append(1))
+
+    drag(canvas, "n1", QPoint(40, 30))
+    assert told, "a drag"
+    told.clear()
+
+    canvas.undo_move()
+    assert told, "an undo"
+    told.clear()
+
+    drag(canvas, "n1", QPoint(40, 30))
+    told.clear()
+    canvas.reset_layout()
+    assert told, "a reset"
+
+
+def test_a_click_tells_the_window_nothing(qt_app: QApplication) -> None:
+    canvas = ready(2)
+    told: list[int] = []
+    canvas.arrangement_changed.connect(lambda: told.append(1))
+
+    drag(canvas, "n1", QPoint(0, 0))
+
+    assert not told

@@ -43,7 +43,7 @@ from PyQt6.QtWidgets import (
 
 from logarc.core.graph import reciprocal_pairs
 from logarc.graphbuild.layout import _COLUMN, _ROW, Point, layout_graph
-from logarc.gui.arrangement import Move
+from logarc.gui.arrangement import Move, MoveHistory, Positions
 from logarc.gui.style import (
     CAPTION_COLOUR,
     PAPER,
@@ -456,6 +456,11 @@ class ActivityCanvas(QGraphicsView):
 
     node_selected = pyqtSignal(str)
 
+    arrangement_changed = pyqtSignal()
+    """Something moved, or moved back. `Undo` and `Reset` are menu entries that
+    have to grey out when there is nothing left for them to do, and the canvas
+    is the only thing that knows."""
+
     def __init__(self) -> None:
         super().__init__()
         self._scene = QGraphicsScene(self)
@@ -475,6 +480,12 @@ class ActivityCanvas(QGraphicsView):
         self._halo: QGraphicsEllipseItem | None = None
         self._selected: str | None = None
         self._lit: str | None = None
+        self._history = MoveHistory()
+        # Where the layout put each node, before any saved arrangement was
+        # applied over it. `Reset` reaches back to here rather than to what the
+        # graph was opened with: reaching only that far could not undo the
+        # arrangement itself, and there would be no way back to the layout.
+        self._base: dict[str, Point] = {}
         self._wrap = True
         # Nodes are placed with `setPos` while a graph is being drawn, and every
         # one of those is a position change. Without this the first node placed
@@ -631,6 +642,12 @@ class ActivityCanvas(QGraphicsView):
             self._light_edges(self._lit, lit=False)
             self._lit = None
         self._frame_scene()
+        # One entry per drag, not per mouse-move event: `Undo` steps back
+        # through the arrangements the reader saw, not through the hundreds of
+        # positions their hand passed over on the way.
+        if move.is_a_move:
+            self._history.record(move)
+            self.arrangement_changed.emit()
 
     def _frame_scene(self) -> None:
         """Fit the scene rectangle to what is on it, with room to breathe."""
@@ -656,6 +673,54 @@ class ActivityCanvas(QGraphicsView):
         rect = self._scene.sceneRect()
         if not rect.contains(reach):
             self._scene.setSceneRect(rect.united(reach))
+
+    # -- the arrangement ---------------------------------------------------
+
+    @property
+    def can_undo(self) -> bool:
+        """Whether there is a drag left to take back."""
+        return self._history.can_undo
+
+    @property
+    def positions(self) -> Positions:
+        """Where every activity sits now, ready to be saved and handed back.
+
+        The same shape `show_graph` takes. If the two ever disagreed, a saved
+        arrangement would come back as a different picture from the one that
+        was saved.
+        """
+        return {node_id: (item.pos().x(), item.pos().y()) for node_id, item in self._nodes.items()}
+
+    def undo_move(self) -> None:
+        """Put the last activity that was dragged back where it came from.
+
+        One drag per press, and nothing to do when the stack is empty — the
+        menu entry greys out then, but a keyboard shortcut can still arrive.
+        """
+        move = self._history.undo()
+        if move is None:
+            return
+        item = self._nodes.get(move.node_id)
+        if item is not None:
+            # Everything attached follows, because `setPos` is a position change
+            # like any other and `_node_moved` does not care who asked for it.
+            item.setPos(*move.before)
+        self._frame_scene()
+        self.arrangement_changed.emit()
+
+    def reset_layout(self) -> None:
+        """Put every activity back where the layout put it.
+
+        The history goes with it. Undoing back across a reset would step through
+        arrangements the reader has just said they are finished with.
+        """
+        for node_id, point in self._base.items():
+            item = self._nodes.get(node_id)
+            if item is not None:
+                item.setPos(point.x, point.y)
+        self._history.clear()
+        self._frame_scene()
+        self.arrangement_changed.emit()
 
     # -- drawing -----------------------------------------------------------
 
@@ -694,8 +759,20 @@ class ActivityCanvas(QGraphicsView):
         self._scene.addItem(halo)
         self._halo = halo
 
-    def show_graph(self, graph: ActivityGraph) -> None:
-        """Replace whatever is on the canvas with `graph`."""
+    def show_graph(self, graph: ActivityGraph, positions: Positions | None = None) -> None:
+        """Replace whatever is on the canvas with `graph`.
+
+        `positions` overrides the layout for the nodes it names, and is how a
+        saved arrangement comes back. Applied before anything is drawn rather
+        than moved into place afterwards: drawn at the layout and reshaped after
+        would look identical at rest and cost a second pass over every arrow on
+        every open.
+
+        A node the arrangement does not name keeps its layout position. That is
+        not a corner case — a case re-ingested with a different rule pack has
+        different activities in it, and an arrangement saved against the old
+        ones must not leave the new ones stacked on the origin.
+        """
         self._graph = graph
         self._scene.clear()
         self._nodes.clear()
@@ -706,15 +783,27 @@ class ActivityCanvas(QGraphicsView):
         self._halo = None
         self._selected = None
         self._lit = None
+        # The nodes the history names are gone. Undoing onto their replacements
+        # would move whichever activity inherited the id.
+        self._history.clear()
+        self._base.clear()
 
-        positions = _spread(layout_graph(graph, wrap=self._wrap), graph)
-        if not positions:
+        laid_out = _spread(layout_graph(graph, wrap=self._wrap), graph)
+        if not laid_out:
             self._show_message("This client has no reconstructed activity.")
             return
+        self._base = laid_out
+
+        placed = laid_out
+        if positions:
+            placed = {
+                node_id: Point(*positions[node_id]) if node_id in positions else point
+                for node_id, point in laid_out.items()
+            }
 
         self._drawing = True
         try:
-            self._draw(graph, positions)
+            self._draw(graph, placed)
         finally:
             self._drawing = False
 
@@ -762,6 +851,10 @@ class ActivityCanvas(QGraphicsView):
         self._halo = None
         self._selected = None
         self._lit = None
+        # The nodes the history names are gone. Undoing onto their replacements
+        # would move whichever activity inherited the id.
+        self._history.clear()
+        self._base.clear()
         self._show_message(text)
 
     def _show_message(self, text: str) -> None:
