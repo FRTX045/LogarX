@@ -154,6 +154,16 @@ class TimeFilterBar(QWidget):
         """The case's traffic, for the band to draw."""
         self._band.set_bars(bars)
 
+    def show_band(self, showing: bool) -> None:
+        """Whether to draw the traffic at all.
+
+        Only the picture goes. The fields stay, because they are the precise
+        control and the one a reader falls back on for a stretch too narrow to
+        drag onto — turning the drawing off must not turn the filter off with
+        it.
+        """
+        self._band.setVisible(showing)
+
     def set_span(self, span: tuple[datetime, datetime] | None) -> None:
         """The stretch the open case covers, or `None` when none is open.
 

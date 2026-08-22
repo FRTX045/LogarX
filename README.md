@@ -177,6 +177,11 @@ Because that is a different answer, it is given different names: identifiers car
 `100.67.0.86#1/1` in a folder holding both reports. Without a range nothing changes — every case
 and report made before this existed still reads exactly as it did. **Whole case** goes back.
 
+The band itself is optional: **View → Show the traffic band** turns the drawing off and gives its
+62 pixels back to the graph. Only the picture goes — the fields and **Whole case** stay, because
+they are the precise control and the one to fall back on for a stretch too narrow to drag onto.
+The choice is remembered between launches.
+
 **A saved arrangement is the same kind of record.** It is filed under the case, the client, the
 view and the wrap setting, and the coordinates it holds are keyed by activity id — which for a
 trace carries the client's address in plain text. So `View → Save this arrangement` writes down
