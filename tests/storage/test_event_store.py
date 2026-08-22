@@ -151,6 +151,9 @@ def test_ip_summaries_describe_each_client(store: ParquetEventStore) -> None:
             event("1.1.1.1", offset_seconds=0, path="/a", status=200),
             event("1.1.1.1", offset_seconds=60, path="/b", status=404),
             event("1.1.1.1", offset_seconds=120, path="/b", status=404),
+            # A server error. Not the client's fault, so it must not raise the
+            # share the client list sorts suspicion by.
+            event("1.1.1.1", offset_seconds=180, path="/c", status=503),
             event("2.2.2.2", offset_seconds=5, path="/a", status=200),
         ]
     )
@@ -159,11 +162,11 @@ def test_ip_summaries_describe_each_client(store: ParquetEventStore) -> None:
     summaries = {s.client_ip: s for s in store.ip_summaries()}
 
     first = summaries["1.1.1.1"]
-    assert first.request_count == 3
-    assert first.distinct_paths == 2
+    assert first.request_count == 4
+    assert first.distinct_paths == 3
     assert first.first_seen == START
-    assert first.last_seen == START + timedelta(seconds=120)
-    assert first.client_error_ratio == pytest.approx(2 / 3)
+    assert first.last_seen == START + timedelta(seconds=180)
+    assert first.client_error_ratio == pytest.approx(2 / 4)
     assert summaries["2.2.2.2"].request_count == 1
 
 
@@ -421,3 +424,109 @@ def test_an_open_window_reads_exactly_what_no_window_reads(store: ParquetEventSt
     assert store.events_for_ip("203.0.113.5", window=EVERYTHING) == store.events_for_ip(
         "203.0.113.5"
     )
+
+
+# -- summarising one stretch of time ---------------------------------------
+
+
+def busy(store: ParquetEventStore) -> None:
+    """Two clients whose activity straddles the window used below."""
+    store.write(
+        [
+            # 1.1.1.1 — three inside the window, two outside it
+            event("1.1.1.1", offset_seconds=0, path="/before", status=200, line_no=1),
+            event("1.1.1.1", offset_seconds=30, path="/a", status=404, line_no=2),
+            event("1.1.1.1", offset_seconds=45, path="/b", status=404, line_no=3),
+            event("1.1.1.1", offset_seconds=60, path="/a", status=200, line_no=4),
+            # A server error, inside the window. It is not the client's fault
+            # and must not raise the share the list sorts suspicion by.
+            event("1.1.1.1", offset_seconds=55, path="/c", status=503, line_no=7),
+            event("1.1.1.1", offset_seconds=200, path="/after", status=200, line_no=5),
+            # 2.2.2.2 — entirely outside it
+            event("2.2.2.2", offset_seconds=500, path="/x", status=200, line_no=6),
+        ]
+    )
+    store.finalize()
+
+
+WINDOW = TimeWindow(START + timedelta(seconds=30), START + timedelta(seconds=60))
+
+
+def test_a_client_silent_in_the_window_is_not_listed(store: ParquetEventStore) -> None:
+    busy(store)
+
+    listed = {s.client_ip for s in store.ip_summaries(window=WINDOW)}
+
+    assert listed == {"1.1.1.1"}
+
+
+def test_the_numbers_are_the_windows_own_not_the_whole_cases(
+    store: ParquetEventStore,
+) -> None:
+    """The test this feature turns on.
+
+    A row saying 5 requests beside a graph saying 3 is two numbers for one thing
+    on one screen, and it is what decided the shape of the whole feature. The
+    only way that cannot happen is if the summary is computed from the same
+    events the graph is built from — so this compares the two directly rather
+    than against a number typed into the test.
+    """
+    busy(store)
+
+    summary = next(s for s in store.ip_summaries(window=WINDOW) if s.client_ip == "1.1.1.1")
+    events = store.events_for_ip("1.1.1.1", window=WINDOW)
+
+    assert summary.request_count == len(events)
+    assert summary.first_seen == min(e.timestamp for e in events)
+    assert summary.last_seen == max(e.timestamp for e in events)
+    assert summary.distinct_paths == len({e.path for e in events})
+    assert summary.bytes_total == sum(e.bytes_sent or 0 for e in events)
+
+
+def test_the_error_share_is_the_windows_own(store: ParquetEventStore) -> None:
+    """Two of the four requests inside the window were refused by the server as
+    the client's fault; a third was a 503, which is not. The client list sorts
+    suspicion by this figure, so counting server errors into it would put the
+    wrong client at the top, and a whole-case ratio shown against a window would
+    do the same.
+    """
+    busy(store)
+
+    summary = next(s for s in store.ip_summaries(window=WINDOW) if s.client_ip == "1.1.1.1")
+
+    assert summary.client_error_ratio == pytest.approx(2 / 4)
+
+
+def test_an_open_window_summarises_exactly_what_no_window_summarises(
+    store: ParquetEventStore,
+) -> None:
+    """The contract that keeps an unfiltered case reading as it always did."""
+    busy(store)
+
+    assert store.ip_summaries(window=EVERYTHING) == store.ip_summaries()
+
+
+def test_a_window_holding_nobody_lists_nobody(store: ParquetEventStore) -> None:
+    busy(store)
+
+    assert (
+        store.ip_summaries(window=TimeWindow(START + timedelta(days=9), START + timedelta(days=10)))
+        == []
+    )
+
+
+def test_a_window_still_honours_the_order_and_the_limit(store: ParquetEventStore) -> None:
+    store.write(
+        [
+            event("1.1.1.1", offset_seconds=30, line_no=1),
+            event("2.2.2.2", offset_seconds=31, line_no=2),
+            event("2.2.2.2", offset_seconds=32, line_no=3),
+            event("3.3.3.3", offset_seconds=33, line_no=4),
+        ]
+    )
+    store.finalize()
+    wide = TimeWindow(START, START + timedelta(seconds=60))
+
+    busiest = store.ip_summaries(window=wide, order_by="requests", limit=2)
+
+    assert [s.client_ip for s in busiest] == ["2.2.2.2", "1.1.1.1"]

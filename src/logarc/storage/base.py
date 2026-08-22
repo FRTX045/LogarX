@@ -71,9 +71,19 @@ class EventStore(Protocol):
         ...
 
     def ip_summaries(
-        self, *, limit: int | None = None, order_by: str = "requests"
+        self,
+        *,
+        limit: int | None = None,
+        order_by: str = "requests",
+        window: TimeWindow | None = None,
     ) -> list[IpSummary]:
-        """Per-client summaries, busiest first unless `order_by` says otherwise."""
+        """Per-client summaries, busiest first unless `order_by` says otherwise.
+
+        `window` narrows every figure to one stretch of time — the counts, the
+        first and last sighting, the error share. Not a filter over whole-case
+        summaries: a client half inside the window would then be listed with
+        numbers describing the half that is not shown.
+        """
         ...
 
     def close(self) -> None:
