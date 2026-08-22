@@ -123,7 +123,10 @@ chains wrap onto further rows, alternating direction, because a trace drawn on o
 as it is long and shrinks to an unreadable smudge when fitted to the window. **View → Wrap long
 traces** (Alt+Z) turns the fold off when the straight timeline is worth more than legible captions;
 the graph is then panned rather than fitted, opening on its first activity, and the choice is
-remembered between launches. The panel on the right is the evidence the selected node was built
+remembered between launches. Activities can be dragged where you want them — their
+arrows and the selection ring come along, **Ctrl+Z** takes the last move back, and **View → Save
+this arrangement** keeps it for the next time this client is opened; **Reset layout** returns to
+the computed one and forgets what was saved. The panel on the right is the evidence the selected node was built
 from, a row per request: sort it by size to find the one that got data out, or by status to find
 what was served rather than refused. Payloads are decoded, so `' OR '1'='1` reads as the tautology
 it is instead of `%27+OR+%271%27%3D%271`. The pane beneath holds the selected request in full,
