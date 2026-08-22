@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from datetime import datetime
 
     from logarc.core.event import NormalizedEvent
+    from logarc.core.window import TimeWindow
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,8 +48,15 @@ class EventStore(Protocol):
         """Close out ingest and build the structures reads depend on."""
         ...
 
-    def events_for_ip(self, client_ip: str) -> list[NormalizedEvent]:
-        """All events for one client, in time order."""
+    def events_for_ip(
+        self, client_ip: str, *, window: TimeWindow | None = None
+    ) -> list[NormalizedEvent]:
+        """All events for one client, in time order.
+
+        `window` narrows the read to one stretch of time, counting both ends.
+        Applied here rather than by the caller so the backend can skip the rows
+        instead of handing them over to be discarded.
+        """
         ...
 
     def all_events(self) -> Iterator[NormalizedEvent]:

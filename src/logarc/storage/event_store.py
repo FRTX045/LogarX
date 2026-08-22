@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import shutil
-from datetime import UTC
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
@@ -24,6 +24,7 @@ import pyarrow.parquet as pq
 
 from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
+from logarc.core.window import TimeWindow
 from logarc.storage.base import IpSummary
 
 if TYPE_CHECKING:
@@ -299,12 +300,15 @@ class ParquetEventStore:
 
     # -- analysis ----------------------------------------------------------
 
-    def events_for_ip(self, client_ip: str) -> list[NormalizedEvent]:
+    def events_for_ip(
+        self, client_ip: str, *, window: TimeWindow | None = None
+    ) -> list[NormalizedEvent]:
         self._require_finalized()
         pattern = self._events / "**" / "*.parquet"
         if not any(self._events.rglob("*.parquet")):
             return []
 
+        clause, bounds = _window_sql(window)
         # Constraining `bucket` lets DuckDB skip whole partition files rather
         # than opening each one to check its statistics.
         rows = (
@@ -315,10 +319,10 @@ class ParquetEventStore:
                    bytes_sent, referer, user_agent, host, source_file_id,
                    source_line_no, extra
             FROM read_parquet({self._sql_path(pattern)}, hive_partitioning = true)
-            WHERE bucket = hash(?) % {BUCKETS} AND client_ip = ?
+            WHERE bucket = hash(?) % {BUCKETS} AND client_ip = ?{clause}
             ORDER BY timestamp, source_line_no
             """,
-                [client_ip, client_ip],
+                [client_ip, client_ip, *bounds],
             )
             .fetchall()
         )
@@ -439,6 +443,40 @@ class ParquetEventStore:
         left to be read as escape sequences.
         """
         return "'" + str(path).replace("\\", "/").replace("'", "''") + "'"
+
+
+def _window_sql(window: TimeWindow | None) -> tuple[str, list[datetime]]:
+    """A time predicate and its parameters, or nothing at all.
+
+    Returns an empty clause for an open window rather than one that is always
+    true, so the query a case without a filter runs is byte for byte the query
+    it has always run — and nothing about its plan can quietly change.
+
+    Both ends are inclusive, matching `TimeWindow.contains`. A store that
+    excluded them would drop the very request whose second the reader typed.
+    """
+    if window is None or window.is_open:
+        return "", []
+    clauses: list[str] = []
+    bounds: list[datetime] = []
+    if window.start is not None:
+        clauses.append("timestamp >= ?")
+        bounds.append(_naive(window.start))
+    if window.end is not None:
+        clauses.append("timestamp <= ?")
+        bounds.append(_naive(window.end))
+    return " AND " + " AND ".join(clauses), bounds
+
+
+def _naive(when: datetime) -> datetime:
+    """UTC with the marker taken off.
+
+    The `timestamp` column holds naive values — reads put the marker back on
+    the way out. Compared against an aware bound, DuckDB matched nothing at
+    all, silently: the query succeeded and returned an empty window over data
+    that was there.
+    """
+    return when.astimezone(UTC).replace(tzinfo=None)
 
 
 def _to_event(row: tuple[Any, ...]) -> NormalizedEvent:

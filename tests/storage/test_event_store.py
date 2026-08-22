@@ -9,6 +9,7 @@ import pytest
 
 from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
+from logarc.core.window import EVERYTHING, TimeWindow
 from logarc.storage.event_store import ParquetEventStore, StoreStateError
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
@@ -355,3 +356,68 @@ def test_a_store_without_a_shard_name_keeps_writing_where_it_always_did(
 
     assert (tmp_path / "case" / "staging" / "part-000000.parquet").exists()
     store.close()
+
+
+# -- narrowing a read to one stretch of time -------------------------------
+
+
+def test_a_window_keeps_only_the_events_inside_it(store: ParquetEventStore) -> None:
+    store.write([event(offset_seconds=n, line_no=n + 1) for n in (0, 30, 60, 90)])
+    store.finalize()
+
+    inside = store.events_for_ip(
+        "203.0.113.5",
+        window=TimeWindow(START + timedelta(seconds=30), START + timedelta(seconds=60)),
+    )
+
+    assert [e.timestamp for e in inside] == [
+        START + timedelta(seconds=30),
+        START + timedelta(seconds=60),
+    ]
+
+
+def test_a_window_includes_events_on_both_of_its_edges(store: ParquetEventStore) -> None:
+    """The store has to agree with `TimeWindow.contains`, which counts both
+    ends. A store that excluded them would drop the very request whose second
+    the reader typed in."""
+    store.write([event(offset_seconds=n, line_no=n + 1) for n in (0, 30, 60)])
+    store.finalize()
+    edges = TimeWindow(START, START + timedelta(seconds=60))
+
+    inside = store.events_for_ip("203.0.113.5", window=edges)
+
+    assert len(inside) == 3
+
+
+def test_a_window_still_returns_events_in_time_order(store: ParquetEventStore) -> None:
+    store.write([event(offset_seconds=n, line_no=n + 1) for n in (90, 0, 60, 30)])
+    store.finalize()
+
+    inside = store.events_for_ip("203.0.113.5", window=TimeWindow(START, START + timedelta(days=1)))
+
+    assert [e.timestamp for e in inside] == sorted(e.timestamp for e in inside)
+
+
+def test_a_window_holding_nothing_is_empty_not_an_error(store: ParquetEventStore) -> None:
+    store.write([event(offset_seconds=0)])
+    store.finalize()
+
+    assert (
+        store.events_for_ip(
+            "203.0.113.5",
+            window=TimeWindow(START + timedelta(days=9), START + timedelta(days=10)),
+        )
+        == []
+    )
+
+
+def test_an_open_window_reads_exactly_what_no_window_reads(store: ParquetEventStore) -> None:
+    """The contract that keeps every existing case reading as it always did.
+    Compared event by event, not by counting: a path that returned the right
+    number of the wrong rows would pass a count."""
+    store.write([event(offset_seconds=n, line_no=n + 1) for n in (0, 30, 60, 90)])
+    store.finalize()
+
+    assert store.events_for_ip("203.0.113.5", window=EVERYTHING) == store.events_for_ip(
+        "203.0.113.5"
+    )
