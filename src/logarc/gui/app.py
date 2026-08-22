@@ -282,6 +282,7 @@ class MainWindow(QMainWindow):
         self._legend = LegendBar()
         self._evidence = EvidencePanel()
         self._clients.client_chosen.connect(self._reconstruct)
+        self._clients.client_released.connect(self._let_go_of_client)
         self._canvas.node_selected.connect(self._show_evidence)
 
         self._build_layout()
@@ -808,15 +809,11 @@ class MainWindow(QMainWindow):
         def done(loaded: Any) -> None:
             summaries, _, _, _ = loaded
             self._listed = len(summaries)
-            # Blocked while the table is rebuilt. Refilling it moves what is
-            # selected, and that is a selection signal like any other — so a
-            # reconstruction starts for whatever row happens to land selected,
-            # and can finish after the one asked for below and overwrite it. The
-            # graph then describes a client the reader never chose.
-            table = self._clients._table
-            blocked = table.blockSignals(True)
+            # `show_clients` is silent for the whole rebuild — the table owns
+            # that, because it is the one that knows when it is replacing its
+            # own furniture. This used to block the signals from out here, which
+            # left two mechanisms for one rule.
             self._clients.show_clients(summaries)
-            table.blockSignals(blocked)
             self._say_what_is_left()
             if not summaries:
                 # An answer, not a failure, and often the one being looked for.
@@ -874,6 +871,16 @@ class MainWindow(QMainWindow):
                 return
         # Gone from this range. The graph would otherwise go on showing a
         # reconstruction of a client the list no longer offers.
+        self._let_go_of_client()
+
+    def _let_go_of_client(self) -> None:
+        """Stop reading whoever was being read.
+
+        Two ways in: the reader presses the row they are already on, or a
+        narrower range drops that client from the list. Both leave the window
+        with nobody selected, and the same things have to be true afterwards —
+        so they say it once here rather than agreeing with each other by hand.
+        """
         self._result = None
         self._selected = None
         self._evidence.clear(prompt=False)
@@ -882,6 +889,10 @@ class MainWindow(QMainWindow):
         self._canvas.show_graph_placeholder()
         # Nobody is being read, so the question is the case's again.
         self._time_filter.set_bars(self._case_bars)
+        self._say_what_is_left()
+        # The status line still named the client. Left standing it is the only
+        # thing on screen claiming one is open, and it names one that is not.
+        self._idle(f"{plural(self._listed, 'client')} listed")
 
     # -- reconstruction ----------------------------------------------------
 
