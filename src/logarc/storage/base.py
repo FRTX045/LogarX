@@ -99,13 +99,19 @@ class EventStore(Protocol):
         """
         ...
 
-    def activity_over_time(self, *, buckets: int = 200) -> list[TimeSlot]:
+    def activity_over_time(
+        self, *, buckets: int = 200, client_ip: str | None = None
+    ) -> list[TimeSlot]:
         """Request volume across the case, in roughly `buckets` steps.
 
-        Roughly, because the step is the case's own span divided by `buckets`
-        and stretches of it may carry nothing at all. A case covering minutes
-        and one covering a month both come back filled, which is what lets one
-        band serve either.
+        Roughly, because the step is the span divided by `buckets` and stretches
+        of it may carry nothing at all. A case covering minutes and one covering
+        a month both come back filled, which is what lets one band serve either.
+
+        `client_ip` asks about one client instead, over *its* own span rather
+        than the case's. That is the point of asking: a client alive for ninety
+        minutes fills the band, instead of being a hairline in the middle of two
+        days.
         """
         ...
 

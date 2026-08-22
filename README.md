@@ -177,6 +177,13 @@ Because that is a different answer, it is given different names: identifiers car
 `100.67.0.86#1/1` in a folder holding both reports. Without a range nothing changes — every case
 and report made before this existed still reads exactly as it did. **Whole case** goes back.
 
+**The band follows whoever is being read.** Before a client is picked it draws the whole case.
+Pick one and it becomes that client's own history, across that client's own life — first request to
+last — so a client alive for ninety minutes fills the band instead of being a hairline in the middle
+of two days. The bars are then that client's requests and nobody else's: when it worked, when it
+went quiet. Letting go of the client, or narrowing to a stretch it was not there for, hands the case
+back.
+
 The band itself is optional: **View → Show the traffic band** turns the drawing off and gives its
 62 pixels back to the graph. Only the picture goes — the fields and **Whole case** stay, because
 they are the precise control and the one to fall back on for a stretch too narrow to drag onto.
