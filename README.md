@@ -165,6 +165,13 @@ view preferences. That is a record of what was investigated, not merely of how t
 so it has to be removable: **Ctrl+A** then **Forget these** takes every entry, and an emptied list
 removes the registry key rather than storing an empty one in it.
 
+**A saved arrangement is the same kind of record.** It is filed under the case, the client, the
+view and the wrap setting, and the coordinates it holds are keyed by activity id — which for a
+trace carries the client's address in plain text. So `View → Save this arrangement` writes down
+which client of which case you were reading, in the same place and with the same consequences.
+**Reset layout** removes the one for the graph in front of you; nothing else is kept once every
+arrangement has been reset.
+
 A case that could not read all of its logs says so, every time it is opened — an
 amber strip naming how many lines were refused and what share of the file that
 was. When a whole log produced *no* events, that is not damage but the wrong

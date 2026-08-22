@@ -99,14 +99,20 @@ _WRAP_KEY = "view/wrap_traces"
 #: Where the arrangements the reader saved are kept. One value holding all
 #: of them, capped in `gui.arrangement`, so a single read on open answers for
 #: every graph rather than one read per case in the settings tree.
+#:
+#: Like `_RECENT_KEY`, this records *what was investigated*: the coordinates are
+#: keyed by activity id, and a trace's activity ids are built from the client's
+#: address. `Reset layout` removes the arrangement for the graph in front of the
+#: reader, which is the control they have over it.
 _LAYOUT_KEY = "view/arrangements"
 _DECODE_KEY = "view/decode_targets"
 
 #: The cases opened here, and whether to reopen the last one on start.
 #:
-#: Worth saying plainly: this is the first setting that records *what was
-#: investigated* rather than how the window looked doing it. `Forget these` in
-#: the chooser removes it, and the README says so.
+#: Worth saying plainly: this records *what was investigated* rather than how
+#: the window looked doing it. `Forget these` in the chooser removes it, and the
+#: README says so. `_LAYOUT_KEY` is the other one — a saved arrangement is keyed
+#: by activity id, and a trace's activity ids carry the client's address.
 _RECENT_KEY = "cases/recent"
 _REOPEN_KEY = "cases/reopen_last"
 
