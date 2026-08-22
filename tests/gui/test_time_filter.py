@@ -1,0 +1,346 @@
+"""Narrowing a case to one stretch of time, from the control to the graph.
+
+Run without a display. What is checked here is which numbers reach the screen
+and whether the two halves of the window agree about them — none of which the
+offscreen platform's missing fonts can hide.
+"""
+
+from __future__ import annotations
+
+import os
+from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+import pytest
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
+
+from PyQt6.QtWidgets import QApplication
+
+from logarc.case import Case
+from logarc.core.window import EVERYTHING, TimeWindow
+from logarc.gui import app
+from logarc.gui.app import MainWindow
+from logarc.gui.time_filter import TimeFilterBar
+
+FIRST = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
+LAST = datetime(2024, 5, 2, 12, 0, tzinfo=UTC)
+
+BUSY = "203.0.113.9"
+LATECOMER = "203.0.113.44"
+EARLY = datetime(2024, 5, 1, 3, 0, tzinfo=UTC)
+LATE = datetime(2024, 5, 1, 4, 0, tzinfo=UTC)
+
+
+@pytest.fixture(scope="module")
+def qt_app() -> QApplication:
+    return QApplication.instance() or QApplication([])
+
+
+def opened(qt_app: QApplication) -> TimeFilterBar:
+    bar = TimeFilterBar()
+    bar.set_span((FIRST, LAST))
+    return bar
+
+
+# -- the control on its own ------------------------------------------------
+
+
+def test_the_control_is_dead_until_a_case_is_open(qt_app: QApplication) -> None:
+    """A live control that does nothing reads as a fault in the tool."""
+    bar = TimeFilterBar()
+
+    assert not bar._from.isEnabled()
+    assert not bar._to.isEnabled()
+    assert bar.chosen is EVERYTHING
+
+
+def test_an_open_case_starts_on_the_whole_of_it(qt_app: QApplication) -> None:
+    """Not on a range the reader did not ask for. Opening a case already
+    filtered would hide part of it with nothing on screen saying so."""
+    bar = opened(qt_app)
+
+    assert bar.chosen.is_open
+
+
+def test_the_fields_cannot_reach_past_the_case(qt_app: QApplication) -> None:
+    """A reader who cannot ask for a stretch the case does not cover cannot get
+    an empty reconstruction for a reason that was never on screen."""
+    bar = opened(qt_app)
+
+    bar._from.setDateTime(bar._from.dateTime().addYears(-5))
+
+    assert bar.chosen.is_open or bar.chosen.start >= FIRST
+
+
+def test_narrowing_one_end_is_no_longer_the_whole_case(qt_app: QApplication) -> None:
+    bar = opened(qt_app)
+
+    bar._from.setDateTime(bar._from.dateTime().addSecs(3600))
+
+    assert not bar.chosen.is_open
+    assert bar.chosen.start == FIRST + timedelta(hours=1)
+
+
+def test_the_whole_case_reads_as_open_not_as_its_own_two_ends(
+    qt_app: QApplication,
+) -> None:
+    """So nothing downstream has to compare dates to know a filter is off — and
+    identifiers stay exactly what they have always been."""
+    bar = opened(qt_app)
+
+    bar._from.setDateTime(bar._from.dateTime().addSecs(3600))
+    bar.clear()
+
+    assert bar.chosen is EVERYTHING
+
+
+def test_changing_a_field_reports_the_new_stretch(qt_app: QApplication) -> None:
+    bar = opened(qt_app)
+    heard: list[TimeWindow] = []
+    bar.changed.connect(heard.append)
+
+    bar._from.setDateTime(bar._from.dateTime().addSecs(3600))
+    bar._from.editingFinished.emit()
+
+    assert heard and heard[-1].start == FIRST + timedelta(hours=1)
+
+
+def test_an_end_dragged_before_the_start_is_held_not_swapped(
+    qt_app: QApplication,
+) -> None:
+    """`TimeWindow` refuses a range that ends before it starts. Swapping here
+    would turn a mistyped end into a range the reader never asked for; holding
+    it shows them what happened."""
+    bar = opened(qt_app)
+    bar._from.setDateTime(bar._from.dateTime().addSecs(7200))
+
+    bar._to.setDateTime(bar._to.dateTime().addYears(-5))
+    bar._to.editingFinished.emit()
+
+    assert bar.chosen.is_open or bar.chosen.end >= bar.chosen.start
+
+
+def test_showing_a_window_does_not_report_it_back(qt_app: QApplication) -> None:
+    """Two controls will point at one range once the band exists. Each has to
+    set the other without that counting as the reader asking for something, or
+    the two would answer each other forever."""
+    bar = opened(qt_app)
+    heard: list[TimeWindow] = []
+    bar.changed.connect(heard.append)
+
+    bar.set_window(TimeWindow(FIRST + timedelta(hours=2), LAST))
+
+    assert heard == []
+
+
+# -- the two halves of the window agreeing ---------------------------------
+
+
+@pytest.fixture(scope="module")
+def settings_in_a_temp_file(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
+    from PyQt6.QtCore import QSettings
+
+    ini = tmp_path_factory.mktemp("settings") / "logarc.ini"
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(app, "_settings", lambda: QSettings(str(ini), QSettings.Format.IniFormat))
+        yield ini
+
+
+@pytest.fixture(scope="module")
+def two_bursts(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """One client working in two bursts an hour apart, and a second client who
+    only shows up in the later one."""
+    root = tmp_path_factory.mktemp("windowed")
+    lines = []
+    for offset in range(12):
+        lines.append(_line(EARLY + timedelta(seconds=offset * 5), f"/admin/{offset}", BUSY))
+    for offset in range(8):
+        lines.append(_line(LATE + timedelta(seconds=offset * 5), f"/wp/{offset}", BUSY))
+        lines.append(_line(LATE + timedelta(seconds=offset * 5), f"/x/{offset}", LATECOMER))
+
+    log = root / "access.log"
+    log.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    with Case.create(root / "case") as case:
+        case.ingest([log])
+    return root / "case"
+
+
+def _line(when: datetime, target: str, ip: str) -> str:
+    stamp = when.strftime("%d/%b/%Y:%H:%M:%S +0000")
+    return f'{ip} - - [{stamp}] "GET {target} HTTP/1.1" 404 12 "-" "curl/8.0"'
+
+
+def settled(qt_app: QApplication, rounds: int = 3) -> None:
+    from PyQt6.QtCore import QThreadPool
+
+    for _ in range(rounds):
+        pool = QThreadPool.globalInstance()
+        assert pool is not None
+        assert pool.waitForDone(30_000)
+        for _ in range(10):
+            qt_app.processEvents()
+
+
+def reading(qt_app: QApplication, case: Path, client: str) -> MainWindow:
+    window = MainWindow()
+    window._load_case(case)
+    settled(qt_app)
+    row = _row_for(window, client)
+    assert row is not None, f"{client} is not listed"
+    window._clients._table.selectRow(row)
+    settled(qt_app)
+    return window
+
+
+def _row_for(window: MainWindow, client: str) -> int | None:
+    table = window._clients._table
+    for row in range(table.rowCount()):
+        cell = table.item(row, 0)
+        if cell is not None and cell.text() == client:
+            return row
+    return None
+
+
+def _requests_in_row(window: MainWindow, client: str) -> int:
+    row = _row_for(window, client)
+    assert row is not None
+    cell = window._clients._table.item(row, 1)
+    assert cell is not None
+    return int(cell.text().replace(",", ""))
+
+
+EARLY_ONLY = TimeWindow(EARLY, EARLY + timedelta(minutes=5))
+
+
+def test_a_range_narrows_the_graph(
+    qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
+) -> None:
+    window = reading(qt_app, two_bursts, BUSY)
+    assert window._result is not None
+    whole = window._result.request_count
+
+    window._apply_window(EARLY_ONLY)
+    settled(qt_app)
+
+    assert window._result is not None
+    assert window._result.request_count < whole
+    assert window._result.request_count == 12
+    window.close()
+
+
+def test_a_range_narrows_the_client_list_to_who_was_there(
+    qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
+) -> None:
+    window = reading(qt_app, two_bursts, BUSY)
+    assert _row_for(window, LATECOMER) is not None, "premise: both are listed"
+
+    window._apply_window(EARLY_ONLY)
+    settled(qt_app)
+
+    assert _row_for(window, BUSY) is not None
+    assert _row_for(window, LATECOMER) is None
+    window.close()
+
+
+def test_the_row_and_the_graph_agree_about_the_same_client(
+    qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
+) -> None:
+    """The test this whole feature was shaped around.
+
+    A row saying 20 requests beside a graph saying 12 is two numbers for one
+    thing on one screen, and it is what ruled out narrowing the graph alone.
+    """
+    window = reading(qt_app, two_bursts, BUSY)
+
+    window._apply_window(EARLY_ONLY)
+    settled(qt_app)
+
+    assert window._result is not None
+    assert _requests_in_row(window, BUSY) == window._result.request_count
+    window.close()
+
+
+def test_going_back_to_the_whole_case_restores_both_halves(
+    qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
+) -> None:
+    window = reading(qt_app, two_bursts, BUSY)
+    assert window._result is not None
+    whole = window._result.request_count
+    listed = window._clients._table.rowCount()
+    window._apply_window(EARLY_ONLY)
+    settled(qt_app)
+
+    window._apply_window(EVERYTHING)
+    settled(qt_app)
+
+    assert window._clients._table.rowCount() == listed
+    assert window._result is not None
+    assert window._result.request_count == whole
+    window.close()
+
+
+def test_a_range_holding_nobody_says_so_rather_than_looking_broken(
+    qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
+) -> None:
+    window = reading(qt_app, two_bursts, BUSY)
+
+    window._apply_window(
+        TimeWindow(datetime(2099, 1, 1, tzinfo=UTC), datetime(2099, 1, 2, tzinfo=UTC))
+    )
+    settled(qt_app)
+
+    assert window._clients._table.rowCount() == 0
+    assert "No client was active" in window._status.text()
+    window.close()
+
+
+def test_the_line_beside_the_control_carries_both_counts(
+    qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
+) -> None:
+    """One line, both numbers, so a reader can see them agree without looking
+    from the list to the heading and back. `gui.timerange` decides the wording;
+    this is what proves the window fills it with the right figures."""
+    window = reading(qt_app, two_bursts, BUSY)
+    assert window._time_filter._summary.text() == "whole case"
+
+    window._apply_window(EARLY_ONLY)
+    settled(qt_app)
+
+    assert window._time_filter._summary.text() == "1 of 2 clients · 12 of 20 requests"
+    window.close()
+
+
+def test_the_line_goes_back_to_saying_whole_case(
+    qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
+) -> None:
+    window = reading(qt_app, two_bursts, BUSY)
+    window._apply_window(EARLY_ONLY)
+    settled(qt_app)
+
+    window._apply_window(EVERYTHING)
+    settled(qt_app)
+
+    assert window._time_filter._summary.text() == "whole case"
+    window.close()
+
+
+def test_the_line_speaks_before_any_client_has_been_picked(
+    qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
+) -> None:
+    """Setting a range is a reasonable first move — narrow to the hour, then see
+    who was there. With no client selected nothing reconstructs, so the line has
+    to be filled by the range itself or it goes on claiming the whole case."""
+    window = MainWindow()
+    window._load_case(two_bursts)
+    settled(qt_app)
+    assert window._result is None, "premise: nobody has been picked"
+
+    window._apply_window(EARLY_ONLY)
+    settled(qt_app)
+
+    assert window._time_filter._summary.text() == "1 of 2 clients"
+    window.close()
