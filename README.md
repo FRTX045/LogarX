@@ -165,6 +165,18 @@ view preferences. That is a record of what was investigated, not merely of how t
 so it has to be removable: **Ctrl+A** then **Forget these** takes every entry, and an emptied list
 removes the registry key rather than storing an empty one in it.
 
+**A case can be read over one stretch of time.** The band above the panels shows where the
+traffic sits — the day-night rhythm, and the bursts standing out of it — and a stretch is dragged
+out of it or typed into the two fields beside it. Both halves of the window narrow together: the
+client list shows only who was active in that stretch, with that stretch's own counts, and the
+graph is *reconstructed* from those requests rather than drawn with parts hidden. An activity that
+straddles the edge reports what is inside it, not what it would have been over the whole case.
+
+Because that is a different answer, it is given different names: identifiers carry the range, so
+`100.67.0.86@20240502T012500-20240502T020000#1/1` can never be mistaken for the whole-case
+`100.67.0.86#1/1` in a folder holding both reports. Without a range nothing changes — every case
+and report made before this existed still reads exactly as it did. **Whole case** goes back.
+
 **A saved arrangement is the same kind of record.** It is filed under the case, the client, the
 view and the wrap setting, and the coordinates it holds are keyed by activity id — which for a
 trace carries the client's address in plain text. So `View → Save this arrangement` writes down
