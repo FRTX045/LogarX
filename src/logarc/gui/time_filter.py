@@ -22,15 +22,19 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QVBoxLayout,
     QWidget,
 )
 
 from logarc.core.window import EVERYTHING, TimeWindow
 from logarc.gui.style import THEME
 from logarc.gui.theme import GAP, TIGHT
+from logarc.gui.timeline import Timeline
 
 if TYPE_CHECKING:
     from datetime import datetime
+
+    from logarc.storage.base import TimeSlot
 
 __all__ = ["TimeFilterBar"]
 
@@ -87,9 +91,20 @@ class TimeFilterBar(QWidget):
         self.setStyleSheet(_STYLE)
         self._span: tuple[datetime, datetime] | None = None
 
-        row = QHBoxLayout(self)
-        row.setContentsMargins(GAP, TIGHT, GAP, TIGHT)
+        column = QVBoxLayout(self)
+        column.setContentsMargins(GAP, TIGHT, GAP, TIGHT)
+        column.setSpacing(TIGHT)
+
+        # The band above the fields, because it is read first: it answers
+        # *where is the traffic* before the fields are asked *which stretch*.
+        self._band = Timeline()
+        self._band.changed.connect(self._from_band)
+        column.addWidget(self._band)
+
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(GAP)
+        column.addLayout(row)
 
         row.addWidget(QLabel("Between"))
         self._from = self._field()
@@ -110,6 +125,15 @@ class TimeFilterBar(QWidget):
 
         self.set_span(None)
 
+    def _from_band(self, window: TimeWindow) -> None:
+        """The reader dragged on the band. Show it in the fields and pass it on.
+
+        One range, two controls. The fields are told rather than asked, and told
+        with signals blocked, so neither control can answer the other.
+        """
+        self.set_window(window)
+        self.changed.emit(window)
+
     def _field(self) -> QDateTimeEdit:
         field = QDateTimeEdit()
         field.setDisplayFormat(_FORMAT)
@@ -125,6 +149,10 @@ class TimeFilterBar(QWidget):
         return field
 
     # -- what the window tells it ------------------------------------------
+
+    def set_bars(self, bars: list[TimeSlot]) -> None:
+        """The case's traffic, for the band to draw."""
+        self._band.set_bars(bars)
 
     def set_span(self, span: tuple[datetime, datetime] | None) -> None:
         """The stretch the open case covers, or `None` when none is open.
@@ -153,6 +181,7 @@ class TimeFilterBar(QWidget):
         """
         if self._span is None:
             return
+        self._band.set_window(window)
         shown = window.clamped_to(*self._span)
         # `clamped_to` fills both ends from the case, so neither is ever absent
         # here — but the type does not say so, and an assert is cheaper than a

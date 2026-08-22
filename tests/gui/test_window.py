@@ -219,7 +219,7 @@ def test_the_window_reads_the_crs_evidence_a_case_carries(enriched: Path) -> Non
     enriched case answered differently here than on the command line. Two front
     ends that disagree about the evidence are worse than one that offers the
     feature only in the other, because nothing tells you which answer is real."""
-    _summaries, crs, _ = read_case(enriched)
+    _summaries, crs, _, _ = read_case(enriched)
 
     assert crs.fingerprint == "test-fingerprint"
     assert crs.index is not None
@@ -229,7 +229,7 @@ def test_a_reconstruction_credits_the_crs_configuration_that_produced_it(
     enriched: Path,
 ) -> None:
     """The evidence has to reach the analysis, not merely be loaded beside it."""
-    _summaries, crs, _ = read_case(enriched)
+    _summaries, crs, _, _ = read_case(enriched)
 
     result = reconstruct_client(enriched, CLIENT, crs)
 
@@ -238,7 +238,7 @@ def test_a_reconstruction_credits_the_crs_configuration_that_produced_it(
 
 def test_an_unenriched_case_credits_nothing(campaign: Path) -> None:
     """The ordinary case, and the one that must not claim CRS took part."""
-    _summaries, crs, _ = read_case(campaign)
+    _summaries, crs, _, _ = read_case(campaign)
 
     result = reconstruct_client(campaign, CLIENT, crs)
 

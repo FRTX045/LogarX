@@ -362,3 +362,57 @@ def test_the_fields_show_the_range_that_is_actually_in_force(
 
     assert window._time_filter.chosen == EARLY_ONLY
     window.close()
+
+
+# -- the band and the fields as one control --------------------------------
+
+
+def test_dragging_the_band_moves_the_fields(
+    qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
+) -> None:
+    """One range, two controls. A band that picked a stretch the fields did not
+    show would leave the reader two answers to one question."""
+    window = reading(qt_app, two_bursts, BUSY)
+    bar = window._time_filter
+    picked = TimeWindow(EARLY, EARLY + timedelta(minutes=3))
+
+    bar._band.changed.emit(picked)
+
+    assert bar.chosen == picked
+    window.close()
+
+
+def test_dragging_the_band_reads_the_case_over_that_stretch(
+    qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
+) -> None:
+    window = reading(qt_app, two_bursts, BUSY)
+
+    window._time_filter._band.changed.emit(EARLY_ONLY)
+    settled(qt_app)
+
+    assert window._result is not None
+    assert window._result.request_count == 12
+    window.close()
+
+
+def test_typing_in_the_fields_moves_the_band(
+    qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
+) -> None:
+    window = reading(qt_app, two_bursts, BUSY)
+
+    window._apply_window(EARLY_ONLY)
+    settled(qt_app)
+
+    assert window._time_filter._band.showing() == EARLY_ONLY
+    window.close()
+
+
+def test_the_band_is_given_the_cases_own_traffic(
+    qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
+) -> None:
+    """Drawn from nothing it is an empty box, and the reason for having it at
+    all — seeing where the busy hours are — is gone."""
+    window = reading(qt_app, two_bursts, BUSY)
+
+    assert window._time_filter._band._bars
+    window.close()
