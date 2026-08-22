@@ -35,6 +35,7 @@ from logarc import __version__
 from logarc.analysis import AnalysisPolicy, analyse_ip
 from logarc.case import Case
 from logarc.core.graph import GraphKind
+from logarc.core.window import EVERYTHING, TimeWindow
 from logarc.detect.crs import CrsEvidence
 from logarc.episode.builder import DEFAULT_EVIDENCE_SAMPLE, EpisodePolicy
 from logarc.gui import arrangement, recent
@@ -50,6 +51,8 @@ from logarc.gui.quarantine_notice import notice_for
 from logarc.gui.recent import RecentCase
 from logarc.gui.style import THEME, format_requests, plural
 from logarc.gui.theme import GAP, MONO_FAMILIES, PAD, TIGHT, apply_theme, heading_font
+from logarc.gui.time_filter import TimeFilterBar
+from logarc.gui.timerange import nobody_here, summary
 from logarc.gui.workers import run_job
 from logarc.ingest.pipeline import IngestCancelled
 from logarc.ingest.quarantine import DIRECTORY_NAME as QUARANTINE_DIR
@@ -58,10 +61,11 @@ from logarc.storage.case import CaseManifest
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+    from datetime import datetime
 
     from logarc.analysis import AnalysisResult
     from logarc.core.graph import ActivityGraph, GraphNode
-    from logarc.storage.base import IpSummary
+    from logarc.storage.base import IpSummary, TimeSlot
 
 __all__ = ["MainWindow", "main", "read_case", "reconstruct_client"]
 
@@ -158,18 +162,33 @@ def _remembered(key: str, *, default: bool) -> bool:
 # — and did — quietly disagree with the CLI about what a case contains. Out
 # here they are callable without a display, so a test can hold both front ends
 # to the same answer.
-def read_case(path: Path) -> tuple[Sequence[IpSummary], CrsEvidence]:
+def read_case(
+    path: Path, *, window: TimeWindow | None = None
+) -> tuple[Sequence[IpSummary], CrsEvidence, tuple[datetime, datetime] | None, list[TimeSlot]]:
     """Everything a freshly opened case needs, gathered in one visit.
 
     The CRS evidence is read here rather than per reconstruction because it is a
     property of the case, not of the client being looked at, and a case is
     opened once against many clicks.
+
+    The third value is the stretch the case covers — the whole of it, never the
+    window. It is what holds the fields inside the case, so it has to keep
+    describing the case even while a narrower window is being shown.
     """
     with Case.open(path) as case:
-        return (
-            case.store.ip_summaries(limit=_CLIENT_LIMIT, order_by="requests"),
-            case.crs_evidence(),
+        whole = case.store.ip_summaries(limit=_CLIENT_LIMIT, order_by="requests")
+        listed = (
+            whole
+            if window is None or window.is_open
+            else case.store.ip_summaries(limit=_CLIENT_LIMIT, order_by="requests", window=window)
         )
+        span = (
+            (min(s.first_seen for s in whole), max(s.last_seen for s in whole)) if whole else None
+        )
+        # Counted once, when the case is opened. Measured at 0.029s on 200k
+        # events and 0.077s on three million, against a reconstruction the
+        # reader is waiting for anyway.
+        return listed, case.crs_evidence(), span, case.store.activity_over_time()
 
 
 def _node_for_episodes(graph: ActivityGraph, episode_ids: frozenset[str]) -> GraphNode | None:
@@ -197,6 +216,7 @@ def reconstruct_client(
     crs: CrsEvidence,
     *,
     evidence_sample: int = _EVIDENCE_LIMIT,
+    window: TimeWindow | None = None,
 ) -> AnalysisResult:
     """Reconstruct one client, applying whatever CRS contributed to the case.
 
@@ -218,6 +238,7 @@ def reconstruct_client(
             policy=AnalysisPolicy(episode=EpisodePolicy(evidence_sample=evidence_sample)),
             crs=crs.index,
             crs_fingerprint=crs.fingerprint,
+            window=window,
         )
 
 
@@ -230,6 +251,15 @@ class MainWindow(QMainWindow):
         self.resize(1400, 880)
 
         self._case_path: Path | None = None
+        # One piece of state for the range, changed in one place. The graph,
+        # the client list and an exported report all have to agree about it.
+        self._window: TimeWindow = EVERYTHING
+        self._all_clients = 0
+        self._listed = 0
+        # What each client did over the *whole* case, captured when it was
+        # opened. A filtered list cannot answer that question about itself,
+        # and the summary line has to say `16 of 19` rather than `16 of 16`.
+        self._whole_counts: dict[str, int] = {}
         self._result: AnalysisResult | None = None
         #: What CRS contributed to the open case. Empty until one is opened, so
         #: a reconstruction before then applies nothing rather than failing.
@@ -368,6 +398,15 @@ class MainWindow(QMainWindow):
         stack.setContentsMargins(0, 0, 0, 0)
         stack.setSpacing(0)
         stack.addWidget(self._notice)
+        # Beside the notice for the same reason, and it matters more here than
+        # it looks: the range governs the client list as well as the graph, so
+        # sitting over the graph alone it would claim to narrow one of the two
+        # things it narrows. Inside the middle column it also forced that column
+        # wider than the client table could spare — measured at 279 pixels for a
+        # table that needs 420 to show its columns.
+        self._time_filter = TimeFilterBar()
+        self._time_filter.changed.connect(self._apply_window)
+        stack.addWidget(self._time_filter)
         stack.addWidget(splitter, 1)
         self.setCentralWidget(frame)
 
@@ -667,7 +706,7 @@ class MainWindow(QMainWindow):
     def _load_case(self, path: Path) -> None:
         def work(report: Callable[[str], None]) -> Any:
             report(f"Opening {path}…")
-            summaries, crs = read_case(path)
+            summaries, crs, span, bars = read_case(path)
             # Snapshotted here, on the worker, and stored with the entry. The
             # chooser has to draw before it has touched a disk: a case on a share
             # that is no longer mounted would otherwise stall the list once per
@@ -683,15 +722,24 @@ class MainWindow(QMainWindow):
             # Built here, on the worker: it is arithmetic over the source
             # records, and the manifest is already in hand. `done` only shows it.
             notice = notice_for(manifest.sources)
-            return summaries, crs, snapshot, notice
+            return summaries, crs, span, bars, snapshot, notice
 
         self._busy(f"Opening {path}…")
 
         def done(loaded: Any) -> None:
-            summaries, crs, snapshot, notice = loaded
+            summaries, crs, span, bars, snapshot, notice = loaded
             self._remember_case(snapshot)
             self._case_path = path
             self._crs = crs
+            # A fresh case is read whole. Opening one already narrowed would
+            # hide part of it with nothing on screen saying so.
+            self._window = EVERYTHING
+            self._all_clients = len(summaries)
+            self._listed = len(summaries)
+            # Unfiltered by construction: a case is opened whole.
+            self._whole_counts = {s.client_ip: s.request_count for s in summaries}
+            self._time_filter.set_bars(bars)
+            self._time_filter.set_span(span)
             self._result = None
             self._selected = None
             self._canvas.show_graph_placeholder()
@@ -705,6 +753,7 @@ class MainWindow(QMainWindow):
             self._heading.setText("")
             self._tabs.setVisible(False)
             self._clients.show_clients(summaries)
+            self._say_what_is_left()
             self._idle(
                 f"{path} — {plural(len(summaries), 'client')} listed"
                 + (", CRS applied" if crs.fingerprint else "")
@@ -717,6 +766,107 @@ class MainWindow(QMainWindow):
 
         run_job(work, on_done=done, on_error=self._report_error, on_progress=self._status.setText)
 
+    # -- the stretch of time being read ------------------------------------
+
+    def _apply_window(self, window: TimeWindow) -> None:
+        """Read the case over a different stretch of time.
+
+        Both halves, always. Narrowing only the graph leaves the client row
+        saying 19 requests beside a heading saying 16 — two numbers for one
+        thing on one screen, which is the failure this feature was shaped
+        around.
+        """
+        if self._case_path is None or window == self._window:
+            return
+        self._window = window
+        # The control is told what is in force, not asked. Typing in the fields
+        # keeps them right by accident; every other way the range can be set
+        # would otherwise leave them naming a stretch nobody is reading.
+        self._time_filter.set_window(window)
+        path = self._case_path
+
+        def work(report: Callable[[str], None]) -> Any:
+            report("Reading the selected time range…")
+            return read_case(path, window=window)
+
+        self._busy("Reading the selected time range…")
+
+        def done(loaded: Any) -> None:
+            summaries, _, _, _ = loaded
+            self._listed = len(summaries)
+            # Blocked while the table is rebuilt. Refilling it moves what is
+            # selected, and that is a selection signal like any other — so a
+            # reconstruction starts for whatever row happens to land selected,
+            # and can finish after the one asked for below and overwrite it. The
+            # graph then describes a client the reader never chose.
+            table = self._clients._table
+            blocked = table.blockSignals(True)
+            self._clients.show_clients(summaries)
+            table.blockSignals(blocked)
+            self._say_what_is_left()
+            if not summaries:
+                # An answer, not a failure, and often the one being looked for.
+                self._result = None
+                self._selected = None
+                self._evidence.clear(prompt=False)
+                self._tabs.setVisible(False)
+                self._heading.setText("")
+                self._canvas.show_graph_placeholder(nobody_here(window))
+                self._idle(nobody_here(window))
+                return
+            self._idle(f"{len(summaries)} of {self._all_clients} clients in this range")
+            # The client the reader was on, if this range still holds them. The
+            # table has been rebuilt, so the selection has to be found again.
+            if self._result is not None:
+                self._reselect(self._result.client_ip)
+
+        run_job(work, on_done=done, on_error=self._report_error, on_progress=self._status.setText)
+
+    def _say_what_is_left(self, result: AnalysisResult | None = None) -> None:
+        """The line beside the control: what the range left of the case.
+
+        Both counts once a client is reconstructed, so one line carries the two
+        numbers that have to agree — what the range did to the list, and what it
+        did to the graph.
+        """
+        whole = self._whole_counts.get(result.client_ip) if result is not None else None
+        self._time_filter.say(
+            summary(
+                self._window,
+                clients=self._listed,
+                all_clients=self._all_clients,
+                requests=result.request_count if result is not None else None,
+                all_requests=whole,
+            )
+        )
+
+    def _reselect(self, client_ip: str) -> None:
+        """Put the reader back on the client they were reading, if it is listed.
+
+        The reconstruction is asked for outright rather than left to the
+        selection signal. After a narrower range the client can land on the row
+        it was already on, and `selectRow` on the current row changes nothing
+        and emits nothing — so the graph went on showing the reconstruction it
+        had, over a range that was no longer in force.
+        """
+        table = self._clients._table
+        for row in range(table.rowCount()):
+            cell = table.item(row, 0)
+            if cell is not None and cell.text() == client_ip:
+                blocked = table.blockSignals(True)
+                table.selectRow(row)
+                table.blockSignals(blocked)
+                self._reconstruct(client_ip)
+                return
+        # Gone from this range. The graph would otherwise go on showing a
+        # reconstruction of a client the list no longer offers.
+        self._result = None
+        self._selected = None
+        self._evidence.clear(prompt=False)
+        self._tabs.setVisible(False)
+        self._heading.setText("")
+        self._canvas.show_graph_placeholder()
+
     # -- reconstruction ----------------------------------------------------
 
     def _reconstruct(self, client_ip: str) -> None:
@@ -727,14 +877,25 @@ class MainWindow(QMainWindow):
         # worker: the job must not reach back into window state while the window
         # is free to change it.
         crs = self._crs
+        window = self._window
 
         def work(report: Callable[[str], None]) -> AnalysisResult:
             report(f"Reconstructing {client_ip}…")
-            return reconstruct_client(path, client_ip, crs)
+            return reconstruct_client(path, client_ip, crs, window=window)
 
         self._busy(f"Reconstructing {client_ip}…")
 
         def done(result: AnalysisResult) -> None:
+            # A reconstruction that describes a range no longer in force is
+            # thrown away. Jobs finish in whatever order they finish, and a
+            # second one can be started by something as ordinary as refilling
+            # the client table — so without this, the graph and the client list
+            # can end up describing different ranges, or different clients.
+            #
+            # A guard on arrival rather than only on departure: it holds however
+            # the stale job was started, which is what makes it worth having.
+            if result.window != self._window:
+                return
             self._result = result
             # Forgotten before the redraw below, or the new client's graph would
             # be searched for the activity the last one was being read at.
@@ -762,6 +923,7 @@ class MainWindow(QMainWindow):
                 f" · {plural(len(result.episodes), 'activity', 'activities')}</span>"
             )
             self._redraw()
+            self._say_what_is_left(result)
             self._idle(f"{client_ip}: {plural(len(result.episodes), 'activity', 'activities')}")
 
         run_job(work, on_done=done, on_error=self._report_error, on_progress=self._status.setText)
@@ -851,6 +1013,7 @@ class MainWindow(QMainWindow):
             self._result.client_ip,
             self._kind,
             wrap=self._canvas.wrap if wrap is None else wrap,
+            window=self._window.tag,
         )
 
     def _arrangements(self) -> arrangement.Store:

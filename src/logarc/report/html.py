@@ -19,6 +19,7 @@ from logarc.core.activity import Outcome, Severity
 from logarc.core.graph import GraphKind, reciprocal_pairs
 from logarc.graphbuild.layout import layout_graph
 from logarc.gui.style import edge_label, severity_colour, severity_legend
+from logarc.gui.timerange import spoken
 
 if TYPE_CHECKING:
     from logarc.analysis import AnalysisResult
@@ -80,6 +81,11 @@ def _summary(result: AnalysisResult) -> str:
         ("Highest severity", worst.name.title()),
         ("Any hostile request served", "Yes" if breached else "No"),
     ]
+    if not result.window.is_open:
+        # Only when there is one. A card saying `whole case` on every report
+        # anyone has ever exported is noise, and it would push the finding that
+        # matters one place further along the row.
+        cards.append(("Time range", spoken(result.window)))
     return "".join(
         f'<div class="card"><div class="card-label">{label}</div>'
         f'<div class="card-value">{value}</div></div>'

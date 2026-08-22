@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
-    from datetime import datetime
 
     from logarc.core.event import NormalizedEvent
+    from logarc.core.window import TimeWindow
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +32,19 @@ class IpSummary:
     bytes_total: int
 
 
+@dataclass(frozen=True, slots=True)
+class TimeSlot:
+    """How much traffic the case carried over one stretch of it.
+
+    What the band above the graph is drawn from: enough to show where the busy
+    hours are, and nothing more. Whose requests they were is a different
+    question, answered by `ip_summaries`.
+    """
+
+    start: datetime
+    request_count: int
+
+
 class EventStore(Protocol):
     """Writes events during ingest, reads them back one client at a time.
 
@@ -47,8 +61,15 @@ class EventStore(Protocol):
         """Close out ingest and build the structures reads depend on."""
         ...
 
-    def events_for_ip(self, client_ip: str) -> list[NormalizedEvent]:
-        """All events for one client, in time order."""
+    def events_for_ip(
+        self, client_ip: str, *, window: TimeWindow | None = None
+    ) -> list[NormalizedEvent]:
+        """All events for one client, in time order.
+
+        `window` narrows the read to one stretch of time, counting both ends.
+        Applied here rather than by the caller so the backend can skip the rows
+        instead of handing them over to be discarded.
+        """
         ...
 
     def all_events(self) -> Iterator[NormalizedEvent]:
@@ -63,9 +84,29 @@ class EventStore(Protocol):
         ...
 
     def ip_summaries(
-        self, *, limit: int | None = None, order_by: str = "requests"
+        self,
+        *,
+        limit: int | None = None,
+        order_by: str = "requests",
+        window: TimeWindow | None = None,
     ) -> list[IpSummary]:
-        """Per-client summaries, busiest first unless `order_by` says otherwise."""
+        """Per-client summaries, busiest first unless `order_by` says otherwise.
+
+        `window` narrows every figure to one stretch of time — the counts, the
+        first and last sighting, the error share. Not a filter over whole-case
+        summaries: a client half inside the window would then be listed with
+        numbers describing the half that is not shown.
+        """
+        ...
+
+    def activity_over_time(self, *, buckets: int = 200) -> list[TimeSlot]:
+        """Request volume across the case, in roughly `buckets` steps.
+
+        Roughly, because the step is the case's own span divided by `buckets`
+        and stretches of it may carry nothing at all. A case covering minutes
+        and one covering a month both come back filled, which is what lets one
+        band serve either.
+        """
         ...
 
     def close(self) -> None:

@@ -20,6 +20,7 @@ from conftest import contrast
 from logarc.analysis import analyse_ip
 from logarc.case import Case
 from logarc.core.activity import ActivityCategory, Outcome, Severity
+from logarc.core.window import TimeWindow
 from logarc.graphbuild.layout import Point
 from logarc.gui.style import severity_colour
 from logarc.report.html import render_report
@@ -358,3 +359,35 @@ def test_the_report_never_prints_a_severity_on_a_colour_it_cannot_be_read_agains
     # Non-vacuous: the severities must still be named, however they are drawn.
     for episode in result.episodes:
         assert episode.severity.name.title() in page
+
+
+# -- saying what stretch of time the report covers -------------------------
+
+
+def test_a_report_of_the_whole_case_says_nothing_about_a_range(campaign: Case) -> None:
+    """Unfiltered is the ordinary state. A card announcing `whole case` on every
+    report anyone has ever exported is noise."""
+    assert "Time range" not in render_report(analyse_ip(campaign.store, ATTACKER))
+
+
+def test_a_report_of_one_stretch_names_it_where_a_person_will_read_it(
+    campaign: Case,
+) -> None:
+    """The identifiers already stop two reports being mistaken for one another.
+    This is what lets a person tell them apart without comparing them."""
+    window = TimeWindow(START, START + timedelta(minutes=1))
+
+    page = render_report(analyse_ip(campaign.store, ATTACKER, window=window))
+
+    assert "Time range" in page
+    assert "12:00" in page
+
+
+def test_the_range_travels_in_the_machine_readable_payload_too(campaign: Case) -> None:
+    """A tool reading the JSON has the same problem a person does."""
+    window = TimeWindow(START, START + timedelta(minutes=1))
+
+    narrowed = analyse_ip(campaign.store, ATTACKER, window=window)
+
+    assert narrowed.to_dict()["window"] == window.tag
+    assert analyse_ip(campaign.store, ATTACKER).to_dict()["window"] == ""

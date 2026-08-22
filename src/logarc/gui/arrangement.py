@@ -96,18 +96,24 @@ class MoveHistory:
         self._moves.clear()
 
 
-def key(case_path: str, client_ip: str, kind: GraphKind, *, wrap: bool) -> str:
+def key(case_path: str, client_ip: str, kind: GraphKind, *, wrap: bool, window: str = "") -> str:
     r"""Which graph an arrangement belongs to.
 
-    Four things decide where a node sits, and positions saved under one of them
+    Five things decide where a node sits, and positions saved under one of them
     describe nothing under another: a wrapped trace folds onto rows an unwrapped
-    one does not have, and a behaviour map has different nodes entirely.
+    one does not have, a behaviour map has different nodes entirely, and a graph
+    read over one stretch of time has different activities in it — different
+    names and different counts — from the same graph read over another.
+
+    `window` is a `TimeWindow.tag`, empty for the whole case. Empty leaves the
+    key exactly what it was before ranges existed, so an arrangement saved then
+    is still found now.
 
     Hashed rather than spelled out because a case path carries `\` and `:` and
     a client address carries `:` in its IPv6 form, and because a fixed-width key
     keeps the stored value's size a function of the node count alone.
     """
-    parts = _JOIN.join((case_path, client_ip, str(kind), "wrap" if wrap else "flat"))
+    parts = _JOIN.join((case_path, client_ip, str(kind), "wrap" if wrap else "flat", window))
     return hashlib.sha1(parts.encode("utf-8"), usedforsecurity=False).hexdigest()
 
 

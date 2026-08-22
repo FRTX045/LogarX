@@ -9,6 +9,7 @@ import pytest
 
 from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
+from logarc.core.window import EVERYTHING, TimeWindow
 from logarc.storage.event_store import ParquetEventStore, StoreStateError
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
@@ -150,6 +151,9 @@ def test_ip_summaries_describe_each_client(store: ParquetEventStore) -> None:
             event("1.1.1.1", offset_seconds=0, path="/a", status=200),
             event("1.1.1.1", offset_seconds=60, path="/b", status=404),
             event("1.1.1.1", offset_seconds=120, path="/b", status=404),
+            # A server error. Not the client's fault, so it must not raise the
+            # share the client list sorts suspicion by.
+            event("1.1.1.1", offset_seconds=180, path="/c", status=503),
             event("2.2.2.2", offset_seconds=5, path="/a", status=200),
         ]
     )
@@ -158,11 +162,11 @@ def test_ip_summaries_describe_each_client(store: ParquetEventStore) -> None:
     summaries = {s.client_ip: s for s in store.ip_summaries()}
 
     first = summaries["1.1.1.1"]
-    assert first.request_count == 3
-    assert first.distinct_paths == 2
+    assert first.request_count == 4
+    assert first.distinct_paths == 3
     assert first.first_seen == START
-    assert first.last_seen == START + timedelta(seconds=120)
-    assert first.client_error_ratio == pytest.approx(2 / 3)
+    assert first.last_seen == START + timedelta(seconds=180)
+    assert first.client_error_ratio == pytest.approx(2 / 4)
     assert summaries["2.2.2.2"].request_count == 1
 
 
@@ -355,3 +359,243 @@ def test_a_store_without_a_shard_name_keeps_writing_where_it_always_did(
 
     assert (tmp_path / "case" / "staging" / "part-000000.parquet").exists()
     store.close()
+
+
+# -- narrowing a read to one stretch of time -------------------------------
+
+
+def test_a_window_keeps_only_the_events_inside_it(store: ParquetEventStore) -> None:
+    store.write([event(offset_seconds=n, line_no=n + 1) for n in (0, 30, 60, 90)])
+    store.finalize()
+
+    inside = store.events_for_ip(
+        "203.0.113.5",
+        window=TimeWindow(START + timedelta(seconds=30), START + timedelta(seconds=60)),
+    )
+
+    assert [e.timestamp for e in inside] == [
+        START + timedelta(seconds=30),
+        START + timedelta(seconds=60),
+    ]
+
+
+def test_a_window_includes_events_on_both_of_its_edges(store: ParquetEventStore) -> None:
+    """The store has to agree with `TimeWindow.contains`, which counts both
+    ends. A store that excluded them would drop the very request whose second
+    the reader typed in."""
+    store.write([event(offset_seconds=n, line_no=n + 1) for n in (0, 30, 60)])
+    store.finalize()
+    edges = TimeWindow(START, START + timedelta(seconds=60))
+
+    inside = store.events_for_ip("203.0.113.5", window=edges)
+
+    assert len(inside) == 3
+
+
+def test_a_window_still_returns_events_in_time_order(store: ParquetEventStore) -> None:
+    store.write([event(offset_seconds=n, line_no=n + 1) for n in (90, 0, 60, 30)])
+    store.finalize()
+
+    inside = store.events_for_ip("203.0.113.5", window=TimeWindow(START, START + timedelta(days=1)))
+
+    assert [e.timestamp for e in inside] == sorted(e.timestamp for e in inside)
+
+
+def test_a_window_holding_nothing_is_empty_not_an_error(store: ParquetEventStore) -> None:
+    store.write([event(offset_seconds=0)])
+    store.finalize()
+
+    assert (
+        store.events_for_ip(
+            "203.0.113.5",
+            window=TimeWindow(START + timedelta(days=9), START + timedelta(days=10)),
+        )
+        == []
+    )
+
+
+def test_an_open_window_reads_exactly_what_no_window_reads(store: ParquetEventStore) -> None:
+    """The contract that keeps every existing case reading as it always did.
+    Compared event by event, not by counting: a path that returned the right
+    number of the wrong rows would pass a count."""
+    store.write([event(offset_seconds=n, line_no=n + 1) for n in (0, 30, 60, 90)])
+    store.finalize()
+
+    assert store.events_for_ip("203.0.113.5", window=EVERYTHING) == store.events_for_ip(
+        "203.0.113.5"
+    )
+
+
+# -- summarising one stretch of time ---------------------------------------
+
+
+def busy(store: ParquetEventStore) -> None:
+    """Two clients whose activity straddles the window used below."""
+    store.write(
+        [
+            # 1.1.1.1 — three inside the window, two outside it
+            event("1.1.1.1", offset_seconds=0, path="/before", status=200, line_no=1),
+            event("1.1.1.1", offset_seconds=30, path="/a", status=404, line_no=2),
+            event("1.1.1.1", offset_seconds=45, path="/b", status=404, line_no=3),
+            event("1.1.1.1", offset_seconds=60, path="/a", status=200, line_no=4),
+            # A server error, inside the window. It is not the client's fault
+            # and must not raise the share the list sorts suspicion by.
+            event("1.1.1.1", offset_seconds=55, path="/c", status=503, line_no=7),
+            event("1.1.1.1", offset_seconds=200, path="/after", status=200, line_no=5),
+            # 2.2.2.2 — entirely outside it
+            event("2.2.2.2", offset_seconds=500, path="/x", status=200, line_no=6),
+        ]
+    )
+    store.finalize()
+
+
+WINDOW = TimeWindow(START + timedelta(seconds=30), START + timedelta(seconds=60))
+
+
+def test_a_client_silent_in_the_window_is_not_listed(store: ParquetEventStore) -> None:
+    busy(store)
+
+    listed = {s.client_ip for s in store.ip_summaries(window=WINDOW)}
+
+    assert listed == {"1.1.1.1"}
+
+
+def test_the_numbers_are_the_windows_own_not_the_whole_cases(
+    store: ParquetEventStore,
+) -> None:
+    """The test this feature turns on.
+
+    A row saying 5 requests beside a graph saying 3 is two numbers for one thing
+    on one screen, and it is what decided the shape of the whole feature. The
+    only way that cannot happen is if the summary is computed from the same
+    events the graph is built from — so this compares the two directly rather
+    than against a number typed into the test.
+    """
+    busy(store)
+
+    summary = next(s for s in store.ip_summaries(window=WINDOW) if s.client_ip == "1.1.1.1")
+    events = store.events_for_ip("1.1.1.1", window=WINDOW)
+
+    assert summary.request_count == len(events)
+    assert summary.first_seen == min(e.timestamp for e in events)
+    assert summary.last_seen == max(e.timestamp for e in events)
+    assert summary.distinct_paths == len({e.path for e in events})
+    assert summary.bytes_total == sum(e.bytes_sent or 0 for e in events)
+
+
+def test_the_error_share_is_the_windows_own(store: ParquetEventStore) -> None:
+    """Two of the four requests inside the window were refused by the server as
+    the client's fault; a third was a 503, which is not. The client list sorts
+    suspicion by this figure, so counting server errors into it would put the
+    wrong client at the top, and a whole-case ratio shown against a window would
+    do the same.
+    """
+    busy(store)
+
+    summary = next(s for s in store.ip_summaries(window=WINDOW) if s.client_ip == "1.1.1.1")
+
+    assert summary.client_error_ratio == pytest.approx(2 / 4)
+
+
+def test_an_open_window_summarises_exactly_what_no_window_summarises(
+    store: ParquetEventStore,
+) -> None:
+    """The contract that keeps an unfiltered case reading as it always did."""
+    busy(store)
+
+    assert store.ip_summaries(window=EVERYTHING) == store.ip_summaries()
+
+
+def test_a_window_holding_nobody_lists_nobody(store: ParquetEventStore) -> None:
+    busy(store)
+
+    assert (
+        store.ip_summaries(window=TimeWindow(START + timedelta(days=9), START + timedelta(days=10)))
+        == []
+    )
+
+
+def test_a_window_still_honours_the_order_and_the_limit(store: ParquetEventStore) -> None:
+    store.write(
+        [
+            event("1.1.1.1", offset_seconds=30, line_no=1),
+            event("2.2.2.2", offset_seconds=31, line_no=2),
+            event("2.2.2.2", offset_seconds=32, line_no=3),
+            event("3.3.3.3", offset_seconds=33, line_no=4),
+        ]
+    )
+    store.finalize()
+    wide = TimeWindow(START, START + timedelta(seconds=60))
+
+    busiest = store.ip_summaries(window=wide, order_by="requests", limit=2)
+
+    assert [s.client_ip for s in busiest] == ["2.2.2.2", "1.1.1.1"]
+
+
+# -- where the traffic sits, for the band ----------------------------------
+
+
+def test_the_buckets_account_for_every_event(store: ParquetEventStore) -> None:
+    """The band is drawn from these. A bucketing that loses events would draw a
+    quiet stretch where the case is busy, and the reader would select the wrong
+    window because of it."""
+    store.write([event(offset_seconds=n * 7, line_no=n + 1) for n in range(50)])
+    store.finalize()
+
+    slots = store.activity_over_time(buckets=10)
+
+    assert sum(slot.request_count for slot in slots) == 50
+
+
+def test_the_band_starts_at_the_case_and_ends_at_the_case(store: ParquetEventStore) -> None:
+    store.write([event(offset_seconds=n * 60, line_no=n + 1) for n in range(20)])
+    store.finalize()
+
+    slots = store.activity_over_time(buckets=8)
+
+    assert slots[0].start <= START
+    assert slots[-1].start <= START + timedelta(seconds=19 * 60)
+
+
+def test_the_band_is_filled_to_roughly_the_width_asked_for(store: ParquetEventStore) -> None:
+    """A case covering a few minutes has to fill the band too, or the control
+    that exists to show where the traffic is shows one block.
+
+    Roughly, and checked as a share rather than exactly: the step is the span
+    divided by the count, and `time_bucket` aligns to whole steps from the
+    epoch, so the ends can spill by one. Asserting merely "more than one" was
+    too loose to notice a step as wide as the entire case.
+    """
+    store.write([event(offset_seconds=n * 10, line_no=n + 1) for n in range(30)])
+    store.finalize()
+
+    slots = store.activity_over_time(buckets=10)
+
+    assert len(slots) >= 8
+
+
+def test_a_case_with_one_event_does_not_fall_over(store: ParquetEventStore) -> None:
+    """Span zero. Divided by it, the bucket width is undefined and the band
+    never draws."""
+    store.write([event(offset_seconds=0)])
+    store.finalize()
+
+    slots = store.activity_over_time(buckets=10)
+
+    assert len(slots) == 1
+    assert slots[0].request_count == 1
+
+
+def test_an_empty_case_has_an_empty_band(store: ParquetEventStore) -> None:
+    store.finalize()
+
+    assert store.activity_over_time() == []
+
+
+def test_the_buckets_come_back_in_time_order(store: ParquetEventStore) -> None:
+    store.write([event(offset_seconds=n * 13, line_no=n + 1) for n in (7, 1, 4, 9, 0)])
+    store.finalize()
+
+    slots = store.activity_over_time(buckets=5)
+
+    assert [s.start for s in slots] == sorted(s.start for s in slots)

@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
     from logarc.core.event import NormalizedEvent
+    from logarc.core.window import TimeWindow
 
 __all__ = ["SessionPolicy", "sessionize"]
 
@@ -51,6 +52,8 @@ class SessionPolicy:
 def sessionize(
     events: Iterable[NormalizedEvent],
     policy: SessionPolicy | None = None,
+    *,
+    window: TimeWindow | None = None,
 ) -> list[Session]:
     """Group `events` into sessions, one client at a time.
 
@@ -61,8 +64,18 @@ def sessionize(
     Events may arrive in any order; they are sorted per client first. The store
     already returns them sorted, but relying on that would make this quietly
     wrong for any other caller.
+
+    `window` does not filter — whoever read these events has already done that.
+    It puts its name on the sessions, and through them on the episodes and every
+    identifier printed in a report. Two reconstructions of one client over two
+    windows describe different things, and sharing a name they would say so
+    using the same identifiers.
+
+    An open window, or none, names sessions exactly as they have always been
+    named. That is what keeps every case and report already on disk valid.
     """
     policy = policy or SessionPolicy()
+    tag = f"@{window.tag}" if window is not None and not window.is_open else ""
 
     by_client: dict[str, list[NormalizedEvent]] = defaultdict(list)
     for event in events:
@@ -71,7 +84,7 @@ def sessionize(
     sessions: list[Session] = []
     for client_ip, client_events in by_client.items():
         client_events.sort(key=lambda e: (e.timestamp, e.evidence.line_no))
-        sessions.extend(_split_one_client(client_ip, client_events, policy))
+        sessions.extend(_split_one_client(client_ip, client_events, policy, tag))
     return sessions
 
 
@@ -79,18 +92,19 @@ def _split_one_client(
     client_ip: str,
     events: Sequence[NormalizedEvent],
     policy: SessionPolicy,
+    tag: str,
 ) -> list[Session]:
     sessions: list[Session] = []
     current: list[NormalizedEvent] = []
 
     for event in events:
         if current and _starts_new_session(current, event, policy):
-            sessions.append(_build(client_ip, len(sessions) + 1, current))
+            sessions.append(_build(client_ip, len(sessions) + 1, current, tag))
             current = []
         current.append(event)
 
     if current:
-        sessions.append(_build(client_ip, len(sessions) + 1, current))
+        sessions.append(_build(client_ip, len(sessions) + 1, current, tag))
     return sessions
 
 
@@ -110,9 +124,9 @@ def _starts_new_session(
     return event.timestamp - current[0].timestamp > policy.max_duration
 
 
-def _build(client_ip: str, index: int, events: Sequence[NormalizedEvent]) -> Session:
+def _build(client_ip: str, index: int, events: Sequence[NormalizedEvent], tag: str) -> Session:
     return Session(
-        session_id=f"{client_ip}#{index}",
+        session_id=f"{client_ip}{tag}#{index}",
         client_ip=client_ip,
         user_agent=events[0].user_agent,
         events=tuple(events),

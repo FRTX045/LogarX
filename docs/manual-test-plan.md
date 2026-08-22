@@ -606,6 +606,58 @@ empty ground it was dragged across.
 
 ---
 
+## 16. A case can be read over one stretch of time
+
+**Why:** the suite checks that both halves narrow together and that the numbers
+agree. What it cannot judge is whether the band is worth having — on the
+synthetic log it is nearly flat, because generated traffic is uniform, and the
+whole argument for drawing it rests on a real log not being.
+
+Measured, so there is something to compare against: opening a case 1.1 s at
+200 k events and 1.3 s at 3 million; applying a range 0.35 s and 0.44 s; going
+back to the whole case 0.90 s and 1.08 s. The last of those is over a second,
+and is the one to watch.
+
+1. Open a case and look at the band above the panels.
+
+**Pass:** it is filled end to end, and on a real log it has shape — quiet
+nights, busy hours. If it is a flat wall, say so: that is the finding.
+
+2. Drag a stretch out of the middle of the band.
+
+**Pass:** the fields beneath it change to match. The client list shrinks to who
+was active then. The line on the right says both counts.
+
+3. Pick a client and compare its row against the heading above the graph.
+
+**Pass:** the same number of requests in both. This is the check the whole
+feature was shaped around; if these two ever disagree, stop and report it.
+
+4. Look at an activity that started before your range began.
+
+**Pass:** it reports the requests inside the range, not all of them.
+
+5. Type a range into the fields instead.
+
+**Pass:** the highlight on the band moves to match. One range, two controls.
+
+6. Narrow to a stretch when nobody was active.
+
+**Pass:** the list is empty and says *No client was active …* with the times.
+Not a blank panel, and not zero of nine thousand.
+
+7. Export an HTML report while a range is set, and another with **Whole case**.
+
+**Pass:** the filtered one carries a **Time range** card; the other does not.
+Open both and search for the same activity id: they must not share one.
+
+8. Press **Whole case**.
+
+**Pass:** the full client list is back, and the graph is the whole reconstruction
+again.
+
+---
+
 ## Recording a run
 
 | # | Check | Result | Notes |
@@ -625,5 +677,6 @@ empty ground it was dragged across.
 | 13 | A log that produced no events interrupts, and names the format | | |
 | 14 | Several cases forgotten in one pass; Ctrl+A removes the key itself | | |
 | 15 | Activities drag smoothly; undo, save and reset behave | | |
+| 16 | A time range narrows both halves, and the two agree | | |
 
 Version tested: ______  ·  Date: ______  ·  Machine: ______

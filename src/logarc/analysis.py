@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from logarc.core.window import EVERYTHING, TimeWindow
 from logarc.detect.engine import RuleEngine
 from logarc.detect.rulepacks import default_rules
 from logarc.episode.builder import EpisodePolicy, segment
@@ -93,6 +94,15 @@ class AnalysisResult:
     behaviour: ActivityGraph
     ruleset_fingerprint: str
     policy: AnalysisPolicy
+    window: TimeWindow = EVERYTHING
+    """The stretch of time this covers.
+
+    Carried so a report can say what it is a report *of*. The identifiers
+    already differ between windows, which is what stops two reports being
+    confused for one another; this is what lets a person read which is which
+    without comparing them.
+    """
+
     crs_fingerprint: str | None = None
     """Which CRS configuration contributed, or None when the case was not enriched.
 
@@ -118,6 +128,11 @@ class AnalysisResult:
             "ruleset_fingerprint": self.ruleset_fingerprint,
             "crs_fingerprint": self.crs_fingerprint,
             "policy": self.policy.as_config(),
+            # Empty for the whole case, which is what every report written
+            # before this existed already means. A tool reading two of these has
+            # the same problem a person does: without it, one client's two
+            # reports differ in their numbers and agree in everything else.
+            "window": self.window.tag,
             "trace": self.trace.to_dict(),
             "behaviour": self.behaviour.to_dict(),
         }
@@ -131,18 +146,29 @@ def analyse_ip(
     policy: AnalysisPolicy | None = None,
     crs: DetectionIndex | None = None,
     crs_fingerprint: str | None = None,
+    window: TimeWindow | None = None,
 ) -> AnalysisResult:
     """Reconstruct what one client did.
 
     `crs` is the detection set from `logarc enrich`, if the case has one. It
     never changes a label a rule packed here asserted; it only names requests
     that would otherwise fall through to ordinary traffic.
+
+    `window` narrows this to one stretch of time, and it narrows it at the
+    bottom: the events are read for that stretch and everything above is built
+    from what is left. Sessions are found again in the remainder, so a client
+    with two visits either side of the window comes back with one. That is the
+    honest answer to "what did this client do between these times" — the other
+    reading, keeping the whole-case structure and hiding the parts outside,
+    reports activities with request counts that include requests the window
+    excludes.
     """
     engine = engine or RuleEngine(default_rules())
     policy = policy or AnalysisPolicy()
 
-    events = store.events_for_ip(client_ip)
-    sessions = sessionize(events, policy.session)
+    window = window or EVERYTHING
+    events = store.events_for_ip(client_ip, window=window)
+    sessions = sessionize(events, policy.session, window=window)
     sessions.sort(key=lambda session: session.start)
 
     episodes: list[Episode] = []
@@ -165,5 +191,6 @@ def analyse_ip(
         behaviour=build_behaviour_map(episodes, client_ip=client_ip),
         ruleset_fingerprint=engine.fingerprint,
         policy=policy,
+        window=window,
         crs_fingerprint=crs_fingerprint,
     )
