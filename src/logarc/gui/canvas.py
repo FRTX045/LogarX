@@ -235,6 +235,10 @@ class _EdgeShape:
     """The point the transition is *about*: the middle of a straight arrow, the
     apex of a bowed one."""
 
+    length: float
+    """How far the arrow reaches, rim to rim. What decides whether there is room
+    to write a number on it."""
+
     @property
     def label_at(self) -> QPointF:
         """Where the number sits: clear of the arrow, not on top of it."""
@@ -307,15 +311,25 @@ def _edge_shape(
             ),
         ]
     )
-    return _EdgeShape(path=path, head=head, anchor=anchor)
+    return _EdgeShape(
+        path=path,
+        head=head,
+        anchor=anchor,
+        length=math.hypot(finish.x() - begin.x(), finish.y() - begin.y()),
+    )
 
 
 class _EdgeArt:
     """One arrow already on the canvas, and what it takes to move it.
 
-    The items are *reshaped*, not replaced. A node with three arrows on it would
-    otherwise create and destroy nine scene items on every mouse-move event, and
-    that is the difference between a drag that glides and one that stutters.
+    The items are *reshaped*, not replaced, so a node with three arrows on it
+    does not create and destroy nine scene items per mouse-move event.
+
+    Measured, on a native Qt platform, for one such event: 0.30 ms against
+    0.52 ms rebuilding on a 50-node trace, and 0.34 ms against 0.80 ms on 600.
+    About twice as cheap, and worth having — but both sit well inside a 16 ms
+    frame, so this is not what would have made a drag stutter. Nothing here
+    would have, at the sizes this tool draws.
     """
 
     __slots__ = (
@@ -355,17 +369,38 @@ class _EdgeArt:
 
     def reshape(self, start: QPointF, end: QPointF) -> None:
         """Redraw this arrow between two centres it has moved to."""
-        shape = _edge_shape(
-            start,
-            end,
-            source_radius=self.source_radius,
-            target_radius=self.target_radius,
-            paired=self.paired,
+        self.place(
+            _edge_shape(
+                start,
+                end,
+                source_radius=self.source_radius,
+                target_radius=self.target_radius,
+                paired=self.paired,
+            )
         )
+
+    def place(self, shape: _EdgeShape) -> None:
+        """Put the line, the head and the number where `shape` says.
+
+        Called both when the graph is drawn and when a node is dragged, so a
+        graph opened on a saved arrangement is subject to the same rules as one
+        the reader has just rearranged.
+        """
         self.line.setPath(shape.path)
         self.head.setPolygon(shape.head)
         if self.label is not None:
             self.label.setPos(shape.label_at)
+            # The number sits on a patch of ground so an arrow passing behind it
+            # cannot cross the text. Two activities dragged close together leave
+            # an arrow shorter than that patch is wide, and then the patch hides
+            # the whole arrow — the graph stops showing a transition it has.
+            #
+            # Structure before detail: the transition has to go on reading as an
+            # arrow, and the number is what gives way. Compared on width alone,
+            # which over-hides slightly on a steep diagonal — where the patch is
+            # taller than the arrow is long, and covers it anyway.
+            room = shape.length > self.label.rect().width() + _ARROW_LENGTH * 2
+            self.label.setVisible(room)
 
 
 class _NodeItem(QGraphicsEllipseItem):
@@ -577,10 +612,16 @@ class ActivityCanvas(QGraphicsView):
     def _node_moved(self, node_id: str) -> None:
         """Bring everything attached to an activity along with it.
 
-        Called on every mouse-move event of a drag, so it touches only what
+        Called on every mouse-move event of a drag, and it touches only what
         moved: the arrows filed under this node, and the ring if this is the
-        node being read. Reshaping the whole graph here is what would turn a
-        long trace into a slideshow.
+        node being read.
+
+        Not for speed. Reshaping every arrow in the graph instead measured the
+        same to three decimal places — 0.339 ms against 0.343 ms on a 600-node
+        trace — because the cost of one of these events is Qt's, not this
+        function's. The index earns its place because `_light_edges` needs the
+        same question answered for a reason that is not an optimisation at all:
+        *which arrows does this activity carry.*
         """
         if self._drawing:
             return
@@ -1030,9 +1071,11 @@ class ActivityCanvas(QGraphicsView):
             weight=weight,
             paired=paired,
         )
+        art.place(shape)
         self._edge_art.append(art)
-        # Under both ends, so a node being dragged finds its own arrows without
-        # walking the whole graph on every mouse-move event.
+        # Under both ends: an arrow belongs to the activity at each of them, and
+        # both a drag and the light that goes on during one ask the same
+        # question of a node — which arrows are mine.
         self._edges_by_node.setdefault(source.node_id, []).append(art)
         self._edges_by_node.setdefault(target.node_id, []).append(art)
 

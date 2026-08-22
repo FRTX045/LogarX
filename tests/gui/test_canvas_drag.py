@@ -276,8 +276,12 @@ def test_the_number_on_an_arrow_follows_it_too(qt_app: QApplication) -> None:
 
 
 def test_only_the_arrows_on_the_dragged_node_are_reshaped(qt_app: QApplication) -> None:
-    """Reshaping every arrow on every mouse-move event is the easy way to make
-    this work, and it is what turns a long trace into a slideshow.
+    """A node asks for its own arrows, not for the whole graph.
+
+    Not a speed claim — measured, reshaping everything costs the same, because
+    the cost of one of these events is Qt's. It is a claim about what the code
+    means: `_light_edges` asks the same question for a reason that has nothing
+    to do with speed, and the two must not answer it differently.
 
     Counted rather than compared: an arrow reshaped from two node positions that
     did not change comes out on exactly the path it was already on, so the
@@ -765,3 +769,69 @@ def test_a_click_tells_the_window_nothing(qt_app: QApplication) -> None:
     drag(canvas, "n1", QPoint(0, 0))
 
     assert not told
+
+
+# -- when the number no longer fits on the arrow --------------------------
+
+
+def test_a_number_is_written_on_an_arrow_that_has_room_for_it(
+    qt_app: QApplication,
+) -> None:
+    canvas = ready(2)
+    art = canvas._edge_art[0]
+
+    assert art.label is not None
+    assert art.label.isVisible()
+
+
+def test_the_number_gets_out_of_the_way_when_the_arrow_gets_short(
+    qt_app: QApplication,
+) -> None:
+    """The number is drawn on a patch of ground so an arrow passing behind it
+    cannot cross the text. Dragged close together, two activities leave an arrow
+    shorter than that patch is wide — and the patch hides the whole arrow.
+
+    Structure before detail: the transition still has to read as an arrow, and
+    the number is what gives way. Found by looking at a real drag, not by
+    reading the code: the geometry was right and the picture was wrong.
+    """
+    canvas = ready(2)
+    art = canvas._edge_art[0]
+    assert art.label is not None
+    home = QPointF(canvas._nodes["n1"].pos())
+
+    canvas._nodes["n1"].setPos(home.x() - 250.0, home.y())
+
+    assert not art.label.isVisible()
+
+
+def test_the_number_comes_back_when_the_arrow_does(qt_app: QApplication) -> None:
+    canvas = ready(2)
+    art = canvas._edge_art[0]
+    assert art.label is not None
+    home = QPointF(canvas._nodes["n1"].pos())
+    canvas._nodes["n1"].setPos(home.x() - 250.0, home.y())
+    assert not art.label.isVisible(), "premise: it got out of the way"
+
+    canvas._nodes["n1"].setPos(home)
+
+    assert art.label.isVisible()
+
+
+def test_a_graph_opened_on_a_crowded_arrangement_hides_the_number_too(
+    qt_app: QApplication,
+) -> None:
+    """A saved arrangement puts nodes wherever the reader left them, which may
+    be close together. Applied only when a node moves, the rule would miss every
+    arrangement that opens that way."""
+    canvas = ActivityCanvas()
+    canvas.resize(600, 480)
+    laid_out = ActivityCanvas()
+    laid_out.show_graph(chain(2))
+    home = laid_out.positions["n1"]
+
+    canvas.show_graph(chain(2), positions={"n1": (home[0] - 250.0, home[1])})
+
+    art = canvas._edge_art[0]
+    assert art.label is not None
+    assert not art.label.isVisible()
