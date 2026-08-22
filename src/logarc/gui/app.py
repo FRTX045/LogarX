@@ -775,6 +775,10 @@ class MainWindow(QMainWindow):
         if self._case_path is None or window == self._window:
             return
         self._window = window
+        # The control is told what is in force, not asked. Typing in the fields
+        # keeps them right by accident; every other way the range can be set
+        # would otherwise leave them naming a stretch nobody is reading.
+        self._time_filter.set_window(window)
         path = self._case_path
 
         def work(report: Callable[[str], None]) -> Any:

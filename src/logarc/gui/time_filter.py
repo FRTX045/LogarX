@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import QDateTime, Qt, pyqtSignal
+from PyQt6.QtGui import QFontMetrics
 from PyQt6.QtWidgets import (
     QDateTimeEdit,
     QHBoxLayout,
@@ -38,6 +39,9 @@ __all__ = ["TimeFilterBar"]
 #: window itself keeps seconds, which is what stops two ranges a second apart
 #: sharing a name.
 _FORMAT = "yyyy-MM-dd  HH:mm"
+
+#: Room for the calendar arrow and the field's own padding, beside the text.
+_ARROW = 40
 
 _STYLE = f"""
 QWidget#timeFilterBar {{
@@ -110,6 +114,13 @@ class TimeFilterBar(QWidget):
         field = QDateTimeEdit()
         field.setDisplayFormat(_FORMAT)
         field.setCalendarPopup(True)
+        # Measured, not guessed. Qt sizes one of these to its format string and
+        # then puts the calendar arrow on top of the result, so the minutes are
+        # clipped — `2024-05-02 01:2` for a field whose whole job is to say when.
+        # `_ARROW` is the room that arrow takes.
+        field.setMinimumWidth(
+            QFontMetrics(field.font()).horizontalAdvance("2024-05-02  00:00") + _ARROW
+        )
         field.editingFinished.connect(self._announce)
         return field
 

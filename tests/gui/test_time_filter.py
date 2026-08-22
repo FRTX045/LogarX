@@ -344,3 +344,21 @@ def test_the_line_speaks_before_any_client_has_been_picked(
 
     assert window._time_filter._summary.text() == "1 of 2 clients"
     window.close()
+
+
+def test_the_fields_show_the_range_that_is_actually_in_force(
+    qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
+) -> None:
+    """A control that does not show its own state is worse than no control.
+
+    Typing in the fields keeps them right by accident. Every other way the range
+    can be set — a restored one, the band once it exists — leaves them naming a
+    stretch that is not the one being read.
+    """
+    window = reading(qt_app, two_bursts, BUSY)
+
+    window._apply_window(EARLY_ONLY)
+    settled(qt_app)
+
+    assert window._time_filter.chosen == EARLY_ONLY
+    window.close()
