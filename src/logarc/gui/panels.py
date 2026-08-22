@@ -40,6 +40,8 @@ if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
     from datetime import datetime
 
+    from PyQt6.QtGui import QMouseEvent
+
     from logarc.storage.base import IpSummary
 
 __all__ = ["ClientTable", "LegendBar"]
@@ -75,14 +77,49 @@ def format_seen(when: datetime) -> str:
     return when.strftime("%d %b %H:%M")
 
 
+class _Rows(QTableWidget):
+    """The rows themselves, with one gesture the base class does not offer.
+
+    Pressing the row that is already selected lets go of it. Qt keeps such a
+    press as a no-op — the row stays selected and nothing is emitted — which
+    leaves no way back out of a client once one has been opened, and the band
+    drawn against that client's life stays with it.
+    """
+
+    def mousePressEvent(self, event: QMouseEvent | None) -> None:  # noqa: N802 - Qt's naming
+        if event is None:  # pragma: no cover - Qt always supplies one
+            return
+        # The left button only. The right one opens a context menu, and a menu
+        # that dropped what it was opened on would be unusable.
+        already = (
+            self.currentRow()
+            if event.button() == Qt.MouseButton.LeftButton
+            and (model := self.selectionModel()) is not None
+            and model.hasSelection()
+            else -1
+        )
+        pressed = self.indexAt(event.pos())
+        super().mousePressEvent(event)
+        if pressed.isValid() and pressed.row() == already:
+            self.clearSelection()
+
+
 class ClientTable(QWidget):
     """Every client in the case, sortable, one click to reconstruct."""
 
     client_chosen = pyqtSignal(str)
 
+    client_released = pyqtSignal()
+    """The reader pressed the row they were already on.
+
+    A signal of its own rather than an empty `client_chosen`: letting go is not
+    choosing nobody, it is a different instruction, and the window answers it by
+    putting the case back rather than by reconstructing anything.
+    """
+
     def __init__(self) -> None:
         super().__init__()
-        self._table = QTableWidget(0, len(_COLUMNS))
+        self._table = _Rows(0, len(_COLUMNS))
         self._table.setHorizontalHeaderLabels(_COLUMNS)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -148,6 +185,12 @@ class ClientTable(QWidget):
         # it. Cleared here rather than carried across.
         self._filter.clear()
 
+        # Silent for the whole rebuild. A refill is the window replacing its own
+        # furniture, not the reader choosing or dropping anything — and left to
+        # speak it does both, one of them wrongly: shrinking the list moves the
+        # selection onto a surviving row and emits a choice carrying whatever
+        # address that row still held, from the list being replaced.
+        blocked = self._table.blockSignals(True)
         self._table.setSortingEnabled(False)
         self._table.setRowCount(len(summaries))
         with self._sized_once():
@@ -163,6 +206,7 @@ class ClientTable(QWidget):
         self._table.setSortingEnabled(True)
         for row in range(self._table.rowCount()):
             self._table.setRowHidden(row, False)
+        self._table.blockSignals(blocked)
         self._write_caption(shown=len(summaries))
 
     @contextmanager
@@ -237,10 +281,12 @@ class ClientTable(QWidget):
 
     def _emit_choice(self) -> None:
         rows = required(self._table.selectionModel(), "selection model").selectedRows()
-        if rows:
-            cell = self._table.item(rows[0].row(), 0)
-            if cell is not None:
-                self.client_chosen.emit(cell.text())
+        if not rows:
+            self.client_released.emit()
+            return
+        cell = self._table.item(rows[0].row(), 0)
+        if cell is not None:
+            self.client_chosen.emit(cell.text())
 
 
 #: How big an outcome sample is drawn. Larger than the severity swatch beside

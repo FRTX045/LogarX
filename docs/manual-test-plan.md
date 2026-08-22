@@ -663,17 +663,24 @@ that client's own. A client that worked for an hour fills the band. Compare the
 bar heights against the graph: a burst in the band should be an activity in the
 trace.
 
-10. Narrow to a stretch that client was not there for.
+10. Press the row of the client you are already on.
+
+**Pass:** the highlight goes, the graph goes back to waiting, and the band goes
+back to the whole case. Nothing on screen still names that client — check the
+status bar at the bottom too. Press a different row: it opens that client as
+usual.
+
+11. Narrow to a stretch that client was not there for.
 
 **Pass:** the graph empties and the band goes back to the whole case — it must
 not go on drawing a client no longer on screen.
 
-11. **View → Show the traffic band**, to turn the drawing off.
+12. **View → Show the traffic band**, to turn the drawing off.
 
 **Pass:** the bars go and the date fields stay. The graph gains the height —
 measured at 62 pixels. Set a range with the fields: it still narrows both halves.
 
-12. Close the application and open it again.
+13. Close the application and open it again.
 
 **Pass:** the band is still off. Turn it back on and it draws as before.
 

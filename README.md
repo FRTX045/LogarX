@@ -177,6 +177,10 @@ Because that is a different answer, it is given different names: identifiers car
 `100.67.0.86#1/1` in a folder holding both reports. Without a range nothing changes — every case
 and report made before this existed still reads exactly as it did. **Whole case** goes back.
 
+**Pressing the client you are on lets go of it.** The graph goes back to waiting, and the band goes
+back to the whole case — which is how you leave the stretch of time one client's life pins the band
+to. Pressing a different row moves to that client as it always did.
+
 **The band follows whoever is being read.** Before a client is picked it draws the whole case.
 Pick one and it becomes that client's own history, across that client's own life — first request to
 last — so a client alive for ninety minutes fills the band instead of being a hairline in the middle

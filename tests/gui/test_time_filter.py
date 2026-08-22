@@ -671,3 +671,57 @@ def test_a_client_dropped_by_the_range_gives_the_band_back_to_the_case(
     assert window._result is None, "premise: this client is not in that stretch"
     assert band_span(window) != theirs
     window.close()
+
+
+def test_pressing_the_client_again_gives_the_whole_case_back(
+    qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
+) -> None:
+    """The way out of a client, and out of the band drawn against its life.
+
+    `LATECOMER`, not `BUSY`: `BUSY` is present in both bursts so its life covers
+    almost the whole case, and a band that never changed would pass.
+    """
+    window = reading(qt_app, two_bursts, LATECOMER)
+    theirs = band_span(window)
+    assert window._result is not None
+
+    window._clients.client_released.emit()
+    settled(qt_app)
+
+    assert window._result is None
+    assert band_span(window) != theirs
+    assert not window._tabs.isVisible()
+    assert window._heading.text() == ""
+    window.close()
+
+
+def test_letting_go_takes_the_request_counts_out_of_the_line(
+    qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
+) -> None:
+    """`12 of 20 requests` names a client nobody is reading any more."""
+    window = reading(qt_app, two_bursts, BUSY)
+    window._apply_window(EARLY_ONLY)
+    settled(qt_app)
+    assert "requests" in window._time_filter._summary.text()
+
+    window._clients.client_released.emit()
+    settled(qt_app)
+
+    assert "requests" not in window._time_filter._summary.text()
+    window.close()
+
+
+def test_letting_go_stops_the_status_line_naming_that_client(
+    qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
+) -> None:
+    """`203.0.113.9: 3 activities` left standing is the window reporting on a
+    client it is no longer showing — the only line on screen still claiming one
+    is open."""
+    window = reading(qt_app, two_bursts, BUSY)
+    assert BUSY in window._status.text()
+
+    window._clients.client_released.emit()
+    settled(qt_app)
+
+    assert BUSY not in window._status.text()
+    window.close()
