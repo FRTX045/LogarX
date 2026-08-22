@@ -2835,6 +2835,12 @@ def test_a_saved_arrangement_comes_back_on_the_next_open(
     second = _reconstructed(qt_app, campaign)
 
     assert _where(second, moved) == placed
+    # The file is checked too, and for a different reason — that the window is
+    # still writing through the seam these tests substitute. Inline a
+    # `QSettings` at either call site and this file stays empty while every
+    # arrangement quietly goes to the real registry of whoever ran the suite,
+    # with the test above passing all the way through.
+    assert "arrangements" in settings_in_a_temp_file.read_text(encoding="utf-8")
     second.close()
 
 
