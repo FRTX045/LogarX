@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from itertools import pairwise
 from pathlib import Path
 
 import pytest
@@ -584,6 +585,45 @@ def test_a_case_with_one_event_does_not_fall_over(store: ParquetEventStore) -> N
 
     assert len(slots) == 1
     assert slots[0].request_count == 1
+
+
+def test_a_quiet_stretch_comes_back_as_zero_rather_than_missing(
+    store: ParquetEventStore,
+) -> None:
+    """A histogram with holes in it is not a histogram.
+
+    Only non-empty buckets used to come back, which left the band unable to
+    know how wide a bucket was: it inferred that from the narrowest gap between
+    two that arrived. On a client with a handful of requests that gap is far
+    wider than the bucket really is, and every request was drawn as a slab —
+    six requests over two minutes became six blocks 21px wide, each claiming to
+    have lasted half a minute.
+    """
+    store.write([event(offset_seconds=0, line_no=1), event(offset_seconds=1_000, line_no=2)])
+    store.finalize()
+
+    slots = store.activity_over_time(buckets=10)
+
+    assert [slot.request_count for slot in slots] == [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
+
+
+def test_every_pair_of_buckets_is_exactly_one_step_apart(store: ParquetEventStore) -> None:
+    """What makes the width knowable rather than guessable. With no holes, the
+    gap between two neighbours *is* the bucket width."""
+    store.write([event(offset_seconds=n, line_no=n + 1) for n in (0, 3, 4, 400, 401, 900)])
+    store.finalize()
+
+    slots = store.activity_over_time(buckets=20)
+
+    steps = {b.start - a.start for a, b in pairwise(slots)}
+    assert len(steps) == 1, f"buckets are not evenly spaced: {sorted(steps)}"
+
+
+def test_filling_the_quiet_stretches_invents_no_requests(store: ParquetEventStore) -> None:
+    store.write([event(offset_seconds=n * 97, line_no=n + 1) for n in range(11)])
+    store.finalize()
+
+    assert sum(slot.request_count for slot in store.activity_over_time(buckets=25)) == 11
 
 
 def test_an_empty_case_has_an_empty_band(store: ParquetEventStore) -> None:
