@@ -39,7 +39,7 @@ from logarc.core.graph import GraphKind
 from logarc.core.window import EVERYTHING, TimeWindow
 from logarc.detect.crs import CrsEvidence
 from logarc.episode.builder import DEFAULT_EVIDENCE_SAMPLE, EpisodePolicy
-from logarc.gui import arrangement, recent
+from logarc.gui import arrangement, crash, recent
 from logarc.gui._qt import required
 from logarc.gui.canvas import ActivityCanvas
 from logarc.gui.case_chooser import CaseChooser
@@ -1444,7 +1444,11 @@ class MainWindow(QMainWindow):
 
 def main() -> int:
     """Entry point for the `logarc-gui` command."""
-    app = QApplication(sys.argv)
+    # Reused if one is already up. There never is in production; it is what
+    # lets this function be called from a test at all, and an entry point that
+    # cannot be called is an entry point nothing checks.
+    running = QApplication.instance()
+    app = running if isinstance(running, QApplication) else QApplication(sys.argv)
     app.setApplicationName("logarc")
     apply_theme(app)
     try:
@@ -1452,6 +1456,10 @@ def main() -> int:
     except Exception:
         traceback.print_exc()
         return 1
+    # The net goes up as soon as there is somewhere to show a problem. Before
+    # it, a mistake anywhere in the interface reached Qt's own handler, which
+    # ends the process without printing anything at all — see `gui.crash`.
+    crash.install(window._report_error)
     window.show()
     window.offer_start()
     return app.exec()
