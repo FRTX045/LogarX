@@ -1057,16 +1057,23 @@ def test_a_trace_too_wide_to_fit_opens_at_its_beginning(qt_app: QApplication) ->
     assert bar.value() == bar.minimum()
 
 
-def test_the_wrap_toggle_is_offered_only_where_it_does_something(qt_app: QApplication) -> None:
-    """A behaviour map is a circle and has no rows to fold. A live control that
-    does nothing reads as a fault in the tool."""
+def test_the_wrap_choice_survives_a_trip_through_the_behaviour_map(
+    qt_app: QApplication,
+) -> None:
+    """A behaviour map is a circle and has no rows to fold, so wrapping decides
+    nothing while one is on screen.
+
+    The menu used to grey the entry out to say so. With the entry gone the
+    greying goes too, and what has to hold is the part that always mattered:
+    the choice is kept, and applies again the moment the trace comes back.
+    """
     window = MainWindow()
+    _prefer(window, "view/wrap_traces", False)
 
     window._show_behaviour()
-    assert not window._wrap_action.isEnabled()
-
     window._show_trace()
-    assert window._wrap_action.isEnabled()
+
+    assert window._canvas.wrap is False
     window.close()
 
 
@@ -1084,13 +1091,13 @@ def test_the_wrap_choice_outlives_the_window(
     """
     app._settings().clear()
     first = MainWindow()
-    assert first._wrap_action.isChecked(), "wrapping is the default"
+    assert first._canvas.wrap, "wrapping is the default"
 
-    first._wrap_action.trigger()
+    _prefer(first, "view/wrap_traces", False)
     first.close()
     second = MainWindow()
 
-    assert not second._wrap_action.isChecked()
+    assert second._prefs["view/wrap_traces"] is False
     assert not second._canvas.wrap
     assert "false" in settings_in_a_temp_file.read_text(encoding="utf-8").lower()
     second.close()
@@ -1358,6 +1365,16 @@ def test_switching_view_leaves_the_panel_describing_what_is_ringed(
     window.close()
 
 
+def _prefer(window: MainWindow, key: str, value: object) -> None:
+    """Change one preference the way the dialog does.
+
+    Through `_apply_preferences`, not by reaching into a widget: that is the
+    one path a reader's choice takes now, and a test that took another would
+    stop covering the path they use.
+    """
+    window._apply_preferences({**window._prefs, key: value})
+
+
 def _reconstructed(qt_app: QApplication, case: Path) -> MainWindow:
     """A window with the first client of `case` reconstructed."""
     window = MainWindow()
@@ -1569,14 +1586,14 @@ def test_the_decode_choice_outlives_the_window(qt_app: QApplication) -> None:
     strictly more than a global on-or-off could give."""
     app._settings().clear()
     first = MainWindow()
-    assert first._decode_action.isChecked(), "decoding is the default"
+    assert first._evidence._decode, "decoding is the default"
     assert not hasattr(first, "_raw_action"), "the raw toggle is retired"
 
-    first._decode_action.trigger()
+    _prefer(first, "view/decode_targets", False)
     first.close()
     second = MainWindow()
 
-    assert not second._decode_action.isChecked()
+    assert second._evidence._decode is False
     second.close()
 
 
@@ -1909,15 +1926,15 @@ def test_a_case_that_will_not_open_is_not_remembered(
 def test_the_reopen_choice_outlives_the_window(qt_app: QApplication) -> None:
     app._settings().clear()
     first = MainWindow()
-    assert not first._reopen_action.isChecked(), (
+    assert first._prefs["cases/reopen_last"] is False, (
         "the chooser is what a launch opens on; reopening the last case is opt-in"
     )
 
-    first._reopen_action.trigger()
+    _prefer(first, "cases/reopen_last", True)
     first.close()
     second = MainWindow()
 
-    assert second._reopen_action.isChecked()
+    assert second._prefs["cases/reopen_last"] is True
     second.close()
 
 
@@ -2924,12 +2941,12 @@ def test_an_arrangement_saved_with_wrap_on_is_not_applied_with_it_off(
     saved coordinates put nodes where no row exists."""
     app._settings().clear()
     window = _reconstructed(qt_app, campaign)
-    assert window._wrap_action.isChecked(), "premise: wrapping is on"
+    assert window._canvas.wrap, "premise: wrapping is on"
     moved = _nudged(window)
     placed = _where(window, moved)
     window._save_layout_action.trigger()
 
-    window._wrap_action.trigger()
+    _prefer(window, "view/wrap_traces", False)
     _settled(qt_app)
 
     assert _where(window, moved) != placed

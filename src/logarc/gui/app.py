@@ -16,9 +16,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from PyQt6.QtCore import QSettings, Qt
-from PyQt6.QtGui import QAction, QActionGroup, QKeySequence
+from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
+    QDialog,
     QFileDialog,
     QLabel,
     QMainWindow,
@@ -39,16 +40,15 @@ from logarc.core.graph import GraphKind
 from logarc.core.window import EVERYTHING, TimeWindow
 from logarc.detect.crs import CrsEvidence
 from logarc.episode.builder import DEFAULT_EVIDENCE_SAMPLE, EpisodePolicy
-from logarc.gui import arrangement, crash, recent
+from logarc.gui import arrangement, crash, prefs, recent
 from logarc.gui._qt import required
 from logarc.gui.canvas import ActivityCanvas
 from logarc.gui.case_chooser import CaseChooser
-from logarc.gui.density import DEFAULT as DEFAULT_DENSITY
 from logarc.gui.density import Density, buckets_for
-from logarc.gui.density import named as named_density
 from logarc.gui.evidence_panel import EvidencePanel
 from logarc.gui.notice_bar import QuarantineBanner, warn_about_dead_files
 from logarc.gui.panels import ClientTable, LegendBar
+from logarc.gui.preferences import PreferencesDialog
 from logarc.gui.progress import Progress, Reading
 from logarc.gui.progress_card import IngestCard
 from logarc.gui.quarantine_notice import notice_for
@@ -96,12 +96,11 @@ _CLIENT_LIMIT = 500
 #: twenty lines or twenty thousand.
 _EVIDENCE_LIMIT = 2_000
 
-#: Where the window remembers how it was left. One key so far: whether long
-#: traces are folded. Worth persisting for the same reason an editor persists
-#: word wrap — it is a reading preference, and being asked for it again every
-#: launch is the annoyance the setting exists to remove.
+#: Where the window remembers how it was left. The reader's preferences are
+#: catalogued in `gui.prefs`, which owns their keys; what is named here is the
+#: state the window keeps that nobody chose — where things were put, and what
+#: was opened.
 _SETTINGS = ("logarc", "logarc")
-_WRAP_KEY = "view/wrap_traces"
 
 #: Where the arrangements the reader saved are kept. One value holding all
 #: of them, capped in `gui.arrangement`, so a single read on open answers for
@@ -112,11 +111,6 @@ _WRAP_KEY = "view/wrap_traces"
 #: address. `Reset layout` removes the arrangement for the graph in front of the
 #: reader, which is the control they have over it.
 _LAYOUT_KEY = "view/arrangements"
-_DECODE_KEY = "view/decode_targets"
-_BAND_KEY = "view/traffic_band"
-#: How finely the band counts the traffic. Kept as a name rather than a
-#: number so a stored setting still means something if the numbers change.
-_DENSITY_KEY = "view/band_density"
 
 #: The cases opened here, and whether to reopen the last one on start.
 #:
@@ -125,7 +119,6 @@ _DENSITY_KEY = "view/band_density"
 #: README says so. `_LAYOUT_KEY` is the other one — a saved arrangement is keyed
 #: by activity id, and a trace's activity ids carry the client's address.
 _RECENT_KEY = "cases/recent"
-_REOPEN_KEY = "cases/reopen_last"
 
 #: The two views, in the order the tab bar shows them. One list rather than a
 #: pair of indices spelled out at each end, so a tab and the view it selects
@@ -148,20 +141,6 @@ def _settings() -> QSettings:
     read its own leftovers back on the next run.
     """
     return QSettings(*_SETTINGS)
-
-
-def _remembered(key: str, *, default: bool) -> bool:
-    """A remembered yes/no, normalised rather than trusted.
-
-    Both stores hand these back as text — the registry keeps `REG_SZ "false"`,
-    an ini file the characters `false` — and a non-empty string is truthy, so
-    reading one at face value turns every setting back on for anyone who ever
-    turned it off.
-    """
-    value = _settings().value(key, default)
-    if isinstance(value, bool):
-        return value
-    return str(value).strip().lower() not in {"false", "0", ""}
 
 
 # Module-level and Qt-free on purpose. These are the two decisions the window
@@ -299,9 +278,12 @@ class MainWindow(QMainWindow):
         self._case_bars: list[TimeSlot] = []
         # How finely to count it. Read before the menu is built, because the
         # menu shows what is in force rather than deciding it.
-        self._density = named_density(
-            str(_settings().value(_DENSITY_KEY, DEFAULT_DENSITY.name.lower()))
-        )
+        # Every preference, read once through the catalogue rather than key by
+        # key. Kept because the dialog is opened showing what is in force, and
+        # a window that had to ask five widgets what they were set to would be
+        # asking the widgets rather than knowing.
+        self._prefs = prefs.read(_settings().value)
+        self._density = prefs.density_in(self._prefs)
         self._result: AnalysisResult | None = None
         # Who the window is waiting to hear about, and over which stretch. A
         # reconstruction that arrives describing anything else is stale and is
@@ -329,6 +311,10 @@ class MainWindow(QMainWindow):
 
         self._build_layout()
         self._build_menu()
+        # What the reader left set at the last launch, put back. The menu used
+        # to do this as a side effect of checking its own boxes; with the menu
+        # entries gone it is said outright.
+        self._restore_preferences()
 
         self._status = QLabel("Open a case, or ingest logs into a new one.")
         self._progress = QProgressBar()
@@ -468,6 +454,41 @@ class MainWindow(QMainWindow):
         case_menu.addSeparator()
         self._add(case_menu, "E&xit", self.close, QKeySequence.StandardKey.Quit)
 
+        # What is done to the graph, and the door to the preferences. `Edit`
+        # rather than `View` because `Ctrl+Z` is the first thing anyone looks
+        # for there, and because it leaves `View` answering one question.
+        edit_menu = required(menu_bar.addMenu("&Edit"))
+
+        # Where an activity was dragged to, and how to be rid of it. In the menu
+        # with every other control rather than on the canvas: a strip floating
+        # over the graph covers a patch of it, has to be moved on every resize,
+        # and swallows clicks meant for whatever node is underneath.
+        self._undo_action = self._add(edit_menu, "&Undo node move", self._undo_move)
+        self._undo_action.setShortcut(QKeySequence.StandardKey.Undo)
+        self._undo_action.setStatusTip("Put the last activity you moved back where it was.")
+        self._save_layout_action = self._add(
+            edit_menu, "&Save this arrangement", self._save_arrangement
+        )
+        self._save_layout_action.setShortcut(QKeySequence.StandardKey.Save)
+        self._save_layout_action.setStatusTip(
+            "Remember where you have put the activities on this graph."
+        )
+        self._reset_layout_action = self._add(edit_menu, "&Reset layout", self._reset_layout)
+        self._reset_layout_action.setShortcut(QKeySequence("Ctrl+Shift+R"))
+        self._reset_layout_action.setStatusTip(
+            "Put every activity back where it was laid out, and forget the saved arrangement."
+        )
+        self._canvas.arrangement_changed.connect(self._sync_arrangement_actions)
+        self._sync_arrangement_actions()
+        edit_menu.addSeparator()
+
+        preferences = self._add(edit_menu, "&Preferences…", self._show_preferences)
+        preferences.setShortcut(QKeySequence("Ctrl+,"))
+        preferences.setStatusTip("Change how the graph, the evidence and the launch behave.")
+
+        # One question: what is being shown. It held eleven entries answering
+        # four — two switches, four actions, four preferences, and one setting
+        # about what happens at launch, which is not a view at all.
         view_menu = required(menu_bar.addMenu("&View"))
         self._trace_action = self._add(view_menu, "&Trace (chronological)", self._show_trace)
         self._behaviour_action = self._add(view_menu, "&Behaviour map", self._show_behaviour)
@@ -475,100 +496,7 @@ class MainWindow(QMainWindow):
             action.setCheckable(True)
         self._trace_action.setChecked(True)
         view_menu.addSeparator()
-
-        # Alt+Z, because that is what an editor uses for word wrap and this is
-        # the same choice about the same trade: fold the long line and read it,
-        # or keep it straight and scroll.
-        self._wrap_action = self._add(view_menu, "&Wrap long traces", self._apply_wrap)
-        self._wrap_action.setCheckable(True)
-        self._wrap_action.setChecked(_remembered(_WRAP_KEY, default=True))
-        self._wrap_action.setShortcut(QKeySequence("Alt+Z"))
-        self._wrap_action.setStatusTip(
-            "Fold a long session onto further rows so the captions stay readable, "
-            "or lay it out on one line and pan along it."
-        )
-        self._canvas.set_wrap(self._wrap_action.isChecked())
-
-        # Beside the wrap toggle: both answer *what is shown*, and both are
-        # reading preferences worth remembering rather than asking for again
-        # every launch.
-        self._band_action = self._add(view_menu, "Show the traffic &band", self._apply_band)
-        self._band_action.setCheckable(True)
-        self._band_action.setChecked(_remembered(_BAND_KEY, default=True))
-        self._band_action.setStatusTip("Draw where the case's traffic sits, above the date fields.")
-        self._time_filter.show_band(self._band_action.isChecked())
-
-        # How finely that traffic is counted. A submenu rather than three
-        # entries in the view menu: they are one question with three answers,
-        # and a group makes the menu incapable of claiming two at once.
-        detail = required(view_menu.addMenu("Band &detail"), "band detail menu")
-        chosen = QActionGroup(self)
-        chosen.setExclusive(True)
-        self._density_actions: dict[Density, QAction] = {}
-        for density, label, tip in (
-            (Density.COARSE, "&Coarse", "One bar for every eight pixels of band."),
-            (Density.MEDIUM, "&Medium", "One bar for every four pixels of band."),
-            (Density.FINE, "&Fine", "One bar to a pixel — as fine as the band can draw."),
-        ):
-            action = self._add(detail, label, self._apply_density)
-            action.setCheckable(True)
-            action.setChecked(density is self._density)
-            action.setStatusTip(tip)
-            chosen.addAction(action)
-            self._density_actions[density] = action
-
         self._add(view_menu, "&Fit to window", self._canvas.fit)
-        view_menu.addSeparator()
-
-        # Where an activity was dragged to, and how to be rid of it. In the menu
-        # with every other control rather than on the canvas: a strip floating
-        # over the graph covers a patch of it, has to be moved on every resize,
-        # and swallows clicks meant for whatever node is underneath.
-        self._undo_action = self._add(view_menu, "&Undo node move", self._undo_move)
-        self._undo_action.setShortcut(QKeySequence.StandardKey.Undo)
-        self._undo_action.setStatusTip("Put the last activity you moved back where it was.")
-        self._save_layout_action = self._add(
-            view_menu, "&Save this arrangement", self._save_arrangement
-        )
-        self._save_layout_action.setShortcut(QKeySequence.StandardKey.Save)
-        self._save_layout_action.setStatusTip(
-            "Remember where you have put the activities on this graph."
-        )
-        self._reset_layout_action = self._add(view_menu, "&Reset layout", self._reset_layout)
-        self._reset_layout_action.setShortcut(QKeySequence("Ctrl+Shift+R"))
-        self._reset_layout_action.setStatusTip(
-            "Put every activity back where it was laid out, and forget the saved arrangement."
-        )
-        self._canvas.arrangement_changed.connect(self._sync_arrangement_actions)
-        self._sync_arrangement_actions()
-        view_menu.addSeparator()
-
-        # How the evidence beside the graph is read. Both are preferences about
-        # presentation, never about which evidence is shown: the `file:line`
-        # reference is printed whatever either of these is set to.
-        self._decode_action = self._add(view_menu, "&Decode URL escapes", self._apply_evidence_view)
-        self._decode_action.setCheckable(True)
-        self._decode_action.setChecked(_remembered(_DECODE_KEY, default=True))
-        self._decode_action.setStatusTip(
-            "Show request targets as the attacker wrote them — %27+OR+%271%27%3D%271 "
-            "reads as ' OR '1'='1 — or exactly as the log holds them."
-        )
-
-        self._apply_evidence_view()
-        view_menu.addSeparator()
-
-        self._reopen_action = self._add(
-            view_menu, "Reopen the &last case on start", self._apply_reopen
-        )
-        self._reopen_action.setCheckable(True)
-        # Off by default: a launch opens on the list. Reopening the last case
-        # straight away is genuinely useful and is also a way never to see the
-        # chooser at all, which is the thing it was built to be.
-        self._reopen_action.setChecked(_remembered(_REOPEN_KEY, default=False))
-        self._reopen_action.setStatusTip(
-            "Open the case you were last working on as soon as the window appears, "
-            "or start with the list of recent cases instead."
-        )
 
         export_menu = required(menu_bar.addMenu("&Export"))
         self._add(export_menu, "&HTML report…", lambda: self._export("html"))
@@ -767,16 +695,13 @@ class MainWindow(QMainWindow):
         """
         action, entry = recent.startup_action(
             self._recent_cases(),
-            reopen_last=self._reopen_action.isChecked(),
+            reopen_last=bool(self._prefs["cases/reopen_last"]),
             exists=lambda path: Path(path).exists(),
         )
         if action is recent.Startup.OPEN_LAST and entry is not None:
             self._load_case(Path(entry.path))
         elif action is recent.Startup.CHOOSE:
             self._show_recent()
-
-    def _apply_reopen(self) -> None:
-        _settings().setValue(_REOPEN_KEY, self._reopen_action.isChecked())
 
     def _load_case(self, path: Path) -> None:
         # Read here, on the interface thread. The worker must not reach into a
@@ -1094,10 +1019,6 @@ class MainWindow(QMainWindow):
         self._trace_action.setChecked(True)
         self._behaviour_action.setChecked(False)
         self._sync_tabs()
-        # Greyed out on the other view rather than hidden: a behaviour map is a
-        # circle and has nothing to fold, and a live control that does nothing
-        # reads as a fault. The choice itself is kept, and applies again here.
-        self._wrap_action.setEnabled(True)
         self._redraw()
 
     def _show_behaviour(self) -> None:
@@ -1105,7 +1026,6 @@ class MainWindow(QMainWindow):
         self._trace_action.setChecked(False)
         self._behaviour_action.setChecked(True)
         self._sync_tabs()
-        self._wrap_action.setEnabled(False)
         self._redraw()
 
     def _sync_tabs(self) -> None:
@@ -1197,11 +1117,46 @@ class MainWindow(QMainWindow):
         self._save_layout_action.setEnabled(drawn)
         self._reset_layout_action.setEnabled(drawn)
 
-    def _apply_band(self) -> None:
+    def _restore_preferences(self) -> None:
+        """Put what is in force into the widgets, without writing it again.
+
+        Not `_apply_preferences`: nothing has been chosen here, and writing the
+        settings back on every launch would rewrite a file for no reason. The
+        band's counting needs no applying — `_buckets` reads it when it asks.
+        """
+        self._apply_wrap(bool(self._prefs["view/wrap_traces"]))
+        self._apply_band(bool(self._prefs["view/traffic_band"]))
+        self._apply_evidence_view(bool(self._prefs["view/decode_targets"]))
+
+    def _show_preferences(self) -> None:
+        """Open the preferences, and apply them only if the reader says OK.
+
+        The dialog is handed what is in force and hands values back. It applies
+        nothing itself, which is what makes Cancel mean *nothing happened*
+        rather than *something to be undone*.
+        """
+        dialog = PreferencesDialog(self._prefs, self)
+        if dialog.exec() != int(QDialog.DialogCode.Accepted.value):
+            return
+        self._apply_preferences(dialog.chosen())
+
+    def _apply_preferences(self, chosen: dict[str, bool | Density]) -> None:
+        """Put every setting in force and write them all down.
+
+        All of them together rather than one signal each: they are decided in
+        one go now, and applying them one at a time was how the window and the
+        menu came to hold two copies of the same answer.
+        """
+        self._prefs = dict(chosen)
+        self._apply_wrap(bool(chosen["view/wrap_traces"]))
+        self._apply_band(bool(chosen["view/traffic_band"]))
+        self._apply_evidence_view(bool(chosen["view/decode_targets"]))
+        self._apply_density(prefs.density_in(chosen))
+        prefs.write(_settings().setValue, self._prefs)
+
+    def _apply_band(self, showing: bool) -> None:
         """Draw the traffic above the fields, or stop drawing it."""
-        showing = self._band_action.isChecked()
         self._time_filter.show_band(showing)
-        _settings().setValue(_BAND_KEY, showing)
 
     def _buckets(self) -> int:
         """How many buckets to ask for, at the counting now in force.
@@ -1213,13 +1168,11 @@ class MainWindow(QMainWindow):
         """
         return buckets_for(self._time_filter.band_width(), self._density)
 
-    def _apply_density(self) -> None:
-        """Count the traffic more finely, or less, and remember which."""
-        self._density = next(
-            (kind for kind, action in self._density_actions.items() if action.isChecked()),
-            DEFAULT_DENSITY,
-        )
-        _settings().setValue(_DENSITY_KEY, self._density.name.lower())
+    def _apply_density(self, density: Density) -> None:
+        """Count the traffic more finely, or less."""
+        if density is self._density:
+            return
+        self._density = density
         self._recount_traffic()
 
     def _recount_traffic(self) -> None:
@@ -1261,26 +1214,27 @@ class MainWindow(QMainWindow):
 
         run_job(work, on_done=done, on_error=self._report_error)
 
-    def _apply_wrap(self) -> None:
-        """Fold long traces or stop folding them, and remember which."""
-        wrap = self._wrap_action.isChecked()
+    def _apply_wrap(self, wrap: bool) -> None:
+        """Fold long traces or stop folding them.
+
+        A behaviour map is a circle and has nothing to fold, so this decides
+        nothing while one is on screen — the choice is kept and applies again
+        the moment the trace comes back.
+        """
         # The arrangement for the wrap being switched *to*, handed over with the
         # instruction. `set_wrap` redraws once; asking it to redraw and then
         # redrawing again to place the nodes would double the cost of a toggle
         # on the graphs where it is already slowest.
         self._canvas.set_wrap(wrap, positions=self._saved_arrangement(wrap=wrap))
-        _settings().setValue(_WRAP_KEY, wrap)
 
-    def _apply_evidence_view(self) -> None:
-        """How targets are shown in the evidence panel, and remember it.
+    def _apply_evidence_view(self, decode: bool) -> None:
+        """How targets are shown in the evidence panel.
 
         The `Show raw log lines` toggle that used to live beside this is gone:
         the detail pane prints the original line for the selected row always,
         which is strictly more than a global on-or-off could give.
         """
-        decode = self._decode_action.isChecked()
         self._evidence.set_decode(decode)
-        _settings().setValue(_DECODE_KEY, decode)
 
     # -- evidence ----------------------------------------------------------
 

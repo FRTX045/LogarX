@@ -23,7 +23,7 @@ from PyQt6.QtCore import QSettings, QThreadPool
 from PyQt6.QtWidgets import QApplication
 
 from logarc.case import Case
-from logarc.gui import app
+from logarc.gui import app, prefs
 from logarc.gui.app import MainWindow
 from logarc.gui.density import Density
 
@@ -121,7 +121,13 @@ def _open(qt_app: QApplication, window: MainWindow, client_ip: str) -> None:
 
 
 def _choose(qt_app: QApplication, window: MainWindow, density: Density) -> None:
-    window._density_actions[density].trigger()
+    """Change the counting the way the dialog does.
+
+    Through `_apply_preferences`, not by reaching into a widget: that is the
+    one path a reader's choice takes now, and a test that took another would
+    stop covering the path they use.
+    """
+    window._apply_preferences({**window._prefs, prefs.DENSITY: density})
     _settled(qt_app)
 
 
@@ -162,27 +168,14 @@ def test_the_band_is_counted_against_its_own_width(qt_app: QApplication, case: P
 
 def test_the_setting_survives_a_restart(qt_app: QApplication) -> None:
     first = MainWindow()
-    assert first._density_actions[Density.FINE].isChecked(), "fine is the default"
+    assert first._density is Density.FINE, "fine is the default"
 
-    first._density_actions[Density.COARSE].trigger()
+    first._apply_preferences({**first._prefs, prefs.DENSITY: Density.COARSE})
     first.close()
 
     second = MainWindow()
-    assert second._density_actions[Density.COARSE].isChecked()
+    assert second._density is Density.COARSE
     second.close()
-
-
-def test_only_one_setting_is_ever_chosen(qt_app: QApplication) -> None:
-    """Three checkable entries with nothing joining them would let a reader tick
-    all three, and the window would then be showing a band at one of them while
-    the menu claimed all of them."""
-    window = MainWindow()
-
-    window._density_actions[Density.MEDIUM].trigger()
-
-    chosen = [d for d, action in window._density_actions.items() if action.isChecked()]
-    assert chosen == [Density.MEDIUM]
-    window.close()
 
 
 def test_changing_it_recounts_the_client_being_read(qt_app: QApplication, case: Path) -> None:
@@ -248,7 +241,7 @@ def test_a_recount_that_lands_after_the_reader_let_go_hands_the_case_back(
         "premise: this client's band is not the case's"
     )
 
-    window._density_actions[Density.COARSE].trigger()
+    window._apply_preferences({**window._prefs, prefs.DENSITY: Density.COARSE})
     window._let_go_of_client()
     _settled(qt_app)
 

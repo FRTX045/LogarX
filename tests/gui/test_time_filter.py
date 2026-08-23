@@ -489,13 +489,23 @@ def _answers_for_the_whole_case(path: Path, client_ip: str, crs: object, **kw: o
 # -- turning the bars off --------------------------------------------------
 
 
+def turn(window: MainWindow, key: str, on: bool) -> None:
+    """Change one preference the way the dialog does.
+
+    Through `_apply_preferences`, not by reaching into a widget: that is the
+    one path a reader's choice takes now, and a test that took another would
+    stop covering the path they use.
+    """
+    window._apply_preferences({**window._prefs, key: on})
+
+
 def test_the_bars_are_shown_until_someone_turns_them_off(
     qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
 ) -> None:
     app._settings().clear()
     window = reading(qt_app, two_bursts, BUSY)
 
-    assert window._band_action.isChecked()
+    assert window._prefs["view/traffic_band"] is True
     # `isHidden`, not `isVisible`: the second asks whether the widget is on
     # screen, which is false for every child of a window nobody showed. The
     # toggle controls the first.
@@ -510,7 +520,7 @@ def test_turning_the_bars_off_leaves_the_filter_behind(
     reader falls back on for a stretch too narrow to drag onto."""
     window = reading(qt_app, two_bursts, BUSY)
 
-    window._band_action.trigger()
+    turn(window, "view/traffic_band", False)
 
     assert window._time_filter._band.isHidden()
     assert not window._time_filter._from.isHidden()
@@ -522,7 +532,7 @@ def test_the_filter_still_works_with_the_bars_off(
     qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
 ) -> None:
     window = reading(qt_app, two_bursts, BUSY)
-    window._band_action.trigger()
+    turn(window, "view/traffic_band", False)
 
     window._apply_window(EARLY_ONLY)
     settled(qt_app)
@@ -536,9 +546,9 @@ def test_the_bars_come_back_when_they_are_turned_on(
     qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
 ) -> None:
     window = reading(qt_app, two_bursts, BUSY)
-    window._band_action.trigger()
+    turn(window, "view/traffic_band", False)
 
-    window._band_action.trigger()
+    turn(window, "view/traffic_band", True)
 
     # `isHidden`, not `isVisible`: the second asks whether the widget is on
     # screen, which is false for every child of a window nobody showed. The
@@ -555,12 +565,12 @@ def test_the_choice_outlives_the_window(
     and reading the file would not catch it."""
     app._settings().clear()
     first = MainWindow()
-    first._band_action.trigger()
+    turn(first, "view/traffic_band", False)
     first.close()
 
     second = MainWindow()
 
-    assert not second._band_action.isChecked()
+    assert second._prefs["view/traffic_band"] is False
     assert second._time_filter._band.isHidden()
     assert "false" in settings_in_a_temp_file.read_text(encoding="utf-8").lower()
     second.close()

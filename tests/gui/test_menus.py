@@ -1,0 +1,261 @@
+"""Where things are in the menu bar, and what the preferences dialog does.
+
+The View menu held four different kinds of thing in eleven entries: two view
+switches, four one-off actions, four preferences, and one setting that decided
+nothing about the view at all — it decided what happened when the application
+opened. This is where that separation is held in place.
+
+Run without a display.
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+import pytest
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
+
+from PyQt6.QtCore import QSettings
+from PyQt6.QtGui import QAction
+from PyQt6.QtWidgets import QApplication, QDialog, QMenu
+
+from logarc.gui import app, prefs
+from logarc.gui.app import MainWindow
+from logarc.gui.density import Density
+from logarc.gui.preferences import PreferencesDialog
+
+
+@pytest.fixture(scope="module")
+def qt_app() -> QApplication:
+    return QApplication.instance() or QApplication([])
+
+
+@pytest.fixture(autouse=True)
+def settings(tmp_path: Path) -> object:
+    ini = tmp_path / "logarc.ini"
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(app, "_settings", lambda: QSettings(str(ini), QSettings.Format.IniFormat))
+        yield ini
+
+
+def _menu(window: MainWindow, name: str) -> QMenu:
+    bar = window.menuBar()
+    assert bar is not None
+    for action in bar.actions():
+        if action.text().replace("&", "") == name:
+            menu = action.menu()
+            assert menu is not None, f"{name} is not a menu"
+            return menu
+    raise AssertionError(f"there is no {name} menu")
+
+
+def _entries(menu: QMenu) -> list[str]:
+    return [
+        action.text().replace("&", "")
+        for action in menu.actions()
+        if not action.isSeparator() and action.text()
+    ]
+
+
+def _everywhere(window: MainWindow) -> list[QAction]:
+    bar = window.menuBar()
+    assert bar is not None
+    found: list[QAction] = []
+    for top in bar.actions():
+        menu = top.menu()
+        if menu is None:
+            continue
+        for action in menu.actions():
+            found.append(action)
+            deeper = action.menu()
+            if deeper is not None:
+                found.extend(deeper.actions())
+    return found
+
+
+# -- where things are ------------------------------------------------------
+
+
+def test_the_view_menu_holds_only_what_is_shown(qt_app: QApplication) -> None:
+    """Three entries answering one question. It held eleven answering four."""
+    window = MainWindow()
+
+    assert _entries(_menu(window, "View")) == [
+        "Trace (chronological)",
+        "Behaviour map",
+        "Fit to window",
+    ]
+    window.close()
+
+
+def test_no_preference_is_left_in_a_menu(qt_app: QApplication) -> None:
+    """Every one of them lives in the dialog now. Left in both places they
+    would disagree the moment either was used."""
+    window = MainWindow()
+    labels = {action.text().replace("&", "") for action in _everywhere(window)}
+
+    for setting in prefs.EVERY:
+        assert setting.label not in labels, f"{setting.label} is still in a menu"
+    assert "Band detail" not in labels
+    window.close()
+
+
+def test_the_edit_menu_holds_what_is_done_to_the_graph(qt_app: QApplication) -> None:
+    window = MainWindow()
+
+    assert _entries(_menu(window, "Edit")) == [
+        "Undo node move",
+        "Save this arrangement",
+        "Reset layout",
+        "Preferences…",
+    ]
+    window.close()
+
+
+def test_the_startup_setting_is_not_in_the_view_menu(qt_app: QApplication) -> None:
+    """It was, and it decided nothing about the view. It decided what happened
+    when the application opened."""
+    window = MainWindow()
+
+    assert "Reopen the last case on start" not in _entries(_menu(window, "View"))
+    window.close()
+
+
+# -- nothing a reader had learned changes ---------------------------------
+
+
+def test_every_shortcut_still_reaches_the_same_entry(qt_app: QApplication) -> None:
+    """Moving an entry to another menu must not move its shortcut. These are
+    what a reader's hands know, and relearning them is the cost of a tidy-up
+    nobody asked to pay."""
+    window = MainWindow()
+    reachable = {
+        action.shortcut().toString(): action.text().replace("&", "")
+        for action in _everywhere(window)
+        if not action.shortcut().isEmpty()
+    }
+
+    assert reachable["Ctrl+Z"] == "Undo node move"
+    assert reachable["Ctrl+S"] == "Save this arrangement"
+    assert reachable["Ctrl+Shift+R"] == "Reset layout"
+    assert reachable["Ctrl+O"] == "Open case…"
+    assert reachable["Ctrl+Shift+O"] == "Recently opened…"
+    window.close()
+
+
+def test_preferences_has_the_shortcut_every_application_uses(qt_app: QApplication) -> None:
+    window = MainWindow()
+    shortcuts = {
+        action.text().replace("&", ""): action.shortcut().toString()
+        for action in _everywhere(window)
+    }
+
+    assert shortcuts["Preferences…"] == "Ctrl+,"
+    window.close()
+
+
+# -- and what the dialog does ---------------------------------------------
+
+
+def _answer(monkeypatch: pytest.MonkeyPatch, code: QDialog.DialogCode, **changes: object) -> None:
+    """Open the dialog, set these, and close it with `code` — without a modal.
+
+    Patched on the dialog rather than on the window, so what is under test is
+    still the window asking for it and reading the answer back.
+    """
+
+    def opened(dialog: PreferencesDialog) -> int:
+        for key, value in changes.items():
+            control = dialog._controls[key]
+            if hasattr(control, "setCurrentIndex"):
+                control.setCurrentIndex(control.findData(value))
+            else:
+                control.setChecked(bool(value))
+        return int(code.value)
+
+    monkeypatch.setattr(PreferencesDialog, "exec", opened)
+
+
+def test_saying_ok_applies_every_setting_at_once(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    window = MainWindow()
+    assert window._canvas.wrap, "premise: wrapping starts on"
+    assert window._density is Density.FINE, "premise: the band starts fine"
+
+    _answer(
+        monkeypatch,
+        QDialog.DialogCode.Accepted,
+        **{
+            "view/wrap_traces": False,
+            "view/band_density": Density.COARSE,
+            "view/traffic_band": False,
+            "view/decode_targets": False,
+            "cases/reopen_last": True,
+        },
+    )
+    window._show_preferences()
+
+    assert window._canvas.wrap is False
+    assert window._density is Density.COARSE
+    assert window._time_filter._band.isHidden()
+    assert window._evidence._decode is False
+    window.close()
+
+
+def test_saying_ok_writes_them_down(qt_app: QApplication, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A preference that does not survive the launch is not a preference."""
+    first = MainWindow()
+    _answer(monkeypatch, QDialog.DialogCode.Accepted, **{"view/wrap_traces": False})
+    first._show_preferences()
+    first.close()
+
+    second = MainWindow()
+
+    assert second._canvas.wrap is False
+    second.close()
+
+
+def test_saying_cancel_changes_nothing_at_all(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The whole reason the dialog applies nothing while it is open: there is
+    then nothing to undo, and Cancel cannot half-work."""
+    window = MainWindow()
+
+    _answer(
+        monkeypatch,
+        QDialog.DialogCode.Rejected,
+        **{"view/wrap_traces": False, "view/band_density": Density.COARSE},
+    )
+    window._show_preferences()
+
+    assert window._canvas.wrap is True
+    assert window._density is Density.FINE
+    window.close()
+
+
+def test_the_dialog_opens_showing_what_is_in_force(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Opened showing defaults instead, a second visit would offer to undo the
+    first without saying so."""
+    window = MainWindow()
+    _answer(monkeypatch, QDialog.DialogCode.Accepted, **{"view/wrap_traces": False})
+    window._show_preferences()
+
+    seen: list[bool] = []
+
+    def look(dialog: PreferencesDialog) -> int:
+        seen.append(dialog._controls["view/wrap_traces"].isChecked())
+        return int(QDialog.DialogCode.Rejected.value)
+
+    monkeypatch.setattr(PreferencesDialog, "exec", look)
+    window._show_preferences()
+
+    assert seen == [False]
+    window.close()
