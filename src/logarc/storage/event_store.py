@@ -25,7 +25,7 @@ import pyarrow.parquet as pq
 from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
 from logarc.core.window import TimeWindow
-from logarc.storage.base import IpSummary, TimeSlot
+from logarc.storage.base import CaseOverview, IpSummary, TimeSlot
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -464,6 +464,25 @@ class ParquetEventStore:
             slots.append(TimeSlot(start=at, request_count=counts.get(at, 0)))
             at += step
         return slots
+
+    def overview(self, *, window: TimeWindow | None = None) -> CaseOverview:
+        self._require_finalized()
+        source, bounds = self._summary_source(window)
+        row = (
+            self._connect()
+            .execute(
+                f"SELECT count(*), min(first_seen), max(last_seen) FROM ({source})",
+                bounds,
+            )
+            .fetchone()
+        )
+        if row is None or not row[0]:  # pragma: no cover - count(*) always returns a row
+            return CaseOverview(clients=0, first_seen=None, last_seen=None)
+        return CaseOverview(
+            clients=int(row[0]),
+            first_seen=row[1].replace(tzinfo=UTC),
+            last_seen=row[2].replace(tzinfo=UTC),
+        )
 
     def _summary_source(self, window: TimeWindow | None) -> tuple[str, list[datetime]]:
         """Where the per-client figures come from.
