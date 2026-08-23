@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import shutil
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
@@ -443,9 +443,27 @@ class ParquetEventStore:
             """,
             who,
         ).fetchall()
-        return [
-            TimeSlot(start=row[0].replace(tzinfo=UTC), request_count=int(row[1])) for row in rows
-        ]
+        counts = {row[0].replace(tzinfo=UTC): int(row[1]) for row in rows}
+        if not counts:  # pragma: no cover - the span query above already found events
+            return []
+        # Every bucket across the span, the quiet ones as zero. A histogram with
+        # holes in it is not a histogram, and the holes cost the band the one
+        # thing it cannot work out for itself: how wide a bucket is. It inferred
+        # that from the narrowest gap between two buckets that arrived, which on
+        # a client with a handful of requests is far wider than the bucket really
+        # is — six requests over two minutes drew as six blocks 21px wide, each
+        # claiming to have lasted half a minute.
+        #
+        # Filled here rather than in SQL. `time_bucket` aligns to whole steps
+        # from the epoch, so the buckets that came back already sit on those
+        # boundaries and stepping from the first lands on every one of them.
+        step = timedelta(seconds=seconds)
+        slots: list[TimeSlot] = []
+        at, last = min(counts), max(counts)
+        while at <= last:
+            slots.append(TimeSlot(start=at, request_count=counts.get(at, 0)))
+            at += step
+        return slots
 
     def _summary_source(self, window: TimeWindow | None) -> tuple[str, list[datetime]]:
         """Where the per-client figures come from.

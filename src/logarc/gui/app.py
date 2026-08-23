@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from PyQt6.QtCore import QSettings, Qt
-from PyQt6.QtGui import QAction, QKeySequence
+from PyQt6.QtGui import QAction, QActionGroup, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -42,6 +42,9 @@ from logarc.gui import arrangement, recent
 from logarc.gui._qt import required
 from logarc.gui.canvas import ActivityCanvas
 from logarc.gui.case_chooser import CaseChooser
+from logarc.gui.density import DEFAULT as DEFAULT_DENSITY
+from logarc.gui.density import Density, buckets_for
+from logarc.gui.density import named as named_density
 from logarc.gui.evidence_panel import EvidencePanel
 from logarc.gui.notice_bar import QuarantineBanner, warn_about_dead_files
 from logarc.gui.panels import ClientTable, LegendBar
@@ -111,6 +114,9 @@ _WRAP_KEY = "view/wrap_traces"
 _LAYOUT_KEY = "view/arrangements"
 _DECODE_KEY = "view/decode_targets"
 _BAND_KEY = "view/traffic_band"
+#: How finely the band counts the traffic. Kept as a name rather than a
+#: number so a stored setting still means something if the numbers change.
+_DENSITY_KEY = "view/band_density"
 
 #: The cases opened here, and whether to reopen the last one on start.
 #:
@@ -164,7 +170,7 @@ def _remembered(key: str, *, default: bool) -> bool:
 # here they are callable without a display, so a test can hold both front ends
 # to the same answer.
 def read_case(
-    path: Path, *, window: TimeWindow | None = None
+    path: Path, *, window: TimeWindow | None = None, buckets: int = 200
 ) -> tuple[Sequence[IpSummary], CrsEvidence, tuple[datetime, datetime] | None, list[TimeSlot]]:
     """Everything a freshly opened case needs, gathered in one visit.
 
@@ -189,7 +195,7 @@ def read_case(
         # Counted once, when the case is opened. Measured at 0.029s on 200k
         # events and 0.077s on three million, against a reconstruction the
         # reader is waiting for anyway.
-        return listed, case.crs_evidence(), span, case.store.activity_over_time()
+        return listed, case.crs_evidence(), span, case.store.activity_over_time(buckets=buckets)
 
 
 def _node_for_episodes(graph: ActivityGraph, episode_ids: frozenset[str]) -> GraphNode | None:
@@ -264,6 +270,11 @@ class MainWindow(QMainWindow):
         # The case's own traffic, kept so the band can be handed back whenever
         # no client is being read.
         self._case_bars: list[TimeSlot] = []
+        # How finely to count it. Read before the menu is built, because the
+        # menu shows what is in force rather than deciding it.
+        self._density = named_density(
+            str(_settings().value(_DENSITY_KEY, DEFAULT_DENSITY.name.lower()))
+        )
         self._result: AnalysisResult | None = None
         # Who the window is waiting to hear about, and over which stretch. A
         # reconstruction that arrives describing anything else is stale and is
@@ -459,6 +470,25 @@ class MainWindow(QMainWindow):
         self._band_action.setChecked(_remembered(_BAND_KEY, default=True))
         self._band_action.setStatusTip("Draw where the case's traffic sits, above the date fields.")
         self._time_filter.show_band(self._band_action.isChecked())
+
+        # How finely that traffic is counted. A submenu rather than three
+        # entries in the view menu: they are one question with three answers,
+        # and a group makes the menu incapable of claiming two at once.
+        detail = required(view_menu.addMenu("Band &detail"), "band detail menu")
+        chosen = QActionGroup(self)
+        chosen.setExclusive(True)
+        self._density_actions: dict[Density, QAction] = {}
+        for density, label, tip in (
+            (Density.COARSE, "&Coarse", "One bar for every eight pixels of band."),
+            (Density.MEDIUM, "&Medium", "One bar for every four pixels of band."),
+            (Density.FINE, "&Fine", "One bar to a pixel — as fine as the band can draw."),
+        ):
+            action = self._add(detail, label, self._apply_density)
+            action.setCheckable(True)
+            action.setChecked(density is self._density)
+            action.setStatusTip(tip)
+            chosen.addAction(action)
+            self._density_actions[density] = action
 
         self._add(view_menu, "&Fit to window", self._canvas.fit)
         view_menu.addSeparator()
@@ -722,9 +752,13 @@ class MainWindow(QMainWindow):
         _settings().setValue(_REOPEN_KEY, self._reopen_action.isChecked())
 
     def _load_case(self, path: Path) -> None:
+        # Read here, on the interface thread. The worker must not reach into a
+        # widget to ask how wide it is while the window is free to resize it.
+        buckets = self._buckets()
+
         def work(report: Callable[[str], None]) -> Any:
             report(f"Opening {path}…")
-            summaries, crs, span, bars = read_case(path)
+            summaries, crs, span, bars = read_case(path, buckets=buckets)
             # Snapshotted here, on the worker, and stored with the entry. The
             # chooser has to draw before it has touched a disk: a case on a share
             # that is no longer mounted would otherwise stall the list once per
@@ -808,10 +842,11 @@ class MainWindow(QMainWindow):
         # would otherwise leave them naming a stretch nobody is reading.
         self._time_filter.set_window(window)
         path = self._case_path
+        buckets = self._buckets()
 
         def work(report: Callable[[str], None]) -> Any:
             report("Reading the selected time range…")
-            return read_case(path, window=window)
+            return read_case(path, window=window, buckets=buckets)
 
         self._busy("Reading the selected time range…")
 
@@ -919,6 +954,7 @@ class MainWindow(QMainWindow):
         # is free to change it.
         crs = self._crs
         window = self._window
+        buckets = self._buckets()
         self._awaiting = (client_ip, window)
 
         def work(report: Callable[[str], None]) -> tuple[AnalysisResult, list[TimeSlot]]:
@@ -931,7 +967,7 @@ class MainWindow(QMainWindow):
             # needs to see. Measured at 0.037s, and it does not grow with the
             # case: three million events came back in 0.039s.
             with Case.open(path) as case:
-                return result, case.store.activity_over_time(client_ip=client_ip)
+                return result, case.store.activity_over_time(buckets=buckets, client_ip=client_ip)
 
         self._busy(f"Reconstructing {client_ip}…")
 
@@ -1127,6 +1163,64 @@ class MainWindow(QMainWindow):
         showing = self._band_action.isChecked()
         self._time_filter.show_band(showing)
         _settings().setValue(_BAND_KEY, showing)
+
+    def _buckets(self) -> int:
+        """How many buckets to ask for, at the counting now in force.
+
+        Reckoned from the band's own width rather than from a fixed number: a
+        count that ignores the width is right at one window size and wrong at
+        every other. `gui.density` holds the arithmetic and the floor that
+        covers a window Qt has not laid out yet.
+        """
+        return buckets_for(self._time_filter.band_width(), self._density)
+
+    def _apply_density(self) -> None:
+        """Count the traffic more finely, or less, and remember which."""
+        self._density = next(
+            (kind for kind, action in self._density_actions.items() if action.isChecked()),
+            DEFAULT_DENSITY,
+        )
+        _settings().setValue(_DENSITY_KEY, self._density.name.lower())
+        self._recount_traffic()
+
+    def _recount_traffic(self) -> None:
+        """Ask for the traffic again, at the counting now in force.
+
+        Both bands, because there are two: the case's, kept so it can be handed
+        back when nobody is being read, and the open client's, which is what is
+        on screen while somebody is. Counting only the one showing would leave
+        the other at the old setting, to reappear at it the moment the reader
+        let go.
+        """
+        if self._case_path is None:
+            return
+        path = self._case_path
+        buckets = self._buckets()
+        client = self._result.client_ip if self._result is not None else None
+
+        def work(report: Callable[[str], None]) -> tuple[list[TimeSlot], list[TimeSlot]]:
+            report("Counting the traffic…")
+            with Case.open(path) as case:
+                whole = case.store.activity_over_time(buckets=buckets)
+                mine = (
+                    case.store.activity_over_time(buckets=buckets, client_ip=client)
+                    if client is not None
+                    else []
+                )
+            return whole, mine
+
+        def done(counted: tuple[list[TimeSlot], list[TimeSlot]]) -> None:
+            whole, mine = counted
+            self._case_bars = whole
+            # Whoever is being read still owns the band — but only if they are
+            # still the one being read. A recount is a job like any other and
+            # can outlive what it was asked about: let go of the client while
+            # one is in flight, and the band was handed that client's traffic
+            # anyway, drawn against a life nobody was reading.
+            reading = self._result.client_ip if self._result is not None else None
+            self._time_filter.set_bars(mine if mine and reading == client else whole)
+
+        run_job(work, on_done=done, on_error=self._report_error)
 
     def _apply_wrap(self) -> None:
         """Fold long traces or stop folding them, and remember which."""
