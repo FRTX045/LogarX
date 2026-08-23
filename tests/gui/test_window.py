@@ -38,7 +38,7 @@ from logarc.gui.app import MainWindow, read_case, reconstruct_client
 from logarc.gui.canvas import MIN_FIT_SCALE, ActivityCanvas
 from logarc.gui.evidence_panel import EvidencePanel
 from logarc.gui.notice_bar import QuarantineBanner
-from logarc.gui.panels import ClientTable
+from logarc.gui.panels import ClientTable, format_seen
 from logarc.gui.progress import Progress
 from logarc.gui.progress_card import IngestCard
 from logarc.gui.quarantine_notice import notice_for
@@ -2660,11 +2660,24 @@ def test_the_columns_are_still_sized_to_what_they_hold(qt_app: QApplication) -> 
         f"the address column is {table._table.columnWidth(0)}px for "
         f"{widest_address!r}, which needs {needed}px"
     )
-    # And the timestamps, which are the other pair that hid.
-    for column in (4, 5):
-        assert table._table.columnWidth(column) >= 90, (
-            f"column {column} is {table._table.columnWidth(column)}px, too narrow for a date"
-        )
+    # And `First seen`, the other column that hid. Measured like the address
+    # above, not against a round number: 90px was this machine's answer, and the
+    # Linux runners draw the same date in 89px because their default font is
+    # narrower. The column fitted its dates on both, and CI went red on every
+    # push for a fortnight over one pixel of font metrics.
+    #
+    # `Last seen` is not asked. It is the stretching section, so its width is
+    # whatever room is left over rather than a measurement of anything — which
+    # is why it reads 100px above while its dates want more.
+    stamp = max(
+        (format_seen(summary.first_seen) for summary in summaries),
+        key=metrics.horizontalAdvance,
+    )
+    wanted = metrics.horizontalAdvance(stamp)
+    assert table._table.columnWidth(4) >= wanted, (
+        f"the first-seen column is {table._table.columnWidth(4)}px for "
+        f"{stamp!r}, which needs {wanted}px"
+    )
     table.close()
 
 
