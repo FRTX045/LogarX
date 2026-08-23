@@ -154,6 +154,16 @@ class TimeFilterBar(QWidget):
         """The case's traffic, for the band to draw."""
         self._band.set_bars(bars)
 
+    def band_width(self) -> int:
+        """How many pixels wide the band's bars are drawn across.
+
+        Asked by the window to decide how finely to count the traffic. Reported
+        even while the band is hidden: the reader can turn it back on without
+        reopening the case, and a count of zero would draw nothing when they
+        did.
+        """
+        return self._band.track().width()
+
     def show_band(self, showing: bool) -> None:
         """Whether to draw the traffic at all.
 

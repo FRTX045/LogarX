@@ -2702,7 +2702,15 @@ def test_choosing_the_case_already_open_does_not_read_it_again(
 
     reads: list[Path] = []
     original = app_module.read_case
-    monkeypatch.setattr(app_module, "read_case", lambda path: reads.append(path) or original(path))
+    # `**kw` rather than the arguments spelled out: what this stub is for is
+    # recording *which case* was read, and a stub that also pins the signature
+    # turns any addition to it into a worker raising `TypeError` — which the
+    # window answers with a modal, and a modal in a test suite hangs it.
+    monkeypatch.setattr(
+        app_module,
+        "read_case",
+        lambda path, **kw: reads.append(path) or original(path, **kw),
+    )
 
     def pick_the_open_one(self: CaseChooser) -> int:
         self.chosen_path = str(campaign)
@@ -2766,7 +2774,15 @@ def test_choosing_a_different_case_still_reads_it(
 
     reads: list[Path] = []
     original = app_module.read_case
-    monkeypatch.setattr(app_module, "read_case", lambda path: reads.append(path) or original(path))
+    # `**kw` rather than the arguments spelled out: what this stub is for is
+    # recording *which case* was read, and a stub that also pins the signature
+    # turns any addition to it into a worker raising `TypeError` — which the
+    # window answers with a modal, and a modal in a test suite hangs it.
+    monkeypatch.setattr(
+        app_module,
+        "read_case",
+        lambda path, **kw: reads.append(path) or original(path, **kw),
+    )
 
     def pick_the_other(self: CaseChooser) -> int:
         self.chosen_path = str(other)
