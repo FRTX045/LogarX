@@ -84,7 +84,18 @@ class _Rows(QTableWidget):
     press as a no-op — the row stays selected and nothing is emitted — which
     leaves no way back out of a client once one has been opened, and the band
     drawn against that client's life stays with it.
+
+    The gesture is decided when the button goes down and carried out when it
+    comes up, which is not a detail. `QAbstractItemView` finishes selecting on
+    the release: it re-applies the selection to whatever the press landed on.
+    Letting go during the press was therefore undone a moment later, in the same
+    gesture — the row came back, `client_chosen` was emitted a second time, and
+    the window answered it by reconstructing the client it had just dropped.
     """
+
+    def __init__(self, rows: int, columns: int) -> None:
+        super().__init__(rows, columns)
+        self._letting_go: int | None = None
 
     def mousePressEvent(self, event: QMouseEvent | None) -> None:  # noqa: N802 - Qt's naming
         if event is None:  # pragma: no cover - Qt always supplies one
@@ -99,8 +110,19 @@ class _Rows(QTableWidget):
             else -1
         )
         pressed = self.indexAt(event.pos())
+        self._letting_go = pressed.row() if pressed.isValid() and pressed.row() == already else None
         super().mousePressEvent(event)
-        if pressed.isValid() and pressed.row() == already:
+
+    def mouseReleaseEvent(self, event: QMouseEvent | None) -> None:  # noqa: N802 - Qt's naming
+        if event is None:  # pragma: no cover - Qt always supplies one
+            return
+        letting_go = self._letting_go
+        self._letting_go = None
+        super().mouseReleaseEvent(event)
+        released = self.indexAt(event.pos())
+        # The same row the press was on. A button that came up somewhere else
+        # was dragged, and a drag is not a second press on the row.
+        if letting_go is not None and released.isValid() and released.row() == letting_go:
             self.clearSelection()
 
 

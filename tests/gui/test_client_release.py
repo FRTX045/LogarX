@@ -58,19 +58,25 @@ def address(panel: ClientTable, row: int) -> str:
 
 
 def press(panel: ClientTable, row: int, button: Qt.MouseButton = Qt.MouseButton.LeftButton) -> None:
+    """The whole gesture: the button going down, and the button coming up.
+
+    Both halves, because a hand cannot do one without the other and because
+    `QAbstractItemView` finishes selecting on the release rather than on the
+    press. Sending only the press let a release that Qt undid a moment later
+    look like a release that worked, and every test here passed over a gesture
+    that did nothing in the application.
+    """
     table = panel._table
     at = table.visualItemRect(table.item(row, 0)).center()
-    QApplication.sendEvent(
-        table.viewport(),
-        QMouseEvent(
-            QEvent.Type.MouseButtonPress,
-            QPointF(at),
-            table.viewport().mapToGlobal(at).toPointF(),
-            button,
-            button,
-            Qt.KeyboardModifier.NoModifier,
-        ),
-    )
+    where = table.viewport().mapToGlobal(at).toPointF()
+    for kind, held in (
+        (QEvent.Type.MouseButtonPress, button),
+        (QEvent.Type.MouseButtonRelease, Qt.MouseButton.NoButton),
+    ):
+        QApplication.sendEvent(
+            table.viewport(),
+            QMouseEvent(kind, QPointF(at), where, button, held, Qt.KeyboardModifier.NoModifier),
+        )
 
 
 def test_pressing_a_row_chooses_that_client(qt_app: QApplication) -> None:
@@ -86,15 +92,25 @@ def test_pressing_a_row_chooses_that_client(qt_app: QApplication) -> None:
 
 
 def test_pressing_the_row_already_chosen_lets_go_of_it(qt_app: QApplication) -> None:
-    """The way out of a client, and out of the band drawn against its life."""
+    """The way out of a client, and out of the band drawn against its life.
+
+    `client_chosen` is watched as closely as `client_released`. Letting go and
+    then choosing the same client again is not letting go: the window answers
+    the second signal by reconstructing that client, which puts the graph, the
+    heading and the band straight back — the release having fired is no comfort
+    at all if something undoes it in the same gesture.
+    """
     panel = listed(qt_app)
     press(panel, 0)
     released: list[int] = []
+    chosen: list[str] = []
     panel.client_released.connect(lambda: released.append(1))
+    panel.client_chosen.connect(chosen.append)
 
     press(panel, 0)
 
     assert released
+    assert chosen == []
     assert not panel._table.selectionModel().hasSelection()
 
 
