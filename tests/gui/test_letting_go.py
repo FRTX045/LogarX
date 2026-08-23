@@ -148,3 +148,29 @@ def test_pressing_the_open_client_again_puts_the_case_back(
     assert window._result is None
     assert _band(window) == whole
     assert not window._clients._table.selectionModel().hasSelection()
+
+
+def test_a_reconstruction_that_lands_after_letting_go_is_thrown_away(
+    qt_app: QApplication, case: Path
+) -> None:
+    """A job in flight when the reader lets go must not put the client back.
+
+    The window already throws away a reconstruction describing a range no
+    longer in force. Nobody being read is the same kind of staleness on the
+    other axis, and it arrives the same way: the reader let go a moment before
+    the answer came back, and the graph, the heading and the band all returned
+    with it.
+    """
+    window = _opened(qt_app, case)
+    _press(window, BRIEF)
+    _settled(qt_app)
+    assert window._result is not None, "premise: a client is being read"
+
+    window._reconstruct(BRIEF)
+    window._let_go_of_client()
+    assert window._result is None, "premise: letting go clears it at once"
+
+    _settled(qt_app)
+
+    assert window._result is None
+    assert window._heading.text() == ""

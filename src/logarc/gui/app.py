@@ -265,6 +265,10 @@ class MainWindow(QMainWindow):
         # no client is being read.
         self._case_bars: list[TimeSlot] = []
         self._result: AnalysisResult | None = None
+        # Who the window is waiting to hear about, and over which stretch. A
+        # reconstruction that arrives describing anything else is stale and is
+        # thrown away — see the guard in `_reconstruct`.
+        self._awaiting: tuple[str, TimeWindow] | None = None
         #: What CRS contributed to the open case. Empty until one is opened, so
         #: a reconstruction before then applies nothing rather than failing.
         self._crs = CrsEvidence(index=None, fingerprint=None)
@@ -748,6 +752,7 @@ class MainWindow(QMainWindow):
             # A fresh case is read whole. Opening one already narrowed would
             # hide part of it with nothing on screen saying so.
             self._window = EVERYTHING
+            self._awaiting = None
             self._all_clients = len(summaries)
             self._listed = len(summaries)
             # Unfiltered by construction: a case is opened whole.
@@ -794,6 +799,10 @@ class MainWindow(QMainWindow):
         if self._case_path is None or window == self._window:
             return
         self._window = window
+        # Nothing in flight describes this range: each was asked over the range
+        # before it. `_reselect` asks again below if the reader is still on
+        # somebody, which is what puts a fresh answer back on the way.
+        self._awaiting = None
         # The control is told what is in force, not asked. Typing in the fields
         # keeps them right by accident; every other way the range can be set
         # would otherwise leave them naming a stretch nobody is reading.
@@ -882,6 +891,11 @@ class MainWindow(QMainWindow):
         so they say it once here rather than agreeing with each other by hand.
         """
         self._result = None
+        # Nobody is wanted, so nothing may arrive. Without this the answer to a
+        # question asked a moment ago comes back and puts the client, the band
+        # and the heading straight back on screen — the gesture appearing to do
+        # nothing at all.
+        self._awaiting = None
         self._selected = None
         self._evidence.clear(prompt=False)
         self._tabs.setVisible(False)
@@ -905,6 +919,7 @@ class MainWindow(QMainWindow):
         # is free to change it.
         crs = self._crs
         window = self._window
+        self._awaiting = (client_ip, window)
 
         def work(report: Callable[[str], None]) -> tuple[AnalysisResult, list[TimeSlot]]:
             report(f"Reconstructing {client_ip}…")
@@ -922,15 +937,21 @@ class MainWindow(QMainWindow):
 
         def done(loaded: tuple[AnalysisResult, list[TimeSlot]]) -> None:
             result, bars = loaded
-            # A reconstruction that describes a range no longer in force is
-            # thrown away. Jobs finish in whatever order they finish, and a
-            # second one can be started by something as ordinary as refilling
-            # the client table — so without this, the graph and the client list
-            # can end up describing different ranges, or different clients.
+            # Only what the window is still waiting for. Jobs finish in whatever
+            # order they finish, and one can be started by something as ordinary
+            # as refilling the client table — so without this, the graph and the
+            # client list can end up describing different ranges, or different
+            # clients.
+            #
+            # Both halves of the question, because staleness arrives on two
+            # axes. Asking only about the range let a reconstruction that was
+            # already in flight land after the reader had let go of the client,
+            # putting the graph, the heading and the band straight back: the
+            # range had not changed, so the answer looked current.
             #
             # A guard on arrival rather than only on departure: it holds however
             # the stale job was started, which is what makes it worth having.
-            if result.window != self._window:
+            if (result.client_ip, result.window) != self._awaiting:
                 return
             self._result = result
             # The band becomes this client's own history: when it worked, when
