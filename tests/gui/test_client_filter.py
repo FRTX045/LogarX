@@ -85,6 +85,20 @@ def test_the_caption_without_a_filter_is_the_one_it_always_was() -> None:
     )
 
 
+def test_a_capped_list_says_it_holds_only_the_busiest_of_them() -> None:
+    """The table holds the busiest few hundred, so a case of a hundred thousand
+    clients is not a hundred thousand rows.
+
+    Captioned with the case's total alone it invites the reader to select any of
+    them, and 119,380 of them are not there to select. Captioned with the row
+    count instead — which is what it did — it reports a case of 119,880 clients
+    as a case of 500.
+    """
+    assert caption(shown=500, total=119_880, query="") == (
+        "Busiest 500 of 119,880 clients. Select one to reconstruct what it did."
+    )
+
+
 def test_one_match_is_not_called_clients() -> None:
     assert caption(shown=1, total=49_175, query="203.0.113.66") == (
         "1 of 49,175 clients matches 203.0.113.66"

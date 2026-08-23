@@ -533,6 +533,91 @@ def test_a_window_still_honours_the_order_and_the_limit(store: ParquetEventStore
     assert [s.client_ip for s in busiest] == ["2.2.2.2", "1.1.1.1"]
 
 
+# -- how large the case is -------------------------------------------------
+
+
+def test_the_overview_counts_every_client_not_only_the_listed_ones(
+    store: ParquetEventStore,
+) -> None:
+    """`ip_summaries` is capped so a window can draw a table from it. What the
+    window says *about the case* cannot come from that list: a cap there makes a
+    case of fifty thousand clients look like a case of five hundred.
+
+    Six hundred clients, deliberately more than the five hundred the window
+    lists. At fifty-nine this test passed with a `LIMIT 500` left in the query
+    it is checking — the number has to be past every cap in the tool or it
+    proves nothing about caps.
+    """
+    store.write(
+        [event(f"10.{n // 250}.{n % 250}.1", offset_seconds=n, line_no=n + 1) for n in range(600)]
+    )
+    store.finalize()
+
+    assert store.overview().clients == 600
+    assert len(store.ip_summaries(limit=500)) == 500
+
+
+def test_the_overview_reaches_the_clients_the_busiest_never_touch(
+    store: ParquetEventStore,
+) -> None:
+    """The date fields are held inside this stretch, so it has to be the case's.
+
+    Taken from the busiest clients alone it stops short of both ends. Measured
+    on a real case of 119,880 clients: the busiest five hundred covered eight
+    days of a twenty-seven day case, and nineteen days of it could not be
+    selected at all — while the band above the fields went on drawing traffic
+    across all of it.
+    """
+    busy = [event("10.0.0.1", offset_seconds=n, line_no=n + 1) for n in range(50)]
+    early = [event("10.0.0.2", offset_seconds=-9_000, line_no=100)]
+    late = [event("10.0.0.3", offset_seconds=9_000, line_no=101)]
+    store.write(busy + early + late)
+    store.finalize()
+
+    overview = store.overview()
+
+    assert overview.first_seen == START - timedelta(seconds=9_000)
+    assert overview.last_seen == START + timedelta(seconds=9_000)
+
+
+def test_the_overview_can_be_asked_about_one_stretch(store: ParquetEventStore) -> None:
+    """What the range left of the case. Counted rather than inferred from a
+    capped list, for the same reason the whole-case figure is."""
+    store.write([event(f"10.0.0.{n}", offset_seconds=n * 600, line_no=n + 1) for n in range(1, 20)])
+    store.finalize()
+
+    narrow = TimeWindow(START + timedelta(seconds=600), START + timedelta(seconds=3_000))
+
+    assert store.overview(window=narrow).clients == 5
+    assert store.overview().clients == 19
+
+
+def test_an_empty_case_has_an_empty_overview(store: ParquetEventStore) -> None:
+    """A case is opened before it is read, and the window asks then."""
+    store.finalize()
+
+    overview = store.overview()
+
+    assert overview.clients == 0
+    assert overview.first_seen is None
+    assert overview.last_seen is None
+
+
+def test_the_overview_agrees_with_the_summaries_when_nothing_is_capped(
+    store: ParquetEventStore,
+) -> None:
+    """Two ways of counting the same thing must not disagree."""
+    store.write([event(f"10.0.0.{n}", offset_seconds=n * 7, line_no=n + 1) for n in range(1, 12)])
+    store.finalize()
+
+    every = store.ip_summaries()
+    overview = store.overview()
+
+    assert overview.clients == len(every)
+    assert overview.first_seen == min(s.first_seen for s in every)
+    assert overview.last_seen == max(s.last_seen for s in every)
+
+
 # -- where the traffic sits, for the band ----------------------------------
 
 

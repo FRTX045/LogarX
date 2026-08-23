@@ -141,6 +141,10 @@ class ClientTable(QWidget):
 
     def __init__(self) -> None:
         super().__init__()
+        # How large the case is, which is not how many rows were drawn from
+        # it. Zero until a case is opened, which is what the caption already
+        # words as "No clients."
+        self._total = 0
         self._table = _Rows(0, len(_COLUMNS))
         self._table.setHorizontalHeaderLabels(_COLUMNS)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -200,7 +204,15 @@ class ClientTable(QWidget):
         layout.addWidget(self._caption)
         layout.addWidget(self._table)
 
-    def show_clients(self, summaries: Sequence[IpSummary]) -> None:
+    def show_clients(self, summaries: Sequence[IpSummary], *, total: int | None = None) -> None:
+        """Draw these rows, and say how large the case they came from is.
+
+        `total` because the two are not the same number. This list is capped so
+        a case of a hundred thousand clients does not become a hundred thousand
+        rows, and the caption is the only place a reader learns how large the
+        case is — handed the row count, it said a case of 119,880 clients had
+        500 in it.
+        """
         # A filter typed for the last case would hide most of this one, and the
         # reader has no reason to suspect a box they filled in for something
         # else — the table would simply look like a case with almost nothing in
@@ -229,6 +241,7 @@ class ClientTable(QWidget):
         for row in range(self._table.rowCount()):
             self._table.setRowHidden(row, False)
         self._table.blockSignals(blocked)
+        self._total = len(summaries) if total is None else total
         self._write_caption(shown=len(summaries))
 
     @contextmanager
@@ -281,7 +294,7 @@ class ClientTable(QWidget):
 
     def _write_caption(self, *, shown: int) -> None:
         self._caption.setText(
-            filter_caption(shown=shown, total=self._table.rowCount(), query=self._filter.text())
+            filter_caption(shown=shown, total=self._total, query=self._filter.text())
         )
 
     def _set(self, row: int, column: int, text: str, *, sort_key: float | None = None) -> None:

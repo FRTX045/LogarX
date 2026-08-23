@@ -7,9 +7,10 @@ previous answer was to scroll.
 
 Free of Qt so the two judgements here can be tested without a display: what
 counts as a match, and what the panel says about the result. The second is the
-one that can misinform. A filtered list captioned "9 clients" describes a case
-containing nine clients, which is a lie about the evidence; the total has to
-stay on screen beside it.
+one that can misinform, and it does so in both directions. A filtered list
+captioned "9 clients" describes a case containing nine clients, which is a lie
+about the evidence. So is an unfiltered list of the busiest five hundred
+captioned "119,880 clients": the reader cannot select 119,380 of them.
 """
 
 from __future__ import annotations
@@ -63,13 +64,18 @@ def caption(*, shown: int, total: int, query: str) -> str:
     look like a case of nine.
     """
     if not query.strip():
+        if not total:
+            return "No clients."
         # The unfiltered wording is unchanged: this is the sentence the panel
         # has always opened with, and it tells a new reader what to do next.
-        return (
-            f"{plural(total, 'client')}. Select one to reconstruct what it did."
-            if total
-            else "No clients."
-        )
+        opening = "Select one to reconstruct what it did."
+        if shown >= total:
+            return f"{plural(total, 'client')}. {opening}"
+        # Capped. The table holds the busiest few hundred so a case of a
+        # hundred thousand clients is not a hundred thousand rows — and named
+        # by the case's total alone, the caption invites the reader to select
+        # any of them when almost none are there to select.
+        return f"Busiest {shown:,} of {total:,} clients. {opening}"
 
     wanted = query.strip()
     if shown == 0:

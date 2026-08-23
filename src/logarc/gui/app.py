@@ -11,6 +11,7 @@ from __future__ import annotations
 import sys
 import threading
 import traceback
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -64,11 +65,10 @@ from logarc.storage.case import CaseManifest
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
-    from datetime import datetime
 
     from logarc.analysis import AnalysisResult
     from logarc.core.graph import ActivityGraph, GraphNode
-    from logarc.storage.base import IpSummary, TimeSlot
+    from logarc.storage.base import CaseOverview, IpSummary, TimeSlot
 
 __all__ = ["MainWindow", "main", "read_case", "reconstruct_client"]
 
@@ -169,33 +169,60 @@ def _remembered(key: str, *, default: bool) -> bool:
 # — and did — quietly disagree with the CLI about what a case contains. Out
 # here they are callable without a display, so a test can hold both front ends
 # to the same answer.
-def read_case(
-    path: Path, *, window: TimeWindow | None = None, buckets: int = 200
-) -> tuple[Sequence[IpSummary], CrsEvidence, tuple[datetime, datetime] | None, list[TimeSlot]]:
+@dataclass(frozen=True, slots=True)
+class CaseView:
     """Everything a freshly opened case needs, gathered in one visit.
+
+    A record rather than a tuple because two of these figures look alike and
+    are not: `listed` is what fits in the table, `whole.clients` is what the
+    case holds. Confusing them is how a case of 119,880 clients came to
+    describe itself as a case of 500.
+    """
+
+    listed: Sequence[IpSummary]
+    """The rows for the table, capped at `_CLIENT_LIMIT`."""
+
+    crs: CrsEvidence
+
+    whole: CaseOverview
+    """The case itself: how many clients it holds and the stretch it covers.
+    Never the window — this is what holds the date fields inside the case, so
+    it has to keep describing the case while a narrower range is in force."""
+
+    in_range: int
+    """How many clients the range holds. The same as `whole.clients` when no
+    range is in force. Counted, not measured off `listed`, which is capped."""
+
+    bars: list[TimeSlot]
+
+
+def read_case(path: Path, *, window: TimeWindow | None = None, buckets: int = 200) -> CaseView:
+    """Read a case, or one stretch of it.
 
     The CRS evidence is read here rather than per reconstruction because it is a
     property of the case, not of the client being looked at, and a case is
     opened once against many clicks.
-
-    The third value is the stretch the case covers — the whole of it, never the
-    window. It is what holds the fields inside the case, so it has to keep
-    describing the case even while a narrower window is being shown.
     """
     with Case.open(path) as case:
-        whole = case.store.ip_summaries(limit=_CLIENT_LIMIT, order_by="requests")
-        listed = (
-            whole
-            if window is None or window.is_open
-            else case.store.ip_summaries(limit=_CLIENT_LIMIT, order_by="requests", window=window)
+        narrowed = window is not None and not window.is_open
+        listed = case.store.ip_summaries(
+            limit=_CLIENT_LIMIT, order_by="requests", window=window if narrowed else None
         )
-        span = (
-            (min(s.first_seen for s in whole), max(s.last_seen for s in whole)) if whole else None
-        )
+        # Asked of the store, not worked out from `listed`. That list is the
+        # busiest few hundred, and on a real case of 119,880 clients they
+        # happened to cover eight days of a twenty-seven day case — so the date
+        # fields stopped nineteen days short of traffic the band was drawing.
+        whole = case.store.overview()
         # Counted once, when the case is opened. Measured at 0.029s on 200k
         # events and 0.077s on three million, against a reconstruction the
         # reader is waiting for anyway.
-        return listed, case.crs_evidence(), span, case.store.activity_over_time(buckets=buckets)
+        return CaseView(
+            listed=listed,
+            crs=case.crs_evidence(),
+            whole=whole,
+            in_range=case.store.overview(window=window).clients if narrowed else whole.clients,
+            bars=case.store.activity_over_time(buckets=buckets),
+        )
 
 
 def _node_for_episodes(graph: ActivityGraph, episode_ids: frozenset[str]) -> GraphNode | None:
@@ -758,7 +785,7 @@ class MainWindow(QMainWindow):
 
         def work(report: Callable[[str], None]) -> Any:
             report(f"Opening {path}…")
-            summaries, crs, span, bars = read_case(path, buckets=buckets)
+            view = read_case(path, buckets=buckets)
             # Snapshotted here, on the worker, and stored with the entry. The
             # chooser has to draw before it has touched a disk: a case on a share
             # that is no longer mounted would otherwise stall the list once per
@@ -774,26 +801,35 @@ class MainWindow(QMainWindow):
             # Built here, on the worker: it is arithmetic over the source
             # records, and the manifest is already in hand. `done` only shows it.
             notice = notice_for(manifest.sources)
-            return summaries, crs, span, bars, snapshot, notice
+            return view, snapshot, notice
 
         self._busy(f"Opening {path}…")
 
         def done(loaded: Any) -> None:
-            summaries, crs, span, bars, snapshot, notice = loaded
+            view, snapshot, notice = loaded
+            summaries = view.listed
             self._remember_case(snapshot)
             self._case_path = path
-            self._crs = crs
+            self._crs = view.crs
             # A fresh case is read whole. Opening one already narrowed would
             # hide part of it with nothing on screen saying so.
             self._window = EVERYTHING
             self._awaiting = None
-            self._all_clients = len(summaries)
-            self._listed = len(summaries)
+            # The case's own figures, not the table's. `summaries` is the
+            # busiest few hundred; taken from it, a case of a hundred thousand
+            # clients reports itself as a case of five hundred, and its date
+            # fields stop wherever those five hundred happened to stop.
+            self._all_clients = view.whole.clients
+            self._listed = view.in_range
             # Unfiltered by construction: a case is opened whole.
             self._whole_counts = {s.client_ip: s.request_count for s in summaries}
-            self._case_bars = bars
-            self._time_filter.set_bars(bars)
-            self._time_filter.set_span(span)
+            self._case_bars = view.bars
+            self._time_filter.set_bars(view.bars)
+            self._time_filter.set_span(
+                (view.whole.first_seen, view.whole.last_seen)
+                if view.whole.first_seen is not None and view.whole.last_seen is not None
+                else None
+            )
             self._result = None
             self._selected = None
             self._canvas.show_graph_placeholder()
@@ -806,11 +842,13 @@ class MainWindow(QMainWindow):
             self._notice.show_notice(notice, quarantine_dir=path / QUARANTINE_DIR)
             self._heading.setText("")
             self._tabs.setVisible(False)
-            self._clients.show_clients(summaries)
+            self._clients.show_clients(summaries, total=view.whole.clients)
             self._say_what_is_left()
             self._idle(
-                f"{path} — {plural(len(summaries), 'client')} listed"
-                + (", CRS applied" if crs.fingerprint else "")
+                # Not "listed": the table holds the busiest few hundred of
+                # them, and the caption beside it is where that is said.
+                f"{path} — {plural(view.whole.clients, 'client')}"
+                + (", CRS applied" if view.crs.fingerprint else "")
             )
             # Last, after the window has finished loading, never before. A modal
             # raised mid-load sits over a half-drawn case, so the reader has to
@@ -851,13 +889,14 @@ class MainWindow(QMainWindow):
         self._busy("Reading the selected time range…")
 
         def done(loaded: Any) -> None:
-            summaries, _, _, _ = loaded
-            self._listed = len(summaries)
+            summaries = loaded.listed
+            # What the range holds, not what fitted in the table.
+            self._listed = loaded.in_range
             # `show_clients` is silent for the whole rebuild — the table owns
             # that, because it is the one that knows when it is replacing its
             # own furniture. This used to block the signals from out here, which
             # left two mechanisms for one rule.
-            self._clients.show_clients(summaries)
+            self._clients.show_clients(summaries, total=self._all_clients)
             self._say_what_is_left()
             if not summaries:
                 # An answer, not a failure, and often the one being looked for.
@@ -869,7 +908,7 @@ class MainWindow(QMainWindow):
                 self._canvas.show_graph_placeholder(nobody_here(window))
                 self._idle(nobody_here(window))
                 return
-            self._idle(f"{len(summaries)} of {self._all_clients} clients in this range")
+            self._idle(f"{self._listed:,} of {self._all_clients:,} clients in this range")
             # The client the reader was on, if this range still holds them. The
             # table has been rebuilt, so the selection has to be found again.
             if self._result is not None:
@@ -941,7 +980,7 @@ class MainWindow(QMainWindow):
         self._say_what_is_left()
         # The status line still named the client. Left standing it is the only
         # thing on screen claiming one is open, and it names one that is not.
-        self._idle(f"{plural(self._listed, 'client')} listed")
+        self._idle(plural(self._listed, "client"))
 
     # -- reconstruction ----------------------------------------------------
 

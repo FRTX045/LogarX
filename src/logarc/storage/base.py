@@ -45,6 +45,26 @@ class TimeSlot:
     request_count: int
 
 
+@dataclass(frozen=True, slots=True)
+class CaseOverview:
+    """How large the case is, before any of it is listed.
+
+    Its own question, because `ip_summaries` is capped — a window has to draw a
+    table from it, and a case of a hundred thousand clients cannot be a hundred
+    thousand rows. Everything a window says *about the case* has to come from
+    here instead: derived from that capped list, a case of 119,880 clients
+    reported itself as a case of 500, and its date fields covered the eight days
+    the busiest five hundred happened to span rather than the twenty-seven the
+    case does.
+    """
+
+    clients: int
+    first_seen: datetime | None
+    last_seen: datetime | None
+    """Both absent when the case holds nothing. A case is opened before it is
+    read, and the window asks then."""
+
+
 class EventStore(Protocol):
     """Writes events during ingest, reads them back one client at a time.
 
@@ -96,6 +116,17 @@ class EventStore(Protocol):
         first and last sighting, the error share. Not a filter over whole-case
         summaries: a client half inside the window would then be listed with
         numbers describing the half that is not shown.
+        """
+        ...
+
+    def overview(self, *, window: TimeWindow | None = None) -> CaseOverview:
+        """How many clients the case holds, and the stretch it covers.
+
+        Counted, not read off `ip_summaries`: that list is capped, and a figure
+        taken from it describes the cap rather than the case.
+
+        `window` asks the same about one stretch — how much of the case a range
+        left, which is the other half of the same sentence.
         """
         ...
 
