@@ -172,6 +172,47 @@ def test_refused_paths_are_forced_browsing_rather_than_enumeration(engine: RuleE
     assert all(item.label.category is ActivityCategory.ACCESS_CONTROL for item in labelled)
 
 
+def test_a_fast_page_load_is_not_reconnaissance(engine: RuleEngine) -> None:
+    """A browser pulling one page's sub-resources is not a scan.
+
+    Sixty asset fetches inside six seconds is what a single media-heavy page
+    looks like over HTTP/2. `rapid_request_burst` keyed on rate alone and
+    carried no `member` clause, so it labelled every request in the burst:
+    427 static-asset lines of one measured corpus became reconnaissance, and
+    not one of the 469 lines it won across that corpus was correct.
+    """
+    events = [request(f"/assets/img/{n}.png", seconds=n * 0.1) for n in range(60)]
+
+    labelled = engine.label_events(events)
+
+    assert all(item.label.category is ActivityCategory.STATIC_ASSET for item in labelled)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="directory_enumeration claims a broken page; see the Tranche 2 threshold rework",
+)
+def test_a_page_whose_assets_are_all_missing_is_not_hostile(engine: RuleEngine) -> None:
+    """A botched deploy is not an attacker, and this is not fixed yet.
+
+    When a page requests sixty assets that are no longer there, every visitor
+    produces sixty distinct 404s in six seconds. That clears
+    `directory_enumeration`'s 20-in-60s and 15-distinct-paths thresholds, so
+    each visitor is reported as enumerating the site.
+
+    Recorded rather than left silent because it is the reason a `status >= 400`
+    scope was rejected for the burst rule: keying on error responses fixes the
+    healthy page and admits the broken one. The corpus this was measured on
+    cannot show it — 41 of its 4,209 client errors are benign — so the case
+    lives here instead.
+    """
+    events = [request(f"/assets/img/{n}.png", status=404, seconds=n * 0.1) for n in range(60)]
+
+    labelled = engine.label_events(events)
+
+    assert not any(item.label.category.is_hostile for item in labelled)
+
+
 def test_credential_attack_is_seen_across_requests(engine: RuleEngine) -> None:
     events = [request("/login", status=401, seconds=n * 2) for n in range(20)]
 
