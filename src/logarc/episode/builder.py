@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import TYPE_CHECKING, Final
 
+from logarc.core.activity import ActivityCategory
 from logarc.core.episode import Episode, derive_outcome
 from logarc.normalize.decode import canonical_path
 
@@ -48,6 +49,63 @@ DEFAULT_EVIDENCE_SAMPLE: Final = 20
 
 #: Distinct targets named on a graph node before it becomes unreadable.
 _TOP_TARGETS: Final = 5
+
+#: Categories that are one act rather than three, for the purpose of cutting.
+#:
+#: Fetching a page, the stylesheets and images it pulls in, and the XHR it
+#: fires are not three activities a reader wants three nodes for — they are one
+#: page load. Splitting on the raw category made 58.5% of episodes a single
+#: request on a measured corpus, because `browsing -> static_asset ->
+#: api_call -> browsing` is what every ordinary page looks like; those three
+#: transitions alone were 11,777 of roughly 13,000 boundaries.
+#:
+#: `_absorb_noise` cannot reach this. It merges runs of the *same* category
+#: separated by a brief interlude, and here every run is a different category.
+#:
+#: Deliberately narrow. `authentication` is left out: signing in is the moment a
+#: client becomes someone, and a trace that reads "browsed, signed in, browsed"
+#: is the point of having a trace. `crawling` is left out because a crawler is
+#: recognised by its user-agent, so all of its requests already carry that one
+#: category and never interleave. Every hostile category keeps its own class, so
+#: an attack between two page loads still gets its own node.
+_ORDINARY_USE: Final[frozenset[ActivityCategory]] = frozenset(
+    {
+        ActivityCategory.BROWSING,
+        ActivityCategory.STATIC_ASSET,
+        ActivityCategory.API_CALL,
+    }
+)
+
+#: Which benign label names an episode that contains several.
+#:
+#: Benign labels are all INFO at one confidence, so they tie, and `max` returns
+#: whichever arrived first — a page load whose images beat the document came out
+#: called "Static Asset". Ordered most-worth-naming first; anything absent
+#: (every hostile category) ranks below all of them and never needs to, because
+#: severity has already decided by then.
+_NAMING_ORDER: Final[tuple[ActivityCategory, ...]] = (
+    ActivityCategory.BROWSING,
+    ActivityCategory.AUTHENTICATION,
+    ActivityCategory.API_CALL,
+    ActivityCategory.STATIC_ASSET,
+    ActivityCategory.CRAWLING,
+)
+
+
+def _boundary_class(category: ActivityCategory) -> str:
+    """What a category counts as when deciding where one act ends.
+
+    Coarser than the category itself, and used for nothing else: the episode is
+    still labelled, reported and scored by its real category.
+    """
+    return "ordinary_use" if category in _ORDINARY_USE else category.value
+
+
+def _naming_rank(category: ActivityCategory) -> int:
+    """Higher names the episode where severity and confidence tie."""
+    if category not in _NAMING_ORDER:
+        return 0
+    return len(_NAMING_ORDER) - _NAMING_ORDER.index(category)
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,7 +192,7 @@ def _split(labelled: Sequence[LabelledEvent], policy: EpisodePolicy) -> list[lis
 
 
 def _is_boundary(previous: LabelledEvent, item: LabelledEvent, policy: EpisodePolicy) -> bool:
-    if previous.label.category is not item.label.category:
+    if _boundary_class(previous.label.category) != _boundary_class(item.label.category):
         return True
     gap = item.event.timestamp - previous.event.timestamp
     return gap > policy.max_gap
@@ -223,5 +281,12 @@ def _representative(run: Sequence[LabelledEvent]) -> ActivityLabel:
     """The label the episode is named after: the worst thing that happened in it."""
     return max(
         (item.label for item in run),
-        key=lambda activity: (activity.severity, activity.confidence),
+        key=lambda activity: (
+            activity.severity,
+            activity.confidence,
+            # Before the benign order, so a benign label can never name an
+            # episode over a hostile one that merely happens to tie with it.
+            activity.category.is_hostile,
+            _naming_rank(activity.category),
+        ),
     )

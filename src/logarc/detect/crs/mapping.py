@@ -28,6 +28,7 @@ from logarc.core.activity import ActivityCategory, Severity
 __all__ = [
     "KNOWN_FAMILIES",
     "RESCUE_CONFIDENCE",
+    "category_for",
     "category_for_family",
     "severity_for",
 ]
@@ -75,6 +76,33 @@ _FAMILY_CATEGORY: Final[dict[str, ActivityCategory]] = {
     # Session fixation: forcing a session identifier is an attack on who the
     # application thinks you are.
     "attack-fixation": ActivityCategory.ACCESS_CONTROL,
+}
+
+#: Rule ids whose family tag is right about the payload and wrong about the act.
+#:
+#: `attack-lfi` is the only family so far that needs this, and it needs it
+#: because it covers two behaviours that share a mechanism and not a meaning:
+#:
+#: | rule | message | what it is |
+#: |---|---|---|
+#: | 930100/930110 | Path Traversal Attack (`/../`) | climbing out of the web root |
+#: | 930120/930121 | OS File Access Attempt | reading a system file by name |
+#: | 930130 | Restricted File Access Attempt | asking for `/.env`, `/.git/`, `/Dockerfile` |
+#: | 930140 | Restricted File Access: AI Coding Assistant Artifact | the same, for newer secrets |
+#:
+#: The last two are `@pmFromFile` lists of source, manifests, credentials and
+#: version-control history — files that are simply *there*, requested by their
+#: own name with no traversal at all. That is reconnaissance, and this project
+#: already says so: `config_file_exposure` and `backup_file_probe` classify the
+#: identical URLs that way. Mapping the whole family to `path_traversal` made
+#: CRS contradict the native rule on the same request, and on one labelled
+#: corpus produced eight false positives and no true ones.
+#:
+#: Found the way the other two errors in this file were found — by reading what
+#: the rules actually matched, not by reasoning about the tag.
+_RULE_CATEGORY: Final[dict[int, ActivityCategory]] = {
+    930130: ActivityCategory.RECONNAISSANCE,
+    930140: ActivityCategory.RECONNAISSANCE,
 }
 
 #: Families that are recorded as evidence but may never name an activity.
@@ -156,6 +184,21 @@ def category_for_family(family: str | None) -> ActivityCategory | None:
     if family is None or family in _UNMAPPED:
         return None
     return _FAMILY_CATEGORY.get(family)
+
+
+def category_for(rule_id: int, family: str | None) -> ActivityCategory | None:
+    """The category one detection may name, or None.
+
+    `family` decides *whether* a detection may speak; `rule_id` may then correct
+    *what* it says. That order is deliberate and is the bound the table has
+    always had: an override can redirect a detection the family already allowed,
+    and can never give a voice to one the family withheld. Otherwise a listed
+    rule id would be a back door for `attack-protocol`.
+    """
+    category = category_for_family(family)
+    if category is None:
+        return None
+    return _RULE_CATEGORY.get(rule_id, category)
 
 
 def severity_for(severity: str | None) -> Severity:

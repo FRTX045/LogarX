@@ -14,6 +14,7 @@ cannot supply the other three things `detect/` does — behaviour across request
 from logarc.detect.crs.mapping import (
     KNOWN_FAMILIES,
     RESCUE_CONFIDENCE,
+    category_for,
     category_for_family,
     severity_for,
 )
@@ -42,6 +43,7 @@ __all__ = [
     "CrsUnavailableError",
     "DetectionIndex",
     "SidecarConfig",
+    "category_for",
     "category_for_family",
     "default_binary",
     "is_enriched",

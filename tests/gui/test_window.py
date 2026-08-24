@@ -143,6 +143,11 @@ def campaign(tmp_path_factory: pytest.TempPathFactory) -> Path:
         lines.append(_line(at, f"/product?{payload}", status=403))
         at += 3
     lines.append(_line(at, "/product?id=1%20UNION%20SELECT%20pw%20FROM%20users", size=1_400_000))
+    at += 3
+    # One request on its own, so the case still contains a single-line episode.
+    # Authentication keeps its own boundary class, so this does not join the
+    # injection run before it, and nothing follows for it to be absorbed into.
+    lines.append(_line(at, "/login"))
 
     log = root / "access.log"
     log.write_text("\n".join(lines) + "\n", encoding="utf-8")

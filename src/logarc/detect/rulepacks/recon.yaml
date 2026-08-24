@@ -113,18 +113,30 @@ rules:
           op: "<="
           value: 3
 
-  - id: rapid_request_burst
-    name: Rapid Request Burst
-    category: reconnaissance
-    severity: low
-    confidence: 0.6
-    window:
-      span_seconds: 10
-      min_requests: 50
-      conditions:
-        - metric: requests_per_second
-          op: ">="
-          value: 5
+  # `rapid_request_burst` was here: 50 requests in 10 seconds, at 5 a second,
+  # called reconnaissance. Retired rather than repaired.
+  #
+  # It was the only rule in this file without a `member` clause, so it labelled
+  # every request in the burst rather than the ones the behaviour consisted of.
+  # Measured across 66,531 lines of a labelled corpus it won 469 requests and
+  # was correct on none of them: 427 static assets, 25 page views, one API call,
+  # and 16 enumeration lines it named reconnaissance.
+  #
+  # Scoping it does not help. Restricted to client errors it wins 1 line;
+  # restricted to non-asset paths, 16; restricted to both, 1 — none correct.
+  # Rate alone is not a signal. Sixty asset fetches in six seconds is one
+  # media-heavy page over HTTP/2, and no per-request filter separates that from
+  # a wordlist walk: what distinguishes them is that the page's requests are
+  # sub-resources of one document, which no field here can test.
+  #
+  # `status >= 400` is the worst of the options, not the safest. It fixes a
+  # healthy page and admits a broken one — fifty missing assets are fifty client
+  # errors in ten seconds, and every visitor during a bad deploy becomes a
+  # scanner.
+  #
+  # If a burst signal is wanted back it needs a discriminator that is not rate:
+  # distinct referers across the burst, or whether the requests hang off a
+  # document already fetched. That is a new window metric, not a threshold.
 
   - id: server_errors_provoked
     name: Server Errors Provoked

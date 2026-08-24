@@ -98,6 +98,139 @@ def test_a_gap_exactly_at_the_threshold_does_not_split() -> None:
     assert len(build_episodes(events, policy=policy)) == 1
 
 
+def test_a_page_and_its_sub_resources_are_one_episode() -> None:
+    """The fix for the shape of the whole output.
+
+    A page load is one act: the document, the stylesheets and images it pulls
+    in, and the XHR it fires. Cutting an episode at each of those transitions
+    made 58.5% of episodes a single request on one measured corpus — 10,196
+    episodes against 2,475 real activities — and a graph that should read as a
+    sentence read as confetti.
+    """
+    events = [
+        labelled(ActivityCategory.BROWSING, seconds=0, path="/products", severity=Severity.INFO),
+        *[
+            labelled(
+                ActivityCategory.STATIC_ASSET,
+                seconds=n * 0.1,
+                path=f"/assets/{n}.css",
+                severity=Severity.INFO,
+            )
+            for n in range(1, 9)
+        ],
+        labelled(ActivityCategory.API_CALL, seconds=1, path="/api/cart", severity=Severity.INFO),
+    ]
+
+    (episode,) = build_episodes(events)
+
+    assert episode.request_count == 10
+
+
+def test_a_merged_group_is_named_for_the_page_not_the_assets() -> None:
+    """Severity and confidence tie across benign labels, so without an explicit
+    order the name falls to whichever request happened to arrive first — "Static
+    Asset" whenever the images beat the document."""
+    events = [
+        *[
+            labelled(
+                ActivityCategory.STATIC_ASSET,
+                seconds=n * 0.1,
+                path=f"/assets/{n}.png",
+                severity=Severity.INFO,
+            )
+            for n in range(6)
+        ],
+        labelled(ActivityCategory.BROWSING, seconds=1, path="/products", severity=Severity.INFO),
+    ]
+
+    (episode,) = build_episodes(events)
+
+    assert episode.activity.category is ActivityCategory.BROWSING
+
+
+def test_an_attack_amid_ordinary_use_still_keeps_its_own_episode() -> None:
+    """The invariant the merge must not break: grouping sub-resources together
+    must not also swallow the attack sitting between two page loads."""
+    events = [
+        labelled(ActivityCategory.BROWSING, seconds=0, severity=Severity.INFO),
+        labelled(ActivityCategory.STATIC_ASSET, seconds=1, severity=Severity.INFO),
+        labelled(ActivityCategory.INJECTION, seconds=2),
+        labelled(ActivityCategory.BROWSING, seconds=3, severity=Severity.INFO),
+        labelled(ActivityCategory.STATIC_ASSET, seconds=4, severity=Severity.INFO),
+    ]
+
+    episodes = build_episodes(events)
+
+    assert [e.activity.category for e in episodes] == [
+        ActivityCategory.BROWSING,
+        ActivityCategory.INJECTION,
+        ActivityCategory.BROWSING,
+    ]
+
+
+def test_signing_in_is_still_its_own_step() -> None:
+    """Ordinary use is grouped; authenticating is not part of it.
+
+    An analyst reading a trace wants to see "browsed, signed in, browsed" — the
+    moment the client became someone is the thing the trace is for.
+    """
+    events = [
+        *[labelled(ActivityCategory.BROWSING, seconds=n, severity=Severity.INFO) for n in range(2)],
+        *[
+            labelled(
+                ActivityCategory.AUTHENTICATION, seconds=n, path="/login", severity=Severity.INFO
+            )
+            for n in range(2, 7)
+        ],
+        *[
+            labelled(ActivityCategory.BROWSING, seconds=n, severity=Severity.INFO)
+            for n in range(7, 9)
+        ],
+    ]
+
+    episodes = build_episodes(events)
+
+    assert [e.activity.category for e in episodes] == [
+        ActivityCategory.BROWSING,
+        ActivityCategory.AUTHENTICATION,
+        ActivityCategory.BROWSING,
+    ]
+
+
+def test_a_gap_still_splits_grouped_ordinary_use() -> None:
+    """Grouping is about category, not about time. An hour later is a new act."""
+    events = [
+        labelled(ActivityCategory.BROWSING, seconds=0, severity=Severity.INFO),
+        labelled(ActivityCategory.STATIC_ASSET, seconds=1, severity=Severity.INFO),
+        labelled(ActivityCategory.STATIC_ASSET, seconds=3600, severity=Severity.INFO),
+        labelled(ActivityCategory.BROWSING, seconds=3601, severity=Severity.INFO),
+    ]
+
+    assert len(build_episodes(events)) == 2
+
+
+def test_a_benign_label_never_names_an_episode_over_a_hostile_one() -> None:
+    """Regression from adding the benign naming order.
+
+    That order breaks ties between benign labels, which all sit at one severity
+    and one confidence. Applied without qualification it also broke the tie
+    between a benign label and a hostile one that happened to match on both, and
+    handed an injection episode the name "Static Asset". An episode is named for
+    the worst thing in it; nothing about grouping page loads changes that.
+    """
+    events = [
+        labelled(ActivityCategory.INJECTION, seconds=0, severity=Severity.MEDIUM),
+        labelled(ActivityCategory.STATIC_ASSET, seconds=1, severity=Severity.MEDIUM),
+    ]
+
+    episodes = build_episodes(events)
+
+    assert [e.activity.category for e in episodes] == [
+        ActivityCategory.INJECTION,
+        ActivityCategory.STATIC_ASSET,
+    ]
+
+
 def test_a_short_benign_interlude_is_absorbed() -> None:
     """Without this, one favicon fetch mid-attack splits a single episode into
     three and the graph turns into fragments."""
