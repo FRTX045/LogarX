@@ -101,15 +101,49 @@ def test_evaluate_can_write_the_numbers_for_a_paper(
     assert payload["ruleset_fingerprint"]
 
 
+@pytest.fixture
+def interleaved(tmp_path: Path) -> tuple[Path, Path]:
+    """A corpus with attacks sitting inside ordinary traffic.
+
+    `sqli_campaign` no longer exercises absorption at all. Since episodes stop
+    splitting on `browsing`/`static_asset`/`api_call` transitions, the boundary
+    class already merges the benign interleaving that absorption used to catch,
+    and what is left for absorption is the narrower case it was written for: a
+    brief benign interlude between two runs of the *same hostile* category.
+    `mixed` still produces those.
+    """
+    log = tmp_path / "interleaved.log"
+    result = runner.invoke(
+        app,
+        [
+            "generate",
+            "--scenario", "mixed",
+            "--lines", "3000",
+            "--seed", "4",
+            "--out", str(log),
+            "--truth", str(tmp_path / "interleaved.truth.jsonl"),
+        ],
+    )  # fmt: skip
+    assert result.exit_code == 0, result.stdout
+    return log, tmp_path / "interleaved.truth.jsonl"
+
+
 def test_turning_off_absorption_finds_more_boundaries_and_more_episodes(
-    generated: tuple[Path, Path], tmp_path: Path
+    interleaved: tuple[Path, Path], tmp_path: Path
 ) -> None:
     """The ablation that makes the merge rule arguable instead of asserted.
 
     Absorption trades boundary recall for a graph that can be read. Being able
     to run both ways is what turns that from a claim into a measurement.
+
+    The margin is small — a few episodes in several hundred — and that is itself
+    the measurement. Most of what absorption used to do was rejoining page loads
+    that the old boundary rule had split on `static_asset`, and the boundary
+    class now does that directly. On a real 66,531-line log absorption still
+    merges 524 episodes, so it earns its place; on generated traffic it barely
+    registers.
     """
-    log, truth = generated
+    log, truth = interleaved
     case = tmp_path / "case"
     runner.invoke(app, ["ingest", str(log), "--case", str(case)])
 
