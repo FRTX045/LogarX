@@ -19,7 +19,7 @@ from functools import cached_property
 from typing import TYPE_CHECKING, Final
 
 from logarc.core.activity import ActivityCategory, ActivityLabel, Severity
-from logarc.detect.crs import RESCUE_CONFIDENCE, category_for_family, severity_for
+from logarc.detect.crs import RESCUE_CONFIDENCE, category_for, severity_for
 from logarc.detect.rules import Condition, SignatureRule, WindowRule
 from logarc.normalize.decode import NormalizedText, canonical_path, normalize
 
@@ -394,8 +394,9 @@ def _names_activity(detection: CrsDetection) -> bool:
 def _rescue(detections: Sequence[CrsDetection]) -> ActivityLabel | None:
     """Name an activity from CRS, for a request no rule packed here recognised.
 
-    Only detections whose family this project has an opinion about can do this;
-    see `detect/crs/mapping.py` for which, and why the rest are withheld. When
+    Only detections whose family this project has an opinion about can do this,
+    and a few rule ids correct the category their family implies; see
+    `detect/crs/mapping.py` for which, and why the rest are withheld. When
     several qualify the most severe wins, matching how competing rule matches
     are already resolved.
 
@@ -410,7 +411,7 @@ def _rescue(detections: Sequence[CrsDetection]) -> ActivityLabel | None:
         (detection, category)
         for detection in detections
         if _names_activity(detection)
-        and (category := category_for_family(detection.attack_family)) is not None
+        and (category := category_for(detection.rule_id, detection.attack_family)) is not None
     ]
     if not candidates:
         return None

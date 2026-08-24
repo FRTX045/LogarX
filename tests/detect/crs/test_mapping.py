@@ -13,9 +13,11 @@ import pytest
 from logarc.core.activity import ActivityCategory, Severity
 from logarc.detect.crs.mapping import (
     _FAMILY_CATEGORY,
+    _RULE_CATEGORY,
     _UNMAPPED,
     KNOWN_FAMILIES,
     RESCUE_CONFIDENCE,
+    category_for,
     category_for_family,
     severity_for,
 )
@@ -74,6 +76,60 @@ def test_every_family_the_ruleset_carries_is_accounted_for() -> None:
 
     assert KNOWN_FAMILIES - classified == set()
     assert classified - KNOWN_FAMILIES == set()
+
+
+@pytest.mark.parametrize(
+    ("rule_id", "category"),
+    [
+        # Path traversal proper, and reading a file the server did not mean to
+        # serve. Both are `path_traversal` in this taxonomy.
+        (930100, ActivityCategory.PATH_TRAVERSAL),
+        (930110, ActivityCategory.PATH_TRAVERSAL),
+        (930120, ActivityCategory.PATH_TRAVERSAL),
+        (930121, ActivityCategory.PATH_TRAVERSAL),
+        # Restricted files: source, manifests, credentials, VCS history. Asking
+        # for `/.env` is not traversal, and this project already calls it
+        # reconnaissance in `config_file_exposure`.
+        (930130, ActivityCategory.RECONNAISSANCE),
+        (930140, ActivityCategory.RECONNAISSANCE),
+    ],
+)
+def test_the_lfi_family_is_split_by_rule(rule_id: int, category: ActivityCategory) -> None:
+    """`attack-lfi` covers two behaviours and the family tag cannot tell them apart.
+
+    Mapping the whole family to `path_traversal` put every `/.env`,
+    `/Dockerfile` and `/.htaccess` probe in the wrong category and made CRS
+    contradict the native rule that had already classified the same URL. On one
+    labelled corpus that was eight of the twelve rescues that were wrong.
+    """
+    assert category_for(rule_id, "attack-lfi") is category
+
+
+def test_a_rule_override_cannot_resurrect_a_withheld_family() -> None:
+    """The bound the whole table rests on, kept as the override layer is added.
+
+    An override may redirect a detection that was already allowed to speak. It
+    may not give a voice to a family that was deliberately silenced, or
+    `attack-protocol` would return through the back door on any rule id that
+    happened to be listed.
+    """
+    assert category_for(930130, "attack-protocol") is None
+    assert category_for(930130, "attack-something-invented-later") is None
+    assert category_for(930130, None) is None
+
+
+def test_an_unlisted_rule_falls_back_to_its_family() -> None:
+    assert category_for(942100, "attack-sqli") is ActivityCategory.INJECTION
+    assert category_for(0, "attack-ssrf") is ActivityCategory.SSRF
+
+
+def test_every_override_names_a_category_its_family_could_have_named() -> None:
+    """An override that changes nothing is a dead entry and should be removed."""
+    for rule_id, category in _RULE_CATEGORY.items():
+        assert category_for(rule_id, "attack-lfi") is category
+        assert category is not _FAMILY_CATEGORY["attack-lfi"], (
+            f"override for {rule_id} matches the family default and is redundant"
+        )
 
 
 def test_an_unrecognised_family_is_a_no_op_rather_than_an_error() -> None:
