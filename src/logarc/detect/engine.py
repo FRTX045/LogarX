@@ -368,6 +368,29 @@ def _detections_for(crs: DetectionIndex | None, event: NormalizedEvent) -> tuple
     return tuple(crs.get(key, ()))
 
 
+#: `matched_var` prefixes whose content came from a *different* request.
+#:
+#: A referer is where the client came from. When CRS matches a payload there,
+#: the request that carried it is the previous one, and naming *this* request
+#: for it puts the finding on the wrong line — which in a tool whose whole claim
+#: is that every finding resolves to a source line is the worst way to be wrong.
+#: `GET /contact` returning 200 is navigation away from an attack, not an attack.
+#:
+#: Coraza reports the header as it was written, so the comparison is folded.
+_HEARSAY_VARS: Final[tuple[str, ...]] = ("request_headers:referer",)
+
+
+def _names_activity(detection: CrsDetection) -> bool:
+    """Whether this detection may be the answer, as opposed to corroboration.
+
+    Attachment is not in question — a detection is kept as evidence either way,
+    because "this client had just been somewhere hostile" is worth an
+    investigator's attention. This governs only whether it can name the
+    activity.
+    """
+    return not detection.matched_var.strip().lower().startswith(_HEARSAY_VARS)
+
+
 def _rescue(detections: Sequence[CrsDetection]) -> ActivityLabel | None:
     """Name an activity from CRS, for a request no rule packed here recognised.
 
@@ -376,13 +399,18 @@ def _rescue(detections: Sequence[CrsDetection]) -> ActivityLabel | None:
     several qualify the most severe wins, matching how competing rule matches
     are already resolved.
 
+    Detections read out of a referer are skipped: see `_HEARSAY_VARS`. The test
+    is per detection rather than per request, so a request carrying both a
+    referer-borne match and one in its own query is still named by the second.
+
     Returns None when nothing qualifies, which is the ordinary case and means
     the caller should fall through to benign classification as before.
     """
     candidates = [
         (detection, category)
         for detection in detections
-        if (category := category_for_family(detection.attack_family)) is not None
+        if _names_activity(detection)
+        and (category := category_for_family(detection.attack_family)) is not None
     ]
     if not candidates:
         return None

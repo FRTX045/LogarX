@@ -384,6 +384,7 @@ def crs_detection(
     family: str | None = "attack-sqli",
     severity: str = "critical",
     msg: str = "SQL Injection Attack Detected via libinjection",
+    matched_var: str = "ARGS:q",
 ) -> CrsDetection:
     return CrsDetection(
         source_file_id="access.log",
@@ -391,7 +392,7 @@ def crs_detection(
         rule_id=rule_id,
         severity=severity,
         msg=msg,
-        matched_var="ARGS:q",
+        matched_var=matched_var,
         transformed_value="1' UNION SELECT",
         attack_family=family,
     )
@@ -466,6 +467,64 @@ def test_an_observation_does_not_suppress_a_rescue(engine: RuleEngine) -> None:
     (labelled,) = engine.label_events(events, crs=crs_index(detection))
 
     assert labelled.label.rule_id == "crs:932140"
+
+
+def test_a_referer_match_does_not_name_the_request(engine: RuleEngine) -> None:
+    """A referer says where the client came from, not what it just asked for.
+
+    `GET /contact` returning 200 is navigation. When the referer carries a
+    payload the *previous* request was the attack, and naming this one for it
+    moves a finding onto the wrong line — the one place a forensic tool cannot
+    afford to be approximate. Measured on a labelled corpus this accounted for
+    five of the twelve rescues that were wrong, two of which overwrote a
+    correct answer.
+
+    The detection is still attached, because "this client had been somewhere
+    hostile" is worth an investigator's attention. It just may not name the
+    activity.
+    """
+    detection = crs_detection(
+        rule_id=941101,
+        family="attack-xss",
+        msg="XSS Attack Detected via libinjection",
+        matched_var="REQUEST_HEADERS:Referer",
+    )
+
+    (labelled,) = engine.label_events([event(path="/contact")], crs=crs_index(detection))
+
+    assert labelled.label.category is ActivityCategory.BROWSING
+    assert labelled.crs[0].rule_id == 941101
+
+
+def test_a_referer_match_is_recognised_whatever_its_casing(engine: RuleEngine) -> None:
+    """Coraza reports the header as written, so the same rule yields
+    `REQUEST_HEADERS:Referer` on one request and a lowercased form on another."""
+    detection = crs_detection(
+        rule_id=930121, family="attack-lfi", matched_var="request_headers:referer"
+    )
+
+    (labelled,) = engine.label_events([event(path="/metrics")], crs=crs_index(detection))
+
+    assert labelled.label.category is ActivityCategory.BROWSING
+
+
+def test_a_payload_in_a_parameter_still_names_the_request(engine: RuleEngine) -> None:
+    """The other side of it: the filter is per detection, not per request.
+
+    A request carrying a referer-borne detection *and* one in its own query is
+    still named by the second. Dropping the whole request because one of its
+    detections came from a header would trade five false positives for an
+    unknown number of missed attacks.
+    """
+    detections = crs_index(
+        crs_detection(rule_id=941101, family="attack-xss", matched_var="REQUEST_HEADERS:Referer"),
+        crs_detection(rule_id=932140, family="attack-rce", matched_var="ARGS:c"),
+    )
+
+    (labelled,) = engine.label_events([event(path="/get", query="c=uname")], crs=detections)
+
+    assert labelled.label.rule_id == "crs:932140"
+    assert labelled.label.category is ActivityCategory.INJECTION
 
 
 def test_a_real_claim_still_outranks_crs(engine: RuleEngine) -> None:
