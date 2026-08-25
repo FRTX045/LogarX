@@ -388,6 +388,28 @@ def test_holding_a_node_says_so_with_the_cursor(qt_app: QApplication) -> None:
     assert item.cursor().shape() != Qt.CursorShape.SizeAllCursor
 
 
+def test_the_canvas_reports_where_the_layout_put_things(qt_app: QApplication) -> None:
+    """The baseline an unsaved arrangement is measured against.
+
+    Reached through `_base` by hand, the window would be reading a private
+    attribute whose shape is not the one `positions` hands back: that one holds
+    `Point`, which is the layout's type and not this one, so every comparison
+    would be between a tuple and an object and every activity would read as
+    moved.
+    """
+    canvas = ready(3)
+    laid_out = canvas.laid_out
+
+    assert set(laid_out) == set(canvas.positions), "every drawn activity is in it"
+    assert laid_out == canvas.positions, "nothing has been moved yet"
+
+    canvas._nodes["n1"].setPos(500.0, 400.0)
+
+    assert canvas.positions["n1"] == (500.0, 400.0)
+    assert laid_out["n1"] != (500.0, 400.0), "the layout is not rewritten by a drag"
+    assert canvas.laid_out["n1"] != (500.0, 400.0), "nor is it on the next ask"
+
+
 # -- the room to drag into ------------------------------------------------
 
 
