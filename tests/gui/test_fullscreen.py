@@ -24,16 +24,23 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
-from PyQt6.QtCore import QSettings, Qt
+from PyQt6.QtCore import QSettings, QSize, Qt
 from PyQt6.QtGui import QKeyEvent
 from PyQt6.QtWidgets import QApplication
 
+from conftest import contrast
 from logarc.core.activity import ActivityCategory, Outcome, Severity
 from logarc.core.evidence import EvidenceRef
 from logarc.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
 from logarc.gui import app
 from logarc.gui.app import MainWindow
-from logarc.gui.canvas import MIN_FIT_SCALE, ActivityCanvas
+from logarc.gui.canvas import (
+    _EXPAND_ICON,
+    _EXPAND_SIDE,
+    MIN_FIT_SCALE,
+    PAPER,
+    ActivityCanvas,
+)
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 
@@ -133,16 +140,21 @@ def test_it_moves_when_the_canvas_does(qt_app: QApplication) -> None:
     canvas.close()
 
 
-#: The last two are the ones that matter. A 57x27 button still fits a 120x90
-#: canvas with room to spare, so none of the larger sizes ever reaches the
-#: clamp in `_place_expand`: 60px wide drives the horizontal arithmetic
-#: negative and 32px tall the vertical one.
+#: The last two are the ones that matter. The button is a fixed 30x30 and sits
+#: 12px in, so it fits everything larger with room to spare and none of those
+#: sizes ever reaches the clamp in `_place_expand`: 36px wide drives the
+#: horizontal arithmetic negative, 32px tall the vertical one.
+#:
+#: Those two numbers are tied to `_EXPAND_SIDE` and `_EXPAND_INSET`. When the
+#: button was resized they stopped biting — 60px wide had been narrow enough
+#: for the old 57px button and is roomy for this one — and the horizontal
+#: clamp went unguarded until a mutation said so.
 #:
 #: Nothing smaller than the button itself is asked for. A canvas narrower than
 #: its own control cannot hold it, the splitter never gets there, and a test
 #: demanding the impossible only forces the code to pretend.
 @pytest.mark.parametrize(
-    "size", [(200, 150), (600, 400), (1920, 1080), (120, 90), (60, 45), (200, 32)]
+    "size", [(200, 150), (600, 400), (1920, 1080), (120, 90), (36, 45), (200, 32)]
 )
 def test_it_stays_inside_the_canvas_at_any_size(
     qt_app: QApplication, size: tuple[int, int]
@@ -201,6 +213,82 @@ def test_the_button_says_which_way_it_goes(qt_app: QApplication) -> None:
 
     assert expanded != canvas._expand.toolTip()
     assert expanded, "it says nothing at all"
+
+
+def test_the_button_can_be_seen_against_the_paper_it_sits_on() -> None:
+    """It shipped measured against the wrong ground.
+
+    `raised` on `surface` is 1.08:1. The button was drawn, was on top, and took
+    its own press — and still could not be found, because the colours were
+    chosen for the window chrome while the button sits on the canvas. Nothing
+    in the code said so: the ground it was reasoned about was never the ground
+    behind it.
+    """
+    from logarc.gui import canvas as canvas_module
+
+    assert contrast(canvas_module._EXPAND_EDGE, PAPER) >= 3.0, (
+        "the edge of a control has to carry 3:1 against what is behind it"
+    )
+    assert contrast(canvas_module._EXPAND_INK, canvas_module._EXPAND_GROUND) >= 4.5
+
+
+def test_the_button_draws_its_own_mark(qt_app: QApplication) -> None:
+    """Not a glyph.
+
+    U+26F6 falls to the colour emoji face on Windows, which refuses the pen and
+    paints a multicoloured speck instead of the theme's ink. The Linux runners
+    have no such face at all and render something else again. A drawn mark
+    takes its colour from the theme and is the same on both.
+    """
+    canvas = ActivityCanvas()
+
+    assert canvas._expand.text() == "", "a glyph is at the mercy of the font"
+    assert not canvas._expand.icon().isNull()
+
+
+def test_the_mark_is_drawn_in_the_ink_it_was_measured_with(qt_app: QApplication) -> None:
+    """Measuring `_EXPAND_INK` proves nothing if the pen reaches for something
+    else. Only fully covered pixels are read — the rest are antialiasing."""
+    from logarc.gui import canvas as canvas_module
+
+    image = canvas_module._expand_mark(canvas_module._EXPAND_INK).toImage()
+    opaque = {
+        image.pixelColor(x, y).name()
+        for x in range(image.width())
+        for y in range(image.height())
+        if image.pixelColor(x, y).alpha() == 255
+    }
+
+    assert opaque, "the mark is blank"
+    assert opaque == {canvas_module._EXPAND_INK}
+
+
+def test_the_button_is_the_size_it_was_drawn_for(qt_app: QApplication) -> None:
+    """Fixed, not fitted to its contents.
+
+    A button that sizes itself is sized by the platform's style metrics, and
+    this suite runs on two platforms whose numbers differ — the same button was
+    57x27 here and something else again on the runners. Pinning it keeps the
+    mark's proportion inside the frame and makes the sizes the clamp is tested
+    at mean the same thing on both.
+    """
+    canvas = ActivityCanvas()
+
+    assert canvas._expand.size() == QSize(_EXPAND_SIDE, _EXPAND_SIDE)
+    assert canvas._expand.iconSize() == QSize(_EXPAND_ICON, _EXPAND_ICON)
+
+
+def test_the_mark_changes_when_its_meaning_does(qt_app: QApplication) -> None:
+    """The tooltip already says which way it goes, but a tooltip has to be
+    waited for. The mark is the part that is read at a glance."""
+    canvas = ActivityCanvas()
+
+    canvas.set_expanded(False)
+    outward = canvas._expand.icon().pixmap(_EXPAND_ICON, _EXPAND_ICON).toImage()
+    canvas.set_expanded(True)
+    inward = canvas._expand.icon().pixmap(_EXPAND_ICON, _EXPAND_ICON).toImage()
+
+    assert outward != inward, "one mark for both meanings says nothing"
 
 
 # -- what the window does with it -----------------------------------------

@@ -16,15 +16,17 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
 
-from PyQt6.QtCore import QPointF, QRectF, Qt, pyqtSignal
+from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import (
     QBrush,
     QColor,
     QFont,
     QFontMetricsF,
+    QIcon,
     QPainter,
     QPainterPath,
     QPen,
+    QPixmap,
     QPolygonF,
     QTransform,
     QWheelEvent,
@@ -83,6 +85,33 @@ MIN_FIT_SCALE: Final = 0.55
 #: How far the corner button sits from the canvas edge. Small, because the
 #: patch it covers is a patch of graph given up.
 _EXPAND_INSET: Final = 12
+
+#: The corner button's own colours, named here so they can be measured.
+#:
+#: They are read against `PAPER`, not against the window chrome. The button is
+#: a window control by function and a canvas resident by position, and it
+#: shipped styled for the first: `raised` on `surface` is 1.08:1, with a
+#: 1.83:1 edge. It was drawn, it was on top, and it took its own press — and it
+#: still could not be found.
+#:
+#: What carries it is the edge and the mark, not the fill. On a ground this
+#: dark the fill has almost nowhere to go: `stripe` is 1.19:1, barely better
+#: than what it replaces. `muted` gives the edge 8.9:1 and `ink` gives the mark
+#: 13.9:1 against that fill, and those two are what make it findable.
+_EXPAND_GROUND: Final = THEME.stripe
+_EXPAND_EDGE: Final = THEME.muted
+_EXPAND_INK: Final = THEME.ink
+
+#: The drawn mark, the button around it, and the pen that draws it. Fixed
+#: rather than fitted to its contents: the size then owes nothing to the font
+#: or the platform style, so the button is the same on this machine and on the
+#: CI runners, where a size that came out different once already turned a
+#: passing suite red.
+_EXPAND_ICON: Final = 16
+_EXPAND_SIDE: Final = 30
+_EXPAND_MARGIN: Final = 2
+_EXPAND_ARM: Final = 4
+_EXPAND_PEN: Final = 2.0
 
 #: The scale text is sized against. Every caption is drawn `1 / _LEGIBLE_AT`
 #: times larger in scene units, so that when the view sits at this scale the
@@ -491,6 +520,40 @@ class _NodeItem(QGraphicsEllipseItem):
         )
 
 
+def _expand_mark(colour: str, *, inward: bool = False) -> QPixmap:
+    """Four corner brackets, drawn rather than borrowed from a font.
+
+    The glyph this replaces, `U+26F6`, falls to Segoe UI Emoji on Windows,
+    which refuses the pen and paints its own multicoloured mark eight pixels
+    across; the Linux runners have no such face and render something else
+    again. Drawing it takes the colour the theme was measured with and gets the
+    same picture on every machine.
+
+    `inward` turns the brackets around. Outward the joints sit in the corners
+    and the arms run toward the middle, which reads as room being taken;
+    inward they meet where those arms ended and run back out, which reads as
+    room being given up.
+    """
+    mark = QPixmap(_EXPAND_ICON, _EXPAND_ICON)
+    mark.fill(QColor(0, 0, 0, 0))
+    painter = QPainter(mark)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(QPen(QColor(colour), _EXPAND_PEN, cap=Qt.PenCapStyle.FlatCap))
+    near, far = _EXPAND_MARGIN, _EXPAND_ICON - _EXPAND_MARGIN
+    for corner_x, towards_x in ((near, 1), (far, -1)):
+        for corner_y, towards_y in ((near, 1), (far, -1)):
+            reach_x = towards_x * _EXPAND_ARM
+            reach_y = towards_y * _EXPAND_ARM
+            joint_x = corner_x + reach_x if inward else corner_x
+            joint_y = corner_y + reach_y if inward else corner_y
+            end_x = corner_x if inward else corner_x + reach_x
+            end_y = corner_y if inward else corner_y + reach_y
+            painter.drawLine(joint_x, joint_y, end_x, joint_y)
+            painter.drawLine(joint_x, joint_y, joint_x, end_y)
+    painter.end()
+    return mark
+
+
 class ActivityCanvas(QGraphicsView):
     """Pan, zoom, and click a node to see what it is made of."""
 
@@ -553,10 +616,12 @@ class ActivityCanvas(QGraphicsView):
         self._expand = QToolButton(self)
         self._expand.setCursor(Qt.CursorShape.PointingHandCursor)
         self._expand.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._expand.setFixedSize(_EXPAND_SIDE, _EXPAND_SIDE)
+        self._expand.setIconSize(QSize(_EXPAND_ICON, _EXPAND_ICON))
         self._expand.setStyleSheet(
-            f"QToolButton {{ background: {THEME.raised}; color: {THEME.muted};"
-            f" border: 1px solid {THEME.edge}; border-radius: 3px; padding: 5px 8px; }}"
-            f"QToolButton:hover {{ color: {THEME.ink}; border-color: {THEME.accent}; }}"
+            f"QToolButton {{ background: {_EXPAND_GROUND};"
+            f" border: 1px solid {_EXPAND_EDGE}; border-radius: 4px; }}"
+            f"QToolButton:hover {{ background: {THEME.edge}; border-color: {THEME.ink}; }}"
         )
         self._expand.clicked.connect(self.expand_requested)
         self.set_expanded(False)
@@ -569,10 +634,8 @@ class ActivityCanvas(QGraphicsView):
         do. Offering `Full screen` while already full screen is a control lying
         about itself — and while full screen it is the most visible way back.
         """
-        self._expand.setText("✖" if expanded else "⛶")
+        self._expand.setIcon(QIcon(_expand_mark(_EXPAND_INK, inward=expanded)))
         self._expand.setToolTip("Leave full screen  (Esc)" if expanded else "Full screen  (F11)")
-        self._expand.adjustSize()
-        self._place_expand()
 
     def _place_expand(self) -> None:
         """Keep it in the top right, inside the canvas whatever size it is.
