@@ -21,23 +21,23 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from dragging import drag, hold, let_go, mouse, press_on
-from PyQt6.QtCore import QEvent, QPoint, QPointF, Qt
+from PyQt6.QtCore import QEvent, QPoint, QPointF, QRectF, Qt
 from PyQt6.QtGui import QColor, QPainterPath
 from PyQt6.QtWidgets import QApplication
 
 from logarc.core.activity import ActivityCategory, Outcome, Severity
 from logarc.core.evidence import EvidenceRef
 from logarc.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
-from logarc.gui.canvas import (
-    _EDGE_COLOUR,
-    _SCENE_MARGIN,
-    ActivityCanvas,
-    _edge_shape,
-    _EdgeArt,
-)
+from logarc.gui.canvas import _EDGE_COLOUR, ActivityCanvas, _edge_shape, _EdgeArt
 from logarc.gui.style import SELECTION_COLOUR
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
+
+#: Room added to the window after the graph has been fitted into it, in
+#: pixels. Bigger than a node so one can be moved clear of the others and
+#: stay on screen; smaller than the ground the scene keeps around a graph,
+#: so claiming that ground still runs out of window.
+_SLACK = 120
 
 
 @pytest.fixture(scope="module")
@@ -446,15 +446,209 @@ def test_the_scene_settles_once_the_hand_lets_go(qt_app: QApplication) -> None:
     mouse(canvas, QEvent.Type.MouseMove, at, held=True)
     assert canvas.graph_scene.sceneRect() != canvas.graph_scene.itemsBoundingRect()
 
+    grown = canvas.graph_scene.sceneRect()
+
     let_go(canvas, at)
 
-    assert canvas.graph_scene.sceneRect().contains(canvas.graph_scene.itemsBoundingRect())
-    # From the constant, not from a number copied out of it. Written as 160.0,
-    # this said nothing about what it meant and went red the day the margin
-    # changed for a reason that had nothing to do with dragging.
-    assert canvas.graph_scene.sceneRect().width() == pytest.approx(
-        canvas.graph_scene.itemsBoundingRect().width() + 2 * _SCENE_MARGIN
+    settled = canvas.graph_scene.sceneRect()
+    assert settled.contains(canvas.graph_scene.itemsBoundingRect())
+    # Said as "smaller than it was", not as a width copied out of the margin.
+    # Written as `items + 2 * _SCENE_MARGIN` this pinned one particular way of
+    # arriving at the answer, and went red the day the scene learned to stop at
+    # what the view can show — a change that left the behaviour it was written
+    # for exactly as it was.
+    assert settled.width() < grown.width(), "the ground it was dragged across is still there"
+    assert settled.height() < grown.height()
+
+
+def as_opened(count: int = 12) -> ActivityCanvas:
+    """A canvas on screen with a graph in it, in the state a reader drags from.
+
+    Two things matter, and both were got wrong first.
+
+    The window is shaped like the graph, so the fit binds on both axes and
+    frames it almost exactly. Given a window of some other shape, the fit
+    letterboxes and the spare band swallows anything a drag adds — written that
+    way, every mutation of this work survived while the tests stayed green.
+
+    And the graph is long enough to wrap, so it is a block rather than a strip.
+    A three-node trace is wide and flat whatever window it is put in.
+    """
+    shape = ActivityCanvas()
+    shape.show_graph(chain(count))
+    graph = shape.graph_scene.itemsBoundingRect()
+
+    # Roughly life size. Shrunk to some fixed number of pixels instead, these
+    # captions — which the offscreen platform draws far wider than any real
+    # font — drive the fit under `MIN_FIT_SCALE`, and it clamps and puts up the
+    # very bars the premise is about.
+    canvas = ActivityCanvas()
+    canvas.resize(round(graph.width()) + 60, round(graph.height()) + 60)
+    canvas.show()
+    QApplication.processEvents()
+    canvas.show_graph(chain(count))
+    QApplication.processEvents()
+
+    # `show_graph` fits, so at this point the window frames the graph exactly
+    # and there is nowhere to drag a node that is not already inside it. The
+    # slack is added afterwards, where no fit will take it back: enough for a
+    # node to be moved out past the others and still be on screen, and little
+    # enough that the ground kept around the graph no longer has room to fit.
+    canvas.resize(canvas.width() + _SLACK, canvas.height() + _SLACK)
+    QApplication.processEvents()
+
+    assert not canvas.verticalScrollBar().isVisible(), "premise: nothing to scroll to begin with"
+    assert not canvas.horizontalScrollBar().isVisible(), "premise: nothing to scroll to begin with"
+    return canvas
+
+
+def test_opening_a_graph_frames_the_graph_not_the_last_view(qt_app: QApplication) -> None:
+    """`show_graph` rescales the view around what it has just set, so the
+    region on screen beforehand says nothing about the region that will be on
+    screen after. Framed to the old one, a graph small enough to sit inside it
+    opens at whatever scale happened to be in force rather than filling the
+    window it was given.
+    """
+    canvas = ActivityCanvas()
+    canvas.resize(1600, 1200)
+    canvas.show()
+    QApplication.processEvents()
+
+    canvas.show_graph(chain(2))
+    QApplication.processEvents()
+
+    on_screen = canvas.mapFromScene(canvas.graph_scene.itemsBoundingRect()).boundingRect()
+    room = canvas.viewport().rect()
+
+    assert on_screen.width() > room.width() * 0.7, (
+        f"the graph fills {on_screen.width()} of {room.width()} px"
     )
+    canvas.close()
+
+
+def whole_of(canvas: ActivityCanvas, node_id: str) -> QRectF:
+    """A node and its caption, in scene units.
+
+    The caption is a child item, so `sceneBoundingRect` alone is the circle and
+    nothing else. Asked that way, a node whose caption had slid off the edge
+    still answered that it was on screen — and the test built on it was
+    checking the opposite of what it said.
+    """
+    node = canvas._nodes[node_id]
+    return node.sceneBoundingRect().united(node.mapRectToScene(node.childrenBoundingRect()))
+
+
+def in_sight(canvas: ActivityCanvas, node_id: str) -> bool:
+    """Whether the node, caption and all, is still wholly on screen."""
+    seen = canvas.mapToScene(canvas.viewport().rect()).boundingRect()
+    return seen.contains(whole_of(canvas, node_id))
+
+
+#: How much clear window to leave beyond the node, in pixels. Small: the point
+#: is to put its far edge as near the frame as it will go while keeping it
+#: wholly on screen, because that is the state the fault appears in.
+_SPARE = 4
+
+
+def toward_the_corner(canvas: ActivityCanvas, node_id: str = "n0") -> QPoint:
+    """Where to put the cursor to bring the node's far edge up to the frame.
+
+    Backed off by the distance from the cursor to that edge, not by the node's
+    whole width and height. The cursor holds the node by its centre and the
+    caption reaches about half its width past that, so backing off by the whole
+    of it stops half a node short — which on a window with only a little room
+    to spare is the difference between a drag that reaches the frame and one
+    that never leaves the graph it started in.
+    """
+    node = canvas._nodes[node_id]
+    whole = canvas.mapFromScene(whole_of(canvas, node_id)).boundingRect()
+    held = canvas.mapFromScene(node.scenePos())
+    room = canvas.viewport().rect()
+    return QPoint(
+        room.right() - (whole.right() - held.x()) - _SPARE,
+        room.bottom() - (whole.bottom() - held.y()) - _SPARE,
+    )
+
+
+def test_a_node_still_on_screen_is_not_chased_by_the_scene(qt_app: QApplication) -> None:
+    """Nothing has gone anywhere, so there is nothing to follow.
+
+    The scene grows so that a node dragged out of view can still be scrolled
+    to. Applied to a node that never left, it hands the reader two bars while
+    the thing they are dragging is in front of them the whole time.
+    """
+    canvas = as_opened()
+    before = canvas.sceneRect()
+    press_on(canvas, "n0")
+
+    mouse(canvas, QEvent.Type.MouseMove, toward_the_corner(canvas), held=True)
+    QApplication.processEvents()
+
+    assert in_sight(canvas, "n0"), "premise: it never left the screen"
+    # Said as "the scene did not move", not as "no bars appeared". Whether the
+    # ground it claims is enough to raise a bar depends on how near the frame
+    # the graph already was, so the bars answer this question only from a few
+    # pixels' worth of starting positions — and the version of this test that
+    # asked them let the fault through.
+    assert canvas.sceneRect() == before, "the scene chased a node that never left"
+    assert not canvas.verticalScrollBar().isVisible(), "a bar while nothing is off screen"
+    assert not canvas.horizontalScrollBar().isVisible(), "a bar while nothing is off screen"
+    canvas.close()
+
+
+def test_a_node_dropped_inside_the_frame_raises_no_scrollbars(qt_app: QApplication) -> None:
+    """And it stays that way once the hand lets go.
+
+    Measured full screen, a node dropped 90px inside the corner — 55px of clear
+    room still beyond its caption — put up both bars. The graph fitted the view
+    by 6 units across; what did not fit was the ground kept around it.
+    """
+    canvas = as_opened()
+    press_on(canvas, "n0")
+    corner = toward_the_corner(canvas)
+    mouse(canvas, QEvent.Type.MouseMove, corner, held=True)
+
+    let_go(canvas, corner)
+    QApplication.processEvents()
+
+    assert in_sight(canvas, "n0"), "premise: it never left the screen"
+    # With everything on screen the scene is exactly what is on screen: nothing
+    # to scroll to, and no ground claimed that cannot be seen. Stated as the
+    # rule rather than as the bars, which only show it once the graph has grown
+    # to within a margin's width of the frame.
+    seen = canvas.mapToScene(canvas.viewport().rect()).boundingRect()
+    scene = canvas.sceneRect()
+    assert scene.width() == pytest.approx(seen.width(), abs=1.0), (
+        f"scene {scene.width():.1f} wide against a window showing {seen.width():.1f}"
+    )
+    assert scene.height() == pytest.approx(seen.height(), abs=1.0)
+    assert not canvas.verticalScrollBar().isVisible(), "a bar to scroll into empty ground"
+    assert not canvas.horizontalScrollBar().isVisible(), "a bar to scroll into empty ground"
+    canvas.close()
+
+
+def test_a_node_dragged_out_of_sight_can_still_be_reached(qt_app: QApplication) -> None:
+    """The other direction, and the reason the scene grows at all.
+
+    The cheapest way to stop bars appearing during a drag is to stop the scene
+    growing — and then a node pushed past the edge is simply gone, because the
+    view clamps scrolling to the scene and there is nothing out there to
+    scroll to.
+    """
+    canvas = as_opened()
+    press_on(canvas, "n0")
+    room = canvas.viewport().rect()
+    beyond = QPoint(room.right() + 400, room.bottom() + 400)
+
+    mouse(canvas, QEvent.Type.MouseMove, beyond, held=True)
+    QApplication.processEvents()
+
+    assert not in_sight(canvas, "n0"), "premise: it has left the screen"
+    assert canvas.graph_scene.sceneRect().contains(canvas._nodes["n0"].sceneBoundingRect()), (
+        "it cannot be scrolled to"
+    )
+    let_go(canvas, beyond)
+    canvas.close()
 
 
 # -- what lights up while a node is moving --------------------------------
