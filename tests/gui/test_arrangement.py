@@ -20,6 +20,8 @@ from logarc.gui.arrangement import (
     forget,
     key,
     load,
+    moved_from,
+    notice,
     remember,
 )
 
@@ -246,3 +248,55 @@ def test_the_whole_case_keeps_the_key_it_always_had() -> None:
     assert key(CASE, "10.0.0.1", GraphKind.TRACE, wrap=True) == key(
         CASE, "10.0.0.1", GraphKind.TRACE, wrap=True, window=""
     )
+
+
+# -- which activities are not where they were kept -------------------------
+
+
+def test_nothing_has_moved_when_everything_is_where_it_was_kept() -> None:
+    where = {"n0": (0.0, 0.0), "n1": (10.0, 20.0)}
+    assert moved_from(where, dict(where)) == ()
+
+
+def test_a_node_somewhere_else_is_reported_by_id() -> None:
+    kept = {"n0": (0.0, 0.0), "n1": (10.0, 20.0)}
+    now = {"n0": (0.0, 0.0), "n1": (11.0, 20.0)}
+    assert moved_from(now, kept) == ("n1",)
+
+
+def test_every_node_that_moved_is_reported_in_a_settled_order() -> None:
+    """Sorted, so neither the count nor the ids depend on dictionary order,
+    which is insertion order, which is whatever order the graph was drawn in.
+    """
+    kept = {"n2": (0.0, 0.0), "n0": (0.0, 0.0), "n1": (0.0, 0.0)}
+    now = {"n2": (5.0, 0.0), "n0": (5.0, 0.0), "n1": (0.0, 0.0)}
+    assert moved_from(now, kept) == ("n0", "n2")
+
+
+def test_a_node_the_baseline_does_not_name_has_not_moved() -> None:
+    """It has nowhere to have moved *from*.
+
+    Counted as moved, a case re-ingested with a different rule pack would open
+    already offering to save an arrangement nobody had touched: the new
+    activities are not in the saved one, and every one of them would read as a
+    move.
+    """
+    assert moved_from({"n0": (1.0, 1.0)}, {}) == ()
+
+
+def test_a_node_that_has_gone_is_not_a_move_either() -> None:
+    """The other way round. An activity the baseline names and the graph no
+    longer has cannot have been moved, because it is not on the canvas to move.
+    """
+    assert moved_from({}, {"n0": (1.0, 1.0)}) == ()
+
+
+def test_one_activity_is_counted_in_the_singular() -> None:
+    assert notice(1) == "You have moved 1 activity. This arrangement is not saved."
+
+
+def test_several_activities_are_counted_in_the_plural() -> None:
+    """`activities`, not `activitys`. The window already says `1 session(s)`
+    nowhere, and this is the noun that would have made it start again.
+    """
+    assert notice(2) == "You have moved 2 activities. This arrangement is not saved."
