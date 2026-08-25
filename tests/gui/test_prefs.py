@@ -21,6 +21,7 @@ def test_every_setting_the_window_keeps_is_in_the_catalogue() -> None:
     assert {setting.key for setting in prefs.EVERY} == {
         "view/wrap_traces",
         "view/traffic_band",
+        "view/ask_unsaved_arrangement",
         "view/band_density",
         "view/decode_targets",
         "cases/reopen_last",
@@ -33,6 +34,7 @@ def test_the_defaults_are_the_ones_the_menu_already_used() -> None:
     assert prefs.defaults() == {
         "view/wrap_traces": True,
         "view/traffic_band": True,
+        "view/ask_unsaved_arrangement": True,
         "view/band_density": Density.FINE,
         "view/decode_targets": True,
         "cases/reopen_last": False,
@@ -67,6 +69,7 @@ def test_a_group_keeps_its_settings_in_catalogue_order() -> None:
     assert [s.key for s in prefs.in_group("Graph")] == [
         "view/wrap_traces",
         "view/traffic_band",
+        "view/ask_unsaved_arrangement",
         "view/band_density",
     ]
 

@@ -16,6 +16,8 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
 
+from logarc.gui.style import plural
+
 if TYPE_CHECKING:
     from logarc.core.graph import GraphKind
 
@@ -29,6 +31,8 @@ __all__ = [
     "forget",
     "key",
     "load",
+    "moved_from",
+    "notice",
     "remember",
 ]
 
@@ -182,3 +186,48 @@ def remember(store: Store, name: str, positions: Positions) -> Store:
 def forget(store: Store, name: str) -> Store:
     """Drop one arrangement. Dropping one that was never saved is not an error."""
     return {existing: entry for existing, entry in store.items() if existing != name}
+
+
+def moved_from(current: Positions, kept: Positions) -> tuple[str, ...]:
+    """Which activities sit somewhere other than where `kept` puts them.
+
+    The whole of "is this arrangement unsaved?", and derived rather than kept,
+    because the state that would be kept is not the state being asked about.
+    `MoveHistory` answers "has anything been dragged" — and a reader who drags a
+    node and drags it back has dragged something and has nothing to save.
+
+    An activity `kept` does not name has not moved: there is nowhere for it to
+    have moved *from*. Counted, a case re-ingested against a different rule pack
+    would open already offering to save an arrangement nobody had touched, since
+    every activity the saved one predates would read as a move. The same holds
+    the other way: one `kept` names and the graph no longer has is not on the
+    canvas to be moved.
+
+    Sorted, so neither the count nor the ids depend on dictionary order — which
+    is insertion order, and insertion order is whatever order the graph happened
+    to be drawn in.
+
+    Compared exactly. Both sides come off the same `setPos`/`pos()` round trip
+    with no arithmetic in between, so there is no float noise to absorb, and a
+    tolerance here would hide a small move rather than forgive one.
+    """
+    return tuple(
+        sorted(
+            node_id
+            for node_id, where in current.items()
+            if node_id in kept and kept[node_id] != where
+        )
+    )
+
+
+def notice(count: int) -> str:
+    """What to say when `count` activities have been moved and not kept.
+
+    Here rather than in the widget that draws it, for the reason the whole
+    module is here: the wording is a judgement, and a judgement should be
+    checkable without starting a window. `gui.quarantine_notice` and
+    `gui.notice_bar` are already split along this line.
+    """
+    return (
+        f"You have moved {plural(count, 'activity', 'activities')}. This arrangement is not saved."
+    )

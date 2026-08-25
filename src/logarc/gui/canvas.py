@@ -902,6 +902,18 @@ class ActivityCanvas(QGraphicsView):
         """
         return {node_id: (item.pos().x(), item.pos().y()) for node_id, item in self._nodes.items()}
 
+    @property
+    def laid_out(self) -> Positions:
+        """Where the layout put each activity, before any arrangement went over it.
+
+        The baseline an unsaved arrangement is measured against, in the shape
+        `positions` hands back so the two can be compared without either caller
+        reshaping the other. `_base` holds `Point`, which is the layout's own
+        type: compared against a tuple, every activity on the canvas would read
+        as moved.
+        """
+        return {node_id: (point.x, point.y) for node_id, point in self._base.items()}
+
     def undo_move(self) -> None:
         """Put the last activity that was dragged back where it came from.
 

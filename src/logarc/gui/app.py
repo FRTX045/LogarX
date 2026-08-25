@@ -19,6 +19,7 @@ from PyQt6.QtCore import QSettings, Qt, QTimer
 from PyQt6.QtGui import QAction, QKeyEvent, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QDialog,
     QFileDialog,
     QLabel,
@@ -42,6 +43,7 @@ from logarc.detect.crs import CrsEvidence
 from logarc.episode.builder import DEFAULT_EVIDENCE_SAMPLE, EpisodePolicy
 from logarc.gui import arrangement, crash, prefs, recent
 from logarc.gui._qt import required
+from logarc.gui.arrangement_bar import ArrangementBar
 from logarc.gui.canvas import ActivityCanvas
 from logarc.gui.case_chooser import CaseChooser
 from logarc.gui.density import Density, buckets_for
@@ -119,6 +121,11 @@ _LAYOUT_KEY = "view/arrangements"
 #: README says so. `_LAYOUT_KEY` is the other one — a saved arrangement is keyed
 #: by activity id, and a trace's activity ids carry the client's address.
 _RECENT_KEY = "cases/recent"
+
+#: Whether to warn before an arrangement nobody kept is lost. In `prefs.EVERY`
+#: as well, which is what puts it in the Preferences dialog — and the dialog is
+#: the only way back after `Don't ask this again`.
+_ASK_UNSAVED_KEY = "view/ask_unsaved_arrangement"
 
 #: The two views, in the order the tab bar shows them. One list rather than a
 #: pair of indices spelled out at each end, so a tab and the view it selects
@@ -311,7 +318,7 @@ class MainWindow(QMainWindow):
         self._legend = LegendBar()
         self._evidence = EvidencePanel()
         self._clients.client_chosen.connect(self._reconstruct)
-        self._clients.client_released.connect(self._let_go_of_client)
+        self._clients.client_released.connect(self._release_requested)
         self._canvas.node_selected.connect(self._show_evidence)
 
         self._build_layout()
@@ -388,6 +395,14 @@ class MainWindow(QMainWindow):
         # Nothing to switch between until a client has been reconstructed.
         self._tabs.setVisible(False)
 
+        # Under the canvas rather than over it. The note beside `Undo` in the
+        # Edit menu says why: a strip floating on the graph covers a patch of it,
+        # has to be moved on every resize, and swallows clicks meant for whatever
+        # node is underneath.
+        self._arrangement_bar = ArrangementBar()
+        self._arrangement_bar.save_requested.connect(self._save_arrangement)
+        self._arrangement_bar.reset_requested.connect(self._reset_layout)
+
         centre = QWidget()
         column = QVBoxLayout(centre)
         # Matching the panels either side, and what lets the canvas read as a
@@ -397,6 +412,7 @@ class MainWindow(QMainWindow):
         column.addWidget(self._tabs)
         column.addWidget(self._heading)
         column.addWidget(self._canvas)
+        column.addWidget(self._arrangement_bar)
         column.addWidget(self._legend)
 
         # Small enough to leave the panel adjustable, which is the whole point
@@ -501,7 +517,7 @@ class MainWindow(QMainWindow):
             action.setCheckable(True)
         self._trace_action.setChecked(True)
         view_menu.addSeparator()
-        self._add(view_menu, "&Fit to window", self._canvas.fit)
+        self._fit_action = self._add(view_menu, "&Fit to window", self._canvas.fit)
         view_menu.addSeparator()
         self._fullscreen_action = self._add(view_menu, "F&ull screen", self._from_the_menu)
         self._fullscreen_action.setCheckable(True)
@@ -512,6 +528,28 @@ class MainWindow(QMainWindow):
         # exactly when it is one of the two ways back.
         self.addAction(self._fullscreen_action)
         self._canvas.expand_requested.connect(self._from_the_canvas)
+
+        # The same actions again, offered where the reader's hand already is.
+        # Qt builds the menu from them, so each entry carries the shortcut it
+        # already has and greys out exactly when its twin in the menu bar does
+        # — because it is not a twin, it is the same object. A menu built by
+        # hand here would be a second list to keep in step, and the first thing
+        # to fall out of step would be which entries are dead.
+        #
+        # After the View menu, not with the Edit one: `_fit_action` is made
+        # there, and added before it exists this would be adding `None`.
+        on_the_canvas = QAction(self._canvas)
+        on_the_canvas.setSeparator(True)
+        self._canvas.addActions(
+            [
+                self._save_layout_action,
+                self._undo_action,
+                self._reset_layout_action,
+                on_the_canvas,
+                self._fit_action,
+            ]
+        )
+        self._canvas.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
 
         export_menu = required(menu_bar.addMenu("&Export"))
         self._add(export_menu, "&HTML report…", lambda: self._export("html"))
@@ -874,6 +912,27 @@ class MainWindow(QMainWindow):
             )
         )
 
+    def _select_quietly(self, client_ip: str) -> bool:
+        """Put the table back on `client_ip` without asking for a reconstruction.
+
+        `False` when that client is not in the list at all.
+
+        The block is the point. `ClientTable` emits `client_chosen` from
+        `itemSelectionChanged`, and `gui.panels` records what a selection that
+        comes back unblocked does: the row came back, the choice was emitted a
+        second time, and the window reconstructed the client it had just
+        dropped. Two callers need this now, so there is one copy of it.
+        """
+        table = self._clients._table
+        for row in range(table.rowCount()):
+            cell = table.item(row, 0)
+            if cell is not None and cell.text() == client_ip:
+                blocked = table.blockSignals(True)
+                table.selectRow(row)
+                table.blockSignals(blocked)
+                return True
+        return False
+
     def _reselect(self, client_ip: str) -> None:
         """Put the reader back on the client they were reading, if it is listed.
 
@@ -883,17 +942,85 @@ class MainWindow(QMainWindow):
         and emits nothing — so the graph went on showing the reconstruction it
         had, over a range that was no longer in force.
         """
-        table = self._clients._table
-        for row in range(table.rowCount()):
-            cell = table.item(row, 0)
-            if cell is not None and cell.text() == client_ip:
-                blocked = table.blockSignals(True)
-                table.selectRow(row)
-                table.blockSignals(blocked)
-                self._reconstruct(client_ip)
-                return
+        if self._select_quietly(client_ip):
+            self._reconstruct(client_ip)
+            return
         # Gone from this range. The graph would otherwise go on showing a
         # reconstruction of a client the list no longer offers.
+        self._let_go_of_client()
+
+    def _ask_about_the_arrangement(self) -> str:
+        """Put the question, and answer `save`, `discard` or `cancel`.
+
+        Split from `_may_leave_the_graph` so the rule around it can be tested
+        without a dialog on screen: a modal `exec()` in a test either blocks the
+        run or has to be dismissed by a timer, and neither is a test of the rule.
+        """
+        client = self._result.client_ip if self._result is not None else "this client"
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle("Unsaved arrangement")
+        box.setText(f"Keep how you have arranged {client}?")
+        box.setInformativeText(
+            "Leaving without saving puts the activities back where they were laid out."
+        )
+        save = box.addButton("Save and continue", QMessageBox.ButtonRole.AcceptRole)
+        discard = box.addButton("Discard", QMessageBox.ButtonRole.DestructiveRole)
+        box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(save)
+        # Held in a name, not passed inline. `setCheckBox` does not keep the
+        # Python object alive: an inline `QCheckBox` is collected, the tick
+        # disappears from the dialog, and reading `box.checkBox()` afterwards
+        # touches freed C++ and takes the process down with no traceback at all.
+        ask_again = QCheckBox("Don't ask this again")
+        box.setCheckBox(ask_again)
+
+        box.exec()
+        if ask_again.isChecked():
+            # Both, not just the store. The window reads its switches once into
+            # `self._prefs` at startup, so writing only the stored value would
+            # leave the dialog coming back for the rest of the session.
+            _settings().setValue(_ASK_UNSAVED_KEY, False)
+            self._prefs[_ASK_UNSAVED_KEY] = False
+
+        pressed = box.clickedButton()
+        if pressed is save:
+            return "save"
+        return "discard" if pressed is discard else "cancel"
+
+    def _may_leave_the_graph(self) -> bool:
+        """Whether the reader is finished with the graph that is on screen.
+
+        `False` only when they said so. A cancelled question is the one answer
+        that has to stop whatever asked it, and the caller is the only thing
+        that knows how to undo its own half of the gesture.
+        """
+        if self._result is None or not self._canvas._nodes:
+            return True
+        if not self._prefs.get(_ASK_UNSAVED_KEY, True):
+            return True
+        if not arrangement.moved_from(self._canvas.positions, self._baseline()):
+            return True
+
+        answer = self._ask_about_the_arrangement()
+        if answer == "save":
+            self._save_arrangement()
+        return answer != "cancel"
+
+    def _release_requested(self) -> None:
+        """The reader pressed the row they were already on.
+
+        Asked here rather than inside `_let_go_of_client`, because that runs on
+        two paths and only one of them is the reader leaving: a narrower range
+        drops a client from the list and lets go of it on their behalf. Asking
+        there would offer to keep an arrangement for a graph that is going
+        whatever the answer, and cancelling would leave the window reading a
+        client the list no longer has.
+        """
+        if not self._may_leave_the_graph():
+            if self._result is not None:
+                self._select_quietly(self._result.client_ip)
+            return
         self._let_go_of_client()
 
     def _let_go_of_client(self) -> None:
@@ -926,6 +1053,17 @@ class MainWindow(QMainWindow):
 
     def _reconstruct(self, client_ip: str) -> None:
         if self._case_path is None:
+            return
+        # Only a different client is leaving this one. `_reselect` calls this
+        # again for the *same* client whenever the range moves, and asking there
+        # would say the reader is leaving a client they are still on.
+        leaving = self._result is not None and self._result.client_ip != client_ip
+        if leaving and not self._may_leave_the_graph():
+            # The selection has already moved: `client_chosen` comes from
+            # `itemSelectionChanged`, which fires before the window hears about
+            # it. Refusing the move means putting the row back as well.
+            if self._result is not None:
+                self._select_quietly(self._result.client_ip)
             return
         path = self._case_path
         # Read once here, on the interface thread, rather than from inside the
@@ -1093,6 +1231,27 @@ class MainWindow(QMainWindow):
         name = self._arrangement_key(wrap=wrap)
         return None if name is None else self._arrangements().get(name)
 
+    def _baseline(self) -> arrangement.Positions:
+        """Where this graph would be drawn if it were opened again right now.
+
+        The layout, with whatever has been saved laid over it — which is exactly
+        what `show_graph` does with a saved arrangement. Anything else on the
+        canvas is a move the reader has made and not kept.
+
+        Worked out on every ask rather than kept in an attribute, and that is
+        what makes saving and resetting take the strip away without either of
+        them having to remember to: after a save the store holds the positions
+        that are on screen, after a reset it holds nothing and the positions are
+        the layout's, and both come out as "nothing has moved" without being
+        told. A flag set on the first drag would still be set after an undo had
+        put everything back.
+        """
+        baseline = self._canvas.laid_out
+        saved = self._saved_arrangement()
+        if saved:
+            baseline.update({node: where for node, where in saved.items() if node in baseline})
+        return baseline
+
     def _undo_move(self) -> None:
         self._canvas.undo_move()
 
@@ -1103,6 +1262,7 @@ class MainWindow(QMainWindow):
             return
         store = arrangement.remember(self._arrangements(), name, self._canvas.positions)
         _settings().setValue(_LAYOUT_KEY, arrangement.dump(store))
+        self._sync_arrangement_actions()
         self._idle("Arrangement saved.")
 
     def _reset_layout(self) -> None:
@@ -1118,19 +1278,27 @@ class MainWindow(QMainWindow):
             _settings().setValue(
                 _LAYOUT_KEY, arrangement.dump(arrangement.forget(self._arrangements(), name))
             )
+        self._sync_arrangement_actions()
         self._idle("Layout reset.")
 
     def _sync_arrangement_actions(self) -> None:
-        """Grey out what there is nothing to do with.
+        """Grey out what there is nothing to do with, and offer what there is.
 
         A live control that does nothing reads as a fault in the tool, and
         `Undo` is the one that changes most: it comes alive on the first drag
         and goes back out when the stack empties.
+
+        The strip rides along here because it answers the same question at the
+        same moments. This is already wired to `arrangement_changed`, which is
+        emitted once per drag that moved something — so there is no second thing
+        to remember to call, and no second place for the two to fall out of step.
         """
         drawn = self._result is not None and bool(self._canvas._nodes)
         self._undo_action.setEnabled(drawn and self._canvas.can_undo)
         self._save_layout_action.setEnabled(drawn)
         self._reset_layout_action.setEnabled(drawn)
+        moved = arrangement.moved_from(self._canvas.positions, self._baseline()) if drawn else ()
+        self._arrangement_bar.show_moved(len(moved))
 
     def _from_the_menu(self) -> None:
         self._apply_fullscreen(self._fullscreen_action.isChecked())

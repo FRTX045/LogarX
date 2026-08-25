@@ -2903,6 +2903,126 @@ def _where(window: MainWindow, node_id: str) -> tuple[float, float]:
     return (item.pos().x(), item.pos().y())
 
 
+def test_moving_an_activity_offers_to_keep_it(qt_app: QApplication, campaign: Path) -> None:
+    """The strip is the whole point of knowing an arrangement is unsaved."""
+    window = _reconstructed(qt_app, campaign)
+    # `isVisibleTo`, not `isVisible`. These tests never show the window, and a
+    # child of a hidden parent is never `isVisible` - so `not isVisible()` is
+    # true here whatever the strip does, and every assertion that the strip had
+    # gone would have passed without testing anything.
+    assert not window._arrangement_bar.isVisibleTo(window), "premise: nothing moved yet"
+
+    _nudged(window)
+    _settled(qt_app)
+
+    assert window._arrangement_bar.isVisibleTo(window)
+    assert "1 activity" in window._arrangement_bar.text()
+    window.close()
+
+
+def test_keeping_it_takes_the_offer_away(
+    qt_app: QApplication, campaign: Path, settings_in_a_temp_file: Path
+) -> None:
+    """Saving is what the strip asks for, so the strip has to notice it happened.
+
+    Left up, it would say the arrangement is unsaved directly after saving it,
+    which reads as the save having failed.
+    """
+    app._settings().clear()
+    window = _reconstructed(qt_app, campaign)
+    _nudged(window)
+    _settled(qt_app)
+    assert window._arrangement_bar.isVisibleTo(window), "premise: it is offering"
+
+    window._save_layout_action.trigger()
+
+    assert not window._arrangement_bar.isVisibleTo(window)
+    window.close()
+
+
+def test_putting_it_back_takes_the_offer_away_too(
+    qt_app: QApplication, campaign: Path, settings_in_a_temp_file: Path
+) -> None:
+    """Undo until nothing has moved, and there is nothing left to save.
+
+    Derived rather than tracked is what buys this: a flag set on the first drag
+    would still be set here, and the strip would go on offering to save a graph
+    that is exactly where it was laid out.
+    """
+    app._settings().clear()
+    window = _reconstructed(qt_app, campaign)
+    _nudged(window)
+    _settled(qt_app)
+    assert window._arrangement_bar.isVisibleTo(window), "premise: it is offering"
+
+    window._undo_action.trigger()
+    _settled(qt_app)
+
+    assert not window._arrangement_bar.isVisibleTo(window)
+    window.close()
+
+
+def test_the_strip_saves_by_the_same_route_the_menu_does(
+    qt_app: QApplication, campaign: Path, settings_in_a_temp_file: Path
+) -> None:
+    """One implementation of saving, not two. A second would be a second thing
+    to keep in step with the key and the store.
+    """
+    app._settings().clear()
+    window = _reconstructed(qt_app, campaign)
+    _nudged(window)
+    _settled(qt_app)
+
+    window._arrangement_bar._save.click()
+    _settled(qt_app)
+
+    assert window._saved_arrangement() == window._canvas.positions
+    assert not window._arrangement_bar.isVisibleTo(window)
+    window.close()
+
+
+def test_the_strip_resets_by_the_same_route_the_menu_does(
+    qt_app: QApplication, campaign: Path, settings_in_a_temp_file: Path
+) -> None:
+    """`Reset` forgets a stored arrangement as well as putting the nodes back,
+    and only the window can reach the store.
+    """
+    app._settings().clear()
+    window = _reconstructed(qt_app, campaign)
+    moved = _nudged(window)
+    home = window._canvas.laid_out[moved]
+    window._save_layout_action.trigger()
+    assert window._saved_arrangement() is not None, "premise: something is stored"
+
+    window._arrangement_bar._reset.click()
+    _settled(qt_app)
+
+    assert _where(window, moved) == home
+    assert window._saved_arrangement() is None, "the stored one is gone too"
+    window.close()
+
+
+def test_a_saved_arrangement_reopens_with_nothing_to_offer(
+    qt_app: QApplication, campaign: Path, settings_in_a_temp_file: Path
+) -> None:
+    """The graph comes back where it was left, and that is not a move.
+
+    Measured against the layout alone, every activity a saved arrangement moves
+    would read as moved on every open, and the strip would be up before the
+    reader had touched anything.
+    """
+    app._settings().clear()
+    window = _reconstructed(qt_app, campaign)
+    _nudged(window)
+    window._save_layout_action.trigger()
+    window.close()
+
+    again = _reconstructed(qt_app, campaign)
+
+    assert not again._arrangement_bar.isVisibleTo(again)
+    again.close()
+
+
 def test_the_arrangement_entries_are_dead_before_a_graph_is_drawn(
     qt_app: QApplication,
 ) -> None:

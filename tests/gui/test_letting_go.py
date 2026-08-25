@@ -11,6 +11,7 @@ of it looks.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -20,11 +21,13 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
-from PyQt6.QtCore import QEvent, QPointF, Qt, QThreadPool
+from dragging import drag
+from PyQt6.QtCore import QEvent, QPoint, QPointF, QSettings, Qt, QThreadPool
 from PyQt6.QtGui import QMouseEvent
 from PyQt6.QtWidgets import QApplication
 
 from logarc.case import Case
+from logarc.gui import app
 from logarc.gui.app import MainWindow
 
 START = datetime(2024, 5, 1, 0, 0, tzinfo=UTC)
@@ -40,6 +43,20 @@ BRIEF = "10.0.0.2"
 @pytest.fixture(scope="module")
 def qt_app() -> QApplication:
     return QApplication.instance() or QApplication([])
+
+
+@pytest.fixture(autouse=True)
+def settings_in_a_temp_file(tmp_path: Path) -> Iterator[Path]:
+    """Point the window's preferences at a file nobody has to live with.
+
+    `QSettings` resolves to `HKCU\\Software` on Windows, so without this the
+    tests below write real preferences onto whichever machine ran them — and
+    the arrangement they save would be read back by the next run.
+    """
+    ini = tmp_path / "logarc.ini"
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(app, "_settings", lambda: QSettings(str(ini), QSettings.Format.IniFormat))
+        yield ini
 
 
 def _line(client: str, seconds: int, target: str) -> str:
@@ -174,3 +191,217 @@ def test_a_reconstruction_that_lands_after_letting_go_is_thrown_away(
 
     assert window._result is None
     assert window._heading.text() == ""
+
+
+# -- leaving a client with an arrangement nobody kept ----------------------
+
+
+def _moved(window: MainWindow) -> str:
+    """Drag the first activity on the canvas, and say which one it was."""
+    node_id = next(iter(window._canvas._nodes))
+    drag(window._canvas, node_id, QPoint(70, -40))
+    return node_id
+
+
+#: The dialog is stubbed everywhere below, never shown. A modal `exec()` in a
+#: test either blocks the run or has to be dismissed by a timer, and neither of
+#: those is a test of the rule that decides whether to ask at all.
+
+
+def test_moving_to_another_client_with_an_unsaved_arrangement_asks_first(
+    qt_app: QApplication, case: Path
+) -> None:
+    window = _opened(qt_app, case)
+    _press(window, BRIEF)
+    _settled(qt_app)
+    _moved(window)
+
+    asked: list[str] = []
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(
+            MainWindow,
+            "_ask_about_the_arrangement",
+            lambda self: (asked.append("asked"), "discard")[1],
+        )
+        _press(window, ALL_DAY)
+        _settled(qt_app)
+
+    assert asked == ["asked"]
+    window.close()
+
+
+def test_moving_to_another_client_with_nothing_moved_asks_nothing(
+    qt_app: QApplication, case: Path
+) -> None:
+    """The question would have no subject.
+
+    Asked anyway, the warning becomes something to click through on every
+    client, and clicking through is what trains a reader to stop reading it.
+    """
+    window = _opened(qt_app, case)
+    _press(window, BRIEF)
+    _settled(qt_app)
+
+    asked: list[str] = []
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(
+            MainWindow,
+            "_ask_about_the_arrangement",
+            lambda self: (asked.append("asked"), "discard")[1],
+        )
+        _press(window, ALL_DAY)
+        _settled(qt_app)
+
+    assert asked == []
+    assert window._result is not None
+    assert window._result.client_ip == ALL_DAY, "and the move went through"
+    window.close()
+
+
+def test_cancelling_leaves_the_reader_on_the_client_they_were_reading(
+    qt_app: QApplication, case: Path
+) -> None:
+    """The selection has already moved by the time the window hears about it,
+    so cancelling has to put the row back as well as refusing the move.
+    """
+    window = _opened(qt_app, case)
+    _press(window, BRIEF)
+    _settled(qt_app)
+    moved = _moved(window)
+    placed = (
+        window._canvas._nodes[moved].pos().x(),
+        window._canvas._nodes[moved].pos().y(),
+    )
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(MainWindow, "_ask_about_the_arrangement", lambda self: "cancel")
+        _press(window, ALL_DAY)
+        _settled(qt_app)
+
+    assert window._result is not None
+    assert window._result.client_ip == BRIEF, "the reader was moved anyway"
+    assert _row_of(window, BRIEF) in {
+        index.row() for index in window._clients._table.selectionModel().selectedRows()
+    }, "the row under the reader is not the client being read"
+    assert window._canvas._nodes[moved].pos().x() == placed[0], "the graph was redrawn"
+    assert window._canvas._nodes[moved].pos().y() == placed[1]
+    window.close()
+
+
+def test_discarding_goes_on_to_the_other_client(qt_app: QApplication, case: Path) -> None:
+    window = _opened(qt_app, case)
+    _press(window, BRIEF)
+    _settled(qt_app)
+    _moved(window)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(MainWindow, "_ask_about_the_arrangement", lambda self: "discard")
+        _press(window, ALL_DAY)
+        _settled(qt_app)
+
+    assert window._result is not None
+    assert window._result.client_ip == ALL_DAY
+    window.close()
+
+
+def test_saving_on_the_way_out_keeps_the_arrangement(qt_app: QApplication, case: Path) -> None:
+    """And it is there when the reader comes back."""
+    window = _opened(qt_app, case)
+    _press(window, BRIEF)
+    _settled(qt_app)
+    moved = _moved(window)
+    placed = (
+        window._canvas._nodes[moved].pos().x(),
+        window._canvas._nodes[moved].pos().y(),
+    )
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(MainWindow, "_ask_about_the_arrangement", lambda self: "save")
+        _press(window, ALL_DAY)
+        _settled(qt_app)
+
+    _press(window, BRIEF)
+    _settled(qt_app)
+
+    assert window._canvas._nodes[moved].pos().x() == placed[0]
+    assert window._canvas._nodes[moved].pos().y() == placed[1]
+    window.close()
+
+
+def test_turning_the_warning_off_stops_it_being_asked(qt_app: QApplication, case: Path) -> None:
+    """`Don't ask this again` writes the preference, and it is read before the
+    dialog is built - or turning it off would only last the session.
+    """
+    window = _opened(qt_app, case)
+    _press(window, BRIEF)
+    _settled(qt_app)
+    _moved(window)
+    window._prefs["view/ask_unsaved_arrangement"] = False
+
+    asked: list[str] = []
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(
+            MainWindow,
+            "_ask_about_the_arrangement",
+            lambda self: (asked.append("asked"), "discard")[1],
+        )
+        _press(window, ALL_DAY)
+        _settled(qt_app)
+
+    assert asked == [], "the warning was turned off"
+    assert window._result is not None
+    assert window._result.client_ip == ALL_DAY
+    window.close()
+
+
+def test_a_change_of_range_is_not_leaving_the_client(qt_app: QApplication, case: Path) -> None:
+    """`_reselect` reconstructs the *same* client whenever the range moves.
+
+    Asked there, the warning would say the reader is leaving a client they are
+    still on, and it would fire on every nudge of the date fields - which is
+    the fastest way to teach someone to click a warning away without reading it.
+    """
+    window = _opened(qt_app, case)
+    _press(window, BRIEF)
+    _settled(qt_app)
+    _moved(window)
+
+    asked: list[str] = []
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(
+            MainWindow,
+            "_ask_about_the_arrangement",
+            lambda self: (asked.append("asked"), "discard")[1],
+        )
+        window._reselect(BRIEF)
+        _settled(qt_app)
+
+    assert asked == [], "the same client is not another client"
+    assert window._result is not None
+    assert window._result.client_ip == BRIEF
+    window.close()
+
+
+def test_letting_go_of_a_moved_client_asks_too(qt_app: QApplication, case: Path) -> None:
+    """Pressing the open row again drops the client, and the arrangement with
+    it. That is the same loss the warning exists to prevent.
+    """
+    window = _opened(qt_app, case)
+    _press(window, BRIEF)
+    _settled(qt_app)
+    _moved(window)
+
+    asked: list[str] = []
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(
+            MainWindow,
+            "_ask_about_the_arrangement",
+            lambda self: (asked.append("asked"), "cancel")[1],
+        )
+        _press(window, BRIEF)
+        _settled(qt_app)
+
+    assert asked == ["asked"]
+    assert window._result is not None, "cancelling kept the client open"
+    assert window._result.client_ip == BRIEF
+    window.close()

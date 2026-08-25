@@ -77,6 +77,16 @@ EVERY: tuple[Setting, ...] = (
         group="Graph",
     ),
     Setting(
+        key="view/ask_unsaved_arrangement",
+        label="Ask before leaving an unsaved arrangement",
+        note=(
+            "Warn when leaving a client whose activities you have moved and not "
+            "saved, rather than putting them back without saying so."
+        ),
+        default=True,
+        group="Graph",
+    ),
+    Setting(
         key="view/band_density",
         label="Band detail",
         note=(
