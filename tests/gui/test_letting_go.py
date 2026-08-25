@@ -354,6 +354,34 @@ def test_turning_the_warning_off_stops_it_being_asked(qt_app: QApplication, case
     window.close()
 
 
+def test_a_change_of_range_is_not_leaving_the_client(qt_app: QApplication, case: Path) -> None:
+    """`_reselect` reconstructs the *same* client whenever the range moves.
+
+    Asked there, the warning would say the reader is leaving a client they are
+    still on, and it would fire on every nudge of the date fields - which is
+    the fastest way to teach someone to click a warning away without reading it.
+    """
+    window = _opened(qt_app, case)
+    _press(window, BRIEF)
+    _settled(qt_app)
+    _moved(window)
+
+    asked: list[str] = []
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(
+            MainWindow,
+            "_ask_about_the_arrangement",
+            lambda self: (asked.append("asked"), "discard")[1],
+        )
+        window._reselect(BRIEF)
+        _settled(qt_app)
+
+    assert asked == [], "the same client is not another client"
+    assert window._result is not None
+    assert window._result.client_ip == BRIEF
+    window.close()
+
+
 def test_letting_go_of_a_moved_client_asks_too(qt_app: QApplication, case: Path) -> None:
     """Pressing the open row again drops the client, and the arrangement with
     it. That is the same loss the warning exists to prevent.
