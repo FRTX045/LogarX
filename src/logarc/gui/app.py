@@ -511,7 +511,7 @@ class MainWindow(QMainWindow):
             action.setCheckable(True)
         self._trace_action.setChecked(True)
         view_menu.addSeparator()
-        self._add(view_menu, "&Fit to window", self._canvas.fit)
+        self._fit_action = self._add(view_menu, "&Fit to window", self._canvas.fit)
         view_menu.addSeparator()
         self._fullscreen_action = self._add(view_menu, "F&ull screen", self._from_the_menu)
         self._fullscreen_action.setCheckable(True)
@@ -522,6 +522,28 @@ class MainWindow(QMainWindow):
         # exactly when it is one of the two ways back.
         self.addAction(self._fullscreen_action)
         self._canvas.expand_requested.connect(self._from_the_canvas)
+
+        # The same actions again, offered where the reader's hand already is.
+        # Qt builds the menu from them, so each entry carries the shortcut it
+        # already has and greys out exactly when its twin in the menu bar does
+        # — because it is not a twin, it is the same object. A menu built by
+        # hand here would be a second list to keep in step, and the first thing
+        # to fall out of step would be which entries are dead.
+        #
+        # After the View menu, not with the Edit one: `_fit_action` is made
+        # there, and added before it exists this would be adding `None`.
+        on_the_canvas = QAction(self._canvas)
+        on_the_canvas.setSeparator(True)
+        self._canvas.addActions(
+            [
+                self._save_layout_action,
+                self._undo_action,
+                self._reset_layout_action,
+                on_the_canvas,
+                self._fit_action,
+            ]
+        )
+        self._canvas.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
 
         export_menu = required(menu_bar.addMenu("&Export"))
         self._add(export_menu, "&HTML report…", lambda: self._export("html"))

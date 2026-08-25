@@ -19,7 +19,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
-from PyQt6.QtCore import QSettings
+from PyQt6.QtCore import QSettings, Qt
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QApplication, QDialog, QMenu
 
@@ -265,4 +265,53 @@ def test_the_dialog_opens_showing_what_is_in_force(
     window._show_preferences()
 
     assert seen == [False]
+    window.close()
+
+
+# -- the same actions, on the canvas ---------------------------------------
+
+
+def test_the_canvas_offers_the_arrangement_actions_on_a_right_click(
+    qt_app: QApplication,
+) -> None:
+    """Qt builds the menu from the widget's own actions, so these are the very
+    same objects the Edit menu carries - not copies that could drift from it.
+    """
+    window = MainWindow()
+
+    assert window._canvas.contextMenuPolicy() == Qt.ContextMenuPolicy.ActionsContextMenu
+    on_canvas = window._canvas.actions()
+
+    assert window._save_layout_action in on_canvas
+    assert window._undo_action in on_canvas
+    assert window._reset_layout_action in on_canvas
+    assert window._fit_action in on_canvas
+    window.close()
+
+
+def test_a_dead_menu_entry_is_dead_on_the_canvas_too(qt_app: QApplication) -> None:
+    """Because it is the same action, not a copy of one.
+
+    A right-click that offered to save an arrangement with no graph on the
+    canvas would be offering nothing, and a control that does nothing reads as
+    a fault in the tool.
+    """
+    window = MainWindow()
+    window._sync_arrangement_actions()
+
+    assert not window._save_layout_action.isEnabled(), "premise: no graph, nothing to save"
+    assert window._save_layout_action in window._canvas.actions()
+    window.close()
+
+
+def test_the_canvas_menu_keeps_the_shortcuts_the_menu_bar_shows(
+    qt_app: QApplication,
+) -> None:
+    """The right-click is also where the shortcut is learned. Rebuilt by hand
+    as plain entries, they would carry no shortcut and teach nothing.
+    """
+    window = MainWindow()
+
+    for action in (window._save_layout_action, window._undo_action, window._reset_layout_action):
+        assert not action.shortcut().isEmpty(), f"{action.text()} lost its shortcut"
     window.close()
