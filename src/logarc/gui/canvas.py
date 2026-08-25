@@ -829,13 +829,40 @@ class ActivityCanvas(QGraphicsView):
             self._history.record(move)
             self.arrangement_changed.emit()
 
-    def _frame_scene(self) -> None:
-        """Fit the scene rectangle to what is on it, with room to breathe."""
-        self._scene.setSceneRect(
-            self._scene.itemsBoundingRect().adjusted(
-                -_SCENE_MARGIN, -_SCENE_MARGIN, _SCENE_MARGIN, _SCENE_MARGIN
-            )
-        )
+    def _on_screen(self) -> QRectF:
+        """The region of the scene the window is showing, in scene units.
+
+        Empty if there is somehow no viewport, which reads as "nothing is on
+        screen" — so both callers fall back to claiming the ground they would
+        have claimed before, rather than to claiming none.
+        """
+        viewport = self.viewport()
+        if viewport is None:  # pragma: no cover - a scroll area always has one
+            return QRectF()
+        return self.mapToScene(viewport.rect()).boundingRect()
+
+    def _frame_scene(self, *, within_the_view: bool = True) -> None:
+        """Fit the scene rectangle to what is on it, with room to breathe.
+
+        Stopping at what the view can already show, because the view hangs its
+        scrollbars on this rectangle: ground claimed past the edge of the
+        window is ground the reader is invited to scroll into for nothing.
+        Measured full screen, a node dropped 90 pixels inside the corner — with
+        55 still clear beyond its caption — put up both bars. The graph fitted
+        the view by 6 units across. What did not fit was the ground kept around
+        it.
+
+        `within_the_view` is off for a graph about to be fitted: there the view
+        is rescaled around whatever this sets, so the region on screen now says
+        nothing about the region that will be on screen after.
+        """
+        graph = self._scene.itemsBoundingRect()
+        wanted = graph.adjusted(-_SCENE_MARGIN, -_SCENE_MARGIN, _SCENE_MARGIN, _SCENE_MARGIN)
+        if within_the_view:
+            seen = self._on_screen()
+            if seen.contains(graph):
+                wanted = seen
+        self._scene.setSceneRect(wanted)
 
     def _grow_scene_for(self, item: QGraphicsItem) -> None:
         """Make room for an activity dragged past the edge of the scene.
@@ -848,8 +875,15 @@ class ActivityCanvas(QGraphicsView):
         the scrollbars under the hand that is holding it, and the graph would
         jump away from the cursor.
         """
-        reach = item.sceneBoundingRect().united(item.mapRectToScene(item.childrenBoundingRect()))
-        reach = reach.adjusted(-_SCENE_MARGIN, -_SCENE_MARGIN, _SCENE_MARGIN, _SCENE_MARGIN)
+        whole = item.sceneBoundingRect().united(item.mapRectToScene(item.childrenBoundingRect()))
+        seen = self._on_screen()
+        if seen.contains(whole):
+            # Still in front of the reader, caption and all. Nothing has gone
+            # anywhere, so there is nothing to follow — and claiming ground for
+            # it raises bars over a node that never left the window.
+            return
+
+        reach = whole.adjusted(-_SCENE_MARGIN, -_SCENE_MARGIN, _SCENE_MARGIN, _SCENE_MARGIN)
         rect = self._scene.sceneRect()
         if not rect.contains(reach):
             self._scene.setSceneRect(rect.united(reach))
@@ -1012,7 +1046,7 @@ class ActivityCanvas(QGraphicsView):
         for node in graph.nodes:
             self._draw_node(node, positions[node.node_id])
 
-        self._frame_scene()
+        self._frame_scene(within_the_view=False)
         self.fit()
 
     def show_graph_placeholder(self, text: str = WAITING_MESSAGE) -> None:
