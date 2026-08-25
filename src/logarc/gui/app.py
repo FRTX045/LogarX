@@ -42,6 +42,7 @@ from logarc.detect.crs import CrsEvidence
 from logarc.episode.builder import DEFAULT_EVIDENCE_SAMPLE, EpisodePolicy
 from logarc.gui import arrangement, crash, prefs, recent
 from logarc.gui._qt import required
+from logarc.gui.arrangement_bar import ArrangementBar
 from logarc.gui.canvas import ActivityCanvas
 from logarc.gui.case_chooser import CaseChooser
 from logarc.gui.density import Density, buckets_for
@@ -388,6 +389,14 @@ class MainWindow(QMainWindow):
         # Nothing to switch between until a client has been reconstructed.
         self._tabs.setVisible(False)
 
+        # Under the canvas rather than over it. The note beside `Undo` in the
+        # Edit menu says why: a strip floating on the graph covers a patch of it,
+        # has to be moved on every resize, and swallows clicks meant for whatever
+        # node is underneath.
+        self._arrangement_bar = ArrangementBar()
+        self._arrangement_bar.save_requested.connect(self._save_arrangement)
+        self._arrangement_bar.reset_requested.connect(self._reset_layout)
+
         centre = QWidget()
         column = QVBoxLayout(centre)
         # Matching the panels either side, and what lets the canvas read as a
@@ -397,6 +406,7 @@ class MainWindow(QMainWindow):
         column.addWidget(self._tabs)
         column.addWidget(self._heading)
         column.addWidget(self._canvas)
+        column.addWidget(self._arrangement_bar)
         column.addWidget(self._legend)
 
         # Small enough to leave the panel adjustable, which is the whole point
@@ -1093,6 +1103,27 @@ class MainWindow(QMainWindow):
         name = self._arrangement_key(wrap=wrap)
         return None if name is None else self._arrangements().get(name)
 
+    def _baseline(self) -> arrangement.Positions:
+        """Where this graph would be drawn if it were opened again right now.
+
+        The layout, with whatever has been saved laid over it — which is exactly
+        what `show_graph` does with a saved arrangement. Anything else on the
+        canvas is a move the reader has made and not kept.
+
+        Worked out on every ask rather than kept in an attribute, and that is
+        what makes saving and resetting take the strip away without either of
+        them having to remember to: after a save the store holds the positions
+        that are on screen, after a reset it holds nothing and the positions are
+        the layout's, and both come out as "nothing has moved" without being
+        told. A flag set on the first drag would still be set after an undo had
+        put everything back.
+        """
+        baseline = self._canvas.laid_out
+        saved = self._saved_arrangement()
+        if saved:
+            baseline.update({node: where for node, where in saved.items() if node in baseline})
+        return baseline
+
     def _undo_move(self) -> None:
         self._canvas.undo_move()
 
@@ -1103,6 +1134,7 @@ class MainWindow(QMainWindow):
             return
         store = arrangement.remember(self._arrangements(), name, self._canvas.positions)
         _settings().setValue(_LAYOUT_KEY, arrangement.dump(store))
+        self._sync_arrangement_actions()
         self._idle("Arrangement saved.")
 
     def _reset_layout(self) -> None:
@@ -1118,19 +1150,27 @@ class MainWindow(QMainWindow):
             _settings().setValue(
                 _LAYOUT_KEY, arrangement.dump(arrangement.forget(self._arrangements(), name))
             )
+        self._sync_arrangement_actions()
         self._idle("Layout reset.")
 
     def _sync_arrangement_actions(self) -> None:
-        """Grey out what there is nothing to do with.
+        """Grey out what there is nothing to do with, and offer what there is.
 
         A live control that does nothing reads as a fault in the tool, and
         `Undo` is the one that changes most: it comes alive on the first drag
         and goes back out when the stack empties.
+
+        The strip rides along here because it answers the same question at the
+        same moments. This is already wired to `arrangement_changed`, which is
+        emitted once per drag that moved something — so there is no second thing
+        to remember to call, and no second place for the two to fall out of step.
         """
         drawn = self._result is not None and bool(self._canvas._nodes)
         self._undo_action.setEnabled(drawn and self._canvas.can_undo)
         self._save_layout_action.setEnabled(drawn)
         self._reset_layout_action.setEnabled(drawn)
+        moved = arrangement.moved_from(self._canvas.positions, self._baseline()) if drawn else ()
+        self._arrangement_bar.show_moved(len(moved))
 
     def _from_the_menu(self) -> None:
         self._apply_fullscreen(self._fullscreen_action.isChecked())
