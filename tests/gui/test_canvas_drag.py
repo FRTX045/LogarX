@@ -391,15 +391,20 @@ def test_holding_a_node_says_so_with_the_cursor(qt_app: QApplication) -> None:
 # -- the room to drag into ------------------------------------------------
 
 
-def test_the_scene_grows_to_hold_a_node_pulled_off_the_edge(qt_app: QApplication) -> None:
-    """The view clamps scrolling to the scene rectangle, so a node dragged past
-    it cannot be followed. It is simply gone, with no way to bring it back.
+def test_the_paper_grows_to_hold_a_node_that_lands_beyond_it(qt_app: QApplication) -> None:
+    """The view clamps scrolling to the scene rectangle, so a node past it
+    cannot be followed. It is simply gone, with no way to bring it back.
+
+    Placed rather than dragged. A drag cannot reach past the paper any more -
+    the paper is a screenful wide on every side and the hand never leaves the
+    window — but an arrangement saved from a larger window is read back
+    verbatim, and that can put a node anywhere at all.
     """
     canvas = ready(2)
     item = canvas._nodes["n1"]
     was = canvas.graph_scene.sceneRect()
 
-    hold(canvas, "n1", QPoint(400, 340))
+    item.setPos(was.bottomRight().x() + 600.0, was.bottomRight().y() + 400.0)
 
     assert canvas.graph_scene.sceneRect() != was, "premise: it had to grow"
     assert canvas.graph_scene.sceneRect().contains(item.sceneBoundingRect())
@@ -436,28 +441,32 @@ def test_the_scene_does_not_shrink_while_the_hand_is_still_down(
 
 
 def test_the_scene_settles_once_the_hand_lets_go(qt_app: QApplication) -> None:
-    """Grown and never given back, the empty ground a node was dragged across
-    stays in the scene for good — and `Fit to window` frames the emptiness along
-    with the graph, for the rest of the session.
+    """Grown and never given back, the empty ground a node was carried across
+    stays on the paper for good, and every later drag starts from a surface
+    that only ever got larger.
     """
     canvas = ready(2)
-    at = press_on(canvas, "n1")
-    mouse(canvas, QEvent.Type.MouseMove, at + QPoint(400, 340), held=True)
-    mouse(canvas, QEvent.Type.MouseMove, at, held=True)
-    assert canvas.graph_scene.sceneRect() != canvas.graph_scene.itemsBoundingRect()
-
+    item = canvas._nodes["n1"]
+    home = QPointF(item.pos())
+    # Out past the paper and back again, which is the one way left to stretch
+    # it: `_grow_scene_for` only ever grows, so the ground it claimed on the
+    # way out is still claimed once the node is home.
+    item.setPos(canvas.graph_scene.sceneRect().bottomRight() + QPointF(600.0, 400.0))
+    item.setPos(home)
     grown = canvas.graph_scene.sceneRect()
+    assert grown != canvas.graph_scene.itemsBoundingRect()
 
-    let_go(canvas, at)
+    at = press_on(canvas, "n1")
+    mouse(canvas, QEvent.Type.MouseMove, at + QPoint(20, 20), held=True)
+    let_go(canvas, at + QPoint(20, 20))
 
     settled = canvas.graph_scene.sceneRect()
     assert settled.contains(canvas.graph_scene.itemsBoundingRect())
     # Said as "smaller than it was", not as a width copied out of the margin.
     # Written as `items + 2 * _SCENE_MARGIN` this pinned one particular way of
-    # arriving at the answer, and went red the day the scene learned to stop at
-    # what the view can show — a change that left the behaviour it was written
-    # for exactly as it was.
-    assert settled.width() < grown.width(), "the ground it was dragged across is still there"
+    # arriving at the answer, and went red twice for changes that left the
+    # behaviour it was written for exactly as it was.
+    assert settled.width() < grown.width(), "the ground it was carried across is still there"
     assert settled.height() < grown.height()
 
 
@@ -612,16 +621,16 @@ def test_a_node_dropped_inside_the_frame_raises_no_scrollbars(qt_app: QApplicati
     QApplication.processEvents()
 
     assert in_sight(canvas, "n0"), "premise: it never left the screen"
-    # With everything on screen the scene is exactly what is on screen: nothing
-    # to scroll to, and no ground claimed that cannot be seen. Stated as the
-    # rule rather than as the bars, which only show it once the graph has grown
-    # to within a margin's width of the frame.
+    # The paper is still paper afterwards. Re-laid around the graph on release,
+    # it has to come back reaching past the view on every side — collapsed onto
+    # what the window shows, the drop would leave a canvas that cannot be
+    # pushed until something is dragged again.
     seen = canvas.mapToScene(canvas.viewport().rect()).boundingRect()
-    scene = canvas.sceneRect()
-    assert scene.width() == pytest.approx(seen.width(), abs=1.0), (
-        f"scene {scene.width():.1f} wide against a window showing {seen.width():.1f}"
-    )
-    assert scene.height() == pytest.approx(seen.height(), abs=1.0)
+    paper = canvas.sceneRect()
+    assert paper.left() < seen.left(), "no paper left to push into"
+    assert paper.top() < seen.top(), "no paper left to push into"
+    assert paper.right() > seen.right(), "no paper left to push into"
+    assert paper.bottom() > seen.bottom(), "no paper left to push into"
     assert not canvas.verticalScrollBar().isVisible(), "a bar to scroll into empty ground"
     assert not canvas.horizontalScrollBar().isVisible(), "a bar to scroll into empty ground"
     canvas.close()
@@ -648,6 +657,160 @@ def test_a_node_dragged_out_of_sight_can_still_be_reached(qt_app: QApplication) 
         "it cannot be scrolled to"
     )
     let_go(canvas, beyond)
+    canvas.close()
+
+
+def test_a_node_dragged_hard_into_the_corner_raises_no_bars(qt_app: QApplication) -> None:
+    """The gesture the fault was reported from: to the edge, as far as it goes.
+
+    Every fix before this one tuned where the scene stopped, and this drag
+    always crossed it. A node held against the frame is half past it by
+    definition, so the scene grew to follow — and the bars came up over a node
+    the reader was looking straight at.
+    """
+    canvas = as_opened()
+    room = canvas.viewport().rect()
+    press_on(canvas, "n0")
+    corner = QPoint(room.right() - 2, room.bottom() - 2)
+
+    mouse(canvas, QEvent.Type.MouseMove, corner, held=True)
+    QApplication.processEvents()
+
+    assert not canvas.verticalScrollBar().isVisible(), "a bar while the node is still held"
+    assert not canvas.horizontalScrollBar().isVisible(), "a bar while the node is still held"
+
+    let_go(canvas, corner)
+    QApplication.processEvents()
+
+    assert not canvas.verticalScrollBar().isVisible(), "a bar once the hand let go"
+    assert not canvas.horizontalScrollBar().isVisible(), "a bar once the hand let go"
+    canvas.close()
+
+
+def test_there_is_paper_to_push_from_the_moment_a_graph_opens(qt_app: QApplication) -> None:
+    """A whiteboard reaches past what you can see, in every direction.
+
+    Framed to the graph and no further, there is nowhere to push it to: the
+    view clamps every scroll to the scene, so a graph that fits its window
+    cannot be moved at all.
+    """
+    canvas = as_opened()
+    seen = canvas.mapToScene(canvas.viewport().rect()).boundingRect()
+    paper = canvas.sceneRect()
+
+    assert paper.left() < seen.left(), "no paper to the left"
+    assert paper.top() < seen.top(), "no paper above"
+    assert paper.right() > seen.right(), "no paper to the right"
+    assert paper.bottom() > seen.bottom(), "no paper below"
+    canvas.close()
+
+
+def test_a_graph_that_fits_its_window_can_still_be_pushed_around(qt_app: QApplication) -> None:
+    """And the paper moves when pushed.
+
+    `pannable` has to lay out a trace too wide for its window before it can
+    find anywhere to pan to. That is the tell: panning worked only where the
+    graph had already overflowed. On a whiteboard the paper moves whatever is
+    drawn on it.
+    """
+    canvas = as_opened()
+    at = QPoint(4, 4)
+    assert canvas.itemAt(at) is None, "premise: there is nothing here to pick up"
+    before = canvas.mapToScene(canvas.viewport().rect()).boundingRect()
+
+    mouse(canvas, QEvent.Type.MouseButtonPress, at, held=True)
+    mouse(canvas, QEvent.Type.MouseMove, at + QPoint(90, 60), held=True)
+    mouse(canvas, QEvent.Type.MouseButtonRelease, at + QPoint(90, 60), held=False)
+    QApplication.processEvents()
+
+    assert canvas.mapToScene(canvas.viewport().rect()).boundingRect() != before, (
+        "the paper did not move"
+    )
+    canvas.close()
+
+
+def test_fitting_frames_the_graph_not_the_paper_it_lies_on(qt_app: QApplication) -> None:
+    """The other half of giving the graph paper to lie on.
+
+    The paper reaches a screenful past the graph on every side. Framed instead
+    of the graph, `Fit to window` would shrink the graph to a third of the
+    window and call it fitted.
+    """
+    canvas = as_opened()
+    room = canvas.viewport().rect()
+    press_on(canvas, "n0")
+    beyond = QPoint(room.right() + 400, room.bottom() + 400)
+    mouse(canvas, QEvent.Type.MouseMove, beyond, held=True)
+    let_go(canvas, beyond)
+    QApplication.processEvents()
+
+    canvas.fit()
+    QApplication.processEvents()
+
+    graph = canvas.graph_scene.itemsBoundingRect()
+    assert canvas.sceneRect().width() > graph.width() * 1.4, "premise: the paper is far larger"
+
+    on_screen = canvas.mapFromScene(graph).boundingRect()
+    room = canvas.viewport().rect()
+    filled = max(on_screen.width() / room.width(), on_screen.height() / room.height())
+    assert filled > 0.8, f"the graph fills only {filled:.0%} of the window it was fitted to"
+    canvas.close()
+
+
+def pushed_to_the_far_left(canvas: ActivityCanvas) -> QRectF:
+    """Shove the paper right until the view stops moving. Returns what it shows."""
+    at = QPoint(6, 6)
+    assert canvas.itemAt(at) is None, "premise: there is nothing here to pick up"
+    last, shoves = None, 0
+    while last != canvas.mapToScene(canvas.viewport().rect()).boundingRect().left():
+        last = canvas.mapToScene(canvas.viewport().rect()).boundingRect().left()
+        mouse(canvas, QEvent.Type.MouseButtonPress, at, held=True)
+        mouse(canvas, QEvent.Type.MouseMove, at + QPoint(400, 0), held=True)
+        mouse(canvas, QEvent.Type.MouseButtonRelease, at + QPoint(400, 0), held=False)
+        QApplication.processEvents()
+        shoves += 1
+        assert shoves < 40, "the view never stopped moving"
+    return canvas.mapToScene(canvas.viewport().rect()).boundingRect()
+
+
+def test_re_laying_the_paper_never_pulls_it_from_under_the_view(
+    qt_app: QApplication,
+) -> None:
+    """The paper is laid around the graph, and the graph moves.
+
+    Laid around the graph and nothing else, a reader who has followed a node
+    out to the far edge is standing on ground the next re-laying leaves out —
+    and the view is hauled back to the graph without being asked, which
+    mid-drag means the graph jumping out from under the hand holding it.
+
+    Measured: with the graph pulled 2,400 units left and the view pushed out
+    after it, the paper that fitted the graph afterwards ran -1228 to 2128
+    while the view was showing -2516 to -1379. Nowhere near.
+    """
+    canvas = ActivityCanvas()
+    canvas.resize(1000, 700)
+    canvas.show()
+    QApplication.processEvents()
+    canvas.show_graph(chain(8))
+    QApplication.processEvents()
+
+    left_most = min(canvas._nodes.values(), key=lambda item: item.pos().x())
+    home = QPointF(left_most.pos())
+    left_most.setPos(home.x() - 2400.0, home.y())
+    QApplication.processEvents()
+
+    pushed_to_the_far_left(canvas)
+    left_most.setPos(home)
+    before = canvas.mapToScene(canvas.viewport().rect()).boundingRect()
+    assert not before.intersects(canvas.graph_scene.itemsBoundingRect()), (
+        "premise: the reader is looking at empty paper, well away from the graph"
+    )
+
+    canvas.reset_layout()
+    QApplication.processEvents()
+
+    after = canvas.mapToScene(canvas.viewport().rect()).boundingRect()
+    assert after == before, f"the view was hauled {abs(after.left() - before.left()):.0f} units"
     canvas.close()
 
 

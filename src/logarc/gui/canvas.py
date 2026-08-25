@@ -237,19 +237,16 @@ _LIT_WIDTH: Final = 2.0
 
 #: Clear ground kept around the graph, in scene units.
 #:
-#: Small on purpose. The view hangs its scrollbars on this rectangle rather
-#: than on the graph, so whatever is kept here is ground the reader can be
-#: asked to scroll into. When a graph nearly fills the canvas, being generous
-#: here turns a graph that fits into one that does not: at 80 this was 88
-#: pixels at the legibility floor, which bought two scrollbars — and the second
-#: of those appeared only because the first took the height that caused it.
-#: Measured full screen, the graph fitted with 176 units to spare across and
-#: 104 down, and both bars were up.
+#: Two jobs, both about the graph and neither about the window. `fit` frames
+#: the graph plus this, so the outermost captions are not pressed against the
+#: frame; and `_grow_scene_for` reaches this far past a node dragged beyond the
+#: paper, so it arrives with room around it rather than flush to the edge.
 #:
-#: It is also how far past its old edge the rectangle reaches when a node is
-#: dragged out of it, and that costs nothing to keep small: `_grow_scene_for`
-#: extends the rectangle as the node moves, rather than leaning on room set
-#: aside in advance.
+#: Small enough not to matter to either. It used to have to be: while the view
+#: hung its scrollbars on this rectangle, ground kept here was ground the
+#: reader could be asked to scroll into, and at 80 it bought two bars over a
+#: graph that fitted its window with 176 units to spare. The bars are gone now,
+#: so this number no longer decides anything the reader sees.
 _SCENE_MARGIN: Final = 24.0
 
 
@@ -587,6 +584,13 @@ class ActivityCanvas(QGraphicsView):
         self.setScene(self._scene)
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+        # No bars, ever. This is a whiteboard: the paper reaches past the window
+        # on every side and the hand pushes it around. A bar reports how much of
+        # a document is off screen, and a surface with no edge has no such number
+        # to give — every bar the reader saw here was raised by ground they had no
+        # reason to visit. `View -> Fit to window` is the way back to the graph.
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setBackgroundBrush(QBrush(QColor(PAPER)))
         # Framed, so the pinned light ground reads as a document lying on the
@@ -821,7 +825,7 @@ class ActivityCanvas(QGraphicsView):
         if self._lit is not None:
             self._light_edges(self._lit, lit=False)
             self._lit = None
-        self._frame_scene()
+        self._spread_paper()
         # One entry per drag, not per mouse-move event: `Undo` steps back
         # through the arrangements the reader saw, not through the hundreds of
         # positions their hand passed over on the way.
@@ -833,56 +837,49 @@ class ActivityCanvas(QGraphicsView):
         """The region of the scene the window is showing, in scene units.
 
         Empty if there is somehow no viewport, which reads as "nothing is on
-        screen" — so both callers fall back to claiming the ground they would
-        have claimed before, rather than to claiming none.
+        screen" — so the paper falls back to the graph and its margin, which is
+        the smallest rectangle that still shows the whole of it.
         """
         viewport = self.viewport()
         if viewport is None:  # pragma: no cover - a scroll area always has one
             return QRectF()
         return self.mapToScene(viewport.rect()).boundingRect()
 
-    def _frame_scene(self, *, within_the_view: bool = True) -> None:
-        """Fit the scene rectangle to what is on it, with room to breathe.
+    def _spread_paper(self) -> None:
+        """Lay a screenful of clear paper around the graph, on every side.
 
-        Stopping at what the view can already show, because the view hangs its
-        scrollbars on this rectangle: ground claimed past the edge of the
-        window is ground the reader is invited to scroll into for nothing.
-        Measured full screen, a node dropped 90 pixels inside the corner — with
-        55 still clear beyond its caption — put up both bars. The graph fitted
-        the view by 6 units across. What did not fit was the ground kept around
-        it.
+        The scene rectangle is not what the reader looks at — `fit` frames the
+        graph itself. It is how far they may push the graph before the view
+        stops following, and that is all it is now.
 
-        `within_the_view` is off for a graph about to be fitted: there the view
-        is rescaled around whatever this sets, so the region on screen now says
-        nothing about the region that will be on screen after.
+        Sized from the window rather than written down, so it scales with both
+        the window and the zoom: always somewhere to push to, and never so much
+        that a graph can be lost out on empty paper.
+
+        United with what is on screen, so the paper can never be pulled out
+        from under the view. Recomputed after a drag that left the graph
+        smaller, a rectangle that no longer held the current view would snap
+        the graph back under the hand that had just placed it.
         """
         graph = self._scene.itemsBoundingRect()
-        wanted = graph.adjusted(-_SCENE_MARGIN, -_SCENE_MARGIN, _SCENE_MARGIN, _SCENE_MARGIN)
-        if within_the_view:
-            seen = self._on_screen()
-            if seen.contains(graph):
-                wanted = seen
-        self._scene.setSceneRect(wanted)
+        seen = self._on_screen()
+        paper = graph.adjusted(-seen.width(), -seen.height(), seen.width(), seen.height())
+        self._scene.setSceneRect(paper.united(seen))
 
     def _grow_scene_for(self, item: QGraphicsItem) -> None:
-        """Make room for an activity dragged past the edge of the scene.
+        """Lay more paper under an activity that has landed beyond the edge of it.
 
-        The view clamps scrolling to the scene rectangle, so a node dragged
-        beyond it cannot be followed — it is simply gone, with no way to bring
-        it back.
+        The view clamps panning to the scene rectangle, so a node outside it
+        cannot be reached — it is simply gone, with no way to bring it back. A
+        drag cannot get one out there any more, since the paper is a screenful
+        wide on every side and the hand never leaves the window; an arrangement
+        saved from a larger window is read back verbatim, and can.
 
-        Grows and never shrinks. Shrinking as a node is dragged back would move
-        the scrollbars under the hand that is holding it, and the graph would
-        jump away from the cursor.
+        Grows and never shrinks. Shrinking as a node comes back would move the
+        paper under the hand that is holding it, and the graph would jump away
+        from the cursor.
         """
         whole = item.sceneBoundingRect().united(item.mapRectToScene(item.childrenBoundingRect()))
-        seen = self._on_screen()
-        if seen.contains(whole):
-            # Still in front of the reader, caption and all. Nothing has gone
-            # anywhere, so there is nothing to follow — and claiming ground for
-            # it raises bars over a node that never left the window.
-            return
-
         reach = whole.adjusted(-_SCENE_MARGIN, -_SCENE_MARGIN, _SCENE_MARGIN, _SCENE_MARGIN)
         rect = self._scene.sceneRect()
         if not rect.contains(reach):
@@ -919,7 +916,7 @@ class ActivityCanvas(QGraphicsView):
             # Everything attached follows, because `setPos` is a position change
             # like any other and `_node_moved` does not care who asked for it.
             item.setPos(*move.before)
-        self._frame_scene()
+        self._spread_paper()
         self.arrangement_changed.emit()
 
     def reset_layout(self) -> None:
@@ -933,7 +930,7 @@ class ActivityCanvas(QGraphicsView):
             if item is not None:
                 item.setPos(point.x, point.y)
         self._history.clear()
-        self._frame_scene()
+        self._spread_paper()
         self.arrangement_changed.emit()
 
     # -- drawing -----------------------------------------------------------
@@ -1046,7 +1043,6 @@ class ActivityCanvas(QGraphicsView):
         for node in graph.nodes:
             self._draw_node(node, positions[node.node_id])
 
-        self._frame_scene(within_the_view=False)
         self.fit()
 
     def show_graph_placeholder(self, text: str = WAITING_MESSAGE) -> None:
@@ -1270,9 +1266,16 @@ class ActivityCanvas(QGraphicsView):
         """Frame the whole graph, down to the point where it stays readable."""
         if not self._scene.items():
             return
+        graph = self._scene.itemsBoundingRect()
+        # Claimed before framing, not after. The view clamps every scroll to the
+        # scene rectangle and `fitInView` scrolls, so a graph lying outside the
+        # rectangle the last one left behind cannot be reached: the fit lands
+        # short and the graph opens half off the window.
+        self._scene.setSceneRect(
+            graph.adjusted(-_SCENE_MARGIN, -_SCENE_MARGIN, _SCENE_MARGIN, _SCENE_MARGIN)
+        )
         self.fitInView(self._scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
-        scale = self.transform().m11()
-        if scale < MIN_FIT_SCALE:
+        if self.transform().m11() < MIN_FIT_SCALE:
             self.resetTransform()
             self.scale(MIN_FIT_SCALE, MIN_FIT_SCALE)
             # Clamped, so the graph is wider than the window and something has
@@ -1280,7 +1283,11 @@ class ActivityCanvas(QGraphicsView):
             # the view was centred over: with an unwrapped trace that clamps on
             # every draw, centring hides both ends and starts the reader in the
             # middle of a chronology.
-            self.centerOn(self._scene.sceneRect().topLeft())
+            self.centerOn(graph.topLeft())
+        # Last, because it reads the region on screen and the fit has just
+        # decided that. The graph keeps its place: the paper only ever grows
+        # around what the view is already showing.
+        self._spread_paper()
 
 
 def _tooltip(node: GraphNode) -> str:

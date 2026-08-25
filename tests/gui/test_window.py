@@ -1055,11 +1055,22 @@ def test_a_trace_too_wide_to_fit_opens_at_its_beginning(qt_app: QApplication) ->
     canvas.resize(400, 300)
     canvas.set_wrap(False)
 
-    canvas.show_graph(_long_trace(12))
+    trace = _long_trace(12)
+    canvas.show_graph(trace)
 
-    bar = canvas.horizontalScrollBar()
-    assert bar.maximum() > bar.minimum(), "premise: it does not fit"
-    assert bar.value() == bar.minimum()
+    # Said as "the first activity is on screen and the last is not", not as
+    # "scrolled as far left as it goes". Those were the same sentence only
+    # while the scene stopped at the graph. The paper now reaches a screenful
+    # further out, so as far left as it goes is empty ground, and a view that
+    # opened correctly on the first node read as one that had not.
+    seen = canvas.mapToScene(canvas.viewport().rect()).boundingRect()
+    graph = canvas.graph_scene.itemsBoundingRect()
+    assert seen.width() < graph.width(), "premise: it does not fit"
+
+    first = canvas._nodes[trace.nodes[0].node_id].sceneBoundingRect()
+    last = canvas._nodes[trace.nodes[-1].node_id].sceneBoundingRect()
+    assert seen.intersects(first), "the trace does not open on its first activity"
+    assert not seen.intersects(last), "premise: the far end is off screen"
 
 
 def test_a_trace_that_does_fit_is_framed_without_scrollbars(qt_app: QApplication) -> None:
