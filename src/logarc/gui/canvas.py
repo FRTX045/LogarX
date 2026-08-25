@@ -235,10 +235,22 @@ _GRID_MIN_SCALE: Final = 0.45
 #: which is thin enough that a change of colour alone is easy to miss.
 _LIT_WIDTH: Final = 2.0
 
-#: Clear ground kept around the graph, in scene units. The view clamps
-#: scrolling to the scene rectangle, so this is also the room a node has to be
-#: dragged into before the rectangle has to grow to hold it.
-_SCENE_MARGIN: Final = 80.0
+#: Clear ground kept around the graph, in scene units.
+#:
+#: Small on purpose. The view hangs its scrollbars on this rectangle rather
+#: than on the graph, so whatever is kept here is ground the reader can be
+#: asked to scroll into. When a graph nearly fills the canvas, being generous
+#: here turns a graph that fits into one that does not: at 80 this was 88
+#: pixels at the legibility floor, which bought two scrollbars — and the second
+#: of those appeared only because the first took the height that caused it.
+#: Measured full screen, the graph fitted with 176 units to spare across and
+#: 104 down, and both bars were up.
+#:
+#: It is also how far past its old edge the rectangle reaches when a node is
+#: dragged out of it, and that costs nothing to keep small: `_grow_scene_for`
+#: extends the rectangle as the node moves, rather than leaning on room set
+#: aside in advance.
+_SCENE_MARGIN: Final = 24.0
 
 
 def _steps(start: float, stop: float) -> list[float]:
