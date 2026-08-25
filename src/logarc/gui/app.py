@@ -19,6 +19,7 @@ from PyQt6.QtCore import QSettings, Qt, QTimer
 from PyQt6.QtGui import QAction, QKeyEvent, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QDialog,
     QFileDialog,
     QLabel,
@@ -120,6 +121,11 @@ _LAYOUT_KEY = "view/arrangements"
 #: README says so. `_LAYOUT_KEY` is the other one — a saved arrangement is keyed
 #: by activity id, and a trace's activity ids carry the client's address.
 _RECENT_KEY = "cases/recent"
+
+#: Whether to warn before an arrangement nobody kept is lost. In `prefs.EVERY`
+#: as well, which is what puts it in the Preferences dialog — and the dialog is
+#: the only way back after `Don't ask this again`.
+_ASK_UNSAVED_KEY = "view/ask_unsaved_arrangement"
 
 #: The two views, in the order the tab bar shows them. One list rather than a
 #: pair of indices spelled out at each end, so a tab and the view it selects
@@ -312,7 +318,7 @@ class MainWindow(QMainWindow):
         self._legend = LegendBar()
         self._evidence = EvidencePanel()
         self._clients.client_chosen.connect(self._reconstruct)
-        self._clients.client_released.connect(self._let_go_of_client)
+        self._clients.client_released.connect(self._release_requested)
         self._canvas.node_selected.connect(self._show_evidence)
 
         self._build_layout()
@@ -906,6 +912,27 @@ class MainWindow(QMainWindow):
             )
         )
 
+    def _select_quietly(self, client_ip: str) -> bool:
+        """Put the table back on `client_ip` without asking for a reconstruction.
+
+        `False` when that client is not in the list at all.
+
+        The block is the point. `ClientTable` emits `client_chosen` from
+        `itemSelectionChanged`, and `gui.panels` records what a selection that
+        comes back unblocked does: the row came back, the choice was emitted a
+        second time, and the window reconstructed the client it had just
+        dropped. Two callers need this now, so there is one copy of it.
+        """
+        table = self._clients._table
+        for row in range(table.rowCount()):
+            cell = table.item(row, 0)
+            if cell is not None and cell.text() == client_ip:
+                blocked = table.blockSignals(True)
+                table.selectRow(row)
+                table.blockSignals(blocked)
+                return True
+        return False
+
     def _reselect(self, client_ip: str) -> None:
         """Put the reader back on the client they were reading, if it is listed.
 
@@ -915,17 +942,85 @@ class MainWindow(QMainWindow):
         and emits nothing — so the graph went on showing the reconstruction it
         had, over a range that was no longer in force.
         """
-        table = self._clients._table
-        for row in range(table.rowCount()):
-            cell = table.item(row, 0)
-            if cell is not None and cell.text() == client_ip:
-                blocked = table.blockSignals(True)
-                table.selectRow(row)
-                table.blockSignals(blocked)
-                self._reconstruct(client_ip)
-                return
+        if self._select_quietly(client_ip):
+            self._reconstruct(client_ip)
+            return
         # Gone from this range. The graph would otherwise go on showing a
         # reconstruction of a client the list no longer offers.
+        self._let_go_of_client()
+
+    def _ask_about_the_arrangement(self) -> str:
+        """Put the question, and answer `save`, `discard` or `cancel`.
+
+        Split from `_may_leave_the_graph` so the rule around it can be tested
+        without a dialog on screen: a modal `exec()` in a test either blocks the
+        run or has to be dismissed by a timer, and neither is a test of the rule.
+        """
+        client = self._result.client_ip if self._result is not None else "this client"
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle("Unsaved arrangement")
+        box.setText(f"Keep how you have arranged {client}?")
+        box.setInformativeText(
+            "Leaving without saving puts the activities back where they were laid out."
+        )
+        save = box.addButton("Save and continue", QMessageBox.ButtonRole.AcceptRole)
+        discard = box.addButton("Discard", QMessageBox.ButtonRole.DestructiveRole)
+        box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(save)
+        # Held in a name, not passed inline. `setCheckBox` does not keep the
+        # Python object alive: an inline `QCheckBox` is collected, the tick
+        # disappears from the dialog, and reading `box.checkBox()` afterwards
+        # touches freed C++ and takes the process down with no traceback at all.
+        ask_again = QCheckBox("Don't ask this again")
+        box.setCheckBox(ask_again)
+
+        box.exec()
+        if ask_again.isChecked():
+            # Both, not just the store. The window reads its switches once into
+            # `self._prefs` at startup, so writing only the stored value would
+            # leave the dialog coming back for the rest of the session.
+            _settings().setValue(_ASK_UNSAVED_KEY, False)
+            self._prefs[_ASK_UNSAVED_KEY] = False
+
+        pressed = box.clickedButton()
+        if pressed is save:
+            return "save"
+        return "discard" if pressed is discard else "cancel"
+
+    def _may_leave_the_graph(self) -> bool:
+        """Whether the reader is finished with the graph that is on screen.
+
+        `False` only when they said so. A cancelled question is the one answer
+        that has to stop whatever asked it, and the caller is the only thing
+        that knows how to undo its own half of the gesture.
+        """
+        if self._result is None or not self._canvas._nodes:
+            return True
+        if not self._prefs.get(_ASK_UNSAVED_KEY, True):
+            return True
+        if not arrangement.moved_from(self._canvas.positions, self._baseline()):
+            return True
+
+        answer = self._ask_about_the_arrangement()
+        if answer == "save":
+            self._save_arrangement()
+        return answer != "cancel"
+
+    def _release_requested(self) -> None:
+        """The reader pressed the row they were already on.
+
+        Asked here rather than inside `_let_go_of_client`, because that runs on
+        two paths and only one of them is the reader leaving: a narrower range
+        drops a client from the list and lets go of it on their behalf. Asking
+        there would offer to keep an arrangement for a graph that is going
+        whatever the answer, and cancelling would leave the window reading a
+        client the list no longer has.
+        """
+        if not self._may_leave_the_graph():
+            if self._result is not None:
+                self._select_quietly(self._result.client_ip)
+            return
         self._let_go_of_client()
 
     def _let_go_of_client(self) -> None:
@@ -958,6 +1053,17 @@ class MainWindow(QMainWindow):
 
     def _reconstruct(self, client_ip: str) -> None:
         if self._case_path is None:
+            return
+        # Only a different client is leaving this one. `_reselect` calls this
+        # again for the *same* client whenever the range moves, and asking there
+        # would say the reader is leaving a client they are still on.
+        leaving = self._result is not None and self._result.client_ip != client_ip
+        if leaving and not self._may_leave_the_graph():
+            # The selection has already moved: `client_chosen` comes from
+            # `itemSelectionChanged`, which fires before the window hears about
+            # it. Refusing the move means putting the row back as well.
+            if self._result is not None:
+                self._select_quietly(self._result.client_ip)
             return
         path = self._case_path
         # Read once here, on the interface thread, rather than from inside the
