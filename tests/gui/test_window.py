@@ -24,7 +24,7 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 from dragging import drag
 from PyQt6.QtCore import QPoint
 from PyQt6.QtGui import QFontMetrics, QPalette
-from PyQt6.QtWidgets import QApplication, QSplitter
+from PyQt6.QtWidgets import QApplication, QSplitter, QStyle
 
 from conftest import contrast
 from logarc.analysis import analyse_ip
@@ -1060,6 +1060,64 @@ def test_a_trace_too_wide_to_fit_opens_at_its_beginning(qt_app: QApplication) ->
     bar = canvas.horizontalScrollBar()
     assert bar.maximum() > bar.minimum(), "premise: it does not fit"
     assert bar.value() == bar.minimum()
+
+
+def test_a_trace_that_does_fit_is_framed_without_scrollbars(qt_app: QApplication) -> None:
+    """The other half of the one above, and the half that was wrong.
+
+    Scrollbars go on the scene rectangle, not on the graph, and that rectangle
+    is the graph plus the room a node can be dragged into. When the graph
+    nearly fills the canvas, that room is what tips it over: the reader gets
+    two bars that scroll into empty ground — and the second appears only
+    because the first took the height that caused it.
+
+    Measured full screen on a graph that fitted with 176 units to spare across
+    and 104 down, both bars were up. The room kept at rest has to cost less
+    than the bars it would otherwise summon; the room to drag into is granted
+    when it is needed, by `_grow_scene_for`.
+    """
+    canvas = ActivityCanvas()
+    canvas.show_graph(_long_trace(9))
+    graph = canvas._scene.itemsBoundingRect()
+
+    # Room for the graph at the legibility floor and for three scrollbars
+    # besides. Sized from the graph rather than written down, because how wide
+    # these captions come out is a fact about the platform's font — the number
+    # that would be right here is wrong on the runners.
+    slack = 3 * canvas.style().pixelMetric(QStyle.PixelMetric.PM_ScrollBarExtent)
+    canvas.resize(
+        round(graph.width() * MIN_FIT_SCALE) + slack,
+        round(graph.height() * MIN_FIT_SCALE) + slack,
+    )
+    canvas.show()
+    QApplication.processEvents()
+    canvas.fit()
+    QApplication.processEvents()
+
+    assert not canvas.verticalScrollBar().isVisible(), "a bar to scroll into empty ground"
+    assert not canvas.horizontalScrollBar().isVisible(), "a bar to scroll into empty ground"
+    canvas.close()
+
+
+def test_a_graph_still_gets_clear_ground_around_it(qt_app: QApplication) -> None:
+    """The other end of the same dial.
+
+    The room around the graph was cut because it was summoning scrollbars, and
+    the cheapest way to stop it summoning them is to take all of it. Said as
+    geometry rather than as a number, because the test that already names the
+    constant would agree with itself at zero, and a graph flush against the
+    frame has its outer node outlines shaved by the edge.
+    """
+    canvas = ActivityCanvas()
+    canvas.show_graph(_long_trace(9))
+
+    scene = canvas._scene.sceneRect()
+    graph = canvas._scene.itemsBoundingRect()
+
+    assert scene.left() < graph.left(), "no ground on the left"
+    assert scene.top() < graph.top(), "no ground above"
+    assert scene.right() > graph.right(), "no ground on the right"
+    assert scene.bottom() > graph.bottom(), "no ground below"
 
 
 def test_the_wrap_choice_survives_a_trip_through_the_behaviour_map(

@@ -28,7 +28,13 @@ from PyQt6.QtWidgets import QApplication
 from logarc.core.activity import ActivityCategory, Outcome, Severity
 from logarc.core.evidence import EvidenceRef
 from logarc.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
-from logarc.gui.canvas import _EDGE_COLOUR, ActivityCanvas, _edge_shape, _EdgeArt
+from logarc.gui.canvas import (
+    _EDGE_COLOUR,
+    _SCENE_MARGIN,
+    ActivityCanvas,
+    _edge_shape,
+    _EdgeArt,
+)
 from logarc.gui.style import SELECTION_COLOUR
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
@@ -443,8 +449,11 @@ def test_the_scene_settles_once_the_hand_lets_go(qt_app: QApplication) -> None:
     let_go(canvas, at)
 
     assert canvas.graph_scene.sceneRect().contains(canvas.graph_scene.itemsBoundingRect())
+    # From the constant, not from a number copied out of it. Written as 160.0,
+    # this said nothing about what it meant and went red the day the margin
+    # changed for a reason that had nothing to do with dragging.
     assert canvas.graph_scene.sceneRect().width() == pytest.approx(
-        canvas.graph_scene.itemsBoundingRect().width() + 160.0
+        canvas.graph_scene.itemsBoundingRect().width() + 2 * _SCENE_MARGIN
     )
 
 
