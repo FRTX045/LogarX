@@ -15,8 +15,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from PyQt6.QtCore import QSettings, Qt
-from PyQt6.QtGui import QAction, QKeySequence
+from PyQt6.QtCore import QSettings, Qt, QTimer
+from PyQt6.QtGui import QAction, QKeyEvent, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
@@ -282,6 +282,11 @@ class MainWindow(QMainWindow):
         # key. Kept because the dialog is opened showing what is in force, and
         # a window that had to ask five widgets what they were set to would be
         # asking the widgets rather than knowing.
+        # Whether the graph has the screen to itself, and what was taken off
+        # it to give it that. The list matters: coming back must put back only
+        # what was there, never everything — see `_apply_fullscreen`.
+        self._fullscreen = False
+        self._covered: list[QWidget] = []
         self._prefs = prefs.read(_settings().value)
         self._density = prefs.density_in(self._prefs)
         self._result: AnalysisResult | None = None
@@ -497,6 +502,16 @@ class MainWindow(QMainWindow):
         self._trace_action.setChecked(True)
         view_menu.addSeparator()
         self._add(view_menu, "&Fit to window", self._canvas.fit)
+        view_menu.addSeparator()
+        self._fullscreen_action = self._add(view_menu, "F&ull screen", self._from_the_menu)
+        self._fullscreen_action.setCheckable(True)
+        self._fullscreen_action.setShortcut(QKeySequence("F11"))
+        self._fullscreen_action.setStatusTip("Give the whole screen to the activity graph.")
+        # On the window as well as in the menu. Full screen hides the menu bar,
+        # and a shortcut that lived only on a hidden menu would stop answering
+        # exactly when it is one of the two ways back.
+        self.addAction(self._fullscreen_action)
+        self._canvas.expand_requested.connect(self._from_the_canvas)
 
         export_menu = required(menu_bar.addMenu("&Export"))
         self._add(export_menu, "&HTML report…", lambda: self._export("html"))
@@ -1116,6 +1131,67 @@ class MainWindow(QMainWindow):
         self._undo_action.setEnabled(drawn and self._canvas.can_undo)
         self._save_layout_action.setEnabled(drawn)
         self._reset_layout_action.setEnabled(drawn)
+
+    def _from_the_menu(self) -> None:
+        self._apply_fullscreen(self._fullscreen_action.isChecked())
+
+    def _from_the_canvas(self) -> None:
+        self._apply_fullscreen(not self._fullscreen)
+
+    def keyPressEvent(self, event: QKeyEvent | None) -> None:  # noqa: N802 - Qt's naming
+        """Escape comes back, and only from full screen.
+
+        Answering it always would make a stray press do something in a window
+        where the key means nothing, so the guard is the point rather than a
+        detail.
+        """
+        if event is not None and event.key() == Qt.Key.Key_Escape and self._fullscreen:
+            self._apply_fullscreen(False)
+            return
+        super().keyPressEvent(event)
+
+    def _apply_fullscreen(self, on: bool) -> None:
+        """Give the graph the screen, or hand the window back.
+
+        What is put back is what was taken away, not everything: a reader who
+        turned the traffic band off in Preferences must not find it back on
+        because they used full screen. So the widgets hidden here are recorded,
+        and only those are shown again.
+        """
+        if on == self._fullscreen:
+            return
+        self._fullscreen = on
+        blocked = self._fullscreen_action.blockSignals(True)
+        self._fullscreen_action.setChecked(on)
+        self._fullscreen_action.blockSignals(blocked)
+        self._canvas.set_expanded(on)
+
+        if on:
+            around: list[QWidget | None] = [
+                self._clients,
+                self._evidence,
+                self._time_filter,
+                self._notice,
+                self._tabs,
+                self._heading,
+                self._legend,
+                self.menuBar(),
+                self.statusBar(),
+            ]
+            self._covered = [w for w in around if w is not None and not w.isHidden()]
+            for widget in self._covered:
+                widget.hide()
+            self.showFullScreen()
+        else:
+            for widget in self._covered:
+                widget.show()
+            self._covered = []
+            self.showNormal()
+        # Refitted once the new geometry exists, not now. `showFullScreen`
+        # returns before Qt has laid the window out again, so fitting here
+        # frames the graph to the size the canvas has just stopped being —
+        # measured, 536px wide while it was already becoming 784.
+        QTimer.singleShot(0, self._canvas.fit)
 
     def _restore_preferences(self) -> None:
         """Put what is in force into the widgets, without writing it again.

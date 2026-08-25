@@ -81,13 +81,20 @@ def _everywhere(window: MainWindow) -> list[QAction]:
 
 
 def test_the_view_menu_holds_only_what_is_shown(qt_app: QApplication) -> None:
-    """Three entries answering one question. It held eleven answering four."""
+    """Four entries answering one question. It held eleven answering four.
+
+    `Full screen` belongs here on the same test every other entry passes: it
+    decides what is on screen and nothing else. It is not a preference — it is
+    not remembered, and it describes this moment rather than how the reader
+    likes to work.
+    """
     window = MainWindow()
 
     assert _entries(_menu(window, "View")) == [
         "Trace (chronological)",
         "Behaviour map",
         "Fit to window",
+        "Full screen",
     ]
     window.close()
 
