@@ -39,6 +39,7 @@ from PyQt6.QtWidgets import (
     QGraphicsSceneMouseEvent,
     QGraphicsSimpleTextItem,
     QGraphicsView,
+    QToolButton,
 )
 
 from logarc.core.graph import reciprocal_pairs
@@ -59,7 +60,7 @@ from logarc.gui.style import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from PyQt6.QtGui import QMouseEvent
+    from PyQt6.QtGui import QMouseEvent, QResizeEvent
 
     from logarc.core.graph import ActivityGraph, GraphNode
 
@@ -78,6 +79,10 @@ WAITING_MESSAGE: Final = "Select a client to reconstruct what it did."
 #: investigator pan instead. Requiring a pan is a smaller failure than
 #: presenting a picture nobody can read.
 MIN_FIT_SCALE: Final = 0.55
+
+#: How far the corner button sits from the canvas edge. Small, because the
+#: patch it covers is a patch of graph given up.
+_EXPAND_INSET: Final = 12
 
 #: The scale text is sized against. Every caption is drawn `1 / _LEGIBLE_AT`
 #: times larger in scene units, so that when the view sits at this scale the
@@ -496,6 +501,11 @@ class ActivityCanvas(QGraphicsView):
     have to grey out when there is nothing left for them to do, and the canvas
     is the only thing that knows."""
 
+    expand_requested = pyqtSignal()
+    """The corner button was pressed. What full screen *means* is the window's
+    business; the canvas only owns the button, because the canvas is what knows
+    when it has been resized and the button has to follow."""
+
     def __init__(self) -> None:
         super().__init__()
         self._scene = QGraphicsScene(self)
@@ -533,6 +543,54 @@ class ActivityCanvas(QGraphicsView):
         # startup as blank paper inside dark chrome, which reads as a renderer
         # that failed rather than as a tool waiting to be given something.
         self.show_graph_placeholder(STARTUP_MESSAGE)
+
+        # Floating, at the reader's request, over the objection this project
+        # recorded when the arrangement controls were kept out of here. Two of
+        # the three reasons are answered rather than accepted: `resizeEvent`
+        # below moves it, and being a child widget it takes its own press
+        # instead of handing it to `ScrollHandDrag`. The third — that it covers
+        # a patch of the graph — is the trade that was chosen.
+        self._expand = QToolButton(self)
+        self._expand.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._expand.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._expand.setStyleSheet(
+            f"QToolButton {{ background: {THEME.raised}; color: {THEME.muted};"
+            f" border: 1px solid {THEME.edge}; border-radius: 3px; padding: 5px 8px; }}"
+            f"QToolButton:hover {{ color: {THEME.ink}; border-color: {THEME.accent}; }}"
+        )
+        self._expand.clicked.connect(self.expand_requested)
+        self.set_expanded(False)
+        self._place_expand()
+
+    def set_expanded(self, expanded: bool) -> None:
+        """Say which way the button goes.
+
+        One control with two meanings, so it has to name the one it is about to
+        do. Offering `Full screen` while already full screen is a control lying
+        about itself — and while full screen it is the most visible way back.
+        """
+        self._expand.setText("✖" if expanded else "⛶")
+        self._expand.setToolTip("Leave full screen  (Esc)" if expanded else "Full screen  (F11)")
+        self._expand.adjustSize()
+        self._place_expand()
+
+    def _place_expand(self) -> None:
+        """Keep it in the top right, inside the canvas whatever size it is.
+
+        Held inside with `max`, because the arithmetic goes negative on a canvas
+        narrower than the button and a control placed off its own near edge
+        cannot be pressed — which, while full screen, is the way out.
+        """
+        gap = _EXPAND_INSET
+        button = self._expand
+        button.move(
+            max(self.width() - button.width() - gap, 0),
+            max(min(gap, self.height() - button.height()), 0),
+        )
+
+    def resizeEvent(self, event: QResizeEvent | None) -> None:  # noqa: N802 - Qt's naming
+        super().resizeEvent(event)
+        self._place_expand()
 
     def drawBackground(self, painter: QPainter | None, rect: QRectF) -> None:  # noqa: N802
         """The ground under the graph: the theme's colour, then its grid.
