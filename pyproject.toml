@@ -135,6 +135,19 @@ follow_imports = "skip"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers --strict-config"
+# A warning nobody is shown is a warning nobody acts on. `ResourceWarning` is
+# off by default, and it had been naming an unclosed reader per parsed range for
+# as long as `read_range` has existed - eleven of them in one run, once asked.
+#
+# Turned on here rather than in CI so it is the same suite everywhere, and turned
+# on now because the suite raises none: this costs nothing today and fails the
+# next one immediately. Checked rather than assumed - with the reader leak put
+# back, twelve tests fail, including tests that look at no warnings themselves.
+#
+# When a dependency deprecates something and there is nothing to do about it yet,
+# narrow it with an `ignore::` line naming that warning and that module. Do not
+# drop the `error`.
+filterwarnings = ["error"]
 markers = [
     "slow: tests that process large inputs (deselect with '-m \"not slow\"')",
 ]
