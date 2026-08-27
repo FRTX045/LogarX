@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from logarc.core.activity import ActivityCategory
     from logarc.core.episode import Episode
     from logarc.core.evidence import EvidenceRef
-    from logarc.core.graph import ActivityGraph
+    from logarc.core.graph import ActivityGraph, GraphNode
     from logarc.core.session import Session
     from logarc.detect.crs import DetectionIndex
     from logarc.detect.engine import LabelledEvent
@@ -117,6 +117,36 @@ class AnalysisResult:
     @property
     def hostile_episodes(self) -> tuple[Episode, ...]:
         return tuple(episode for episode in self.episodes if episode.category.is_hostile)
+
+    def evidence_for(self, node: GraphNode, *, limit: int | None = None) -> tuple[EvidenceRef, ...]:
+        """Every line behind one activity, in the order the client performed it.
+
+        Read from the episodes the node names rather than from `node.evidence`,
+        and that is the whole point of the method. `graphbuild.build` merges a
+        behaviour node's references in episode order and cuts them at twenty, so
+        that tuple carries the earliest burst of an activity and nothing at all
+        of the latest, however long it ran. The episodes still hold the lot.
+
+        Chronological, because the episodes are, and deliberately not sorted by
+        source and line number. Sorted, a case holding two logs would show one
+        file's whole story and then the other's, rather than the sequence the
+        client actually performed — and on a forensic tool the order is part of
+        the evidence.
+
+        `limit` is the caller's, not this method's: how many lines can be read
+        before a reader notices the wait is a question about whoever is waiting.
+        A node naming an episode this result does not hold answers with nothing
+        rather than raising — a graph and a result that disagree are better said
+        by an empty panel than by a traceback.
+        """
+        named = set(node.episode_ids)
+        refs = tuple(
+            ref
+            for episode in self.episodes
+            if episode.episode_id in named
+            for ref in episode.evidence
+        )
+        return refs if limit is None else refs[:limit]
 
     def to_dict(self) -> dict[str, Any]:
         """The machine-readable form, for export and for other tools."""

@@ -25,7 +25,6 @@ dependencies = [
     "duckdb>=1.0",
     "pyyaml>=6.0",
     "pydantic>=2.6",
-    "networkx>=3.2",
     "typer>=0.12",
     "rich>=13.7",
 ]
@@ -42,7 +41,6 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
     "types-PyYAML",
-    "types-networkx",
 ]
 
 [project.scripts]
@@ -127,7 +125,7 @@ strict = true
 # them fails on syntax we never execute. We only need their signatures at the
 # call site, not a full check of their internals.
 [[tool.mypy.overrides]]
-module = ["duckdb.*", "pyarrow.*", "networkx.*", "numpy.*"]
+module = ["duckdb.*", "pyarrow.*"]
 ignore_missing_imports = true
 follow_imports = "skip"
 
@@ -144,30 +142,56 @@ markers = [
 [tool.coverage.run]
 source = ["src/logarc"]
 branch = true
-# Excluded because the number would be a lie, not because the code is unimportant.
+# Follow the ingest workers into their own processes.
 #
-# The four GUI modules are the ones that only a display can exercise — wiring,
-# painting and threading. They are kept deliberately thin and are checked by hand
-# against docs/manual-test-plan.md. Not every Qt module is here: `case_chooser`
-# and `evidence_panel` import Qt too and stay measured, because most of what they
-# do can be driven offscreen. Anything decidable without a display at all —
-# `style`, `client_filter`, `evidence_view`, `recent` — stays measured for the
-# same reason: those are the judgements that decide whether a graph misinforms.
+# `_parse_chunk` is the whole of what a parallel ingest does, and it runs in a
+# spawned process, so coverage saw none of it and `ingest/parallel.py` reported
+# 63% — the same misleading kind of number the `omit` below exists to avoid,
+# reached by a different route and left standing. Measured, it is 90%.
+#
+# It is not free: the ingest tests take 44.4s with this and 33.6s without, and
+# they are the only ones that spawn anything. Eleven seconds to stop a quarter
+# of a module reading as untested.
+#
+# `bench_worker` is out of reach even so — it is a `python -m` entry point, not
+# a multiprocessing worker — which is why it stays omitted below.
+concurrency = ["multiprocessing"]
+parallel = true
+sigterm = true
+# One module, excluded because the number would be a lie, not because the code
+# is unimportant.
 #
 # `bench_worker` is a `python -m` entry point that `benchmark` runs in a
-# subprocess, so coverage never sees it execute and reported 0%. It is exercised
+# subprocess, so coverage never sees it execute and reports 0%. It is exercised
 # by five tests in tests/cli/test_benchmark_command.py, which run real benchmarks
 # and would fail if it broke — a standing 0% invited someone to "fix" it with a
 # test that adds nothing.
+#
+# Four GUI modules used to sit here too, on the grounds that only a display can
+# exercise them and that they were kept deliberately thin. Measured on
+# 2026-08-26, that had stopped being true: `canvas.py` came out at 96% (473
+# statements, 10 missed) and `panels.py` at 99% (244, 1) — among the best
+# covered files in the tree, and hidden. `app.py` at 81% and `workers.py` at 78%
+# are lower, and a low number that is true is worth more than no number, because
+# only a measured file can show a regression as a fall.
+#
+# What the offscreen suite grew into is what changed. It now drives real
+# gestures through real widgets, so most of what these modules do is reachable
+# without a screen after all.
 omit = [
-    "src/logarc/gui/app.py",
-    "src/logarc/gui/canvas.py",
-    "src/logarc/gui/panels.py",
-    "src/logarc/gui/workers.py",
     "src/logarc/evaluation/bench_worker.py",
 ]
 
 [tool.coverage.report]
+# A floor, not a target. It is here so that coverage can only be lost on
+# purpose: without one, a module can drift down a point per change and nothing
+# says so until someone thinks to look.
+#
+# 94 against a measured 95: near enough to bite on a real slide, far enough
+# that one addition which is genuinely hard to reach does not block a merge
+# while its tests are being written. Raise it when the true number rises;
+# lowering it is a decision worth arguing for in a commit message.
+fail_under = 94
 exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",

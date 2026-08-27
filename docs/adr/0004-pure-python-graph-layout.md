@@ -53,3 +53,29 @@ This supersedes the "NetworkX/Graphviz" wording in the approved design. The subs
 decision — layout computed outside the GUI, returning coordinates, independently testable — is
 preserved; only the layout backend changed, to remove a native dependency that conflicted with
 the packaging requirement.
+
+**NetworkX went too, and this note did not say so.** The Decision above still names
+`multipartite_layout` and `spring_layout`; `graphbuild/layout.py` calls neither, and imports
+nothing but `math`, `dataclasses`, `typing` and one internal module.
+
+In fact `networkx` was never imported at all: `git log -S networkx -- src/` returns nothing.
+It was declared in the scaffolding commit on 2026-08-08, ahead of this decision, and the code
+never went that way — so every install since has carried a package nothing used, and a reader
+checking *why* would have been sent looking for calls that were never written. `mypy` reported
+the matching stub override as an unused section on every run, which is the tell that went
+unread. Dependency, stubs and override are all removed now.
+
+Each replacement turned out to serve this ADR's own reasoning better than the function it
+replaced:
+
+- **The trace needs no layering algorithm at all.** `multipartite_layout` was chosen to lay out
+  topological depth, but a trace is already in chronological order and its only edges join
+  consecutive episodes of one session — so position follows from order directly. What was added
+  instead is serpentine wrapping, which the original design did not consider and which is what
+  makes a long session readable.
+- **`spring_layout` was chosen for determinism, and a circle is deterministic for a better
+  reason.** A seeded iterative solver is reproducible because it is told to be; a circle ordered
+  by request volume cannot vary between runs at all. With one node per activity category the
+  node count is tiny and every pair may be connected, which is exactly where a force-directed
+  layout buys least. `test_layout_is_identical_across_runs` still holds the guarantee this ADR
+  asked for.

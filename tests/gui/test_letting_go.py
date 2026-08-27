@@ -11,7 +11,6 @@ of it looks.
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -22,12 +21,12 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from dragging import drag
-from PyQt6.QtCore import QEvent, QPoint, QPointF, QSettings, Qt, QThreadPool
+from PyQt6.QtCore import QEvent, QPoint, QPointF, Qt
 from PyQt6.QtGui import QMouseEvent
 from PyQt6.QtWidgets import QApplication
 
+from conftest import settled
 from logarc.case import Case
-from logarc.gui import app
 from logarc.gui.app import MainWindow
 
 START = datetime(2024, 5, 1, 0, 0, tzinfo=UTC)
@@ -38,25 +37,6 @@ ALL_DAY = "10.0.0.1"
 #: Two minutes in the middle of it. Selecting this one is what makes the band
 #: visibly narrow, and letting go of it is what has to widen the band again.
 BRIEF = "10.0.0.2"
-
-
-@pytest.fixture(scope="module")
-def qt_app() -> QApplication:
-    return QApplication.instance() or QApplication([])
-
-
-@pytest.fixture(autouse=True)
-def settings_in_a_temp_file(tmp_path: Path) -> Iterator[Path]:
-    """Point the window's preferences at a file nobody has to live with.
-
-    `QSettings` resolves to `HKCU\\Software` on Windows, so without this the
-    tests below write real preferences onto whichever machine ran them — and
-    the arrangement they save would be read back by the next run.
-    """
-    ini = tmp_path / "logarc.ini"
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(app, "_settings", lambda: QSettings(str(ini), QSettings.Format.IniFormat))
-        yield ini
 
 
 def _line(client: str, seconds: int, target: str) -> str:
@@ -83,17 +63,10 @@ def case(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return root / "case"
 
 
-def _settled(qt_app: QApplication, timeout: float = 30.0) -> None:
-    pool = QThreadPool.globalInstance()
-    assert pool is not None
-    assert pool.waitForDone(int(timeout * 1000)), "background work did not finish"
-    qt_app.processEvents()
-
-
 def _opened(qt_app: QApplication, case: Path) -> MainWindow:
     window = MainWindow()
     window._load_case(case)
-    _settled(qt_app)
+    settled(qt_app)
     assert window._clients._table.rowCount() == 2, "premise: both clients are listed"
     return window
 
@@ -155,12 +128,12 @@ def test_pressing_the_open_client_again_puts_the_case_back(
     whole = _band(window)
 
     _press(window, BRIEF)
-    _settled(qt_app)
+    settled(qt_app)
     assert window._result is not None, "premise: the press opened the client"
     assert _band(window) != whole, "premise: the band followed the client"
 
     _press(window, BRIEF)
-    _settled(qt_app)
+    settled(qt_app)
 
     assert window._result is None
     assert _band(window) == whole
@@ -180,14 +153,14 @@ def test_a_reconstruction_that_lands_after_letting_go_is_thrown_away(
     """
     window = _opened(qt_app, case)
     _press(window, BRIEF)
-    _settled(qt_app)
+    settled(qt_app)
     assert window._result is not None, "premise: a client is being read"
 
     window._reconstruct(BRIEF)
     window._let_go_of_client()
     assert window._result is None, "premise: letting go clears it at once"
 
-    _settled(qt_app)
+    settled(qt_app)
 
     assert window._result is None
     assert window._heading.text() == ""
@@ -213,7 +186,7 @@ def test_moving_to_another_client_with_an_unsaved_arrangement_asks_first(
 ) -> None:
     window = _opened(qt_app, case)
     _press(window, BRIEF)
-    _settled(qt_app)
+    settled(qt_app)
     _moved(window)
 
     asked: list[str] = []
@@ -224,7 +197,7 @@ def test_moving_to_another_client_with_an_unsaved_arrangement_asks_first(
             lambda self: (asked.append("asked"), "discard")[1],
         )
         _press(window, ALL_DAY)
-        _settled(qt_app)
+        settled(qt_app)
 
     assert asked == ["asked"]
     window.close()
@@ -240,7 +213,7 @@ def test_moving_to_another_client_with_nothing_moved_asks_nothing(
     """
     window = _opened(qt_app, case)
     _press(window, BRIEF)
-    _settled(qt_app)
+    settled(qt_app)
 
     asked: list[str] = []
     with pytest.MonkeyPatch.context() as patch:
@@ -250,7 +223,7 @@ def test_moving_to_another_client_with_nothing_moved_asks_nothing(
             lambda self: (asked.append("asked"), "discard")[1],
         )
         _press(window, ALL_DAY)
-        _settled(qt_app)
+        settled(qt_app)
 
     assert asked == []
     assert window._result is not None
@@ -266,7 +239,7 @@ def test_cancelling_leaves_the_reader_on_the_client_they_were_reading(
     """
     window = _opened(qt_app, case)
     _press(window, BRIEF)
-    _settled(qt_app)
+    settled(qt_app)
     moved = _moved(window)
     placed = (
         window._canvas._nodes[moved].pos().x(),
@@ -276,7 +249,7 @@ def test_cancelling_leaves_the_reader_on_the_client_they_were_reading(
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(MainWindow, "_ask_about_the_arrangement", lambda self: "cancel")
         _press(window, ALL_DAY)
-        _settled(qt_app)
+        settled(qt_app)
 
     assert window._result is not None
     assert window._result.client_ip == BRIEF, "the reader was moved anyway"
@@ -291,13 +264,13 @@ def test_cancelling_leaves_the_reader_on_the_client_they_were_reading(
 def test_discarding_goes_on_to_the_other_client(qt_app: QApplication, case: Path) -> None:
     window = _opened(qt_app, case)
     _press(window, BRIEF)
-    _settled(qt_app)
+    settled(qt_app)
     _moved(window)
 
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(MainWindow, "_ask_about_the_arrangement", lambda self: "discard")
         _press(window, ALL_DAY)
-        _settled(qt_app)
+        settled(qt_app)
 
     assert window._result is not None
     assert window._result.client_ip == ALL_DAY
@@ -308,7 +281,7 @@ def test_saving_on_the_way_out_keeps_the_arrangement(qt_app: QApplication, case:
     """And it is there when the reader comes back."""
     window = _opened(qt_app, case)
     _press(window, BRIEF)
-    _settled(qt_app)
+    settled(qt_app)
     moved = _moved(window)
     placed = (
         window._canvas._nodes[moved].pos().x(),
@@ -318,10 +291,10 @@ def test_saving_on_the_way_out_keeps_the_arrangement(qt_app: QApplication, case:
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(MainWindow, "_ask_about_the_arrangement", lambda self: "save")
         _press(window, ALL_DAY)
-        _settled(qt_app)
+        settled(qt_app)
 
     _press(window, BRIEF)
-    _settled(qt_app)
+    settled(qt_app)
 
     assert window._canvas._nodes[moved].pos().x() == placed[0]
     assert window._canvas._nodes[moved].pos().y() == placed[1]
@@ -334,7 +307,7 @@ def test_turning_the_warning_off_stops_it_being_asked(qt_app: QApplication, case
     """
     window = _opened(qt_app, case)
     _press(window, BRIEF)
-    _settled(qt_app)
+    settled(qt_app)
     _moved(window)
     window._prefs["view/ask_unsaved_arrangement"] = False
 
@@ -346,7 +319,7 @@ def test_turning_the_warning_off_stops_it_being_asked(qt_app: QApplication, case
             lambda self: (asked.append("asked"), "discard")[1],
         )
         _press(window, ALL_DAY)
-        _settled(qt_app)
+        settled(qt_app)
 
     assert asked == [], "the warning was turned off"
     assert window._result is not None
@@ -363,7 +336,7 @@ def test_a_change_of_range_is_not_leaving_the_client(qt_app: QApplication, case:
     """
     window = _opened(qt_app, case)
     _press(window, BRIEF)
-    _settled(qt_app)
+    settled(qt_app)
     _moved(window)
 
     asked: list[str] = []
@@ -374,7 +347,7 @@ def test_a_change_of_range_is_not_leaving_the_client(qt_app: QApplication, case:
             lambda self: (asked.append("asked"), "discard")[1],
         )
         window._reselect(BRIEF)
-        _settled(qt_app)
+        settled(qt_app)
 
     assert asked == [], "the same client is not another client"
     assert window._result is not None
@@ -388,7 +361,7 @@ def test_letting_go_of_a_moved_client_asks_too(qt_app: QApplication, case: Path)
     """
     window = _opened(qt_app, case)
     _press(window, BRIEF)
-    _settled(qt_app)
+    settled(qt_app)
     _moved(window)
 
     asked: list[str] = []
@@ -399,7 +372,7 @@ def test_letting_go_of_a_moved_client_asks_too(qt_app: QApplication, case: Path)
             lambda self: (asked.append("asked"), "cancel")[1],
         )
         _press(window, BRIEF)
-        _settled(qt_app)
+        settled(qt_app)
 
     assert asked == ["asked"]
     assert window._result is not None, "cancelling kept the client open"

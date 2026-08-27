@@ -40,11 +40,6 @@ START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 _SLACK = 120
 
 
-@pytest.fixture(scope="module")
-def qt_app() -> QApplication:
-    return QApplication.instance() or QApplication([])
-
-
 def node(index: int, label: str = "directory enumeration") -> GraphNode:
     return GraphNode(
         node_id=f"n{index}",

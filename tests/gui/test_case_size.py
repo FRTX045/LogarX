@@ -25,9 +25,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
-from PyQt6.QtCore import QSettings, QThreadPool
 from PyQt6.QtWidgets import QApplication
 
+from conftest import settled
 from logarc.case import Case
 from logarc.core.window import TimeWindow
 from logarc.gui import app
@@ -52,19 +52,6 @@ LATE_AT = START + timedelta(hours=5)
 #: what a cap does. `read_case` reads it when it runs, so patching the module
 #: attribute is enough.
 CAP = 2
-
-
-@pytest.fixture(scope="module")
-def qt_app() -> QApplication:
-    return QApplication.instance() or QApplication([])
-
-
-@pytest.fixture(autouse=True)
-def settings(tmp_path: Path) -> object:
-    ini = tmp_path / "logarc.ini"
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(app, "_settings", lambda: QSettings(str(ini), QSettings.Format.IniFormat))
-        yield ini
 
 
 @pytest.fixture(autouse=True)
@@ -101,17 +88,10 @@ def case(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return root / "case"
 
 
-def _settled(qt_app: QApplication, timeout: float = 30.0) -> None:
-    pool = QThreadPool.globalInstance()
-    assert pool is not None
-    assert pool.waitForDone(int(timeout * 1000)), "background work did not finish"
-    qt_app.processEvents()
-
-
 def _opened(qt_app: QApplication, case: Path) -> MainWindow:
     window = MainWindow()
     window._load_case(case)
-    _settled(qt_app)
+    settled(qt_app)
     assert window._clients._table.rowCount() == CAP, "premise: the listing is capped"
     return window
 
@@ -188,7 +168,7 @@ def test_narrowing_the_range_counts_what_the_range_holds(qt_app: QApplication, c
     window = _opened(qt_app, case)
 
     window._apply_window(TimeWindow(START - timedelta(minutes=1), START + timedelta(minutes=20)))
-    _settled(qt_app)
+    settled(qt_app)
 
     assert window._listed == 3, "the three busy clients, not the two rows drawn"
     assert window._all_clients == 5

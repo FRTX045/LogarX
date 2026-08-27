@@ -15,22 +15,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
-from PyQt6.QtCore import QThreadPool
 from PyQt6.QtWidgets import QApplication
 
+from conftest import settled
 from logarc.gui.workers import run_job
-
-
-@pytest.fixture(scope="module")
-def qt_app() -> QApplication:
-    return QApplication.instance() or QApplication([])
-
-
-def _settled(qt_app: QApplication, timeout: float = 10.0) -> None:
-    pool = QThreadPool.globalInstance()
-    assert pool is not None
-    assert pool.waitForDone(int(timeout * 1000)), "the job did not finish"
-    qt_app.processEvents()
 
 
 def test_a_job_can_report_figures_as_well_as_a_sentence(qt_app: QApplication) -> None:
@@ -59,7 +47,7 @@ def test_a_job_can_report_figures_as_well_as_a_sentence(qt_app: QApplication) ->
         on_progress=said.append,
         on_advance=advanced.append,
     )
-    _settled(qt_app)
+    settled(qt_app, timeout=10.0)
 
     assert said == ["opening", "still going"]
     assert advanced == [{"lines": 5}]
@@ -77,7 +65,7 @@ def test_a_job_that_reports_nothing_structured_still_works(qt_app: QApplication)
         return 7
 
     run_job(work, on_done=done.append, on_error=lambda _m, _d: None, on_progress=said.append)
-    _settled(qt_app)
+    settled(qt_app, timeout=10.0)
 
     assert said == ["working"]
     assert done == [7]

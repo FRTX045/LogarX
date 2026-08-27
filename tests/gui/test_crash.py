@@ -27,11 +27,6 @@ from logarc.gui import app as app_module
 from logarc.gui import crash
 
 
-@pytest.fixture(scope="module")
-def qt_app() -> QApplication:
-    return QApplication.instance() or QApplication([])
-
-
 @pytest.fixture(autouse=True)
 def hook_restored() -> object:
     """Put `sys.excepthook` back. Left installed, one test's net catches the

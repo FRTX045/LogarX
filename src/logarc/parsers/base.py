@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from logarc.core.event import NormalizedEvent
     from logarc.core.evidence import EvidenceRef
 
 
-@runtime_checkable
 class LogParser(Protocol):
     """Turns lines of one log format into `NormalizedEvent`.
 

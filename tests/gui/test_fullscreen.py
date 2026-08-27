@@ -16,7 +16,6 @@ from __future__ import annotations
 import os
 from datetime import UTC, datetime, timedelta
 from itertools import pairwise
-from pathlib import Path
 
 import pytest
 
@@ -24,15 +23,14 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
-from PyQt6.QtCore import QSettings, QSize, Qt
+from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtGui import QKeyEvent
 from PyQt6.QtWidgets import QApplication
 
-from conftest import contrast
+from colours import contrast
 from logarc.core.activity import ActivityCategory, Outcome, Severity
 from logarc.core.evidence import EvidenceRef
 from logarc.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
-from logarc.gui import app
 from logarc.gui.app import MainWindow
 from logarc.gui.canvas import (
     _EXPAND_ICON,
@@ -75,19 +73,6 @@ def a_trace(count: int = 6) -> ActivityGraph:
         for first, second in pairwise(nodes)
     )
     return ActivityGraph(kind=GraphKind.TRACE, client_ip="1.2.3.4", nodes=nodes, edges=edges)
-
-
-@pytest.fixture(scope="module")
-def qt_app() -> QApplication:
-    return QApplication.instance() or QApplication([])
-
-
-@pytest.fixture(autouse=True)
-def settings(tmp_path: Path) -> object:
-    ini = tmp_path / "logarc.ini"
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(app, "_settings", lambda: QSettings(str(ini), QSettings.Format.IniFormat))
-        yield ini
 
 
 def shown(size: tuple[int, int]) -> ActivityCanvas:
