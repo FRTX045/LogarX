@@ -269,7 +269,9 @@ class EvidencePanel(QWidget):
         # than showing nothing at all.
         index = marker.data(_INDEX)
         _episode, lines = self._shown
-        if not isinstance(index, int) or not 0 <= index < len(lines):  # pragma: no cover
+        # The index came from this panel, over the lines it is still holding, so
+        # it cannot be out of step with them while the two are in step.
+        if not isinstance(index, int) or not 0 <= index < len(lines):  # pragma: no cover - guarded
             return
         self._show_detail(detail_for(lines[index], decode=self._decode))
 
