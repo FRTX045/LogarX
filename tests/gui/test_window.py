@@ -25,6 +25,7 @@ from on_canvas import node_item, node_items
 from PyQt6.QtCore import QPoint
 from PyQt6.QtGui import QFontMetrics, QPalette
 from PyQt6.QtWidgets import QApplication, QSplitter, QStyle
+from tables import cell, column_of
 
 from colours import contrast
 from conftest import settled
@@ -475,10 +476,11 @@ def _summaries(*addresses: str) -> list[object]:
 def _on_screen(table: ClientTable) -> list[str]:
     """The addresses a reader can actually see, in the order they are drawn."""
     seen = []
+    address = column_of(table._table, "Client")
     for row in range(table._table.rowCount()):
-        cell = table._table.item(row, 0)
-        if cell is not None and not table._table.isRowHidden(row):
-            seen.append(cell.text())
+        item = table._table.item(row, address)
+        if item is not None and not table._table.isRowHidden(row):
+            seen.append(item.text())
     return seen
 
 
@@ -567,7 +569,7 @@ def test_sorting_after_filtering_still_hides_the_right_rows(qt_app: QApplication
     # Descending, so every item actually changes row. Ascending left this data
     # in the order it was already in, and the test passed with the fix removed
     # — a sort that moves nothing cannot catch a bug about rows moving.
-    table._table.sortItems(1, Qt.SortOrder.DescendingOrder)
+    table._table.sortItems(column_of(table._table, "Reqs"), Qt.SortOrder.DescendingOrder)
     assert _on_screen(table)[0] != "203.0.3.9", "premise: the sort reordered the table"
 
     assert set(_on_screen(table)) == {"203.0.3.9", "203.0.3.8"}
@@ -1766,8 +1768,7 @@ def test_the_client_table_shows_a_percentage_not_a_bare_number(
 
     table.show_clients(summaries)
 
-    ratio = table._table.item(0, 3)
-    assert ratio is not None
+    ratio = cell(table._table, 0, "4xx")
     assert ratio.text().endswith("%"), f"a ratio, not {ratio.text()!r}"
 
 
@@ -1781,10 +1782,9 @@ def test_the_client_table_still_sorts_by_the_number(qt_app: QApplication, campai
     table = ClientTable()
     table.show_clients(summaries)
 
-    table._table.sortItems(1, QtNS.SortOrder.DescendingOrder)
+    table._table.sortItems(column_of(table._table, "Reqs"), QtNS.SortOrder.DescendingOrder)
 
-    top = table._table.item(0, 1)
-    assert top is not None
+    top = cell(table._table, 0, "Reqs")
     assert top.text() == f"{max(s.request_count for s in summaries):,}"
 
 
@@ -2708,8 +2708,9 @@ def test_the_columns_are_still_sized_to_what_they_hold(qt_app: QApplication) -> 
     metrics = QFontMetrics(table._table.font())
     needed = metrics.horizontalAdvance(widest_address)
 
-    assert table._table.columnWidth(0) >= needed, (
-        f"the address column is {table._table.columnWidth(0)}px for "
+    address = column_of(table._table, "Client")
+    assert table._table.columnWidth(address) >= needed, (
+        f"the address column is {table._table.columnWidth(address)}px for "
         f"{widest_address!r}, which needs {needed}px"
     )
     # And `First seen`, the other column that hid. Measured like the address
@@ -2726,8 +2727,9 @@ def test_the_columns_are_still_sized_to_what_they_hold(qt_app: QApplication) -> 
         key=metrics.horizontalAdvance,
     )
     wanted = metrics.horizontalAdvance(stamp)
-    assert table._table.columnWidth(4) >= wanted, (
-        f"the first-seen column is {table._table.columnWidth(4)}px for "
+    first_seen = column_of(table._table, "First")
+    assert table._table.columnWidth(first_seen) >= wanted, (
+        f"the first-seen column is {table._table.columnWidth(first_seen)}px for "
         f"{stamp!r}, which needs {wanted}px"
     )
     table.close()

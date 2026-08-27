@@ -19,6 +19,7 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 from PyQt6.QtCore import QEvent, QPointF, Qt
 from PyQt6.QtGui import QMouseEvent
 from PyQt6.QtWidgets import QApplication
+from tables import cell
 
 from logarc.gui.panels import ClientTable
 from logarc.storage.base import IpSummary
@@ -47,9 +48,7 @@ def listed(qt_app: QApplication) -> ClientTable:
 def address(panel: ClientTable, row: int) -> str:
     """Whose row that is. Read rather than assumed: the table sorts itself, so
     the order rows were handed over in is not the order they sit in."""
-    cell = panel._table.item(row, 0)
-    assert cell is not None
-    return cell.text()
+    return cell(panel._table, row, "Client").text()
 
 
 def press(panel: ClientTable, row: int, button: Qt.MouseButton = Qt.MouseButton.LeftButton) -> None:

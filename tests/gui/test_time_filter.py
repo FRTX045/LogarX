@@ -19,6 +19,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from PyQt6.QtWidgets import QApplication
+from tables import cell
 
 from logarc.case import Case
 from logarc.core.window import EVERYTHING, TimeWindow
@@ -202,9 +203,7 @@ def _row_for(window: MainWindow, client: str) -> int | None:
 def _requests_in_row(window: MainWindow, client: str) -> int:
     row = _row_for(window, client)
     assert row is not None
-    cell = window._clients._table.item(row, 1)
-    assert cell is not None
-    return int(cell.text().replace(",", ""))
+    return int(cell(window._clients._table, row, "Reqs").text().replace(",", ""))
 
 
 EARLY_ONLY = TimeWindow(EARLY, EARLY + timedelta(minutes=5))
