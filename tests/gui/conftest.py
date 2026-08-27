@@ -105,3 +105,35 @@ def settings_in_a_temp_file(tmp_path_factory: pytest.TempPathFactory) -> Iterato
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(app, "_settings", lambda: QSettings(str(ini), QSettings.Format.IniFormat))
         yield ini
+
+
+@pytest.fixture(autouse=True)
+def nothing_left_running(request: pytest.FixtureRequest) -> Iterator[None]:
+    """Fail a test that walks away from work it started.
+
+    Three tests here did. Each passed, and each ended the process with
+    0xC0000409 when it was the last thing to run - one of them only sometimes,
+    which is the worse kind: it had been arriving as a segfault on CI, on a
+    different machine, days apart, with nothing to point at.
+
+    Nothing in the assertion is about crashing. A test that returns while the
+    window is still reading has stopped watching before the thing it asked for
+    happened, so what it checked was the state on the way there. `settled` is
+    how a test says it wants the end of that.
+
+    Quiet where there is no application - 207 tests here are of Qt-free seams
+    and never build one, and `globalInstance()` is None for them. An assertion
+    that demanded a display from those would be asking them to stop being what
+    they are.
+    """
+    yield
+    if QApplication.instance() is None:
+        return
+    pool = QThreadPool.globalInstance()
+    if pool is None:
+        return
+    left = pool.activeThreadCount()
+    assert left == 0, (
+        f"{request.node.name} ended with {left} job(s) still running. "
+        "Call settled(qt_app) before the test returns."
+    )

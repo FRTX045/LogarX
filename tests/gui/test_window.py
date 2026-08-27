@@ -3032,6 +3032,7 @@ def test_undo_comes_alive_once_something_has_been_moved(
     assert window._undo_action.isEnabled()
     window._undo_action.trigger()
     assert not window._undo_action.isEnabled(), "and goes back out when the stack empties"
+    settled(qt_app)
     window.close()
 
 

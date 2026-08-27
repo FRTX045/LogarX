@@ -371,7 +371,13 @@ def test_dragging_the_band_moves_the_fields(
 
     bar._band.changed.emit(picked)
 
+    # Asserted before the read, deliberately: the fields have to follow the band
+    # at once rather than when the case has been re-read over the new stretch.
     assert bar.chosen == picked
+    # And then waited for, because that read was started and this test is not
+    # about it. Left running, it outlives the test and the interpreter tears
+    # down on top of it.
+    settled(qt_app)
     window.close()
 
 
