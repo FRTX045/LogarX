@@ -14,17 +14,12 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from PyQt6.QtWidgets import QApplication, QDialog
 
-from conftest import contrast
+from colours import contrast
 from logarc.gui.case_chooser import COLUMNS, CaseChooser
 from logarc.gui.recent import RecentCase
 from logarc.gui.style import PIN_COLOUR, PIN_MARK, THEME
 
 WHEN = datetime(2026, 8, 15, 13, 4, tzinfo=UTC)
-
-
-@pytest.fixture(scope="module")
-def qt_app() -> QApplication:
-    return QApplication.instance() or QApplication([])
 
 
 def case(path: str, case_id: str = "case-001", events: int = 120) -> RecentCase:

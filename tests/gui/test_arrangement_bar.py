@@ -20,11 +20,6 @@ from PyQt6.QtWidgets import QApplication
 from logarc.gui.arrangement_bar import ArrangementBar
 
 
-@pytest.fixture(scope="module")
-def qt_app() -> QApplication:
-    return QApplication.instance() or QApplication([])
-
-
 def test_it_starts_with_nothing_to_say(qt_app: QApplication) -> None:
     """Built with the window, long before a graph is drawn. Visible from the
     start, it would announce an unsaved arrangement over an empty canvas.

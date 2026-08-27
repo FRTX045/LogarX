@@ -28,11 +28,6 @@ FIRST = datetime(2024, 5, 1, 0, 0, tzinfo=UTC)
 LAST = FIRST + timedelta(hours=24)
 
 
-@pytest.fixture(scope="module")
-def qt_app() -> QApplication:
-    return QApplication.instance() or QApplication([])
-
-
 def bars() -> list[TimeSlot]:
     # Twenty-four buckets an hour wide. The last one *starts* at 23:00 and
     # covers the hour after it, so the case ends at 24:00 — which is what the

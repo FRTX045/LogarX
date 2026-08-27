@@ -28,7 +28,7 @@ from PyQt6.QtCore import QSettings, QSize, Qt
 from PyQt6.QtGui import QKeyEvent
 from PyQt6.QtWidgets import QApplication
 
-from conftest import contrast
+from colours import contrast
 from logarc.core.activity import ActivityCategory, Outcome, Severity
 from logarc.core.evidence import EvidenceRef
 from logarc.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
@@ -75,11 +75,6 @@ def a_trace(count: int = 6) -> ActivityGraph:
         for first, second in pairwise(nodes)
     )
     return ActivityGraph(kind=GraphKind.TRACE, client_ip="1.2.3.4", nodes=nodes, edges=edges)
-
-
-@pytest.fixture(scope="module")
-def qt_app() -> QApplication:
-    return QApplication.instance() or QApplication([])
 
 
 @pytest.fixture(autouse=True)

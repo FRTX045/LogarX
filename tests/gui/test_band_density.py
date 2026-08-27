@@ -19,9 +19,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
-from PyQt6.QtCore import QSettings, QThreadPool
+from PyQt6.QtCore import QSettings
 from PyQt6.QtWidgets import QApplication
 
+from conftest import settled
 from logarc.case import Case
 from logarc.gui import app, prefs
 from logarc.gui.app import MainWindow
@@ -36,11 +37,6 @@ CLIENT = "10.0.0.1"
 #: different lists — and without that, a test asking which of the two the band
 #: was handed cannot tell them apart, and passes whichever it was given.
 BRIEF = "10.0.0.2"
-
-
-@pytest.fixture(scope="module")
-def qt_app() -> QApplication:
-    return QApplication.instance() or QApplication([])
 
 
 @pytest.fixture(autouse=True)
@@ -80,13 +76,6 @@ def case(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return root / "case"
 
 
-def _settled(qt_app: QApplication, timeout: float = 30.0) -> None:
-    pool = QThreadPool.globalInstance()
-    assert pool is not None
-    assert pool.waitForDone(int(timeout * 1000)), "background work did not finish"
-    qt_app.processEvents()
-
-
 def _opened(qt_app: QApplication, case: Path) -> MainWindow:
     window = MainWindow()
     # Given a size, because the bucket count is read off the band's width and an
@@ -96,7 +85,7 @@ def _opened(qt_app: QApplication, case: Path) -> MainWindow:
     window.show()
     qt_app.processEvents()
     window._load_case(case)
-    _settled(qt_app)
+    settled(qt_app)
     return window
 
 
@@ -115,7 +104,7 @@ def _open(qt_app: QApplication, window: MainWindow, client_ip: str) -> None:
         cell = table.item(row, 0)
         if cell is not None and cell.text() == client_ip:
             table.selectRow(row)
-            _settled(qt_app)
+            settled(qt_app)
             return
     raise AssertionError(f"{client_ip} is not listed")
 
@@ -128,7 +117,7 @@ def _choose(qt_app: QApplication, window: MainWindow, density: Density) -> None:
     stop covering the path they use.
     """
     window._apply_preferences({**window._prefs, prefs.DENSITY: density})
-    _settled(qt_app)
+    settled(qt_app)
 
 
 def test_a_finer_setting_draws_more_bars(qt_app: QApplication, case: Path) -> None:
@@ -243,7 +232,7 @@ def test_a_recount_that_lands_after_the_reader_let_go_hands_the_case_back(
 
     window._apply_preferences({**window._prefs, prefs.DENSITY: Density.COARSE})
     window._let_go_of_client()
-    _settled(qt_app)
+    settled(qt_app)
 
     assert window._result is None
     assert window._time_filter._band._bars == window._case_bars, (

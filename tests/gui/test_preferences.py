@@ -22,11 +22,6 @@ from logarc.gui.density import Density
 from logarc.gui.preferences import PreferencesDialog
 
 
-@pytest.fixture(scope="module")
-def qt_app() -> QApplication:
-    return QApplication.instance() or QApplication([])
-
-
 def _opened(values: dict[str, bool | Density] | None = None) -> PreferencesDialog:
     return PreferencesDialog(values or prefs.defaults())
 

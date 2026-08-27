@@ -37,11 +37,6 @@ EARLY = datetime(2024, 5, 1, 3, 0, tzinfo=UTC)
 LATE = datetime(2024, 5, 1, 4, 0, tzinfo=UTC)
 
 
-@pytest.fixture(scope="module")
-def qt_app() -> QApplication:
-    return QApplication.instance() or QApplication([])
-
-
 def opened(qt_app: QApplication) -> TimeFilterBar:
     bar = TimeFilterBar()
     bar.set_span((FIRST, LAST))

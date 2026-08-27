@@ -7,7 +7,7 @@ from itertools import combinations, pairwise
 
 import pytest
 
-from conftest import apart, chroma, contrast, hue_apart
+from colours import apart, chroma, contrast, hue_apart
 from logarc.core.activity import ActivityCategory, Outcome, Severity
 from logarc.core.evidence import EvidenceRef
 from logarc.core.graph import GraphKind, GraphNode

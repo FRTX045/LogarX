@@ -26,7 +26,8 @@ from PyQt6.QtCore import QPoint
 from PyQt6.QtGui import QFontMetrics, QPalette
 from PyQt6.QtWidgets import QApplication, QSplitter, QStyle
 
-from conftest import contrast
+from colours import contrast
+from conftest import settled
 from logarc.analysis import analyse_ip
 from logarc.case import Case
 from logarc.core.activity import ActivityCategory, Outcome, Severity
@@ -51,11 +52,6 @@ START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 CLIENT = "203.0.113.66"
 
 
-@pytest.fixture(scope="module")
-def qt_app() -> QApplication:
-    return QApplication.instance() or QApplication([])
-
-
 @pytest.fixture(scope="module", autouse=True)
 def settings_in_a_temp_file(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
     """Point the window's preferences at a file nobody has to live with.
@@ -76,21 +72,6 @@ def settings_in_a_temp_file(tmp_path_factory: pytest.TempPathFactory) -> Iterato
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(app, "_settings", lambda: QSettings(str(ini), QSettings.Format.IniFormat))
         yield ini
-
-
-def _settled(qt_app: QApplication, timeout: float = 30.0) -> None:
-    """Wait for the window's background work, then let its results land.
-
-    Everything the window does off the interface thread comes back as a queued
-    signal, so waiting for the pool is only half of it: without pumping the
-    event loop afterwards the job has finished and nothing has been told.
-    """
-    from PyQt6.QtCore import QThreadPool
-
-    pool = QThreadPool.globalInstance()
-    assert pool is not None
-    assert pool.waitForDone(int(timeout * 1000)), "background work did not finish"
-    qt_app.processEvents()
 
 
 def _long_trace(count: int) -> ActivityGraph:
@@ -1420,18 +1401,18 @@ def test_switching_view_leaves_the_panel_describing_what_is_ringed(
     """
     window = MainWindow()
     window._load_case(recurring)
-    _settled(qt_app)
+    settled(qt_app)
     window._clients._table.selectRow(0)
-    _settled(qt_app)
+    settled(qt_app)
     assert window._result is not None
 
     enumeration = max(window._result.trace.nodes, key=lambda item: item.request_count)
     window._show_evidence(enumeration.node_id)
-    _settled(qt_app)
+    settled(qt_app)
     assert f"{enumeration.request_count:,} requests" in window._evidence._heading.text()
 
     window._show_behaviour()
-    _settled(qt_app)
+    settled(qt_app)
 
     merged = max(window._result.behaviour.nodes, key=lambda item: item.episode_count)
     assert window._canvas._selected == merged.node_id, "the map is not ringing anything"
@@ -1453,9 +1434,9 @@ def _reconstructed(qt_app: QApplication, case: Path) -> MainWindow:
     """A window with the first client of `case` reconstructed."""
     window = MainWindow()
     window._load_case(case)
-    _settled(qt_app)
+    settled(qt_app)
     window._clients._table.selectRow(0)
-    _settled(qt_app)
+    settled(qt_app)
     assert window._result is not None
     return window
 
@@ -1472,7 +1453,7 @@ def test_an_activity_that_fits_is_shown_whole(qt_app: QApplication, campaign: Pa
     biggest = max(window._result.trace.nodes, key=lambda item: item.request_count)
 
     window._show_evidence(biggest.node_id)
-    _settled(qt_app)
+    settled(qt_app)
 
     assert window._evidence._table.rowCount() == biggest.evidence_total
     assert (
@@ -1498,10 +1479,10 @@ def test_a_merged_activity_shows_every_episode_not_just_the_first(
     window = _reconstructed(qt_app, recurring)
     merged = max(window._result.behaviour.nodes, key=lambda item: item.episode_count)
     window._show_behaviour()
-    _settled(qt_app)
+    settled(qt_app)
 
     window._show_evidence(merged.node_id)
-    _settled(qt_app)
+    settled(qt_app)
 
     table = window._evidence._table
     assert table.rowCount() == merged.evidence_total
@@ -1527,7 +1508,7 @@ def test_the_table_stops_at_what_it_can_draw_and_says_so(
     biggest = max(window._result.trace.nodes, key=lambda item: item.request_count)
 
     window._show_evidence(biggest.node_id)
-    _settled(qt_app)
+    settled(qt_app)
 
     assert window._evidence._table.rowCount() == 5
     assert f"Showing 5 of {biggest.evidence_total} lines" in window._evidence._heading.text()
@@ -1555,7 +1536,7 @@ def test_an_exported_graph_keeps_the_bounded_sample(
     window = _reconstructed(qt_app, campaign)
 
     window._export("json")
-    _settled(qt_app)
+    settled(qt_app)
 
     exported = json.loads(written.read_text(encoding="utf-8"))
     counts = [len(node["evidence"]) for node in exported["trace"]["nodes"]]
@@ -1962,7 +1943,7 @@ def test_opening_a_case_puts_it_at_the_top_of_the_list(
     window = MainWindow()
 
     window._load_case(campaign)
-    _settled(qt_app)
+    settled(qt_app)
 
     remembered = window._recent_cases()
     assert remembered
@@ -1990,7 +1971,7 @@ def test_a_case_that_will_not_open_is_not_remembered(
     not_a_case.mkdir()
 
     window._load_case(not_a_case)
-    _settled(qt_app)
+    settled(qt_app)
 
     assert reported, "opening a folder that is not a case has to say so"
     assert window._recent_cases() == ()
@@ -2036,7 +2017,7 @@ def test_forgetting_the_list_leaves_nothing_on_the_machine(
     app._settings().clear()
     window = MainWindow()
     window._load_case(campaign)
-    _settled(qt_app)
+    settled(qt_app)
     assert window._recent_cases()
 
     window._forget_recent()
@@ -2058,7 +2039,7 @@ def test_a_pin_survives_closing_the_chooser_without_opening_anything(
     app._settings().clear()
     window = MainWindow()
     window._load_case(campaign)
-    _settled(qt_app)
+    settled(qt_app)
     assert window._recent_cases()
 
     def pin_then_close(self: CaseChooser) -> int:
@@ -2092,7 +2073,7 @@ def test_forgetting_every_case_removes_the_key_rather_than_emptying_it(
     app._settings().clear()
     window = MainWindow()
     window._load_case(campaign)
-    _settled(qt_app)
+    settled(qt_app)
     assert window._recent_cases(), "premise: something was recorded"
     assert app._settings().contains(app._RECENT_KEY), "premise: it reached the key"
 
@@ -2123,7 +2104,7 @@ def test_forgetting_some_cases_keeps_the_rest_on_the_machine(
     app._settings().clear()
     window = MainWindow()
     window._load_case(campaign)
-    _settled(qt_app)
+    settled(qt_app)
 
     kept = recent.RecentCase(
         path="D:/cases/kept",
@@ -2281,7 +2262,7 @@ def test_opening_a_case_reports_its_unparsed_lines(
     window = MainWindow()
     window.show()
     window._load_case(case_dir)
-    _settled(qt_app)
+    settled(qt_app)
 
     assert window._notice.isVisible()
     assert "1 line could not be parsed" in window._notice.text()
@@ -2317,7 +2298,7 @@ def test_opening_a_clean_case_leaves_the_window_quiet(
     window = MainWindow()
     window.show()
     window._load_case(case_dir)
-    _settled(qt_app)
+    settled(qt_app)
 
     assert not window._notice.isVisible()
     assert raised == []
@@ -2382,7 +2363,7 @@ def test_a_log_that_produced_nothing_interrupts(
     window = MainWindow()
     window.show()
     window._load_case(case_dir)
-    _settled(qt_app)
+    settled(qt_app)
 
     assert raised == ["system.log could not be read"]
     # And the strip is up behind it, so the case still says so once the dialog
@@ -2410,7 +2391,7 @@ def test_a_merely_damaged_case_does_not_interrupt(
     window = MainWindow()
     window.show()
     window._load_case(case_dir)
-    _settled(qt_app)
+    settled(qt_app)
 
     assert raised == [], "a damaged log is a strip, not an interruption"
     assert window._notice.isVisible(), "premise: the strip still reported the damage"
@@ -2458,7 +2439,7 @@ def test_a_dismissed_strip_returns_when_the_case_is_opened_again(
     window.show()
 
     window._load_case(damaged)
-    _settled(qt_app)
+    settled(qt_app)
     assert window._notice.isVisible(), "premise: the damaged case put the strip up"
 
     window._notice.dismiss()
@@ -2467,11 +2448,11 @@ def test_a_dismissed_strip_returns_when_the_case_is_opened_again(
     # Somewhere else entirely, and that case is clean — so the strip staying
     # down here proves nothing on its own.
     window._load_case(clean)
-    _settled(qt_app)
+    settled(qt_app)
     assert not window._notice.isVisible()
 
     window._load_case(damaged)
-    _settled(qt_app)
+    settled(qt_app)
 
     assert window._notice.isVisible(), (
         "a dismissed strip must come back: the case is still incomplete, and the "
@@ -2627,7 +2608,7 @@ def test_a_real_ingest_reports_progress_that_only_goes_forwards(
     monkeypatch.setattr(window, "_show_ingest_progress", watch)
 
     window._ingest_new_case()
-    _settled(qt_app)
+    settled(qt_app)
 
     assert seen, "no progress was reported at all"
     lines = [item.lines for item in seen]
@@ -2662,7 +2643,7 @@ def test_a_failed_ingest_takes_the_card_down_with_it(
 
     window = MainWindow()
     window._ingest_new_case()
-    _settled(qt_app)
+    settled(qt_app)
 
     assert window._ingest_card is None
     window.close()
@@ -2788,7 +2769,7 @@ def test_choosing_the_case_already_open_does_not_read_it_again(
     app._settings().clear()
     window = MainWindow()
     window._load_case(campaign)
-    _settled(qt_app)
+    settled(qt_app)
     assert window._case_path == campaign, "premise: the case is open"
 
     reads: list[Path] = []
@@ -2809,7 +2790,7 @@ def test_choosing_the_case_already_open_does_not_read_it_again(
 
     monkeypatch.setattr(app_module.CaseChooser, "exec", pick_the_open_one)
     window._show_recent()
-    _settled(qt_app)
+    settled(qt_app)
 
     assert reads == [], f"the open case was read again: {reads}"
     window.close()
@@ -2828,7 +2809,7 @@ def test_choosing_the_case_already_open_says_so(
     app._settings().clear()
     window = MainWindow()
     window._load_case(campaign)
-    _settled(qt_app)
+    settled(qt_app)
 
     def pick_the_open_one(self: CaseChooser) -> int:
         self.chosen_path = str(campaign)
@@ -2836,7 +2817,7 @@ def test_choosing_the_case_already_open_says_so(
 
     monkeypatch.setattr(app_module.CaseChooser, "exec", pick_the_open_one)
     window._show_recent()
-    _settled(qt_app)
+    settled(qt_app)
 
     assert "already open" in window._status.text().lower(), window._status.text()
     window.close()
@@ -2861,7 +2842,7 @@ def test_choosing_a_different_case_still_reads_it(
     app._settings().clear()
     window = MainWindow()
     window._load_case(campaign)
-    _settled(qt_app)
+    settled(qt_app)
 
     reads: list[Path] = []
     original = app_module.read_case
@@ -2881,7 +2862,7 @@ def test_choosing_a_different_case_still_reads_it(
 
     monkeypatch.setattr(app_module.CaseChooser, "exec", pick_the_other)
     window._show_recent()
-    _settled(qt_app)
+    settled(qt_app)
 
     assert reads == [other]
     assert window._case_path == other
@@ -2913,7 +2894,7 @@ def test_moving_an_activity_offers_to_keep_it(qt_app: QApplication, campaign: Pa
     assert not window._arrangement_bar.isVisibleTo(window), "premise: nothing moved yet"
 
     _nudged(window)
-    _settled(qt_app)
+    settled(qt_app)
 
     assert window._arrangement_bar.isVisibleTo(window)
     assert "1 activity" in window._arrangement_bar.text()
@@ -2931,7 +2912,7 @@ def test_keeping_it_takes_the_offer_away(
     app._settings().clear()
     window = _reconstructed(qt_app, campaign)
     _nudged(window)
-    _settled(qt_app)
+    settled(qt_app)
     assert window._arrangement_bar.isVisibleTo(window), "premise: it is offering"
 
     window._save_layout_action.trigger()
@@ -2952,11 +2933,11 @@ def test_putting_it_back_takes_the_offer_away_too(
     app._settings().clear()
     window = _reconstructed(qt_app, campaign)
     _nudged(window)
-    _settled(qt_app)
+    settled(qt_app)
     assert window._arrangement_bar.isVisibleTo(window), "premise: it is offering"
 
     window._undo_action.trigger()
-    _settled(qt_app)
+    settled(qt_app)
 
     assert not window._arrangement_bar.isVisibleTo(window)
     window.close()
@@ -2971,10 +2952,10 @@ def test_the_strip_saves_by_the_same_route_the_menu_does(
     app._settings().clear()
     window = _reconstructed(qt_app, campaign)
     _nudged(window)
-    _settled(qt_app)
+    settled(qt_app)
 
     window._arrangement_bar._save.click()
-    _settled(qt_app)
+    settled(qt_app)
 
     assert window._saved_arrangement() == window._canvas.positions
     assert not window._arrangement_bar.isVisibleTo(window)
@@ -2995,7 +2976,7 @@ def test_the_strip_resets_by_the_same_route_the_menu_does(
     assert window._saved_arrangement() is not None, "premise: something is stored"
 
     window._arrangement_bar._reset.click()
-    _settled(qt_app)
+    settled(qt_app)
 
     assert _where(window, moved) == home
     assert window._saved_arrangement() is None, "the stored one is gone too"
@@ -3118,11 +3099,11 @@ def test_saving_on_the_behaviour_map_does_not_overwrite_the_trace(
     window._save_layout_action.trigger()
 
     window._show_behaviour()
-    _settled(qt_app)
+    settled(qt_app)
     _nudged(window)
     window._save_layout_action.trigger()
     window._show_trace()
-    _settled(qt_app)
+    settled(qt_app)
 
     assert _where(window, moved) == placed
     window.close()
@@ -3141,7 +3122,7 @@ def test_an_arrangement_saved_with_wrap_on_is_not_applied_with_it_off(
     window._save_layout_action.trigger()
 
     _prefer(window, "view/wrap_traces", False)
-    _settled(qt_app)
+    settled(qt_app)
 
     assert _where(window, moved) != placed
     window.close()
@@ -3160,9 +3141,9 @@ def test_a_saved_arrangement_survives_a_trip_through_the_other_view(
     window._save_layout_action.trigger()
 
     window._show_behaviour()
-    _settled(qt_app)
+    settled(qt_app)
     window._show_trace()
-    _settled(qt_app)
+    settled(qt_app)
 
     assert _where(window, moved) == placed
     window.close()
@@ -3181,9 +3162,9 @@ def test_reset_forgets_the_saved_arrangement_as_well(
 
     window._reset_layout_action.trigger()
     window._show_behaviour()
-    _settled(qt_app)
+    settled(qt_app)
     window._show_trace()
-    _settled(qt_app)
+    settled(qt_app)
 
     assert _where(window, moved) != placed
     window.close()

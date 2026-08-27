@@ -29,11 +29,6 @@ from logarc.gui.density import Density
 from logarc.gui.preferences import PreferencesDialog
 
 
-@pytest.fixture(scope="module")
-def qt_app() -> QApplication:
-    return QApplication.instance() or QApplication([])
-
-
 @pytest.fixture(autouse=True)
 def settings(tmp_path: Path) -> object:
     ini = tmp_path / "logarc.ini"

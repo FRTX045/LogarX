@@ -16,7 +16,7 @@ from unittest import mock
 
 import pytest
 
-from conftest import contrast
+from colours import contrast
 from logarc.analysis import analyse_ip
 from logarc.case import Case
 from logarc.core.activity import ActivityCategory, Outcome, Severity

@@ -26,11 +26,6 @@ from logarc.storage.base import IpSummary
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 
 
-@pytest.fixture(scope="module")
-def qt_app() -> QApplication:
-    return QApplication.instance() or QApplication([])
-
-
 def summary(ip: str, requests: int = 10) -> IpSummary:
     return IpSummary(
         client_ip=ip,
