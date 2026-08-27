@@ -17,7 +17,7 @@ stays in the store, unread, and the window quietly falls back to the default.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from logarc.gui.density import DEFAULT as DEFAULT_DENSITY
 from logarc.gui.density import Density
@@ -26,7 +26,14 @@ from logarc.gui.density import named as named_density
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+#: The switch that decides whether leaving an unsaved arrangement warns first.
+#: Named here rather than spelled out at each use: the dialog writes it, the
+#: window reads it, and the keeper acts on it, and three copies of a settings
+#: key is three chances for one of them to be silently reading nothing.
+ASK_UNSAVED_ARRANGEMENT: Final = "view/ask_unsaved_arrangement"
+
 __all__ = [
+    "ASK_UNSAVED_ARRANGEMENT",
     "DENSITY",
     "EVERY",
     "GROUPS",
@@ -77,7 +84,7 @@ EVERY: tuple[Setting, ...] = (
         group="Graph",
     ),
     Setting(
-        key="view/ask_unsaved_arrangement",
+        key=ASK_UNSAVED_ARRANGEMENT,
         label="Ask before leaving an unsaved arrangement",
         note=(
             "Warn when leaving a client whose activities you have moved and not "

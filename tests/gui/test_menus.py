@@ -283,7 +283,7 @@ def test_a_dead_menu_entry_is_dead_on_the_canvas_too(qt_app: QApplication) -> No
     a fault in the tool.
     """
     window = MainWindow()
-    window._sync_arrangement_actions()
+    window._arrangements_kept.refresh()
 
     assert not window._save_layout_action.isEnabled(), "premise: no graph, nothing to save"
     assert window._save_layout_action in window._canvas.actions()

@@ -19,7 +19,6 @@ from PyQt6.QtCore import QSettings, Qt, QTimer
 from PyQt6.QtGui import QAction, QKeyEvent, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
-    QCheckBox,
     QDialog,
     QFileDialog,
     QLabel,
@@ -41,9 +40,10 @@ from logarc.core.graph import GraphKind
 from logarc.core.window import EVERYTHING, TimeWindow
 from logarc.detect.crs import CrsEvidence
 from logarc.episode.builder import DEFAULT_EVIDENCE_SAMPLE, EpisodePolicy
-from logarc.gui import arrangement, crash, prefs, recent
+from logarc.gui import crash, prefs, recent
 from logarc.gui._qt import required
 from logarc.gui.arrangement_bar import ArrangementBar
+from logarc.gui.arrangement_keeper import ArrangementKeeper, Showing
 from logarc.gui.canvas import ActivityCanvas
 from logarc.gui.case_chooser import CaseChooser
 from logarc.gui.density import Density, buckets_for
@@ -104,28 +104,14 @@ _EVIDENCE_LIMIT = 2_000
 #: was opened.
 _SETTINGS = ("logarc", "logarc")
 
-#: Where the arrangements the reader saved are kept. One value holding all
-#: of them, capped in `gui.arrangement`, so a single read on open answers for
-#: every graph rather than one read per case in the settings tree.
-#:
-#: Like `_RECENT_KEY`, this records *what was investigated*: the coordinates are
-#: keyed by activity id, and a trace's activity ids are built from the client's
-#: address. `Reset layout` removes the arrangement for the graph in front of the
-#: reader, which is the control they have over it.
-_LAYOUT_KEY = "view/arrangements"
-
 #: The cases opened here, and whether to reopen the last one on start.
 #:
 #: Worth saying plainly: this records *what was investigated* rather than how
 #: the window looked doing it. `Forget these` in the chooser removes it, and the
-#: README says so. `_LAYOUT_KEY` is the other one — a saved arrangement is keyed
-#: by activity id, and a trace's activity ids carry the client's address.
+#: README says so. `arrangement_keeper.LAYOUT_KEY` is the other one — a saved
+#: arrangement is keyed by activity id, and a trace's activity ids carry the
+#: client's address.
 _RECENT_KEY = "cases/recent"
-
-#: Whether to warn before an arrangement nobody kept is lost. In `prefs.EVERY`
-#: as well, which is what puts it in the Preferences dialog — and the dialog is
-#: the only way back after `Don't ask this again`.
-_ASK_UNSAVED_KEY = "view/ask_unsaved_arrangement"
 
 #: The two views, in the order the tab bar shows them. One list rather than a
 #: pair of indices spelled out at each end, so a tab and the view it selects
@@ -400,8 +386,19 @@ class MainWindow(QMainWindow):
         # has to be moved on every resize, and swallows clicks meant for whatever
         # node is underneath.
         self._arrangement_bar = ArrangementBar()
-        self._arrangement_bar.save_requested.connect(self._save_arrangement)
-        self._arrangement_bar.reset_requested.connect(self._reset_layout)
+        # Handed the canvas rather than owning it: every part of the window uses
+        # that. What it owns is the store, the key, the strip and the question
+        # asked before an arrangement nobody kept is lost.
+        self._arrangements_kept = ArrangementKeeper(
+            self._canvas,
+            self._arrangement_bar,
+            settings=_settings,
+            say=self._idle,
+            parent=self,
+            showing=self._showing_now,
+        )
+        self._arrangement_bar.save_requested.connect(self._arrangements_kept.save)
+        self._arrangement_bar.reset_requested.connect(self._arrangements_kept.reset)
 
         centre = QWidget()
         column = QVBoxLayout(centre)
@@ -484,23 +481,28 @@ class MainWindow(QMainWindow):
         # with every other control rather than on the canvas: a strip floating
         # over the graph covers a patch of it, has to be moved on every resize,
         # and swallows clicks meant for whatever node is underneath.
-        self._undo_action = self._add(edit_menu, "&Undo node move", self._undo_move)
+        self._undo_action = self._add(edit_menu, "&Undo node move", self._arrangements_kept.undo)
         self._undo_action.setShortcut(QKeySequence.StandardKey.Undo)
         self._undo_action.setStatusTip("Put the last activity you moved back where it was.")
         self._save_layout_action = self._add(
-            edit_menu, "&Save this arrangement", self._save_arrangement
+            edit_menu, "&Save this arrangement", self._arrangements_kept.save
         )
         self._save_layout_action.setShortcut(QKeySequence.StandardKey.Save)
         self._save_layout_action.setStatusTip(
             "Remember where you have put the activities on this graph."
         )
-        self._reset_layout_action = self._add(edit_menu, "&Reset layout", self._reset_layout)
+        self._reset_layout_action = self._add(
+            edit_menu, "&Reset layout", self._arrangements_kept.reset
+        )
         self._reset_layout_action.setShortcut(QKeySequence("Ctrl+Shift+R"))
         self._reset_layout_action.setStatusTip(
             "Put every activity back where it was laid out, and forget the saved arrangement."
         )
-        self._canvas.arrangement_changed.connect(self._sync_arrangement_actions)
-        self._sync_arrangement_actions()
+        self._arrangements_kept.offer(
+            self._save_layout_action, self._undo_action, self._reset_layout_action
+        )
+        self._canvas.arrangement_changed.connect(self._arrangements_kept.refresh)
+        self._arrangements_kept.refresh()
         edit_menu.addSeparator()
 
         preferences = self._add(edit_menu, "&Preferences…", self._show_preferences)
@@ -912,6 +914,24 @@ class MainWindow(QMainWindow):
             )
         )
 
+    def _showing_now(self) -> Showing | None:
+        """What the canvas is showing, for whatever needs to know.
+
+        Asked for rather than pushed. Five things decide which arrangement
+        belongs to a graph and each changes at its own moment — the case on
+        open, the client on selection, the kind on a tab, the range on the date
+        fields. Told each time, there would be four places that must remember;
+        asked, there are none.
+        """
+        if self._case_path is None or self._result is None:
+            return None
+        return Showing(
+            case_path=str(self._case_path),
+            client_ip=self._result.client_ip,
+            kind=self._kind,
+            window_tag=self._window.tag,
+        )
+
     def _select_quietly(self, client_ip: str) -> bool:
         """Put the table back on `client_ip` without asking for a reconstruction.
 
@@ -949,64 +969,6 @@ class MainWindow(QMainWindow):
         # reconstruction of a client the list no longer offers.
         self._let_go_of_client()
 
-    def _ask_about_the_arrangement(self) -> str:
-        """Put the question, and answer `save`, `discard` or `cancel`.
-
-        Split from `_may_leave_the_graph` so the rule around it can be tested
-        without a dialog on screen: a modal `exec()` in a test either blocks the
-        run or has to be dismissed by a timer, and neither is a test of the rule.
-        """
-        client = self._result.client_ip if self._result is not None else "this client"
-        box = QMessageBox(self)
-        box.setIcon(QMessageBox.Icon.Question)
-        box.setWindowTitle("Unsaved arrangement")
-        box.setText(f"Keep how you have arranged {client}?")
-        box.setInformativeText(
-            "Leaving without saving puts the activities back where they were laid out."
-        )
-        save = box.addButton("Save and continue", QMessageBox.ButtonRole.AcceptRole)
-        discard = box.addButton("Discard", QMessageBox.ButtonRole.DestructiveRole)
-        box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
-        box.setDefaultButton(save)
-        # Held in a name, not passed inline. `setCheckBox` does not keep the
-        # Python object alive: an inline `QCheckBox` is collected, the tick
-        # disappears from the dialog, and reading `box.checkBox()` afterwards
-        # touches freed C++ and takes the process down with no traceback at all.
-        ask_again = QCheckBox("Don't ask this again")
-        box.setCheckBox(ask_again)
-
-        box.exec()
-        if ask_again.isChecked():
-            # Both, not just the store. The window reads its switches once into
-            # `self._prefs` at startup, so writing only the stored value would
-            # leave the dialog coming back for the rest of the session.
-            _settings().setValue(_ASK_UNSAVED_KEY, False)
-            self._prefs[_ASK_UNSAVED_KEY] = False
-
-        pressed = box.clickedButton()
-        if pressed is save:
-            return "save"
-        return "discard" if pressed is discard else "cancel"
-
-    def _may_leave_the_graph(self) -> bool:
-        """Whether the reader is finished with the graph that is on screen.
-
-        `False` only when they said so. A cancelled question is the one answer
-        that has to stop whatever asked it, and the caller is the only thing
-        that knows how to undo its own half of the gesture.
-        """
-        if self._result is None or not self._canvas._nodes:
-            return True
-        if not self._prefs.get(_ASK_UNSAVED_KEY, True):
-            return True
-        if not arrangement.moved_from(self._canvas.positions, self._baseline()):
-            return True
-
-        answer = self._ask_about_the_arrangement()
-        if answer == "save":
-            self._save_arrangement()
-        return answer != "cancel"
-
     def _release_requested(self) -> None:
         """The reader pressed the row they were already on.
 
@@ -1017,7 +979,7 @@ class MainWindow(QMainWindow):
         whatever the answer, and cancelling would leave the window reading a
         client the list no longer has.
         """
-        if not self._may_leave_the_graph():
+        if not self._arrangements_kept.may_leave():
             if self._result is not None:
                 self._select_quietly(self._result.client_ip)
             return
@@ -1058,7 +1020,7 @@ class MainWindow(QMainWindow):
         # again for the *same* client whenever the range moves, and asking there
         # would say the reader is leaving a client they are still on.
         leaving = self._result is not None and self._result.client_ip != client_ip
-        if leaving and not self._may_leave_the_graph():
+        if leaving and not self._arrangements_kept.may_leave():
             # The selection has already moved: `client_chosen` comes from
             # `itemSelectionChanged`, which fires before the window hears about
             # it. Refusing the move means putting the row back as well.
@@ -1154,8 +1116,8 @@ class MainWindow(QMainWindow):
             return
         graph = self._result.trace if self._kind is GraphKind.TRACE else self._result.behaviour
         was_reading = self._selected
-        self._canvas.show_graph(graph, positions=self._saved_arrangement())
-        self._sync_arrangement_actions()
+        self._canvas.show_graph(graph, positions=self._arrangements_kept.saved_positions())
+        self._arrangements_kept.refresh()
         if was_reading is None:
             return
         # Found by episode, not by node id: the two graphs number their nodes
@@ -1206,99 +1168,6 @@ class MainWindow(QMainWindow):
             self._show_behaviour()
 
     # -- where the reader put the activities --------------------------------
-
-    def _arrangement_key(self, *, wrap: bool | None = None) -> str | None:
-        """Which saved arrangement belongs to what is on the canvas now.
-
-        `None` before there is a graph, which is also when the menu entries are
-        dead — so nothing downstream has to guess what an arrangement for no
-        client would even mean.
-        """
-        if self._case_path is None or self._result is None:
-            return None
-        return arrangement.key(
-            str(self._case_path),
-            self._result.client_ip,
-            self._kind,
-            wrap=self._canvas.wrap if wrap is None else wrap,
-            window=self._window.tag,
-        )
-
-    def _arrangements(self) -> arrangement.Store:
-        return arrangement.load(str(_settings().value(_LAYOUT_KEY, "")))
-
-    def _saved_arrangement(self, *, wrap: bool | None = None) -> arrangement.Positions | None:
-        name = self._arrangement_key(wrap=wrap)
-        return None if name is None else self._arrangements().get(name)
-
-    def _baseline(self) -> arrangement.Positions:
-        """Where this graph would be drawn if it were opened again right now.
-
-        The layout, with whatever has been saved laid over it — which is exactly
-        what `show_graph` does with a saved arrangement. Anything else on the
-        canvas is a move the reader has made and not kept.
-
-        Worked out on every ask rather than kept in an attribute, and that is
-        what makes saving and resetting take the strip away without either of
-        them having to remember to: after a save the store holds the positions
-        that are on screen, after a reset it holds nothing and the positions are
-        the layout's, and both come out as "nothing has moved" without being
-        told. A flag set on the first drag would still be set after an undo had
-        put everything back.
-        """
-        baseline = self._canvas.laid_out
-        saved = self._saved_arrangement()
-        if saved:
-            baseline.update({node: where for node, where in saved.items() if node in baseline})
-        return baseline
-
-    def _undo_move(self) -> None:
-        self._canvas.undo_move()
-
-    def _save_arrangement(self) -> None:
-        """Remember where the activities have been put on this graph."""
-        name = self._arrangement_key()
-        if name is None:  # pragma: no cover - the entry is dead without a graph
-            return
-        store = arrangement.remember(self._arrangements(), name, self._canvas.positions)
-        _settings().setValue(_LAYOUT_KEY, arrangement.dump(store))
-        self._sync_arrangement_actions()
-        self._idle("Arrangement saved.")
-
-    def _reset_layout(self) -> None:
-        """Put every activity back, and forget the arrangement that was saved.
-
-        Both, because otherwise there is no way to be rid of a saved
-        arrangement: reset, reopen the case, and it is back — which reads as the
-        reset having failed rather than as having done half of what it says.
-        """
-        self._canvas.reset_layout()
-        name = self._arrangement_key()
-        if name is not None:
-            _settings().setValue(
-                _LAYOUT_KEY, arrangement.dump(arrangement.forget(self._arrangements(), name))
-            )
-        self._sync_arrangement_actions()
-        self._idle("Layout reset.")
-
-    def _sync_arrangement_actions(self) -> None:
-        """Grey out what there is nothing to do with, and offer what there is.
-
-        A live control that does nothing reads as a fault in the tool, and
-        `Undo` is the one that changes most: it comes alive on the first drag
-        and goes back out when the stack empties.
-
-        The strip rides along here because it answers the same question at the
-        same moments. This is already wired to `arrangement_changed`, which is
-        emitted once per drag that moved something — so there is no second thing
-        to remember to call, and no second place for the two to fall out of step.
-        """
-        drawn = self._result is not None and bool(self._canvas._nodes)
-        self._undo_action.setEnabled(drawn and self._canvas.can_undo)
-        self._save_layout_action.setEnabled(drawn)
-        self._reset_layout_action.setEnabled(drawn)
-        moved = arrangement.moved_from(self._canvas.positions, self._baseline()) if drawn else ()
-        self._arrangement_bar.show_moved(len(moved))
 
     def _from_the_menu(self) -> None:
         self._apply_fullscreen(self._fullscreen_action.isChecked())
@@ -1396,6 +1265,10 @@ class MainWindow(QMainWindow):
         self._apply_band(bool(chosen["view/traffic_band"]))
         self._apply_evidence_view(bool(chosen["view/decode_targets"]))
         self._apply_density(prefs.density_in(chosen))
+        # Carried across rather than read by the keeper on every ask. It holds
+        # this as a plain attribute, so without this line the switch goes one
+        # way only: off from the dialog, and never back on from Preferences.
+        self._arrangements_kept.ask_before_leaving = bool(chosen[prefs.ASK_UNSAVED_ARRANGEMENT])
         prefs.write(_settings().setValue, self._prefs)
 
     def _apply_band(self, showing: bool) -> None:
@@ -1469,7 +1342,7 @@ class MainWindow(QMainWindow):
         # instruction. `set_wrap` redraws once; asking it to redraw and then
         # redrawing again to place the nodes would double the cost of a toggle
         # on the graphs where it is already slowest.
-        self._canvas.set_wrap(wrap, positions=self._saved_arrangement(wrap=wrap))
+        self._canvas.set_wrap(wrap, positions=self._arrangements_kept.saved_positions(wrap=wrap))
 
     def _apply_evidence_view(self, decode: bool) -> None:
         """How targets are shown in the evidence panel.
