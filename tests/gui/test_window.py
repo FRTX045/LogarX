@@ -32,9 +32,11 @@ from logarc.case import Case
 from logarc.core.activity import ActivityCategory, Outcome, Severity
 from logarc.core.evidence import EvidenceRef
 from logarc.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
+from logarc.core.window import TimeWindow
 from logarc.detect.crs import CrsDetection, write_detections
 from logarc.gui import app
 from logarc.gui.app import MainWindow, read_case, reconstruct_client
+from logarc.gui.arrangement_keeper import LAYOUT_KEY
 from logarc.gui.canvas import MIN_FIT_SCALE, ActivityCanvas
 from logarc.gui.evidence_panel import EvidencePanel
 from logarc.gui.notice_bar import QuarantineBanner
@@ -2934,7 +2936,7 @@ def test_the_strip_saves_by_the_same_route_the_menu_does(
     window._arrangement_bar._save.click()
     settled(qt_app)
 
-    assert window._saved_arrangement() == window._canvas.positions
+    assert window._arrangements_kept.saved_positions() == window._canvas.positions
     assert not window._arrangement_bar.isVisibleTo(window)
     window.close()
 
@@ -2950,13 +2952,13 @@ def test_the_strip_resets_by_the_same_route_the_menu_does(
     moved = _nudged(window)
     home = window._canvas.laid_out[moved]
     window._save_layout_action.trigger()
-    assert window._saved_arrangement() is not None, "premise: something is stored"
+    assert window._arrangements_kept.saved_positions() is not None, "premise: something is stored"
 
     window._arrangement_bar._reset.click()
     settled(qt_app)
 
     assert _where(window, moved) == home
-    assert window._saved_arrangement() is None, "the stored one is gone too"
+    assert window._arrangements_kept.saved_positions() is None, "the stored one is gone too"
     window.close()
 
 
@@ -3105,6 +3107,36 @@ def test_an_arrangement_saved_with_wrap_on_is_not_applied_with_it_off(
     window.close()
 
 
+def test_an_arrangement_saved_over_the_whole_case_is_not_applied_to_a_slice(
+    qt_app: QApplication, campaign: Path, settings_in_a_temp_file: Path
+) -> None:
+    """A narrower range holds different activities, with different ids.
+
+    The twin of the wrap test above, and the one the range needed. Coordinates
+    saved over the whole case describe activities a slice of it does not
+    contain, so applying them would put nodes at positions worked out for a
+    graph nobody is looking at. `arrangement.key` carries the range for exactly
+    this reason, and until now nothing checked that the window passes it.
+    """
+    app._settings().clear()
+    window = _reconstructed(qt_app, campaign)
+    _nudged(window)
+    window._save_layout_action.trigger()
+    assert window._arrangements_kept.saved_positions() is not None, "premise: it was kept"
+
+    window._apply_window(TimeWindow(START, START + timedelta(seconds=20)))
+    settled(qt_app)
+
+    assert window._arrangements_kept.saved_positions() is None, (
+        "the whole case's arrangement was offered to a slice of it"
+    )
+    # Where the nodes end up is not asserted on. A narrower range lays its own
+    # graph out, and that layout can put an activity at the very coordinates the
+    # saved arrangement held - which happens here, and is a coincidence of
+    # geometry rather than the arrangement having been applied.
+    window.close()
+
+
 def test_a_saved_arrangement_survives_a_trip_through_the_other_view(
     qt_app: QApplication, campaign: Path, settings_in_a_temp_file: Path
 ) -> None:
@@ -3167,7 +3199,7 @@ def test_a_settings_value_nobody_can_read_still_opens_the_case(
     """A view preference, not evidence. A window that will not open a case
     because of one is a far worse failure than a lost arrangement."""
     app._settings().clear()
-    app._settings().setValue(app._LAYOUT_KEY, "{not json at all")
+    app._settings().setValue(LAYOUT_KEY, "{not json at all")
 
     window = _reconstructed(qt_app, campaign)
 

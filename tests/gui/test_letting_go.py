@@ -28,6 +28,7 @@ from PyQt6.QtWidgets import QApplication
 from conftest import settled
 from logarc.case import Case
 from logarc.gui.app import MainWindow
+from logarc.gui.arrangement_keeper import ArrangementKeeper
 
 START = datetime(2024, 5, 1, 0, 0, tzinfo=UTC)
 
@@ -192,8 +193,8 @@ def test_moving_to_another_client_with_an_unsaved_arrangement_asks_first(
     asked: list[str] = []
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(
-            MainWindow,
-            "_ask_about_the_arrangement",
+            ArrangementKeeper,
+            "ask",
             lambda self: (asked.append("asked"), "discard")[1],
         )
         _press(window, ALL_DAY)
@@ -218,8 +219,8 @@ def test_moving_to_another_client_with_nothing_moved_asks_nothing(
     asked: list[str] = []
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(
-            MainWindow,
-            "_ask_about_the_arrangement",
+            ArrangementKeeper,
+            "ask",
             lambda self: (asked.append("asked"), "discard")[1],
         )
         _press(window, ALL_DAY)
@@ -247,7 +248,7 @@ def test_cancelling_leaves_the_reader_on_the_client_they_were_reading(
     )
 
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(MainWindow, "_ask_about_the_arrangement", lambda self: "cancel")
+        patch.setattr(ArrangementKeeper, "ask", lambda self: "cancel")
         _press(window, ALL_DAY)
         settled(qt_app)
 
@@ -268,7 +269,7 @@ def test_discarding_goes_on_to_the_other_client(qt_app: QApplication, case: Path
     _moved(window)
 
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(MainWindow, "_ask_about_the_arrangement", lambda self: "discard")
+        patch.setattr(ArrangementKeeper, "ask", lambda self: "discard")
         _press(window, ALL_DAY)
         settled(qt_app)
 
@@ -289,7 +290,7 @@ def test_saving_on_the_way_out_keeps_the_arrangement(qt_app: QApplication, case:
     )
 
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(MainWindow, "_ask_about_the_arrangement", lambda self: "save")
+        patch.setattr(ArrangementKeeper, "ask", lambda self: "save")
         _press(window, ALL_DAY)
         settled(qt_app)
 
@@ -309,13 +310,13 @@ def test_turning_the_warning_off_stops_it_being_asked(qt_app: QApplication, case
     _press(window, BRIEF)
     settled(qt_app)
     _moved(window)
-    window._prefs["view/ask_unsaved_arrangement"] = False
+    window._arrangements_kept.ask_before_leaving = False
 
     asked: list[str] = []
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(
-            MainWindow,
-            "_ask_about_the_arrangement",
+            ArrangementKeeper,
+            "ask",
             lambda self: (asked.append("asked"), "discard")[1],
         )
         _press(window, ALL_DAY)
@@ -324,6 +325,38 @@ def test_turning_the_warning_off_stops_it_being_asked(qt_app: QApplication, case
     assert asked == [], "the warning was turned off"
     assert window._result is not None
     assert window._result.client_ip == ALL_DAY
+    window.close()
+
+
+def test_turning_the_warning_back_on_in_preferences_reaches_the_keeper(
+    qt_app: QApplication, case: Path
+) -> None:
+    """The dialog is the only way back after `Don't ask this again`.
+
+    The keeper holds this as a plain attribute rather than reading the store on
+    every ask, so something has to carry a change in Preferences across to it.
+    Nothing did, and the switch went one way only: off from the dialog, and
+    never back on.
+    """
+    window = _opened(qt_app, case)
+    _press(window, BRIEF)
+    settled(qt_app)
+    _moved(window)
+    window._arrangements_kept.ask_before_leaving = False
+
+    window._apply_preferences({**window._prefs, "view/ask_unsaved_arrangement": True})
+
+    asked: list[str] = []
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(
+            ArrangementKeeper,
+            "ask",
+            lambda self: (asked.append("asked"), "discard")[1],
+        )
+        _press(window, ALL_DAY)
+        settled(qt_app)
+
+    assert asked == ["asked"], "Preferences turned it on and the keeper never heard"
     window.close()
 
 
@@ -342,8 +375,8 @@ def test_a_change_of_range_is_not_leaving_the_client(qt_app: QApplication, case:
     asked: list[str] = []
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(
-            MainWindow,
-            "_ask_about_the_arrangement",
+            ArrangementKeeper,
+            "ask",
             lambda self: (asked.append("asked"), "discard")[1],
         )
         window._reselect(BRIEF)
@@ -367,8 +400,8 @@ def test_letting_go_of_a_moved_client_asks_too(qt_app: QApplication, case: Path)
     asked: list[str] = []
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(
-            MainWindow,
-            "_ask_about_the_arrangement",
+            ArrangementKeeper,
+            "ask",
             lambda self: (asked.append("asked"), "cancel")[1],
         )
         _press(window, BRIEF)
