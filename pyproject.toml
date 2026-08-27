@@ -135,6 +135,19 @@ follow_imports = "skip"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers --strict-config"
+# A warning nobody is shown is a warning nobody acts on. `ResourceWarning` is
+# off by default, and it had been naming an unclosed reader per parsed range for
+# as long as `read_range` has existed - eleven of them in one run, once asked.
+#
+# Turned on here rather than in CI so it is the same suite everywhere, and turned
+# on now because the suite raises none: this costs nothing today and fails the
+# next one immediately. Checked rather than assumed - with the reader leak put
+# back, twelve tests fail, including tests that look at no warnings themselves.
+#
+# When a dependency deprecates something and there is nothing to do about it yet,
+# narrow it with an `ignore::` line naming that warning and that module. Do not
+# drop the `error`.
+filterwarnings = ["error"]
 markers = [
     "slow: tests that process large inputs (deselect with '-m \"not slow\"')",
 ]
@@ -181,6 +194,33 @@ sigterm = true
 omit = [
     "src/logarc/evaluation/bench_worker.py",
 ]
+
+# What the GUI numbers do not say, so that nobody reads them as saying it.
+#
+# `workers.py` reports 78% and `app.py` 82%, and part of what is counted missing
+# there is not untested - it is untraceable. `Job.run`, `Job._report` and the
+# `work()` closures inside `app.py` all execute on a thread QThreadPool made in
+# C++. Coverage installs its tracer per thread through `threading.settrace`,
+# which reaches threads the `threading` module started and no others, so a Qt
+# thread runs Python that nothing is watching.
+#
+# Measured rather than argued: a counter inside `Job.run` says it ran 261 times
+# during the GUI suite. Coverage reports those same lines as never run.
+#
+# Two ways out were tried and neither is taken:
+#
+# * `concurrency = ["multiprocessing", "thread"]` - identical numbers, to the
+#   statement. The default already includes threads; it is foreign threads that
+#   are out of reach, not unlisted ones.
+# * `COVERAGE_CORE=sysmon` - `sys.monitoring` is process-wide and would see
+#   them, but this coverage cannot measure branches under it. Branch coverage is
+#   worth more than these lines; the omit list above exists because a number
+#   that lies is worse than a number that is low.
+#
+# So the figures stand as they are, understated on purpose and by a known
+# amount. What holds this code is behaviour: `tests/gui/test_workers.py` asserts
+# a job reports sentences, figures and failures back, and none of that arrives
+# unless `run` and `_report` did their work.
 
 [tool.coverage.report]
 # A floor, not a target. It is here so that coverage can only be lost on
