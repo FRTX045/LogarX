@@ -25,7 +25,6 @@ dependencies = [
     "duckdb>=1.0",
     "pyyaml>=6.0",
     "pydantic>=2.6",
-    "networkx>=3.2",
     "typer>=0.12",
     "rich>=13.7",
 ]
@@ -42,7 +41,6 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
     "types-PyYAML",
-    "types-networkx",
 ]
 
 [project.scripts]
@@ -127,7 +125,7 @@ strict = true
 # them fails on syntax we never execute. We only need their signatures at the
 # call site, not a full check of their internals.
 [[tool.mypy.overrides]]
-module = ["duckdb.*", "pyarrow.*", "networkx.*", "numpy.*"]
+module = ["duckdb.*", "pyarrow.*"]
 ignore_missing_imports = true
 follow_imports = "skip"
 
