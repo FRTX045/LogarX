@@ -301,12 +301,12 @@ def test_going_full_screen_leaves_the_graph_alone_on_it(qt_app: QApplication) ->
     window.show()
     qt_app.processEvents()
 
-    window._apply_fullscreen(True)
+    window._full_screen.apply(True)
     qt_app.processEvents()
 
     assert not any(_shown(window).values()), f"still on screen: {_shown(window)}"
     assert not window._canvas.isHidden()
-    window._apply_fullscreen(False)
+    window._full_screen.apply(False)
     window.close()
 
 
@@ -316,9 +316,9 @@ def test_coming_back_puts_the_window_back(qt_app: QApplication) -> None:
     qt_app.processEvents()
     before = _shown(window)
 
-    window._apply_fullscreen(True)
+    window._full_screen.apply(True)
     qt_app.processEvents()
-    window._apply_fullscreen(False)
+    window._full_screen.apply(False)
     qt_app.processEvents()
 
     assert _shown(window) == before
@@ -338,8 +338,8 @@ def test_coming_back_does_not_undo_a_preference(qt_app: QApplication) -> None:
     qt_app.processEvents()
     assert window._time_filter._band.isHidden(), "premise: the band is off"
 
-    window._apply_fullscreen(True)
-    window._apply_fullscreen(False)
+    window._full_screen.apply(True)
+    window._full_screen.apply(False)
     qt_app.processEvents()
 
     assert window._time_filter._band.isHidden()
@@ -388,28 +388,50 @@ def test_the_graph_is_refitted_when_it_is_given_the_screen(qt_app: QApplication)
     before = window._canvas.transform().m11()
     assert before > MIN_FIT_SCALE, "premise: the fit is not sitting on its floor"
 
-    window._apply_fullscreen(True)
+    window._full_screen.apply(True)
     qt_app.processEvents()
 
     assert window._canvas.transform().m11() != before
-    window._apply_fullscreen(False)
+    window._full_screen.apply(False)
     window.close()
 
 
 # -- the ways in and out ---------------------------------------------------
 
 
+def test_the_corner_button_follows_the_window_into_full_screen(qt_app: QApplication) -> None:
+    """The button says which way it goes, and full screen is the other way.
+
+    It was only ever checked by calling `set_expanded` on the canvas directly.
+    Nothing followed the window's own route, so a full screen that forgot to
+    tell the canvas would have left the button offering to do the thing it had
+    just done.
+    """
+    window = MainWindow()
+    window.show()
+    QApplication.processEvents()
+    before = window._canvas._expand.toolTip()
+
+    window._full_screen.apply(True)
+    QApplication.processEvents()
+
+    assert window._canvas._expand.toolTip() != before, "the button was never told"
+    assert "Leave" in window._canvas._expand.toolTip()
+    window._full_screen.apply(False)
+    window.close()
+
+
 def test_escape_comes_back(qt_app: QApplication) -> None:
     window = MainWindow()
     window.show()
-    window._apply_fullscreen(True)
+    window._full_screen.apply(True)
     qt_app.processEvents()
 
     window.keyPressEvent(
         QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_Escape, Qt.KeyboardModifier.NoModifier)
     )
 
-    assert not window._fullscreen
+    assert not window._full_screen.on
     window.close()
 
 
@@ -429,7 +451,7 @@ def test_escape_is_passed_on_when_there_is_nothing_to_leave(qt_app: QApplication
     window.keyPressEvent(press)
 
     assert not press.isAccepted(), "escape was swallowed by a window that is not full screen"
-    assert not window._fullscreen
+    assert not window._full_screen.on
     window.close()
 
 
@@ -438,14 +460,14 @@ def test_escape_is_taken_when_there_is_something_to_leave(qt_app: QApplication) 
     further, or it would also reach whatever else listens for it."""
     window = MainWindow()
     window.show()
-    window._apply_fullscreen(True)
+    window._full_screen.apply(True)
     qt_app.processEvents()
     press = QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_Escape, Qt.KeyboardModifier.NoModifier)
 
     window.keyPressEvent(press)
 
     assert press.isAccepted()
-    assert not window._fullscreen
+    assert not window._full_screen.on
     window.close()
 
 
@@ -466,7 +488,7 @@ def test_the_shortcut_still_works_with_the_menu_bar_hidden(qt_app: QApplication)
     way back."""
     window = MainWindow()
     window.show()
-    window._apply_fullscreen(True)
+    window._full_screen.apply(True)
     qt_app.processEvents()
     bar = window.menuBar()
     assert bar is not None and bar.isHidden(), "premise: the menu bar is hidden"
@@ -474,7 +496,7 @@ def test_the_shortcut_still_works_with_the_menu_bar_hidden(qt_app: QApplication)
     on_the_window = [a.text().replace("&", "") for a in window.actions()]
 
     assert "Full screen" in on_the_window
-    window._apply_fullscreen(False)
+    window._full_screen.apply(False)
     window.close()
 
 
