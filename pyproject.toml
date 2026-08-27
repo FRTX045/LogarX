@@ -183,6 +183,15 @@ omit = [
 ]
 
 [tool.coverage.report]
+# A floor, not a target. It is here so that coverage can only be lost on
+# purpose: without one, a module can drift down a point per change and nothing
+# says so until someone thinks to look.
+#
+# 94 against a measured 95: near enough to bite on a real slide, far enough
+# that one addition which is genuinely hard to reach does not block a merge
+# while its tests are being written. Raise it when the true number rises;
+# lowering it is a decision worth arguing for in a commit message.
+fail_under = 94
 exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",
