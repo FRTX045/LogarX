@@ -69,3 +69,37 @@ def test_a_job_that_reports_nothing_structured_still_works(qt_app: QApplication)
 
     assert said == ["working"]
     assert done == [7]
+
+
+def test_settling_waits_for_the_work_that_a_result_starts(qt_app: QApplication) -> None:
+    """One wait is not enough when a result starts more work.
+
+    `settled` drains the pool and then pumps the loop so the results land. But a
+    result landing is exactly when the window starts the next thing: finishing an
+    ingest loads the case, and loading a case is another job. That job begins
+    during the pump, which is after the wait, so the wait never covered it.
+
+    A test that returns here leaves a thread running into the interpreter's own
+    teardown. On this machine that ends the process with 0xC0000409 after the
+    test has already passed - measured, and it is why this exists.
+    """
+    landed: list[object] = []
+
+    def second(_report: Callable[[object], None]) -> str:
+        return "second"
+
+    def first(_report: Callable[[object], None]) -> str:
+        return "first"
+
+    def after_first(result: object) -> None:
+        landed.append(result)
+        run_job(second, on_done=landed.append, on_error=_never)
+
+    run_job(first, on_done=after_first, on_error=_never)
+    settled(qt_app)
+
+    assert landed == ["first", "second"], "the second job was left running"
+
+
+def _never(message: str, detail: str) -> None:
+    raise AssertionError(f"the job failed: {message} -- {detail}")

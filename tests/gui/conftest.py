@@ -12,6 +12,7 @@ so a module that set it after would be setting it for nobody.
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -46,14 +47,34 @@ def settled(qt_app: QApplication, timeout: float = 30.0) -> None:
     signal, so waiting for the pool is only half of it: without pumping the
     event loop afterwards the job has finished and nothing has been told.
 
+    **Round and round until a pump starts nothing**, rather than waiting once.
+    A result landing is exactly when the window starts the next thing - an
+    ingest that finishes loads the case, and loading a case is another job - so
+    that job begins during the pump, which is after the wait the caller made.
+    Waiting once left it running, and a test that returned there carried a live
+    thread into the interpreter's own teardown: on this machine the process then
+    ended with 0xC0000409 *after* the test had passed. Twice over, and gone as
+    soon as the second round was waited for.
+
+    `waitForDone(0)` is the loop's condition because it answers for a job the
+    instant it is started, checked rather than assumed - 40 starts, 40 times not
+    empty. Were it racy, a round could see an empty pool and return into the
+    same live thread this exists to wait for.
+
     A plain function rather than a fixture because callers ask for it in the
     middle of a test, between a gesture and the assertion about it, which is
     not something a fixture can be asked for.
     """
     pool = QThreadPool.globalInstance()
     assert pool is not None
-    assert pool.waitForDone(int(timeout * 1000)), "background work did not finish"
-    qt_app.processEvents()
+    deadline = time.monotonic() + timeout
+    while True:
+        left = deadline - time.monotonic()
+        assert left > 0, "background work did not finish"
+        assert pool.waitForDone(int(left * 1000)), "background work did not finish"
+        qt_app.processEvents()
+        if pool.waitForDone(0):
+            return
 
 
 @pytest.fixture(autouse=True)
