@@ -1495,17 +1495,12 @@ class MainWindow(QMainWindow):
         self._selected = node
 
         path = self._case_path
-        # Gathered from the episodes the node names, not from `node.evidence`.
-        # `graphbuild.build` cuts a behaviour node's merged references at twenty
-        # and merges in episode order, so that tuple holds the earliest burst
-        # and nothing of the latest however long it ran. The episodes still have
-        # the lot, and taking it here leaves the exported graph untouched.
-        refs = tuple(
-            ref
-            for episode in self._result.episodes
-            if episode.episode_id in node.episode_ids
-            for ref in episode.evidence
-        )[:_EVIDENCE_LIMIT]
+        # Which lines are behind an activity is `AnalysisResult`'s to answer, not
+        # the window's: it is a fact about the reconstruction, checkable without
+        # a display, and getting it wrong shows the reader the wrong evidence.
+        # What stays here is the ceiling, which is a question about how long
+        # somebody will sit watching a panel fill.
+        refs = self._result.evidence_for(node, limit=_EVIDENCE_LIMIT)
 
         def work(_: Callable[[str], None]) -> Any:
             with Case.open(path) as case:

@@ -7,15 +7,17 @@ these produce is wrong, the tool is wrong regardless of what the unit tests say.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
-from logarc.analysis import analyse_ip
+from logarc.analysis import AnalysisPolicy, analyse_ip
 from logarc.case import Case
 from logarc.core.activity import ActivityCategory, Outcome
 from logarc.core.window import EVERYTHING, TimeWindow
+from logarc.episode.builder import EpisodePolicy
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 ATTACKER = "203.0.113.66"
@@ -308,3 +310,103 @@ def test_a_window_holding_nothing_reconstructs_nothing_without_falling_over(
 
     assert result.episodes == ()
     assert result.trace.nodes == ()
+
+
+# -- which lines are behind one activity ----------------------------------
+
+
+def test_a_node_answers_with_the_evidence_of_every_episode_it_holds(
+    campaign: Case,
+) -> None:
+    """Gathered from the episodes the node names, not from `node.evidence`.
+
+    `graphbuild.build` merges a behaviour node's references in episode order
+    and cuts them at twenty, so that tuple holds the earliest burst and nothing
+    of the latest however long it ran. Read from the episodes instead, the
+    panel shows the whole of what the activity did.
+    """
+    # The sample the window asks for, not the default. `graphbuild.build` cuts a
+    # node's merged references at twenty whatever the episodes were given, so at
+    # the default sample of twenty the two are the same length and this would
+    # pass while proving nothing.
+    result = analyse_ip(
+        campaign.store,
+        ATTACKER,
+        policy=AnalysisPolicy(episode=EpisodePolicy(evidence_sample=2_000)),
+    )
+    biggest = max(result.behaviour.nodes, key=lambda node: node.request_count)
+
+    whole = result.evidence_for(biggest)
+    from_the_node = biggest.evidence
+
+    assert len(from_the_node) < len(whole), (
+        "premise: the merged tuple is cut and the episodes are not"
+    )
+    assert set(from_the_node) <= set(whole), "and it is a prefix of the same evidence"
+
+
+def test_the_evidence_of_an_activity_stops_at_the_ceiling_it_is_given(
+    campaign: Case,
+) -> None:
+    """The reader is waiting while these are read, so there is a limit. Where
+    it sits is the caller's business - what belongs here is that it is obeyed.
+    """
+    result = analyse_ip(campaign.store, ATTACKER)
+    biggest = max(result.behaviour.nodes, key=lambda node: node.request_count)
+
+    assert len(result.evidence_for(biggest, limit=3)) == 3
+
+
+def test_an_activity_whose_episodes_are_gone_answers_with_nothing(
+    campaign: Case,
+) -> None:
+    """Rather than raising. A node naming an episode this result does not hold
+    is a graph and a result that disagree, and the panel showing nothing says
+    that better than a traceback does.
+    """
+    result = analyse_ip(campaign.store, ATTACKER)
+    stranger = replace(result.trace.nodes[0], episode_ids=("nobody/0",))
+
+    assert result.evidence_for(stranger) == ()
+
+
+@pytest.fixture
+def two_logs(tmp_path: Path) -> Case:
+    """One sweep, logged across two files, alternating line by line.
+
+    A load balancer in front of two servers writes exactly this, and it is the
+    only shape that can tell chronological order apart from file order: with one
+    log the two agree, and a test on one log cannot see the difference between
+    a right answer and a tidy one.
+    """
+    first, second = [], []
+    for index in range(20):
+        target = f"/admin/{index}"
+        (first if index % 2 == 0 else second).append(
+            line(seconds=index, target=target, status=404, size=0)
+        )
+
+    left, right = tmp_path / "a.log", tmp_path / "b.log"
+    left.write_text("\n".join(first) + "\n", encoding="utf-8")
+    right.write_text("\n".join(second) + "\n", encoding="utf-8")
+    with Case.create(tmp_path / "case") as case:
+        case.ingest([left, right])
+    return Case.open(tmp_path / "case")
+
+
+def test_the_lines_come_back_as_performed_not_sorted_by_file(two_logs: Case) -> None:
+    """Chronological, because the episodes are, and deliberately not by file.
+
+    Sorted by source and line number, a reader would be shown one server's whole
+    story and then the other's, rather than the sequence the client actually
+    performed. On a forensic tool the order *is* part of the evidence.
+    """
+    result = analyse_ip(two_logs.store, ATTACKER)
+    biggest = max(result.trace.nodes, key=lambda node: node.request_count)
+
+    refs = result.evidence_for(biggest)
+    sources = [ref.source_file_id for ref in refs]
+
+    assert len(set(sources)) == 2, "premise: this activity spans both logs"
+    assert sources != sorted(sources), "premise: file order is not the order performed"
+    assert sources == ["a.log", "b.log"] * (len(sources) // 2), "the sweep is interleaved"
