@@ -2555,6 +2555,25 @@ def test_a_real_ingest_reports_progress_that_only_goes_forwards(
     falling, and the whole of a tiny log reports fewer bytes than the first
     batch of a big one, so the boundary never showed up as a fall and the
     counts silently restarted.
+
+    **Run this test on its own and the process exits 0xC0000409 after it
+    passes.** Not a failure of the test and not a fault in the application -
+    the same work outside pytest exits cleanly. Measured, so the next reader
+    starts where this stopped rather than here:
+
+    - alone: crashes 3 of 3. With any test after it: exit 0, 3 of 3. Whole
+      file, whole suite: exit 0.
+    - 120,000 lines is what makes `worth_splitting` true. At 300 lines, no
+      worker processes and no crash.
+    - `tests/ingest/test_parallel.py` alone really spawns workers and exits 0,
+      so it is not the process pool by itself.
+    - Outside pytest - QApplication, the same `run_job`, `Case.create` and both
+      files - exit 0, twice. It needs the harness.
+    - `window.deleteLater()` and pumping the loop before exit do not help, so
+      it is not the window being torn down late.
+
+    It cost something once: a sweep for tests that cannot fail read this exit
+    code as a failing premise and reported this test as one, which it is not.
     """
     from logarc.gui import app as app_module
 
