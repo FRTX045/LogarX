@@ -21,6 +21,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from dragging import drag
+from on_canvas import node_item, node_items
 from PyQt6.QtCore import QPoint
 from PyQt6.QtGui import QFontMetrics, QPalette
 from PyQt6.QtWidgets import QApplication, QSplitter, QStyle
@@ -663,11 +664,11 @@ def test_turning_wrap_off_redraws_the_trace_on_one_row(qt_app: QApplication) -> 
     the one way the user can see."""
     canvas = ActivityCanvas()
     canvas.show_graph(_long_trace(12))
-    assert len({item.pos().y() for item in canvas._nodes.values()}) > 1, "premise: it wrapped"
+    assert len({y for _, y in canvas.positions.values()}) > 1, "premise: it wrapped"
 
     canvas.set_wrap(False)
 
-    assert len({item.pos().y() for item in canvas._nodes.values()}) == 1
+    assert len({y for _, y in canvas.positions.values()}) == 1
 
 
 def test_wrap_can_be_set_before_anything_is_drawn(qt_app: QApplication) -> None:
@@ -679,7 +680,7 @@ def test_wrap_can_be_set_before_anything_is_drawn(qt_app: QApplication) -> None:
     canvas.set_wrap(False)
     canvas.show_graph(_long_trace(12))
 
-    assert len({item.pos().y() for item in canvas._nodes.values()}) == 1
+    assert len({y for _, y in canvas.positions.values()}) == 1
 
 
 def test_the_ring_follows_the_node_across_a_wrap_toggle(qt_app: QApplication) -> None:
@@ -695,13 +696,13 @@ def test_the_ring_follows_the_node_across_a_wrap_toggle(qt_app: QApplication) ->
     # let a ring left at the old position pass as a ring that followed.
     ringed = graph.nodes[5].node_id
     canvas.highlight(ringed)
-    was_at = canvas._nodes[ringed].pos()
+    was_at = node_item(canvas, ringed).pos()
 
     canvas.set_wrap(False)
 
-    assert canvas._nodes[ringed].pos() != was_at, "premise: this node moved"
+    assert node_item(canvas, ringed).pos() != was_at, "premise: this node moved"
     assert canvas._halo is not None
-    assert canvas._halo.pos() == canvas._nodes[ringed].pos()
+    assert canvas._halo.pos() == node_item(canvas, ringed).pos()
 
 
 def test_the_canvas_says_what_to_do_before_a_case_is_open(qt_app: QApplication) -> None:
@@ -851,11 +852,11 @@ def test_nothing_written_on_the_canvas_lands_on_anything_else(
 
     captions = [
         child.sceneBoundingRect()
-        for node in canvas._nodes.values()
+        for node in node_items(canvas)
         for child in node.childItems()
         if isinstance(child, QGraphicsRectItem)
     ]
-    circles = [node.sceneBoundingRect() for node in canvas._nodes.values()]
+    circles = [node.sceneBoundingRect() for node in node_items(canvas)]
     assert len(captions) >= 50, "premise: every activity is captioned"
 
     for index, one in enumerate(captions):
@@ -1027,8 +1028,8 @@ def test_a_trace_too_wide_to_fit_opens_at_its_beginning(qt_app: QApplication) ->
     graph = canvas.graph_scene.itemsBoundingRect()
     assert seen.width() < graph.width(), "premise: it does not fit"
 
-    first = canvas._nodes[trace.nodes[0].node_id].sceneBoundingRect()
-    last = canvas._nodes[trace.nodes[-1].node_id].sceneBoundingRect()
+    first = node_item(canvas, trace.nodes[0].node_id).sceneBoundingRect()
+    last = node_item(canvas, trace.nodes[-1].node_id).sceneBoundingRect()
     assert seen.intersects(first), "the trace does not open on its first activity"
     assert not seen.intersects(last), "premise: the far end is off screen"
 
@@ -1899,7 +1900,7 @@ def test_clicking_an_activity_leaves_only_the_ring_behind(
     canvas.fit()
 
     target = result.trace.nodes[0]
-    item = canvas._nodes[target.node_id]
+    item = node_item(canvas, target.node_id)
     QTest.mouseClick(
         canvas.viewport(),
         QtNS.MouseButton.LeftButton,
@@ -2853,13 +2854,13 @@ def test_choosing_a_different_case_still_reads_it(
 
 def _nudged(window: MainWindow) -> str:
     """Drag the first activity on the canvas, and say which one it was."""
-    node_id = next(iter(window._canvas._nodes))
+    node_id = next(iter(window._canvas.positions))
     drag(window._canvas, node_id, QPoint(70, -40))
     return node_id
 
 
 def _where(window: MainWindow, node_id: str) -> tuple[float, float]:
-    item = window._canvas._nodes[node_id]
+    item = node_item(window._canvas, node_id)
     return (item.pos().x(), item.pos().y())
 
 
@@ -3203,5 +3204,5 @@ def test_a_settings_value_nobody_can_read_still_opens_the_case(
 
     window = _reconstructed(qt_app, campaign)
 
-    assert window._canvas._nodes, "the graph is on the canvas"
+    assert window._canvas.positions, "the graph is on the canvas"
     window.close()

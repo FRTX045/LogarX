@@ -21,6 +21,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from dragging import drag
+from on_canvas import node_item
 from PyQt6.QtCore import QEvent, QPoint, QPointF, Qt
 from PyQt6.QtGui import QMouseEvent
 from PyQt6.QtWidgets import QApplication
@@ -172,7 +173,7 @@ def test_a_reconstruction_that_lands_after_letting_go_is_thrown_away(
 
 def _moved(window: MainWindow) -> str:
     """Drag the first activity on the canvas, and say which one it was."""
-    node_id = next(iter(window._canvas._nodes))
+    node_id = next(iter(window._canvas.positions))
     drag(window._canvas, node_id, QPoint(70, -40))
     return node_id
 
@@ -243,8 +244,8 @@ def test_cancelling_leaves_the_reader_on_the_client_they_were_reading(
     settled(qt_app)
     moved = _moved(window)
     placed = (
-        window._canvas._nodes[moved].pos().x(),
-        window._canvas._nodes[moved].pos().y(),
+        node_item(window._canvas, moved).pos().x(),
+        node_item(window._canvas, moved).pos().y(),
     )
 
     with pytest.MonkeyPatch.context() as patch:
@@ -257,8 +258,8 @@ def test_cancelling_leaves_the_reader_on_the_client_they_were_reading(
     assert _row_of(window, BRIEF) in {
         index.row() for index in window._clients._table.selectionModel().selectedRows()
     }, "the row under the reader is not the client being read"
-    assert window._canvas._nodes[moved].pos().x() == placed[0], "the graph was redrawn"
-    assert window._canvas._nodes[moved].pos().y() == placed[1]
+    assert node_item(window._canvas, moved).pos().x() == placed[0], "the graph was redrawn"
+    assert node_item(window._canvas, moved).pos().y() == placed[1]
     window.close()
 
 
@@ -285,8 +286,8 @@ def test_saving_on_the_way_out_keeps_the_arrangement(qt_app: QApplication, case:
     settled(qt_app)
     moved = _moved(window)
     placed = (
-        window._canvas._nodes[moved].pos().x(),
-        window._canvas._nodes[moved].pos().y(),
+        node_item(window._canvas, moved).pos().x(),
+        node_item(window._canvas, moved).pos().y(),
     )
 
     with pytest.MonkeyPatch.context() as patch:
@@ -297,8 +298,8 @@ def test_saving_on_the_way_out_keeps_the_arrangement(qt_app: QApplication, case:
     _press(window, BRIEF)
     settled(qt_app)
 
-    assert window._canvas._nodes[moved].pos().x() == placed[0]
-    assert window._canvas._nodes[moved].pos().y() == placed[1]
+    assert node_item(window._canvas, moved).pos().x() == placed[0]
+    assert node_item(window._canvas, moved).pos().y() == placed[1]
     window.close()
 
 
