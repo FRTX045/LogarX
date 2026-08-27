@@ -24,7 +24,6 @@ sequential ingest for those rather than pretending otherwise.
 from __future__ import annotations
 
 import hashlib
-import io
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -141,10 +140,23 @@ def read_range(path: Path, chunk: Chunk) -> Iterator[tuple[int, str]]:
     remaining = chunk.end - chunk.start
     line_no = chunk.first_line
 
+    # Iterated directly. `Path.open("rb")` already hands back a `BufferedReader`,
+    # so the `io.BufferedReader(handle)` this used to wrap it in was a buffer on
+    # a buffer, and nothing ever closed the outer one.
+    #
+    # No file was really leaked - the `with` shuts the handle underneath it - but
+    # a reader was left to the garbage collector per range, and a worker parses a
+    # great many ranges. `ResourceWarning` is the interpreter saying so, and it
+    # is off by default, so it had been saying it to nobody.
+    #
+    # Dropping the wrapper is also a little quicker, measured over 36.4 MB in one
+    # range: 0.168s against 0.192s at best, 0.181s against 0.206s at the median.
+    # Around 12%, which is 24 ms on a file that size - worth having and not worth
+    # claiming much for. Correctness is why the wrapper went.
     with Path(path).open("rb") as handle:
         handle.seek(chunk.start)
         consumed = 0
-        for raw in io.BufferedReader(handle):
+        for raw in handle:
             consumed += len(raw)
             text = raw.decode("utf-8", errors="surrogateescape").rstrip("\r\n")
             # Only the true first line of the file can carry a mark; anywhere

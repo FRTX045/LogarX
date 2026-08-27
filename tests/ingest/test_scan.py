@@ -14,7 +14,9 @@ no reference at all.
 
 from __future__ import annotations
 
+import gc
 import hashlib
+import warnings
 from itertools import pairwise
 from pathlib import Path
 
@@ -172,3 +174,27 @@ def test_a_chunk_is_picklable(tmp_path: Path) -> None:
     chunk = Chunk(start=0, end=10, first_line=1)
 
     assert pickle.loads(pickle.dumps(chunk)) == chunk
+
+
+def test_reading_a_range_leaves_nothing_open(tmp_path: Path) -> None:
+    """A worker parses several ranges of several files and then goes home.
+
+    Every reader it opened has to be shut before then. One left to the garbage
+    collector is a handle held over a log the investigator may want to move, and
+    on Windows an open handle is enough to refuse that - which is the machine
+    this tool is used on.
+
+    Asserted on `ResourceWarning`, which is the interpreter saying exactly this
+    and is off by default, so it says it to nobody unless asked.
+    """
+    log = write(tmp_path / "access.log", 400)
+    chunks = scan_chunks(log, parts=4).chunks
+
+    with warnings.catch_warnings(record=True) as seen:
+        warnings.simplefilter("always", ResourceWarning)
+        for chunk in chunks:
+            assert list(read_range(log, chunk)), "premise: the range had lines in it"
+        gc.collect()
+
+    left = [str(w.message) for w in seen if issubclass(w.category, ResourceWarning)]
+    assert not left, f"reading {len(chunks)} ranges left {len(left)} open: {left[:2]}"
