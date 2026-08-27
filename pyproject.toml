@@ -142,6 +142,22 @@ markers = [
 [tool.coverage.run]
 source = ["src/logarc"]
 branch = true
+# Follow the ingest workers into their own processes.
+#
+# `_parse_chunk` is the whole of what a parallel ingest does, and it runs in a
+# spawned process, so coverage saw none of it and `ingest/parallel.py` reported
+# 63% — the same misleading kind of number the `omit` below exists to avoid,
+# reached by a different route and left standing. Measured, it is 90%.
+#
+# It is not free: the ingest tests take 44.4s with this and 33.6s without, and
+# they are the only ones that spawn anything. Eleven seconds to stop a quarter
+# of a module reading as untested.
+#
+# `bench_worker` is out of reach even so — it is a `python -m` entry point, not
+# a multiprocessing worker — which is why it stays omitted below.
+concurrency = ["multiprocessing"]
+parallel = true
+sigterm = true
 # One module, excluded because the number would be a lie, not because the code
 # is unimportant.
 #
