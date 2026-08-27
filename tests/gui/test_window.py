@@ -2556,24 +2556,14 @@ def test_a_real_ingest_reports_progress_that_only_goes_forwards(
     batch of a big one, so the boundary never showed up as a fall and the
     counts silently restarted.
 
-    **Run this test on its own and the process exits 0xC0000409 after it
-    passes.** Not a failure of the test and not a fault in the application -
-    the same work outside pytest exits cleanly. Measured, so the next reader
-    starts where this stopped rather than here:
-
-    - alone: crashes 3 of 3. With any test after it: exit 0, 3 of 3. Whole
-      file, whole suite: exit 0.
-    - 120,000 lines is what makes `worth_splitting` true. At 300 lines, no
-      worker processes and no crash.
-    - `tests/ingest/test_parallel.py` alone really spawns workers and exits 0,
-      so it is not the process pool by itself.
-    - Outside pytest - QApplication, the same `run_job`, `Case.create` and both
-      files - exit 0, twice. It needs the harness.
-    - `window.deleteLater()` and pumping the loop before exit do not help, so
-      it is not the window being torn down late.
-
-    It cost something once: a sweep for tests that cannot fail read this exit
-    code as a failing premise and reported this test as one, which it is not.
+    This test used to end the process with 0xC0000409 after passing, whenever it
+    was the only test run. It was `settled` waiting once: the ingest finishing
+    is what loads the case, and loading a case is a second job, started during
+    the pump that comes after the wait. The test returned with that job still
+    running and the interpreter tore down on top of it. `settled` now goes round
+    until a pump starts nothing, and the exit code is 0 - so the assertion below
+    that the case opened is not only the point of an ingest, it is what proves
+    the waiting reaches that far.
     """
     from logarc.gui import app as app_module
 
@@ -2618,6 +2608,10 @@ def test_a_real_ingest_reports_progress_that_only_goes_forwards(
     # Every snapshot is a whole-ingest figure, so none may exceed the whole.
     assert all(item.bytes_done <= item.bytes_total for item in seen)
     assert window._ingest_card is None, "the card has to go when the read ends"
+    # The point of finishing an ingest. Asserted here because the test used to
+    # stop one step short of it, at the card going down, while the case was
+    # still being opened on another thread.
+    assert window._case_path == case_dir, "the case the ingest built has to open"
     window.close()
 
 
