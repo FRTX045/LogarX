@@ -25,7 +25,6 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
-from PyQt6.QtCore import QSettings
 from PyQt6.QtWidgets import QApplication
 
 from conftest import settled
@@ -53,14 +52,6 @@ LATE_AT = START + timedelta(hours=5)
 #: what a cap does. `read_case` reads it when it runs, so patching the module
 #: attribute is enough.
 CAP = 2
-
-
-@pytest.fixture(autouse=True)
-def settings(tmp_path: Path) -> object:
-    ini = tmp_path / "logarc.ini"
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(app, "_settings", lambda: QSettings(str(ini), QSettings.Format.IniFormat))
-        yield ini
 
 
 @pytest.fixture(autouse=True)

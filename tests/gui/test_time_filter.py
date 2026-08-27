@@ -8,7 +8,6 @@ offscreen platform's missing fonts can hide.
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
@@ -135,16 +134,6 @@ def test_showing_a_window_does_not_report_it_back(qt_app: QApplication) -> None:
 
 
 # -- the two halves of the window agreeing ---------------------------------
-
-
-@pytest.fixture(scope="module")
-def settings_in_a_temp_file(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
-    from PyQt6.QtCore import QSettings
-
-    ini = tmp_path_factory.mktemp("settings") / "logarc.ini"
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(app, "_settings", lambda: QSettings(str(ini), QSettings.Format.IniFormat))
-        yield ini
 
 
 @pytest.fixture(scope="module")

@@ -11,7 +11,6 @@ of it looks.
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -22,13 +21,12 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from dragging import drag
-from PyQt6.QtCore import QEvent, QPoint, QPointF, QSettings, Qt
+from PyQt6.QtCore import QEvent, QPoint, QPointF, Qt
 from PyQt6.QtGui import QMouseEvent
 from PyQt6.QtWidgets import QApplication
 
 from conftest import settled
 from logarc.case import Case
-from logarc.gui import app
 from logarc.gui.app import MainWindow
 
 START = datetime(2024, 5, 1, 0, 0, tzinfo=UTC)
@@ -39,20 +37,6 @@ ALL_DAY = "10.0.0.1"
 #: Two minutes in the middle of it. Selecting this one is what makes the band
 #: visibly narrow, and letting go of it is what has to widen the band again.
 BRIEF = "10.0.0.2"
-
-
-@pytest.fixture(autouse=True)
-def settings_in_a_temp_file(tmp_path: Path) -> Iterator[Path]:
-    """Point the window's preferences at a file nobody has to live with.
-
-    `QSettings` resolves to `HKCU\\Software` on Windows, so without this the
-    tests below write real preferences onto whichever machine ran them — and
-    the arrangement they save would be read back by the next run.
-    """
-    ini = tmp_path / "logarc.ini"
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(app, "_settings", lambda: QSettings(str(ini), QSettings.Format.IniFormat))
-        yield ini
 
 
 def _line(client: str, seconds: int, target: str) -> str:

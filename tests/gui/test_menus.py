@@ -11,7 +11,6 @@ Run without a display.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 import pytest
 
@@ -19,22 +18,14 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
-from PyQt6.QtCore import QSettings, Qt
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QApplication, QDialog, QMenu
 
-from logarc.gui import app, prefs
+from logarc.gui import prefs
 from logarc.gui.app import MainWindow
 from logarc.gui.density import Density
 from logarc.gui.preferences import PreferencesDialog
-
-
-@pytest.fixture(autouse=True)
-def settings(tmp_path: Path) -> object:
-    ini = tmp_path / "logarc.ini"
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(app, "_settings", lambda: QSettings(str(ini), QSettings.Format.IniFormat))
-        yield ini
 
 
 def _menu(window: MainWindow, name: str) -> QMenu:

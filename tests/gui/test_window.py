@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import os
 import time
-from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from itertools import pairwise
 from pathlib import Path
@@ -50,28 +49,6 @@ from logarc.storage.case import CaseManifest, SourceRecord
 NEWLINE = chr(10)
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 CLIENT = "203.0.113.66"
-
-
-@pytest.fixture(scope="module", autouse=True)
-def settings_in_a_temp_file(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
-    """Point the window's preferences at a file nobody has to live with.
-
-    `QSettings` resolves to `HKCU\\Software` on Windows, so without this the
-    suite writes real preferences onto whichever machine ran it and reads its
-    own leftovers back on the next run — which would make these tests pass or
-    fail according to what a previous run happened to leave behind.
-
-    Substituting the factory, not `QSettings.setDefaultFormat` and `setPath`:
-    those were tried first and do not redirect the `QSettings(org, app)`
-    constructor at all. It goes on resolving to the registry, and the isolation
-    is imaginary while looking completely convincing.
-    """
-    from PyQt6.QtCore import QSettings
-
-    ini = tmp_path_factory.mktemp("settings") / "logarc.ini"
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(app, "_settings", lambda: QSettings(str(ini), QSettings.Format.IniFormat))
-        yield ini
 
 
 def _long_trace(count: int) -> ActivityGraph:

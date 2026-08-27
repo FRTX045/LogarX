@@ -19,12 +19,11 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
-from PyQt6.QtCore import QSettings
 from PyQt6.QtWidgets import QApplication
 
 from conftest import settled
 from logarc.case import Case
-from logarc.gui import app, prefs
+from logarc.gui import prefs
 from logarc.gui.app import MainWindow
 from logarc.gui.density import Density
 
@@ -37,16 +36,6 @@ CLIENT = "10.0.0.1"
 #: different lists — and without that, a test asking which of the two the band
 #: was handed cannot tell them apart, and passes whichever it was given.
 BRIEF = "10.0.0.2"
-
-
-@pytest.fixture(autouse=True)
-def settings(tmp_path: Path) -> object:
-    """Somewhere harmless. Without this the suite writes the real registry of
-    whoever ran it, and the reader's own preferences change under them."""
-    ini = tmp_path / "logarc.ini"
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(app, "_settings", lambda: QSettings(str(ini), QSettings.Format.IniFormat))
-        yield ini
 
 
 def _line(seconds: int, target: str, client: str = CLIENT) -> str:
