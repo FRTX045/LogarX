@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from on_canvas import node_item
 from PyQt6.QtCore import QEvent, QPoint, QPointF, Qt
 from PyQt6.QtGui import QMouseEvent
 from PyQt6.QtWidgets import QApplication
@@ -42,7 +43,7 @@ def press_on(canvas: ActivityCanvas, node_id: str) -> QPoint:
     A press that lands on empty ground pans instead of dragging, and every test
     below would then pass while testing nothing.
     """
-    item = canvas._nodes[node_id]
+    item = node_item(canvas, node_id)
     at = canvas.viewport().mapFrom(canvas, canvas.mapFromScene(item.scenePos()))
     assert canvas.itemAt(at) in (item, *item.childItems()), "premise: the press lands on the node"
     mouse(canvas, QEvent.Type.MouseButtonPress, at, held=True)

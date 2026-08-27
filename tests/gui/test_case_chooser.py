@@ -13,6 +13,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from PyQt6.QtWidgets import QApplication, QDialog
+from tables import cell
 
 from colours import contrast
 from logarc.gui.case_chooser import COLUMNS, CaseChooser
@@ -172,7 +173,7 @@ def test_text_from_the_case_file_cannot_smuggle_control_characters(
     since it was written. A cell is one line."""
     chooser = CaseChooser((case(r"D:\cases\a", "before\nafter"),), exists=lambda _p: True)
 
-    shown = chooser._table.item(0, 0).text()  # type: ignore[union-attr]
+    shown = cell(chooser._table, 0, "Case").text()
 
     assert "\n" not in shown
 
@@ -226,7 +227,7 @@ def test_renaming_shows_the_new_name_and_leaves_the_case_alone(
 
     assert chooser.cases[0].display_name == "acme-breach (jan)"
     assert chooser.cases[0].case_id == "case-001"
-    assert "acme-breach (jan)" in chooser._table.item(0, 1).text()  # type: ignore[union-attr]
+    assert "acme-breach (jan)" in cell(chooser._table, 0, "Case").text()
 
 
 def test_a_cancelled_rename_changes_nothing(
@@ -257,7 +258,7 @@ def test_a_name_cannot_smuggle_a_line_break_into_a_row(
     chooser._table.selectRow(0)
     chooser._rename()
 
-    assert "\n" not in chooser._table.item(0, 1).text()  # type: ignore[union-attr]
+    assert "\n" not in cell(chooser._table, 0, "Case").text()
 
 
 def test_dropping_one_entry_leaves_the_others(qt_app: QApplication) -> None:

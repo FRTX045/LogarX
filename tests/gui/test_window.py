@@ -21,9 +21,11 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from dragging import drag
+from on_canvas import node_item, node_items
 from PyQt6.QtCore import QPoint
 from PyQt6.QtGui import QFontMetrics, QPalette
 from PyQt6.QtWidgets import QApplication, QSplitter, QStyle
+from tables import cell, column_of
 
 from colours import contrast
 from conftest import settled
@@ -474,10 +476,11 @@ def _summaries(*addresses: str) -> list[object]:
 def _on_screen(table: ClientTable) -> list[str]:
     """The addresses a reader can actually see, in the order they are drawn."""
     seen = []
+    address = column_of(table._table, "Client")
     for row in range(table._table.rowCount()):
-        cell = table._table.item(row, 0)
-        if cell is not None and not table._table.isRowHidden(row):
-            seen.append(cell.text())
+        item = table._table.item(row, address)
+        if item is not None and not table._table.isRowHidden(row):
+            seen.append(item.text())
     return seen
 
 
@@ -566,7 +569,7 @@ def test_sorting_after_filtering_still_hides_the_right_rows(qt_app: QApplication
     # Descending, so every item actually changes row. Ascending left this data
     # in the order it was already in, and the test passed with the fix removed
     # — a sort that moves nothing cannot catch a bug about rows moving.
-    table._table.sortItems(1, Qt.SortOrder.DescendingOrder)
+    table._table.sortItems(column_of(table._table, "Reqs"), Qt.SortOrder.DescendingOrder)
     assert _on_screen(table)[0] != "203.0.3.9", "premise: the sort reordered the table"
 
     assert set(_on_screen(table)) == {"203.0.3.9", "203.0.3.8"}
@@ -663,11 +666,11 @@ def test_turning_wrap_off_redraws_the_trace_on_one_row(qt_app: QApplication) -> 
     the one way the user can see."""
     canvas = ActivityCanvas()
     canvas.show_graph(_long_trace(12))
-    assert len({item.pos().y() for item in canvas._nodes.values()}) > 1, "premise: it wrapped"
+    assert len({y for _, y in canvas.positions.values()}) > 1, "premise: it wrapped"
 
     canvas.set_wrap(False)
 
-    assert len({item.pos().y() for item in canvas._nodes.values()}) == 1
+    assert len({y for _, y in canvas.positions.values()}) == 1
 
 
 def test_wrap_can_be_set_before_anything_is_drawn(qt_app: QApplication) -> None:
@@ -679,7 +682,7 @@ def test_wrap_can_be_set_before_anything_is_drawn(qt_app: QApplication) -> None:
     canvas.set_wrap(False)
     canvas.show_graph(_long_trace(12))
 
-    assert len({item.pos().y() for item in canvas._nodes.values()}) == 1
+    assert len({y for _, y in canvas.positions.values()}) == 1
 
 
 def test_the_ring_follows_the_node_across_a_wrap_toggle(qt_app: QApplication) -> None:
@@ -695,13 +698,13 @@ def test_the_ring_follows_the_node_across_a_wrap_toggle(qt_app: QApplication) ->
     # let a ring left at the old position pass as a ring that followed.
     ringed = graph.nodes[5].node_id
     canvas.highlight(ringed)
-    was_at = canvas._nodes[ringed].pos()
+    was_at = node_item(canvas, ringed).pos()
 
     canvas.set_wrap(False)
 
-    assert canvas._nodes[ringed].pos() != was_at, "premise: this node moved"
+    assert node_item(canvas, ringed).pos() != was_at, "premise: this node moved"
     assert canvas._halo is not None
-    assert canvas._halo.pos() == canvas._nodes[ringed].pos()
+    assert canvas._halo.pos() == node_item(canvas, ringed).pos()
 
 
 def test_the_canvas_says_what_to_do_before_a_case_is_open(qt_app: QApplication) -> None:
@@ -851,11 +854,11 @@ def test_nothing_written_on_the_canvas_lands_on_anything_else(
 
     captions = [
         child.sceneBoundingRect()
-        for node in canvas._nodes.values()
+        for node in node_items(canvas)
         for child in node.childItems()
         if isinstance(child, QGraphicsRectItem)
     ]
-    circles = [node.sceneBoundingRect() for node in canvas._nodes.values()]
+    circles = [node.sceneBoundingRect() for node in node_items(canvas)]
     assert len(captions) >= 50, "premise: every activity is captioned"
 
     for index, one in enumerate(captions):
@@ -1027,8 +1030,8 @@ def test_a_trace_too_wide_to_fit_opens_at_its_beginning(qt_app: QApplication) ->
     graph = canvas.graph_scene.itemsBoundingRect()
     assert seen.width() < graph.width(), "premise: it does not fit"
 
-    first = canvas._nodes[trace.nodes[0].node_id].sceneBoundingRect()
-    last = canvas._nodes[trace.nodes[-1].node_id].sceneBoundingRect()
+    first = node_item(canvas, trace.nodes[0].node_id).sceneBoundingRect()
+    last = node_item(canvas, trace.nodes[-1].node_id).sceneBoundingRect()
     assert seen.intersects(first), "the trace does not open on its first activity"
     assert not seen.intersects(last), "premise: the far end is off screen"
 
@@ -1765,8 +1768,7 @@ def test_the_client_table_shows_a_percentage_not_a_bare_number(
 
     table.show_clients(summaries)
 
-    ratio = table._table.item(0, 3)
-    assert ratio is not None
+    ratio = cell(table._table, 0, "4xx")
     assert ratio.text().endswith("%"), f"a ratio, not {ratio.text()!r}"
 
 
@@ -1780,10 +1782,9 @@ def test_the_client_table_still_sorts_by_the_number(qt_app: QApplication, campai
     table = ClientTable()
     table.show_clients(summaries)
 
-    table._table.sortItems(1, QtNS.SortOrder.DescendingOrder)
+    table._table.sortItems(column_of(table._table, "Reqs"), QtNS.SortOrder.DescendingOrder)
 
-    top = table._table.item(0, 1)
-    assert top is not None
+    top = cell(table._table, 0, "Reqs")
     assert top.text() == f"{max(s.request_count for s in summaries):,}"
 
 
@@ -1899,7 +1900,7 @@ def test_clicking_an_activity_leaves_only_the_ring_behind(
     canvas.fit()
 
     target = result.trace.nodes[0]
-    item = canvas._nodes[target.node_id]
+    item = node_item(canvas, target.node_id)
     QTest.mouseClick(
         canvas.viewport(),
         QtNS.MouseButton.LeftButton,
@@ -2554,6 +2555,25 @@ def test_a_real_ingest_reports_progress_that_only_goes_forwards(
     falling, and the whole of a tiny log reports fewer bytes than the first
     batch of a big one, so the boundary never showed up as a fall and the
     counts silently restarted.
+
+    **Run this test on its own and the process exits 0xC0000409 after it
+    passes.** Not a failure of the test and not a fault in the application -
+    the same work outside pytest exits cleanly. Measured, so the next reader
+    starts where this stopped rather than here:
+
+    - alone: crashes 3 of 3. With any test after it: exit 0, 3 of 3. Whole
+      file, whole suite: exit 0.
+    - 120,000 lines is what makes `worth_splitting` true. At 300 lines, no
+      worker processes and no crash.
+    - `tests/ingest/test_parallel.py` alone really spawns workers and exits 0,
+      so it is not the process pool by itself.
+    - Outside pytest - QApplication, the same `run_job`, `Case.create` and both
+      files - exit 0, twice. It needs the harness.
+    - `window.deleteLater()` and pumping the loop before exit do not help, so
+      it is not the window being torn down late.
+
+    It cost something once: a sweep for tests that cannot fail read this exit
+    code as a failing premise and reported this test as one, which it is not.
     """
     from logarc.gui import app as app_module
 
@@ -2707,8 +2727,9 @@ def test_the_columns_are_still_sized_to_what_they_hold(qt_app: QApplication) -> 
     metrics = QFontMetrics(table._table.font())
     needed = metrics.horizontalAdvance(widest_address)
 
-    assert table._table.columnWidth(0) >= needed, (
-        f"the address column is {table._table.columnWidth(0)}px for "
+    address = column_of(table._table, "Client")
+    assert table._table.columnWidth(address) >= needed, (
+        f"the address column is {table._table.columnWidth(address)}px for "
         f"{widest_address!r}, which needs {needed}px"
     )
     # And `First seen`, the other column that hid. Measured like the address
@@ -2725,8 +2746,9 @@ def test_the_columns_are_still_sized_to_what_they_hold(qt_app: QApplication) -> 
         key=metrics.horizontalAdvance,
     )
     wanted = metrics.horizontalAdvance(stamp)
-    assert table._table.columnWidth(4) >= wanted, (
-        f"the first-seen column is {table._table.columnWidth(4)}px for "
+    first_seen = column_of(table._table, "First")
+    assert table._table.columnWidth(first_seen) >= wanted, (
+        f"the first-seen column is {table._table.columnWidth(first_seen)}px for "
         f"{stamp!r}, which needs {wanted}px"
     )
     table.close()
@@ -2853,13 +2875,13 @@ def test_choosing_a_different_case_still_reads_it(
 
 def _nudged(window: MainWindow) -> str:
     """Drag the first activity on the canvas, and say which one it was."""
-    node_id = next(iter(window._canvas._nodes))
+    node_id = next(iter(window._canvas.positions))
     drag(window._canvas, node_id, QPoint(70, -40))
     return node_id
 
 
 def _where(window: MainWindow, node_id: str) -> tuple[float, float]:
-    item = window._canvas._nodes[node_id]
+    item = node_item(window._canvas, node_id)
     return (item.pos().x(), item.pos().y())
 
 
@@ -3203,5 +3225,5 @@ def test_a_settings_value_nobody_can_read_still_opens_the_case(
 
     window = _reconstructed(qt_app, campaign)
 
-    assert window._canvas._nodes, "the graph is on the canvas"
+    assert window._canvas.positions, "the graph is on the canvas"
     window.close()

@@ -21,6 +21,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from dragging import drag, hold, let_go, mouse, press_on
+from on_canvas import edge_between, node_item
 from PyQt6.QtCore import QEvent, QPoint, QPointF, QRectF, Qt
 from PyQt6.QtGui import QColor, QPainterPath
 from PyQt6.QtWidgets import QApplication
@@ -162,10 +163,10 @@ def test_reshaping_an_arrow_puts_it_back_exactly_where_it_was_drawn(
     drawing code gave it. Anything else means the two have already parted."""
     canvas = ActivityCanvas()
     canvas.show_graph(chain(2))
-    art = canvas._edge_art[0]
+    art = edge_between(canvas, "n0", "n1")
     at_rest = points(art.line.path())
     head_at_rest = [(p.x(), p.y()) for p in art.head.polygon()]
-    was = QPointF(canvas._nodes["n0"].pos()), QPointF(canvas._nodes["n1"].pos())
+    was = QPointF(node_item(canvas, "n0").pos()), QPointF(node_item(canvas, "n1").pos())
 
     art.reshape(was[0], QPointF(500.0, -300.0))
     # Both premises, separately. An arrowhead that is never touched comes back
@@ -238,11 +239,11 @@ def path_end(art: _EdgeArt) -> QPointF:
 
 def test_a_node_follows_the_mouse(qt_app: QApplication) -> None:
     canvas = ready(2)
-    was = QPointF(canvas._nodes["n1"].pos())
+    was = QPointF(node_item(canvas, "n1").pos())
 
     moved = drag(canvas, "n1", QPoint(70, -40))
 
-    assert gap(canvas._nodes["n1"].pos(), was + moved) < 0.5
+    assert gap(node_item(canvas, "n1").pos(), was + moved) < 0.5
 
 
 def test_the_arrows_on_a_dragged_node_follow_it(qt_app: QApplication) -> None:
@@ -251,13 +252,13 @@ def test_the_arrows_on_a_dragged_node_follow_it(qt_app: QApplication) -> None:
     nobody can rearrange.
     """
     canvas = ready(2)
-    was = QPointF(canvas._nodes["n1"].pos())
-    art = canvas._edge_art[0]
+    was = QPointF(node_item(canvas, "n1").pos())
+    art = edge_between(canvas, "n0", "n1")
     radius = art.target_radius
 
     drag(canvas, "n1", QPoint(90, -60))
 
-    now = QPointF(canvas._nodes["n1"].pos())
+    now = QPointF(node_item(canvas, "n1").pos())
     assert gap(path_end(art), now) == pytest.approx(radius, abs=0.5)
     assert gap(path_end(art), was) > radius * 2, "and is nowhere near where it used to be"
 
@@ -267,7 +268,7 @@ def test_the_number_on_an_arrow_follows_it_too(qt_app: QApplication) -> None:
     Left where the arrow used to be, it labels whatever the eye finds there.
     """
     canvas = ready(2)
-    art = canvas._edge_art[0]
+    art = edge_between(canvas, "n0", "n1")
     assert art.label is not None, "premise: this arrow carries a number"
     was = QPointF(art.label.pos())
 
@@ -289,9 +290,8 @@ def test_only_the_arrows_on_the_dragged_node_are_reshaped(qt_app: QApplication) 
     picture cannot tell the wasted work from none at all.
     """
     canvas = ready(4)
-    near, far = canvas._edge_art[0], canvas._edge_art[2]
-    assert {near.source_id, near.target_id} == {"n0", "n1"}, "premise: attached"
-    assert {far.source_id, far.target_id} == {"n2", "n3"}, "premise: not attached"
+    near = edge_between(canvas, "n0", "n1")
+    far = edge_between(canvas, "n2", "n3")
 
     with patch.object(_EdgeArt, "reshape", autospec=True) as reshaped:
         drag(canvas, "n0", QPoint(80, 50))
@@ -311,7 +311,7 @@ def test_the_selection_ring_follows_a_dragged_node(qt_app: QApplication) -> None
     drag(canvas, "n1", QPoint(80, 50))
 
     assert canvas._halo is not None
-    assert canvas._halo.pos() == canvas._nodes["n1"].pos()
+    assert canvas._halo.pos() == node_item(canvas, "n1").pos()
 
 
 def test_a_ring_on_another_node_is_not_dragged_along(qt_app: QApplication) -> None:
@@ -374,7 +374,7 @@ def test_holding_a_node_says_so_with_the_cursor(qt_app: QApplication) -> None:
     things.
     """
     canvas = ready(2)
-    item = canvas._nodes["n1"]
+    item = node_item(canvas, "n1")
 
     press_on(canvas, "n1")
 
@@ -398,7 +398,7 @@ def test_the_canvas_reports_where_the_layout_put_things(qt_app: QApplication) ->
     assert set(laid_out) == set(canvas.positions), "every drawn activity is in it"
     assert laid_out == canvas.positions, "nothing has been moved yet"
 
-    canvas._nodes["n1"].setPos(500.0, 400.0)
+    node_item(canvas, "n1").setPos(500.0, 400.0)
 
     assert canvas.positions["n1"] == (500.0, 400.0)
     assert laid_out["n1"] != (500.0, 400.0), "the layout is not rewritten by a drag"
@@ -418,7 +418,7 @@ def test_the_paper_grows_to_hold_a_node_that_lands_beyond_it(qt_app: QApplicatio
     verbatim, and that can put a node anywhere at all.
     """
     canvas = ready(2)
-    item = canvas._nodes["n1"]
+    item = node_item(canvas, "n1")
     was = canvas.graph_scene.sceneRect()
 
     item.setPos(was.bottomRight().x() + 600.0, was.bottomRight().y() + 400.0)
@@ -432,7 +432,7 @@ def test_the_scene_keeps_room_for_the_caption_as_well(qt_app: QApplication) -> N
     off at exactly the moment someone drags a node aside to read it.
     """
     canvas = ready(2)
-    item = canvas._nodes["n1"]
+    item = node_item(canvas, "n1")
 
     item.setPos(canvas.graph_scene.sceneRect().bottomRight() + QPointF(600.0, 400.0))
 
@@ -463,7 +463,7 @@ def test_the_scene_settles_once_the_hand_lets_go(qt_app: QApplication) -> None:
     that only ever got larger.
     """
     canvas = ready(2)
-    item = canvas._nodes["n1"]
+    item = node_item(canvas, "n1")
     home = QPointF(item.pos())
     # Out past the paper and back again, which is the one way left to stretch
     # it: `_grow_scene_for` only ever grows, so the ground it claimed on the
@@ -560,7 +560,7 @@ def whole_of(canvas: ActivityCanvas, node_id: str) -> QRectF:
     still answered that it was on screen — and the test built on it was
     checking the opposite of what it said.
     """
-    node = canvas._nodes[node_id]
+    node = node_item(canvas, node_id)
     return node.sceneBoundingRect().united(node.mapRectToScene(node.childrenBoundingRect()))
 
 
@@ -586,7 +586,7 @@ def toward_the_corner(canvas: ActivityCanvas, node_id: str = "n0") -> QPoint:
     to spare is the difference between a drag that reaches the frame and one
     that never leaves the graph it started in.
     """
-    node = canvas._nodes[node_id]
+    node = node_item(canvas, node_id)
     whole = canvas.mapFromScene(whole_of(canvas, node_id)).boundingRect()
     held = canvas.mapFromScene(node.scenePos())
     room = canvas.viewport().rect()
@@ -670,7 +670,7 @@ def test_a_node_dragged_out_of_sight_can_still_be_reached(qt_app: QApplication) 
     QApplication.processEvents()
 
     assert not in_sight(canvas, "n0"), "premise: it has left the screen"
-    assert canvas.graph_scene.sceneRect().contains(canvas._nodes["n0"].sceneBoundingRect()), (
+    assert canvas.graph_scene.sceneRect().contains(node_item(canvas, "n0").sceneBoundingRect()), (
         "it cannot be scrolled to"
     )
     let_go(canvas, beyond)
@@ -811,7 +811,7 @@ def test_re_laying_the_paper_never_pulls_it_from_under_the_view(
     canvas.show_graph(chain(8))
     QApplication.processEvents()
 
-    left_most = min(canvas._nodes.values(), key=lambda item: item.pos().x())
+    left_most = node_item(canvas, min(canvas.positions, key=lambda n: canvas.positions[n][0]))
     home = QPointF(left_most.pos())
     left_most.setPos(home.x() - 2400.0, home.y())
     QApplication.processEvents()
@@ -842,7 +842,8 @@ def test_the_arrows_on_a_node_light_up_while_it_is_moving(qt_app: QApplication) 
     """On a branching behaviour map it is not obvious which transitions a node
     carries until it is picked up. Lit, the answer is the thing being moved."""
     canvas = ready(4)
-    near, far = canvas._edge_art[0], canvas._edge_art[2]
+    near = edge_between(canvas, "n0", "n1")
+    far = edge_between(canvas, "n2", "n3")
 
     hold(canvas, "n0", QPoint(60, 40))
 
@@ -854,7 +855,7 @@ def test_the_arrowhead_lights_up_with_its_line(qt_app: QApplication) -> None:
     """Filled, not stroked. A head left grey on a lit line reads as a rendering
     fault rather than as an arrow."""
     canvas = ready(2)
-    art = canvas._edge_art[0]
+    art = edge_between(canvas, "n0", "n1")
 
     hold(canvas, "n0", QPoint(60, 40))
 
@@ -864,7 +865,7 @@ def test_the_arrowhead_lights_up_with_its_line(qt_app: QApplication) -> None:
 
 def test_the_light_goes_out_when_the_hand_lets_go(qt_app: QApplication) -> None:
     canvas = ready(2)
-    art = canvas._edge_art[0]
+    art = edge_between(canvas, "n0", "n1")
 
     at = hold(canvas, "n0", QPoint(60, 40))
     assert pen_colour(art) == QColor(SELECTION_COLOUR).name(), "premise: it lit"
@@ -888,7 +889,8 @@ def test_each_arrow_comes_back_at_the_width_its_own_weight_earned(
     canvas = ActivityCanvas()
     canvas.resize(600, 480)
     canvas.show_graph(two_weights())
-    once, often = canvas._edge_art[0], canvas._edge_art[1]
+    once = edge_between(canvas, "n0", "n1")
+    often = edge_between(canvas, "n0", "n2")
     at_rest = (once.line.pen().widthF(), often.line.pen().widthF())
     assert at_rest[0] < at_rest[1], "premise: weight decides the width"
 
@@ -904,7 +906,7 @@ def test_a_click_that_moves_nothing_lights_nothing(qt_app: QApplication) -> None
     """Otherwise every click on an activity flashes the arrows around it, and
     the light stops meaning "this is what you are moving"."""
     canvas = ready(2)
-    art = canvas._edge_art[0]
+    art = edge_between(canvas, "n0", "n1")
 
     press_on(canvas, "n0")
 
@@ -916,12 +918,13 @@ def test_picking_up_a_second_node_puts_out_the_first(qt_app: QApplication) -> No
     it — leaves an activity lit with nothing holding it. The next thing picked
     up is where that gets noticed, so it is where it gets cleared."""
     canvas = ready(4)
-    first, second = canvas._edge_art[0], canvas._edge_art[2]
+    first = edge_between(canvas, "n0", "n1")
+    second = edge_between(canvas, "n2", "n3")
     hold(canvas, "n0", QPoint(60, 40))
     assert pen_colour(first) == QColor(SELECTION_COLOUR).name(), "premise: the first lit"
     # What losing the window mid-drag does: the grab goes, and the release that
     # would have put the light out never arrives.
-    canvas._nodes["n0"].ungrabMouse()
+    node_item(canvas, "n0").ungrabMouse()
 
     hold(canvas, "n3", QPoint(60, 40))
 
@@ -950,13 +953,13 @@ def test_a_click_is_not_something_to_undo(qt_app: QApplication) -> None:
 
 def test_undo_puts_a_node_back_exactly_where_it_was(qt_app: QApplication) -> None:
     canvas = ready(2)
-    was = QPointF(canvas._nodes["n1"].pos())
+    was = QPointF(node_item(canvas, "n1").pos())
     drag(canvas, "n1", QPoint(70, -40))
-    assert canvas._nodes["n1"].pos() != was, "premise: it moved"
+    assert node_item(canvas, "n1").pos() != was, "premise: it moved"
 
     canvas.undo_move()
 
-    assert canvas._nodes["n1"].pos() == was
+    assert node_item(canvas, "n1").pos() == was
     assert not canvas.can_undo
 
 
@@ -966,7 +969,7 @@ def test_undo_brings_the_arrows_and_the_ring_back_with_it(qt_app: QApplication) 
     reconcile instead of one arrangement they chose."""
     canvas = ready(2)
     canvas.highlight("n1")
-    art = canvas._edge_art[0]
+    art = edge_between(canvas, "n0", "n1")
     at_rest = points(art.line.path())
     drag(canvas, "n1", QPoint(70, -40))
 
@@ -974,22 +977,22 @@ def test_undo_brings_the_arrows_and_the_ring_back_with_it(qt_app: QApplication) 
 
     assert points(art.line.path()) == at_rest
     assert canvas._halo is not None
-    assert canvas._halo.pos() == canvas._nodes["n1"].pos()
+    assert canvas._halo.pos() == node_item(canvas, "n1").pos()
 
 
 def test_undo_goes_back_one_drag_at_a_time(qt_app: QApplication) -> None:
     canvas = ready(4)
-    home = {node_id: QPointF(item.pos()) for node_id, item in canvas._nodes.items()}
+    home = dict(canvas.positions)
     for node_id in ("n0", "n1", "n2"):
         drag(canvas, node_id, QPoint(40, 30))
 
     canvas.undo_move()
-    assert canvas._nodes["n2"].pos() == home["n2"]
-    assert canvas._nodes["n1"].pos() != home["n1"], "and no further"
+    assert canvas.positions["n2"] == home["n2"]
+    assert canvas.positions["n1"] != home["n1"], "and no further"
     canvas.undo_move()
     canvas.undo_move()
 
-    assert {node_id: QPointF(item.pos()) for node_id, item in canvas._nodes.items()} == home
+    assert canvas.positions == home
 
 
 def test_undoing_past_the_beginning_does_nothing_and_does_not_raise(
@@ -998,11 +1001,11 @@ def test_undoing_past_the_beginning_does_nothing_and_does_not_raise(
     canvas = ready(2)
     drag(canvas, "n1", QPoint(40, 30))
     canvas.undo_move()
-    settled = QPointF(canvas._nodes["n1"].pos())
+    settled = QPointF(node_item(canvas, "n1").pos())
 
     canvas.undo_move()
 
-    assert canvas._nodes["n1"].pos() == settled
+    assert node_item(canvas, "n1").pos() == settled
 
 
 # -- back to the beginning ------------------------------------------------
@@ -1010,13 +1013,13 @@ def test_undoing_past_the_beginning_does_nothing_and_does_not_raise(
 
 def test_reset_returns_every_node_to_the_layout(qt_app: QApplication) -> None:
     canvas = ready(4)
-    home = {node_id: QPointF(item.pos()) for node_id, item in canvas._nodes.items()}
+    home = dict(canvas.positions)
     for node_id in ("n0", "n2", "n3"):
         drag(canvas, node_id, QPoint(40, 30))
 
     canvas.reset_layout()
 
-    assert {node_id: QPointF(item.pos()) for node_id, item in canvas._nodes.items()} == home
+    assert canvas.positions == home
 
 
 def test_reset_leaves_nothing_to_undo(qt_app: QApplication) -> None:
@@ -1037,12 +1040,12 @@ def test_reset_goes_to_the_layout_not_to_what_was_opened(qt_app: QApplication) -
     canvas = ActivityCanvas()
     canvas.resize(600, 480)
     canvas.show_graph(chain(2))
-    layout = {node_id: QPointF(item.pos()) for node_id, item in canvas._nodes.items()}
+    layout = dict(canvas.positions)
 
     canvas.show_graph(chain(2), positions={"n1": (900.0, -400.0)})
     canvas.reset_layout()
 
-    assert {node_id: QPointF(item.pos()) for node_id, item in canvas._nodes.items()} == layout
+    assert canvas.positions == layout
 
 
 # -- opening a graph somewhere other than the layout ----------------------
@@ -1054,7 +1057,7 @@ def test_a_graph_can_be_opened_at_positions_it_is_given(qt_app: QApplication) ->
 
     canvas.show_graph(chain(2), positions={"n1": (900.0, -400.0)})
 
-    assert canvas._nodes["n1"].pos() == QPointF(900.0, -400.0)
+    assert node_item(canvas, "n1").pos() == QPointF(900.0, -400.0)
 
 
 def test_a_node_the_saved_arrangement_never_heard_of_keeps_its_place(
@@ -1069,12 +1072,12 @@ def test_a_node_the_saved_arrangement_never_heard_of_keeps_its_place(
     # The third, deliberately. The layout puts the first node of a trace on the
     # origin, so a node dropped there for want of a saved position is
     # indistinguishable from one that kept its place.
-    layout = QPointF(canvas._nodes["n2"].pos())
+    layout = QPointF(node_item(canvas, "n2").pos())
     assert layout != QPointF(0.0, 0.0), "premise: this node is not laid out on the origin"
 
     canvas.show_graph(chain(4), positions={"n1": (900.0, -400.0), "gone": (5.0, 5.0)})
 
-    assert canvas._nodes["n2"].pos() == layout
+    assert node_item(canvas, "n2").pos() == layout
 
 
 def test_the_arrows_are_drawn_where_the_given_positions_put_the_nodes(
@@ -1087,7 +1090,7 @@ def test_the_arrows_are_drawn_where_the_given_positions_put_the_nodes(
 
     canvas.show_graph(chain(2), positions={"n1": (900.0, -400.0)})
 
-    art = canvas._edge_art[0]
+    art = edge_between(canvas, "n0", "n1")
     assert gap(path_end(art), QPointF(900.0, -400.0)) == pytest.approx(art.target_radius, abs=0.5)
 
 
@@ -1104,9 +1107,7 @@ def test_what_the_canvas_reports_is_what_it_can_be_reopened_with(
     again.resize(600, 480)
     again.show_graph(chain(4), positions=saved)
 
-    assert {node_id: QPointF(item.pos()) for node_id, item in again._nodes.items()} == {
-        node_id: QPointF(item.pos()) for node_id, item in canvas._nodes.items()
-    }
+    assert again.positions == canvas.positions
 
 
 def test_a_new_graph_leaves_nothing_to_undo(qt_app: QApplication) -> None:
@@ -1161,7 +1162,7 @@ def test_a_number_is_written_on_an_arrow_that_has_room_for_it(
     qt_app: QApplication,
 ) -> None:
     canvas = ready(2)
-    art = canvas._edge_art[0]
+    art = edge_between(canvas, "n0", "n1")
 
     assert art.label is not None
     assert art.label.isVisible()
@@ -1179,24 +1180,24 @@ def test_the_number_gets_out_of_the_way_when_the_arrow_gets_short(
     reading the code: the geometry was right and the picture was wrong.
     """
     canvas = ready(2)
-    art = canvas._edge_art[0]
+    art = edge_between(canvas, "n0", "n1")
     assert art.label is not None
-    home = QPointF(canvas._nodes["n1"].pos())
+    home = QPointF(node_item(canvas, "n1").pos())
 
-    canvas._nodes["n1"].setPos(home.x() - 250.0, home.y())
+    node_item(canvas, "n1").setPos(home.x() - 250.0, home.y())
 
     assert not art.label.isVisible()
 
 
 def test_the_number_comes_back_when_the_arrow_does(qt_app: QApplication) -> None:
     canvas = ready(2)
-    art = canvas._edge_art[0]
+    art = edge_between(canvas, "n0", "n1")
     assert art.label is not None
-    home = QPointF(canvas._nodes["n1"].pos())
-    canvas._nodes["n1"].setPos(home.x() - 250.0, home.y())
+    home = QPointF(node_item(canvas, "n1").pos())
+    node_item(canvas, "n1").setPos(home.x() - 250.0, home.y())
     assert not art.label.isVisible(), "premise: it got out of the way"
 
-    canvas._nodes["n1"].setPos(home)
+    node_item(canvas, "n1").setPos(home)
 
     assert art.label.isVisible()
 
@@ -1215,6 +1216,6 @@ def test_a_graph_opened_on_a_crowded_arrangement_hides_the_number_too(
 
     canvas.show_graph(chain(2), positions={"n1": (home[0] - 250.0, home[1])})
 
-    art = canvas._edge_art[0]
+    art = edge_between(canvas, "n0", "n1")
     assert art.label is not None
     assert not art.label.isVisible()
