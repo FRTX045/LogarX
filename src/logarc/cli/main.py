@@ -40,7 +40,7 @@ from logarc.gui.style import plural
 from logarc.ingest.pipeline import FormatDetectionError
 from logarc.ingest.reader import LogSourceError
 from logarc.parsers.registry import UnknownFormatError, registered_formats
-from logarc.report.html import render_report
+from logarc.report import export as export_formats
 from logarc.sessionize.segmenter import SessionPolicy
 from logarc.storage.event_store import SORT_KEYS, StoreStateError
 
@@ -401,8 +401,11 @@ def export(
     rules: Annotated[list[Path] | None, RULES_OPTION] = None,
 ) -> None:
     """Write a standalone report for one client."""
-    if output_format not in {"html", "json"}:
-        raise _fail(f"unknown format {output_format!r}; choose html or json")
+    # Checked before the case is opened, so a typo costs nothing but the typo.
+    try:
+        export_formats.named(output_format)
+    except ValueError as exc:
+        raise _fail(str(exc)) from exc
 
     try:
         engine = _rule_engine(rules)
@@ -419,10 +422,7 @@ def export(
     except USER_ERRORS as exc:
         raise _fail(str(exc)) from exc
 
-    if output_format == "json":
-        out.write_text(json.dumps(result.to_dict(), indent=2), encoding="utf-8")
-    else:
-        out.write_text(render_report(result, manifest), encoding="utf-8")
+    export_formats.write_reconstruction(result, manifest, kind=output_format, target=out)
     _path_line(f"Report written to {out}")
 
 

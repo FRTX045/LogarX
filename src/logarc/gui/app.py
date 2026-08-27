@@ -62,7 +62,7 @@ from logarc.gui.timerange import nobody_here, summary
 from logarc.gui.workers import run_job
 from logarc.ingest.pipeline import IngestCancelled
 from logarc.ingest.quarantine import DIRECTORY_NAME as QUARANTINE_DIR
-from logarc.report.html import render_report
+from logarc.report import export
 from logarc.storage.case import CaseManifest
 
 if TYPE_CHECKING:
@@ -1519,12 +1519,16 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Nothing to export", "Reconstruct a client first.")
             return
 
-        filters = {
-            "html": ("HTML report", "report.html", "HTML (*.html)"),
-            "json": ("JSON graph", "graph.json", "JSON (*.json)"),
-            "png": ("PNG image", "graph.png", "PNG (*.png)"),
-        }
-        title, suggested, mask = filters[kind]
+        # What each format is called and what it suggests saving as comes from
+        # `report.export`, so the extension offered here cannot drift from the
+        # extension actually written. PNG is not in that list — it is a picture
+        # of the canvas rather than a serialisation of the reconstruction, and
+        # only something holding a canvas can produce one.
+        if kind == "png":
+            title, suggested, mask = "PNG image", "graph.png", "PNG (*.png)"
+        else:
+            fmt = export.named(kind)
+            title, suggested, mask = fmt.label, fmt.suggested, fmt.mask
         chosen, _ = QFileDialog.getSaveFileName(self, f"Export {title}", suggested, mask)
         if not chosen:
             return
@@ -1552,14 +1556,11 @@ class MainWindow(QMainWindow):
             bounded = reconstruct_client(
                 case_path, client_ip, crs, evidence_sample=DEFAULT_EVIDENCE_SAMPLE
             )
-            if kind == "json":
-                import json
-
-                target.write_text(json.dumps(bounded.to_dict(), indent=2), encoding="utf-8")
-            else:
-                with Case.open(case_path) as case:
-                    target.write_text(render_report(bounded, case.manifest), encoding="utf-8")
-            return str(target)
+            with Case.open(case_path) as case:
+                written = export.write_reconstruction(
+                    bounded, case.manifest, kind=kind, target=target
+                )
+            return str(written)
 
         run_job(
             work,
