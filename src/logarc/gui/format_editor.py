@@ -112,6 +112,21 @@ def _saved() -> list[FormatSpec]:
         return []
 
 
+def _install_saved() -> str:
+    """Reconcile the registry with the library file. Returns what went wrong.
+
+    Empty when nothing did. Guarded for the same reason `_saved` is, and it has
+    to be guarded separately: `register_saved_formats` reads the file itself,
+    so a damaged one raised straight out of the constructor and took the window
+    down with it — on the one screen that could have fixed the file.
+    """
+    try:
+        register_saved_formats()
+    except FormatLibraryError as exc:
+        return str(exc)
+    return ""
+
+
 class FormatEditor(QDialog):
     """The library of log formats: read a built-in, write your own, try both."""
 
@@ -123,6 +138,7 @@ class FormatEditor(QDialog):
 
         self._editing: str | None = None
         self._trouble = ""
+        self._library_trouble = ""
 
         self._formats = QListWidget()
         self._formats.setMaximumWidth(220)
@@ -331,18 +347,20 @@ class FormatEditor(QDialog):
         except LogFormatError as exc:
             return self._refuse(str(exc))
 
-        # Replace by name rather than by position, so renaming a format while
-        # editing it adds the new one and leaves the old, which is what the
-        # reader asked for by changing the name rather than pressing Delete.
+        # Both the new name and the one being edited are dropped, so changing
+        # the name of a format is a rename rather than a copy. That is the
+        # reading that matches the gesture — a reader wanting two formats would
+        # have started a new one — and no case is affected either way, since
+        # each carries its own copy of the definition it was read with.
         kept = [item for item in saved if item.name not in {name, self._editing}]
         try:
             save_library([*kept, spec])
         except FormatLibraryError as exc:
             return self._refuse(str(exc))
 
-        # Registered here, not at the next launch: a format that is in the file
-        # and absent from every list offering it is one the reader cannot use.
-        register_saved_formats()
+        # `_reload` re-registers from the file, so the format is usable now
+        # rather than at the next launch: one that is in the file and absent
+        # from every list offering it is one the reader cannot use.
         self._reload()
         self.select(name)
         return True
@@ -356,8 +374,9 @@ class FormatEditor(QDialog):
         if self._editing is None:
             return
         save_library([spec for spec in _saved() if spec.name != self._editing])
-        register_saved_formats()
         self._editing = None
+        # `_reload` reconciles the registry with the file, which is what takes
+        # the deleted format out of every list that was offering it.
         self._reload()
         self.start_new()
 
@@ -382,7 +401,7 @@ class FormatEditor(QDialog):
         can. Told apart only by what happens when you click them, the reader
         finds that out by being refused.
         """
-        register_saved_formats()
+        self._library_trouble = _install_saved()
         current = self._name.text()
         built_in = [name for name in available_formats() if is_built_in(name)]
         saved = [name for name in available_formats() if not is_built_in(name)]
@@ -415,7 +434,10 @@ class FormatEditor(QDialog):
 
     def _refresh_preview(self) -> None:
         result = self.preview()
-        self._status.setText(self._trouble or result.status)
+        # The library's own trouble comes first. It is about the whole screen,
+        # where the other two are about the directive in front of the reader,
+        # and it is the one they cannot work out from what they can see.
+        self._status.setText(self._library_trouble or self._trouble or result.status)
         self._fields.setRowCount(len(result.fields))
         for row, (field, value) in enumerate(result.fields):
             self._fields.setItem(row, 0, QTableWidgetItem(field))
@@ -429,11 +451,13 @@ class FormatChoice(QDialog):
         super().__init__(parent)
         self.setWindowTitle("How should these logs be read?")
 
+        self._library_trouble = ""
         self._choice = QComboBox()
         self._fill()
 
         explain = QLabel(
-            "Detecting works for Apache and nginx logs and anything shaped like "
+            self._library_trouble
+            or "Detecting works for Apache and nginx logs and anything shaped like "
             "them. Choose a format when the logs are in one of your own."
         )
         explain.setWordWrap(True)
@@ -461,7 +485,7 @@ class FormatChoice(QDialog):
         # Same reconciliation as the editor's list, and needed for the same
         # reason: a format written on the command line has to be offerable here
         # without the reader restarting the application.
-        register_saved_formats()
+        self._library_trouble = _install_saved()
         chosen = self.chosen() if self._choice.count() else None
         self._choice.clear()
         # First and therefore the default. It is what every ingest did before

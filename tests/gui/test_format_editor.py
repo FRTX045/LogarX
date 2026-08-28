@@ -20,8 +20,8 @@ from PyQt6.QtWidgets import QApplication
 
 from logarc.gui.format_editor import FormatChoice, FormatEditor
 from logarc.parsers.apache import COMBINED
-from logarc.parsers.library import load_library, save_library
-from logarc.parsers.registry import register_saved_formats
+from logarc.parsers.library import FormatLibraryError, library_path, load_library, save_library
+from logarc.parsers.registry import register_format, register_saved_formats, unregister_format
 from logarc.parsers.spec import LogFormatSpec
 
 PIPED = '%h|%t|"%r"|%>s|%b'
@@ -356,3 +356,137 @@ def test_a_name_the_list_itself_uses_is_refused(qt_app: QApplication) -> None:
         assert not editor.save(), f"{reserved!r} was accepted as a format name"
 
     assert load_library() == []
+
+
+def test_renaming_a_saved_format_renames_it_rather_than_leaving_a_twin(
+    qt_app: QApplication, saved_office: LogFormatSpec
+) -> None:
+    """Changing the name of a format you are editing is a rename.
+
+    The alternative — keeping the old one and adding a new — was written into a
+    comment here and contradicted by the code beside it, so nobody had decided.
+    Rename is the reading that matches the gesture: a reader who wanted two
+    formats would have started a new one. Cases ingested under the old name are
+    unaffected either way; each carries its own copy of the definition.
+    """
+    editor = FormatEditor()
+    editor.select("log-kantor")
+
+    editor._name.setText("log-kantor-lama")
+
+    assert editor.save()
+    assert [spec.name for spec in load_library()] == ["log-kantor-lama"]
+
+
+# -- the corners ------------------------------------------------------------
+
+
+def test_a_format_registered_from_code_is_shown_and_cannot_be_edited(
+    qt_app: QApplication,
+) -> None:
+    """`register_format` takes a factory. There is code behind the name and no
+    definition to show, let alone edit — and none to write into a case either,
+    which is why it is listed rather than hidden: seeing it is how a reader
+    learns the name their case will record."""
+
+    class Nothing:
+        name = "from-code"
+
+        def parse_line(self, line: str, ref: object) -> None:
+            return None
+
+    register_format("from-code", Nothing)
+    try:
+        editor = FormatEditor()
+        editor.select("from-code")
+
+        assert "from-code" in editor.listed()
+        assert editor._name.text() == "from-code"
+        assert editor._directive.text() == ""
+        assert not editor._directive.isEnabled()
+        assert not editor._save.isEnabled()
+    finally:
+        unregister_format("from-code")
+
+
+def test_a_damaged_library_does_not_stop_the_screen_opening(qt_app: QApplication) -> None:
+    """A reader who has broken their library file is exactly the one who needs
+    somewhere to write a format. The CLI reports the damage on every command;
+    refusing to open here as well would leave them nowhere to go."""
+    library_path().parent.mkdir(parents=True, exist_ok=True)
+    library_path().write_text("{not json", encoding="utf-8")
+
+    editor = FormatEditor()
+
+    assert "apache-combined" in editor.listed()
+    assert str(library_path()) in editor._status.text(), (
+        "the screen opened but said nothing, so the reader has no idea their "
+        "saved formats are missing rather than never written"
+    )
+
+
+def test_a_damaged_library_is_said_where_a_format_is_chosen_too(qt_app: QApplication) -> None:
+    """The other screen reading it. Silence here is worse: the list simply has
+    no saved formats in it, which is indistinguishable from having saved none."""
+    library_path().parent.mkdir(parents=True, exist_ok=True)
+    library_path().write_text("{not json", encoding="utf-8")
+
+    chooser = FormatChoice()
+
+    assert chooser.chosen() is None
+    assert str(library_path()) in chooser._library_trouble
+
+
+def test_a_library_that_will_not_take_a_write_is_reported_not_raised(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A read-only config directory, a full disk. The screen has to say so
+    where the reader is looking, not raise into the crash handler."""
+    from logarc.gui import format_editor as module
+
+    def refuse(*_args: object, **_kwargs: object) -> None:
+        raise FormatLibraryError("the library could not be written")
+
+    monkeypatch.setattr(module, "save_library", refuse)
+
+    editor = FormatEditor()
+    editor.start_new()
+    editor._name.setText("log-kantor")
+    editor._directive.setText(PIPED)
+
+    assert not editor.save()
+    assert "could not be written" in editor.trouble()
+
+
+def test_the_manage_button_reopens_the_chooser_on_what_was_written(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The chooser offers formats; the editor writes them. A format written
+    without leaving the ingest flow has to be choosable in the list behind."""
+    from logarc.gui import format_editor as module
+
+    def write_one(self: FormatEditor) -> int:
+        save_library([LogFormatSpec(name="log-kantor", directive=PIPED)])
+        return 1
+
+    monkeypatch.setattr(module.FormatEditor, "exec", write_one)
+
+    chooser = FormatChoice()
+    assert "log-kantor" not in chooser.offered(), "premise: not there yet"
+
+    chooser._manage()
+
+    assert "log-kantor" in chooser.offered()
+
+
+def test_the_chooser_keeps_what_was_chosen_when_the_list_is_rebuilt(
+    qt_app: QApplication, saved_office: LogFormatSpec
+) -> None:
+    """Otherwise a trip to the editor silently resets the choice back to
+    detection, and the ingest reads with something the reader did not pick."""
+    chooser = FormatChoice()
+    chooser.choose("log-kantor")
+
+    chooser._fill()
+
+    assert chooser.chosen() == "log-kantor"
