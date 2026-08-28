@@ -224,3 +224,162 @@ def test_a_damaged_library_warns_without_stopping_an_unrelated_command(tmp_path:
     assert result.exit_code == 0, result.output
     assert str(library_path()) in result.output
     assert "warning" in result.output.lower()
+
+
+# ---------------------------------------------------------------------------
+# JSON logs
+# ---------------------------------------------------------------------------
+
+GATEWAY_LINES = [
+    json.dumps(
+        {
+            "time": "2024-05-01T09:00:45+00:00",
+            "remote_addr": "203.0.113.77",
+            "request": "GET /admin/0.php HTTP/1.1",
+            "status": 404,
+            "body_bytes_sent": 0,
+            "http_user_agent": "curl/8.4.0",
+        }
+    ),
+    json.dumps(
+        {
+            "time": "2024-05-01T09:00:46+00:00",
+            "remote_addr": "203.0.113.77",
+            "request": "GET /admin/1.php HTTP/1.1",
+            "status": 404,
+            "body_bytes_sent": 0,
+            "http_user_agent": "curl/8.4.0",
+        }
+    ),
+]
+
+
+@pytest.fixture
+def json_log(tmp_path: Path) -> Path:
+    log = tmp_path / "gateway.jsonl"
+    log.write_text("\n".join(GATEWAY_LINES) + "\n", encoding="utf-8")
+    return log
+
+
+def test_a_json_log_s_keys_are_guessed_and_shown(json_log: Path) -> None:
+    """JSON keys are self-describing, so the mapping is worth proposing — and
+    showing it is what keeps the proposal honest."""
+    result = runner.invoke(app, ["formats", "check-json", "--log", str(json_log)])
+
+    assert result.exit_code == 0, result.output
+    assert "remote_addr" in result.stdout
+    assert "203.0.113.77" in result.stdout
+    assert "2 of 2" in result.stdout
+
+
+def test_a_guessed_mapping_can_be_saved_in_one_step(json_log: Path) -> None:
+    result = runner.invoke(app, ["formats", "add-json", "gateway", "--log", str(json_log)])
+
+    assert result.exit_code == 0, result.output
+    saved = load_library()[0]
+    assert dict(saved.fields)["client_ip"] == "remote_addr"
+    assert dict(saved.fields)["timestamp"] == "time"
+
+
+def test_a_mapping_can_be_written_out_instead_of_guessed() -> None:
+    result = runner.invoke(
+        app,
+        [
+            "formats",
+            "add-json",
+            "gateway",
+            "--map",
+            "timestamp=ts",
+            "--map",
+            "client_ip=src",
+            "--map",
+            "status=code",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert dict(load_library()[0].fields) == {
+        "timestamp": "ts",
+        "client_ip": "src",
+        "status": "code",
+    }
+
+
+def test_a_written_mapping_overrides_what_was_guessed(json_log: Path) -> None:
+    """The guess is a starting point. A reader correcting one field must not
+    have to write out the other seven."""
+    result = runner.invoke(
+        app,
+        [
+            "formats",
+            "add-json",
+            "gateway",
+            "--log",
+            str(json_log),
+            "--map",
+            "client_ip=http_x_real_ip",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    saved = dict(load_library()[0].fields)
+    assert saved["client_ip"] == "http_x_real_ip"
+    assert saved["timestamp"] == "time", "the rest of the guess was thrown away"
+
+
+def test_a_mapping_missing_its_timestamp_is_refused_with_the_guess_shown() -> None:
+    """Refused here rather than at ingest, where it would quarantine every line
+    and present as an empty case."""
+    result = runner.invoke(app, ["formats", "add-json", "half", "--map", "client_ip=src"])
+
+    assert result.exit_code != 0
+    assert "timestamp" in result.output
+    assert "Traceback" not in result.output
+    assert load_library() == []
+
+
+def test_a_map_that_is_not_a_pair_fails_cleanly() -> None:
+    result = runner.invoke(app, ["formats", "add-json", "bad", "--map", "just-a-word"])
+
+    assert result.exit_code != 0
+    assert "Traceback" not in result.output
+
+
+def test_a_log_holding_no_json_at_all_says_so(tmp_path: Path, piped_log: Path) -> None:
+    result = runner.invoke(app, ["formats", "check-json", "--log", str(piped_log)])
+
+    assert result.exit_code != 0
+    assert "Traceback" not in result.output
+
+
+def test_a_json_log_can_be_ingested_end_to_end(tmp_path: Path, json_log: Path) -> None:
+    runner.invoke(app, ["formats", "add-json", "gateway", "--log", str(json_log)])
+
+    result = runner.invoke(
+        app, ["ingest", str(json_log), "--case", str(tmp_path / "case"), "--format", "gateway"]
+    )
+
+    assert result.exit_code == 0, result.output
+    manifest = json.loads((tmp_path / "case" / "case.json").read_text(encoding="utf-8"))
+    assert manifest["sources"][0]["events_parsed"] == 2
+    assert manifest["sources"][0]["format_spec"]["kind"] == "json"
+
+
+def test_a_json_format_is_listed_beside_the_others(json_log: Path) -> None:
+    runner.invoke(app, ["formats", "add-json", "gateway", "--log", str(json_log)])
+
+    result = runner.invoke(app, ["formats"])
+
+    assert result.exit_code == 0
+    assert "gateway" in result.stdout
+    assert "remote_addr" in result.stdout, "the mapping is the definition; show it"
+
+
+def test_show_describes_a_json_format_by_its_mapping(json_log: Path) -> None:
+    runner.invoke(app, ["formats", "add-json", "gateway", "--log", str(json_log)])
+
+    result = runner.invoke(app, ["formats", "show", "gateway"])
+
+    assert result.exit_code == 0
+    assert "json" in result.stdout
+    assert "remote_addr" in result.stdout

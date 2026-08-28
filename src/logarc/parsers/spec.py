@@ -20,9 +20,10 @@ missing (see `evidence._parser_for`); that stays true.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
+from logarc.parsers.json_format import JsonParser
 from logarc.parsers.logformat import LogFormatParser
 
 if TYPE_CHECKING:
@@ -34,6 +35,7 @@ __all__ = [
     "SPEC_VERSION",
     "FormatSpec",
     "FormatSpecError",
+    "JsonFormatSpec",
     "LogFormatSpec",
     "spec_from_dict",
     "spec_to_dict",
@@ -62,6 +64,9 @@ class LogFormatSpec:
     #: take their own, and a reader dispatches on it.
     kind: ClassVar[str] = "logformat"
 
+    #: What `to_payload` writes. See `JsonFormatSpec.PAYLOAD_KEYS`.
+    PAYLOAD_KEYS: ClassVar[frozenset[str]] = frozenset({"name", "directive", "description"})
+
     name: str
     directive: str
     description: str = ""
@@ -85,20 +90,116 @@ class LogFormatSpec:
         """
         return LogFormatParser(self.directive, name=self.name)
 
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "directive": self.directive,
+            "description": self.description,
+        }
 
-#: The union of every kind. One member today; the tagged dispatch below is what
-#: lets a second be added without changing anything already written to a case.
-FormatSpec = LogFormatSpec
+    @classmethod
+    def from_payload(cls, payload: Mapping[str, Any]) -> LogFormatSpec:
+        return cls(
+            name=_text(payload, "name"),
+            directive=_text(payload, "directive"),
+            description=_text(payload, "description", required=False),
+        )
 
-_KINDS: Final[dict[str, type[FormatSpec]]] = {LogFormatSpec.kind: LogFormatSpec}
+
+@dataclass(frozen=True, slots=True)
+class JsonFormatSpec:
+    """One JSON object per line, with a mapping from our field names to theirs.
+
+    The mapping is held as pairs rather than a dictionary so the record really
+    is frozen — a dictionary attribute can be reassigned nowhere and mutated
+    anywhere, which for a definition a case stores forever is the wrong kind of
+    immutable. It is written to JSON as an object all the same, because the
+    library file is meant to be openable in an editor and a list of pairs is
+    not.
+    """
+
+    kind: ClassVar[str] = "json"
+
+    #: What `to_payload` writes, so a hand-edited file can be checked against
+    #: it. Declared rather than derived from the dataclass: the two differ by
+    #: design, and deriving one from the other would tie the file's shape to
+    #: the class's, which is the coupling `to_payload` exists to break.
+    PAYLOAD_KEYS: ClassVar[frozenset[str]] = frozenset(
+        {"name", "fields", "time_format", "description"}
+    )
+
+    name: str
+    fields: tuple[tuple[str, str], ...]
+    """Our field name, then the key in their log. Order is the reader's."""
+
+    time_format: str = ""
+    """A strftime pattern, when the timestamp is in neither ISO nor epoch."""
+
+    description: str = ""
+
+    @property
+    def summary(self) -> str:
+        """The mapping on one line, for a list of formats."""
+        return ", ".join(f"{ours}={theirs}" for ours, theirs in self.fields)
+
+    def build(self) -> LogParser:
+        """Build the parser, or refuse the mapping and say why.
+
+        Refused here rather than at ingest, where a mapping missing its
+        timestamp would quarantine every line of the log and present as an
+        empty case.
+        """
+        return JsonParser(self.fields, name=self.name, time_format=self.time_format)
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "fields": dict(self.fields),
+            "time_format": self.time_format,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_payload(cls, payload: Mapping[str, Any]) -> JsonFormatSpec:
+        mapping = payload.get("fields")
+        if not isinstance(mapping, dict) or not all(
+            isinstance(key, str) and isinstance(value, str) for key, value in mapping.items()
+        ):
+            raise FormatSpecError("a json format's 'fields' must map names to keys")
+        return cls(
+            name=_text(payload, "name"),
+            fields=tuple(mapping.items()),
+            time_format=_text(payload, "time_format", required=False),
+            description=_text(payload, "description", required=False),
+        )
+
+
+def _text(payload: Mapping[str, Any], key: str, *, required: bool = True) -> str:
+    value = payload.get(key)
+    if value is None and not required:
+        return ""
+    if not isinstance(value, str):
+        raise FormatSpecError(f"format definition needs {key!r} to be text, not {value!r}")
+    return value
+
+
+#: The union of every kind. The tagged dispatch below is what lets a third be
+#: added without changing anything already written to a case.
+FormatSpec = LogFormatSpec | JsonFormatSpec
+
+_KINDS: Final[dict[str, type[FormatSpec]]] = {
+    LogFormatSpec.kind: LogFormatSpec,
+    JsonFormatSpec.kind: JsonFormatSpec,
+}
 
 
 def spec_to_dict(spec: FormatSpec) -> dict[str, Any]:
-    """Render a spec as the JSON object a case or a library file stores."""
-    payload: dict[str, Any] = {"version": SPEC_VERSION, "kind": spec.kind}
-    for entry in fields(spec):
-        payload[entry.name] = getattr(spec, entry.name)
-    return payload
+    """Render a spec as the JSON object a case or a library file stores.
+
+    The shape is the kind's own, not the dataclass's: a mapping held as pairs
+    in memory is still written as an object, because a person opens this file.
+    """
+    return {"version": SPEC_VERSION, "kind": spec.kind, **spec.to_payload()}
 
 
 def spec_from_dict(payload: Mapping[str, Any]) -> FormatSpec:
@@ -121,14 +222,11 @@ def spec_from_dict(payload: Mapping[str, Any]) -> FormatSpec:
     # Unknown keys are refused rather than ignored. The library file is plain
     # JSON that a user may edit by hand, and a misspelt key accepted in silence
     # would drop whatever they were trying to set while appearing to work.
-    expected = {entry.name for entry in fields(spec_type)}
+    expected = spec_type.PAYLOAD_KEYS
     if unexpected := sorted(set(payload) - expected - {"version", "kind"}):
         raise FormatSpecError(
             f"format definition has fields a {kind!r} format does not use: "
             f"{', '.join(repr(name) for name in unexpected)}"
         )
 
-    try:
-        return spec_type(**{name: payload[name] for name in expected if name in payload})
-    except TypeError as exc:  # a required field is absent
-        raise FormatSpecError(f"format definition is incomplete: {exc}") from exc
+    return spec_type.from_payload(payload)

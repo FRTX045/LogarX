@@ -24,6 +24,7 @@ without a display. What is here is the arranging of it.
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import Qt
@@ -47,9 +48,10 @@ from PyQt6.QtWidgets import (
 )
 
 from logarc.gui._qt import required
-from logarc.gui.format_preview import preview
+from logarc.gui.format_preview import preview, preview_mapping
 from logarc.gui.style import THEME
 from logarc.gui.theme import GAP, ROOM, caption_font
+from logarc.parsers.json_format import MAPPABLE, JsonFormatError, guess_mapping
 from logarc.parsers.library import FormatLibraryError, load_library, save_library
 from logarc.parsers.logformat import LogFormatError
 from logarc.parsers.registry import (
@@ -58,9 +60,11 @@ from logarc.parsers.registry import (
     is_built_in,
     register_saved_formats,
 )
-from logarc.parsers.spec import LogFormatSpec
+from logarc.parsers.spec import JsonFormatSpec, LogFormatSpec
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from logarc.gui.format_preview import Preview
     from logarc.parsers.spec import FormatSpec
 
@@ -78,12 +82,18 @@ _ROW = 26
 
 _DETECT = "Detect automatically"
 
-#: The first row of the list, and the reason there is no "nothing is selected"
-#: state to get wrong. `QListWidget` makes row 0 current the first time it is
-#: shown if nothing is — measured, by watching it overwrite a half-written
-#: format — so a list whose row 0 is a real format silently discards what the
-#: reader has typed. A list whose row 0 *is* the blank form cannot.
-_NEW = "New format…"
+#: The first rows of the list, and the reason there is no "nothing is
+#: selected" state to get wrong. `QListWidget` makes row 0 current the first
+#: time it is shown if nothing is — measured, by watching it overwrite a
+#: half-written format — so a list whose row 0 is a real format silently
+#: discards what the reader has typed. A list whose row 0 *is* a blank form
+#: cannot.
+#:
+#: Two of them rather than one, because a single row could not say which kind
+#: is being started, and asking afterwards means the reader types a directive
+#: into a screen that wanted a mapping.
+_NEW_TEXT = "New text format…"
+_NEW_JSON = "New JSON format…"
 
 _BUILT_IN_HEADING = "Built in"
 _SAVED_HEADING = "Saved by you"
@@ -91,7 +101,7 @@ _SAVED_HEADING = "Saved by you"
 #: The rows of the list that are not formats. A format named after one of them
 #: would be picked up by the wrong branch of `_on_selected` and edited as
 #: something it is not, so the names are refused on the way in.
-_RESERVED = frozenset({_NEW, _BUILT_IN_HEADING, _SAVED_HEADING})
+_RESERVED = frozenset({_NEW_TEXT, _NEW_JSON, _BUILT_IN_HEADING, _SAVED_HEADING})
 
 _SAMPLE_HINT = (
     "Paste one line from your log here.\nCopy it exactly, including the quotes and brackets."
@@ -139,6 +149,7 @@ class FormatEditor(QDialog):
         self._editing: str | None = None
         self._trouble = ""
         self._library_trouble = ""
+        self._kind = "logformat"
 
         self._formats = QListWidget()
         self._formats.setMaximumWidth(220)
@@ -154,6 +165,33 @@ class FormatEditor(QDialog):
 
         self._note = QLineEdit()
         self._note.setPlaceholderText("What this format is for (optional)")
+
+        # The JSON half. Fixed rows, one per field logarc records, rather than
+        # a list the reader adds to: which fields *can* be mapped is the
+        # decision they are making, and a list they have to populate hides the
+        # ones they have not thought of.
+        self._mapping = QTableWidget(len(MAPPABLE), 2)
+        self._mapping.setHorizontalHeaderLabels(["logarc calls it", "your log calls it"])
+        required(self._mapping.verticalHeader()).setVisible(False)
+        required(self._mapping.verticalHeader()).setDefaultSectionSize(_ROW)
+        heads = required(self._mapping.horizontalHeader())
+        heads.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        heads.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        for row, ours in enumerate(MAPPABLE):
+            label = QTableWidgetItem(ours)
+            label.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            self._mapping.setItem(row, 0, label)
+            self._mapping.setItem(row, 1, QTableWidgetItem(""))
+        self._mapping.itemChanged.connect(self._refresh_preview)
+
+        self._time_format = QLineEdit()
+        self._time_format.setPlaceholderText(
+            "Leave empty unless the time is neither ISO nor a number"
+        )
+        self._time_format.textChanged.connect(self._refresh_preview)
+
+        self._guess = QPushButton("Guess from the line above")
+        self._guess.clicked.connect(self.guess)
 
         self._sample = QPlainTextEdit()
         self._sample.setPlaceholderText(_SAMPLE_HINT)
@@ -201,17 +239,44 @@ class FormatEditor(QDialog):
 
         right = QVBoxLayout()
         right.setSpacing(GAP // 2)
-        for caption, field in (
-            ("Name", self._name),
-            ("LogFormat directive", self._directive),
-            ("Note", self._note),
-        ):
-            right.addWidget(self._labelled(caption))
-            right.addWidget(field)
+        right.addWidget(self._labelled("Name"))
+        right.addWidget(self._name)
+
+        self._directive_label = self._labelled("LogFormat directive")
+        right.addWidget(self._directive_label)
+        right.addWidget(self._directive)
+
+        right.addWidget(self._labelled("Note"))
+        right.addWidget(self._note)
+
         right.addWidget(self._labelled("A line from your log"))
         right.addWidget(self._sample)
+
+        # Under the sample, because guessing reads it and mapping is checked
+        # against it. Above the mapping, because that is the order the reader
+        # works in: paste, guess, correct.
+        self._guess_row = QWidget()
+        guessing = QHBoxLayout(self._guess_row)
+        guessing.setContentsMargins(0, 0, 0, 0)
+        guessing.addWidget(self._guess)
+        guessing.addWidget(self._labelled("Time format"))
+        guessing.addWidget(self._time_format, 1)
+        right.addWidget(self._guess_row)
+
         right.addWidget(self._status)
-        right.addWidget(self._fields, 1)
+
+        # The rule on the left, what it read on the right. Stacked, neither
+        # table could show even half its rows at the opening size and the
+        # reader scrolled one to check the other. Side by side they are the
+        # comparison they exist to be — and in text mode the mapping is hidden,
+        # so the result takes the whole width on its own.
+        tables = QWidget()
+        beside = QHBoxLayout(tables)
+        beside.setContentsMargins(0, 0, 0, 0)
+        beside.setSpacing(GAP // 2)
+        beside.addWidget(self._mapping, 1)
+        beside.addWidget(self._fields, 1)
+        right.addWidget(tables, 1)
 
         buttons = QDialogButtonBox()
         buttons.addButton(self._delete, QDialogButtonBox.ButtonRole.DestructiveRole)
@@ -243,7 +308,47 @@ class FormatEditor(QDialog):
             for row in range(self._formats.count())
             if row not in self._headings
         ]
-        return [item.text() for item in items if item is not None and item.text() != _NEW]
+        return [
+            item.text()
+            for item in items
+            if item is not None and item.text() not in (_NEW_TEXT, _NEW_JSON)
+        ]
+
+    def kind(self) -> str:
+        """Which shape the right-hand side is in: `logformat` or `json`."""
+        return self._kind
+
+    def mapping(self) -> tuple[tuple[str, str], ...]:
+        """The rows of the mapping table that have been filled in."""
+        rows = []
+        for row, ours in enumerate(MAPPABLE):
+            cell = self._mapping.item(row, 1)
+            theirs = cell.text().strip() if cell is not None else ""
+            if theirs:
+                rows.append((ours, theirs))
+        return tuple(rows)
+
+    def set_mapping(self, fields: Sequence[tuple[str, str]]) -> None:
+        """Put `fields` into the table, clearing whatever was there."""
+        by_ours = dict(fields)
+        self._mapping.blockSignals(True)
+        for row, ours in enumerate(MAPPABLE):
+            self._mapping.setItem(row, 1, QTableWidgetItem(by_ours.get(ours, "")))
+        self._mapping.blockSignals(False)
+        self._refresh_preview()
+
+    def guess(self) -> None:
+        """Propose a mapping from the pasted line, for the reader to correct."""
+        try:
+            payload = json.loads(self._sample.toPlainText().strip())
+        except (json.JSONDecodeError, ValueError):
+            self._refuse("That line is not JSON, so there are no keys to guess from.")
+            return
+        if not isinstance(payload, dict):
+            self._refuse("That line is JSON but not an object, so it has no keys to map.")
+            return
+        self._trouble = ""
+        self.set_mapping(guess_mapping(payload))
 
     def editing(self) -> str | None:
         """The saved format being edited, or `None` for a new or built-in one."""
@@ -254,8 +359,11 @@ class FormatEditor(QDialog):
         return self._trouble
 
     def preview(self) -> Preview:
-        """What the directive currently reads out of the pasted line."""
-        return preview(self._directive.text(), self._sample.toPlainText())
+        """What the format on screen currently reads out of the pasted line."""
+        sample = self._sample.toPlainText()
+        if self._kind == "json":
+            return preview_mapping(self.mapping(), self._time_format.text().strip(), sample)
+        return preview(self._directive.text(), sample)
 
     # -- moving around the list ------------------------------------------
 
@@ -268,24 +376,44 @@ class FormatEditor(QDialog):
             self._on_selected(name)
 
     def start_new(self) -> None:
-        """Clear the right-hand side for a format that does not exist yet."""
-        self._formats.setCurrentRow(0)
-        self._blank()
+        """Clear the right-hand side for a text format that does not exist yet."""
+        self.select(_NEW_TEXT)
 
-    def _blank(self) -> None:
+    def start_new_json(self) -> None:
+        """Clear the right-hand side for a JSON format that does not exist yet."""
+        self.select(_NEW_JSON)
+
+    def _blank(self, kind: str) -> None:
         self._editing = None
         self._trouble = ""
         self._name.clear()
         self._directive.clear()
         self._note.clear()
+        self._time_format.clear()
+        self.set_mapping(())
+        self._show_kind(kind)
         self._set_editable(True)
         self._refresh_preview()
+
+    def _show_kind(self, kind: str) -> None:
+        """Put the right half of the screen in front of the reader.
+
+        Hidden rather than disabled: a greyed-out mapping table beside a live
+        directive line invites the reader to wonder which one this format uses,
+        and the answer is never both.
+        """
+        self._kind = kind
+        text = kind == "logformat"
+        self._directive_label.setVisible(text)
+        self._directive.setVisible(text)
+        self._mapping.setVisible(not text)
+        self._guess_row.setVisible(not text)
 
     def _on_selected(self, name: str) -> None:
         if not name:
             return
-        if name == _NEW:
-            self._blank()
+        if name in (_NEW_TEXT, _NEW_JSON):
+            self._blank("logformat" if name == _NEW_TEXT else "json")
             return
         try:
             spec = get_spec(name)
@@ -295,6 +423,7 @@ class FormatEditor(QDialog):
             # Registered from a factory: there is code behind the name and no
             # definition to show, let alone edit.
             self._editing = None
+            self._show_kind("logformat")
             self._name.setText(name)
             self._directive.clear()
             self._note.clear()
@@ -303,9 +432,17 @@ class FormatEditor(QDialog):
             return
 
         self._editing = name if self._is_saved(name) else None
+        self._show_kind(spec.kind)
         self._name.setText(spec.name)
-        self._directive.setText(spec.summary)
         self._note.setText(spec.description)
+        if isinstance(spec, JsonFormatSpec):
+            self._directive.clear()
+            self._time_format.setText(spec.time_format)
+            self.set_mapping(spec.fields)
+        else:
+            self._directive.setText(spec.directive)
+            self._time_format.clear()
+            self.set_mapping(())
         self._set_editable(self._is_saved(name))
         self._refresh_preview()
 
@@ -313,8 +450,10 @@ class FormatEditor(QDialog):
         return name in available_formats() and not is_built_in(name)
 
     def _set_editable(self, editable: bool) -> None:
-        for field in (self._name, self._directive, self._note):
+        for field in (self._name, self._directive, self._note, self._time_format):
             field.setEnabled(editable)
+        self._mapping.setEnabled(editable)
+        self._guess.setEnabled(editable)
         self._save.setEnabled(editable)
         self._delete.setEnabled(editable and self._editing is not None)
         # Never disabled. Trying a built-in against your own log is reading,
@@ -339,12 +478,21 @@ class FormatEditor(QDialog):
                 "saved format of the same name would never be reached."
             )
 
-        spec = LogFormatSpec(
-            name=name, directive=self._directive.text(), description=self._note.text().strip()
+        spec: FormatSpec = (
+            JsonFormatSpec(
+                name=name,
+                fields=self.mapping(),
+                time_format=self._time_format.text().strip(),
+                description=self._note.text().strip(),
+            )
+            if self._kind == "json"
+            else LogFormatSpec(
+                name=name, directive=self._directive.text(), description=self._note.text().strip()
+            )
         )
         try:
             spec.build()
-        except LogFormatError as exc:
+        except (LogFormatError, JsonFormatError) as exc:
             return self._refuse(str(exc))
 
         # Both the new name and the one being edited are dropped, so changing
@@ -409,7 +557,8 @@ class FormatEditor(QDialog):
         self._formats.blockSignals(True)
         self._formats.clear()
         self._headings.clear()
-        self._formats.addItem(_NEW)
+        self._formats.addItem(_NEW_TEXT)
+        self._formats.addItem(_NEW_JSON)
         for heading, names in ((_BUILT_IN_HEADING, built_in), (_SAVED_HEADING, saved)):
             if not names:
                 continue
@@ -421,9 +570,10 @@ class FormatEditor(QDialog):
         if current in available_formats():
             self.select(current)
         else:
-            # Deliberately, rather than leaving it to the widget: see `_NEW`.
+            # Deliberately, rather than leaving it to the widget: see the
+            # `_NEW_TEXT` note above.
             self._formats.setCurrentRow(0)
-            self._blank()
+            self._blank("logformat")
 
     def _heading_item(self, text: str) -> QListWidgetItem:
         item = QListWidgetItem(text)

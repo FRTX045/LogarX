@@ -11,7 +11,7 @@ from datetime import timedelta
 from itertools import chain, islice
 from pathlib import Path
 from time import perf_counter
-from typing import TYPE_CHECKING, Annotated, Final
+from typing import TYPE_CHECKING, Annotated, Any, Final
 
 import typer
 from rich.console import Console
@@ -40,6 +40,8 @@ from logarc.evaluation.truth import TruthError, read_truth
 from logarc.gui.style import plural
 from logarc.ingest.pipeline import FormatDetectionError
 from logarc.ingest.reader import LogSourceError, open_log
+from logarc.parsers.base import LogParser
+from logarc.parsers.json_format import JsonFormatError, guess_mapping
 from logarc.parsers.library import (
     FormatLibraryError,
     library_path,
@@ -48,19 +50,20 @@ from logarc.parsers.library import (
 )
 from logarc.parsers.logformat import LogFormatError
 from logarc.parsers.registry import (
+    DEFAULT_SAMPLE_SIZE,
     UnknownFormatError,
     get_spec,
     is_built_in,
     register_saved_formats,
     registered_formats,
 )
-from logarc.parsers.spec import LogFormatSpec
+from logarc.parsers.spec import FormatSpec, JsonFormatSpec, LogFormatSpec
 from logarc.report import export as export_formats
 from logarc.sessionize.segmenter import SessionPolicy
 from logarc.storage.event_store import SORT_KEYS, StoreStateError
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator
+    from collections.abc import Iterable, Iterator, Sequence
 
     from logarc.core.event import NormalizedEvent
 
@@ -910,26 +913,180 @@ def formats_add(
     ] = False,
 ) -> None:
     """Save a log format so later cases can be ingested with it by name."""
-    saved = _load_or_fail()
-    existing = {spec.name for spec in saved}
+    _save_spec(LogFormatSpec(name=name, directive=directive, description=note), replace=replace)
 
-    if is_built_in(name):
+
+def _save_spec(spec: FormatSpec, *, replace: bool) -> None:
+    """Put `spec` in the library, or refuse and say why.
+
+    Shared by both kinds. Two copies of these three refusals would be one edit
+    away from `add` and `add-json` disagreeing about what a name may be.
+    """
+    saved = _load_or_fail()
+    existing = {item.name for item in saved}
+
+    if is_built_in(spec.name):
         raise _fail(
-            f"{name!r} is a built-in format. Built-ins are matched first, so a saved "
+            f"{spec.name!r} is a built-in format. Built-ins are matched first, so a saved "
             "format of the same name would never be reached; pick another name."
         )
-    if name in existing and not replace:
-        raise _fail(f"{name!r} is already saved; pass --replace to overwrite it")
+    if spec.name in existing and not replace:
+        raise _fail(f"{spec.name!r} is already saved; pass --replace to overwrite it")
 
-    spec = LogFormatSpec(name=name, directive=directive, description=note)
-    kept = [item for item in saved if item.name != name]
+    kept = [item for item in saved if item.name != spec.name]
     try:
         save_library([*kept, spec])
     except FormatLibraryError as exc:
         raise _fail(str(exc)) from exc
 
-    console.print(f"Saved [bold]{name}[/bold]: {directive}")
+    console.print(f"Saved [bold]{spec.name}[/bold]: {spec.summary}")
     _path_line(f"Saved formats: {library_path()}")
+
+
+def _mapping_from(pairs: Sequence[str]) -> list[tuple[str, str]]:
+    """Read `--map ours=theirs` options into a mapping."""
+    mapping: list[tuple[str, str]] = []
+    for pair in pairs:
+        ours, separator, theirs = pair.partition("=")
+        if not separator or not ours.strip() or not theirs.strip():
+            raise _fail(f"--map wants ours=theirs, not {pair!r}")
+        mapping.append((ours.strip(), theirs.strip()))
+    return mapping
+
+
+def _first_json_object(log: Path) -> dict[str, Any]:
+    """The first line of `log` that is a JSON object, for guessing from."""
+    try:
+        with open_log(log) as stream:
+            for _number, text in islice(stream, DEFAULT_SAMPLE_SIZE):
+                if not text.strip():
+                    continue
+                try:
+                    payload = json.loads(text)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(payload, dict):
+                    return payload
+    except LogSourceError as exc:
+        raise _fail(str(exc)) from exc
+    raise _fail(f"no line of {log} is a JSON object; is this a JSON log?")
+
+
+def _read_back(parser: LogParser, log: Path, lines: int, title: str) -> int:
+    """Show what `parser` pulls out of the first lines of `log`. Returns how
+    many of them it read."""
+    try:
+        with open_log(log) as stream:
+            sample = [(number, text) for number, text in islice(stream, lines) if text.strip()]
+    except LogSourceError as exc:
+        raise _fail(str(exc)) from exc
+
+    table = Table(title=title)
+    for column in ("Line", "Client", "When", "Method", "Path", "Status"):
+        table.add_column(column)
+
+    parsed = 0
+    for number, text in sample:
+        event = parser.parse_line(text, EvidenceRef(log.name, number))
+        if event is None:
+            table.add_row(str(number), "[red]did not match[/red]", "", "", "", "")
+            continue
+        parsed += 1
+        table.add_row(
+            str(number),
+            event.client_ip,
+            event.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+            event.method or "",
+            event.path or "",
+            str(event.status) if event.status is not None else "",
+        )
+    console.print(table)
+    console.print(f"Read [bold]{parsed} of {len(sample)}[/bold] lines.")
+    return parsed
+
+
+def _show_mapping(mapping: Sequence[tuple[str, str]]) -> None:
+    table = Table(title="Fields")
+    table.add_column("logarc calls it")
+    table.add_column("your log calls it")
+    for ours, theirs in mapping:
+        table.add_row(ours, theirs)
+    console.print(table)
+
+
+@formats_app.command("add-json")
+def formats_add_json(
+    name: Annotated[str, typer.Argument(help="What to call this format.")],
+    log: Annotated[
+        Path | None,
+        typer.Option("--log", help="A JSON log to guess the mapping from."),
+    ] = None,
+    mapping: Annotated[
+        list[str] | None,
+        typer.Option("--map", help="ours=theirs, repeatable. Overrides the guess."),
+    ] = None,
+    time_format: Annotated[
+        str,
+        typer.Option(
+            "--time-format", help="strftime pattern, if the time is neither ISO nor epoch."
+        ),
+    ] = "",
+    note: Annotated[str, typer.Option("--note", help="A reminder of what this is for.")] = "",
+    replace: Annotated[
+        bool, typer.Option("--replace", help="Overwrite a saved format of the same name.")
+    ] = False,
+) -> None:
+    """Save a format for a log that writes one JSON object per line.
+
+    With `--log`, the mapping is guessed from the first line and shown. JSON
+    keys are self-describing in a way a positional format's are not, so the
+    guess is worth making — and any `--map` you give overrides it, so
+    correcting one field does not mean writing out the other seven.
+    """
+    guessed = guess_mapping(_first_json_object(log)) if log is not None else ()
+    written = _mapping_from(mapping or [])
+    overridden = {ours for ours, _theirs in written}
+    fields = [*written, *((ours, theirs) for ours, theirs in guessed if ours not in overridden)]
+
+    if not fields:
+        raise _fail("give --log to guess the mapping, or --map to write it out")
+
+    _show_mapping(fields)
+    spec = JsonFormatSpec(
+        name=name, fields=tuple(fields), time_format=time_format, description=note
+    )
+    try:
+        spec.build()
+    except JsonFormatError as exc:
+        raise _fail(str(exc)) from exc
+
+    _save_spec(spec, replace=replace)
+
+
+@formats_app.command("check-json")
+def formats_check_json(
+    log: Annotated[Path, typer.Option("--log", help="A JSON log to try.")],
+    mapping: Annotated[
+        list[str] | None,
+        typer.Option("--map", help="ours=theirs, repeatable. Overrides the guess."),
+    ] = None,
+    lines: Annotated[int, typer.Option("--lines", min=1, help="How many lines to read.")] = 5,
+) -> None:
+    """Guess a JSON log's mapping and show what it reads, without saving it."""
+    guessed = guess_mapping(_first_json_object(log))
+    written = _mapping_from(mapping or [])
+    overridden = {ours for ours, _theirs in written}
+    fields = [*written, *((ours, theirs) for ours, theirs in guessed if ours not in overridden)]
+
+    _show_mapping(fields)
+    spec = JsonFormatSpec(name="check", fields=tuple(fields))
+    try:
+        parser = spec.build()
+    except JsonFormatError as exc:
+        raise _fail(str(exc)) from exc
+
+    if _read_back(parser, log, lines, f"{log.name}") == 0:
+        raise _fail("this mapping reads nothing in that log; check the key names above")
 
 
 @formats_app.command("remove")
@@ -969,6 +1126,8 @@ def formats_show(
     table.add_row("Kind", spec.kind)
     table.add_row("Source", "built-in" if is_built_in(name) else "saved")
     table.add_row("Definition", spec.summary)
+    if isinstance(spec, JsonFormatSpec) and spec.time_format:
+        table.add_row("Time format", spec.time_format)
     if spec.description:
         table.add_row("Note", spec.description)
     console.print(table)
@@ -991,39 +1150,11 @@ def formats_check(
     except LogFormatError as exc:
         raise _fail(str(exc)) from exc
 
-    try:
-        with open_log(log) as stream:
-            sample = [(number, text) for number, text in islice(stream, lines) if text.strip()]
-    except LogSourceError as exc:
-        raise _fail(str(exc)) from exc
-
-    table = Table(title=f"{directive}  ·  {log.name}")
-    for column in ("Line", "Client", "When", "Method", "Path", "Status"):
-        table.add_column(column)
-
-    parsed = 0
-    for number, text in sample:
-        event = parser.parse_line(text, EvidenceRef(log.name, number))
-        if event is None:
-            table.add_row(str(number), "[red]did not match[/red]", "", "", "", "")
-            continue
-        parsed += 1
-        table.add_row(
-            str(number),
-            event.client_ip,
-            event.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-            event.method or "",
-            event.path or "",
-            str(event.status) if event.status is not None else "",
-        )
-    console.print(table)
-    console.print(f"Read [bold]{parsed} of {len(sample)}[/bold] lines.")
-
-    if parsed == 0:
+    if _read_back(parser, log, lines, f"{directive}  ·  {log.name}") == 0:
         raise _fail("this directive reads nothing in that log; the fields are in another order")
 
 
-def _load_or_fail() -> list[LogFormatSpec]:
+def _load_or_fail() -> list[FormatSpec]:
     try:
         return load_library()
     except FormatLibraryError as exc:

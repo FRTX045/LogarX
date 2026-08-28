@@ -8,6 +8,7 @@ immediately choosable at ingest.
 
 from __future__ import annotations
 
+import json
 import os
 
 import pytest
@@ -20,9 +21,10 @@ from PyQt6.QtWidgets import QApplication
 
 from logarc.gui.format_editor import FormatChoice, FormatEditor
 from logarc.parsers.apache import COMBINED
+from logarc.parsers.json_format import MAPPABLE
 from logarc.parsers.library import FormatLibraryError, library_path, load_library, save_library
 from logarc.parsers.registry import register_format, register_saved_formats, unregister_format
-from logarc.parsers.spec import LogFormatSpec
+from logarc.parsers.spec import JsonFormatSpec, LogFormatSpec
 
 PIPED = '%h|%t|"%r"|%>s|%b'
 PIPED_LINE = '203.0.113.5|[10/Oct/2020:13:55:36 +0000]|"GET /.env HTTP/1.1"|404|0'
@@ -348,7 +350,7 @@ def test_a_name_the_list_itself_uses_is_refused(qt_app: QApplication) -> None:
     by the wrong branch and edited as something it is not."""
     editor = FormatEditor()
 
-    for reserved in ("New format…", "Built in", "Saved by you"):
+    for reserved in ("New text format…", "New JSON format…", "Built in", "Saved by you"):
         editor.start_new()
         editor._name.setText(reserved)
         editor._directive.setText(PIPED)
@@ -490,3 +492,177 @@ def test_the_chooser_keeps_what_was_chosen_when_the_list_is_rebuilt(
     chooser._fill()
 
     assert chooser.chosen() == "log-kantor"
+
+
+# ---------------------------------------------------------------------------
+# The other kind of format: a JSON mapping
+# ---------------------------------------------------------------------------
+
+GATEWAY_LINE = json.dumps(
+    {
+        "time": "2024-05-01T09:00:45+00:00",
+        "remote_addr": "203.0.113.77",
+        "request": "GET /admin/0.php HTTP/1.1",
+        "status": 404,
+        "trace_id": "abc123",
+    }
+)
+
+SAVED_JSON = JsonFormatSpec(
+    name="gateway",
+    fields=(("timestamp", "time"), ("client_ip", "remote_addr"), ("status", "status")),
+    description="the API gateway",
+)
+
+
+@pytest.fixture
+def saved_gateway() -> JsonFormatSpec:
+    save_library([SAVED_JSON])
+    register_saved_formats()
+    return SAVED_JSON
+
+
+def test_both_kinds_of_format_can_be_started(qt_app: QApplication) -> None:
+    """A single 'New format…' row could not say which kind, and asking after
+    the fact means the reader types a directive into a screen that wanted a
+    mapping."""
+    editor = FormatEditor()
+
+    rows = [
+        editor._formats.item(row).text()
+        for row in range(editor._formats.count())
+        if editor._formats.item(row) is not None
+    ]
+
+    assert "New text format…" in rows
+    assert "New JSON format…" in rows
+
+
+def test_starting_a_json_format_shows_the_mapping_and_hides_the_directive(
+    qt_app: QApplication,
+) -> None:
+    editor = FormatEditor()
+
+    editor.start_new_json()
+
+    assert editor._mapping.isVisible() or not editor.isVisible()
+    assert not editor._directive.isVisible() or not editor.isVisible()
+    assert editor.kind() == "json"
+
+
+def test_selecting_a_text_format_switches_back(qt_app: QApplication) -> None:
+    editor = FormatEditor()
+    editor.start_new_json()
+
+    editor.select("apache-combined")
+
+    assert editor.kind() == "logformat"
+    assert editor._directive.text() == COMBINED
+
+
+def test_a_saved_json_format_fills_the_mapping(
+    qt_app: QApplication, saved_gateway: JsonFormatSpec
+) -> None:
+    editor = FormatEditor()
+
+    editor.select("gateway")
+
+    assert editor.kind() == "json"
+    assert dict(editor.mapping()) == {
+        "timestamp": "time",
+        "client_ip": "remote_addr",
+        "status": "status",
+    }
+    assert editor._note.text() == "the API gateway"
+
+
+def test_the_mapping_offers_a_row_for_every_field_logarc_records(
+    qt_app: QApplication,
+) -> None:
+    """Fixed rows rather than an add-a-row list: which fields can be mapped is
+    the decision the reader is making, and a list they have to populate hides
+    the ones they have not thought of."""
+    editor = FormatEditor()
+    editor.start_new_json()
+
+    ours = [editor._mapping.item(row, 0).text() for row in range(editor._mapping.rowCount())]
+
+    assert ours == list(MAPPABLE)
+
+
+def test_the_mapping_is_guessed_from_the_pasted_line(qt_app: QApplication) -> None:
+    editor = FormatEditor()
+    editor.start_new_json()
+    editor._sample.setPlainText(GATEWAY_LINE)
+
+    editor.guess()
+
+    assert dict(editor.mapping())["client_ip"] == "remote_addr"
+    assert editor.preview().ok
+
+
+def test_guessing_from_a_line_that_is_not_json_says_so(qt_app: QApplication) -> None:
+    editor = FormatEditor()
+    editor.start_new_json()
+    editor._sample.setPlainText("203.0.113.5 - - [10/Oct/2000] ...")
+
+    editor.guess()
+
+    assert editor.mapping() == ()
+    assert "JSON" in editor._status.text()
+
+
+def test_a_json_format_written_here_reaches_the_library(qt_app: QApplication) -> None:
+    editor = FormatEditor()
+    editor.start_new_json()
+    editor._name.setText("gateway")
+    editor._sample.setPlainText(GATEWAY_LINE)
+    editor.guess()
+
+    assert editor.save(), editor.trouble()
+    saved = load_library()[0]
+    assert isinstance(saved, JsonFormatSpec)
+    assert dict(saved.fields)["client_ip"] == "remote_addr"
+
+
+def test_a_mapping_without_a_timestamp_is_refused_with_a_message(
+    qt_app: QApplication,
+) -> None:
+    editor = FormatEditor()
+    editor.start_new_json()
+    editor._name.setText("half")
+    editor.set_mapping((("client_ip", "remote_addr"),))
+
+    assert not editor.save()
+    assert "timestamp" in editor.trouble()
+    assert load_library() == []
+
+
+def test_a_time_format_written_for_a_json_log_is_kept(qt_app: QApplication) -> None:
+    editor = FormatEditor()
+    editor.start_new_json()
+    editor._name.setText("odd")
+    editor.set_mapping((("timestamp", "t"), ("client_ip", "ip")))
+    editor._time_format.setText("%d/%b/%Y %H:%M:%S %z")
+
+    assert editor.save(), editor.trouble()
+    assert load_library()[0].time_format == "%d/%b/%Y %H:%M:%S %z"
+
+
+def test_a_json_format_can_be_chosen_at_ingest_like_any_other(
+    qt_app: QApplication, saved_gateway: JsonFormatSpec
+) -> None:
+    assert "gateway" in FormatChoice().offered()
+
+
+def test_the_preview_reads_a_json_line_through_the_mapping(qt_app: QApplication) -> None:
+    editor = FormatEditor()
+    editor.start_new_json()
+    editor._sample.setPlainText(GATEWAY_LINE)
+    editor.guess()
+
+    result = editor.preview()
+
+    assert result.ok
+    assert dict(result.fields)["Path"] == "/admin/0.php"
+    assert ("trace_id", "abc123") in result.extra
