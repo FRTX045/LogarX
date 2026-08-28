@@ -586,3 +586,127 @@ def test_those_headings_can_be_mapped_by_hand(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     assert dict(load_library()[0].fields)["client_ip"] == "who"
+
+
+# ---------------------------------------------------------------------------
+# A log nothing else can read
+# ---------------------------------------------------------------------------
+
+#: Written with the year, as RFC 5424 syslog does. Without one nothing can date
+#: the events, and logarc refuses the format rather than putting them in 1900.
+SYSLOG_LINES = [
+    "2024 May  1 09:00:45 gw01 proxy[1234]: client=203.0.113.77 method=GET"
+    " url=/admin/0.php status=404",
+    "2024 May  1 09:00:46 gw01 proxy[1234]: client=203.0.113.77 method=GET"
+    " url=/admin/1.php status=404",
+]
+
+SYSLOG_PATTERN = (
+    r"^(?P<timestamp>\d{4} \w+\s+\d+ \d\d:\d\d:\d\d) \S+ \S+: "
+    r"client=(?P<client_ip>\S+) method=(?P<method>\S+) url=(?P<path>\S+) "
+    r"status=(?P<status>\d+)"
+)
+
+
+@pytest.fixture
+def syslog(tmp_path: Path) -> Path:
+    log = tmp_path / "proxy.log"
+    log.write_text("\n".join(SYSLOG_LINES) + "\n", encoding="utf-8")
+    return log
+
+
+def test_a_pattern_can_be_tried_against_a_log_before_it_is_saved(syslog: Path) -> None:
+    result = runner.invoke(
+        app,
+        [
+            "formats",
+            "check-pattern",
+            SYSLOG_PATTERN,
+            "--log",
+            str(syslog),
+            "--time-format",
+            "%Y %b %d %H:%M:%S",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "203.0.113.77" in result.stdout
+    assert "2 of 2" in result.stdout
+
+
+def test_a_pattern_that_reads_nothing_says_so(syslog: Path) -> None:
+    result = runner.invoke(
+        app,
+        [
+            "formats",
+            "check-pattern",
+            r"(?P<timestamp>\d+) (?P<client_ip>\S+)",
+            "--log",
+            str(syslog),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "0 of 2" in result.output
+
+
+def test_a_pattern_that_will_not_compile_fails_cleanly(syslog: Path) -> None:
+    result = runner.invoke(
+        app, ["formats", "check-pattern", r"(?P<timestamp>\S+))", "--log", str(syslog)]
+    )
+
+    assert result.exit_code != 0
+    assert "Traceback" not in result.output
+
+
+def test_a_pattern_naming_no_groups_says_how_to_name_them(syslog: Path) -> None:
+    result = runner.invoke(app, ["formats", "check-pattern", r"\S+ \S+", "--log", str(syslog)])
+
+    assert result.exit_code != 0
+    assert "(?P<" in result.output
+
+
+def test_a_pattern_format_can_be_saved_and_used(tmp_path: Path, syslog: Path) -> None:
+    saved = runner.invoke(
+        app,
+        [
+            "formats",
+            "add-pattern",
+            "gw-proxy",
+            SYSLOG_PATTERN,
+            "--time-format",
+            "%Y %b %d %H:%M:%S",
+            "--note",
+            "the gateway",
+        ],
+    )
+    assert saved.exit_code == 0, saved.output
+
+    result = runner.invoke(
+        app, ["ingest", str(syslog), "--case", str(tmp_path / "case"), "--format", "gw-proxy"]
+    )
+
+    assert result.exit_code == 0, result.output
+    manifest = json.loads((tmp_path / "case" / "case.json").read_text(encoding="utf-8"))
+    assert manifest["sources"][0]["events_parsed"] == 2
+    assert manifest["sources"][0]["format_spec"]["kind"] == "pattern"
+
+
+def test_a_pattern_with_no_timestamp_group_is_refused_before_it_is_saved() -> None:
+    result = runner.invoke(app, ["formats", "add-pattern", "half", r"(?P<client_ip>\S+)"])
+
+    assert result.exit_code != 0
+    assert "timestamp" in result.output
+    assert load_library() == []
+
+
+def test_show_describes_a_pattern_format() -> None:
+    runner.invoke(
+        app, ["formats", "add-pattern", "gw", SYSLOG_PATTERN, "--time-format", "%Y %b %d %H:%M:%S"]
+    )
+
+    result = runner.invoke(app, ["formats", "show", "gw"])
+
+    assert result.exit_code == 0
+    assert "pattern" in result.stdout
+    assert "%Y %b %d %H:%M:%S" in result.stdout

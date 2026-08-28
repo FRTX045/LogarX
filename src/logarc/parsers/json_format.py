@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 from logarc.core.event import NormalizedEvent
 from logarc.parsers.fieldnames import MAPPABLE, REQUIRED
 from logarc.parsers.fieldnames import guess_mapping as guess_from_names
-from logarc.parsers.times import read_time
+from logarc.parsers.times import TimeFormatError, check_time_format, read_time
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping, Sequence
@@ -123,6 +123,11 @@ class JsonParser:
                 f"a JSON format needs {' and '.join(REQUIRED)} mapped to a key; "
                 f"{', '.join(missing)} is not"
             )
+        try:
+            check_time_format(time_format)
+        except TimeFormatError as exc:
+            raise JsonFormatError(str(exc)) from exc
+
         self.name = name
         self._time_format = time_format
         self._mapped_keys = set(self._mapping.values())

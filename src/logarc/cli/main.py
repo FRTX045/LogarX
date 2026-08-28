@@ -51,6 +51,7 @@ from logarc.parsers.library import (
     save_library,
 )
 from logarc.parsers.logformat import LogFormatError
+from logarc.parsers.pattern import PatternFormatError
 from logarc.parsers.registry import (
     DEFAULT_SAMPLE_SIZE,
     UnknownFormatError,
@@ -59,7 +60,13 @@ from logarc.parsers.registry import (
     register_saved_formats,
     registered_formats,
 )
-from logarc.parsers.spec import ColumnsFormatSpec, FormatSpec, JsonFormatSpec, LogFormatSpec
+from logarc.parsers.spec import (
+    ColumnsFormatSpec,
+    FormatSpec,
+    JsonFormatSpec,
+    LogFormatSpec,
+    PatternFormatSpec,
+)
 from logarc.report import export as export_formats
 from logarc.sessionize.segmenter import SessionPolicy
 from logarc.storage.event_store import SORT_KEYS, StoreStateError
@@ -1251,6 +1258,54 @@ def formats_check_columns(
         raise _fail("this mapping reads nothing in that log; check the column names above")
 
 
+@formats_app.command("add-pattern")
+def formats_add_pattern(
+    name: Annotated[str, typer.Argument(help="What to call this format.")],
+    pattern: Annotated[str, typer.Argument(help="A regular expression with named groups.")],
+    time_format: Annotated[
+        str, typer.Option("--time-format", help="strftime pattern, if the time is unusual.")
+    ] = "",
+    note: Annotated[str, typer.Option("--note", help="A reminder of what this is for.")] = "",
+    replace: Annotated[
+        bool, typer.Option("--replace", help="Overwrite a saved format of the same name.")
+    ] = False,
+) -> None:
+    """Save a format for a log nothing else can read.
+
+    The named groups are the mapping: `(?P<client_ip>\\S+)` is the client
+    address. A regex already names its parts, so there is nothing else to say.
+    Run `logarc formats check-pattern` against the log first.
+    """
+    spec = PatternFormatSpec(name=name, pattern=pattern, time_format=time_format, description=note)
+    try:
+        spec.check()
+    except PatternFormatError as exc:
+        raise _fail(str(exc)) from exc
+    _save_spec(spec, replace=replace)
+
+
+@formats_app.command("check-pattern")
+def formats_check_pattern(
+    pattern: Annotated[str, typer.Argument(help="The regular expression to try.")],
+    log: Annotated[Path, typer.Option("--log", help="A log file to try it against.")],
+    time_format: Annotated[
+        str, typer.Option("--time-format", help="strftime pattern, if the time is unusual.")
+    ] = "",
+    lines: Annotated[int, typer.Option("--lines", min=1, help="How many lines to read.")] = 5,
+) -> None:
+    """Try a regular expression against a real log and show what it pulls out."""
+    try:
+        parser = PatternFormatSpec(name="check", pattern=pattern, time_format=time_format).build()
+    except PatternFormatError as exc:
+        raise _fail(str(exc)) from exc
+
+    if _read_back(parser, log, lines, f"{log.name}") == 0:
+        raise _fail(
+            "this pattern reads nothing in that log; check the groups it names and "
+            "whether the timestamp needs --time-format"
+        )
+
+
 @formats_app.command("remove")
 def formats_remove(
     name: Annotated[str, typer.Argument(help="The saved format to remove.")],
@@ -1288,7 +1343,9 @@ def formats_show(
     table.add_row("Kind", spec.kind)
     table.add_row("Source", "built-in" if is_built_in(name) else "saved")
     table.add_row("Definition", spec.summary)
-    if isinstance(spec, (JsonFormatSpec, ColumnsFormatSpec)) and spec.time_format:
+    if isinstance(spec, (JsonFormatSpec, ColumnsFormatSpec, PatternFormatSpec)) and (
+        spec.time_format
+    ):
         table.add_row("Time format", spec.time_format)
     if isinstance(spec, ColumnsFormatSpec):
         table.add_row("Separator", {" ": "space", ",": "comma", "\t": "tab"}[spec.separator])

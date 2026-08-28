@@ -805,6 +805,39 @@ log's own bookkeeping, not lines that failed. No amber strip appears.
 
 ---
 
+## 20. A log nothing else can read
+
+1. Write one that is none of the four shapes — syslog around a proxy:
+
+```bash
+printf '2024 May  1 09:00:%02d gw01 proxy[1234]: client=203.0.113.77 method=GET url=/admin/%d.php status=404\n' $(seq 0 39 | sed 's/.*/& &/') > proxy.log
+```
+
+2. **Case → Log formats… → New pattern format…** Paste one line, set *Time
+   format* to `%Y %b %d %H:%M:%S`, and write:
+
+```
+^(?P<timestamp>\d{4} \w+\s+\d+ \d\d:\d\d:\d\d) \S+ \S+: client=(?P<client_ip>\S+) method=(?P<method>\S+) url=(?P<path>\S+) status=(?P<status>\d+)
+```
+
+**Pass:** the table fills in as you type the last group. There is no mapping
+table on this screen — the group names are the mapping.
+
+3. Clear the *Time format* box.
+
+**Pass:** it says the pattern does not read the line, because `May  1 …` is
+neither ISO nor a number. Put the format back.
+
+4. Change *Time format* to `%b %d %H:%M:%S` — no year.
+
+**Pass:** it is refused, and the message says every event would be dated 1900.
+
+5. Restore the year, save as `gw-proxy`, and ingest `proxy.log` with it.
+
+**Pass:** 40 events, none quarantined, all dated 2024.
+
+---
+
 ## Recording a run
 
 | # | Check | Result | Notes |
@@ -828,5 +861,6 @@ log's own bookkeeping, not lines that failed. No amber strip appears.
 | 17 | A written format reads a log the presets cannot; the preview keeps up | | |
 | 18 | A JSON log's mapping is guessed, correctable, and says what the keys are | | |
 | 19 | An IIS log reads from its own header; its directives are not quarantined | | |
+| 20 | A pattern reads a syslog-wrapped log; a year-less time format is refused | | |
 
 Version tested: ______  ·  Date: ______  ·  Machine: ______

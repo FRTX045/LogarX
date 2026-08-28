@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Final
 
 from logarc.core.event import NormalizedEvent
 from logarc.parsers.fieldnames import JOIN, MAPPABLE, REQUIRED
-from logarc.parsers.times import read_time
+from logarc.parsers.times import TimeFormatError, check_time_format, read_time
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -183,6 +183,11 @@ class ColumnsParser:
             )
 
         self._mapping = dict(mapping)
+        try:
+            check_time_format(time_format)
+        except TimeFormatError as exc:
+            raise ColumnsFormatError(str(exc)) from exc
+
         self.name = name
         self._columns = tuple(columns)
         self._separator = separator

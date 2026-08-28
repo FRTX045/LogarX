@@ -15,7 +15,38 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any, Final
 
-__all__ = ["read_time"]
+__all__ = ["TimeFormatError", "check_time_format", "read_time"]
+
+
+class TimeFormatError(ValueError):
+    """Raised when a time format could not date an event even if it matched."""
+
+
+#: The strftime directives that carry a year. A pattern with none of them is
+#: refused: `strptime` supplies 1900 for the missing year, so every event of
+#: such a log lands there together — and in a report that reads "the attack
+#: occurred on 1 May 1900". The ordering inside the file survives; the date
+#: does not, and a date is what evidence is pinned to.
+_YEAR_DIRECTIVES: Final[tuple[str, ...]] = ("%Y", "%y", "%G", "%c", "%x", "%s")
+
+
+def check_time_format(time_format: str) -> None:
+    """Refuse a time format that could not date an event even if it matched.
+
+    Asked when a format is written rather than once per line, so the reader
+    hears it while they can still do something about it. An empty format is
+    fine: nothing was promised, and `read_time` then reads ISO or epoch, both
+    of which carry a year.
+    """
+    if not time_format:
+        return
+    if not any(directive in time_format for directive in _YEAR_DIRECTIVES):
+        raise TimeFormatError(
+            f"the time format {time_format!r} says nothing about the year, so every "
+            "event would be dated 1900. Add %Y — or if the log truly does not record "
+            "a year, it cannot be used to date evidence"
+        )
+
 
 #: Tried in turn when no format was given. `fromisoformat` covers most of
 #: ISO 8601 on the versions this project supports; these are the spellings it
@@ -35,12 +66,21 @@ _FALLBACKS: Final[tuple[str, ...]] = (
 _MILLIS_ABOVE: Final = 1e11
 _MICROS_ABOVE: Final = 1e14
 
+#: Below this, a number is not a timestamp at all. 1e8 seconds is March 1973,
+#: before any web server existed, so nothing real is lost — and what is caught
+#: is a field misidentified as the time: a regex group or a column that holds a
+#: small number reads as an instant in 1970, and every event a log produced
+#: lands there together, sorted and plotted and believed.
+_EPOCH_FLOOR: Final = 1e8
+
 
 def _in_utc(parsed: datetime) -> datetime:
     return (parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)).astimezone(UTC)
 
 
-def _from_epoch(number: float) -> datetime:
+def _from_epoch(number: float) -> datetime | None:
+    if abs(number) < _EPOCH_FLOOR:
+        return None
     if abs(number) > _MICROS_ABOVE:
         number /= 1_000_000
     elif abs(number) > _MILLIS_ABOVE:

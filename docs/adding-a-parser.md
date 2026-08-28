@@ -80,9 +80,25 @@ logarc formats add-columns edge --log edge.csv --separator comma
 The date and time in separate columns, as W3C writes them, is spelled
 `date+time`. A log with no header at all takes `--columns when,who,code`.
 
+## Level 1d — it is none of those
+
+A syslog-wrapped line, a load balancer that agrees with nobody. Write a regular
+expression; its named groups are the mapping, and a group logarc does not
+recognise is kept beside the event as evidence.
+
+```bash
+logarc formats check-pattern \
+  '^(?P<timestamp>\S+) \S+: client=(?P<client_ip>\S+) url=(?P<path>\S+)' \
+  --log proxy.log
+```
+
+It is matched from the **start** of the line. Begin with `.*` to skip a prefix
+— that is deliberate, and the reason is in
+[ADR-0010](adr/0010-a-log-format-is-data-that-travels-with-the-work.md).
+
 ## Level 2 — it is a different shape entirely
 
-An appliance with a syntax of its own. Implement the protocol in
+Something none of the four kinds can express. Implement the protocol in
 `logarc/parsers/base.py`:
 
 ```python
