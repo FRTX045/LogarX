@@ -1,5 +1,6 @@
 """Tests for the Apache LogFormat directive compiler."""
 
+import re
 from datetime import UTC, datetime
 
 import pytest
@@ -291,3 +292,156 @@ def test_trailing_carriage_return_does_not_break_matching() -> None:
     line = '1.2.3.4 - - [10/Oct/2000:13:55:36 +0000] "GET / HTTP/1.1" 200 5 "-" "-"\r'
 
     assert parser.parse_line(line, REF) is not None
+
+
+# ---------------------------------------------------------------------------
+# `%{...}t` — a time format of the site's own
+# ---------------------------------------------------------------------------
+#
+# The compiler carried a branch for this from the beginning, with a comment
+# giving `%{%Y-%m-%d}t` as its example, and the branch could not be reached:
+# `t` was missing from the table it looked the directive up in, so every
+# `%{...}t` was refused two lines earlier as unsupported. There is even a
+# timestamp fallback that handles ISO-8601, written for input that could not
+# arrive. Found by using the format library on a log from an appliance that
+# writes ISO timestamps — a large class of logs, entirely shut out.
+
+
+def test_an_iso_timestamp_is_read_from_a_custom_time_format() -> None:
+    parser = LogFormatParser('%{%Y-%m-%dT%H:%M:%S%z}t %h "%r" %>s %b')
+
+    event = parser.parse_line(
+        '2024-05-01T09:00:45+0000 203.0.113.77 "GET /admin/0.php HTTP/1.1" 404 0', REF
+    )
+
+    assert event is not None
+    assert event.timestamp == datetime(2024, 5, 1, 9, 0, 45, tzinfo=UTC)
+    assert event.client_ip == "203.0.113.77"
+    assert event.path == "/admin/0.php"
+
+
+def test_a_custom_time_format_is_converted_to_utc_like_every_other() -> None:
+    parser = LogFormatParser('%{%Y-%m-%dT%H:%M:%S%z}t %h "%r" %>s %b')
+
+    event = parser.parse_line('2024-05-01T09:00:45+0700 203.0.113.77 "GET / HTTP/1.1" 200 12', REF)
+
+    assert event is not None
+    assert event.timestamp == datetime(2024, 5, 1, 2, 0, 45, tzinfo=UTC)
+
+
+def test_a_custom_time_format_may_contain_spaces() -> None:
+    """The reason the pattern has to be built from the format rather than
+    matched as one non-blank run: `%d/%b/%Y %H:%M:%S` writes a space, and a
+    field matched as `\\S+` stops at it and takes the rest of the line with it."""
+    parser = LogFormatParser('[%{%d/%b/%Y %H:%M:%S}t] %h "%r" %>s %b')
+
+    event = parser.parse_line('[01/May/2024 09:00:45] 203.0.113.77 "GET / HTTP/1.1" 200 12', REF)
+
+    assert event is not None
+    assert event.timestamp == datetime(2024, 5, 1, 9, 0, 45, tzinfo=UTC)
+
+
+def test_a_custom_time_without_a_zone_is_read_as_utc() -> None:
+    """Same rule the fallback already applied to a timestamp with no offset.
+    Guessing the reader's local zone would make the same log parse to different
+    instants on two machines, which is the one thing a case may not do."""
+    parser = LogFormatParser('%{%Y-%m-%d %H:%M:%S}t %h "%r" %>s %b')
+
+    event = parser.parse_line('2024-05-01 09:00:45 203.0.113.77 "GET / HTTP/1.1" 200 12', REF)
+
+    assert event is not None
+    assert event.timestamp == datetime(2024, 5, 1, 9, 0, 45, tzinfo=UTC)
+
+
+def test_a_line_whose_time_does_not_fit_the_format_is_refused_not_crashed() -> None:
+    parser = LogFormatParser('%{%Y-%m-%d}t %h "%r" %>s %b')
+
+    assert parser.parse_line('not-a-date 203.0.113.77 "GET / HTTP/1.1" 200 12', REF) is None
+
+
+def test_an_unsupported_strftime_directive_is_named() -> None:
+    with pytest.raises(LogFormatError, match="%Q"):
+        LogFormatParser('%{%Y-%Q}t %h "%r" %>s %b')
+
+
+def test_apaches_named_time_tokens_are_refused_in_their_own_words() -> None:
+    """`%{sec}t`, `%{msec}t`, `%{begin:%s}t`. They are Apache's own vocabulary
+    rather than strftime, and reading one as a strftime pattern would compile
+    to a regex matching the literal text `sec`."""
+    with pytest.raises(LogFormatError, match="sec"):
+        LogFormatParser('%{sec}t %h "%r" %>s %b')
+
+
+def test_a_custom_time_format_can_be_quoted_like_any_other_field() -> None:
+    parser = LogFormatParser('"%{%Y-%m-%dT%H:%M:%S%z}t" %h "%r" %>s %b')
+
+    event = parser.parse_line(
+        '"2024-05-01T09:00:45+0000" 203.0.113.77 "GET / HTTP/1.1" 200 12', REF
+    )
+
+    assert event is not None
+    assert event.timestamp == datetime(2024, 5, 1, 9, 0, 45, tzinfo=UTC)
+
+
+def test_the_plain_clf_time_is_untouched_by_all_of_this() -> None:
+    """The fast path. `%t` reads a bracketed CLF stamp by slicing, which is an
+    order of magnitude quicker than strptime and runs on every ordinary line."""
+    parser = LogFormatParser(COMBINED)
+
+    event = parser.parse_line(
+        '203.0.113.45 - - [10/Oct/2000:13:55:36 -0700] "GET / HTTP/1.1" 200 2326 "-" "curl/8"',
+        REF,
+    )
+
+    assert event is not None
+    assert event.timestamp == datetime(2000, 10, 10, 20, 55, 36, tzinfo=UTC)
+
+
+def test_a_time_format_ending_in_a_bare_percent_is_refused() -> None:
+    with pytest.raises(LogFormatError, match="bare"):
+        LogFormatParser('%{%Y-%m-%d %}t %h "%r" %>s %b')
+
+
+def test_an_argument_directive_that_is_not_supported_is_still_named() -> None:
+    """`t` joining the table of argument-taking directives must not have taken
+    the refusal with it: `%{...}` on a letter logarc does not read is a
+    mistake worth naming."""
+    with pytest.raises(LogFormatError, match=re.escape("%{anything}Q")):
+        LogFormatParser('%h %{anything}Q "%r" %>s %b')
+
+
+def test_an_empty_custom_time_field_refuses_the_line() -> None:
+    """Apache writes `-` for a field it had nothing to put in. Without a time
+    there is no event, so the line is quarantined rather than dated arbitrarily."""
+    parser = LogFormatParser('%{%Y-%m-%d}t|%h|"%r"|%>s|%b')
+
+    assert parser.parse_line('|203.0.113.5|"GET / HTTP/1.1"|200|12', REF) is None
+
+
+def test_a_bracketed_time_that_is_not_clf_inside_still_falls_back() -> None:
+    """The fallback's remaining job.
+
+    It was written for custom `%{...}t` formats, which now compile a pattern of
+    their own and never reach it. What is left is a plain `%t` — which always
+    expects brackets, that being how Apache writes it — whose *contents* are
+    not CLF, because the server writes `%t` and means something else by it.
+    """
+    parser = LogFormatParser('%t %h "%r" %>s %b')
+
+    event = parser.parse_line('[2024-05-01 09:00:45] 203.0.113.5 "GET / HTTP/1.1" 200 12', REF)
+
+    assert event is not None
+    assert event.timestamp == datetime(2024, 5, 1, 9, 0, 45, tzinfo=UTC)
+
+
+def test_a_byte_count_that_is_not_a_number_is_absent_rather_than_fatal() -> None:
+    """Truncated and interleaved writes are routine in a log under attack. A
+    field that cannot be read costs that field, never the line."""
+    parser = LogFormatParser(COMMON)
+
+    event = parser.parse_line(
+        '203.0.113.5 - - [10/Oct/2000:13:55:36 +0000] "GET / HTTP/1.1" 200 not-a-number', REF
+    )
+
+    assert event is not None
+    assert event.bytes_sent is None

@@ -32,6 +32,19 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   since changed says so on a strip that shows both definitions. A `case.json` written before this
   field existed still loads, unchanged.
   See [ADR-0010](docs/adr/0010-a-log-format-is-data-that-travels-with-the-work.md).
+- **A log with a timestamp of its own is readable at last.** `%{%Y-%m-%dT%H:%M:%S%z}t` was
+  refused as an unsupported directive. The compiler had carried a branch for it from the
+  beginning — with a comment giving `%{%Y-%m-%d}t` as its example, and a timestamp fallback written
+  for ISO-8601 input that could not arrive — and the branch was unreachable: `t` was missing from
+  the table the directive was looked up in, so every `%{...}t` was refused two lines earlier.
+
+  Found by using the format library on a log from an appliance that writes ISO timestamps, which is
+  a large class of logs and was entirely shut out. The pattern the field is matched against is now
+  built from the strftime format and parsed back with the same one, so the two cannot disagree, and
+  a format containing a space (`%{%d/%b/%Y %H:%M:%S}t`) works — matching it as one non-blank run
+  would stop at the space and hand the rest of the line to the next field. Apache's own named time
+  tokens (`%{sec}t`, `%{begin:...}t`) are refused by name rather than misread as strftime. The
+  plain `%t` keeps its hand-sliced CLF fast path.
 - **Corrected: nginx `log_format` definitions were never supported.** The compiler's docstring
   claimed it handled "most nginx `log_format` definitions too". Measured: one is rejected outright
   with `no directives found`. What is true is that nginx's default *output* is byte-identical to
