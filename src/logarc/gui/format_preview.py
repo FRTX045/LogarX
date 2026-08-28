@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import Final
 
 from logarc.core.evidence import EvidenceRef
+from logarc.gui.style import plural
 from logarc.parsers.logformat import LogFormatError
 from logarc.parsers.registry import detect_format
 from logarc.parsers.spec import LogFormatSpec
@@ -58,6 +59,14 @@ class Preview:
 
     fields: tuple[tuple[str, str], ...] = ()
     """Field name and value, in log order. Empty whenever `ok` is false."""
+
+    extra: tuple[tuple[str, str], ...] = ()
+    """Fields this format carries that the canonical schema has no place for.
+
+    Usually why a site has its own format at all — a forwarded-for header, a
+    request id, an upstream time. They are kept on the event, so a table that
+    listed the eleven and silently dropped the twelfth would read as "this was
+    not captured", which is the opposite of the truth."""
 
 
 def _already_read_by(sample: str) -> str | None:
@@ -110,8 +119,11 @@ def preview(directive: str, sample: str) -> Preview:
         "Host": event.host or "",
     }
     carried = sum(1 for name in _SHOWN if values[name])
+    extra = tuple(sorted(event.extra.items()))
+    also = f", and {plural(len(extra), 'field')} besides" if extra else ""
     return Preview(
         ok=True,
-        status=f"Read this line, and found {carried} of {len(_SHOWN)} fields in it.",
+        status=f"Read this line, and found {carried} of {len(_SHOWN)} fields in it{also}.",
         fields=tuple((name, values[name]) for name in _SHOWN),
+        extra=extra,
     )

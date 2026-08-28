@@ -117,3 +117,30 @@ def test_a_line_pasted_with_its_newline_still_works() -> None:
     """Copying a line out of a log or a terminal brings the newline with it,
     and a rule that works would otherwise appear not to."""
     assert preview(PIPED, f"  {PIPED_LINE}\n").ok
+
+
+# -- fields the canonical schema has no place for --------------------------
+
+
+def test_a_header_the_schema_does_not_carry_is_still_shown() -> None:
+    """The usual reason a site has its own format at all. A table that lists
+    eleven fields and silently drops the twelfth reads as 'this was not
+    captured' — the opposite of the truth, since it is kept in `extra`."""
+    result = preview(f"{PIPED}|%{{X-Forwarded-For}}i", f"{PIPED_LINE}|198.51.100.9")
+
+    assert result.ok
+    assert ("req_header_x_forwarded_for", "198.51.100.9") in result.extra
+
+
+def test_the_count_says_how_many_extra_fields_were_read() -> None:
+    result = preview(f"{PIPED}|%{{X-Forwarded-For}}i", f"{PIPED_LINE}|198.51.100.9")
+
+    assert "7 of 11" in result.status
+    assert "1" in result.status.split("7 of 11")[1]
+
+
+def test_a_format_with_no_extra_fields_says_nothing_about_them() -> None:
+    result = preview(PIPED, PIPED_LINE)
+
+    assert result.extra == ()
+    assert result.status == "Read this line, and found 7 of 11 fields in it."

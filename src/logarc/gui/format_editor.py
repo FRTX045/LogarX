@@ -438,8 +438,13 @@ class FormatEditor(QDialog):
         # where the other two are about the directive in front of the reader,
         # and it is the one they cannot work out from what they can see.
         self._status.setText(self._library_trouble or self._trouble or result.status)
-        self._fields.setRowCount(len(result.fields))
-        for row, (field, value) in enumerate(result.fields):
+        # The extra fields last, under the canonical ones and named as the log
+        # names them rather than as the schema would: they are not schema
+        # fields, and dressing them up as though they were would suggest the
+        # rest of logarc reads them the same way.
+        rows = [*result.fields, *result.extra]
+        self._fields.setRowCount(len(rows))
+        for row, (field, value) in enumerate(rows):
             self._fields.setItem(row, 0, QTableWidgetItem(field))
             self._fields.setItem(row, 1, QTableWidgetItem(value))
 
