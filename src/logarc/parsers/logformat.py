@@ -15,6 +15,14 @@ the second, which sent anyone with a custom nginx format to a dead end.
 Supported directive syntax::
 
     %h  %{User-Agent}i  %>s  %400,501{Referer}i  %%
+    %{%Y-%m-%dT%H:%M:%S%z}t          # a time format of the site's own
+
+A `%{...}t` is read as a strftime pattern, turned into a regex from it, and
+parsed back with the same pattern — so the shape the field is matched against
+and the shape it is read with cannot disagree. Apache's own named time tokens
+(`%{sec}t`, `%{begin:...}t`) are refused by name rather than misread as
+strftime. The plain `%t` keeps its hand-sliced CLF fast path, which runs on
+every ordinary line and is about ten times quicker than `strptime`.
 
 Conditional prefixes (``%400,501...``) are parsed and ignored: they control
 whether Apache *writes* the field, which we cannot recover after the fact, and
@@ -84,6 +92,35 @@ _ARG_DIRECTIVES: Final[dict[str, str]] = {
     "n": "note",
     "p": "port",
     "P": "process",
+    "t": "time",
+}
+
+#: What each strftime directive writes, as a regex. A `%{...}t` format is
+#: turned into a pattern from this and parsed back with `strptime`, so the two
+#: cannot disagree about what the field looks like.
+#:
+#: Deriving it rather than matching the field as one non-blank run is not a
+#: refinement: `%d/%b/%Y %H:%M:%S` writes a space, and `\S+` would stop at it
+#: and hand the rest of the line to the next field.
+_STRFTIME_BODIES: Final[dict[str, str]] = {
+    "Y": r"\d{4}",
+    "y": r"\d{2}",
+    "m": r"\d{2}",
+    "d": r"\d{2}",
+    "H": r"\d{2}",
+    "I": r"\d{2}",
+    "M": r"\d{2}",
+    "S": r"\d{2}",
+    "j": r"\d{3}",
+    "f": r"\d{1,6}",
+    "b": r"[A-Za-z]{3}",
+    "B": r"[A-Za-z]+",
+    "a": r"[A-Za-z]{3}",
+    "A": r"[A-Za-z]+",
+    "p": r"[APap][Mm]",
+    "z": r"[+-]\d{2}:?\d{2}",
+    "Z": r"[A-Za-z][A-Za-z/_+-]*",
+    "%": "%",
 }
 
 _DIRECTIVE_RE: Final = re.compile(
@@ -154,6 +191,10 @@ class _Field:
     name: str
     directive: str
 
+    arg: str = ""
+    """The `{...}` part, for the directives that take one. Only `%{...}t` reads
+    it here: the others need it for the field's name and nothing more."""
+
 
 def _field_name(match: re.Match[str]) -> str:
     """Derive a stable field name from one directive match."""
@@ -174,6 +215,42 @@ def _field_name(match: re.Match[str]) -> str:
     return f"{prefix}_{slug}" if slug else prefix
 
 
+def _time_pattern(time_format: str) -> str:
+    """A regex matching what `strftime(time_format)` would write.
+
+    Refuses anything it cannot account for rather than guessing. A directive
+    silently rendered as a literal would compile to a pattern that never
+    matches, and the reader would be told their field order was wrong.
+    """
+    if "%" not in time_format:
+        # Apache's own vocabulary — `%{sec}t`, `%{msec}t`, `%{begin:...}t` —
+        # rather than strftime. Read as a strftime pattern it would compile to
+        # a regex matching the literal text `sec`, which matches nothing and
+        # explains nothing.
+        raise LogFormatError(
+            f"time format {time_format!r} is not a strftime pattern; "
+            "logarc reads %{...}t written with strftime directives such as %Y-%m-%d"
+        )
+
+    parts: list[str] = []
+    index = 0
+    while index < len(time_format):
+        char = time_format[index]
+        if char != "%":
+            parts.append(re.escape(char))
+            index += 1
+            continue
+        if index + 1 >= len(time_format):
+            raise LogFormatError(f"time format {time_format!r} ends in a bare %")
+        letter = time_format[index + 1]
+        body = _STRFTIME_BODIES.get(letter)
+        if body is None:
+            raise LogFormatError(f"unsupported time directive %{letter} in {time_format!r}")
+        parts.append(body)
+        index += 2
+    return "".join(parts)
+
+
 def _tokenize(log_format: str) -> list[_Literal | _Field]:
     tokens: list[_Literal | _Field] = []
     pos = 0
@@ -184,7 +261,7 @@ def _tokenize(log_format: str) -> list[_Literal | _Field]:
             tokens.append(_Literal("%"))
         else:
             directive = match.group("fmt") or match.group("argfmt") or ""
-            tokens.append(_Field(_field_name(match), directive))
+            tokens.append(_Field(_field_name(match), directive, match.group("arg") or ""))
         pos = match.end()
     if pos < len(log_format):
         tokens.append(_Literal(log_format[pos:]))
@@ -200,6 +277,8 @@ def _body_pattern(token: _Field, prev: str, nxt: str) -> str:
     """
     if prev.endswith('"') and nxt.startswith('"'):
         return _QUOTED_BODY
+    if token.directive == "t" and token.arg:
+        return _time_pattern(token.arg)
     if token.directive == "t" and not (prev.endswith("[") or nxt.startswith("]")):
         return _BRACKETED_BODY
     if token.directive == "q":
@@ -244,6 +323,14 @@ class _CompiledFormat:
 
     extra_slots: tuple[tuple[str, int], ...]
     """Groups with no place in the canonical schema, as (field name, index)."""
+
+    time_format: str | None = None
+    """The strftime pattern from a `%{...}t`, when the format used one.
+
+    `None` for the ordinary `%t`, which takes the CLF fast path — hand-sliced
+    because it runs once per line and `strptime` is roughly an order of
+    magnitude slower. A site with its own time format pays that cost; every
+    other log does not."""
 
 
 def _slots_for(pattern: re.Pattern[str]) -> _Slots:
@@ -303,6 +390,10 @@ def _compile(log_format: str) -> _CompiledFormat:
         raise LogFormatError(f"could not compile log format {log_format!r}: {exc}") from exc
 
     index_of = {name: number - 1 for name, number in pattern.groupindex.items()}
+    custom_time = next(
+        (token.arg for token in tokens if isinstance(token, _Field) and token.directive == "t"),
+        "",
+    )
     return _CompiledFormat(
         pattern=pattern,
         slots=_slots_for(pattern),
@@ -310,6 +401,7 @@ def _compile(log_format: str) -> _CompiledFormat:
         extra_slots=tuple(
             (name, index) for name, index in index_of.items() if name not in _PROMOTED
         ),
+        time_format=custom_time or None,
     )
 
 
@@ -392,8 +484,31 @@ def _parse_timestamp(raw: str | None) -> datetime | None:
         return _parse_timestamp_fallback(text)
 
 
+def _parse_custom_timestamp(raw: str | None, time_format: str) -> datetime | None:
+    """Read a timestamp written by the format's own `%{...}t` pattern.
+
+    A stamp with no offset is read as UTC, which is what the fallback below
+    already did: guessing the reader's local zone would make one log parse to
+    different instants on two machines, and a case may not do that.
+    """
+    if not raw:
+        return None
+    try:
+        parsed = datetime.strptime(raw, time_format)
+    except ValueError:
+        return None
+    return (parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)).astimezone(UTC)
+
+
 def _parse_timestamp_fallback(text: str) -> datetime | None:
-    """Handle non-CLF timestamps produced by custom ``%{...}t`` formats."""
+    """Handle a bracketed ``%t`` whose contents turn out not to be CLF.
+
+    Written for custom ``%{...}t`` formats, which now compile a pattern of
+    their own and never reach here. What is left is the server that writes
+    ``%t`` — brackets and all, that being how Apache writes it — and puts
+    something other than a CLF stamp inside. Worth catching, because the
+    alternative is quarantining every line of an otherwise readable log.
+    """
     for fmt in ("%d/%b/%Y:%H:%M:%S %z", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%d %H:%M:%S"):
         try:
             parsed = datetime.strptime(text, fmt)
@@ -499,7 +614,11 @@ class LogFormatParser:
                     unescaped[index] = _unescape(text)
             values = unescaped
 
-        timestamp = _parse_timestamp(values[slots.time])
+        timestamp = (
+            _parse_custom_timestamp(values[slots.time], compiled.time_format)
+            if compiled.time_format is not None
+            else _parse_timestamp(values[slots.time])
+        )
         if timestamp is None:
             return None
 
