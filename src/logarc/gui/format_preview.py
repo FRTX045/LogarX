@@ -15,16 +15,23 @@ every such line. Anything short of a real event is a failure here.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from logarc.core.evidence import EvidenceRef
 from logarc.gui.style import plural
+from logarc.parsers.json_format import JsonFormatError, flatten
 from logarc.parsers.logformat import LogFormatError
 from logarc.parsers.registry import detect_format
-from logarc.parsers.spec import LogFormatSpec
+from logarc.parsers.spec import JsonFormatSpec, LogFormatSpec
 
-__all__ = ["Preview", "preview"]
+__all__ = ["Preview", "preview", "preview_mapping"]
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from logarc.core.event import NormalizedEvent
 
 _REF: Final = EvidenceRef(source_file_id="<preview>", line_no=1)
 
@@ -104,7 +111,51 @@ def preview(directive: str, sample: str) -> Preview:
                 "fields and the characters between them." + found
             ),
         )
+    return _read(event)
 
+
+def preview_mapping(fields: Sequence[tuple[str, str]], time_format: str, sample: str) -> Preview:
+    """Try a JSON mapping against one `sample` line and say what came of it.
+
+    The failing message is where the two kinds differ most. For a directive the
+    useful answer is "the fields are in another order"; for a mapping it is
+    "your log calls them these", which the reader can read straight off and
+    correct.
+    """
+    sample = sample.strip()
+    if not fields:
+        return Preview(ok=False, status="Map at least a timestamp and a client address.")
+    if not sample:
+        return Preview(ok=False, status="Paste one line from your log.")
+
+    try:
+        parser = JsonFormatSpec(
+            name="preview", fields=tuple(fields), time_format=time_format
+        ).build()
+    except JsonFormatError as exc:
+        return Preview(ok=False, status=str(exc))
+
+    event = parser.parse_line(sample, _REF)
+    if event is None:
+        return Preview(ok=False, status=_why_the_mapping_missed(sample))
+    return _read(event)
+
+
+def _why_the_mapping_missed(sample: str) -> str:
+    """Name the keys the line actually has, which is the whole answer here."""
+    try:
+        payload = json.loads(sample)
+    except json.JSONDecodeError:
+        return "That line is not JSON. This kind of format reads one JSON object per line."
+    if not isinstance(payload, dict):
+        return "That line is JSON but not an object, so it has no keys to map."
+
+    keys = ", ".join(sorted(path for path, _value in flatten(payload)))
+    return f"Nothing was read from that line. Your log calls its fields: {keys}"
+
+
+def _read(event: NormalizedEvent) -> Preview:
+    """The fields an event carries, as the table under the sample line."""
     values = {
         "Client": event.client_ip,
         "When": event.timestamp.strftime("%Y-%m-%d %H:%M:%S UTC"),

@@ -118,8 +118,21 @@ logarc formats add log-kantor '%h|%t|"%r"|%>s|%b'
 logarc ingest access.log --case ./case-001 --format log-kantor
 ```
 
+A log that writes one JSON object per line is a mapping rather than a directive,
+and logarc proposes the mapping for you — JSON keys are self-describing in a way
+`%h` and `%v` are not. Nested paths are read, including the `user_agent.original`
+shape ECS uses.
+
+```bash
+logarc formats check-json --log gateway.jsonl        # see the guess and what it reads
+logarc formats add-json gateway --log gateway.jsonl  # save it
+logarc formats add-json gateway --log gateway.jsonl --map client_ip=http_x_real_ip
+```
+
 In the desktop application the same thing lives under **Case → Log formats…**,
-where a pasted log line is read back field by field as the directive is typed.
+where a pasted log line is read back field by field as the rule is written —
+a directive for a text log, a field mapping for a JSON one, shown beside what
+it read.
 
 Saved formats live in a plain JSON file you own — `logarc formats` prints its
 path. Each case also records the definition it was ingested with, so editing or

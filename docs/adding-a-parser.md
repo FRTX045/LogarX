@@ -50,10 +50,26 @@ work at all. Its `log_format` *definition* syntax is a different matter: it uses
 equivalent Apache directive — `$remote_addr` becomes `%h`, `$request` becomes
 `%r`, and so on.
 
+## Level 1b — it is JSON
+
+One object per line. No code either: the format is a mapping from logarc's
+field names to your log's keys, and it is proposed for you.
+
+```bash
+logarc formats check-json --log gateway.jsonl
+logarc formats add-json gateway --log gateway.jsonl --map client_ip=http_x_real_ip
+```
+
+Nested keys are reached by their dotted path (`client.ip`), and a path whose
+leaf names a shape rather than a field — `user_agent.original` — is matched on
+its parent. Timestamps in ISO, epoch seconds, milliseconds or microseconds are
+read without being configured; anything else takes `--time-format`, a strftime
+pattern.
+
 ## Level 2 — it is a different shape entirely
 
-IIS W3C, a JSON log, an appliance with its own idea of a timestamp. Implement
-the protocol in `logarc/parsers/base.py`:
+IIS W3C, an appliance with a syntax of its own. Implement the protocol in
+`logarc/parsers/base.py`:
 
 ```python
 class LogParser(Protocol):

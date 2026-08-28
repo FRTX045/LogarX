@@ -8,7 +8,9 @@ quarantined and no sign of why.
 
 from __future__ import annotations
 
-from logarc.gui.format_preview import preview
+import json
+
+from logarc.gui.format_preview import preview, preview_mapping
 from logarc.parsers.apache import COMBINED
 
 COMBINED_LINE = (
@@ -144,3 +146,79 @@ def test_a_format_with_no_extra_fields_says_nothing_about_them() -> None:
 
     assert result.extra == ()
     assert result.status == "Read this line, and found 7 of 11 fields in it."
+
+
+# -- the other kind: a mapping rather than a directive ---------------------
+
+GATEWAY_LINE = json.dumps(
+    {
+        "time": "2024-05-01T09:00:45+00:00",
+        "remote_addr": "203.0.113.77",
+        "request": "GET /admin/0.php HTTP/1.1",
+        "status": 404,
+    }
+)
+
+GATEWAY_MAP = (
+    ("timestamp", "time"),
+    ("client_ip", "remote_addr"),
+    ("request_line", "request"),
+    ("status", "status"),
+)
+
+
+def test_a_mapping_that_reads_the_line_shows_its_fields() -> None:
+    result = preview_mapping(GATEWAY_MAP, "", GATEWAY_LINE)
+
+    assert result.ok
+    assert dict(result.fields)["Client"] == "203.0.113.77"
+    assert dict(result.fields)["Path"] == "/admin/0.php"
+
+
+def test_nothing_mapped_yet_asks_for_a_mapping_rather_than_failing() -> None:
+    result = preview_mapping((), "", GATEWAY_LINE)
+
+    assert not result.ok
+    assert "map" in result.status.lower()
+
+
+def test_a_mapping_with_no_sample_line_asks_for_one() -> None:
+    result = preview_mapping(GATEWAY_MAP, "", "   ")
+
+    assert not result.ok
+    assert "line" in result.status.lower()
+
+
+def test_a_mapping_missing_its_timestamp_says_which_field_is_missing() -> None:
+    result = preview_mapping((("client_ip", "remote_addr"),), "", GATEWAY_LINE)
+
+    assert not result.ok
+    assert "timestamp" in result.status
+
+
+def test_a_mapping_that_reads_nothing_names_the_keys_the_line_has() -> None:
+    """The most useful thing that can be said here. For a directive the answer
+    is 'the fields are in another order'; for a mapping it is 'your log calls
+    them these', and the reader can read it straight off."""
+    wrong = (("timestamp", "ts"), ("client_ip", "src_addr"))
+
+    result = preview_mapping(wrong, "", GATEWAY_LINE)
+
+    assert not result.ok
+    assert "remote_addr" in result.status
+
+
+def test_a_sample_that_is_not_json_says_so_rather_than_naming_keys() -> None:
+    result = preview_mapping(GATEWAY_MAP, "", '203.0.113.5 - - [10/Oct/2000] "GET /" 200 1')
+
+    assert not result.ok
+    assert "JSON" in result.status
+
+
+def test_a_mapping_shows_the_keys_it_did_not_map_as_extras() -> None:
+    line = json.dumps({**json.loads(GATEWAY_LINE), "trace_id": "abc123"})
+
+    result = preview_mapping(GATEWAY_MAP, "", line)
+
+    assert result.ok
+    assert ("trace_id", "abc123") in result.extra

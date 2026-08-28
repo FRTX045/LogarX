@@ -32,6 +32,26 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   since changed says so on a strip that shows both definitions. A `case.json` written before this
   field existed still loads, unchanged.
   See [ADR-0010](docs/adr/0010-a-log-format-is-data-that-travels-with-the-work.md).
+- **A log that writes one JSON object per line is readable.** The second kind of format, and
+  the one that says whether the record shape was general enough — it works the other way round
+  from a `LogFormat` directive, matching names rather than positions.
+
+  A JSON log does not say which of its keys is the client address, so a format of this kind is a
+  mapping. `logarc formats check-json --log gateway.jsonl` proposes one from the first line and
+  shows what it reads; `logarc formats add-json` saves it, and `--map ours=theirs` corrects any
+  field without writing out the rest. In the window, **New JSON format…** shows the mapping beside
+  what it read, so the rule and its result are one glance apart.
+
+  Guessing is worth doing here and is not worth doing for a positional format: JSON keys are
+  self-describing where `%h` and `%v` are not. Nested paths are read (`client.ip`), and a path
+  whose leaf names a shape rather than a field — `user_agent.original`, as ECS and everything
+  copying it writes — is matched on its parent. A key nothing recognises is left out rather than
+  guessed at, and the proposal is always shown before it is saved: a wrong guess is worse than
+  none, because the reader accepts it and finds out at ingest.
+
+  ISO timestamps, epoch seconds, milliseconds and microseconds are told apart without being
+  configured — read as seconds, a millisecond stamp lands in the year 56,000 and sorts last for
+  ever without anything downstream questioning it.
 - **A log with a timestamp of its own is readable at last.** `%{%Y-%m-%dT%H:%M:%S%z}t` was
   refused as an unsupported directive. The compiler had carried a branch for it from the
   beginning — with a comment giving `%{%Y-%m-%d}t` as its example, and a timestamp fallback written

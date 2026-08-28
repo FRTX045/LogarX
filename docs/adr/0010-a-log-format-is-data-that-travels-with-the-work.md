@@ -50,6 +50,15 @@ A format is a record — `parsers/spec.py`, a frozen slots dataclass that is
 picklable, Qt-free and convertible to JSON — and the parser is built from the
 record rather than the other way round.
 
+The records are a tagged union keyed on `kind`. `LogFormatSpec` holds an Apache
+directive; `JsonFormatSpec` holds a mapping from our field names to a JSON log's
+keys, which is the shape that proved the union was worth having — it matches by
+name where the first matches by position, so nothing in the machinery around
+them could have been leaning on a format being a directive string. Each kind
+renders its own JSON payload rather than having one derived from its dataclass,
+because the library file is meant to be openable in an editor: a mapping held as
+pairs in memory is still written as an object.
+
 One change, and each of the three constraints stops being a problem:
 
 | | before | after |

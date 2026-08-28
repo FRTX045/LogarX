@@ -731,6 +731,43 @@ directives. Dismissing it does not dismiss the quarantine strip if one is up.
 
 ---
 
+## 18. A JSON log's mapping is proposed, not demanded
+
+1. Make a nested JSON log:
+
+```bash
+python - <<'PY'
+import json, pathlib
+rows = [{"@timestamp": f"2024-05-01T09:00:{n:02d}+00:00",
+         "client": {"ip": "203.0.113.77"},
+         "http": {"request": {"method": "GET"}, "response": {"status_code": 404}},
+         "url": f"/admin/{n}.php", "user_agent": {"original": "curl/8.4.0"}}
+        for n in range(40)]
+pathlib.Path("ecs.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+PY
+```
+
+2. **Case → Log formats… → New JSON format…** Paste one line into *A line from
+   your log*, then press **Guess from the line above**.
+
+**Pass:** the left table fills in — `timestamp` → `@timestamp`, `client_ip` →
+`client.ip`, `method` → `http.request.method`, `user_agent` →
+`user_agent.original`. The right table beside it shows what those read out of
+the line. Both tables are fully visible without scrolling.
+
+3. Clear the `client_ip` row and type `client.address` instead.
+
+**Pass:** the message changes to say nothing was read, and **names the keys the
+line actually has** — that is the answer worth having here, and it is different
+from the one a directive gets.
+
+4. Put `client.ip` back, name it `ecs`, save, and ingest `ecs.jsonl` with it.
+
+**Pass:** 40 events, none quarantined. `logarc formats show ecs` prints the
+mapping.
+
+---
+
 ## Recording a run
 
 | # | Check | Result | Notes |
@@ -752,5 +789,6 @@ directives. Dismissing it does not dismiss the quarantine strip if one is up.
 | 15 | Activities drag smoothly; undo, save and reset behave | | |
 | 16 | A time range narrows both halves; the band can be turned off | | |
 | 17 | A written format reads a log the presets cannot; the preview keeps up | | |
+| 18 | A JSON log's mapping is guessed, correctable, and says what the keys are | | |
 
 Version tested: ______  ·  Date: ______  ·  Machine: ______
