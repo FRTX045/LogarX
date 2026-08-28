@@ -59,9 +59,18 @@ def _as_text(value: Any) -> str | None:
 
     `-` because a log that was a text log yesterday keeps writing Apache's
     placeholder after being turned into a JSON one, which is most of them.
+
+    A one-element list is unwrapped, because that is how a header is spelled
+    where headers may repeat: Caddy writes `"User-Agent": ["curl/8.4.0"]`.
+    Rendered whole it reaches the evidence table as `['curl/8.4.0']`, brackets
+    and quotes and all, and every rule that reads a user agent then sees a
+    string no client ever sent. A list of two or more is left alone — there
+    really were two values, and picking one would be inventing an answer.
     """
     if value is None:
         return None
+    if isinstance(value, list) and len(value) == 1:
+        value = value[0]
     text = value if isinstance(value, str) else str(value)
     return None if text in ("", "-") else text
 

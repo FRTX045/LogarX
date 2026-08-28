@@ -39,6 +39,7 @@ from logarc.ingest.pipeline import ResolvedFormat, resolve_format
 from logarc.ingest.quarantine import Quarantine
 from logarc.ingest.reader import Compression, open_log
 from logarc.ingest.scan import Chunk, read_range, scan_chunks
+from logarc.parsers.base import skips
 from logarc.parsers.registry import DEFAULT_SAMPLE_SIZE, get_parser
 from logarc.storage.event_store import ParquetEventStore
 
@@ -132,7 +133,7 @@ def _parse_chunk(task: _Task) -> _Counts:
                 lines_read += 1
                 # Blanks and the log's own bookkeeping, on the same footing as
                 # the sequential path: neither parsed nor quarantined.
-                if not text.strip() or parser.is_metadata(text):
+                if not text.strip() or skips(parser, text):
                     continue
                 event = parser.parse_line(text, EvidenceRef(task.file_id, line_no))
                 if event is None:

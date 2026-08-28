@@ -36,6 +36,20 @@ class LogParser(Protocol):
         quarantining it would put a "lines could not be parsed" strip over every
         case of that shape, and that notice exists to mean something went wrong.
 
-        Most formats have no such lines and answer `False` for everything.
+        Most formats have no such lines and answer `False` for everything, and
+        a parser written before this method existed is read as saying so — see
+        `skips`, which every caller goes through.
         """
         ...
+
+
+def skips(parser: LogParser, line: str) -> bool:
+    """Whether `parser` calls this line the log's own bookkeeping.
+
+    Asked through here rather than directly, so a parser that predates
+    `is_metadata` — one registered by a script with `register_format` — keeps
+    working and is read as having no bookkeeping lines, which is true of every
+    format that is not a table.
+    """
+    answer = getattr(parser, "is_metadata", None)
+    return bool(answer(line)) if answer is not None else False

@@ -366,13 +366,29 @@ def test_a_json_log_can_be_ingested_end_to_end(tmp_path: Path, json_log: Path) -
 
 
 def test_a_json_format_is_listed_beside_the_others(json_log: Path) -> None:
-    runner.invoke(app, ["formats", "add-json", "gateway", "--log", str(json_log)])
+    runner.invoke(
+        app, ["formats", "add-json", "gateway", "--log", str(json_log), "--note", "the gateway"]
+    )
 
     result = runner.invoke(app, ["formats"])
 
     assert result.exit_code == 0
     assert "gateway" in result.stdout
-    assert "remote_addr" in result.stdout, "the mapping is the definition; show it"
+    assert "the gateway" in result.stdout, "the list says what a format is for"
+
+
+def test_the_list_does_not_print_every_mapping_in_full(json_log: Path) -> None:
+    """With three formats the definitions fitted. With fourteen they are a wall
+    of mappings nine lines deep, and a list exists to help someone pick — the
+    definition is what `formats show` is for."""
+    runner.invoke(
+        app, ["formats", "add-json", "gateway", "--log", str(json_log), "--note", "the gateway"]
+    )
+
+    result = runner.invoke(app, ["formats"])
+
+    assert "remote_addr" not in result.stdout
+    assert "formats show" in result.stdout, "and the list has to say where the definition is"
 
 
 def test_show_describes_a_json_format_by_its_mapping(json_log: Path) -> None:

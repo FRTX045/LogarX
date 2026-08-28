@@ -30,9 +30,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
 from logarc.core.evidence import EvidenceRef
-from logarc.parsers.apache import PRESETS
+from logarc.parsers.base import skips
+from logarc.parsers.builtins import BUILT_INS
 from logarc.parsers.library import load_library
-from logarc.parsers.spec import LogFormatSpec
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
@@ -116,10 +116,7 @@ def _entry_for(spec: FormatSpec) -> FormatEntry:
 #: Registration order is preference order. Detection compares confidence first
 #: and only falls back to this on a tie, so the built-ins stay ahead of anything
 #: added later — a new format cannot quietly take over logs that already parse.
-_REGISTRY: Final[dict[str, FormatEntry]] = {
-    name: _entry_for(LogFormatSpec(name=name, directive=directive))
-    for name, directive in PRESETS.items()
-}
+_REGISTRY: Final[dict[str, FormatEntry]] = {spec.name: _entry_for(spec) for spec in BUILT_INS}
 
 
 def register_format(name: str, factory: Callable[[], LogParser], *, description: str = "") -> None:
@@ -154,6 +151,8 @@ def register_spec(spec: FormatSpec) -> None:
 
 def register_logformat(name: str, directive: str) -> None:
     """Register an Apache-style format from its directive string."""
+    from logarc.parsers.spec import LogFormatSpec
+
     register_spec(LogFormatSpec(name=name, directive=directive))
 
 
@@ -248,11 +247,17 @@ def get_spec(name: str) -> FormatSpec | None:
 
 
 def score_parser(parser: LogParser, lines: Sequence[str]) -> float:
-    """Fraction of non-blank `lines` that `parser` accepts."""
+    """Fraction of `lines` that `parser` accepts, ignoring what it calls its own.
+
+    A W3C log opens with four directives and a CSV with a header row. Counted
+    as lines the parser failed to read, a short sample of such a log scores far
+    below the threshold and the format written for it is passed over — which is
+    how `iis-w3c` failed to be detected on an IIS log.
+    """
     considered = 0
     accepted = 0
     for line in lines:
-        if not line.strip():
+        if not line.strip() or skips(parser, line):
             continue
         considered += 1
         if parser.parse_line(line, _DETECTION_REF) is not None:

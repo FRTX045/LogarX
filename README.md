@@ -99,6 +99,10 @@ logarc evidence --case ./case-001 --ip 203.0.113.45
 logarc export --case ./case-001 --ip 203.0.113.45 --format html --out report.html
 ```
 
+logarc ships fourteen formats — Apache's, nginx's text and JSON, Caddy,
+Traefik, Cloudflare, Google Cloud, Elastic Common Schema, IIS W3C and
+CloudFront — and `logarc formats` lists what each one reads.
+
 The format is detected from the first lines of a log. When it cannot be — a
 site with its own `LogFormat`, or a file that is not an access log — ingest
 refuses rather than guessing, because the wrong parser quarantines everything

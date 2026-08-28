@@ -32,6 +32,33 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   since changed says so on a strip that shows both definitions. A `case.json` written before this
   field existed still loads, unchanged.
   See [ADR-0010](docs/adr/0010-a-log-format-is-data-that-travels-with-the-work.md).
+- **Fourteen formats ship, where three did.** Apache's three, plus `apache-combined-io`,
+  `apache-vhost-common` and `nginx-combined-forwarded`; `nginx-json`, `caddy-json`,
+  `traefik-json`, `cloudflare-json`, `gcp-http-json` and `ecs-http`; `iis-w3c` and `cloudfront`.
+  Each has a real line of the log it is named for in `tests/parsers/test_builtins.py`, and a test
+  that reading that line yields the right client, path and status — a built-in that does not read
+  the logs it is named for is worse than an absent one, because absent the reader writes their own
+  and wrong they get a case that looks complete.
+
+  A second test asks more: that each is the format **auto-detection picks** for its own log.
+  Reading it is not enough with fourteen candidates; one that reads its log and loses to another
+  is one nobody will ever see used. That test found three real defects. Caddy writes
+  `"User-Agent": ["curl/8.4.0"]` and the value reached the evidence table as `['curl/8.4.0']`,
+  brackets and all, so a one-element list is now unwrapped. Scoring counted a W3C log's four
+  header directives as lines the parser failed to read, which put `iis-w3c` far below the
+  threshold on its own logs — scoring now skips what a format calls its own bookkeeping, as ingest
+  already did. And an nginx forwarded line satisfies `apache-combined-io` as well, because io's
+  two trailing counts are bare fields that match a quoted address and a duration, so the order was
+  wrong.
+
+  `logarc formats` now lists what each format *reads* rather than its definition. With three the
+  definitions fitted; with fourteen they are a wall of mappings nine lines deep, and a list exists
+  to help someone pick. `logarc formats show <name>` prints the definition.
+
+  Not included, deliberately: AWS ALB, Envoy and HAProxy, which write the client as
+  `address:port`. Stripping the port is not safe without deciding what to do about IPv6, where the
+  colons are part of the address, and a wrong answer turns every connection from one client into a
+  client of its own.
 - **A log nothing else can read is readable by a regular expression you write.** The fourth and
     last kind, for a syslog-wrapped line, an appliance with a syntax of its own, a load balancer
     that agrees with nobody. Also the simplest: **the named groups are the mapping**, so
