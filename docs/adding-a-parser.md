@@ -7,30 +7,48 @@ not the graph, not the window. That is the whole point of the canonical schema
 
 There are two levels of effort, and most formats need the first.
 
-## Level 1 — it is Apache- or nginx-shaped
+## Level 1 — it is Apache-shaped
 
 Apache's `LogFormat` directives are not hardcoded here; they are compiled. So a
-site with its own directive string is already supported without writing any
-code:
+site with its own directive string needs no code at all — write it down once
+and it is yours from then on:
 
 ```bash
-logarc ingest access.log --case ./case-001 --format apache-combined
+# See what the directive actually pulls out, before saving anything.
+logarc formats check '%h %l %u %t "%r" %>s %b "%{X-Forwarded-For}i"' --log access.log
+
+logarc formats add site-main '%h %l %u %t "%r" %>s %b "%{X-Forwarded-For}i"'
+logarc ingest access.log --case ./case-001 --format site-main
 ```
 
-If your format is not one of the three presets, register it once:
+`logarc formats check` is worth the extra step. A wrong directive does not
+announce itself: it quarantines every line and presents as an empty case.
+
+Saved formats live in a plain JSON file — `logarc formats` prints its path — and
+are available to `--format`, to auto-detection, and to the window. Each case
+also records the definition it was ingested with, so editing or removing a
+saved format later cannot make an existing case unreadable.
+
+From inside Python the same thing is `register_spec`:
 
 ```python
-from logarc.parsers.registry import register_logformat
+from logarc.parsers.registry import register_spec
+from logarc.parsers.spec import LogFormatSpec
 
-register_logformat("site-main", '%h %l %u %t "%r" %>s %b "%{Referer}i" "%{X-Forwarded-For}i"')
+register_spec(LogFormatSpec(name="site-main", directive='%h %t "%r" %>s %b'))
 ```
 
-It is then available to `--format site-main`, to auto-detection, and to
-`logarc formats`.
+Prefer that over `register_format`, which takes a factory. A factory is code:
+it cannot be pickled to an ingest worker or written into a case, so a format
+registered that way works only in the process that registered it.
 
-nginx's `log_format` is close enough to be handled the same way: its `combined`
-is byte-identical to Apache's, and most custom nginx formats differ only in
-which variables appear.
+A note on nginx. Its default `combined` output is byte-identical to Apache's,
+so an ordinary nginx access log is already read by `apache-combined` with no
+work at all. Its `log_format` *definition* syntax is a different matter: it uses
+`$remote_addr` where Apache uses `%h`, and pasting one here is rejected with
+`no directives found`. A custom nginx format has to be rewritten as the
+equivalent Apache directive — `$remote_addr` becomes `%h`, `$request` becomes
+`%r`, and so on.
 
 ## Level 2 — it is a different shape entirely
 

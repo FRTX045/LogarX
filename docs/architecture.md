@@ -135,7 +135,7 @@ class LogParser(Protocol):
 
 Register it in `parsers/registry.py`. Nothing else changes.
 
-For Apache- and nginx-style formats there is usually no new code at all: `parsers/logformat.py`
+For Apache-style formats there is usually no new code at all: `parsers/logformat.py`
 compiles a `LogFormat` directive string directly into a matcher.
 
 **Adding a detection.** Write YAML in `detect/rulepacks/`. No Python. Rule packs are versioned and

@@ -156,8 +156,19 @@ def register_logformat(name: str, directive: str) -> None:
     register_spec(LogFormatSpec(name=name, directive=directive))
 
 
+#: Names this process installed from the saved-format library, so a later call
+#: can take them out again. Without it the registry only ever grows: a GUI that
+#: refreshes after the user deletes a format would keep offering the deleted
+#: one, and a second call would leave a stale definition behind a live name.
+_FROM_LIBRARY: Final[set[str]] = set()
+
+
 def register_saved_formats() -> list[FormatSpec]:
     """Install the user's saved formats, and report which ones were installed.
+
+    Also a refresh: whatever a previous call installed is removed first, so
+    calling this after the library changes leaves the registry agreeing with
+    the file rather than with the union of every version of it.
 
     Called by the CLI and the GUI at startup, never by the engine: a worker
     parses with the definition it was handed and a case is read from the copy it
@@ -170,11 +181,16 @@ def register_saved_formats() -> list[FormatSpec]:
 
     Calling it twice is not an error; the second call installs nothing.
     """
+    for name in _FROM_LIBRARY:
+        _REGISTRY.pop(name, None)
+    _FROM_LIBRARY.clear()
+
     installed: list[FormatSpec] = []
     for spec in load_library():
         if spec.name in _REGISTRY:
             continue
         _REGISTRY[spec.name] = _entry_for(spec)
+        _FROM_LIBRARY.add(spec.name)
         installed.append(spec)
     return installed
 
