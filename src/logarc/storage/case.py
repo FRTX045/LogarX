@@ -40,6 +40,15 @@ class SourceRecord:
     events_parsed: int
     lines_quarantined: int
 
+    format_spec: dict[str, Any] | None = None
+    """The format definition this file was read with, as it was written down.
+
+    The case's own copy, so that editing or deleting the saved format it came
+    from cannot make this case unreadable. Defaulted to `None`, which is what
+    lets a `case.json` written before this field existed still load: the key is
+    simply absent, and the reader falls back to looking `log_format` up.
+    """
+
 
 @dataclass
 class CaseManifest:

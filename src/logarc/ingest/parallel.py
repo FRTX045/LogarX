@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from logarc.core.evidence import EvidenceRef
-from logarc.ingest.pipeline import resolve_parser
+from logarc.ingest.pipeline import ResolvedFormat, resolve_format
 from logarc.ingest.quarantine import Quarantine
 from logarc.ingest.reader import Compression, open_log
 from logarc.ingest.scan import Chunk, read_range, scan_chunks
@@ -44,6 +44,8 @@ from logarc.storage.event_store import ParquetEventStore
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from logarc.parsers.spec import FormatSpec
 
 __all__ = ["MIN_PARALLEL_BYTES", "can_split", "ingest_file_parallel"]
 
@@ -77,15 +79,28 @@ def worth_splitting(path: Path, *, workers: int) -> bool:
 class _Task:
     """One worker's instructions.
 
-    Only paths, a chunk and strings: everything here is pickled to reach a
-    process started by spawn, which is how Windows starts one.
+    Paths, a chunk, strings and a format definition: everything here is pickled
+    to reach a process started by spawn, which is how Windows starts one.
+
+    The definition rather than only the name, because a spawned worker
+    re-imports `parsers.registry` and gets the three built-in presets and
+    nothing else. A format the parent registered is not there, and a name
+    pointing at it raises `UnknownFormatError` inside the pool.
     """
 
     path: Path
     chunk: Chunk
     case_root: Path
     file_id: str
+
     log_format: str
+    """The name, for the record. `format_spec` is what actually reads."""
+
+    format_spec: FormatSpec | None
+    """The definition. `None` only for a format registered from a factory,
+    which cannot cross a process boundary and never could; the worker then
+    falls back to the name, exactly as it did before."""
+
     shard: str
     batch_size: int
 
@@ -106,7 +121,7 @@ def _parse_chunk(task: _Task) -> _Counts:
     pool raises nothing an ordinary run surfaces, and the ingest completes
     having stored nothing.
     """
-    parser = get_parser(task.log_format)
+    parser = task.format_spec.build() if task.format_spec else get_parser(task.log_format)
     lines_read = events_parsed = lines_quarantined = 0
 
     store = ParquetEventStore(task.case_root, shard=task.shard)
@@ -145,18 +160,19 @@ def ingest_file_parallel(
     workers: int,
     batch_size: int,
     on_progress: Callable[[int, int], None] | None = None,
-) -> tuple[_Counts, str, int, str, float]:
+) -> tuple[_Counts, str, int, ResolvedFormat, float]:
     """Parse `path` into the case at `case_root` using `workers` processes.
 
-    Returns the counts, the digest, the size, the format used and the elapsed
-    time — everything the caller needs to build an `IngestResult`, without this
+    Returns the counts, the digest, the size, the resolved format and the
+    elapsed time — everything the caller needs to build an `IngestResult`, without this
     module having to know what one is.
     """
     path = Path(path)
     started = time.perf_counter()
 
-    # The format is resolved once, here, and its *name* is what workers receive.
-    # Detecting per worker would let two ranges of one file disagree.
+    # The format is resolved once, here, and the definition is what workers
+    # receive. Detecting per worker would let two ranges of one file disagree —
+    # and looking a name up per worker does not work at all; see `_Task`.
     resolved = _resolve_format(path, log_format)
 
     scan = scan_chunks(path, parts=workers)
@@ -166,7 +182,8 @@ def ingest_file_parallel(
             chunk=chunk,
             case_root=Path(case_root),
             file_id=file_id,
-            log_format=resolved,
+            log_format=resolved.name,
+            format_spec=resolved.spec,
             shard=f"{index:02d}",
             batch_size=batch_size,
         )
@@ -196,8 +213,8 @@ def ingest_file_parallel(
     )
 
 
-def _resolve_format(path: Path, log_format: str | None) -> str:
-    """The name of the format every worker will be told to use.
+def _resolve_format(path: Path, log_format: str | None) -> ResolvedFormat:
+    """The format every worker will be told to use.
 
     Resolved here rather than per worker, so two ranges of one file cannot
     disagree about what they are reading — and resolved by the same function the
@@ -210,8 +227,8 @@ def _resolve_format(path: Path, log_format: str | None) -> str:
     open one, and a named format has nothing to detect.
     """
     if log_format is not None:
-        return resolve_parser(path, log_format, []).name
+        return resolve_format(path, log_format, [])
 
     with open_log(path) as stream:
         sample = [text for _, text in islice(stream, DEFAULT_SAMPLE_SIZE)]
-    return resolve_parser(path, log_format, sample).name
+    return resolve_format(path, log_format, sample)

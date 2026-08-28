@@ -21,6 +21,8 @@ import pytest
 
 from logarc.case import Case
 from logarc.ingest.parallel import can_split
+from logarc.parsers.registry import register_spec, unregister_format
+from logarc.parsers.spec import LogFormatSpec
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 
@@ -208,3 +210,79 @@ def test_a_compressed_log_is_not_splittable(tmp_path: Path) -> None:
 
     assert can_split(plain) is True
     assert can_split(packed) is False
+
+
+# ---------------------------------------------------------------------------
+# A format the worker's own import cannot know about
+# ---------------------------------------------------------------------------
+
+#: Pipe-separated, so no built-in format matches it and auto-detection has
+#: nothing to fall back on. Reading this log at all requires the definition the
+#: parent process was given.
+PIPED = '%h|%t|"%r"|%>s|%b'
+
+
+def write_piped_log(path: Path, lines: int) -> Path:
+    rows = []
+    for n in range(lines):
+        when = (START + timedelta(seconds=n)).strftime("%d/%b/%Y:%H:%M:%S +0000")
+        rows.append(f'203.0.113.{n % 97}|[{when}]|"GET /page/{n} HTTP/1.1"|200|512')
+    path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    return path
+
+
+def test_a_worker_parses_with_a_format_the_parent_invented(tmp_path: Path) -> None:
+    """The centre of the whole design.
+
+    A worker started by spawn re-imports `logarc.parsers.registry`, which builds
+    itself from the three built-in presets and nothing else. A format registered
+    here, in the parent, is simply not there in the child — so passing its
+    *name* across cannot work, and the only fix is to send the definition.
+
+    Written against the real pool rather than a mock, because the failure being
+    prevented lives entirely in the pickle boundary.
+    """
+    log = write_piped_log(tmp_path / "access.log", lines=400)
+    register_spec(LogFormatSpec(name="pipes", directive=PIPED))
+    try:
+        with Case.create(tmp_path / "case") as case:
+            results = case.ingest([log], log_format="pipes", workers=3)
+    finally:
+        unregister_format("pipes")
+
+    assert results[0].events_parsed == 400
+    assert results[0].lines_quarantined == 0
+    assert results[0].log_format == "pipes"
+
+
+def test_a_parallel_ingest_records_the_definition_it_used(tmp_path: Path) -> None:
+    """The same definition has to reach the case, not only the workers: it is
+    what makes the case readable after the format is edited or deleted."""
+    log = write_piped_log(tmp_path / "access.log", lines=400)
+    register_spec(LogFormatSpec(name="pipes", directive=PIPED))
+    try:
+        with Case.create(tmp_path / "case") as case:
+            case.ingest([log], log_format="pipes", workers=3)
+    finally:
+        unregister_format("pipes")
+
+    with Case.open(tmp_path / "case") as reopened:
+        source = reopened.manifest.sources[0]
+
+    assert source.format_spec is not None
+    assert source.format_spec["directive"] == PIPED
+
+
+def test_parallel_and_sequential_record_the_same_definition(tmp_path: Path) -> None:
+    log = write_piped_log(tmp_path / "access.log", lines=400)
+    register_spec(LogFormatSpec(name="pipes", directive=PIPED))
+    try:
+        with Case.create(tmp_path / "seq") as case:
+            case.ingest([log], log_format="pipes", workers=1)
+        with Case.create(tmp_path / "par") as case:
+            case.ingest([log], log_format="pipes", workers=3)
+    finally:
+        unregister_format("pipes")
+
+    with Case.open(tmp_path / "seq") as one, Case.open(tmp_path / "par") as many:
+        assert one.manifest.sources[0].format_spec == many.manifest.sources[0].format_spec

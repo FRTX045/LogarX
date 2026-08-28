@@ -8,12 +8,15 @@ demonstrable.
 from __future__ import annotations
 
 import gzip
+import json
 from pathlib import Path
 
 import pytest
 
 from logarc.case import Case
 from logarc.core.evidence import EvidenceRef
+from logarc.parsers.registry import register_spec, unregister_format
+from logarc.parsers.spec import LogFormatSpec
 
 LINES = [
     '203.0.113.5 - - [10/Oct/2020:13:55:36 +0000] "GET / HTTP/1.1" 200 2326 "-" "curl/8.0"',
@@ -158,4 +161,74 @@ def test_a_line_the_parser_cannot_read_still_comes_back(case: Case, tmp_path: Pa
 
     assert line.available
     assert line.text == "this is not a log line at all"
+    assert line.event is None
+
+
+# ---------------------------------------------------------------------------
+# A case outliving the format it was ingested with
+# ---------------------------------------------------------------------------
+
+#: Pipe-separated, so nothing built in can read it. Removing this format from
+#: the registry leaves the case with only its own copy to work from.
+PIPED = '%h|%t|"%r"|%>s|%b'
+
+PIPED_LINES = [
+    '203.0.113.5|[10/Oct/2020:13:55:36 +0000]|"GET / HTTP/1.1"|200|2326',
+    '203.0.113.5|[10/Oct/2020:13:55:40 +0000]|"GET /.env HTTP/1.1"|404|0',
+]
+
+
+def test_a_case_still_reads_its_fields_after_its_format_is_deleted(tmp_path: Path) -> None:
+    """The reason the case carries a copy at all.
+
+    A user who edits or deletes a saved format must not silently lose the
+    fields of every case that was read with it. Before the case stored the
+    definition, the name was all it had, and this returned a line with no
+    parsed event attached.
+    """
+    log = tmp_path / "access.log"
+    log.write_text("\n".join(PIPED_LINES) + "\n", encoding="utf-8")
+
+    register_spec(LogFormatSpec(name="pipes", directive=PIPED))
+    try:
+        with Case.create(tmp_path / "case") as opened:
+            opened.ingest([log], log_format="pipes")
+    finally:
+        # The user deleted the format between ingesting and re-opening.
+        unregister_format("pipes")
+
+    with Case.open(tmp_path / "case") as reopened:
+        (line,) = reopened.read_evidence([EvidenceRef("access.log", 2)])
+
+    assert line.available
+    assert line.text == PIPED_LINES[1]
+    assert line.event is not None, "the line came back with no parsed fields"
+    assert line.event.status == 404
+
+
+def test_an_unresolvable_format_still_returns_the_line_itself(tmp_path: Path) -> None:
+    """The older guarantee, unchanged: a format that cannot be resolved at all
+    costs the fields, never the line. A case whose record predates stored
+    definitions still lands here."""
+    log = tmp_path / "access.log"
+    log.write_text("\n".join(PIPED_LINES) + "\n", encoding="utf-8")
+
+    register_spec(LogFormatSpec(name="pipes", directive=PIPED))
+    try:
+        with Case.create(tmp_path / "case") as opened:
+            opened.ingest([log], log_format="pipes")
+    finally:
+        unregister_format("pipes")
+
+    # Strip the stored copy, leaving a case shaped like one from before.
+    manifest_path = tmp_path / "case" / "case.json"
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    payload["sources"][0]["format_spec"] = None
+    manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with Case.open(tmp_path / "case") as reopened:
+        (line,) = reopened.read_evidence([EvidenceRef("access.log", 2)])
+
+    assert line.available
+    assert line.text == PIPED_LINES[1]
     assert line.event is None

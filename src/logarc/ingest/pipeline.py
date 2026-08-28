@@ -14,7 +14,12 @@ from typing import TYPE_CHECKING, Final
 
 from logarc.core.evidence import EvidenceRef
 from logarc.ingest.reader import open_log
-from logarc.parsers.registry import DEFAULT_SAMPLE_SIZE, detect_format, get_parser
+from logarc.parsers.registry import (
+    DEFAULT_SAMPLE_SIZE,
+    detect_format,
+    get_parser,
+    get_spec,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -23,13 +28,16 @@ if TYPE_CHECKING:
     from logarc.core.event import NormalizedEvent
     from logarc.ingest.quarantine import Quarantine
     from logarc.parsers.base import LogParser
+    from logarc.parsers.spec import FormatSpec
     from logarc.storage.base import EventStore
 
 __all__ = [
     "FormatDetectionError",
     "IngestCancelled",
     "IngestResult",
+    "ResolvedFormat",
     "ingest_file",
+    "resolve_format",
     "resolve_parser",
 ]
 
@@ -85,6 +93,14 @@ class IngestResult:
     size_bytes: int
     compression: str
     log_format: str
+
+    format_spec: FormatSpec | None
+    """The definition this file was read with, when there is one to record.
+
+    `None` for a format registered by handing over a factory — see
+    `registry.get_spec`. The case then falls back to looking the name up, which
+    is what every case did before definitions were carried at all."""
+
     lines_read: int
     events_parsed: int
     lines_quarantined: int
@@ -130,7 +146,8 @@ def ingest_file(
     with open_log(path) as stream:
         lines = iter(stream)
         sample = list(islice(lines, DEFAULT_SAMPLE_SIZE))
-        parser = resolve_parser(path, log_format, [text for _, text in sample])
+        resolved = resolve_format(path, log_format, [text for _, text in sample])
+        parser = resolved.parser
 
         batch: list[NormalizedEvent] = []
         lines_read = 0
@@ -188,7 +205,8 @@ def ingest_file(
             sha256=stream.sha256,
             size_bytes=stream.size_bytes,
             compression=stream.compression.value,
-            log_format=parser.name,
+            log_format=resolved.name,
+            format_spec=resolved.spec,
             lines_read=lines_read,
             events_parsed=events_parsed,
             lines_quarantined=lines_quarantined,
@@ -196,8 +214,23 @@ def ingest_file(
         )
 
 
-def resolve_parser(path: Path, log_format: str | None, sample: list[str]) -> LogParser:
-    """Decide which parser reads `path`, or refuse and say how to fix it.
+@dataclass(frozen=True, slots=True)
+class ResolvedFormat:
+    """Which format reads a file, in all three forms the callers need.
+
+    The parser does the reading, the name is what a person sees, and the
+    definition is what survives leaving this process — into a worker, and into
+    the case. Resolving returns all three together because deriving one from
+    another later is exactly where the two ingest paths could drift apart.
+    """
+
+    name: str
+    parser: LogParser
+    spec: FormatSpec | None
+
+
+def resolve_format(path: Path, log_format: str | None, sample: list[str]) -> ResolvedFormat:
+    """Decide which format reads `path`, or refuse and say how to fix it.
 
     Shared with the parallel path rather than copied into it. Both must refuse
     in the same words: the sentence names the flag that resolves the problem,
@@ -205,11 +238,18 @@ def resolve_parser(path: Path, log_format: str | None, sample: list[str]) -> Log
     advice that only one of them still offers.
     """
     if log_format is not None:
-        return get_parser(log_format)
+        return ResolvedFormat(
+            name=log_format, parser=get_parser(log_format), spec=get_spec(log_format)
+        )
 
     detection = detect_format(sample)
     if detection is None:
         raise FormatDetectionError(
             f"could not identify the log format of {path}; pass one explicitly with --format"
         )
-    return detection.parser
+    return ResolvedFormat(name=detection.name, parser=detection.parser, spec=detection.spec)
+
+
+def resolve_parser(path: Path, log_format: str | None, sample: list[str]) -> LogParser:
+    """Just the parser, for a caller with nothing to carry across a boundary."""
+    return resolve_format(path, log_format, sample).parser

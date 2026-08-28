@@ -17,6 +17,7 @@ from logarc.ingest.parallel import ingest_file_parallel, worth_splitting
 from logarc.ingest.pipeline import DEFAULT_BATCH_SIZE, IngestResult, ingest_file
 from logarc.ingest.quarantine import Quarantine
 from logarc.ingest.reader import Compression
+from logarc.parsers.spec import spec_to_dict
 from logarc.storage.case import MANIFEST_NAME, CaseManifest, SourceRecord
 from logarc.storage.event_store import ParquetEventStore
 
@@ -204,7 +205,8 @@ class Case:
             sha256=sha256,
             size_bytes=size_bytes,
             compression=Compression.NONE.value,
-            log_format=resolved,
+            log_format=resolved.name,
+            format_spec=resolved.spec,
             lines_read=counts.lines_read,
             events_parsed=counts.events_parsed,
             lines_quarantined=counts.lines_quarantined,
@@ -241,6 +243,7 @@ def _to_source_record(result: IngestResult) -> SourceRecord:
         size_bytes=result.size_bytes,
         compression=result.compression,
         log_format=result.log_format,
+        format_spec=spec_to_dict(result.format_spec) if result.format_spec else None,
         lines_read=result.lines_read,
         events_parsed=result.events_parsed,
         lines_quarantined=result.lines_quarantined,

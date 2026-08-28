@@ -66,6 +66,16 @@ class LogFormatSpec:
     directive: str
     description: str = ""
 
+    @property
+    def summary(self) -> str:
+        """One line naming what this format actually is, for a list of them.
+
+        Separate from `description`, which is whatever note the user wrote.
+        Later kinds have no directive to show and give their own summary, so a
+        caller displaying a format never has to know which kind it holds.
+        """
+        return self.directive
+
     def build(self) -> LogParser:
         """Compile this definition into a parser.
 
