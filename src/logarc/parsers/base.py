@@ -27,3 +27,15 @@ class LogParser(Protocol):
         those fields absent, because partial evidence is still evidence.
         """
         ...
+
+    def is_metadata(self, line: str) -> bool:
+        """Whether this line is the log's own bookkeeping rather than a request.
+
+        A W3C `#Fields:` directive, a CSV header row. Such a line is neither
+        parsed nor quarantined — the same treatment a blank line gets — because
+        quarantining it would put a "lines could not be parsed" strip over every
+        case of that shape, and that notice exists to mean something went wrong.
+
+        Most formats have no such lines and answer `False` for everything.
+        """
+        ...

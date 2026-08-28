@@ -130,7 +130,9 @@ def _parse_chunk(task: _Task) -> _Counts:
             batch = []
             for line_no, text in read_range(task.path, task.chunk):
                 lines_read += 1
-                if not text.strip():
+                # Blanks and the log's own bookkeeping, on the same footing as
+                # the sequential path: neither parsed nor quarantined.
+                if not text.strip() or parser.is_metadata(text):
                     continue
                 event = parser.parse_line(text, EvidenceRef(task.file_id, line_no))
                 if event is None:
@@ -222,13 +224,14 @@ def _resolve_format(path: Path, log_format: str | None) -> ResolvedFormat:
     whichever path was taken. Both used to hold a copy of that sentence.
 
     A named format is looked up rather than trusted, because failing here is a
-    message; failing inside a worker is a traceback out of a subprocess. It is
-    looked up without reading the file at all — detection is the only reason to
-    open one, and a named format has nothing to detect.
-    """
-    if log_format is not None:
-        return resolve_format(path, log_format, [])
+    message; failing inside a worker is a traceback out of a subprocess.
 
+    The opening lines are read either way. Detection needs them, and so does a
+    named table format, whose columns may be declared in the file rather than
+    in the definition — this used to skip the read when a format was named, on
+    the grounds that a named format has nothing to detect, which stopped being
+    the whole story once part of a definition could live in the log.
+    """
     with open_log(path) as stream:
         sample = [text for _, text in islice(stream, DEFAULT_SAMPLE_SIZE)]
     return resolve_format(path, log_format, sample)

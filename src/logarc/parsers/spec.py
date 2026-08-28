@@ -20,19 +20,21 @@ missing (see `evidence._parser_for`); that stays true.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
+from logarc.parsers.columns import ColumnsParser, check_mapping, declared_columns
 from logarc.parsers.json_format import JsonParser
 from logarc.parsers.logformat import LogFormatParser
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
 
     from logarc.parsers.base import LogParser
 
 __all__ = [
     "SPEC_VERSION",
+    "ColumnsFormatSpec",
     "FormatSpec",
     "FormatSpecError",
     "JsonFormatSpec",
@@ -105,6 +107,16 @@ class LogFormatSpec:
             description=_text(payload, "description", required=False),
         )
 
+    def resolved(self, sample: Sequence[str]) -> LogFormatSpec:
+        """This definition is complete on its own. See `ColumnsFormatSpec`."""
+        del sample
+        return self
+
+    def check(self) -> None:
+        """Refuse a definition that could never work. Complete without a file,
+        so this is the same question as building it."""
+        self.build()
+
 
 @dataclass(frozen=True, slots=True)
 class JsonFormatSpec:
@@ -159,6 +171,16 @@ class JsonFormatSpec:
             "description": self.description,
         }
 
+    def resolved(self, sample: Sequence[str]) -> JsonFormatSpec:
+        """This definition is complete on its own. See `ColumnsFormatSpec`."""
+        del sample
+        return self
+
+    def check(self) -> None:
+        """Refuse a definition that could never work. Complete without a file,
+        so this is the same question as building it."""
+        self.build()
+
     @classmethod
     def from_payload(cls, payload: Mapping[str, Any]) -> JsonFormatSpec:
         mapping = payload.get("fields")
@@ -174,6 +196,110 @@ class JsonFormatSpec:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class ColumnsFormatSpec:
+    """A log laid out as a table: IIS W3C, or CSV.
+
+    The one kind whose definition is not complete on its own. A W3C log names
+    its columns in a `#Fields:` directive and a CSV often names them in its
+    first row, so `columns` may be empty when the format is saved and filled in
+    by `resolved` when a file is opened. What travels to a worker and into the
+    case is always the resolved one: a worker handed a byte range has never
+    seen the header, and a case recording "the columns are in the file" would
+    depend a year later on a file nobody kept.
+    """
+
+    kind: ClassVar[str] = "columns"
+
+    #: What `to_payload` writes. See `JsonFormatSpec.PAYLOAD_KEYS`.
+    PAYLOAD_KEYS: ClassVar[frozenset[str]] = frozenset(
+        {"name", "fields", "columns", "separator", "time_format", "header_row", "description"}
+    )
+
+    name: str
+    fields: tuple[tuple[str, str], ...]
+    """Our field name, then the column in their log. `date+time` joins two."""
+
+    columns: tuple[str, ...] = ()
+    """The columns, in order. Empty means they are declared in the file."""
+
+    separator: str = " "
+    time_format: str = ""
+
+    header_row: str = ""
+    """The row that named the columns, when a row did. Not read as data."""
+
+    description: str = ""
+
+    @property
+    def summary(self) -> str:
+        return ", ".join(f"{ours}={theirs}" for ours, theirs in self.fields)
+
+    def build(self) -> LogParser:
+        return ColumnsParser(
+            self.columns,
+            self.fields,
+            name=self.name,
+            separator=self.separator,
+            time_format=self.time_format,
+            header_row=self.header_row,
+        )
+
+    def resolved(self, sample: Sequence[str]) -> ColumnsFormatSpec:
+        """Fill in the columns from the file, when the file is what has them.
+
+        Columns already given are never overwritten: the reader said what they
+        are, and a first row that happens to look like a header must not
+        quietly replace their answer.
+        """
+        if self.columns:
+            return self
+        columns, header_row = declared_columns(sample, self.separator)
+        if not columns:
+            return self
+        return replace(self, columns=columns, header_row=header_row)
+
+    def check(self) -> None:
+        """Refuse a mapping that is wrong however the columns turn out.
+
+        Not the same question as building: this kind may not know its columns
+        until a file is in hand, so the library — which has no file — can only
+        ask this much. The rest is caught when a log is actually opened.
+        """
+        check_mapping(self.fields)
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "fields": dict(self.fields),
+            "columns": list(self.columns),
+            "separator": self.separator,
+            "time_format": self.time_format,
+            "header_row": self.header_row,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_payload(cls, payload: Mapping[str, Any]) -> ColumnsFormatSpec:
+        mapping = payload.get("fields")
+        if not isinstance(mapping, dict) or not all(
+            isinstance(key, str) and isinstance(value, str) for key, value in mapping.items()
+        ):
+            raise FormatSpecError("a columns format's 'fields' must map names to columns")
+        columns = payload.get("columns", [])
+        if not isinstance(columns, list) or not all(isinstance(item, str) for item in columns):
+            raise FormatSpecError("a columns format's 'columns' must be a list of names")
+        return cls(
+            name=_text(payload, "name"),
+            fields=tuple(mapping.items()),
+            columns=tuple(columns),
+            separator=_text(payload, "separator", required=False) or " ",
+            time_format=_text(payload, "time_format", required=False),
+            header_row=_text(payload, "header_row", required=False),
+            description=_text(payload, "description", required=False),
+        )
+
+
 def _text(payload: Mapping[str, Any], key: str, *, required: bool = True) -> str:
     value = payload.get(key)
     if value is None and not required:
@@ -183,13 +309,14 @@ def _text(payload: Mapping[str, Any], key: str, *, required: bool = True) -> str
     return value
 
 
-#: The union of every kind. The tagged dispatch below is what lets a third be
+#: The union of every kind. The tagged dispatch below is what lets a fourth be
 #: added without changing anything already written to a case.
-FormatSpec = LogFormatSpec | JsonFormatSpec
+FormatSpec = LogFormatSpec | JsonFormatSpec | ColumnsFormatSpec
 
 _KINDS: Final[dict[str, type[FormatSpec]]] = {
     LogFormatSpec.kind: LogFormatSpec,
     JsonFormatSpec.kind: JsonFormatSpec,
+    ColumnsFormatSpec.kind: ColumnsFormatSpec,
 }
 
 

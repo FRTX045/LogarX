@@ -768,6 +768,43 @@ mapping.
 
 ---
 
+## 19. An IIS log needs almost no configuring
+
+1. Take a real IIS log, or write one:
+
+```bash
+python - <<'PY'
+import pathlib
+head = ["#Software: Microsoft Internet Information Services 10.0", "#Version: 1.0",
+        "#Date: 2024-05-01 09:00:45",
+        "#Fields: date time s-ip cs-method cs-uri-stem cs-uri-query s-port c-ip"
+        " cs(User-Agent) sc-status sc-bytes time-taken"]
+rows = [f"2024-05-01 09:00:{n:02d} 10.0.0.1 GET /admin/{n}.php - 80 203.0.113.77"
+        f" curl/8.4.0 404 0 15" for n in range(40)]
+pathlib.Path("u_ex240501.log").write_text("\n".join(head + rows) + "\n")
+PY
+```
+
+2. **Case → Log formats… → New table format…** Paste the four header lines and
+   one row, then press **Guess from the line above**.
+
+**Pass:** the left table fills in with W3C names — `timestamp` → `date+time`,
+`client_ip` → `c-ip`, `method` → `cs-method`, `status` → `sc-status`. The right
+table shows what those read out of the row, and the columns nobody mapped
+(`s-ip`, `s-port`, `time-taken`) appear under it as extras.
+
+3. Name it `iis`, save, and ingest `u_ex240501.log` with it.
+
+**Pass:** 40 events and **0 quarantined** — the four `#` directives are the
+log's own bookkeeping, not lines that failed. No amber strip appears.
+
+4. `logarc formats show iis`
+
+**Pass:** Columns reads **from the log**, not a frozen list. The case's
+`case.json`, though, names the columns that were actually in this file.
+
+---
+
 ## Recording a run
 
 | # | Check | Result | Notes |
@@ -790,5 +827,6 @@ mapping.
 | 16 | A time range narrows both halves; the band can be turned off | | |
 | 17 | A written format reads a log the presets cannot; the preview keeps up | | |
 | 18 | A JSON log's mapping is guessed, correctable, and says what the keys are | | |
+| 19 | An IIS log reads from its own header; its directives are not quarantined | | |
 
 Version tested: ______  ·  Date: ______  ·  Machine: ______
