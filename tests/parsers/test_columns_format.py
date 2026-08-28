@@ -376,3 +376,41 @@ def test_a_mapped_column_is_not_also_kept_among_the_extras() -> None:
 
     assert event is not None
     assert set(event.extra) == {"s-ip", "s-port", "sc-substatus", "sc-win32-status", "time-taken"}
+
+
+def test_a_mapped_column_the_file_does_not_have_is_simply_absent() -> None:
+    """IIS logs whatever fields the administrator ticked, so a format written
+    for the family names more columns than any one file carries. A referer that
+    is not there is not an error; it is a log without referers."""
+    minimal = [
+        "#Fields: date time c-ip cs-method cs-uri-stem sc-status",
+        "2024-05-01 09:00:45 203.0.113.5 GET /admin 404",
+    ]
+    spec = ColumnsFormatSpec(
+        name="family",
+        fields=(
+            ("timestamp", "date+time"),
+            ("client_ip", "c-ip"),
+            ("status", "sc-status"),
+            ("referer", "cs(Referer)"),
+            ("user_agent", "cs(User-Agent)"),
+        ),
+    )
+
+    event = spec.resolved(minimal).build().parse_line(minimal[1], REF)
+
+    assert event is not None
+    assert event.status == 404
+    assert event.referer is None
+    assert event.user_agent is None
+
+
+def test_a_missing_column_for_a_required_field_is_still_refused() -> None:
+    """Optional is optional; without a time and an address there is no event,
+    and a typo there has to be caught rather than quietly yielding nothing."""
+    with pytest.raises(ColumnsFormatError, match="c-ip"):
+        ColumnsFormatSpec(
+            name="typo",
+            columns=("date", "time", "who"),
+            fields=(("timestamp", "date+time"), ("client_ip", "c-ip")),
+        ).build()

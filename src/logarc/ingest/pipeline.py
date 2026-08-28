@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Final
 
 from logarc.core.evidence import EvidenceRef
 from logarc.ingest.reader import open_log
+from logarc.parsers.base import skips
 from logarc.parsers.registry import (
     DEFAULT_SAMPLE_SIZE,
     detect_format,
@@ -175,7 +176,7 @@ def ingest_file(
             # directive, a CSV header row — is padding of the same kind. Four
             # of those open every IIS file, and quarantining them would put a
             # "lines could not be parsed" strip over every such case.
-            if not text.strip() or parser.is_metadata(text):
+            if not text.strip() or skips(parser, text):
                 continue
 
             event = parser.parse_line(text, EvidenceRef(file_id, line_no))

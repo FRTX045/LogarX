@@ -895,17 +895,24 @@ def formats(ctx: typer.Context) -> None:
     table = Table(title="Known log formats")
     table.add_column("Name")
     table.add_column("Source")
-    table.add_column("Definition")
+    table.add_column("What it reads")
     for entry in registered_formats():
+        # What it is for, not what it says. With three formats the definitions
+        # fitted; with fourteen they are a wall of mappings nine lines deep,
+        # and a list exists to help someone pick. `formats show` is where the
+        # definition lives, and the line under this table points at it.
+        note = entry.spec.description if entry.spec is not None else ""
         table.add_row(
             entry.name,
             "built-in" if is_built_in(entry.name) else "saved",
-            entry.description,
+            note or entry.description,
         )
     console.print(table)
     console.print(
-        "\nWrite one with [bold]logarc formats add <name> '<directive>'[/bold], and try a "
-        "directive against a real log first with [bold]logarc formats check[/bold]."
+        "\n[bold]logarc formats show <name>[/bold] prints the definition behind one. "
+        "Write your own with [bold]add[/bold], [bold]add-json[/bold], "
+        "[bold]add-columns[/bold] or [bold]add-pattern[/bold] — and try it against a "
+        "real log first with the matching [bold]check[/bold]."
     )
     _path_line(f"Saved formats: {library_path()}")
 

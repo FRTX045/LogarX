@@ -838,6 +838,30 @@ neither ISO nor a number. Put the format back.
 
 ---
 
+## 21. The formats that ship read the logs they are named for
+
+Automated in `tests/parsers/test_builtins.py`, one real line each. What is
+here is the part a test cannot check: that the list reads as something a person
+can choose from.
+
+1. `logarc formats`
+
+**Pass:** fourteen rows, each with a plain sentence saying what it reads —
+"Caddy's default JSON access log", "IIS and anything else writing W3C
+extended". Not a definition; the line under the table says where those are.
+
+2. `logarc formats show caddy-json`
+
+**Pass:** the mapping, field by field, and the kind.
+
+3. Take a log from any server you have and ingest it with **no** `--format`.
+
+**Pass:** the Format column of the ingest table names the one it chose, and it
+is the right one. If it is not, that is worth reporting: with fourteen
+candidates the ordering is the thing most likely to be wrong.
+
+---
+
 ## Recording a run
 
 | # | Check | Result | Notes |
@@ -862,5 +886,6 @@ neither ISO nor a number. Put the format back.
 | 18 | A JSON log's mapping is guessed, correctable, and says what the keys are | | |
 | 19 | An IIS log reads from its own header; its directives are not quarantined | | |
 | 20 | A pattern reads a syslog-wrapped log; a year-less time format is refused | | |
+| 21 | The fourteen shipped formats read as a list you can choose from | | |
 
 Version tested: ______  ·  Date: ______  ·  Machine: ______

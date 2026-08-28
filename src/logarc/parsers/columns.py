@@ -168,10 +168,18 @@ class ColumnsParser:
             )
 
         self._index = {column: position for position, column in enumerate(columns)}
+        # Only the columns without which there is no event have to be there.
+        # IIS logs whatever fields the administrator ticked, so a format written
+        # for a family names more columns than any one file carries — a referer
+        # that is absent is not an error, it is a log without referers. A field
+        # the reader misspells shows as empty in the preview, which is where
+        # they are looking; a misspelt *time* would show as nothing readable at
+        # all, so that one is refused here.
         missing = sorted(
             {
                 theirs
-                for _ours, spec in mapping
+                for ours, spec in mapping
+                if ours in REQUIRED
                 for theirs in spec.split(JOIN)
                 if theirs not in self._index
             }
@@ -224,8 +232,10 @@ class ColumnsParser:
             spec = self._mapping.get(field)
             if spec is None:
                 return None
-            parts = [cells[self._index[theirs]] for theirs in spec.split(JOIN)]
-            return " ".join(part.strip() for part in parts)
+            wanted = [self._index[theirs] for theirs in spec.split(JOIN) if theirs in self._index]
+            if not wanted:
+                return None
+            return " ".join(cells[position].strip() for position in wanted)
 
         timestamp = read_time(cell("timestamp"), self._time_format)
         if timestamp is None:
