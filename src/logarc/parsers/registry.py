@@ -48,6 +48,7 @@ __all__ = [
     "detect_format",
     "get_parser",
     "get_spec",
+    "is_built_in",
     "register_format",
     "register_logformat",
     "register_saved_formats",
@@ -221,6 +222,19 @@ def _entry(name: str) -> FormatEntry:
 def get_parser(name: str) -> LogParser:
     """Build the parser registered under `name`."""
     return _entry(name).factory()
+
+
+def is_built_in(name: str) -> bool:
+    """Whether `name` is a format this logarc ships, rather than a saved one.
+
+    Asked here rather than worked out by the caller from `available_formats()`
+    minus the library file. Those two are the same only while the registry and
+    the file agree, and reconciling them is this module's job — a caller doing
+    the subtraction itself gets the wrong answer whenever the file has changed
+    since the last `register_saved_formats`, and calls a user's own format a
+    built-in.
+    """
+    return name in _REGISTRY and name not in _FROM_LIBRARY
 
 
 def get_spec(name: str) -> FormatSpec | None:

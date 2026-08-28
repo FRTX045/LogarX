@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from logarc.parsers.registry import register_saved_formats
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
@@ -37,4 +39,9 @@ def _private_logarc_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Ite
     touching anything outside the test's own directory.
     """
     monkeypatch.setenv("LOGARC_HOME", str(tmp_path / "logarc-home"))
+    # Reconcile the registry with the empty library this test now has. Saved
+    # formats are installed into a module-level registry that outlives any one
+    # test, so without this a format installed by an earlier test is still
+    # reachable by name here — and `is_built_in` would then call it one.
+    register_saved_formats()
     yield

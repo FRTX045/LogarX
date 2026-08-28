@@ -49,6 +49,7 @@ from logarc.gui.canvas import ActivityCanvas
 from logarc.gui.case_chooser import CaseChooser
 from logarc.gui.density import Density, buckets_for
 from logarc.gui.evidence_panel import EvidencePanel
+from logarc.gui.format_editor import FormatChoice, FormatEditor
 from logarc.gui.format_notice import drift_notice
 from logarc.gui.full_screen import FullScreen
 from logarc.gui.notice_bar import NoticeBanner, warn_about_dead_files
@@ -478,6 +479,9 @@ class MainWindow(QMainWindow):
         recently.setShortcut(QKeySequence("Ctrl+Shift+O"))
         recently.setStatusTip("Pick up a case that has been opened on this machine before.")
         self._add(case_menu, "Ingest logs into a &new case…", self._ingest_new_case)
+        self._add(case_menu, "Log &formats…", self._manage_formats).setStatusTip(
+            "See the log formats logarc reads, and write your own."
+        )
         case_menu.addSeparator()
         self._add(case_menu, "E&xit", self.close, QKeySequence.StandardKey.Quit)
 
@@ -599,6 +603,16 @@ class MainWindow(QMainWindow):
         )
         if not logs:
             return
+        # Asked before the case folder, because it is a question about the
+        # logs just chosen. Cancelling here abandons the ingest rather than
+        # falling back to detection: a reader who opened this screen has a
+        # format in mind, and quietly doing the other thing would produce a
+        # case that looks right and was read by something they did not pick.
+        chooser = FormatChoice(self)
+        if not chooser.exec():
+            return
+        log_format = chooser.chosen()
+
         target = QFileDialog.getExistingDirectory(self, "Choose an empty folder for the case")
         if not target:
             return
@@ -627,6 +641,7 @@ class MainWindow(QMainWindow):
                             reading.next_file()
                         case.ingest(
                             [path],
+                            log_format=log_format,
                             on_progress=lambda lines, read: report(
                                 reading.advance(lines=lines, bytes_read=read)
                             ),
@@ -650,6 +665,15 @@ class MainWindow(QMainWindow):
             on_progress=self._status.setText,
             on_advance=self._show_ingest_progress,
         )
+
+    def _manage_formats(self) -> None:
+        """Open the format library.
+
+        Modal, and nothing is applied on the way out: the dialog writes what
+        the reader saved as they save it, so there is no pending state for
+        closing the window to discard or apply by accident.
+        """
+        FormatEditor(self).exec()
 
     def _show_ingest_progress(self, snapshot: object) -> None:
         if self._ingest_card is not None and isinstance(snapshot, Progress):

@@ -100,15 +100,31 @@ logarc export --case ./case-001 --ip 203.0.113.45 --format html --out report.htm
 ```
 
 The format is detected from the first lines of a log. When it cannot be — a
-custom `LogFormat`, or a file that is not an access log — ingest refuses rather
-than guessing, because the wrong parser quarantines everything and presents as
-an empty result. `logarc formats` lists the names `--format` accepts, and the
-directive behind each:
+site with its own `LogFormat`, or a file that is not an access log — ingest
+refuses rather than guessing, because the wrong parser quarantines everything
+and presents as an empty result.
+
+A format you write yourself is a first-class one: saved by name, offered
+wherever the built-ins are, and usable in every later case.
 
 ```bash
-logarc formats
-logarc ingest access.log --case ./case-001 --format apache-common
+logarc formats                    # every format, built-in and saved
+
+# See what a directive reads before committing to it. A wrong one does not
+# announce itself — it quarantines every line and looks like an empty case.
+logarc formats check '%h|%t|"%r"|%>s|%b' --log access.log
+
+logarc formats add log-kantor '%h|%t|"%r"|%>s|%b'
+logarc ingest access.log --case ./case-001 --format log-kantor
 ```
+
+In the desktop application the same thing lives under **Case → Log formats…**,
+where a pasted log line is read back field by field as the directive is typed.
+
+Saved formats live in a plain JSON file you own — `logarc formats` prints its
+path. Each case also records the definition it was ingested with, so editing or
+deleting a saved format later cannot make an existing case unreadable; the
+window says so on a case whose format has since changed.
 
 ### The desktop application
 

@@ -2584,6 +2584,11 @@ def test_a_real_ingest_reports_progress_that_only_goes_forwards(
     monkeypatch.setattr(
         app_module.QFileDialog, "getExistingDirectory", lambda *_a, **_k: str(case_dir)
     )
+    # The window asks which format to read with, between the two file dialogs.
+    # Accepted without touching it, so this test keeps testing what it is about
+    # — that progress is reported honestly — rather than the chooser, which has
+    # its own file.
+    monkeypatch.setattr(app_module.FormatChoice, "exec", lambda _self: 1)
 
     seen: list[Progress] = []
     window = MainWindow()
@@ -2632,6 +2637,7 @@ def test_a_failed_ingest_takes_the_card_down_with_it(
     monkeypatch.setattr(
         app_module.QFileDialog, "getExistingDirectory", lambda *_a, **_k: str(case_dir)
     )
+    monkeypatch.setattr(app_module.FormatChoice, "exec", lambda _self: 1)
     monkeypatch.setattr(MainWindow, "_report_error", lambda *_a, **_k: None)
 
     window = MainWindow()

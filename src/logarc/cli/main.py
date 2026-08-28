@@ -49,8 +49,8 @@ from logarc.parsers.library import (
 from logarc.parsers.logformat import LogFormatError
 from logarc.parsers.registry import (
     UnknownFormatError,
-    available_formats,
     get_spec,
+    is_built_in,
     register_saved_formats,
     registered_formats,
 )
@@ -870,13 +870,6 @@ formats_app = typer.Typer(
 app.add_typer(formats_app, name="formats")
 
 
-def _saved_names() -> set[str]:
-    try:
-        return {spec.name for spec in load_library()}
-    except FormatLibraryError:
-        return set()
-
-
 @formats_app.callback(invoke_without_command=True)
 def formats(ctx: typer.Context) -> None:
     """List the log formats that can be parsed.
@@ -887,7 +880,6 @@ def formats(ctx: typer.Context) -> None:
     if ctx.invoked_subcommand is not None:
         return
 
-    saved = _saved_names()
     table = Table(title="Known log formats")
     table.add_column("Name")
     table.add_column("Source")
@@ -895,7 +887,7 @@ def formats(ctx: typer.Context) -> None:
     for entry in registered_formats():
         table.add_row(
             entry.name,
-            "saved" if entry.name in saved else "built-in",
+            "built-in" if is_built_in(entry.name) else "saved",
             entry.description,
         )
     console.print(table)
@@ -921,7 +913,7 @@ def formats_add(
     saved = _load_or_fail()
     existing = {spec.name for spec in saved}
 
-    if name in available_formats() and name not in existing:
+    if is_built_in(name):
         raise _fail(
             f"{name!r} is a built-in format. Built-ins are matched first, so a saved "
             "format of the same name would never be reached; pick another name."
@@ -951,7 +943,7 @@ def formats_remove(
     """
     saved = _load_or_fail()
     if name not in {spec.name for spec in saved}:
-        if name in available_formats():
+        if is_built_in(name):
             raise _fail(f"{name!r} is a built-in format and cannot be removed")
         raise _fail(f"no saved format named {name!r}")
 
@@ -975,7 +967,7 @@ def formats_show(
     table.add_column("Field")
     table.add_column("Value")
     table.add_row("Kind", spec.kind)
-    table.add_row("Source", "saved" if name in _saved_names() else "built-in")
+    table.add_row("Source", "built-in" if is_built_in(name) else "saved")
     table.add_row("Definition", spec.summary)
     if spec.description:
         table.add_row("Note", spec.description)
