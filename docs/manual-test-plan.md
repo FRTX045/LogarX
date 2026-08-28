@@ -686,6 +686,51 @@ measured at 62 pixels. Set a range with the fields: it still narrows both halves
 
 ---
 
+## 17. A format you write yourself reads a log the presets cannot
+
+Everything here is automated except the one thing that matters — that the
+preview is legible while you are typing, which is the whole reason to have it.
+
+1. Make a log nothing built in can read:
+
+```bash
+printf '203.0.113.5|[10/Oct/2020:13:55:36 +0000]|"GET /.env HTTP/1.1"|404|0\n' > piped.log
+```
+
+2. Open the application. **Case → Log formats…**
+
+**Pass:** the list is grouped — *Built in* above, *Saved by you* below — with
+*New format…* at the top. Selecting `apache-combined` fills the fields and
+greys them out; Save and Delete are unavailable.
+
+3. Paste the line from `piped.log` into *A line from your log*, while
+   `apache-combined` is still selected.
+
+**Pass:** it says the directive does not read that line. The table is empty.
+
+4. Click *New format…*. Name it `piped`. Type the directive one character at a
+   time: `%h|%t|"%r"|%>s|%b`
+
+**Pass:** the message changes as you type, and settles on *Read this line, and
+found 7 of 11 fields in it*. Every one of the eleven fields is in sight without
+scrolling — Client, When, Method, Path, Query, Protocol, Status, Bytes,
+Referer, User agent, Host — with the four the format does not carry shown
+empty rather than missing.
+
+5. Save. Close the dialog. **Case → Ingest logs into a new case…**, choose
+   `piped.log`, and in the format question choose `piped`.
+
+**Pass:** the case opens with one client in it, not an empty one.
+
+6. Go back to **Log formats…**, select `piped`, add `|%{Referer}i` to the end
+   of the directive, save, and open the case again.
+
+**Pass:** an amber strip appears saying the format has changed since the case
+was made, **and the case still shows its client**. The strip names both
+directives. Dismissing it does not dismiss the quarantine strip if one is up.
+
+---
+
 ## Recording a run
 
 | # | Check | Result | Notes |
@@ -706,5 +751,6 @@ measured at 62 pixels. Set a range with the fields: it still narrows both halves
 | 14 | Several cases forgotten in one pass; Ctrl+A removes the key itself | | |
 | 15 | Activities drag smoothly; undo, save and reset behave | | |
 | 16 | A time range narrows both halves; the band can be turned off | | |
+| 17 | A written format reads a log the presets cannot; the preview keeps up | | |
 
 Version tested: ______  ·  Date: ______  ·  Machine: ______

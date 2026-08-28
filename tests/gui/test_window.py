@@ -41,7 +41,7 @@ from logarc.gui.app import MainWindow, read_case, reconstruct_client
 from logarc.gui.arrangement_keeper import LAYOUT_KEY
 from logarc.gui.canvas import MIN_FIT_SCALE, ActivityCanvas
 from logarc.gui.evidence_panel import EvidencePanel
-from logarc.gui.notice_bar import QuarantineBanner
+from logarc.gui.notice_bar import NoticeBanner
 from logarc.gui.panels import ClientTable, format_seen
 from logarc.gui.progress import Progress
 from logarc.gui.progress_card import IngestCard
@@ -2131,14 +2131,14 @@ def _one_source(name: str, *, read: int, quarantined: int) -> SourceRecord:
 
 def test_a_clean_case_gets_no_banner(qt_app: QApplication) -> None:
     """Silence means the case holds everything its logs did."""
-    banner = QuarantineBanner()
+    banner = NoticeBanner()
     banner.show_notice(notice_for([_one_source("a.log", read=1_000, quarantined=0)]))
 
     assert not banner.isVisible()
 
 
 def test_a_damaged_case_gets_a_banner_that_names_the_count(qt_app: QApplication) -> None:
-    banner = QuarantineBanner()
+    banner = NoticeBanner()
     banner.show_notice(notice_for([_one_source("a.log", read=51_268, quarantined=3_412)]))
     banner.show()
 
@@ -2153,7 +2153,7 @@ def test_the_banner_can_be_dismissed(qt_app: QApplication) -> None:
     manifest every time, so nothing has to remember the choice, and a case that
     is still incomplete says so again the next time it is looked at.
     """
-    banner = QuarantineBanner()
+    banner = NoticeBanner()
     banner.show_notice(notice_for([_one_source("a.log", read=900, quarantined=12)]))
     banner.show()
     assert banner.isVisible(), "premise: the strip was up before it was dismissed"
@@ -2167,7 +2167,7 @@ def test_a_second_case_replaces_what_the_banner_said(qt_app: QApplication) -> No
     """The failure this guards: show a damaged case, then a clean one, and a
     strip that only ever learned to appear goes on reporting the first case's
     damage over the second case's evidence."""
-    banner = QuarantineBanner()
+    banner = NoticeBanner()
     banner.show_notice(notice_for([_one_source("a.log", read=51_268, quarantined=3_412)]))
     banner.show()
     assert banner.isVisible(), "premise: the first case put the strip up"
@@ -2188,7 +2188,7 @@ def test_the_banner_shows_one_sentence_not_the_whole_paragraph(
     assert notice is not None
     assert "\n\n" in notice.detail, "premise: the dead-file detail is a paragraph"
 
-    banner = QuarantineBanner()
+    banner = NoticeBanner()
     banner.show_notice(notice)
 
     assert "logarc formats" not in banner.text()
@@ -2584,6 +2584,11 @@ def test_a_real_ingest_reports_progress_that_only_goes_forwards(
     monkeypatch.setattr(
         app_module.QFileDialog, "getExistingDirectory", lambda *_a, **_k: str(case_dir)
     )
+    # The window asks which format to read with, between the two file dialogs.
+    # Accepted without touching it, so this test keeps testing what it is about
+    # — that progress is reported honestly — rather than the chooser, which has
+    # its own file.
+    monkeypatch.setattr(app_module.FormatChoice, "exec", lambda _self: 1)
 
     seen: list[Progress] = []
     window = MainWindow()
@@ -2632,6 +2637,7 @@ def test_a_failed_ingest_takes_the_card_down_with_it(
     monkeypatch.setattr(
         app_module.QFileDialog, "getExistingDirectory", lambda *_a, **_k: str(case_dir)
     )
+    monkeypatch.setattr(app_module.FormatChoice, "exec", lambda _self: 1)
     monkeypatch.setattr(MainWindow, "_report_error", lambda *_a, **_k: None)
 
     window = MainWindow()

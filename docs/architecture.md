@@ -135,8 +135,17 @@ class LogParser(Protocol):
 
 Register it in `parsers/registry.py`. Nothing else changes.
 
-For Apache- and nginx-style formats there is usually no new code at all: `parsers/logformat.py`
-compiles a `LogFormat` directive string directly into a matcher.
+For Apache-style formats there is no new code at all, and no Python either: write the
+directive down with `logarc formats add` or in **Case → Log formats…**, and
+`parsers/logformat.py` compiles it into a matcher.
+
+A format is a *definition*, not a name — `parsers/spec.py` — because a name only
+resolves where the definition is already known, which is untrue in the two places
+it matters: an ingest worker started by spawn, and a case read back after the
+format was edited. Both are handed the definition itself, so the saved-format
+library in `parsers/library.py` is read only by the CLI and the window, never by
+the engine. See
+[ADR-0010](adr/0010-a-log-format-is-data-that-travels-with-the-work.md).
 
 **Adding a detection.** Write YAML in `detect/rulepacks/`. No Python. Rule packs are versioned and
 hashed into the case manifest, so a report states exactly which ruleset produced it — as is the CRS

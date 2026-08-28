@@ -9,8 +9,19 @@ The registry is open. `LogParser` being a Protocol only makes a new format
 *expressible*; it takes a way to register one to make it reachable, otherwise
 the extension point is a preset list with extra steps. Anything satisfying the
 protocol can be added here and is then available to `logarc ingest --format`,
-to auto-detection, and to the window's format dropdown, without a change
+to auto-detection, and to the window's format chooser, without a change
 anywhere else. See docs/adding-a-parser.md.
+
+Two ways in, and the difference between them matters. `register_spec` takes a
+definition — data, which can be pickled to a worker and written into a case.
+`register_format` takes a factory — code, which can do neither. Both are
+reachable by name in this process; only the first survives leaving it. The
+registry says which it holds, through `get_spec` returning `None`, so a caller
+can fall back rather than silently carry nothing.
+
+Nothing here reads the user's saved-format library. `register_saved_formats`
+does, and the CLI and the GUI call it — never the engine, which must work from
+what it was handed. See `logarc.parsers.library`.
 """
 
 from __future__ import annotations
@@ -20,12 +31,14 @@ from typing import TYPE_CHECKING, Final
 
 from logarc.core.evidence import EvidenceRef
 from logarc.parsers.apache import PRESETS
-from logarc.parsers.logformat import LogFormatParser
+from logarc.parsers.library import load_library
+from logarc.parsers.spec import LogFormatSpec
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
 
     from logarc.parsers.base import LogParser
+    from logarc.parsers.spec import FormatSpec
 
 __all__ = [
     "FormatDetection",
@@ -34,8 +47,12 @@ __all__ = [
     "available_formats",
     "detect_format",
     "get_parser",
+    "get_spec",
+    "is_built_in",
     "register_format",
     "register_logformat",
+    "register_saved_formats",
+    "register_spec",
     "registered_formats",
     "unregister_format",
 ]
@@ -62,6 +79,13 @@ class FormatDetection:
     confidence: float
     """Share of non-blank sample lines the parser accepted, 0.0 to 1.0."""
 
+    spec: FormatSpec | None = None
+    """The definition behind the name, when there is one to carry.
+
+    `None` for a format registered by handing over a factory. Ingest reads this
+    to decide whether it can send the format itself to a worker and record it in
+    the case, or has to fall back to the name."""
+
 
 @dataclass(frozen=True, slots=True)
 class FormatEntry:
@@ -72,16 +96,20 @@ class FormatEntry:
     description: str = ""
     """Shown by `logarc formats`. The LogFormat directive, where there is one."""
 
+    spec: FormatSpec | None = None
+    """The definition, for a format registered from one. See `get_spec`."""
 
-def _apache_entry(name: str, directive: str) -> FormatEntry:
-    # Built in a function rather than inline in the comprehension below: the
-    # lambda closes over these parameters, which are bound once per call, where
-    # closing over a comprehension's loop variable would leave every preset
-    # building the last directive in the dict.
+
+def _entry_for(spec: FormatSpec) -> FormatEntry:
+    # `spec.build` rather than a lambda closing over the spec: the closure used
+    # to be the subtle part here, because one bound per comprehension iteration
+    # left every preset building the last directive in the dict. A bound method
+    # cannot have that fault.
     return FormatEntry(
-        name=name,
-        factory=lambda: LogFormatParser(directive, name=name),
-        description=directive,
+        name=spec.name,
+        factory=spec.build,
+        description=spec.summary,
+        spec=spec,
     )
 
 
@@ -89,7 +117,8 @@ def _apache_entry(name: str, directive: str) -> FormatEntry:
 #: and only falls back to this on a tie, so the built-ins stay ahead of anything
 #: added later — a new format cannot quietly take over logs that already parse.
 _REGISTRY: Final[dict[str, FormatEntry]] = {
-    name: _apache_entry(name, directive) for name, directive in PRESETS.items()
+    name: _entry_for(LogFormatSpec(name=name, directive=directive))
+    for name, directive in PRESETS.items()
 }
 
 
@@ -109,13 +138,62 @@ def register_format(name: str, factory: Callable[[], LogParser], *, description:
     _REGISTRY[name] = FormatEntry(name=name, factory=factory, description=description)
 
 
+def register_spec(spec: FormatSpec) -> None:
+    """Make a log format available from its definition rather than its code.
+
+    Preferred over `register_format` wherever there is a definition to hand
+    over: only this form can reach an ingest worker or be recorded in a case.
+    """
+    if spec.name in _REGISTRY:
+        raise ValueError(
+            f"log format {spec.name!r} is already registered; "
+            "pick another name or unregister the existing one first"
+        )
+    _REGISTRY[spec.name] = _entry_for(spec)
+
+
 def register_logformat(name: str, directive: str) -> None:
-    """Register an Apache- or nginx-style format from its directive string."""
-    register_format(
-        name,
-        lambda: LogFormatParser(directive, name=name),
-        description=directive,
-    )
+    """Register an Apache-style format from its directive string."""
+    register_spec(LogFormatSpec(name=name, directive=directive))
+
+
+#: Names this process installed from the saved-format library, so a later call
+#: can take them out again. Without it the registry only ever grows: a GUI that
+#: refreshes after the user deletes a format would keep offering the deleted
+#: one, and a second call would leave a stale definition behind a live name.
+_FROM_LIBRARY: Final[set[str]] = set()
+
+
+def register_saved_formats() -> list[FormatSpec]:
+    """Install the user's saved formats, and report which ones were installed.
+
+    Also a refresh: whatever a previous call installed is removed first, so
+    calling this after the library changes leaves the registry agreeing with
+    the file rather than with the union of every version of it.
+
+    Called by the CLI and the GUI at startup, never by the engine: a worker
+    parses with the definition it was handed and a case is read from the copy it
+    stored, so neither needs — or should depend on — a file in a home directory.
+
+    A saved format whose name is already taken is skipped rather than allowed to
+    displace what is there. Registration order is preference order, so letting
+    one shadow `apache-combined` would change what an existing case means.
+    Skipping shows as an absence from the returned list.
+
+    Calling it twice is not an error; the second call installs nothing.
+    """
+    for name in _FROM_LIBRARY:
+        _REGISTRY.pop(name, None)
+    _FROM_LIBRARY.clear()
+
+    installed: list[FormatSpec] = []
+    for spec in load_library():
+        if spec.name in _REGISTRY:
+            continue
+        _REGISTRY[spec.name] = _entry_for(spec)
+        _FROM_LIBRARY.add(spec.name)
+        installed.append(spec)
+    return installed
 
 
 def unregister_format(name: str) -> None:
@@ -133,14 +211,40 @@ def available_formats() -> list[str]:
     return list(_REGISTRY)
 
 
-def get_parser(name: str) -> LogParser:
-    """Build the parser registered under `name`."""
+def _entry(name: str) -> FormatEntry:
     try:
-        entry = _REGISTRY[name]
+        return _REGISTRY[name]
     except KeyError:
         known = ", ".join(_REGISTRY)
         raise UnknownFormatError(f"unknown log format {name!r}; available: {known}") from None
-    return entry.factory()
+
+
+def get_parser(name: str) -> LogParser:
+    """Build the parser registered under `name`."""
+    return _entry(name).factory()
+
+
+def is_built_in(name: str) -> bool:
+    """Whether `name` is a format this logarc ships, rather than a saved one.
+
+    Asked here rather than worked out by the caller from `available_formats()`
+    minus the library file. Those two are the same only while the registry and
+    the file agree, and reconciling them is this module's job — a caller doing
+    the subtraction itself gets the wrong answer whenever the file has changed
+    since the last `register_saved_formats`, and calls a user's own format a
+    built-in.
+    """
+    return name in _REGISTRY and name not in _FROM_LIBRARY
+
+
+def get_spec(name: str) -> FormatSpec | None:
+    """The definition behind `name`, or `None` if it has none to give.
+
+    `None` is not a failure. It means the format was registered by handing over
+    a factory, which is code, and code cannot be written into a case or sent to
+    a worker. An unknown name *is* a failure, and raises.
+    """
+    return _entry(name).spec
 
 
 def score_parser(parser: LogParser, lines: Sequence[str]) -> float:
@@ -177,5 +281,7 @@ def detect_format(
         parser = get_parser(name)
         confidence = score_parser(parser, lines)
         if confidence >= min_confidence and (best is None or confidence > best.confidence):
-            best = FormatDetection(name=name, parser=parser, confidence=confidence)
+            best = FormatDetection(
+                name=name, parser=parser, confidence=confidence, spec=_REGISTRY[name].spec
+            )
     return best

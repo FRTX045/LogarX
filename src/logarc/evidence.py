@@ -26,7 +26,9 @@ from typing import TYPE_CHECKING
 
 from logarc.core.evidence import EvidenceRef
 from logarc.ingest.reader import LogSourceError, open_log
+from logarc.parsers.logformat import LogFormatError
 from logarc.parsers.registry import UnknownFormatError, get_parser
+from logarc.parsers.spec import FormatSpecError, spec_from_dict
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -127,10 +129,26 @@ def _read_source(
 def _parser_for(record: SourceRecord) -> LogParser | None:
     """The parser this file was ingested with, if it can still be resolved.
 
-    A case can outlive the plugin that read it — a custom `LogFormat` registered
-    by a script that is no longer on the path — so this returns `None` rather
-    than raising. The line is still shown; only its fields are missing.
+    The case's own copy of the definition comes first. That is what it is for:
+    a user who edits or deletes a saved format must not silently lose the
+    fields of every case that was read with it, and the name alone cannot
+    survive either of those.
+
+    Falling back to the name covers two cases that are both real. A `case.json`
+    written before definitions were stored has only a name; and a format
+    registered by handing over a factory has no definition to store, which is
+    the plugin the older wording described.
+
+    Returns `None` rather than raising when neither works. The line is still
+    shown; only its fields are missing.
     """
+    if record.format_spec is not None:
+        try:
+            return spec_from_dict(record.format_spec).build()
+        except (FormatSpecError, LogFormatError):
+            # A definition from a newer logarc, or one that no longer compiles.
+            # Both leave the line readable, which is the guarantee that matters.
+            return None
     try:
         return get_parser(record.log_format)
     except (UnknownFormatError, KeyError):

@@ -5,6 +5,40 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Log formats
+
+- **Write your own log format, and keep it.** logarc read three Apache presets and had no way to
+  add a fourth: the extension point existed in `parsers/registry.py` from the beginning and nothing
+  could reach it. The window passed no format at all, so every ingest from the interface was
+  auto-detected; the CLI's `--format` took a name and the only names were the three built-ins; and
+  `logarc formats` printed that a custom directive "is supported by passing its directive string",
+  which nothing accepted. A site running its own `LogFormat` could not use the tool.
+
+  A format is now a definition rather than a name, and it travels with the work — into the ingest
+  workers, and into the case. `logarc formats add`, `remove`, `show` and `check` write and try one
+  from the command line; **Case → Log formats…** does the same in the window, reading a pasted log
+  line back field by field as the directive is typed. Saved formats live in a plain JSON file you
+  own, are offered wherever the built-ins are, and take part in auto-detection — a log in a format
+  you wrote is now recognised without `--format` at all.
+
+  `logarc formats check` exists because a wrong directive does not announce itself: it quarantines
+  every line and presents as an empty case, which the quarantine notice already calls this tool's
+  worst failure mode. Point it at the log and read the fields before saving anything.
+- **A case outlives the format that read it.** `case.json` recorded a format's *name*, and
+  `evidence._parser_for` had always returned `None` when a name no longer resolved — a docstring
+  anticipating the day a case outlived the thing that read it. Letting readers edit and delete
+  formats is that day, so each source now records the definition it was ingested with. Editing or
+  deleting a saved format cannot make an existing case unreadable, and a case whose format has
+  since changed says so on a strip that shows both definitions. A `case.json` written before this
+  field existed still loads, unchanged.
+  See [ADR-0010](docs/adr/0010-a-log-format-is-data-that-travels-with-the-work.md).
+- **Corrected: nginx `log_format` definitions were never supported.** The compiler's docstring
+  claimed it handled "most nginx `log_format` definitions too". Measured: one is rejected outright
+  with `no directives found`. What is true is that nginx's default *output* is byte-identical to
+  Apache's `combined` and is read by `apache-combined` at confidence 1.0 — reading an nginx log
+  works, pasting an nginx format definition does not. A custom nginx format has to be rewritten as
+  the equivalent Apache directive.
+
 ### Interface
 
 - **Type an address to find one client among tens of thousands.** A filter box above the client

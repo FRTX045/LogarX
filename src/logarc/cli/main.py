@@ -8,7 +8,7 @@ import shutil
 import tempfile
 from dataclasses import replace
 from datetime import timedelta
-from itertools import chain
+from itertools import chain, islice
 from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING, Annotated, Final
@@ -21,6 +21,7 @@ from logarc import __version__
 from logarc.analysis import AnalysisPolicy, analyse_ip
 from logarc.case import Case, CaseError
 from logarc.core.activity import Severity
+from logarc.core.evidence import EvidenceRef
 from logarc.detect.crs import (
     CrsUnavailableError,
     SidecarConfig,
@@ -38,8 +39,22 @@ from logarc.evaluation.scoring import evaluate as score_case
 from logarc.evaluation.truth import TruthError, read_truth
 from logarc.gui.style import plural
 from logarc.ingest.pipeline import FormatDetectionError
-from logarc.ingest.reader import LogSourceError
-from logarc.parsers.registry import UnknownFormatError, registered_formats
+from logarc.ingest.reader import LogSourceError, open_log
+from logarc.parsers.library import (
+    FormatLibraryError,
+    library_path,
+    load_library,
+    save_library,
+)
+from logarc.parsers.logformat import LogFormatError
+from logarc.parsers.registry import (
+    UnknownFormatError,
+    get_spec,
+    is_built_in,
+    register_saved_formats,
+    registered_formats,
+)
+from logarc.parsers.spec import LogFormatSpec
 from logarc.report import export as export_formats
 from logarc.sessionize.segmenter import SessionPolicy
 from logarc.storage.event_store import SORT_KEYS, StoreStateError
@@ -153,6 +168,21 @@ def _version_callback(requested: bool) -> None:
         raise typer.Exit
 
 
+def _install_saved_formats() -> None:
+    """Make the user's saved formats resolvable by name, for this run.
+
+    A damaged library is reported and then stepped over rather than raised. It
+    is the user's own editable file; breaking it should cost them their saved
+    formats for the moment, not the ability to open a case they already have.
+    A command that then cannot resolve a name says so in its own words, and the
+    warning above it explains why.
+    """
+    try:
+        register_saved_formats()
+    except FormatLibraryError as exc:
+        errors.print(f"[yellow]warning:[/yellow] saved formats not loaded: {exc}", soft_wrap=True)
+
+
 @app.callback()
 def main(
     version: Annotated[
@@ -161,6 +191,7 @@ def main(
     ] = False,
 ) -> None:
     """Reconstruct what an IP did on a web server, from its access logs."""
+    _install_saved_formats()
 
 
 @app.command()
@@ -831,16 +862,169 @@ def benchmark(
         _path_line(f"Measurements written to {out}")
 
 
-@app.command()
-def formats() -> None:
-    """List the log formats that can be parsed."""
+formats_app = typer.Typer(
+    help="See, write and try out log formats.",
+    invoke_without_command=True,
+    add_completion=False,
+)
+app.add_typer(formats_app, name="formats")
+
+
+@formats_app.callback(invoke_without_command=True)
+def formats(ctx: typer.Context) -> None:
+    """List the log formats that can be parsed.
+
+    Kept as the group's own behaviour rather than a `list` subcommand, so that
+    `logarc formats` keeps doing what it did before there were subcommands.
+    """
+    if ctx.invoked_subcommand is not None:
+        return
+
     table = Table(title="Known log formats")
     table.add_column("Name")
-    table.add_column("LogFormat directive")
+    table.add_column("Source")
+    table.add_column("Definition")
     for entry in registered_formats():
-        table.add_row(entry.name, entry.description)
+        table.add_row(
+            entry.name,
+            "built-in" if is_built_in(entry.name) else "saved",
+            entry.description,
+        )
     console.print(table)
     console.print(
-        "\nA custom Apache or nginx format is supported by passing its directive "
-        "string; there is no need for it to be listed here."
+        "\nWrite one with [bold]logarc formats add <name> '<directive>'[/bold], and try a "
+        "directive against a real log first with [bold]logarc formats check[/bold]."
     )
+    _path_line(f"Saved formats: {library_path()}")
+
+
+@formats_app.command("add")
+def formats_add(
+    name: Annotated[str, typer.Argument(help="What to call this format.")],
+    directive: Annotated[str, typer.Argument(help="The Apache LogFormat directive string.")],
+    note: Annotated[
+        str, typer.Option("--note", help="A reminder of what this format is for.")
+    ] = "",
+    replace: Annotated[
+        bool, typer.Option("--replace", help="Overwrite a saved format of the same name.")
+    ] = False,
+) -> None:
+    """Save a log format so later cases can be ingested with it by name."""
+    saved = _load_or_fail()
+    existing = {spec.name for spec in saved}
+
+    if is_built_in(name):
+        raise _fail(
+            f"{name!r} is a built-in format. Built-ins are matched first, so a saved "
+            "format of the same name would never be reached; pick another name."
+        )
+    if name in existing and not replace:
+        raise _fail(f"{name!r} is already saved; pass --replace to overwrite it")
+
+    spec = LogFormatSpec(name=name, directive=directive, description=note)
+    kept = [item for item in saved if item.name != name]
+    try:
+        save_library([*kept, spec])
+    except FormatLibraryError as exc:
+        raise _fail(str(exc)) from exc
+
+    console.print(f"Saved [bold]{name}[/bold]: {directive}")
+    _path_line(f"Saved formats: {library_path()}")
+
+
+@formats_app.command("remove")
+def formats_remove(
+    name: Annotated[str, typer.Argument(help="The saved format to remove.")],
+) -> None:
+    """Forget a saved log format.
+
+    Cases already ingested with it are unaffected: each carries its own copy of
+    the definition and goes on reading exactly as it did.
+    """
+    saved = _load_or_fail()
+    if name not in {spec.name for spec in saved}:
+        if is_built_in(name):
+            raise _fail(f"{name!r} is a built-in format and cannot be removed")
+        raise _fail(f"no saved format named {name!r}")
+
+    save_library([spec for spec in saved if spec.name != name])
+    console.print(f"Removed [bold]{name}[/bold].")
+
+
+@formats_app.command("show")
+def formats_show(
+    name: Annotated[str, typer.Argument(help="The format to describe.")],
+) -> None:
+    """Print the definition behind a format's name."""
+    try:
+        spec = get_spec(name)
+    except UnknownFormatError as exc:
+        raise _fail(str(exc)) from exc
+    if spec is None:
+        raise _fail(f"{name!r} was registered from code and has no definition to show")
+
+    table = Table(title=f"Log format {name}")
+    table.add_column("Field")
+    table.add_column("Value")
+    table.add_row("Kind", spec.kind)
+    table.add_row("Source", "built-in" if is_built_in(name) else "saved")
+    table.add_row("Definition", spec.summary)
+    if spec.description:
+        table.add_row("Note", spec.description)
+    console.print(table)
+
+
+@formats_app.command("check")
+def formats_check(
+    directive: Annotated[str, typer.Argument(help="The LogFormat directive to try.")],
+    log: Annotated[Path, typer.Option("--log", help="A log file to try it against.")],
+    lines: Annotated[int, typer.Option("--lines", min=1, help="How many lines to read.")] = 5,
+) -> None:
+    """Try a directive against a real log and show what it pulls out.
+
+    Writing a directive blind is guesswork, and a wrong one does not announce
+    itself — it quarantines every line and presents as an empty case. This is
+    the answer to that: look at the fields before saving anything.
+    """
+    try:
+        parser = LogFormatSpec(name="check", directive=directive).build()
+    except LogFormatError as exc:
+        raise _fail(str(exc)) from exc
+
+    try:
+        with open_log(log) as stream:
+            sample = [(number, text) for number, text in islice(stream, lines) if text.strip()]
+    except LogSourceError as exc:
+        raise _fail(str(exc)) from exc
+
+    table = Table(title=f"{directive}  ·  {log.name}")
+    for column in ("Line", "Client", "When", "Method", "Path", "Status"):
+        table.add_column(column)
+
+    parsed = 0
+    for number, text in sample:
+        event = parser.parse_line(text, EvidenceRef(log.name, number))
+        if event is None:
+            table.add_row(str(number), "[red]did not match[/red]", "", "", "", "")
+            continue
+        parsed += 1
+        table.add_row(
+            str(number),
+            event.client_ip,
+            event.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+            event.method or "",
+            event.path or "",
+            str(event.status) if event.status is not None else "",
+        )
+    console.print(table)
+    console.print(f"Read [bold]{parsed} of {len(sample)}[/bold] lines.")
+
+    if parsed == 0:
+        raise _fail("this directive reads nothing in that log; the fields are in another order")
+
+
+def _load_or_fail() -> list[LogFormatSpec]:
+    try:
+        return load_library()
+    except FormatLibraryError as exc:
+        raise _fail(str(exc)) from exc

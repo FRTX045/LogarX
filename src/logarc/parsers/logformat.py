@@ -1,9 +1,16 @@
 """Compiles Apache `LogFormat` directives into line parsers.
 
 Rather than hardcoding "combined" and "common", this compiles the actual
-directive string an administrator wrote in their server config. That covers the
-standard formats, any custom Apache format, and — because the syntax is close
-enough — most nginx `log_format` definitions too.
+directive string an administrator wrote in their Apache config. That covers the
+standard formats and any custom Apache one.
+
+**Apache directives only.** An nginx `log_format` definition is written in
+`$variable` syntax and is rejected outright — `LogFormatError: no directives
+found`. What is true of nginx is a different statement: its default `combined`
+*output* is byte-identical to Apache's, so an nginx access log is read by
+`apache-combined` (measured: detected at confidence 1.0). Reading an nginx log
+works; pasting an nginx format definition does not. The docstring used to claim
+the second, which sent anyone with a custom nginx format to a dead end.
 
 Supported directive syntax::
 

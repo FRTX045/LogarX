@@ -11,17 +11,22 @@ import pytest
 from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
 from logarc.parsers.apache import COMBINED, COMMON
+from logarc.parsers.library import save_library
 from logarc.parsers.logformat import LogFormatParser
 from logarc.parsers.registry import (
     UnknownFormatError,
     available_formats,
     detect_format,
     get_parser,
+    get_spec,
     register_format,
     register_logformat,
+    register_saved_formats,
+    register_spec,
     registered_formats,
     unregister_format,
 )
+from logarc.parsers.spec import LogFormatSpec
 
 COMBINED_LINES = [
     '203.0.113.45 - - [10/Oct/2000:13:55:36 +0000] "GET / HTTP/1.1" 200 2326 "-" "curl/8.0"',
@@ -249,3 +254,89 @@ def test_vhost_parser_extracts_the_virtual_host() -> None:
 
     assert event is not None
     assert event.host == "a.example.com"
+
+
+# ---------------------------------------------------------------------------
+# The definition behind a name
+# ---------------------------------------------------------------------------
+
+
+def test_a_built_in_format_carries_the_definition_behind_its_name() -> None:
+    """A name only resolves where the definition is already known. Ingest has
+    to send the definition itself to a worker, so the registry must be able to
+    hand one over rather than only a built parser."""
+    spec = get_spec("apache-combined")
+
+    assert spec is not None
+    assert spec.directive == COMBINED
+    assert spec.name == "apache-combined"
+
+
+def test_a_format_registered_from_a_definition_is_available_everywhere() -> None:
+    register_spec(LogFormatSpec(name="log-kantor", directive='%h %t "%r" %>s %b'))
+
+    assert "log-kantor" in available_formats()
+    assert get_parser("log-kantor").name == "log-kantor"
+    assert get_spec("log-kantor") == LogFormatSpec(name="log-kantor", directive='%h %t "%r" %>s %b')
+
+
+def test_a_format_registered_by_handing_over_a_factory_has_no_definition() -> None:
+    """`register_format` takes code, not data, and code cannot be written into
+    a case or pickled to a worker. Saying so with `None` is what lets ingest
+    fall back rather than pretend it carried something."""
+    register_format("test-json", JsonParser)
+
+    assert get_spec("test-json") is None
+
+
+def test_asking_for_the_definition_of_a_format_that_is_not_there_is_refused() -> None:
+    with pytest.raises(UnknownFormatError, match="nonsense"):
+        get_spec("nonsense")
+
+
+def test_detection_reports_the_definition_it_matched() -> None:
+    detection = detect_format(COMBINED_LINES)
+
+    assert detection is not None
+    assert detection.spec is not None
+    assert detection.spec.directive == COMBINED
+
+
+def test_a_definition_registered_over_an_existing_name_is_refused() -> None:
+    with pytest.raises(ValueError, match="apache-combined"):
+        register_spec(LogFormatSpec(name="apache-combined", directive="%h"))
+
+
+def test_saved_formats_reach_the_registry_when_they_are_installed() -> None:
+    """The engine never reads the library itself. The CLI and the GUI install
+    what the user saved; this is that step, and the reason `--format log-kantor`
+    resolves at all."""
+    save_library([LogFormatSpec(name="log-kantor", directive='%h %t "%r" %>s %b')])
+
+    installed = register_saved_formats()
+
+    assert [spec.name for spec in installed] == ["log-kantor"]
+    assert get_parser("log-kantor").name == "log-kantor"
+
+
+def test_installing_saved_formats_twice_is_not_an_error() -> None:
+    """A GUI that opens a second window, or a CLI command that installs before
+    delegating to another, must not fail on the second call."""
+    save_library([LogFormatSpec(name="log-kantor", directive="%h %t")])
+
+    register_saved_formats()
+    register_saved_formats()
+
+    assert available_formats().count("log-kantor") == 1
+
+
+def test_a_saved_format_cannot_displace_a_built_in() -> None:
+    """Registration order is preference order and the built-ins come first, so
+    a case ingested as `apache-combined` keeps meaning what it meant. A saved
+    format that collides is skipped rather than allowed to take the name."""
+    save_library([LogFormatSpec(name="apache-combined", directive="%h")])
+
+    installed = register_saved_formats()
+
+    assert installed == []
+    assert get_spec("apache-combined").directive == COMBINED

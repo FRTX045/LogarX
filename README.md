@@ -100,15 +100,31 @@ logarc export --case ./case-001 --ip 203.0.113.45 --format html --out report.htm
 ```
 
 The format is detected from the first lines of a log. When it cannot be — a
-custom `LogFormat`, or a file that is not an access log — ingest refuses rather
-than guessing, because the wrong parser quarantines everything and presents as
-an empty result. `logarc formats` lists the names `--format` accepts, and the
-directive behind each:
+site with its own `LogFormat`, or a file that is not an access log — ingest
+refuses rather than guessing, because the wrong parser quarantines everything
+and presents as an empty result.
+
+A format you write yourself is a first-class one: saved by name, offered
+wherever the built-ins are, and usable in every later case.
 
 ```bash
-logarc formats
-logarc ingest access.log --case ./case-001 --format apache-common
+logarc formats                    # every format, built-in and saved
+
+# See what a directive reads before committing to it. A wrong one does not
+# announce itself — it quarantines every line and looks like an empty case.
+logarc formats check '%h|%t|"%r"|%>s|%b' --log access.log
+
+logarc formats add log-kantor '%h|%t|"%r"|%>s|%b'
+logarc ingest access.log --case ./case-001 --format log-kantor
 ```
+
+In the desktop application the same thing lives under **Case → Log formats…**,
+where a pasted log line is read back field by field as the directive is typed.
+
+Saved formats live in a plain JSON file you own — `logarc formats` prints its
+path. Each case also records the definition it was ingested with, so editing or
+deleting a saved format later cannot make an existing case unreadable; the
+window says so on a case whose format has since changed.
 
 ### The desktop application
 
@@ -139,6 +155,20 @@ The four `Directory Enumeration` episodes of the trace are one 45-request node h
 each arrow says the scanner went round that loop three times — the thing the trace cannot show. The
 ring marks the activity whose evidence is open; the key along the bottom says what colour, outline
 and size each mean.*
+
+![The log format screen: the built-in formats and the reader's own, with a pasted log line read back field by field](docs/images/screenshot-log-formats.png)
+
+*Log formats — **Case → Log formats…**. The three that ship with logarc above,
+yours below, and neither can be confused for the other: a built-in is readable
+and not editable, because registration order is preference order and an edited
+copy of `apache-combined` would never be reached. Paste one line from your log
+and the directive is tried against it as you type — here a pipe-separated
+format with a forwarded-for header, read into seven of the eleven canonical
+fields plus the header itself, which is usually the whole reason a site has its
+own format. A directive that reads nothing says so, and names the built-in that
+does read the line if there is one. That check is the point of the screen: a
+wrong directive does not announce itself at ingest — it quarantines every line
+and presents as an empty case.*
 
 A Windows GUI (PyQt6) wraps the same engine — the CLI and the GUI share one code path, so
 anything the GUI can do is scriptable. Pick a client from the table, read the activity graph,

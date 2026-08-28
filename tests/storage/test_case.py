@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -101,3 +102,57 @@ def test_timestamps_survive_serialisation_exactly(tmp_path: Path) -> None:
     manifest.save(tmp_path)
 
     assert CaseManifest.load(tmp_path).created_at == manifest.created_at
+
+
+# ---------------------------------------------------------------------------
+# The case's own copy of the format it was read with
+# ---------------------------------------------------------------------------
+
+#: A `case.json` source record exactly as the release before format
+#: definitions wrote one. Spelled out here rather than generated, because the
+#: point of the test is that *this* shape still loads — a generated one would
+#: be regenerated the day the writer changes and would stop testing anything.
+SOURCE_AS_WRITTEN_BEFORE_FORMAT_SPECS = {
+    "file_id": "access.log",
+    "original_path": "/var/log/apache2/access.log",
+    "sha256": "a" * 64,
+    "size_bytes": 2048,
+    "compression": "none",
+    "log_format": "apache-combined",
+    "lines_read": 100,
+    "events_parsed": 98,
+    "lines_quarantined": 2,
+}
+
+
+def test_a_case_written_before_definitions_existed_still_loads(tmp_path: Path) -> None:
+    """Cases are kept. A release that could not open the ones already on an
+    investigator's disk would be worse than one without the feature."""
+    (tmp_path / "case.json").write_text(
+        json.dumps(
+            {
+                "case_id": "case-001",
+                "created_at": "2024-05-01T00:00:00+00:00",
+                "tool_version": "0.1.0",
+                "sources": [SOURCE_AS_WRITTEN_BEFORE_FORMAT_SPECS],
+                "config": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    restored = CaseManifest.load(tmp_path)
+
+    assert restored.sources[0].log_format == "apache-combined"
+    assert restored.sources[0].format_spec is None
+
+
+def test_a_recorded_definition_survives_the_round_trip(tmp_path: Path) -> None:
+    definition = {"version": 1, "kind": "logformat", "name": "log-kantor", "directive": "%h %t"}
+    manifest = CaseManifest.create(case_id="case-002")
+    manifest.sources.append(replace(SOURCE, log_format="log-kantor", format_spec=definition))
+    manifest.save(tmp_path)
+
+    restored = CaseManifest.load(tmp_path)
+
+    assert restored.sources[0].format_spec == definition

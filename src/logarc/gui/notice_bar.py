@@ -39,15 +39,20 @@ if TYPE_CHECKING:
 
     from logarc.gui.quarantine_notice import Notice
 
-__all__ = ["QuarantineBanner", "warn_about_dead_files"]
+__all__ = ["NoticeBanner", "warn_about_dead_files"]
 
 #: Warning, not failure. The strip reports a case that is short of its logs,
 #: which is a thing to look into rather than a thing that broke.
 _AMBER: Final = THEME.severity[Severity.MEDIUM]
 
 
-class QuarantineBanner(QFrame):
-    """An amber strip under the menu bar. Hidden until there is something to say."""
+class NoticeBanner(QFrame):
+    """An amber strip under the menu bar. Hidden until there is something to say.
+
+    Was `QuarantineBanner`, and named for the one thing it said. It now also
+    carries the format-drift notice, which is a different fact about the same
+    case, so the name says what it is rather than what it happened to hold.
+    """
 
     def __init__(self) -> None:
         super().__init__()
@@ -56,9 +61,9 @@ class QuarantineBanner(QFrame):
         # strip as well — which is what the first draft did, drawing a box
         # around the warning glyph and a rule beneath the caption. Found by
         # looking at a screenshot; nothing about the code says it.
-        self.setObjectName("quarantineBanner")
+        self.setObjectName("noticeBanner")
         self.setStyleSheet(
-            f"QFrame#quarantineBanner {{ background: {NOTICE_TINT};"
+            f"QFrame#noticeBanner {{ background: {NOTICE_TINT};"
             f" border: none; border-bottom: 1px solid {_AMBER}; }}"
         )
 
@@ -82,6 +87,14 @@ class QuarantineBanner(QFrame):
             "line with the reason it was refused."
         )
 
+        # The strip shows the first sentence and no more, or it takes a third
+        # of the window. For a notice with more to say, this is the way to the
+        # rest — without it a reader is told the format changed and never which
+        # way, which is the half worth telling them.
+        self._more = QPushButton("Show what changed")
+        self._more.setFont(caption_font(self._more.font()))
+        self._more.clicked.connect(self._show_the_rest)
+
         close = QToolButton()
         close.setText("✕")
         close.setToolTip("Dismiss until this case is opened again.")
@@ -101,10 +114,12 @@ class QuarantineBanner(QFrame):
         row.setSpacing(GAP)
         row.addWidget(mark, 0, Qt.AlignmentFlag.AlignTop)
         row.addLayout(words, 1)
+        row.addWidget(self._more, 0, Qt.AlignmentFlag.AlignTop)
         row.addWidget(self._reveal, 0, Qt.AlignmentFlag.AlignTop)
         row.addWidget(close, 0, Qt.AlignmentFlag.AlignTop)
 
         self._quarantine_dir: Path | None = None
+        self._notice: Notice | None = None
         self.hide()
 
     def text(self) -> str:
@@ -120,6 +135,7 @@ class QuarantineBanner(QFrame):
         case's evidence.
         """
         self._quarantine_dir = quarantine_dir
+        self._notice = notice
         if notice is None:
             self.hide()
             return
@@ -129,11 +145,30 @@ class QuarantineBanner(QFrame):
         # take a third of the window with it.
         self._detail.setText(notice.detail.split("\n\n")[0])
         self._reveal.setVisible(quarantine_dir is not None)
+        # Only when there is a second paragraph to show, and only when
+        # nothing else is already showing it: a blocking notice raises a
+        # dialog holding the whole thing, and a button beside the strip
+        # offering the same words would be the third place to read them. A
+        # button repeating the line above it is worse than none — the reader
+        # opens it once and stops trusting the next one.
+        self._more.setVisible("\n\n" in notice.detail and not notice.is_blocking)
         self.show()
 
     def dismiss(self) -> None:
         """Hide until the next case open, which fills the strip again."""
         self.hide()
+
+    def _show_the_rest(self) -> None:
+        """The paragraphs the strip has no room for."""
+        if self._notice is None:  # pragma: no cover - the button is hidden then
+            return
+        head, *rest = self._notice.detail.split("\n\n")
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setWindowTitle(self._notice.headline)
+        box.setText(head)
+        box.setInformativeText("\n\n".join(rest))
+        box.exec()
 
     def _open_quarantine(self) -> None:
         if self._quarantine_dir is not None:
