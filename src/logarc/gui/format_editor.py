@@ -85,6 +85,14 @@ _DETECT = "Detect automatically"
 #: reader has typed. A list whose row 0 *is* the blank form cannot.
 _NEW = "New format…"
 
+_BUILT_IN_HEADING = "Built in"
+_SAVED_HEADING = "Saved by you"
+
+#: The rows of the list that are not formats. A format named after one of them
+#: would be picked up by the wrong branch of `_on_selected` and edited as
+#: something it is not, so the names are refused on the way in.
+_RESERVED = frozenset({_NEW, _BUILT_IN_HEADING, _SAVED_HEADING})
+
 _SAMPLE_HINT = (
     "Paste one line from your log here.\nCopy it exactly, including the quotes and brackets."
 )
@@ -305,6 +313,8 @@ class FormatEditor(QDialog):
         name = self._name.text().strip()
         if not name:
             return self._refuse("Give this format a name.")
+        if name in _RESERVED:
+            return self._refuse(f"{name!r} is what the list beside this calls one of its own rows.")
 
         saved = _saved()
         if is_built_in(name):
@@ -381,7 +391,7 @@ class FormatEditor(QDialog):
         self._formats.clear()
         self._headings.clear()
         self._formats.addItem(_NEW)
-        for heading, names in (("Built in", built_in), ("Saved by you", saved)):
+        for heading, names in ((_BUILT_IN_HEADING, built_in), (_SAVED_HEADING, saved)):
             if not names:
                 continue
             self._headings.add(self._formats.count())

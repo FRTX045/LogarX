@@ -340,3 +340,19 @@ def test_a_format_deleted_elsewhere_stops_being_offered(qt_app: QApplication) ->
     save_library([])
 
     assert "log-kantor" not in FormatChoice().offered()
+
+
+def test_a_name_the_list_itself_uses_is_refused(qt_app: QApplication) -> None:
+    """The list holds three kinds of row: the blank form, two group headings,
+    and the formats. A format named after one of the others would be selected
+    by the wrong branch and edited as something it is not."""
+    editor = FormatEditor()
+
+    for reserved in ("New format…", "Built in", "Saved by you"):
+        editor.start_new()
+        editor._name.setText(reserved)
+        editor._directive.setText(PIPED)
+
+        assert not editor.save(), f"{reserved!r} was accepted as a format name"
+
+    assert load_library() == []
