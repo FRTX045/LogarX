@@ -40,6 +40,7 @@ from logarc.core.graph import GraphKind
 from logarc.core.window import EVERYTHING, TimeWindow
 from logarc.detect.crs import CrsEvidence
 from logarc.episode.builder import DEFAULT_EVIDENCE_SAMPLE, EpisodePolicy
+from logarc.formats import drifted_sources
 from logarc.gui import crash, prefs, recent
 from logarc.gui._qt import required
 from logarc.gui.arrangement_bar import ArrangementBar
@@ -48,8 +49,9 @@ from logarc.gui.canvas import ActivityCanvas
 from logarc.gui.case_chooser import CaseChooser
 from logarc.gui.density import Density, buckets_for
 from logarc.gui.evidence_panel import EvidencePanel
+from logarc.gui.format_notice import drift_notice
 from logarc.gui.full_screen import FullScreen
-from logarc.gui.notice_bar import QuarantineBanner, warn_about_dead_files
+from logarc.gui.notice_bar import NoticeBanner, warn_about_dead_files
 from logarc.gui.panels import ClientTable, LegendBar
 from logarc.gui.preferences import PreferencesDialog
 from logarc.gui.progress import Progress, Reading
@@ -297,7 +299,13 @@ class MainWindow(QMainWindow):
         #: Up only while an ingest is running.
         self._ingest_card: IngestCard | None = None
 
-        self._notice = QuarantineBanner()
+        self._notice = NoticeBanner()
+        # Its own strip rather than a paragraph added to the one above. The two
+        # say different things — one that the case is short of its logs, the
+        # other that it is complete but was made with a format that has since
+        # been edited — and a reader who has taken in the first should be able
+        # to dismiss it without losing the second.
+        self._format_notice = NoticeBanner()
         self._clients = ClientTable()
         self._canvas = ActivityCanvas()
         self._legend = LegendBar()
@@ -449,6 +457,7 @@ class MainWindow(QMainWindow):
         stack.setContentsMargins(0, 0, 0, 0)
         stack.setSpacing(0)
         stack.addWidget(self._notice)
+        stack.addWidget(self._format_notice)
         # Beside the notice for the same reason, and it matters more here than
         # it looks: the range governs the client list as well as the graph, so
         # sitting over the graph alone it would claim to narrow one of the two
@@ -784,12 +793,16 @@ class MainWindow(QMainWindow):
             # Built here, on the worker: it is arithmetic over the source
             # records, and the manifest is already in hand. `done` only shows it.
             notice = notice_for(manifest.sources)
-            return view, snapshot, notice
+            # Reads the user's saved-format library, which is a file on disk, so
+            # it belongs on the worker beside the rest of the reading. The engine
+            # never does this: the case was read from its own copy long before.
+            drifted = drift_notice(drifted_sources(manifest.sources))
+            return view, snapshot, notice, drifted
 
         self._busy(f"Opening {path}…")
 
         def done(loaded: Any) -> None:
-            view, snapshot, notice = loaded
+            view, snapshot, notice, drifted = loaded
             summaries = view.listed
             self._remember_case(snapshot)
             self._case_path = path
@@ -823,6 +836,9 @@ class MainWindow(QMainWindow):
             # taken yet.
             self._evidence.clear(prompt=False)
             self._notice.show_notice(notice, quarantine_dir=path / QUARANTINE_DIR)
+            # No quarantine folder: nothing was refused. Passing one would offer
+            # a button that opens a directory holding nothing to do with this.
+            self._format_notice.show_notice(drifted)
             self._heading.setText("")
             self._tabs.setVisible(False)
             self._clients.show_clients(summaries, total=view.whole.clients)
@@ -1185,6 +1201,7 @@ class MainWindow(QMainWindow):
             self._evidence,
             self._time_filter,
             self._notice,
+            self._format_notice,
             self._tabs,
             self._heading,
             self._legend,

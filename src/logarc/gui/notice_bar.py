@@ -39,15 +39,20 @@ if TYPE_CHECKING:
 
     from logarc.gui.quarantine_notice import Notice
 
-__all__ = ["QuarantineBanner", "warn_about_dead_files"]
+__all__ = ["NoticeBanner", "warn_about_dead_files"]
 
 #: Warning, not failure. The strip reports a case that is short of its logs,
 #: which is a thing to look into rather than a thing that broke.
 _AMBER: Final = THEME.severity[Severity.MEDIUM]
 
 
-class QuarantineBanner(QFrame):
-    """An amber strip under the menu bar. Hidden until there is something to say."""
+class NoticeBanner(QFrame):
+    """An amber strip under the menu bar. Hidden until there is something to say.
+
+    Was `QuarantineBanner`, and named for the one thing it said. It now also
+    carries the format-drift notice, which is a different fact about the same
+    case, so the name says what it is rather than what it happened to hold.
+    """
 
     def __init__(self) -> None:
         super().__init__()
@@ -56,9 +61,9 @@ class QuarantineBanner(QFrame):
         # strip as well — which is what the first draft did, drawing a box
         # around the warning glyph and a rule beneath the caption. Found by
         # looking at a screenshot; nothing about the code says it.
-        self.setObjectName("quarantineBanner")
+        self.setObjectName("noticeBanner")
         self.setStyleSheet(
-            f"QFrame#quarantineBanner {{ background: {NOTICE_TINT};"
+            f"QFrame#noticeBanner {{ background: {NOTICE_TINT};"
             f" border: none; border-bottom: 1px solid {_AMBER}; }}"
         )
 

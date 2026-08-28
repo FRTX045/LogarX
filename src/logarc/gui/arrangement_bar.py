@@ -47,7 +47,7 @@ class ArrangementBar(QFrame):
         super().__init__()
         # Addressed by name. `QLabel` inherits `QFrame`, so a bare `QFrame` rule
         # paints this border round every label inside the strip as well — the
-        # same trap `QuarantineBanner` records having fallen into, found there
+        # same trap `NoticeBanner` records having fallen into, found there
         # by looking at a screenshot because nothing in the code says it.
         self.setObjectName("arrangementBar")
         self.setStyleSheet(
