@@ -66,9 +66,23 @@ its parent. Timestamps in ISO, epoch seconds, milliseconds or microseconds are
 read without being configured; anything else takes `--time-format`, a strftime
 pattern.
 
+## Level 1c — it is a table
+
+IIS W3C, or CSV. Least work of the three, because the log names its own columns
+— a `#Fields:` line in W3C, the first row in most CSVs.
+
+```bash
+logarc formats check-columns --log u_ex240501.log
+logarc formats add-columns iis --log u_ex240501.log
+logarc formats add-columns edge --log edge.csv --separator comma
+```
+
+The date and time in separate columns, as W3C writes them, is spelled
+`date+time`. A log with no header at all takes `--columns when,who,code`.
+
 ## Level 2 — it is a different shape entirely
 
-IIS W3C, an appliance with a syntax of its own. Implement the protocol in
+An appliance with a syntax of its own. Implement the protocol in
 `logarc/parsers/base.py`:
 
 ```python

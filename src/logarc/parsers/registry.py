@@ -278,10 +278,19 @@ def detect_format(
 
     best: FormatDetection | None = None
     for name in _REGISTRY:
-        parser = get_parser(name)
+        # Resolved against the sample before it is scored. A table format's
+        # columns may be declared in the file rather than in the definition,
+        # and unresolved it cannot read a line — it would score zero and be
+        # passed over for the very logs it was written for.
+        spec = _REGISTRY[name].spec
+        try:
+            resolved = spec.resolved(lines) if spec is not None else None
+            parser = resolved.build() if resolved is not None else get_parser(name)
+        except ValueError:
+            # A definition that cannot be built against this file is simply not
+            # the format of this file. Detection says so by moving on.
+            continue
         confidence = score_parser(parser, lines)
         if confidence >= min_confidence and (best is None or confidence > best.confidence):
-            best = FormatDetection(
-                name=name, parser=parser, confidence=confidence, spec=_REGISTRY[name].spec
-            )
+            best = FormatDetection(name=name, parser=parser, confidence=confidence, spec=resolved)
     return best

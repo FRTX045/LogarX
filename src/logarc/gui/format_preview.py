@@ -21,12 +21,13 @@ from typing import TYPE_CHECKING, Final
 
 from logarc.core.evidence import EvidenceRef
 from logarc.gui.style import plural
+from logarc.parsers.columns import FIELDS_DIRECTIVE, ColumnsFormatError
 from logarc.parsers.json_format import JsonFormatError, flatten
 from logarc.parsers.logformat import LogFormatError
 from logarc.parsers.registry import detect_format
-from logarc.parsers.spec import JsonFormatSpec, LogFormatSpec
+from logarc.parsers.spec import ColumnsFormatSpec, JsonFormatSpec, LogFormatSpec
 
-__all__ = ["Preview", "preview", "preview_mapping"]
+__all__ = ["Preview", "preview", "preview_columns", "preview_mapping"]
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -139,6 +140,87 @@ def preview_mapping(fields: Sequence[tuple[str, str]], time_format: str, sample:
     if event is None:
         return Preview(ok=False, status=_why_the_mapping_missed(sample))
     return _read(event)
+
+
+def preview_columns(
+    fields: Sequence[tuple[str, str]],
+    columns: Sequence[str],
+    separator: str,
+    time_format: str,
+    sample: str,
+) -> Preview:
+    """Try a table format against pasted lines and say what came of it.
+
+    Takes several lines where the other kinds take one, because for this kind
+    the header *is* half the definition: a W3C log names its columns in a
+    `#Fields:` line, so the reader pastes a piece of the log rather than a
+    single row. The row previewed is the first that is not bookkeeping — read
+    as data, the header would say the format is broken when it is only that the
+    reader pasted more than one kind of line.
+    """
+    lines = [line for line in sample.splitlines() if line.strip()]
+    if not fields:
+        return Preview(ok=False, status="Map at least a timestamp and a client address.")
+    if not lines:
+        return Preview(ok=False, status="Paste a few lines from your log, header and all.")
+
+    spec = ColumnsFormatSpec(
+        name="preview",
+        fields=tuple(fields),
+        columns=tuple(columns),
+        separator=separator,
+        time_format=time_format,
+    )
+    settled = spec.resolved(lines)
+    try:
+        parser = settled.build()
+    except ColumnsFormatError as exc:
+        return Preview(ok=False, status=_why_the_columns_missed(spec, settled, lines, exc))
+
+    rows = [line for line in lines if not parser.is_metadata(line)]
+    if not rows:
+        return Preview(
+            ok=False,
+            status="Every line pasted is the log's own header. Paste a row of data too.",
+        )
+
+    event = parser.parse_line(rows[0], _REF)
+    if event is None:
+        return Preview(
+            ok=False,
+            status=(
+                "Nothing was read from that row. Check the separator, and that the "
+                "columns line up with the header above it."
+            ),
+        )
+    return _read(event)
+
+
+def _why_the_columns_missed(
+    asked: ColumnsFormatSpec,
+    settled: ColumnsFormatSpec,
+    lines: Sequence[str],
+    trouble: ColumnsFormatError,
+) -> str:
+    """Say what went wrong in terms of what the reader can see.
+
+    One case earns its own sentence: a log with no `#Fields:` line, whose first
+    row of data was taken for a header. The plain message then lists that row's
+    *values* as though they were column names, which reads as nonsense — and
+    the answer is not to fix the mapping but to give the column names.
+    """
+    took_a_row = (
+        not asked.columns
+        and settled.columns
+        and not any(line.strip().startswith(FIELDS_DIRECTIVE) for line in lines)
+    )
+    if took_a_row:
+        return (
+            "These lines have no #Fields: header, so the first row was read as one — "
+            "and its names are not the ones your mapping uses. If this log has no "
+            "header at all, write the column names in yourself."
+        )
+    return str(trouble)
 
 
 def _why_the_mapping_missed(sample: str) -> str:

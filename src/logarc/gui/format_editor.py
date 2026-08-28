@@ -25,7 +25,7 @@ without a display. What is here is the arranging of it.
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
@@ -48,19 +48,21 @@ from PyQt6.QtWidgets import (
 )
 
 from logarc.gui._qt import required
-from logarc.gui.format_preview import preview, preview_mapping
+from logarc.gui.format_preview import preview, preview_columns, preview_mapping
 from logarc.gui.style import THEME
 from logarc.gui.theme import GAP, ROOM, caption_font
-from logarc.parsers.json_format import MAPPABLE, JsonFormatError, guess_mapping
+from logarc.parsers.columns import FIELDS_DIRECTIVE, declared_columns
+from logarc.parsers.fieldnames import MAPPABLE
+from logarc.parsers.fieldnames import guess_mapping as guess_from_names
+from logarc.parsers.json_format import guess_mapping
 from logarc.parsers.library import FormatLibraryError, load_library, save_library
-from logarc.parsers.logformat import LogFormatError
 from logarc.parsers.registry import (
     available_formats,
     get_spec,
     is_built_in,
     register_saved_formats,
 )
-from logarc.parsers.spec import JsonFormatSpec, LogFormatSpec
+from logarc.parsers.spec import ColumnsFormatSpec, JsonFormatSpec, LogFormatSpec
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -94,6 +96,7 @@ _DETECT = "Detect automatically"
 #: into a screen that wanted a mapping.
 _NEW_TEXT = "New text format…"
 _NEW_JSON = "New JSON format…"
+_NEW_TABLE = "New table format…"
 
 _BUILT_IN_HEADING = "Built in"
 _SAVED_HEADING = "Saved by you"
@@ -101,11 +104,30 @@ _SAVED_HEADING = "Saved by you"
 #: The rows of the list that are not formats. A format named after one of them
 #: would be picked up by the wrong branch of `_on_selected` and edited as
 #: something it is not, so the names are refused on the way in.
-_RESERVED = frozenset({_NEW_TEXT, _NEW_JSON, _BUILT_IN_HEADING, _SAVED_HEADING})
+_RESERVED = frozenset({_NEW_TEXT, _NEW_JSON, _NEW_TABLE, _BUILT_IN_HEADING, _SAVED_HEADING})
+
+#: What the separator box offers, in the spelling a reader recognises. A tab is
+#: not something anyone can type into a text box and see.
+_SEPARATORS: Final[dict[str, str]] = {"Space": " ", "Comma": ",", "Tab": "\t"}
+
+#: Room for one pasted line, and for the header-and-a-row a table needs.
+_SAMPLE_SHORT: Final = 64
+_SAMPLE_TALL: Final = 108
 
 _SAMPLE_HINT = (
     "Paste one line from your log here.\nCopy it exactly, including the quotes and brackets."
 )
+
+#: What to ask for in the sample box, per kind. A table wants several lines,
+#: because for that kind the header is half the definition.
+_SAMPLE_HINTS: Final[dict[str, str]] = {
+    "logformat": _SAMPLE_HINT,
+    "json": _SAMPLE_HINT,
+    "columns": (
+        "Paste a few lines from your log, header and all.\n"
+        "The #Fields: line is where the column names come from."
+    ),
+}
 
 
 def _saved() -> list[FormatSpec]:
@@ -193,9 +215,22 @@ class FormatEditor(QDialog):
         self._guess = QPushButton("Guess from the line above")
         self._guess.clicked.connect(self.guess)
 
+        # The table half. Only these two are new: a table is a mapping like a
+        # JSON log, and shares that screen.
+        self._separator = QComboBox()
+        self._separator.addItems(list(_SEPARATORS))
+        self._separator.currentTextChanged.connect(self._refresh_preview)
+
+        self._columns = QLineEdit()
+        self._columns.setPlaceholderText("Leave empty when the log names its own columns")
+        self._columns.textChanged.connect(self._refresh_preview)
+
+        self._separator_label = self._labelled("Separator")
+        self._columns_label = self._labelled("Columns")
+
         self._sample = QPlainTextEdit()
         self._sample.setPlaceholderText(_SAMPLE_HINT)
-        self._sample.setFixedHeight(64)
+        self._sample.setFixedHeight(_SAMPLE_SHORT)
         self._sample.textChanged.connect(self._refresh_preview)
 
         self._fields = QTableWidget(0, 2)
@@ -263,6 +298,15 @@ class FormatEditor(QDialog):
         guessing.addWidget(self._time_format, 1)
         right.addWidget(self._guess_row)
 
+        self._table_row = QWidget()
+        tabular = QHBoxLayout(self._table_row)
+        tabular.setContentsMargins(0, 0, 0, 0)
+        tabular.addWidget(self._separator_label)
+        tabular.addWidget(self._separator)
+        tabular.addWidget(self._columns_label)
+        tabular.addWidget(self._columns, 1)
+        right.addWidget(self._table_row)
+
         right.addWidget(self._status)
 
         # The rule on the left, what it read on the right. Stacked, neither
@@ -311,7 +355,7 @@ class FormatEditor(QDialog):
         return [
             item.text()
             for item in items
-            if item is not None and item.text() not in (_NEW_TEXT, _NEW_JSON)
+            if item is not None and item.text() not in (_NEW_TEXT, _NEW_JSON, _NEW_TABLE)
         ]
 
     def kind(self) -> str:
@@ -338,7 +382,15 @@ class FormatEditor(QDialog):
         self._refresh_preview()
 
     def guess(self) -> None:
-        """Propose a mapping from the pasted line, for the reader to correct."""
+        """Propose a mapping from the pasted lines, for the reader to correct.
+
+        Where the names come from is all that differs between the kinds: keys
+        in a JSON object, headings in a table. What the names mean is one
+        answer, in `parsers.fieldnames`.
+        """
+        if self._kind == "columns":
+            self._guess_columns()
+            return
         try:
             payload = json.loads(self._sample.toPlainText().strip())
         except (json.JSONDecodeError, ValueError):
@@ -349,6 +401,32 @@ class FormatEditor(QDialog):
             return
         self._trouble = ""
         self.set_mapping(guess_mapping(payload))
+
+    def _guess_columns(self) -> None:
+        lines = [line for line in self._sample.toPlainText().splitlines() if line.strip()]
+        given = self.columns()
+        if given:
+            self._trouble = ""
+            self.set_mapping(guess_from_names(given))
+            return
+
+        found, _header = declared_columns(lines, self.separator())
+        if not found or not any(line.strip().startswith(FIELDS_DIRECTIVE) for line in lines):
+            self._refuse(
+                "These lines have no #Fields: header to take the column names from. "
+                "Write them into Columns yourself."
+            )
+            return
+        self._trouble = ""
+        self.set_mapping(guess_from_names(found))
+
+    def columns(self) -> tuple[str, ...]:
+        """The column names typed in, if any. Empty means the log names them."""
+        return tuple(part.strip() for part in self._columns.text().split(",") if part.strip())
+
+    def separator(self) -> str:
+        """The character between cells, from the box's own wording."""
+        return _SEPARATORS[self._separator.currentText()]
 
     def editing(self) -> str | None:
         """The saved format being edited, or `None` for a new or built-in one."""
@@ -361,6 +439,14 @@ class FormatEditor(QDialog):
     def preview(self) -> Preview:
         """What the format on screen currently reads out of the pasted line."""
         sample = self._sample.toPlainText()
+        if self._kind == "columns":
+            return preview_columns(
+                self.mapping(),
+                self.columns(),
+                self.separator(),
+                self._time_format.text().strip(),
+                sample,
+            )
         if self._kind == "json":
             return preview_mapping(self.mapping(), self._time_format.text().strip(), sample)
         return preview(self._directive.text(), sample)
@@ -383,6 +469,10 @@ class FormatEditor(QDialog):
         """Clear the right-hand side for a JSON format that does not exist yet."""
         self.select(_NEW_JSON)
 
+    def start_new_columns(self) -> None:
+        """Clear the right-hand side for a table format that does not exist yet."""
+        self.select(_NEW_TABLE)
+
     def _blank(self, kind: str) -> None:
         self._editing = None
         self._trouble = ""
@@ -390,6 +480,8 @@ class FormatEditor(QDialog):
         self._directive.clear()
         self._note.clear()
         self._time_format.clear()
+        self._columns.clear()
+        self._separator.setCurrentIndex(0)
         self.set_mapping(())
         self._show_kind(kind)
         self._set_editable(True)
@@ -400,7 +492,8 @@ class FormatEditor(QDialog):
 
         Hidden rather than disabled: a greyed-out mapping table beside a live
         directive line invites the reader to wonder which one this format uses,
-        and the answer is never both.
+        and the answer is never both. A control that means nothing here is a
+        question they have to answer before realising it was not being asked.
         """
         self._kind = kind
         text = kind == "logformat"
@@ -408,12 +501,22 @@ class FormatEditor(QDialog):
         self._directive.setVisible(text)
         self._mapping.setVisible(not text)
         self._guess_row.setVisible(not text)
+        self._table_row.setVisible(kind == "columns")
+        self._sample.setPlaceholderText(_SAMPLE_HINTS[kind])
+        # A table wants a header and a row, so it wants room for both. One line
+        # of a four-line paste, with the rest behind a scrollbar, hides the
+        # half the reader is being asked to check.
+        self._sample.setFixedHeight(_SAMPLE_TALL if kind == "columns" else _SAMPLE_SHORT)
+        required(self._mapping.horizontalHeader()).setVisible(True)
+        self._mapping.setHorizontalHeaderLabels(
+            ["logarc calls it", "your log's column" if kind == "columns" else "your log's key"]
+        )
 
     def _on_selected(self, name: str) -> None:
         if not name:
             return
-        if name in (_NEW_TEXT, _NEW_JSON):
-            self._blank("logformat" if name == _NEW_TEXT else "json")
+        if name in (_NEW_TEXT, _NEW_JSON, _NEW_TABLE):
+            self._blank({_NEW_TEXT: "logformat", _NEW_JSON: "json"}.get(name, "columns"))
             return
         try:
             spec = get_spec(name)
@@ -435,14 +538,19 @@ class FormatEditor(QDialog):
         self._show_kind(spec.kind)
         self._name.setText(spec.name)
         self._note.setText(spec.description)
-        if isinstance(spec, JsonFormatSpec):
-            self._directive.clear()
-            self._time_format.setText(spec.time_format)
-            self.set_mapping(spec.fields)
-        else:
+        if isinstance(spec, LogFormatSpec):
             self._directive.setText(spec.directive)
             self._time_format.clear()
             self.set_mapping(())
+        else:
+            self._directive.clear()
+            self._time_format.setText(spec.time_format)
+            self.set_mapping(spec.fields)
+        if isinstance(spec, ColumnsFormatSpec):
+            self._columns.setText(", ".join(spec.columns))
+            self._separator.setCurrentText(
+                next(shown for shown, char in _SEPARATORS.items() if char == spec.separator)
+            )
         self._set_editable(self._is_saved(name))
         self._refresh_preview()
 
@@ -450,10 +558,11 @@ class FormatEditor(QDialog):
         return name in available_formats() and not is_built_in(name)
 
     def _set_editable(self, editable: bool) -> None:
-        for field in (self._name, self._directive, self._note, self._time_format):
+        for field in (self._name, self._directive, self._note, self._time_format, self._columns):
             field.setEnabled(editable)
         self._mapping.setEnabled(editable)
         self._guess.setEnabled(editable)
+        self._separator.setEnabled(editable)
         self._save.setEnabled(editable)
         self._delete.setEnabled(editable and self._editing is not None)
         # Never disabled. Trying a built-in against your own log is reading,
@@ -478,21 +587,13 @@ class FormatEditor(QDialog):
                 "saved format of the same name would never be reached."
             )
 
-        spec: FormatSpec = (
-            JsonFormatSpec(
-                name=name,
-                fields=self.mapping(),
-                time_format=self._time_format.text().strip(),
-                description=self._note.text().strip(),
-            )
-            if self._kind == "json"
-            else LogFormatSpec(
-                name=name, directive=self._directive.text(), description=self._note.text().strip()
-            )
-        )
+        spec = self._spec_on_screen(name)
         try:
-            spec.build()
-        except (LogFormatError, JsonFormatError) as exc:
+            # `check`, not `build`: a table format may not know its columns
+            # until a log is in hand, and the reader is saving a definition
+            # rather than reading a file.
+            spec.check()
+        except ValueError as exc:
             return self._refuse(str(exc))
 
         # Both the new name and the one being edited are dropped, so changing
@@ -512,6 +613,25 @@ class FormatEditor(QDialog):
         self._reload()
         self.select(name)
         return True
+
+    def _spec_on_screen(self, name: str) -> FormatSpec:
+        """The definition the right-hand side currently describes."""
+        note = self._note.text().strip()
+        when = self._time_format.text().strip()
+        if self._kind == "columns":
+            return ColumnsFormatSpec(
+                name=name,
+                fields=self.mapping(),
+                columns=self.columns(),
+                separator=self.separator(),
+                time_format=when,
+                description=note,
+            )
+        if self._kind == "json":
+            return JsonFormatSpec(
+                name=name, fields=self.mapping(), time_format=when, description=note
+            )
+        return LogFormatSpec(name=name, directive=self._directive.text(), description=note)
 
     def delete(self) -> None:
         """Forget the saved format on the right.
@@ -559,6 +679,7 @@ class FormatEditor(QDialog):
         self._headings.clear()
         self._formats.addItem(_NEW_TEXT)
         self._formats.addItem(_NEW_JSON)
+        self._formats.addItem(_NEW_TABLE)
         for heading, names in ((_BUILT_IN_HEADING, built_in), (_SAVED_HEADING, saved)):
             if not names:
                 continue

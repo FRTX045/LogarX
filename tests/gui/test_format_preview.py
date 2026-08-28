@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 
-from logarc.gui.format_preview import preview, preview_mapping
+from logarc.gui.format_preview import preview, preview_columns, preview_mapping
 from logarc.parsers.apache import COMBINED
 
 COMBINED_LINE = (
@@ -222,3 +222,95 @@ def test_a_mapping_shows_the_keys_it_did_not_map_as_extras() -> None:
 
     assert result.ok
     assert ("trace_id", "abc123") in result.extra
+
+
+# -- the third kind: a table whose columns may be in the log ---------------
+
+IIS_SAMPLE = "\n".join(
+    [
+        "#Software: Microsoft Internet Information Services 10.0",
+        "#Fields: date time c-ip cs-method cs-uri-stem sc-status",
+        "2024-05-01 09:00:45 203.0.113.77 GET /admin/0.php 404",
+    ]
+)
+
+IIS_MAP = (
+    ("timestamp", "date+time"),
+    ("client_ip", "c-ip"),
+    ("method", "cs-method"),
+    ("path", "cs-uri-stem"),
+    ("status", "sc-status"),
+)
+
+
+def test_a_table_reads_its_columns_out_of_the_pasted_lines() -> None:
+    """The reader pastes a piece of the log, header and all, because for this
+    kind the header is half the definition."""
+    result = preview_columns(IIS_MAP, (), " ", "", IIS_SAMPLE)
+
+    assert result.ok
+    assert dict(result.fields)["Client"] == "203.0.113.77"
+    assert dict(result.fields)["Path"] == "/admin/0.php"
+
+
+def test_the_row_previewed_is_the_first_that_is_not_bookkeeping() -> None:
+    """Pasting the header and reading it as data would say the format is
+    broken when it is the reader who pasted more than one kind of line."""
+    result = preview_columns(IIS_MAP, (), " ", "", IIS_SAMPLE)
+
+    assert result.ok
+    assert dict(result.fields)["Status"] == "404"
+
+
+def test_a_table_with_nothing_mapped_asks_for_a_mapping() -> None:
+    result = preview_columns((), (), " ", "", IIS_SAMPLE)
+
+    assert not result.ok
+    assert "map" in result.status.lower()
+
+
+def test_a_table_with_no_pasted_lines_asks_for_some() -> None:
+    result = preview_columns(IIS_MAP, (), " ", "", "  ")
+
+    assert not result.ok
+    assert "line" in result.status.lower()
+
+
+def test_a_log_with_no_header_says_that_rather_than_listing_a_row_of_data() -> None:
+    """Its first row is taken for a header, so the plain message lists that
+    row's *values* as though they were column names — which reads as nonsense,
+    and points at the mapping when the answer is to name the columns."""
+    result = preview_columns(IIS_MAP, (), " ", "", "2024-05-01 09:00:45 203.0.113.77 GET / 404")
+
+    assert not result.ok
+    assert "no #Fields: header" in result.status
+    assert "203.0.113.77" not in result.status
+
+
+def test_a_table_mapping_that_names_a_missing_column_names_it() -> None:
+    result = preview_columns(
+        (("timestamp", "date+time"), ("client_ip", "src-addr")), (), " ", "", IIS_SAMPLE
+    )
+
+    assert not result.ok
+    assert "src-addr" in result.status
+
+
+def test_columns_given_by_hand_are_used_instead_of_the_log_s() -> None:
+    result = preview_columns(
+        (("timestamp", "when"), ("client_ip", "who")),
+        ("when", "who", "code"),
+        ",",
+        "",
+        "2024-05-01T09:00:45Z,203.0.113.5,404",
+    )
+
+    assert result.ok
+    assert dict(result.fields)["Client"] == "203.0.113.5"
+
+
+def test_a_table_shows_the_columns_it_did_not_map_as_extras() -> None:
+    result = preview_columns(IIS_MAP, (), " ", "", IIS_SAMPLE)
+
+    assert result.ok
+    assert result.extra == ()  # every column of this sample is mapped

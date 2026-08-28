@@ -32,6 +32,35 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   since changed says so on a strip that shows both definitions. A `case.json` written before this
   field existed still loads, unchanged.
   See [ADR-0010](docs/adr/0010-a-log-format-is-data-that-travels-with-the-work.md).
+- **A log laid out as a table is readable: IIS W3C, and CSV.** The third kind, and the one that
+  brought a problem the first two did not have — **the file declares its own columns**. A W3C log
+  opens with `#Fields: date time c-ip …`, and a CSV often names its columns in the first row, so
+  the definition a reader saves is not the whole answer.
+
+  It is settled by resolving the format against the file's opening lines before anything reads it,
+  in the process that opened the file. What travels to an ingest worker and into the case is the
+  resolved definition, with the columns it actually found written down: a worker handed a byte
+  range has never seen the header, and a case recording "the columns are in the file" would depend
+  a year later on a file nobody kept. The saved format keeps no columns at all, because IIS writes
+  different fields on different servers and one that froze a server's columns would read only that
+  server's logs.
+
+  ```bash
+  logarc formats check-columns --log u_ex240501.log      # its own header, and what it reads
+  logarc formats add-columns iis --log u_ex240501.log
+  logarc formats add-columns edge --log edge.csv --separator comma
+  ```
+
+  W3C's habit of writing the date and the time in separate columns is spelled `date+time`, and
+  guessed. The log's own bookkeeping — the four directives that open every IIS file, a CSV header
+  row — is neither parsed nor quarantined, which needed a new question in the `LogParser`
+  contract: quarantining them would have put a "lines could not be parsed" strip over every such
+  case, and that notice exists to mean something went wrong.
+
+  A row whose column count does not match is refused rather than read. That is also what a log
+  which redeclares its fields part-way through does — W3C permits it and this cannot follow — so
+  such a log quarantines from that point rather than being misread from it: read by position
+  against the wrong count, every field after the missing one is somebody else's value.
 - **A log that writes one JSON object per line is readable.** The second kind of format, and
   the one that says whether the record shape was general enough — it works the other way round
   from a `LogFormat` directive, matching names rather than positions.

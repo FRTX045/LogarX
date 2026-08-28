@@ -41,6 +41,8 @@ from logarc.gui.style import plural
 from logarc.ingest.pipeline import FormatDetectionError
 from logarc.ingest.reader import LogSourceError, open_log
 from logarc.parsers.base import LogParser
+from logarc.parsers.columns import ColumnsFormatError, declared_columns
+from logarc.parsers.fieldnames import guess_mapping as guess_from_names
 from logarc.parsers.json_format import JsonFormatError, guess_mapping
 from logarc.parsers.library import (
     FormatLibraryError,
@@ -57,7 +59,7 @@ from logarc.parsers.registry import (
     register_saved_formats,
     registered_formats,
 )
-from logarc.parsers.spec import FormatSpec, JsonFormatSpec, LogFormatSpec
+from logarc.parsers.spec import ColumnsFormatSpec, FormatSpec, JsonFormatSpec, LogFormatSpec
 from logarc.report import export as export_formats
 from logarc.sessionize.segmenter import SessionPolicy
 from logarc.storage.event_store import SORT_KEYS, StoreStateError
@@ -977,7 +979,14 @@ def _read_back(parser: LogParser, log: Path, lines: int, title: str) -> int:
     many of them it read."""
     try:
         with open_log(log) as stream:
-            sample = [(number, text) for number, text in islice(stream, lines) if text.strip()]
+            # The log's own bookkeeping is skipped, not shown as a row that did
+            # not match: four directives open every IIS file and reporting them
+            # as failures would bury the two rows the reader came to look at.
+            sample = [
+                (number, text)
+                for number, text in islice(stream, lines + _HEADER_ROOM)
+                if text.strip() and not parser.is_metadata(text)
+            ][:lines]
     except LogSourceError as exc:
         raise _fail(str(exc)) from exc
 
@@ -1089,6 +1098,159 @@ def formats_check_json(
         raise _fail("this mapping reads nothing in that log; check the key names above")
 
 
+#: What `--separator` accepts. Named rather than typed literally, because a
+#: tab is not something a reader can put on a command line, and " " quoted on a
+#: shell is a trap that eats itself.
+_SEPARATORS: Final[dict[str, str]] = {"space": " ", "comma": ",", "tab": "\t"}
+
+#: Extra lines read so that `--lines 5` still shows five *rows* of a log whose
+#: first several lines are its own header.
+_HEADER_ROOM: Final = 8
+
+
+def _separator_from(name: str) -> str:
+    try:
+        return _SEPARATORS[name]
+    except KeyError:
+        raise _fail(f"--separator wants one of {', '.join(_SEPARATORS)}, not {name!r}") from None
+
+
+def _table_spec(
+    name: str,
+    log: Path | None,
+    written: Sequence[tuple[str, str]],
+    columns: str,
+    separator: str,
+    time_format: str,
+    note: str,
+) -> ColumnsFormatSpec:
+    """Work out a table format from what the reader gave and what the log says.
+
+    Columns given on the command line win, and are stored. Columns found in the
+    log are used to guess the mapping and then *forgotten*: IIS writes different
+    fields on different servers, so a saved format that froze one server's
+    columns would read only that server's logs. What each case records is the
+    columns that were actually in the file it read.
+    """
+    given = tuple(part.strip() for part in columns.split(",") if part.strip())
+    found: tuple[str, ...] = ()
+    if not given and log is not None:
+        found, _header = declared_columns(_opening_lines(log), separator)
+        if not found:
+            raise _fail(
+                f"{log} declares no columns — no #Fields: line and no header row. "
+                "Give them with --columns, or check --separator."
+            )
+
+    overridden = {ours for ours, _theirs in written}
+    guessed = guess_from_names(given or found)
+    fields = [*written, *((o, t) for o, t in guessed if o not in overridden)]
+    if not fields:
+        raise _fail("give --log or --columns to guess the mapping, or --map to write it out")
+
+    _show_mapping(fields)
+    if found:
+        console.print(f"Columns come from the log: [bold]{', '.join(found)}[/bold]")
+    return ColumnsFormatSpec(
+        name=name,
+        fields=tuple(fields),
+        columns=given,
+        separator=separator,
+        time_format=time_format,
+        description=note,
+    )
+
+
+@formats_app.command("add-columns")
+def formats_add_columns(
+    name: Annotated[str, typer.Argument(help="What to call this format.")],
+    log: Annotated[
+        Path | None, typer.Option("--log", help="A log to take the columns from.")
+    ] = None,
+    columns: Annotated[
+        str, typer.Option("--columns", help="Comma-separated names, if the log declares none.")
+    ] = "",
+    mapping: Annotated[
+        list[str] | None,
+        typer.Option("--map", help="ours=theirs, repeatable. Overrides the guess."),
+    ] = None,
+    separator: Annotated[str, typer.Option("--separator", help="space, comma or tab.")] = "space",
+    time_format: Annotated[
+        str, typer.Option("--time-format", help="strftime pattern, if the time is unusual.")
+    ] = "",
+    note: Annotated[str, typer.Option("--note", help="A reminder of what this is for.")] = "",
+    replace: Annotated[
+        bool, typer.Option("--replace", help="Overwrite a saved format of the same name.")
+    ] = False,
+) -> None:
+    """Save a format for a log laid out as a table: IIS W3C, or CSV.
+
+    A W3C log names its columns in a `#Fields:` line and many CSVs name theirs
+    in the first row, so `--log` is usually the whole configuration.
+    """
+    spec = _table_spec(
+        name,
+        log,
+        _mapping_from(mapping or []),
+        columns,
+        _separator_from(separator),
+        time_format,
+        note,
+    )
+    try:
+        # What can be judged without a file, then — when there is one — the
+        # rest: that every column the mapping names is really in that log.
+        spec.check()
+        if log is not None:
+            spec.resolved(_opening_lines(log)).build()
+    except ColumnsFormatError as exc:
+        raise _fail(str(exc)) from exc
+    _save_spec(spec, replace=replace)
+
+
+def _opening_lines(log: Path) -> list[str]:
+    """Enough of a log to see what it declares about itself."""
+    try:
+        with open_log(log) as stream:
+            return [text for _, text in islice(stream, DEFAULT_SAMPLE_SIZE)]
+    except LogSourceError as exc:
+        raise _fail(str(exc)) from exc
+
+
+@formats_app.command("check-columns")
+def formats_check_columns(
+    log: Annotated[Path, typer.Option("--log", help="A table-shaped log to try.")],
+    format_name: Annotated[
+        str, typer.Option("--format", help="A saved table format, instead of guessing.")
+    ] = "",
+    mapping: Annotated[
+        list[str] | None,
+        typer.Option("--map", help="ours=theirs, repeatable. Overrides the guess."),
+    ] = None,
+    separator: Annotated[str, typer.Option("--separator", help="space, comma or tab.")] = "space",
+    lines: Annotated[int, typer.Option("--lines", min=1, help="How many rows to read.")] = 5,
+) -> None:
+    """Read a table-shaped log's own column names and show what they read."""
+    if format_name:
+        saved = get_spec(format_name)
+        if not isinstance(saved, ColumnsFormatSpec):
+            raise _fail(f"{format_name!r} is not a table format")
+        spec: ColumnsFormatSpec = saved
+        _show_mapping(spec.fields)
+    else:
+        spec = _table_spec(
+            "check", log, _mapping_from(mapping or []), "", _separator_from(separator), "", ""
+        )
+
+    try:
+        parser = spec.resolved(_opening_lines(log)).build()
+    except ColumnsFormatError as exc:
+        raise _fail(str(exc)) from exc
+
+    if _read_back(parser, log, lines, f"{log.name}") == 0:
+        raise _fail("this mapping reads nothing in that log; check the column names above")
+
+
 @formats_app.command("remove")
 def formats_remove(
     name: Annotated[str, typer.Argument(help="The saved format to remove.")],
@@ -1126,8 +1288,11 @@ def formats_show(
     table.add_row("Kind", spec.kind)
     table.add_row("Source", "built-in" if is_built_in(name) else "saved")
     table.add_row("Definition", spec.summary)
-    if isinstance(spec, JsonFormatSpec) and spec.time_format:
+    if isinstance(spec, (JsonFormatSpec, ColumnsFormatSpec)) and spec.time_format:
         table.add_row("Time format", spec.time_format)
+    if isinstance(spec, ColumnsFormatSpec):
+        table.add_row("Separator", {" ": "space", ",": "comma", "\t": "tab"}[spec.separator])
+        table.add_row("Columns", ", ".join(spec.columns) if spec.columns else "from the log")
     if spec.description:
         table.add_row("Note", spec.description)
     console.print(table)

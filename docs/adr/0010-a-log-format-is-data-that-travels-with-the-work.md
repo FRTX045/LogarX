@@ -59,6 +59,21 @@ renders its own JSON payload rather than having one derived from its dataclass,
 because the library file is meant to be openable in an editor: a mapping held as
 pairs in memory is still written as an object.
 
+`ColumnsFormatSpec`, the third, is the one that stretched the design: **part of
+its definition lives in the log.** A W3C file declares its columns in a
+`#Fields:` line. So a spec gained `resolved(sample)`, called in the process that
+opened the file, returning the definition that will actually be used — and it is
+*that* one which travels to a worker and into the case. The other two kinds
+answer `self`. Two consequences worth stating: a worker handed a byte range has
+never seen the header, so resolving in the parent is not an optimisation but the
+only correct place; and a case has to record the columns it read, or reading it
+back depends on a file nobody kept.
+
+It also split "is this definition well formed" from "build a parser out of it".
+The library validates a saved format by building one, which a table format
+cannot do until a file is in hand — so each kind now answers `check()` for as
+much of itself as can be judged with no file at all.
+
 One change, and each of the three constraints stops being a problem:
 
 | | before | after |

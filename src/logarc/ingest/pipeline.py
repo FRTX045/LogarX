@@ -171,7 +171,11 @@ def ingest_file(
                 report()
             # Blank lines are padding, not damage: they are neither parsed nor
             # quarantined, so the two counts plus blanks account for every line.
-            if not text.strip():
+            # A line the format calls its own bookkeeping — a W3C `#Fields:`
+            # directive, a CSV header row — is padding of the same kind. Four
+            # of those open every IIS file, and quarantining them would put a
+            # "lines could not be parsed" strip over every such case.
+            if not text.strip() or parser.is_metadata(text):
                 continue
 
             event = parser.parse_line(text, EvidenceRef(file_id, line_no))
@@ -238,9 +242,14 @@ def resolve_format(path: Path, log_format: str | None, sample: list[str]) -> Res
     advice that only one of them still offers.
     """
     if log_format is not None:
-        return ResolvedFormat(
-            name=log_format, parser=get_parser(log_format), spec=get_spec(log_format)
-        )
+        spec = get_spec(log_format)
+        if spec is None:
+            return ResolvedFormat(name=log_format, parser=get_parser(log_format), spec=None)
+        # Resolved against the file, because part of a table format's
+        # definition is in the file: a W3C log names its columns in a header.
+        # What comes back is what travels to the workers and into the case.
+        resolved = spec.resolved(sample)
+        return ResolvedFormat(name=log_format, parser=resolved.build(), spec=resolved)
 
     detection = detect_format(sample)
     if detection is None:

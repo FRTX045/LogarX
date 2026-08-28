@@ -129,6 +129,19 @@ logarc formats add-json gateway --log gateway.jsonl  # save it
 logarc formats add-json gateway --log gateway.jsonl --map client_ip=http_x_real_ip
 ```
 
+A log laid out as a table needs less still, because it names its own columns: an
+IIS W3C log declares them in its `#Fields:` line and most CSVs in the first row.
+
+```bash
+logarc formats check-columns --log u_ex240501.log
+logarc formats add-columns iis --log u_ex240501.log
+logarc formats add-columns edge --log edge.csv --separator comma
+```
+
+The saved format keeps no columns of its own — IIS writes different fields on
+different servers — and each case records the ones that were in the file it
+read.
+
 In the desktop application the same thing lives under **Case → Log formats…**,
 where a pasted log line is read back field by field as the rule is written —
 a directive for a text log, a field mapping for a JSON one, shown beside what

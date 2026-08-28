@@ -21,10 +21,10 @@ from PyQt6.QtWidgets import QApplication
 
 from logarc.gui.format_editor import FormatChoice, FormatEditor
 from logarc.parsers.apache import COMBINED
-from logarc.parsers.json_format import MAPPABLE
+from logarc.parsers.fieldnames import MAPPABLE
 from logarc.parsers.library import FormatLibraryError, library_path, load_library, save_library
 from logarc.parsers.registry import register_format, register_saved_formats, unregister_format
-from logarc.parsers.spec import JsonFormatSpec, LogFormatSpec
+from logarc.parsers.spec import ColumnsFormatSpec, JsonFormatSpec, LogFormatSpec
 
 PIPED = '%h|%t|"%r"|%>s|%b'
 PIPED_LINE = '203.0.113.5|[10/Oct/2020:13:55:36 +0000]|"GET /.env HTTP/1.1"|404|0'
@@ -666,3 +666,154 @@ def test_the_preview_reads_a_json_line_through_the_mapping(qt_app: QApplication)
     assert result.ok
     assert dict(result.fields)["Path"] == "/admin/0.php"
     assert ("trace_id", "abc123") in result.extra
+
+
+# ---------------------------------------------------------------------------
+# The third kind: a table whose columns may be in the log
+# ---------------------------------------------------------------------------
+
+IIS_SAMPLE = "\n".join(
+    [
+        "#Software: Microsoft Internet Information Services 10.0",
+        "#Fields: date time c-ip cs-method cs-uri-stem sc-status",
+        "2024-05-01 09:00:45 203.0.113.77 GET /admin/0.php 404",
+    ]
+)
+
+SAVED_TABLE = ColumnsFormatSpec(
+    name="iis",
+    fields=(("timestamp", "date+time"), ("client_ip", "c-ip"), ("status", "sc-status")),
+    separator=" ",
+    description="the web server",
+)
+
+
+def test_a_table_format_can_be_started(qt_app: QApplication) -> None:
+    editor = FormatEditor()
+
+    rows = [
+        editor._formats.item(row).text()
+        for row in range(editor._formats.count())
+        if editor._formats.item(row) is not None
+    ]
+
+    assert "New table format…" in rows
+
+
+def test_starting_a_table_shows_the_separator_and_the_columns(
+    qt_app: QApplication,
+) -> None:
+    editor = FormatEditor()
+    editor.show()
+    qt_app.processEvents()
+
+    editor.start_new_columns()
+
+    assert editor.kind() == "columns"
+    assert editor._separator.isVisible()
+    assert editor._columns.isVisible()
+    assert editor._mapping.isVisible()
+    assert not editor._directive.isVisible()
+
+
+def test_a_json_format_does_not_show_the_table_controls(qt_app: QApplication) -> None:
+    """They mean nothing there, and a control that means nothing is a question
+    the reader has to answer before they realise it was not being asked."""
+    editor = FormatEditor()
+    editor.show()
+    qt_app.processEvents()
+
+    editor.start_new_json()
+
+    assert not editor._separator.isVisible()
+    assert not editor._columns.isVisible()
+
+
+def test_the_columns_and_the_mapping_are_guessed_from_the_pasted_lines(
+    qt_app: QApplication,
+) -> None:
+    editor = FormatEditor()
+    editor.start_new_columns()
+    editor._sample.setPlainText(IIS_SAMPLE)
+
+    editor.guess()
+
+    assert dict(editor.mapping())["client_ip"] == "c-ip"
+    assert dict(editor.mapping())["timestamp"] == "date+time"
+    assert editor.preview().ok
+
+
+def test_a_table_format_written_here_reaches_the_library(qt_app: QApplication) -> None:
+    editor = FormatEditor()
+    editor.start_new_columns()
+    editor._name.setText("iis")
+    editor._sample.setPlainText(IIS_SAMPLE)
+    editor.guess()
+
+    assert editor.save(), editor.trouble()
+    saved = load_library()[0]
+    assert isinstance(saved, ColumnsFormatSpec)
+    assert dict(saved.fields)["client_ip"] == "c-ip"
+
+
+def test_a_saved_table_format_does_not_keep_the_columns_it_was_guessed_from(
+    qt_app: QApplication,
+) -> None:
+    """IIS writes different fields on different servers. A format that froze
+    one server's columns would read only that server's logs."""
+    editor = FormatEditor()
+    editor.start_new_columns()
+    editor._name.setText("iis")
+    editor._sample.setPlainText(IIS_SAMPLE)
+    editor.guess()
+    editor.save()
+
+    assert load_library()[0].columns == ()
+
+
+def test_columns_typed_in_by_hand_are_kept(qt_app: QApplication) -> None:
+    editor = FormatEditor()
+    editor.start_new_columns()
+    editor._name.setText("bare")
+    editor._separator.setCurrentText("Comma")
+    editor._columns.setText("when, who, code")
+    editor.set_mapping((("timestamp", "when"), ("client_ip", "who")))
+
+    assert editor.save(), editor.trouble()
+    assert load_library()[0].columns == ("when", "who", "code")
+    assert load_library()[0].separator == ","
+
+
+def test_a_saved_table_format_fills_the_screen_back_in(qt_app: QApplication) -> None:
+    save_library([SAVED_TABLE])
+    register_saved_formats()
+
+    editor = FormatEditor()
+    editor.select("iis")
+
+    assert editor.kind() == "columns"
+    assert dict(editor.mapping())["client_ip"] == "c-ip"
+    assert editor._note.text() == "the web server"
+
+
+def test_a_table_mapping_without_a_timestamp_is_refused(qt_app: QApplication) -> None:
+    editor = FormatEditor()
+    editor.start_new_columns()
+    editor._name.setText("half")
+    editor.set_mapping((("client_ip", "c-ip"),))
+
+    assert not editor.save()
+    assert "timestamp" in editor.trouble()
+    assert load_library() == []
+
+
+def test_guessing_a_table_from_lines_that_declare_no_columns_says_so(
+    qt_app: QApplication,
+) -> None:
+    editor = FormatEditor()
+    editor.start_new_columns()
+    editor._sample.setPlainText("2024-05-01 09:00:45 203.0.113.77 GET / 404")
+
+    editor.guess()
+
+    assert "header" in editor._status.text().lower()

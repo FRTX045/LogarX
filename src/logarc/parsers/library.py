@@ -25,7 +25,6 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
-from logarc.parsers.logformat import LogFormatError
 from logarc.parsers.spec import FormatSpecError, spec_from_dict, spec_to_dict
 
 if TYPE_CHECKING:
@@ -151,6 +150,10 @@ def _check(specs: Sequence[FormatSpec], path: Path) -> None:
             raise FormatLibraryError(f"{path} would hold two formats named {spec.name!r}")
         seen.add(spec.name)
         try:
-            spec.build()
-        except LogFormatError as exc:
+            # `check`, not `build`. A table format may not know its columns yet
+            # — a W3C log declares them, so the definition is complete only
+            # once a file is in hand, and the library has no file. Each kind
+            # answers for as much of itself as can be judged from here.
+            spec.check()
+        except ValueError as exc:
             raise FormatLibraryError(f"format {spec.name!r} cannot be used: {exc}") from exc

@@ -383,3 +383,206 @@ def test_show_describes_a_json_format_by_its_mapping(json_log: Path) -> None:
     assert result.exit_code == 0
     assert "json" in result.stdout
     assert "remote_addr" in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# Logs laid out as a table
+# ---------------------------------------------------------------------------
+
+IIS_LINES = [
+    "#Software: Microsoft Internet Information Services 10.0",
+    "#Version: 1.0",
+    "#Date: 2024-05-01 09:00:45",
+    "#Fields: date time s-ip cs-method cs-uri-stem cs-uri-query s-port cs-username"
+    " c-ip cs(User-Agent) cs(Referer) sc-status sc-substatus sc-win32-status time-taken",
+    "2024-05-01 09:00:45 10.0.0.1 GET /admin/0.php - 80 - 203.0.113.77 curl/8.4.0 - 404 0 0 15",
+    "2024-05-01 09:00:46 10.0.0.1 GET /admin/1.php - 80 - 203.0.113.77 curl/8.4.0 - 404 0 0 9",
+]
+
+
+@pytest.fixture
+def iis_log(tmp_path: Path) -> Path:
+    log = tmp_path / "u_ex240501.log"
+    log.write_text("\n".join(IIS_LINES) + "\n", encoding="utf-8")
+    return log
+
+
+def test_an_iis_log_names_its_own_columns_and_they_are_guessed(iis_log: Path) -> None:
+    """The whole point of W3C: the file says what its columns are, so there is
+    almost nothing left for the reader to configure."""
+    result = runner.invoke(app, ["formats", "check-columns", "--log", str(iis_log)])
+
+    assert result.exit_code == 0, result.output
+    assert "c-ip" in result.stdout
+    assert "date+time" in result.stdout, "the two halves of a W3C timestamp"
+    assert "203.0.113.77" in result.stdout
+    assert "2 of 2" in result.stdout, "the four directives are not rows"
+
+
+def test_an_iis_format_can_be_saved_in_one_step(iis_log: Path) -> None:
+    result = runner.invoke(app, ["formats", "add-columns", "iis", "--log", str(iis_log)])
+
+    assert result.exit_code == 0, result.output
+    saved = load_library()[0]
+    assert dict(saved.fields)["client_ip"] == "c-ip"
+    assert dict(saved.fields)["timestamp"] == "date+time"
+
+
+def test_a_saved_table_format_does_not_freeze_the_columns_it_saw(iis_log: Path) -> None:
+    """IIS writes different fields on different servers. A format that saved
+    one server's columns would read only that server's logs."""
+    runner.invoke(app, ["formats", "add-columns", "iis", "--log", str(iis_log)])
+
+    assert load_library()[0].columns == ()
+
+
+def test_the_case_records_the_columns_that_were_actually_there(
+    tmp_path: Path, iis_log: Path
+) -> None:
+    """The saved format says 'the columns are in the file'. The case has to say
+    which ones, or reading it back a year later depends on a file nobody kept."""
+    runner.invoke(app, ["formats", "add-columns", "iis", "--log", str(iis_log)])
+
+    result = runner.invoke(
+        app, ["ingest", str(iis_log), "--case", str(tmp_path / "case"), "--format", "iis"]
+    )
+
+    assert result.exit_code == 0, result.output
+    manifest = json.loads((tmp_path / "case" / "case.json").read_text(encoding="utf-8"))
+    source = manifest["sources"][0]
+    assert source["events_parsed"] == 2
+    assert source["lines_quarantined"] == 0, "the four directives were quarantined"
+    assert "c-ip" in source["format_spec"]["columns"]
+
+
+def test_a_csv_with_a_header_row_is_read_without_counting_the_header(
+    tmp_path: Path,
+) -> None:
+    log = tmp_path / "edge.csv"
+    log.write_text(
+        "time,client_ip,method,uri,status\n"
+        "2024-05-01T09:00:45Z,203.0.113.5,GET,/admin,404\n"
+        "2024-05-01T09:00:46Z,203.0.113.5,GET,/.env,404\n",
+        encoding="utf-8",
+    )
+    runner.invoke(
+        app, ["formats", "add-columns", "edge", "--log", str(log), "--separator", "comma"]
+    )
+
+    result = runner.invoke(
+        app, ["ingest", str(log), "--case", str(tmp_path / "case"), "--format", "edge"]
+    )
+
+    assert result.exit_code == 0, result.output
+    manifest = json.loads((tmp_path / "case" / "case.json").read_text(encoding="utf-8"))
+    assert manifest["sources"][0]["events_parsed"] == 2
+    assert manifest["sources"][0]["lines_quarantined"] == 0
+
+
+def test_columns_can_be_written_out_for_a_file_that_names_none(tmp_path: Path) -> None:
+    log = tmp_path / "headerless.csv"
+    log.write_text("2024-05-01T09:00:45Z,203.0.113.5,404\n", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "formats",
+            "add-columns",
+            "bare",
+            "--separator",
+            "comma",
+            "--columns",
+            "when,who,code",
+            "--map",
+            "timestamp=when",
+            "--map",
+            "client_ip=who",
+            "--map",
+            "status=code",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    check = runner.invoke(app, ["formats", "check-columns", "--log", str(log), "--format", "bare"])
+    assert check.exit_code == 0, check.output
+    assert "203.0.113.5" in check.stdout
+
+
+def test_a_table_format_with_no_timestamp_is_refused(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app,
+        ["formats", "add-columns", "half", "--columns", "a,b", "--map", "client_ip=a"],
+    )
+
+    assert result.exit_code != 0
+    assert "timestamp" in result.output
+    assert "Traceback" not in result.output
+    assert load_library() == []
+
+
+def test_a_log_that_declares_no_columns_and_was_given_none_says_so(
+    tmp_path: Path, piped_log: Path
+) -> None:
+    result = runner.invoke(
+        app, ["formats", "add-columns", "guessy", "--log", str(piped_log), "--separator", "comma"]
+    )
+
+    assert result.exit_code != 0
+    assert "Traceback" not in result.output
+
+
+def test_show_describes_a_table_format(iis_log: Path) -> None:
+    runner.invoke(app, ["formats", "add-columns", "iis", "--log", str(iis_log)])
+
+    result = runner.invoke(app, ["formats", "show", "iis"])
+
+    assert result.exit_code == 0
+    assert "columns" in result.stdout
+    assert "c-ip" in result.stdout
+
+
+def test_headings_nothing_recognises_are_refused_rather_than_guessed_at(
+    tmp_path: Path,
+) -> None:
+    """A CSV whose columns are called `when` and `who`. Guessing would give the
+    reader a mapping that looks finished and reads nothing, and they would find
+    that out at ingest. Refused instead, naming what is missing."""
+    log = tmp_path / "cryptic.csv"
+    log.write_text("when,who,code\n2024-05-01T09:00:45Z,203.0.113.5,404\n", encoding="utf-8")
+
+    result = runner.invoke(
+        app, ["formats", "add-columns", "cryptic", "--log", str(log), "--separator", "comma"]
+    )
+
+    assert result.exit_code != 0
+    assert "timestamp" in result.output
+    assert "Traceback" not in result.output
+    assert load_library() == []
+
+
+def test_those_headings_can_be_mapped_by_hand(tmp_path: Path) -> None:
+    """The guess is a convenience, never the only way in."""
+    log = tmp_path / "cryptic.csv"
+    log.write_text("when,who,code\n2024-05-01T09:00:45Z,203.0.113.5,404\n", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "formats",
+            "add-columns",
+            "cryptic",
+            "--log",
+            str(log),
+            "--separator",
+            "comma",
+            "--map",
+            "timestamp=when",
+            "--map",
+            "client_ip=who",
+            "--map",
+            "status=code",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert dict(load_library()[0].fields)["client_ip"] == "who"

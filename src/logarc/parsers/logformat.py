@@ -581,6 +581,11 @@ class LogFormatParser:
         """The compiled regex. Exposed for diagnostics and tests."""
         return self._compiled.pattern
 
+    def is_metadata(self, line: str) -> bool:
+        """An Apache log has no bookkeeping lines: every line is a request."""
+        del line
+        return False
+
     def parse_line(self, line: str, ref: EvidenceRef) -> NormalizedEvent | None:
         """Parse one line, or return `None` if it does not fit this format.
 
