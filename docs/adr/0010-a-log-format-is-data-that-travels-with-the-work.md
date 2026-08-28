@@ -74,6 +74,28 @@ The library validates a saved format by building one, which a table format
 cannot do until a file is in hand — so each kind now answers `check()` for as
 much of itself as can be judged with no file at all.
 
+`PatternFormatSpec`, the fourth, is a regular expression whose named groups are
+the mapping. It is matched from the **start** of the line, which was not the
+first choice: unanchored, `(?P<timestamp>\d+) (?P<client_ip>\S+)` found
+`1 09:00:45` inside `May  1 09:00:45 gw01 proxy…`, read the `1` as one second
+past the epoch, and produced events dated 1970. Nothing downstream would have
+questioned them.
+
+## Two things a timestamp is not
+
+Both found by looking at a screen showing the answer rather than by a test, and
+both are the same failure: a number that looks like a result and is not one.
+
+**A time format naming no year is refused when it is written.** `strptime`
+supplies 1900 for a missing year, so `%b %d %H:%M:%S` — a syslog stamp — puts
+every event of a log in 1900 together. The ordering inside the file survives and
+the date does not, and a date is what evidence is pinned to. Refused at the
+format rather than per line, so the reader hears it while they can still act.
+
+**A number below 1e8 seconds is not an epoch.** That is March 1973, before any
+web server existed, so nothing real is lost; what is caught is a field
+misidentified as the time, which otherwise dates every event to 1970.
+
 One change, and each of the three constraints stops being a problem:
 
 | | before | after |

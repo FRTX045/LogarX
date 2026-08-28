@@ -24,7 +24,12 @@ from logarc.parsers.apache import COMBINED
 from logarc.parsers.fieldnames import MAPPABLE
 from logarc.parsers.library import FormatLibraryError, library_path, load_library, save_library
 from logarc.parsers.registry import register_format, register_saved_formats, unregister_format
-from logarc.parsers.spec import ColumnsFormatSpec, JsonFormatSpec, LogFormatSpec
+from logarc.parsers.spec import (
+    ColumnsFormatSpec,
+    JsonFormatSpec,
+    LogFormatSpec,
+    PatternFormatSpec,
+)
 
 PIPED = '%h|%t|"%r"|%>s|%b'
 PIPED_LINE = '203.0.113.5|[10/Oct/2020:13:55:36 +0000]|"GET /.env HTTP/1.1"|404|0'
@@ -61,7 +66,7 @@ def test_selecting_a_built_in_fills_the_fields(qt_app: QApplication) -> None:
 
     editor.select("apache-combined")
 
-    assert editor._directive.text() == COMBINED
+    assert editor._rule.text() == COMBINED
 
 
 def test_a_built_in_cannot_be_edited_or_deleted(qt_app: QApplication) -> None:
@@ -72,7 +77,7 @@ def test_a_built_in_cannot_be_edited_or_deleted(qt_app: QApplication) -> None:
 
     editor.select("apache-combined")
 
-    assert not editor._directive.isEnabled()
+    assert not editor._rule.isEnabled()
     assert not editor._save.isEnabled()
     assert not editor._delete.isEnabled()
 
@@ -94,7 +99,7 @@ def test_a_saved_format_is_editable(qt_app: QApplication, saved_office: LogForma
 
     editor.select("log-kantor")
 
-    assert editor._directive.isEnabled()
+    assert editor._rule.isEnabled()
     assert editor._delete.isEnabled()
     assert editor._note.text() == "the office"
 
@@ -106,7 +111,7 @@ def test_a_written_format_reaches_the_library(qt_app: QApplication) -> None:
     editor = FormatEditor()
     editor.start_new()
     editor._name.setText("log-kantor")
-    editor._directive.setText(PIPED)
+    editor._rule.setText(PIPED)
     editor._note.setText("the office")
 
     editor.save()
@@ -122,7 +127,7 @@ def test_a_written_format_can_be_used_straight_away(qt_app: QApplication) -> Non
     editor = FormatEditor()
     editor.start_new()
     editor._name.setText("log-kantor")
-    editor._directive.setText(PIPED)
+    editor._rule.setText(PIPED)
 
     editor.save()
 
@@ -133,7 +138,7 @@ def test_a_name_already_taken_by_a_built_in_is_refused(qt_app: QApplication) -> 
     editor = FormatEditor()
     editor.start_new()
     editor._name.setText("apache-combined")
-    editor._directive.setText(PIPED)
+    editor._rule.setText(PIPED)
 
     saved = editor.save()
 
@@ -146,7 +151,7 @@ def test_a_directive_that_will_not_compile_is_refused(qt_app: QApplication) -> N
     editor = FormatEditor()
     editor.start_new()
     editor._name.setText("broken")
-    editor._directive.setText("no percent signs")
+    editor._rule.setText("no percent signs")
 
     saved = editor.save()
 
@@ -157,7 +162,7 @@ def test_a_directive_that_will_not_compile_is_refused(qt_app: QApplication) -> N
 def test_a_format_with_no_name_is_refused(qt_app: QApplication) -> None:
     editor = FormatEditor()
     editor.start_new()
-    editor._directive.setText(PIPED)
+    editor._rule.setText(PIPED)
 
     assert not editor.save()
     assert load_library() == []
@@ -168,7 +173,7 @@ def test_editing_a_saved_format_replaces_it_rather_than_adding_a_second(
 ) -> None:
     editor = FormatEditor()
     editor.select("log-kantor")
-    editor._directive.setText(f"{PIPED}|%{{Referer}}i")
+    editor._rule.setText(f"{PIPED}|%{{Referer}}i")
 
     assert editor.save()
     assert [spec.name for spec in load_library()] == ["log-kantor"]
@@ -193,7 +198,7 @@ def test_the_preview_follows_what_is_typed(qt_app: QApplication) -> None:
     editor.start_new()
     editor._sample.setPlainText(PIPED_LINE)
 
-    editor._directive.setText(PIPED)
+    editor._rule.setText(PIPED)
 
     assert editor.preview().ok
     assert dict(editor.preview().fields)["Path"] == "/.env"
@@ -205,7 +210,7 @@ def test_the_preview_shows_the_trouble_before_it_becomes_a_case(
     editor = FormatEditor()
     editor.start_new()
     editor._sample.setPlainText(PIPED_LINE)
-    editor._directive.setText(COMBINED)
+    editor._rule.setText(COMBINED)
 
     assert not editor.preview().ok
     assert "does not" in editor._status.text().lower()
@@ -258,13 +263,13 @@ def test_showing_the_dialog_does_not_overwrite_a_half_written_format(
     editor = FormatEditor()
     editor.start_new()
     editor._name.setText("log-kantor")
-    editor._directive.setText(PIPED)
+    editor._rule.setText(PIPED)
 
     editor.show()
     qt_app.processEvents()
 
     assert editor._name.text() == "log-kantor"
-    assert editor._directive.text() == PIPED
+    assert editor._rule.text() == PIPED
     assert editor._name.isEnabled(), "the fields were switched to a built-in's"
 
 
@@ -353,7 +358,7 @@ def test_a_name_the_list_itself_uses_is_refused(qt_app: QApplication) -> None:
     for reserved in ("New text format…", "New JSON format…", "Built in", "Saved by you"):
         editor.start_new()
         editor._name.setText(reserved)
-        editor._directive.setText(PIPED)
+        editor._rule.setText(PIPED)
 
         assert not editor.save(), f"{reserved!r} was accepted as a format name"
 
@@ -404,8 +409,8 @@ def test_a_format_registered_from_code_is_shown_and_cannot_be_edited(
 
         assert "from-code" in editor.listed()
         assert editor._name.text() == "from-code"
-        assert editor._directive.text() == ""
-        assert not editor._directive.isEnabled()
+        assert editor._rule.text() == ""
+        assert not editor._rule.isEnabled()
         assert not editor._save.isEnabled()
     finally:
         unregister_format("from-code")
@@ -454,7 +459,7 @@ def test_a_library_that_will_not_take_a_write_is_reported_not_raised(
     editor = FormatEditor()
     editor.start_new()
     editor._name.setText("log-kantor")
-    editor._directive.setText(PIPED)
+    editor._rule.setText(PIPED)
 
     assert not editor.save()
     assert "could not be written" in editor.trouble()
@@ -546,7 +551,7 @@ def test_starting_a_json_format_shows_the_mapping_and_hides_the_directive(
     editor.start_new_json()
 
     assert editor._mapping.isVisible() or not editor.isVisible()
-    assert not editor._directive.isVisible() or not editor.isVisible()
+    assert not editor._rule.isVisible() or not editor.isVisible()
     assert editor.kind() == "json"
 
 
@@ -557,7 +562,7 @@ def test_selecting_a_text_format_switches_back(qt_app: QApplication) -> None:
     editor.select("apache-combined")
 
     assert editor.kind() == "logformat"
-    assert editor._directive.text() == COMBINED
+    assert editor._rule.text() == COMBINED
 
 
 def test_a_saved_json_format_fills_the_mapping(
@@ -713,7 +718,7 @@ def test_starting_a_table_shows_the_separator_and_the_columns(
     assert editor._separator.isVisible()
     assert editor._columns.isVisible()
     assert editor._mapping.isVisible()
-    assert not editor._directive.isVisible()
+    assert not editor._rule.isVisible()
 
 
 def test_a_json_format_does_not_show_the_table_controls(qt_app: QApplication) -> None:
@@ -817,3 +822,108 @@ def test_guessing_a_table_from_lines_that_declare_no_columns_says_so(
     editor.guess()
 
     assert "header" in editor._status.text().lower()
+
+
+# ---------------------------------------------------------------------------
+# The fourth kind: a regular expression
+# ---------------------------------------------------------------------------
+
+SYSLOG_LINE = (
+    "2024 May  1 09:00:45 gw01 proxy[1234]: client=203.0.113.77 method=GET"
+    " url=/admin/0.php status=404"
+)
+
+SYSLOG_PATTERN = (
+    r"^(?P<timestamp>\d{4} \w+\s+\d+ \d\d:\d\d:\d\d) \S+ \S+: "
+    r"client=(?P<client_ip>\S+) method=(?P<method>\S+) url=(?P<path>\S+) "
+    r"status=(?P<status>\d+)"
+)
+
+
+def test_a_pattern_format_can_be_started(qt_app: QApplication) -> None:
+    editor = FormatEditor()
+
+    rows = [
+        editor._formats.item(row).text()
+        for row in range(editor._formats.count())
+        if editor._formats.item(row) is not None
+    ]
+
+    assert "New pattern format…" in rows
+
+
+def test_a_pattern_shows_one_rule_line_and_a_time_format(qt_app: QApplication) -> None:
+    """Its named groups are the mapping, so there is no table to fill in — but
+    a syslog stamp still needs telling apart from an ISO one."""
+    editor = FormatEditor()
+    editor.show()
+    qt_app.processEvents()
+
+    editor.start_new_pattern()
+
+    assert editor.kind() == "pattern"
+    assert editor._rule.isVisible()
+    assert editor._time_format.isVisible()
+    assert not editor._mapping.isVisible()
+    assert not editor._guess.isVisible()
+
+
+def test_the_preview_reads_a_line_through_the_pattern(qt_app: QApplication) -> None:
+    editor = FormatEditor()
+    editor.start_new_pattern()
+    editor._sample.setPlainText(SYSLOG_LINE)
+    editor._time_format.setText("%Y %b %d %H:%M:%S")
+
+    editor._rule.setText(SYSLOG_PATTERN)
+
+    result = editor.preview()
+    assert result.ok, editor._status.text()
+    assert dict(result.fields)["Client"] == "203.0.113.77"
+    assert dict(result.fields)["Path"] == "/admin/0.php"
+
+
+def test_a_pattern_format_written_here_reaches_the_library(qt_app: QApplication) -> None:
+    editor = FormatEditor()
+    editor.start_new_pattern()
+    editor._name.setText("gw-proxy")
+    editor._rule.setText(SYSLOG_PATTERN)
+    editor._time_format.setText("%Y %b %d %H:%M:%S")
+
+    assert editor.save(), editor.trouble()
+    saved = load_library()[0]
+    assert isinstance(saved, PatternFormatSpec)
+    assert saved.time_format == "%Y %b %d %H:%M:%S"
+
+
+def test_a_pattern_naming_no_groups_is_refused_with_the_way_out(
+    qt_app: QApplication,
+) -> None:
+    editor = FormatEditor()
+    editor.start_new_pattern()
+    editor._name.setText("bare")
+    editor._rule.setText(r"\S+ \S+")
+
+    assert not editor.save()
+    assert "(?P<" in editor.trouble()
+    assert load_library() == []
+
+
+def test_a_saved_pattern_format_fills_the_screen_back_in(qt_app: QApplication) -> None:
+    save_library(
+        [
+            PatternFormatSpec(
+                name="gw",
+                pattern=SYSLOG_PATTERN,
+                time_format="%Y %b %d %H:%M:%S",
+                description="the gateway",
+            )
+        ]
+    )
+    register_saved_formats()
+
+    editor = FormatEditor()
+    editor.select("gw")
+
+    assert editor.kind() == "pattern"
+    assert editor._rule.text() == SYSLOG_PATTERN
+    assert editor._note.text() == "the gateway"

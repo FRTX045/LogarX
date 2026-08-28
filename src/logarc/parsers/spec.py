@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Final
 from logarc.parsers.columns import ColumnsParser, check_mapping, declared_columns
 from logarc.parsers.json_format import JsonParser
 from logarc.parsers.logformat import LogFormatParser
+from logarc.parsers.pattern import PatternParser
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -39,6 +40,7 @@ __all__ = [
     "FormatSpecError",
     "JsonFormatSpec",
     "LogFormatSpec",
+    "PatternFormatSpec",
     "spec_from_dict",
     "spec_to_dict",
 ]
@@ -300,6 +302,68 @@ class ColumnsFormatSpec:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class PatternFormatSpec:
+    """A regular expression whose named groups are the mapping.
+
+    The kind that has to work when the other three do not — a syslog-wrapped
+    line, an appliance with a syntax of its own. Also the simplest: a regex
+    already names its parts, so there is no separate mapping to keep in step
+    with it, and `fields` is empty by construction.
+    """
+
+    kind: ClassVar[str] = "pattern"
+
+    #: What `to_payload` writes. See `JsonFormatSpec.PAYLOAD_KEYS`.
+    PAYLOAD_KEYS: ClassVar[frozenset[str]] = frozenset(
+        {"name", "pattern", "time_format", "description"}
+    )
+
+    name: str
+    pattern: str
+    time_format: str = ""
+    description: str = ""
+
+    @property
+    def fields(self) -> tuple[tuple[str, str], ...]:
+        """Nothing: the pattern's own group names are the mapping."""
+        return ()
+
+    @property
+    def summary(self) -> str:
+        return self.pattern
+
+    def build(self) -> LogParser:
+        return PatternParser(self.pattern, name=self.name, time_format=self.time_format)
+
+    def resolved(self, sample: Sequence[str]) -> PatternFormatSpec:
+        """This definition is complete on its own. See `ColumnsFormatSpec`."""
+        del sample
+        return self
+
+    def check(self) -> None:
+        """Refuse a definition that could never work. Complete without a file,
+        so this is the same question as building it."""
+        self.build()
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "pattern": self.pattern,
+            "time_format": self.time_format,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_payload(cls, payload: Mapping[str, Any]) -> PatternFormatSpec:
+        return cls(
+            name=_text(payload, "name"),
+            pattern=_text(payload, "pattern"),
+            time_format=_text(payload, "time_format", required=False),
+            description=_text(payload, "description", required=False),
+        )
+
+
 def _text(payload: Mapping[str, Any], key: str, *, required: bool = True) -> str:
     value = payload.get(key)
     if value is None and not required:
@@ -309,14 +373,15 @@ def _text(payload: Mapping[str, Any], key: str, *, required: bool = True) -> str
     return value
 
 
-#: The union of every kind. The tagged dispatch below is what lets a fourth be
+#: The union of every kind. The tagged dispatch below is what lets a fifth be
 #: added without changing anything already written to a case.
-FormatSpec = LogFormatSpec | JsonFormatSpec | ColumnsFormatSpec
+FormatSpec = LogFormatSpec | JsonFormatSpec | ColumnsFormatSpec | PatternFormatSpec
 
 _KINDS: Final[dict[str, type[FormatSpec]]] = {
     LogFormatSpec.kind: LogFormatSpec,
     JsonFormatSpec.kind: JsonFormatSpec,
     ColumnsFormatSpec.kind: ColumnsFormatSpec,
+    PatternFormatSpec.kind: PatternFormatSpec,
 }
 
 

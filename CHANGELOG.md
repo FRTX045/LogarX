@@ -32,6 +32,28 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   since changed says so on a strip that shows both definitions. A `case.json` written before this
   field existed still loads, unchanged.
   See [ADR-0010](docs/adr/0010-a-log-format-is-data-that-travels-with-the-work.md).
+- **A log nothing else can read is readable by a regular expression you write.** The fourth and
+    last kind, for a syslog-wrapped line, an appliance with a syntax of its own, a load balancer
+    that agrees with nobody. Also the simplest: **the named groups are the mapping**, so
+    `(?P<client_ip>\S+)` is the client address and there is nothing else to configure. A group
+    logarc does not recognise is kept beside the event as evidence.
+
+  ```bash
+  logarc formats check-pattern '^(?P<timestamp>\S+) (?P<client_ip>\S+) …' --log proxy.log
+  logarc formats add-pattern gw-proxy '…' --time-format '%Y %b %d %H:%M:%S'
+  ```
+
+  **Anchored at the start of the line**, after measuring what happens otherwise:
+  `(?P<timestamp>\d+) (?P<client_ip>\S+)` searched anywhere found `1 09:00:45` inside
+  `May  1 09:00:45 gw01 proxy…`, read the `1` as one second past the epoch, and produced events
+  dated 1970 that nothing downstream would have questioned. A pattern describes the line; a reader
+  who means to skip a prefix says so with `.*`.
+- **Two things a timestamp cannot be.** A time format naming no year is refused when it is
+  written — `%b %d %H:%M:%S` has `strptime` supply 1900, so every event of the log lands there
+  together and a report reads "the attack occurred on 1 May 1900". And a number below 1e8 seconds
+  (March 1973, before any web server) is not read as an epoch at all: below that it is a field
+  somebody misidentified as the time. Both were found by looking at a screen showing the answer,
+  not by a test.
 - **A log laid out as a table is readable: IIS W3C, and CSV.** The third kind, and the one that
   brought a problem the first two did not have — **the file declares its own columns**. A W3C log
   opens with `#Fields: date time c-ip …`, and a CSV often names its columns in the first row, so

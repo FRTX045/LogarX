@@ -48,7 +48,12 @@ from PyQt6.QtWidgets import (
 )
 
 from logarc.gui._qt import required
-from logarc.gui.format_preview import preview, preview_columns, preview_mapping
+from logarc.gui.format_preview import (
+    preview,
+    preview_columns,
+    preview_mapping,
+    preview_pattern,
+)
 from logarc.gui.style import THEME
 from logarc.gui.theme import GAP, ROOM, caption_font
 from logarc.parsers.columns import FIELDS_DIRECTIVE, declared_columns
@@ -62,7 +67,12 @@ from logarc.parsers.registry import (
     is_built_in,
     register_saved_formats,
 )
-from logarc.parsers.spec import ColumnsFormatSpec, JsonFormatSpec, LogFormatSpec
+from logarc.parsers.spec import (
+    ColumnsFormatSpec,
+    JsonFormatSpec,
+    LogFormatSpec,
+    PatternFormatSpec,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -97,6 +107,7 @@ _DETECT = "Detect automatically"
 _NEW_TEXT = "New text format…"
 _NEW_JSON = "New JSON format…"
 _NEW_TABLE = "New table format…"
+_NEW_PATTERN = "New pattern format…"
 
 _BUILT_IN_HEADING = "Built in"
 _SAVED_HEADING = "Saved by you"
@@ -104,7 +115,9 @@ _SAVED_HEADING = "Saved by you"
 #: The rows of the list that are not formats. A format named after one of them
 #: would be picked up by the wrong branch of `_on_selected` and edited as
 #: something it is not, so the names are refused on the way in.
-_RESERVED = frozenset({_NEW_TEXT, _NEW_JSON, _NEW_TABLE, _BUILT_IN_HEADING, _SAVED_HEADING})
+_RESERVED = frozenset(
+    {_NEW_TEXT, _NEW_JSON, _NEW_TABLE, _NEW_PATTERN, _BUILT_IN_HEADING, _SAVED_HEADING}
+)
 
 #: What the separator box offers, in the spelling a reader recognises. A tab is
 #: not something anyone can type into a text box and see.
@@ -127,6 +140,30 @@ _SAMPLE_HINTS: Final[dict[str, str]] = {
         "Paste a few lines from your log, header and all.\n"
         "The #Fields: line is where the column names come from."
     ),
+    "pattern": _SAMPLE_HINT,
+}
+
+#: What the one-line rule box is called, per kind. The box holds a directive
+#: for one kind and a regular expression for another, and naming it for either
+#: would be wrong half the time.
+_RULE_LABELS: Final[dict[str, str]] = {
+    "logformat": "LogFormat directive",
+    "pattern": "Regular expression, with named groups",
+}
+
+#: The placeholder in that box, per kind.
+_RULE_HINTS: Final[dict[str, str]] = {
+    "logformat": '%h %l %u %t "%r" %>s %b',
+    "pattern": r"^(?P<timestamp>\S+) (?P<client_ip>\S+) ...",
+}
+
+
+#: Which kind each blank-form row starts.
+_BLANK_FORMS: Final[dict[str, str]] = {
+    _NEW_TEXT: "logformat",
+    _NEW_JSON: "json",
+    _NEW_TABLE: "columns",
+    _NEW_PATTERN: "pattern",
 }
 
 
@@ -181,9 +218,9 @@ class FormatEditor(QDialog):
         self._name = QLineEdit()
         self._name.setPlaceholderText("A name you will recognise later")
 
-        self._directive = QLineEdit()
-        self._directive.setPlaceholderText('%h %l %u %t "%r" %>s %b')
-        self._directive.textChanged.connect(self._refresh_preview)
+        self._rule = QLineEdit()
+        self._rule.setPlaceholderText('%h %l %u %t "%r" %>s %b')
+        self._rule.textChanged.connect(self._refresh_preview)
 
         self._note = QLineEdit()
         self._note.setPlaceholderText("What this format is for (optional)")
@@ -277,9 +314,9 @@ class FormatEditor(QDialog):
         right.addWidget(self._labelled("Name"))
         right.addWidget(self._name)
 
-        self._directive_label = self._labelled("LogFormat directive")
-        right.addWidget(self._directive_label)
-        right.addWidget(self._directive)
+        self._rule_label = self._labelled("LogFormat directive")
+        right.addWidget(self._rule_label)
+        right.addWidget(self._rule)
 
         right.addWidget(self._labelled("Note"))
         right.addWidget(self._note)
@@ -290,13 +327,22 @@ class FormatEditor(QDialog):
         # Under the sample, because guessing reads it and mapping is checked
         # against it. Above the mapping, because that is the order the reader
         # works in: paste, guess, correct.
+        # The guess button belongs to the kinds that map names; the time
+        # format belongs to those *and* to a pattern, whose syslog stamp needs
+        # telling apart from an ISO one. So they are separate rows.
         self._guess_row = QWidget()
         guessing = QHBoxLayout(self._guess_row)
         guessing.setContentsMargins(0, 0, 0, 0)
         guessing.addWidget(self._guess)
-        guessing.addWidget(self._labelled("Time format"))
-        guessing.addWidget(self._time_format, 1)
+        guessing.addStretch(1)
         right.addWidget(self._guess_row)
+
+        self._time_row = QWidget()
+        timing = QHBoxLayout(self._time_row)
+        timing.setContentsMargins(0, 0, 0, 0)
+        timing.addWidget(self._labelled("Time format"))
+        timing.addWidget(self._time_format, 1)
+        right.addWidget(self._time_row)
 
         self._table_row = QWidget()
         tabular = QHBoxLayout(self._table_row)
@@ -353,9 +399,7 @@ class FormatEditor(QDialog):
             if row not in self._headings
         ]
         return [
-            item.text()
-            for item in items
-            if item is not None and item.text() not in (_NEW_TEXT, _NEW_JSON, _NEW_TABLE)
+            item.text() for item in items if item is not None and item.text() not in _BLANK_FORMS
         ]
 
     def kind(self) -> str:
@@ -449,7 +493,9 @@ class FormatEditor(QDialog):
             )
         if self._kind == "json":
             return preview_mapping(self.mapping(), self._time_format.text().strip(), sample)
-        return preview(self._directive.text(), sample)
+        if self._kind == "pattern":
+            return preview_pattern(self._rule.text(), self._time_format.text().strip(), sample)
+        return preview(self._rule.text(), sample)
 
     # -- moving around the list ------------------------------------------
 
@@ -473,11 +519,15 @@ class FormatEditor(QDialog):
         """Clear the right-hand side for a table format that does not exist yet."""
         self.select(_NEW_TABLE)
 
+    def start_new_pattern(self) -> None:
+        """Clear the right-hand side for a pattern that does not exist yet."""
+        self.select(_NEW_PATTERN)
+
     def _blank(self, kind: str) -> None:
         self._editing = None
         self._trouble = ""
         self._name.clear()
-        self._directive.clear()
+        self._rule.clear()
         self._note.clear()
         self._time_format.clear()
         self._columns.clear()
@@ -496,11 +546,15 @@ class FormatEditor(QDialog):
         question they have to answer before realising it was not being asked.
         """
         self._kind = kind
-        text = kind == "logformat"
-        self._directive_label.setVisible(text)
-        self._directive.setVisible(text)
-        self._mapping.setVisible(not text)
-        self._guess_row.setVisible(not text)
+        one_line = kind in _RULE_LABELS
+        self._rule_label.setVisible(one_line)
+        self._rule.setVisible(one_line)
+        if one_line:
+            self._rule_label.setText(_RULE_LABELS[kind])
+            self._rule.setPlaceholderText(_RULE_HINTS[kind])
+        self._mapping.setVisible(not one_line)
+        self._guess_row.setVisible(not one_line)
+        self._time_row.setVisible(kind != "logformat")
         self._table_row.setVisible(kind == "columns")
         self._sample.setPlaceholderText(_SAMPLE_HINTS[kind])
         # A table wants a header and a row, so it wants room for both. One line
@@ -515,8 +569,8 @@ class FormatEditor(QDialog):
     def _on_selected(self, name: str) -> None:
         if not name:
             return
-        if name in (_NEW_TEXT, _NEW_JSON, _NEW_TABLE):
-            self._blank({_NEW_TEXT: "logformat", _NEW_JSON: "json"}.get(name, "columns"))
+        if name in _BLANK_FORMS:
+            self._blank(_BLANK_FORMS[name])
             return
         try:
             spec = get_spec(name)
@@ -528,7 +582,7 @@ class FormatEditor(QDialog):
             self._editing = None
             self._show_kind("logformat")
             self._name.setText(name)
-            self._directive.clear()
+            self._rule.clear()
             self._note.clear()
             self._set_editable(False)
             self._refresh_preview()
@@ -539,11 +593,15 @@ class FormatEditor(QDialog):
         self._name.setText(spec.name)
         self._note.setText(spec.description)
         if isinstance(spec, LogFormatSpec):
-            self._directive.setText(spec.directive)
+            self._rule.setText(spec.directive)
             self._time_format.clear()
             self.set_mapping(())
+        elif isinstance(spec, PatternFormatSpec):
+            self._rule.setText(spec.pattern)
+            self._time_format.setText(spec.time_format)
+            self.set_mapping(())
         else:
-            self._directive.clear()
+            self._rule.clear()
             self._time_format.setText(spec.time_format)
             self.set_mapping(spec.fields)
         if isinstance(spec, ColumnsFormatSpec):
@@ -558,7 +616,7 @@ class FormatEditor(QDialog):
         return name in available_formats() and not is_built_in(name)
 
     def _set_editable(self, editable: bool) -> None:
-        for field in (self._name, self._directive, self._note, self._time_format, self._columns):
+        for field in (self._name, self._rule, self._note, self._time_format, self._columns):
             field.setEnabled(editable)
         self._mapping.setEnabled(editable)
         self._guess.setEnabled(editable)
@@ -631,7 +689,11 @@ class FormatEditor(QDialog):
             return JsonFormatSpec(
                 name=name, fields=self.mapping(), time_format=when, description=note
             )
-        return LogFormatSpec(name=name, directive=self._directive.text(), description=note)
+        if self._kind == "pattern":
+            return PatternFormatSpec(
+                name=name, pattern=self._rule.text(), time_format=when, description=note
+            )
+        return LogFormatSpec(name=name, directive=self._rule.text(), description=note)
 
     def delete(self) -> None:
         """Forget the saved format on the right.
@@ -677,9 +739,8 @@ class FormatEditor(QDialog):
         self._formats.blockSignals(True)
         self._formats.clear()
         self._headings.clear()
-        self._formats.addItem(_NEW_TEXT)
-        self._formats.addItem(_NEW_JSON)
-        self._formats.addItem(_NEW_TABLE)
+        for blank in _BLANK_FORMS:
+            self._formats.addItem(blank)
         for heading, names in ((_BUILT_IN_HEADING, built_in), (_SAVED_HEADING, saved)):
             if not names:
                 continue

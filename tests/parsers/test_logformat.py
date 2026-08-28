@@ -445,3 +445,15 @@ def test_a_byte_count_that_is_not_a_number_is_absent_rather_than_fatal() -> None
 
     assert event is not None
     assert event.bytes_sent is None
+
+
+def test_a_number_too_small_to_be_a_real_timestamp_is_not_one() -> None:
+    """1e8 seconds is March 1973, before any web server existed. Below that a
+    number is a field somebody misidentified as the time — and read as an
+    instant in 1970 every event of the log lands there together, sorted and
+    plotted and believed."""
+    from logarc.parsers.times import read_time
+
+    assert read_time(1) is None
+    assert read_time("1") is None
+    assert read_time(1_714_554_045) is not None

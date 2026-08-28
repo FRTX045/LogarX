@@ -142,6 +142,18 @@ The saved format keeps no columns of its own — IIS writes different fields on
 different servers — and each case records the ones that were in the file it
 read.
 
+When a log is none of those — syslog-wrapped, an appliance with a syntax of its
+own — write a regular expression. Its named groups are the mapping.
+
+```bash
+logarc formats check-pattern '^(?P<timestamp>\S+) (?P<client_ip>\S+) …' --log proxy.log
+logarc formats add-pattern gw-proxy '…' --time-format '%Y %b %d %H:%M:%S'
+```
+
+A time format that names no year is refused rather than accepted: `strptime`
+supplies 1900 for a missing year, and a case where every event is dated 1900 is
+the kind of number this tool exists not to emit.
+
 In the desktop application the same thing lives under **Case → Log formats…**,
 where a pasted log line is read back field by field as the rule is written —
 a directive for a text log, a field mapping for a JSON one, shown beside what

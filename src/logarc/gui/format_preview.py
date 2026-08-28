@@ -24,10 +24,16 @@ from logarc.gui.style import plural
 from logarc.parsers.columns import FIELDS_DIRECTIVE, ColumnsFormatError
 from logarc.parsers.json_format import JsonFormatError, flatten
 from logarc.parsers.logformat import LogFormatError
+from logarc.parsers.pattern import PatternFormatError
 from logarc.parsers.registry import detect_format
-from logarc.parsers.spec import ColumnsFormatSpec, JsonFormatSpec, LogFormatSpec
+from logarc.parsers.spec import (
+    ColumnsFormatSpec,
+    JsonFormatSpec,
+    LogFormatSpec,
+    PatternFormatSpec,
+)
 
-__all__ = ["Preview", "preview", "preview_columns", "preview_mapping"]
+__all__ = ["Preview", "preview", "preview_columns", "preview_mapping", "preview_pattern"]
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -191,6 +197,31 @@ def preview_columns(
             status=(
                 "Nothing was read from that row. Check the separator, and that the "
                 "columns line up with the header above it."
+            ),
+        )
+    return _read(event)
+
+
+def preview_pattern(pattern: str, time_format: str, sample: str) -> Preview:
+    """Try a regular expression against one pasted line and say what came of it."""
+    sample = sample.strip()
+    if not pattern.strip():
+        return Preview(ok=False, status="Write a regular expression above.")
+    if not sample:
+        return Preview(ok=False, status="Paste one line from your log.")
+
+    try:
+        parser = PatternFormatSpec(name="preview", pattern=pattern, time_format=time_format).build()
+    except PatternFormatError as exc:
+        return Preview(ok=False, status=str(exc))
+
+    event = parser.parse_line(sample.splitlines()[0], _REF)
+    if event is None:
+        return Preview(
+            ok=False,
+            status=(
+                "This pattern does not read that line. It is matched from the start "
+                "of the line, so begin with .* if you mean to skip a prefix."
             ),
         )
     return _read(event)

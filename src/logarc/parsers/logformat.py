@@ -37,6 +37,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Final
 
 from logarc.core.event import NormalizedEvent
+from logarc.parsers.times import TimeFormatError, check_time_format
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -231,6 +232,11 @@ def _time_pattern(time_format: str) -> str:
             f"time format {time_format!r} is not a strftime pattern; "
             "logarc reads %{...}t written with strftime directives such as %Y-%m-%d"
         )
+
+    try:
+        check_time_format(time_format)
+    except TimeFormatError as exc:
+        raise LogFormatError(str(exc)) from exc
 
     parts: list[str] = []
     index = 0
