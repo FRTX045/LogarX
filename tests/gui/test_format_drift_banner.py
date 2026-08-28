@@ -21,7 +21,11 @@ from PyQt6.QtWidgets import QApplication
 
 from conftest import settled
 from logarc.case import Case
+from logarc.formats import FormatDrift
 from logarc.gui.app import MainWindow
+from logarc.gui.format_notice import drift_notice
+from logarc.gui.notice_bar import NoticeBanner
+from logarc.gui.quarantine_notice import Notice
 from logarc.parsers.apache import COMBINED
 from logarc.parsers.library import save_library
 from logarc.parsers.registry import register_saved_formats, unregister_format
@@ -131,3 +135,49 @@ def test_the_two_strips_are_dismissed_separately(
     window._format_notice.dismiss()
 
     assert not window._format_notice.isVisible()
+
+
+def test_the_strip_offers_the_rest_of_what_it_has_to_say(qt_app: QApplication) -> None:
+    """The strip shows one sentence, or it takes a third of the window. But the
+    useful half of a drift notice is the two directives side by side, and with
+    no way to reach it the reader is told something changed and never what."""
+    banner = NoticeBanner()
+    notice = drift_notice(
+        [
+            FormatDrift(
+                file_id="access.log",
+                name="log-kantor",
+                stored=LogFormatSpec(name="log-kantor", directive=JANUARY),
+                current=LogFormatSpec(name="log-kantor", directive=JUNE),
+            )
+        ]
+    )
+
+    banner.show_notice(notice)
+    banner.show()
+
+    assert banner._more.isVisible(), "no way to read past the first sentence"
+
+
+def test_a_notice_with_nothing_more_to_say_offers_nothing(qt_app: QApplication) -> None:
+    """A button that opens a box repeating the line above it is worse than no
+    button: the reader clicks it once and stops trusting the next one."""
+    banner = NoticeBanner()
+
+    banner.show_notice(Notice(headline="Short", detail="One sentence only.", dead_files=()))
+    banner.show()
+
+    assert not banner._more.isVisible()
+
+
+def test_a_notice_that_already_interrupts_does_not_also_offer_the_rest(
+    qt_app: QApplication,
+) -> None:
+    """A dead file raises a dialog carrying the whole paragraph. A button
+    beside the strip offering the same words is the third place to read them."""
+    banner = NoticeBanner()
+
+    banner.show_notice(Notice(headline="Gone", detail="First.\n\nSecond.", dead_files=("a.log",)))
+    banner.show()
+
+    assert not banner._more.isVisible()
