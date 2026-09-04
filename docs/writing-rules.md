@@ -109,8 +109,14 @@ distinction cannot be drawn from a single line, so it needs a window.
 
 Metrics: `request_count`, `distinct_paths`, `not_found_ratio`,
 `client_error_ratio`, `server_error_ratio`, `success_ratio`,
-`distinct_statuses`, `requests_per_second`. Operators: `>=`, `>`, `<=`, `<`,
-`==`, `!=`.
+`distinct_statuses`, `requests_per_second`, `static_asset_ratio`. Operators:
+`>=`, `>`, `<=`, `<`, `==`, `!=`.
+
+`static_asset_ratio` is inferred from requested path suffixes, not a trusted
+server-side content type. It is useful as a bounded false-positive guard for a
+page whose assets are all missing, but an enumerator can spend some of its
+requests on asset-shaped targets to lower recall. Treat that as an explicit
+precision tradeoff and include suffix-padding attacks in evaluation data.
 
 **`member` is the part that is easy to get wrong.** Without it a window is just
 a span of time, so a burst of 404s next to a stretch of ordinary browsing

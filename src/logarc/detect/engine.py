@@ -14,7 +14,9 @@ succeeded, and then used what they opened.
 from __future__ import annotations
 
 import hashlib
+from collections import Counter
 from dataclasses import dataclass, field
+from fractions import Fraction
 from functools import cached_property
 from typing import TYPE_CHECKING, Final
 
@@ -24,7 +26,7 @@ from logarc.detect.rules import Condition, SignatureRule, WindowRule
 from logarc.normalize.decode import NormalizedText, canonical_path, normalize
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterable, Sequence
 
     from logarc.core.event import NormalizedEvent
     from logarc.detect.crs import CrsDetection, DetectionIndex
@@ -96,6 +98,10 @@ class RequestView:
         _, _, tail = path.rpartition("/")
         stem, dot, extension = tail.rpartition(".")
         return extension.lower() if dot and stem else ""
+
+    @property
+    def is_static_asset(self) -> bool:
+        return self.extension in _STATIC_EXTENSIONS
 
     def value(self, field_name: str) -> str:
         """The text of one matchable field, as a string."""
@@ -234,9 +240,8 @@ class RuleEngine:
         for rule in self._windows:
             members = [index for index, item in enumerate(labelled) if _is_member(rule, item)]
             label = _to_label(rule)
-            for covered in _windows_meeting(rule, labelled, members):
-                for index in covered:
-                    labelled[index].all_labels.append(label)
+            for index in _members_of_matching_windows(rule, labelled, members):
+                labelled[index].all_labels.append(label)
 
         for item in labelled:
             if item.all_labels:
@@ -253,37 +258,259 @@ def _is_member(rule: WindowRule, item: LabelledEvent) -> bool:
     return any(_condition_holds(condition, view) for condition in conditions)
 
 
-def _windows_meeting(
+def _members_of_matching_windows(
     rule: WindowRule, labelled: Sequence[LabelledEvent], members: Sequence[int]
-) -> list[list[int]]:
-    """Index groups where `rule`'s thresholds hold.
+) -> list[int]:
+    """Request indices covered by at least one matching window.
 
     The scan runs over the rule's *members* rather than over every request, so a
     burst is measured against the requests it consists of. Neighbouring
     unrelated traffic neither dilutes the metrics nor gets labelled by
     association.
     """
+    if not members:
+        return []
+    if thresholds := _static_guard_thresholds(rule):
+        return _members_of_static_guarded_windows(rule, labelled, members, *thresholds)
+
+    coverage = [0] * (len(members) + 1)
+
+    _cover_maximal_windows(rule, labelled, members, coverage, reverse=False)
+    _cover_maximal_windows(rule, labelled, members, coverage, reverse=True)
+
+    active = 0
+    covered: list[int] = []
+    for position, index in enumerate(members):
+        active += coverage[position]
+        if active:
+            covered.append(index)
+    return covered
+
+
+def _static_guard_thresholds(rule: WindowRule) -> tuple[int, Fraction] | None:
+    """Return the optimisable distinct-path and static-ratio thresholds."""
+    conditions = {condition.metric: condition for condition in rule.window.conditions}
+    if len(rule.window.conditions) != 2 or set(conditions) != {
+        "distinct_paths",
+        "static_asset_ratio",
+    }:
+        return None
+    distinct = conditions["distinct_paths"]
+    static = conditions["static_asset_ratio"]
+    if (
+        distinct.op != ">="
+        or static.op != "<="
+        or static.value != 0.2
+        or not distinct.value.is_integer()
+    ):
+        return None
+    return int(distinct.value), Fraction(1, 5)
+
+
+def _members_of_static_guarded_windows(
+    rule: WindowRule,
+    labelled: Sequence[LabelledEvent],
+    members: Sequence[int],
+    distinct_threshold: int,
+    static_threshold: Fraction,
+) -> list[int]:
+    """Find every guarded window in O(n log n), including interior runs."""
+    total = len(members)
+    if not total:
+        return []
+
+    events = [labelled[index].event for index in members]
+    timestamps = [event.timestamp.timestamp() for event in events]
+    paths = [canonical_path(event.path) for event in events]
+    numerator, denominator = static_threshold.numerator, static_threshold.denominator
+    balance = [0]
+    for event in events:
+        balance.append(
+            balance[-1] + (denominator if RequestView(event).is_static_asset else 0) - numerator
+        )
+    tree, tree_size = _range_min_tree(balance)
+
+    coverage = [0] * (total + 1)
+    time_end = 0
+    distinct_end = 0
+    distinct_paths: Counter[str] = Counter()
+    for start in range(total):
+        while (
+            time_end < total
+            and timestamps[time_end] <= timestamps[start] + rule.window.span_seconds
+        ):
+            time_end += 1
+        if distinct_end < start:
+            distinct_end = start
+        while distinct_end < total and len(distinct_paths) < distinct_threshold:
+            distinct_paths[paths[distinct_end]] += 1
+            distinct_end += 1
+
+        if len(distinct_paths) >= distinct_threshold:
+            first_end = max(start + rule.window.min_requests, distinct_end)
+            matching_end = _rightmost_at_most(
+                tree, tree_size, first_end, time_end + 1, balance[start]
+            )
+            if matching_end is not None:
+                coverage[start] += 1
+                coverage[matching_end] -= 1
+
+        if start < distinct_end:
+            distinct_paths[paths[start]] -= 1
+            if not distinct_paths[paths[start]]:
+                del distinct_paths[paths[start]]
+
+    active = 0
+    covered: list[int] = []
+    for position, index in enumerate(members):
+        active += coverage[position]
+        if active:
+            covered.append(index)
+    return covered
+
+
+def _range_min_tree(values: Sequence[int]) -> tuple[list[float], int]:
+    size = 1 << (len(values) - 1).bit_length()
+    tree = [float("inf")] * (size * 2)
+    tree[size : size + len(values)] = values
+    for node in range(size - 1, 0, -1):
+        tree[node] = min(tree[node * 2], tree[node * 2 + 1])
+    return tree, size
+
+
+def _rightmost_at_most(
+    tree: Sequence[float], size: int, left: int, right: int, target: float
+) -> int | None:
+    """Rightmost index in ``[left, right)`` whose value is at most target."""
+
+    def search(node: int, node_left: int, node_right: int) -> int | None:
+        if node_right <= left or right <= node_left or tree[node] > target:
+            return None
+        if node_right - node_left == 1:
+            return node_left
+        middle = (node_left + node_right) // 2
+        found = search(node * 2 + 1, middle, node_right)
+        return found if found is not None else search(node * 2, node_left, middle)
+
+    return search(1, 0, size)
+
+
+def _cover_maximal_windows(
+    rule: WindowRule,
+    labelled: Sequence[LabelledEvent],
+    members: Sequence[int],
+    coverage: list[int],
+    *,
+    reverse: bool,
+) -> None:
+    """Mark maximal matching windows from one temporal direction."""
     span = rule.window.span_seconds
-    hits: list[list[int]] = []
+    measurements = _WindowMeasurements()
+    edge = len(members) if reverse else 0
+    anchors = range(len(members) - 1, -1, -1) if reverse else range(len(members))
 
-    end = 0
-    for start in range(len(members)):
-        if end < start:
-            end = start
-        limit = labelled[members[start]].event.timestamp.timestamp() + span
-        while end < len(members) and labelled[members[end]].event.timestamp.timestamp() <= limit:
-            end += 1
+    for anchor in anchors:
+        timestamp = labelled[members[anchor]].event.timestamp.timestamp()
+        if reverse:
+            limit = timestamp - span
+            while edge > 0 and labelled[members[edge - 1]].event.timestamp.timestamp() >= limit:
+                edge -= 1
+                measurements.add(labelled[members[edge]].event)
+            start, end = edge, anchor + 1
+        else:
+            limit = timestamp + span
+            while (
+                edge < len(members) and labelled[members[edge]].event.timestamp.timestamp() <= limit
+            ):
+                measurements.add(labelled[members[edge]].event)
+                edge += 1
+            start, end = anchor, edge
 
-        if end - start < rule.window.min_requests:
-            continue
-        events = [labelled[index].event for index in members[start:end]]
-        if all(_metric_holds(condition, events, span) for condition in rule.window.conditions):
-            hits.append(list(members[start:end]))
-    return hits
+        if measurements.total >= rule.window.min_requests and all(
+            _measurement_holds(condition, measurements, span)
+            for condition in rule.window.conditions
+        ):
+            coverage[start] += 1
+            coverage[end] -= 1
+        measurements.remove(labelled[members[anchor]].event)
+
+
+@dataclass
+class _WindowMeasurements:
+    total: int = 0
+    paths: Counter[str] = field(default_factory=Counter)
+    statuses: Counter[int | None] = field(default_factory=Counter)
+    not_found: int = 0
+    client_errors: int = 0
+    server_errors: int = 0
+    successes: int = 0
+    static_assets: int = 0
+
+    def add(self, event: NormalizedEvent) -> None:
+        self.total += 1
+        self.paths[canonical_path(event.path)] += 1
+        self.statuses[event.status] += 1
+        self.not_found += event.status == 404
+        self.client_errors += _in_range(event.status, 400, 499)
+        self.server_errors += _in_range(event.status, 500, 599)
+        self.successes += _in_range(event.status, 200, 299)
+        self.static_assets += RequestView(event).is_static_asset
+
+    def remove(self, event: NormalizedEvent) -> None:
+        self.total -= 1
+        path = canonical_path(event.path)
+        self.paths[path] -= 1
+        if not self.paths[path]:
+            del self.paths[path]
+        self.statuses[event.status] -= 1
+        if not self.statuses[event.status]:
+            del self.statuses[event.status]
+        self.not_found -= event.status == 404
+        self.client_errors -= _in_range(event.status, 400, 499)
+        self.server_errors -= _in_range(event.status, 500, 599)
+        self.successes -= _in_range(event.status, 200, 299)
+        self.static_assets -= RequestView(event).is_static_asset
+
+    def value(self, name: str, span: int) -> float:
+        if not self.total:  # pragma: no cover - matching windows are never empty
+            return 0.0
+        match name:
+            case "request_count":
+                return float(self.total)
+            case "distinct_paths":
+                return float(len(self.paths))
+            case "distinct_statuses":
+                return float(len(self.statuses))
+            case "not_found_ratio":
+                return self.not_found / self.total
+            case "client_error_ratio":
+                return self.client_errors / self.total
+            case "server_error_ratio":
+                return self.server_errors / self.total
+            case "success_ratio":
+                return self.successes / self.total
+            case "requests_per_second":
+                return self.total / span if span else 0.0
+            case "static_asset_ratio":
+                return self.static_assets / self.total
+        return 0.0  # pragma: no cover - metrics are validated at load time
+
+
+def _measure(events: Iterable[NormalizedEvent]) -> _WindowMeasurements:
+    measurements = _WindowMeasurements()
+    for event in events:
+        measurements.add(event)
+    return measurements
 
 
 def _metric_holds(condition: WindowCondition, events: Sequence[NormalizedEvent], span: int) -> bool:
-    actual = _metric(condition.metric, events, span)
+    return _measurement_holds(condition, _measure(events), span)
+
+
+def _measurement_holds(
+    condition: WindowCondition, measurements: _WindowMeasurements, span: int
+) -> bool:
+    actual = measurements.value(condition.metric, span)
     target = condition.value
     match condition.op:
         case ">=":
@@ -302,31 +529,7 @@ def _metric_holds(condition: WindowCondition, events: Sequence[NormalizedEvent],
 
 
 def _metric(name: str, events: Sequence[NormalizedEvent], span: int) -> float:
-    total = len(events)
-    if total == 0:  # pragma: no cover - windows always hold at least one event
-        return 0.0
-
-    match name:
-        case "request_count":
-            return float(total)
-        case "distinct_paths":
-            # Counted canonically: `/a/b`, `/a//b` and `/a/./b` are one path,
-            # and counting them as three moves this metric across its threshold
-            # without the client having touched a new resource.
-            return float(len({canonical_path(event.path) for event in events}))
-        case "distinct_statuses":
-            return float(len({event.status for event in events}))
-        case "not_found_ratio":
-            return sum(event.status == 404 for event in events) / total
-        case "client_error_ratio":
-            return sum(_in_range(event.status, 400, 499) for event in events) / total
-        case "server_error_ratio":
-            return sum(_in_range(event.status, 500, 599) for event in events) / total
-        case "success_ratio":
-            return sum(_in_range(event.status, 200, 299) for event in events) / total
-        case "requests_per_second":
-            return total / span if span else 0.0
-    return 0.0  # pragma: no cover - metrics are validated at load time
+    return _measure(events).value(name, span)
 
 
 def _in_range(status: int | None, low: int, high: int) -> bool:
@@ -480,7 +683,7 @@ def _classify_benign(view: RequestView) -> ActivityLabel:
 
     if any(hint in agent for hint in _CRAWLER_HINTS):
         return _benign(ActivityCategory.CRAWLING, "Crawler Traffic")
-    if view.extension in _STATIC_EXTENSIONS:
+    if view.is_static_asset:
         return _benign(ActivityCategory.STATIC_ASSET, "Static Asset")
     if any(hint in path for hint in _AUTH_HINTS):
         return _benign(ActivityCategory.AUTHENTICATION, "Authentication")

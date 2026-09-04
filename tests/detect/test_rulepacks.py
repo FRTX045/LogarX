@@ -31,6 +31,7 @@ def request(
     status: int = 200,
     user_agent: str | None = "Mozilla/5.0",
     seconds: float = 0,
+    referer: str | None = None,
 ) -> NormalizedEvent:
     path, _, query = target.partition("?")
     return NormalizedEvent(
@@ -42,6 +43,7 @@ def request(
         query=query or None,
         status=status,
         bytes_sent=512,
+        referer=referer,
         user_agent=user_agent,
     )
 
@@ -154,6 +156,44 @@ def test_directory_enumeration_is_seen_across_requests(engine: RuleEngine) -> No
     assert any(item.label.rule_id == "directory_enumeration" for item in labelled)
 
 
+def test_human_paced_directory_enumeration_is_detected(engine: RuleEngine) -> None:
+    seconds = [0, 40, 80, 120, 160, 200, 240, 300]
+    targets = [f"/quiet-probe-{n % 6}" for n in range(8)]
+    events = [
+        request(target, status=404, seconds=offset)
+        for target, offset in zip(targets, seconds, strict=True)
+    ]
+
+    labelled = engine.label_events(events)
+
+    assert all(item.label.rule_id == "directory_enumeration_low_slow" for item in labelled)
+
+
+@pytest.mark.parametrize(
+    "targets",
+    [
+        [f"/probe-{n}" for n in range(7)],
+        [f"/probe-{n % 5}" for n in range(8)],
+    ],
+)
+def test_low_slow_enumeration_needs_eight_requests_and_six_paths(
+    engine: RuleEngine, targets: list[str]
+) -> None:
+    events = [request(target, status=404, seconds=n * 40) for n, target in enumerate(targets)]
+
+    labelled = engine.label_events(events)
+
+    assert all(item.label.rule_id != "directory_enumeration_low_slow" for item in labelled)
+
+
+def test_low_slow_enumeration_does_not_count_refused_paths(engine: RuleEngine) -> None:
+    events = [request(f"/private-{n}", status=403, seconds=n * 40) for n in range(8)]
+
+    labelled = engine.label_events(events)
+
+    assert all(item.label.rule_id != "directory_enumeration_low_slow" for item in labelled)
+
+
 def test_refused_paths_are_forced_browsing_rather_than_enumeration(engine: RuleEngine) -> None:
     """Two different behaviours, told apart by what the server answered.
 
@@ -188,12 +228,8 @@ def test_a_fast_page_load_is_not_reconnaissance(engine: RuleEngine) -> None:
     assert all(item.label.category is ActivityCategory.STATIC_ASSET for item in labelled)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="directory_enumeration claims a broken page; see the Tranche 2 threshold rework",
-)
 def test_a_page_whose_assets_are_all_missing_is_not_hostile(engine: RuleEngine) -> None:
-    """A botched deploy is not an attacker, and this is not fixed yet.
+    """A botched deploy is not an attacker.
 
     When a page requests sixty assets that are no longer there, every visitor
     produces sixty distinct 404s in six seconds. That clears
@@ -211,6 +247,128 @@ def test_a_page_whose_assets_are_all_missing_is_not_hostile(engine: RuleEngine) 
     labelled = engine.label_events(events)
 
     assert not any(item.label.category.is_hostile for item in labelled)
+
+
+@pytest.mark.parametrize("referer", [None, "https://shop.example.com/catalog"])
+def test_five_missing_pages_are_not_low_slow_enumeration(
+    engine: RuleEngine, referer: str | None
+) -> None:
+    events = [
+        request(f"/missing-page-{n}", status=404, seconds=n * 20, referer=referer) for n in range(5)
+    ]
+
+    labelled = engine.label_events(events)
+
+    assert not any(item.label.category.is_hostile for item in labelled)
+
+
+def test_one_asset_does_not_break_a_low_slow_window(engine: RuleEngine) -> None:
+    events = [request(f"/probe-{n}", status=404, seconds=n * 30) for n in range(8)]
+    events.insert(4, request("/missing.png", status=404, seconds=105))
+
+    labelled = engine.label_events(events)
+
+    probes = [item for item in labelled if not item.event.path.endswith(".png")]
+    assert all(item.label.rule_id == "directory_enumeration_low_slow" for item in probes)
+
+
+def test_later_assets_do_not_hide_an_earlier_high_volume_window(engine: RuleEngine) -> None:
+    events = [request(f"/probe-{n}", status=404, seconds=n * 2) for n in range(20)]
+    events.extend(request(f"/missing-{n}.png", status=404, seconds=40 + n * 2) for n in range(6))
+
+    labelled = engine.label_events(events)
+
+    assert all(item.label.rule_id == "directory_enumeration" for item in labelled[:20])
+    assert "directory_enumeration" not in {label.rule_id for label in labelled[-1].all_labels}
+
+
+def test_high_volume_window_recovers_after_an_asset_prefix(engine: RuleEngine) -> None:
+    events = [request(f"/missing-{n}.png", status=404, seconds=n) for n in range(6)]
+    events.extend(request(f"/probe-{n}", status=404, seconds=6 + n) for n in range(20))
+
+    labelled = engine.label_events(events)
+
+    assert all(item.label.rule_id == "directory_enumeration" for item in labelled[-20:])
+
+
+def test_assets_around_a_high_volume_window_do_not_hide_it(engine: RuleEngine) -> None:
+    events = [request(f"/before-{n}.png", status=404, seconds=n) for n in range(6)]
+    events.extend(request(f"/probe-{n}", status=404, seconds=6 + n) for n in range(20))
+    events.extend(request(f"/after-{n}.png", status=404, seconds=26 + n) for n in range(6))
+
+    labelled = engine.label_events(events)
+
+    assert all(item.label.rule_id == "directory_enumeration" for item in labelled[6:26])
+
+
+def test_high_volume_enumeration_accepts_guard_thresholds(engine: RuleEngine) -> None:
+    events = [
+        request(
+            f"/probe-{n}.png" if n < 4 else f"/probe-{n}",
+            status=404,
+            seconds=n * 3,
+            referer="https://shop.example.com/catalog" if 4 <= n < 8 else None,
+        )
+        for n in range(20)
+    ]
+
+    labelled = engine.label_events(events)
+
+    overlap = [
+        item
+        for item in labelled
+        if {label.rule_id for label in item.all_labels}
+        >= {"directory_enumeration", "directory_enumeration_low_slow"}
+    ]
+    assert overlap
+    assert all(item.label.rule_id == "directory_enumeration" for item in overlap)
+
+
+def test_high_volume_enumeration_rejects_too_many_static_assets(engine: RuleEngine) -> None:
+    events = [
+        request(
+            f"/probe-{n}.png" if n < 5 else f"/probe-{n}",
+            status=404,
+            seconds=n * 3,
+        )
+        for n in range(20)
+    ]
+
+    labelled = engine.label_events(events)
+
+    assert all(item.label.rule_id != "directory_enumeration" for item in labelled)
+
+
+def test_high_volume_enumeration_ignores_spoofed_referers(engine: RuleEngine) -> None:
+    events = [
+        request(
+            f"/probe-{n}",
+            status=404,
+            seconds=n * 3,
+            referer="https://shop.example.com/catalog",
+        )
+        for n in range(20)
+    ]
+
+    labelled = engine.label_events(events)
+
+    assert all(item.label.rule_id == "directory_enumeration" for item in labelled)
+
+
+def test_low_slow_enumeration_ignores_spoofed_referers(engine: RuleEngine) -> None:
+    events = [
+        request(
+            f"/quiet-probe-{n}",
+            status=404,
+            seconds=n * 40,
+            referer="https://shop.example.com/catalog",
+        )
+        for n in range(8)
+    ]
+
+    labelled = engine.label_events(events)
+
+    assert all(item.label.rule_id == "directory_enumeration_low_slow" for item in labelled)
 
 
 def test_credential_attack_is_seen_across_requests(engine: RuleEngine) -> None:

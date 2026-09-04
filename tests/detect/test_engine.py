@@ -83,6 +83,7 @@ def event(
     query: str | None = None,
     status: int | None = 200,
     user_agent: str | None = "curl/8.0",
+    referer: str | None = None,
 ) -> NormalizedEvent:
     return NormalizedEvent(
         timestamp=START + timedelta(seconds=seconds),
@@ -93,6 +94,7 @@ def event(
         query=query,
         status=status,
         bytes_sent=100,
+        referer=referer,
         user_agent=user_agent,
     )
 
@@ -159,16 +161,15 @@ def test_every_window_metric_measures_its_own_thing() -> None:
     share, a rule tuned to fire at 0.8 would fire on traffic that never had a
     4xx in it — and the finding would look ordinary.
 
-    The window below is chosen so no two metrics share an answer: four requests,
-    three distinct canonical paths, statuses 404, 403, 500 and 200 across two
-    seconds. Any arm returning a neighbour's value is a different number.
+    The window below has four requests, three distinct canonical paths, and
+    statuses 404, 403, 500 and 200 across two seconds.
     """
     from logarc.detect.engine import _metric
     from logarc.detect.rules import WINDOW_METRICS
 
     window = [
-        event(0, path="/a", status=404),
-        event(1, path="/a//", status=403),
+        event(0, path="/a.css", status=404, referer="https://example.test/"),
+        event(1, path="/a.css//", status=403),
         event(1, path="/b", status=500),
         event(2, path="/c", status=200),
     ]
@@ -183,6 +184,7 @@ def test_every_window_metric_measures_its_own_thing() -> None:
         "server_error_ratio": 0.25,
         "success_ratio": 0.25,
         "requests_per_second": 2.0,
+        "static_asset_ratio": 0.25,
     }
     assert set(expected) == set(WINDOW_METRICS), "a metric can be named but not measured"
     assert {name: _metric(name, window, 2) for name in sorted(WINDOW_METRICS)} == expected
@@ -217,6 +219,37 @@ def test_every_threshold_operator_compares_the_way_it_reads(
     condition = WindowCondition(metric="request_count", op=op, value=target)
 
     assert _metric_holds(condition, window, 2) is fires
+
+
+def test_custom_static_ratio_keeps_float_threshold_semantics(tmp_path: Path) -> None:
+    pack = tmp_path / "ratio.yaml"
+    pack.write_text(
+        """
+version: 1
+rules:
+  - id: custom_static_ratio
+    name: Custom static ratio
+    category: enumeration
+    severity: medium
+    window:
+      span_seconds: 60
+      min_requests: 3
+      conditions:
+        - metric: distinct_paths
+          op: ">="
+          value: 3
+        - metric: static_asset_ratio
+          op: "<="
+          value: 0.3333333333333333
+""",
+        encoding="utf-8",
+    )
+    custom = RuleEngine(load_rules([pack]))
+    events = [event(0, path="/one.png"), event(1, path="/two"), event(2, path="/three")]
+
+    labelled = custom.label_events(events)
+
+    assert all(item.label.rule_id == "custom_static_ratio" for item in labelled)
 
 
 def test_a_matching_request_is_labelled(engine: RuleEngine) -> None:
@@ -340,6 +373,63 @@ def test_a_window_label_does_not_displace_a_more_severe_signature(
     labelled = engine.label_events(events)
 
     assert labelled[-1].label.rule_id == "sqli_union"
+
+
+def test_overlapping_windows_add_each_rule_only_once_per_request(engine: RuleEngine) -> None:
+    """A long run satisfies many overlapping windows, but those windows are
+    repeated evidence for one rule rather than distinct matches on a request.
+    """
+    events = [event(seconds=n, path=f"/secret-{n}", status=404) for n in range(8)]
+
+    labelled = engine.label_events(events)
+
+    for item in labelled:
+        assert [label.rule_id for label in item.all_labels].count("dir_enumeration") == 1
+
+
+def test_failed_dense_window_scan_does_bounded_query_work(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing assets must not make every window rescan all its prefixes."""
+    from logarc.detect.engine import _range_min_tree, _WindowMeasurements
+    from logarc.detect.rulepacks import default_rules
+
+    work = 0
+    original = _WindowMeasurements.add
+    original_tree = _range_min_tree
+
+    def counted_add(self: _WindowMeasurements, item: NormalizedEvent) -> None:
+        nonlocal work
+        work += 1
+        original(self, item)
+
+    class CountingTree:
+        def __init__(self, values: list[float]) -> None:
+            self.values = values
+
+        def __len__(self) -> int:
+            return len(self.values)
+
+        def __getitem__(self, index: int) -> float:
+            nonlocal work
+            work += 1
+            return self.values[index]
+
+    def counted_tree(values: list[int]) -> tuple[CountingTree, int]:
+        tree, size = original_tree(values)
+        return CountingTree(tree), size
+
+    monkeypatch.setattr(_WindowMeasurements, "add", counted_add)
+    monkeypatch.setattr("logarc.detect.engine._range_min_tree", counted_tree)
+    events = [
+        event(n / 10, path=f"/missing-{n}.png", status=404, user_agent="Mozilla/5.0")
+        for n in range(500)
+    ]
+
+    labelled = RuleEngine(default_rules()).label_events(events)
+
+    assert not any(item.label.category.is_hostile for item in labelled)
+    assert work < len(events) * 30
 
 
 def test_labelling_no_events_produces_nothing(engine: RuleEngine) -> None:

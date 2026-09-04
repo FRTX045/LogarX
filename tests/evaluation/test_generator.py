@@ -14,6 +14,7 @@ import pytest
 
 from logarc.core.activity import ActivityCategory
 from logarc.core.evidence import EvidenceRef
+from logarc.detect.engine import RequestView
 from logarc.evaluation.generator import (
     SCENARIOS,
     GenerationError,
@@ -124,6 +125,41 @@ def test_normal_browsing_contains_nothing_hostile() -> None:
     """The false-positive half of the evaluation needs clean traffic."""
     for _, truth in emitted("normal_browsing", 1000):
         assert not truth.category.is_hostile, truth
+
+
+def test_browser_like_enumerators_send_a_plausible_referer() -> None:
+    parser = get_parser("apache-combined")
+    enumerated = []
+    for number, (text, truth) in enumerate(emitted("wordpress_scan", 2_000), start=1):
+        if truth.category is not ActivityCategory.ENUMERATION:
+            continue
+        event = parser.parse_line(text, EvidenceRef("gen.log", number))
+        assert event is not None
+        enumerated.append(event)
+
+    assert enumerated
+    assert all(event.referer == "https://shop.example.com/" for event in enumerated)
+
+
+@pytest.mark.parametrize("scenario", ["normal_browsing", "mixed"])
+def test_browsing_workloads_contain_realistic_broken_links(scenario: str) -> None:
+    parser = get_parser("apache-combined")
+    broken_by_client: dict[str, list[object]] = {}
+    for number, (text, truth) in enumerate(emitted(scenario, 3_000), start=1):
+        event = parser.parse_line(text, EvidenceRef("gen.log", number))
+        assert event is not None
+        if truth.category is ActivityCategory.BROWSING and event.status == 404:
+            broken_by_client.setdefault(truth.client_ip, []).append(event)
+
+    sequences = [events for events in broken_by_client.values() if len(events) >= 5]
+    assert sequences
+    for events in sequences:
+        assert len({event.path for event in events}) >= 5
+        assert not any(RequestView(event).is_static_asset for event in events)
+        assert all(
+            event.referer and event.referer.startswith("https://shop.example.com/")
+            for event in events
+        )
 
 
 def test_mixed_carries_both_ordinary_and_hostile_clients() -> None:

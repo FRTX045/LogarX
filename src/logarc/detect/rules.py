@@ -78,6 +78,7 @@ WINDOW_METRICS: Final[frozenset[str]] = frozenset(
         "success_ratio",
         "distinct_statuses",
         "requests_per_second",
+        "static_asset_ratio",
     }
 )
 
