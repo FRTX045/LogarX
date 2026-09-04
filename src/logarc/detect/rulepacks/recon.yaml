@@ -51,7 +51,7 @@ rules:
     category: enumeration
     owasp: "A01:2021"
     severity: medium
-    confidence: 0.85
+    confidence: 0.9
     references: ["CAPEC-127"]
     # Members are the requests that came back "no such thing". Enumeration is
     # finding out what exists; a refusal means the thing exists and is
@@ -71,6 +71,33 @@ rules:
         - metric: distinct_paths
           op: ">="
           value: 15
+        - metric: static_asset_ratio
+          op: "<="
+          value: 0.2
+
+  - id: directory_enumeration_low_slow
+    name: Directory Enumeration (Low and Slow)
+    category: enumeration
+    owasp: "A01:2021"
+    severity: medium
+    confidence: 0.85
+    references: ["CAPEC-127"]
+    member:
+      all:
+        - field: status
+          min: 404
+        - field: status
+          max: 410
+    window:
+      span_seconds: 300
+      min_requests: 8
+      conditions:
+        - metric: distinct_paths
+          op: ">="
+          value: 6
+        - metric: static_asset_ratio
+          op: "<="
+          value: 0.2
 
   - id: forced_browsing
     name: Forced Browsing (repeated refusals)

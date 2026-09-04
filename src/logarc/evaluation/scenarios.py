@@ -141,6 +141,14 @@ _ASSETS: Final = (
     "/favicon.ico",
 )
 
+_BROKEN_LINKS: Final = (
+    "/help/shipping-old",
+    "/sale/summer-2023",
+    "/account/orders/legacy",
+    "/blog/retired-post",
+    "/support/returns-old",
+)
+
 #: A generic content-discovery wordlist, of the kind any scanner ships with.
 _WORDLIST: Final = (
     "/backup", "/backups", "/old", "/new", "/test", "/tmp", "/temp", "/dev",
@@ -317,6 +325,33 @@ def _crawl(rng: Random) -> Actor:
     return Actor(user_agent=rng.choice(_CRAWLER_AGENTS), steps=steps())
 
 
+def _follow_broken_links(rng: Random) -> Actor:
+    """A browser following several dead links from one stale page."""
+
+    def steps() -> Iterator[Step]:
+        page = rng.choice(_PAGES)
+        yield Step(
+            "reading a stale page",
+            Category.BROWSING,
+            path=page,
+            status=200,
+            size=rng.randint(2_000, 40_000),
+            gap=rng.uniform(5.0, 45.0),
+        )
+        referer = f"{_SITE}{page}"
+        for path in _BROKEN_LINKS:
+            yield Step(
+                "following broken links",
+                Category.BROWSING,
+                path=path,
+                status=404,
+                referer=referer,
+                gap=rng.uniform(10.0, 45.0),
+            )
+
+    return Actor(user_agent=rng.choice(_BROWSER_AGENTS), steps=steps())
+
+
 def _scan(rng: Random) -> Actor:
     """Content discovery from a spoofed browser, which is the normal case.
 
@@ -325,6 +360,7 @@ def _scan(rng: Random) -> Actor:
     """
 
     def steps() -> Iterator[Step]:
+        referer = f"{_SITE}/"
         yield Step(
             "arriving",
             Category.BROWSING,
@@ -339,6 +375,7 @@ def _scan(rng: Random) -> Actor:
                 Category.RECONNAISSANCE,
                 path=path,
                 status=rng.choice((404, 404, 403)),
+                referer=referer,
                 gap=rng.uniform(0.5, 2.5),
             )
         for path in rng.sample(_WORDLIST, min(len(_WORDLIST), rng.randint(32, 48))):
@@ -347,6 +384,7 @@ def _scan(rng: Random) -> Actor:
                 Category.ENUMERATION,
                 path=path,
                 status=404,
+                referer=referer,
                 gap=rng.uniform(0.3, 1.4),
             )
         for path in rng.sample(_ADMIN_AREAS, rng.randint(10, 12)):
@@ -355,6 +393,7 @@ def _scan(rng: Random) -> Actor:
                 Category.ACCESS_CONTROL,
                 path=path,
                 status=rng.choice((403, 403, 401)),
+                referer=referer,
                 gap=rng.uniform(0.5, 3.0),
             )
 
@@ -556,6 +595,7 @@ INJECTOR = Role("injector", 67, _inject)
 GUESSER = Role("guesser", 68, _brute_force)
 TRAVERSER = Role("traverser", 69, _traverse)
 NOISY_SCANNER = Role("noisy_scanner", 70, _noisy_scan)
+BROKEN_LINK_BROWSER = Role("broken_link_browser", 71, _follow_broken_links)
 
 
 SCENARIOS: Final[dict[str, Scenario]] = {
@@ -564,7 +604,7 @@ SCENARIOS: Final[dict[str, Scenario]] = {
         Scenario(
             "normal_browsing",
             "Ordinary shoppers and a search engine. Nothing hostile at all.",
-            mix=(BROWSER,) * 7 + (CRAWLER,),
+            mix=(BROWSER,) * 6 + (BROKEN_LINK_BROWSER, CRAWLER),
         ),
         Scenario(
             "wordpress_scan",
@@ -597,7 +637,8 @@ SCENARIOS: Final[dict[str, Scenario]] = {
             # an attacker that pauses between visits emits nothing while it
             # waits, so a single slot yields a few dozen injection requests in
             # a corpus of forty thousand, which is too thin to score.
-            mix=(BROWSER,) * 14
+            mix=(BROWSER,) * 13
+            + (BROKEN_LINK_BROWSER,)
             + (CRAWLER, CRAWLER, SCANNER, NOISY_SCANNER, GUESSER, TRAVERSER)
             + (INJECTOR,) * 4,
         ),
