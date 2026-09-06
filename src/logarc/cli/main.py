@@ -8,20 +8,20 @@ import shutil
 import tempfile
 from dataclasses import replace
 from datetime import timedelta
-from itertools import chain, islice
+from itertools import chain
 from pathlib import Path
 from time import perf_counter
-from typing import TYPE_CHECKING, Annotated, Any, Final
+from typing import TYPE_CHECKING, Annotated, Final
 
 import typer
-from rich.console import Console
 from rich.table import Table
 
 from logarc import __version__
 from logarc.analysis import AnalysisPolicy, analyse_ip
 from logarc.case import Case, CaseError
+from logarc.cli.formats import formats_app
+from logarc.cli.support import console, errors, fail, path_line
 from logarc.core.activity import Severity
-from logarc.core.evidence import EvidenceRef
 from logarc.detect.crs import (
     CrsUnavailableError,
     SidecarConfig,
@@ -38,33 +38,13 @@ from logarc.evaluation.generator import DEFAULT_SEED, describe_scenarios, write_
 from logarc.evaluation.scoring import evaluate as score_case
 from logarc.evaluation.truth import TruthError, read_truth
 from logarc.ingest.pipeline import FormatDetectionError
-from logarc.ingest.reader import LogSourceError, open_log
-from logarc.parsers.base import LogParser
-from logarc.parsers.columns import ColumnsFormatError, declared_columns
-from logarc.parsers.fieldnames import guess_mapping as guess_from_names
-from logarc.parsers.json_format import JsonFormatError, guess_mapping
+from logarc.ingest.reader import LogSourceError
 from logarc.parsers.library import (
     FormatLibraryError,
-    library_path,
-    load_library,
-    save_library,
 )
-from logarc.parsers.logformat import LogFormatError
-from logarc.parsers.pattern import PatternFormatError
 from logarc.parsers.registry import (
-    DEFAULT_SAMPLE_SIZE,
     UnknownFormatError,
-    get_spec,
-    is_built_in,
     register_saved_formats,
-    registered_formats,
-)
-from logarc.parsers.spec import (
-    ColumnsFormatSpec,
-    FormatSpec,
-    JsonFormatSpec,
-    LogFormatSpec,
-    PatternFormatSpec,
 )
 from logarc.report import export as export_formats
 from logarc.sessionize.segmenter import SessionPolicy
@@ -72,8 +52,9 @@ from logarc.storage.event_store import SORT_KEYS, StoreStateError
 from logarc.style import plural
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator, Sequence
+    from collections.abc import Iterable, Iterator
 
+    from logarc.analysis import AnalysisResult
     from logarc.core.event import NormalizedEvent
 
 #: Sizes the benchmark measures when none are named. Ten million is deliberately
@@ -94,9 +75,7 @@ app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
 )
-console = Console()
-errors = Console(stderr=True)
-
+app.add_typer(formats_app, name="formats")
 #: Errors that represent a bad request from the user rather than a defect. These
 #: are reported as a single line; anything else keeps its traceback, because an
 #: unexpected failure in a forensic tool should be loud.
@@ -116,25 +95,6 @@ USER_ERRORS = (
     UnknownFormatError,
     ValueError,
 )
-
-
-def _fail(message: str) -> typer.Exit:
-    errors.print(f"[red]error:[/red] {message}", soft_wrap=True)
-    return typer.Exit(code=1)
-
-
-def _path_line(message: str) -> None:
-    """Print a line carrying a path, without breaking the path.
-
-    Rich wraps to the console width, and a path offers no spaces to break at, so
-    a long one is cut mid-word — `...Desktop-BlackHa` on one line and `t\\...` on
-    the next. Every path this tool prints is the argument to the next command,
-    and one that cannot be copied out of the terminal is one the reader has to
-    retype. `soft_wrap` leaves the line whole and lets the terminal fold it,
-    which is the difference between a display that wraps and text that has had
-    newlines put through it.
-    """
-    console.print(message, soft_wrap=True)
 
 
 #: Shared by every command that applies rules, so a report cannot disagree with
@@ -157,6 +117,23 @@ def _rule_engine(rules: list[Path] | None) -> RuleEngine | None:
     if not rules:
         return None
     return RuleEngine([*default_rules(), *load_rules(list(rules))])
+
+
+def _reconstruct(opened: Case, ip: str, rules: list[Path] | None) -> AnalysisResult:
+    """One client's reconstruction, with whatever CRS contributed to the case.
+
+    The one way the command line reconstructs a client, so `analyze`,
+    `evidence` and `export` cannot disagree about which rules and which CRS
+    evidence a result rests on.
+    """
+    crs = opened.crs_evidence()
+    return analyse_ip(
+        opened.store,
+        ip,
+        engine=_rule_engine(rules),
+        crs=crs.index,
+        crs_fingerprint=crs.fingerprint,
+    )
 
 
 def _analysis_policy(
@@ -236,7 +213,7 @@ def ingest(
         with Case.create(case) as opened:
             results = opened.ingest(logs, log_format=log_format, workers=workers)
     except USER_ERRORS as exc:
-        raise _fail(str(exc)) from exc
+        raise fail(str(exc)) from exc
 
     # The path goes under the table rather than in its title: a title is centred
     # and wrapped, so a long path arrived as three fragments padded with spaces.
@@ -255,11 +232,11 @@ def ingest(
             f"{result.lines_per_second:,.0f}",
         )
     console.print(table)
-    _path_line(f"Case: {case}")
+    path_line(f"Case: {case}")
 
     quarantined = sum(result.lines_quarantined for result in results)
     if quarantined:
-        _path_line(
+        path_line(
             f"[yellow]{plural(quarantined, 'line')} could not be parsed[/yellow] — "
             f"see {case / 'quarantine' / 'unparsed.jsonl'}"
         )
@@ -278,7 +255,7 @@ def list_ips(
         with Case.open(case) as opened:
             summaries = opened.store.ip_summaries(limit=limit, order_by=sort)
     except USER_ERRORS as exc:
-        raise _fail(str(exc)) from exc
+        raise fail(str(exc)) from exc
 
     if not summaries:
         console.print("[yellow]No events in this case.[/yellow]")
@@ -301,7 +278,7 @@ def list_ips(
             summary.last_seen.strftime("%Y-%m-%d %H:%M:%S"),
         )
     console.print(table)
-    _path_line(f"Case: {case}")
+    path_line(f"Case: {case}")
 
 
 @app.command()
@@ -315,18 +292,10 @@ def analyze(
 ) -> None:
     """Reconstruct one client's activity as a graph."""
     try:
-        engine = _rule_engine(rules)
         with Case.open(case) as opened:
-            crs = opened.crs_evidence()
-            result = analyse_ip(
-                opened.store,
-                ip,
-                engine=engine,
-                crs=crs.index,
-                crs_fingerprint=crs.fingerprint,
-            )
+            result = _reconstruct(opened, ip, rules)
     except USER_ERRORS as exc:
-        raise _fail(str(exc)) from exc
+        raise fail(str(exc)) from exc
 
     if result.crs_fingerprint is None:
         # Said out loud on every run, not once at enrich time. The same log
@@ -366,7 +335,7 @@ def analyze(
 
     if out is not None:
         out.write_text(json.dumps(result.to_dict(), indent=2), encoding="utf-8")
-        _path_line(f"Graph written to {out}")
+        path_line(f"Graph written to {out}")
 
 
 @app.command()
@@ -387,27 +356,19 @@ def evidence(
     says which lines say so.
     """
     try:
-        engine = _rule_engine(rules)
         with Case.open(case) as opened:
-            crs = opened.crs_evidence()
-            result = analyse_ip(
-                opened.store,
-                ip,
-                engine=engine,
-                crs=crs.index,
-                crs_fingerprint=crs.fingerprint,
-            )
+            result = _reconstruct(opened, ip, rules)
             episodes = result.episodes
             if episode is not None:
                 episodes = tuple(item for item in episodes if item.episode_id == episode)
                 if not episodes:
                     known = ", ".join(item.episode_id for item in result.episodes) or "none"
-                    raise _fail(f"no activity {episode!r} for {ip}; this client has: {known}")
+                    raise fail(f"no activity {episode!r} for {ip}; this client has: {known}")
             lines = {
                 item.episode_id: opened.read_evidence(item.evidence[:limit]) for item in episodes
             }
     except USER_ERRORS as exc:
-        raise _fail(str(exc)) from exc
+        raise fail(str(exc)) from exc
 
     if not episodes:
         console.print(f"[yellow]No activity found for {ip} in this case.[/yellow]")
@@ -448,25 +409,17 @@ def export(
     try:
         export_formats.named(output_format)
     except ValueError as exc:
-        raise _fail(str(exc)) from exc
+        raise fail(str(exc)) from exc
 
     try:
-        engine = _rule_engine(rules)
         with Case.open(case) as opened:
-            crs = opened.crs_evidence()
-            result = analyse_ip(
-                opened.store,
-                ip,
-                engine=engine,
-                crs=crs.index,
-                crs_fingerprint=crs.fingerprint,
-            )
+            result = _reconstruct(opened, ip, rules)
             manifest = opened.manifest
     except USER_ERRORS as exc:
-        raise _fail(str(exc)) from exc
+        raise fail(str(exc)) from exc
 
     export_formats.write_reconstruction(result, manifest, kind=output_format, target=out)
-    _path_line(f"Report written to {out}")
+    path_line(f"Report written to {out}")
 
 
 @app.command()
@@ -496,7 +449,7 @@ def generate(
         return
 
     if out is None:
-        raise _fail("--out is required unless --list is given")
+        raise fail("--out is required unless --list is given")
 
     with console.status(f"Generating {lines:,} lines…") as status:
         try:
@@ -509,7 +462,7 @@ def generate(
                 on_progress=lambda done: status.update(f"Generated {done:,} of {lines:,} lines…"),
             )
         except USER_ERRORS as exc:
-            raise _fail(str(exc)) from exc
+            raise fail(str(exc)) from exc
 
     console.print(
         f"Wrote {result.lines:,} lines ({result.megabytes:,.1f} MB) of "
@@ -517,7 +470,7 @@ def generate(
         f"in {result.elapsed_seconds:.1f}s (seed {result.seed})"
     )
     if result.truth_path is not None:
-        _path_line(f"Ground truth written to {result.truth_path}")
+        path_line(f"Ground truth written to {result.truth_path}")
 
 
 @app.command()
@@ -559,7 +512,7 @@ def evaluate(
                 on_client=lambda client: status.update(f"Scoring {client}…"),
             )
     except USER_ERRORS as exc:
-        raise _fail(str(exc)) from exc
+        raise fail(str(exc)) from exc
 
     if not report.binary.total:
         console.print("[yellow]Nothing to score: no truth line matched a stored event.[/yellow]")
@@ -631,7 +584,7 @@ def evaluate(
 
     if out is not None:
         out.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
-        _path_line(f"\nFull numbers written to {out}")
+        path_line(f"\nFull numbers written to {out}")
 
 
 @app.command("convert-csic")
@@ -658,7 +611,7 @@ def convert_csic_command(
 ) -> None:
     """Turn the CSIC 2010 HTTP dataset into an access log logarc can read."""
     if not normal and not anomalous:
-        raise _fail("give at least one --normal or --anomalous file")
+        raise fail("give at least one --normal or --anomalous file")
 
     try:
         result = convert_csic(
@@ -669,7 +622,7 @@ def convert_csic_command(
             include_bodies=include_bodies,
         )
     except (CsicError, OSError) as exc:
-        raise _fail(str(exc)) from exc
+        raise fail(str(exc)) from exc
 
     console.print(
         f"Wrote {result.requests:,} requests to {result.path} "
@@ -677,7 +630,7 @@ def convert_csic_command(
         f"{result.sessions:,} sessions)"
     )
     if result.truth_path is not None:
-        _path_line(f"Ground truth written to {result.truth_path}")
+        path_line(f"Ground truth written to {result.truth_path}")
     if result.attacks_hidden_in_bodies and not include_bodies:
         console.print(
             f"[yellow]{result.attacks_hidden_in_bodies:,} attacks "
@@ -743,7 +696,7 @@ def enrich(
             # to someone whose real problem is that they have not ingested yet.
             first = next(stream, None)
             if first is None:
-                raise _fail(f"no events in {case}; ingest a log first")
+                raise fail(f"no events in {case}; ingest a log first")
 
             with console.status("Replaying requests through CRS…"):
                 started = perf_counter()
@@ -754,7 +707,7 @@ def enrich(
             opened.manifest.config.update(config.as_config())
             opened.manifest.save(opened.root)
     except (CrsUnavailableError, *USER_ERRORS) as exc:
-        raise _fail(str(exc)) from exc
+        raise fail(str(exc)) from exc
 
     covered = len({(item.source_file_id, item.line_no) for item in detections})
     rate = replayed / elapsed if elapsed else 0.0
@@ -773,7 +726,7 @@ def enrich(
         f"{rate:,.0f}",
     )
     console.print(table)
-    _path_line(f"\nWritten to {path}")
+    path_line(f"\nWritten to {path}")
     console.print(
         f"CRS {config.revision() or 'unknown'}, configuration {config.fingerprint()} — "
         "recorded in the case manifest so a finding can name what produced it."
@@ -841,7 +794,7 @@ def benchmark(
                     f"{result.analyse_seconds * 1000:,.0f} ms",
                 )
     except BenchmarkError as exc:
-        raise _fail(str(exc)) from exc
+        raise fail(str(exc)) from exc
     finally:
         if not keep:
             shutil.rmtree(workdir, ignore_errors=True)
@@ -871,520 +824,4 @@ def benchmark(
             ),
             encoding="utf-8",
         )
-        _path_line(f"Measurements written to {out}")
-
-
-formats_app = typer.Typer(
-    help="See, write and try out log formats.",
-    invoke_without_command=True,
-    add_completion=False,
-)
-app.add_typer(formats_app, name="formats")
-
-
-@formats_app.callback(invoke_without_command=True)
-def formats(ctx: typer.Context) -> None:
-    """List the log formats that can be parsed.
-
-    Kept as the group's own behaviour rather than a `list` subcommand, so that
-    `logarc formats` keeps doing what it did before there were subcommands.
-    """
-    if ctx.invoked_subcommand is not None:
-        return
-
-    table = Table(title="Known log formats")
-    table.add_column("Name")
-    table.add_column("Source")
-    table.add_column("What it reads")
-    for entry in registered_formats():
-        # What it is for, not what it says. With three formats the definitions
-        # fitted; with fourteen they are a wall of mappings nine lines deep,
-        # and a list exists to help someone pick. `formats show` is where the
-        # definition lives, and the line under this table points at it.
-        note = entry.spec.description if entry.spec is not None else ""
-        table.add_row(
-            entry.name,
-            "built-in" if is_built_in(entry.name) else "saved",
-            note or entry.description,
-        )
-    console.print(table)
-    console.print(
-        "\n[bold]logarc formats show <name>[/bold] prints the definition behind one. "
-        "Write your own with [bold]add[/bold], [bold]add-json[/bold], "
-        "[bold]add-columns[/bold] or [bold]add-pattern[/bold] — and try it against a "
-        "real log first with the matching [bold]check[/bold]."
-    )
-    _path_line(f"Saved formats: {library_path()}")
-
-
-@formats_app.command("add")
-def formats_add(
-    name: Annotated[str, typer.Argument(help="What to call this format.")],
-    directive: Annotated[str, typer.Argument(help="The Apache LogFormat directive string.")],
-    note: Annotated[
-        str, typer.Option("--note", help="A reminder of what this format is for.")
-    ] = "",
-    replace: Annotated[
-        bool, typer.Option("--replace", help="Overwrite a saved format of the same name.")
-    ] = False,
-) -> None:
-    """Save a log format so later cases can be ingested with it by name."""
-    _save_spec(LogFormatSpec(name=name, directive=directive, description=note), replace=replace)
-
-
-def _save_spec(spec: FormatSpec, *, replace: bool) -> None:
-    """Put `spec` in the library, or refuse and say why.
-
-    Shared by both kinds. Two copies of these three refusals would be one edit
-    away from `add` and `add-json` disagreeing about what a name may be.
-    """
-    saved = _load_or_fail()
-    existing = {item.name for item in saved}
-
-    if is_built_in(spec.name):
-        raise _fail(
-            f"{spec.name!r} is a built-in format. Built-ins are matched first, so a saved "
-            "format of the same name would never be reached; pick another name."
-        )
-    if spec.name in existing and not replace:
-        raise _fail(f"{spec.name!r} is already saved; pass --replace to overwrite it")
-
-    kept = [item for item in saved if item.name != spec.name]
-    try:
-        save_library([*kept, spec])
-    except FormatLibraryError as exc:
-        raise _fail(str(exc)) from exc
-
-    console.print(f"Saved [bold]{spec.name}[/bold]: {spec.summary}")
-    _path_line(f"Saved formats: {library_path()}")
-
-
-def _mapping_from(pairs: Sequence[str]) -> list[tuple[str, str]]:
-    """Read `--map ours=theirs` options into a mapping."""
-    mapping: list[tuple[str, str]] = []
-    for pair in pairs:
-        ours, separator, theirs = pair.partition("=")
-        if not separator or not ours.strip() or not theirs.strip():
-            raise _fail(f"--map wants ours=theirs, not {pair!r}")
-        mapping.append((ours.strip(), theirs.strip()))
-    return mapping
-
-
-def _first_json_object(log: Path) -> dict[str, Any]:
-    """The first line of `log` that is a JSON object, for guessing from."""
-    try:
-        with open_log(log) as stream:
-            for _number, text in islice(stream, DEFAULT_SAMPLE_SIZE):
-                if not text.strip():
-                    continue
-                try:
-                    payload = json.loads(text)
-                except json.JSONDecodeError:
-                    continue
-                if isinstance(payload, dict):
-                    return payload
-    except LogSourceError as exc:
-        raise _fail(str(exc)) from exc
-    raise _fail(f"no line of {log} is a JSON object; is this a JSON log?")
-
-
-def _read_back(parser: LogParser, log: Path, lines: int, title: str) -> int:
-    """Show what `parser` pulls out of the first lines of `log`. Returns how
-    many of them it read."""
-    try:
-        with open_log(log) as stream:
-            # The log's own bookkeeping is skipped, not shown as a row that did
-            # not match: four directives open every IIS file and reporting them
-            # as failures would bury the two rows the reader came to look at.
-            sample = [
-                (number, text)
-                for number, text in islice(stream, lines + _HEADER_ROOM)
-                if text.strip() and not parser.is_metadata(text)
-            ][:lines]
-    except LogSourceError as exc:
-        raise _fail(str(exc)) from exc
-
-    table = Table(title=title)
-    for column in ("Line", "Client", "When", "Method", "Path", "Status"):
-        table.add_column(column)
-
-    parsed = 0
-    for number, text in sample:
-        event = parser.parse_line(text, EvidenceRef(log.name, number))
-        if event is None:
-            table.add_row(str(number), "[red]did not match[/red]", "", "", "", "")
-            continue
-        parsed += 1
-        table.add_row(
-            str(number),
-            event.client_ip,
-            event.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-            event.method or "",
-            event.path or "",
-            str(event.status) if event.status is not None else "",
-        )
-    console.print(table)
-    console.print(f"Read [bold]{parsed} of {len(sample)}[/bold] lines.")
-    return parsed
-
-
-def _show_mapping(mapping: Sequence[tuple[str, str]]) -> None:
-    table = Table(title="Fields")
-    table.add_column("logarc calls it")
-    table.add_column("your log calls it")
-    for ours, theirs in mapping:
-        table.add_row(ours, theirs)
-    console.print(table)
-
-
-@formats_app.command("add-json")
-def formats_add_json(
-    name: Annotated[str, typer.Argument(help="What to call this format.")],
-    log: Annotated[
-        Path | None,
-        typer.Option("--log", help="A JSON log to guess the mapping from."),
-    ] = None,
-    mapping: Annotated[
-        list[str] | None,
-        typer.Option("--map", help="ours=theirs, repeatable. Overrides the guess."),
-    ] = None,
-    time_format: Annotated[
-        str,
-        typer.Option(
-            "--time-format", help="strftime pattern, if the time is neither ISO nor epoch."
-        ),
-    ] = "",
-    note: Annotated[str, typer.Option("--note", help="A reminder of what this is for.")] = "",
-    replace: Annotated[
-        bool, typer.Option("--replace", help="Overwrite a saved format of the same name.")
-    ] = False,
-) -> None:
-    """Save a format for a log that writes one JSON object per line.
-
-    With `--log`, the mapping is guessed from the first line and shown. JSON
-    keys are self-describing in a way a positional format's are not, so the
-    guess is worth making — and any `--map` you give overrides it, so
-    correcting one field does not mean writing out the other seven.
-    """
-    guessed = guess_mapping(_first_json_object(log)) if log is not None else ()
-    written = _mapping_from(mapping or [])
-    overridden = {ours for ours, _theirs in written}
-    fields = [*written, *((ours, theirs) for ours, theirs in guessed if ours not in overridden)]
-
-    if not fields:
-        raise _fail("give --log to guess the mapping, or --map to write it out")
-
-    _show_mapping(fields)
-    spec = JsonFormatSpec(
-        name=name, fields=tuple(fields), time_format=time_format, description=note
-    )
-    try:
-        spec.build()
-    except JsonFormatError as exc:
-        raise _fail(str(exc)) from exc
-
-    _save_spec(spec, replace=replace)
-
-
-@formats_app.command("check-json")
-def formats_check_json(
-    log: Annotated[Path, typer.Option("--log", help="A JSON log to try.")],
-    mapping: Annotated[
-        list[str] | None,
-        typer.Option("--map", help="ours=theirs, repeatable. Overrides the guess."),
-    ] = None,
-    lines: Annotated[int, typer.Option("--lines", min=1, help="How many lines to read.")] = 5,
-) -> None:
-    """Guess a JSON log's mapping and show what it reads, without saving it."""
-    guessed = guess_mapping(_first_json_object(log))
-    written = _mapping_from(mapping or [])
-    overridden = {ours for ours, _theirs in written}
-    fields = [*written, *((ours, theirs) for ours, theirs in guessed if ours not in overridden)]
-
-    _show_mapping(fields)
-    spec = JsonFormatSpec(name="check", fields=tuple(fields))
-    try:
-        parser = spec.build()
-    except JsonFormatError as exc:
-        raise _fail(str(exc)) from exc
-
-    if _read_back(parser, log, lines, f"{log.name}") == 0:
-        raise _fail("this mapping reads nothing in that log; check the key names above")
-
-
-#: What `--separator` accepts. Named rather than typed literally, because a
-#: tab is not something a reader can put on a command line, and " " quoted on a
-#: shell is a trap that eats itself.
-_SEPARATORS: Final[dict[str, str]] = {"space": " ", "comma": ",", "tab": "\t"}
-
-#: Extra lines read so that `--lines 5` still shows five *rows* of a log whose
-#: first several lines are its own header.
-_HEADER_ROOM: Final = 8
-
-
-def _separator_from(name: str) -> str:
-    try:
-        return _SEPARATORS[name]
-    except KeyError:
-        raise _fail(f"--separator wants one of {', '.join(_SEPARATORS)}, not {name!r}") from None
-
-
-def _table_spec(
-    name: str,
-    log: Path | None,
-    written: Sequence[tuple[str, str]],
-    columns: str,
-    separator: str,
-    time_format: str,
-    note: str,
-) -> ColumnsFormatSpec:
-    """Work out a table format from what the reader gave and what the log says.
-
-    Columns given on the command line win, and are stored. Columns found in the
-    log are used to guess the mapping and then *forgotten*: IIS writes different
-    fields on different servers, so a saved format that froze one server's
-    columns would read only that server's logs. What each case records is the
-    columns that were actually in the file it read.
-    """
-    given = tuple(part.strip() for part in columns.split(",") if part.strip())
-    found: tuple[str, ...] = ()
-    if not given and log is not None:
-        found, _header = declared_columns(_opening_lines(log), separator)
-        if not found:
-            raise _fail(
-                f"{log} declares no columns — no #Fields: line and no header row. "
-                "Give them with --columns, or check --separator."
-            )
-
-    overridden = {ours for ours, _theirs in written}
-    guessed = guess_from_names(given or found)
-    fields = [*written, *((o, t) for o, t in guessed if o not in overridden)]
-    if not fields:
-        raise _fail("give --log or --columns to guess the mapping, or --map to write it out")
-
-    _show_mapping(fields)
-    if found:
-        console.print(f"Columns come from the log: [bold]{', '.join(found)}[/bold]")
-    return ColumnsFormatSpec(
-        name=name,
-        fields=tuple(fields),
-        columns=given,
-        separator=separator,
-        time_format=time_format,
-        description=note,
-    )
-
-
-@formats_app.command("add-columns")
-def formats_add_columns(
-    name: Annotated[str, typer.Argument(help="What to call this format.")],
-    log: Annotated[
-        Path | None, typer.Option("--log", help="A log to take the columns from.")
-    ] = None,
-    columns: Annotated[
-        str, typer.Option("--columns", help="Comma-separated names, if the log declares none.")
-    ] = "",
-    mapping: Annotated[
-        list[str] | None,
-        typer.Option("--map", help="ours=theirs, repeatable. Overrides the guess."),
-    ] = None,
-    separator: Annotated[str, typer.Option("--separator", help="space, comma or tab.")] = "space",
-    time_format: Annotated[
-        str, typer.Option("--time-format", help="strftime pattern, if the time is unusual.")
-    ] = "",
-    note: Annotated[str, typer.Option("--note", help="A reminder of what this is for.")] = "",
-    replace: Annotated[
-        bool, typer.Option("--replace", help="Overwrite a saved format of the same name.")
-    ] = False,
-) -> None:
-    """Save a format for a log laid out as a table: IIS W3C, or CSV.
-
-    A W3C log names its columns in a `#Fields:` line and many CSVs name theirs
-    in the first row, so `--log` is usually the whole configuration.
-    """
-    spec = _table_spec(
-        name,
-        log,
-        _mapping_from(mapping or []),
-        columns,
-        _separator_from(separator),
-        time_format,
-        note,
-    )
-    try:
-        # What can be judged without a file, then — when there is one — the
-        # rest: that every column the mapping names is really in that log.
-        spec.check()
-        if log is not None:
-            spec.resolved(_opening_lines(log)).build()
-    except ColumnsFormatError as exc:
-        raise _fail(str(exc)) from exc
-    _save_spec(spec, replace=replace)
-
-
-def _opening_lines(log: Path) -> list[str]:
-    """Enough of a log to see what it declares about itself."""
-    try:
-        with open_log(log) as stream:
-            return [text for _, text in islice(stream, DEFAULT_SAMPLE_SIZE)]
-    except LogSourceError as exc:
-        raise _fail(str(exc)) from exc
-
-
-@formats_app.command("check-columns")
-def formats_check_columns(
-    log: Annotated[Path, typer.Option("--log", help="A table-shaped log to try.")],
-    format_name: Annotated[
-        str, typer.Option("--format", help="A saved table format, instead of guessing.")
-    ] = "",
-    mapping: Annotated[
-        list[str] | None,
-        typer.Option("--map", help="ours=theirs, repeatable. Overrides the guess."),
-    ] = None,
-    separator: Annotated[str, typer.Option("--separator", help="space, comma or tab.")] = "space",
-    lines: Annotated[int, typer.Option("--lines", min=1, help="How many rows to read.")] = 5,
-) -> None:
-    """Read a table-shaped log's own column names and show what they read."""
-    if format_name:
-        saved = get_spec(format_name)
-        if not isinstance(saved, ColumnsFormatSpec):
-            raise _fail(f"{format_name!r} is not a table format")
-        spec: ColumnsFormatSpec = saved
-        _show_mapping(spec.fields)
-    else:
-        spec = _table_spec(
-            "check", log, _mapping_from(mapping or []), "", _separator_from(separator), "", ""
-        )
-
-    try:
-        parser = spec.resolved(_opening_lines(log)).build()
-    except ColumnsFormatError as exc:
-        raise _fail(str(exc)) from exc
-
-    if _read_back(parser, log, lines, f"{log.name}") == 0:
-        raise _fail("this mapping reads nothing in that log; check the column names above")
-
-
-@formats_app.command("add-pattern")
-def formats_add_pattern(
-    name: Annotated[str, typer.Argument(help="What to call this format.")],
-    pattern: Annotated[str, typer.Argument(help="A regular expression with named groups.")],
-    time_format: Annotated[
-        str, typer.Option("--time-format", help="strftime pattern, if the time is unusual.")
-    ] = "",
-    note: Annotated[str, typer.Option("--note", help="A reminder of what this is for.")] = "",
-    replace: Annotated[
-        bool, typer.Option("--replace", help="Overwrite a saved format of the same name.")
-    ] = False,
-) -> None:
-    """Save a format for a log nothing else can read.
-
-    The named groups are the mapping: `(?P<client_ip>\\S+)` is the client
-    address. A regex already names its parts, so there is nothing else to say.
-    Run `logarc formats check-pattern` against the log first.
-    """
-    spec = PatternFormatSpec(name=name, pattern=pattern, time_format=time_format, description=note)
-    try:
-        spec.check()
-    except PatternFormatError as exc:
-        raise _fail(str(exc)) from exc
-    _save_spec(spec, replace=replace)
-
-
-@formats_app.command("check-pattern")
-def formats_check_pattern(
-    pattern: Annotated[str, typer.Argument(help="The regular expression to try.")],
-    log: Annotated[Path, typer.Option("--log", help="A log file to try it against.")],
-    time_format: Annotated[
-        str, typer.Option("--time-format", help="strftime pattern, if the time is unusual.")
-    ] = "",
-    lines: Annotated[int, typer.Option("--lines", min=1, help="How many lines to read.")] = 5,
-) -> None:
-    """Try a regular expression against a real log and show what it pulls out."""
-    try:
-        parser = PatternFormatSpec(name="check", pattern=pattern, time_format=time_format).build()
-    except PatternFormatError as exc:
-        raise _fail(str(exc)) from exc
-
-    if _read_back(parser, log, lines, f"{log.name}") == 0:
-        raise _fail(
-            "this pattern reads nothing in that log; check the groups it names and "
-            "whether the timestamp needs --time-format"
-        )
-
-
-@formats_app.command("remove")
-def formats_remove(
-    name: Annotated[str, typer.Argument(help="The saved format to remove.")],
-) -> None:
-    """Forget a saved log format.
-
-    Cases already ingested with it are unaffected: each carries its own copy of
-    the definition and goes on reading exactly as it did.
-    """
-    saved = _load_or_fail()
-    if name not in {spec.name for spec in saved}:
-        if is_built_in(name):
-            raise _fail(f"{name!r} is a built-in format and cannot be removed")
-        raise _fail(f"no saved format named {name!r}")
-
-    save_library([spec for spec in saved if spec.name != name])
-    console.print(f"Removed [bold]{name}[/bold].")
-
-
-@formats_app.command("show")
-def formats_show(
-    name: Annotated[str, typer.Argument(help="The format to describe.")],
-) -> None:
-    """Print the definition behind a format's name."""
-    try:
-        spec = get_spec(name)
-    except UnknownFormatError as exc:
-        raise _fail(str(exc)) from exc
-    if spec is None:
-        raise _fail(f"{name!r} was registered from code and has no definition to show")
-
-    table = Table(title=f"Log format {name}")
-    table.add_column("Field")
-    table.add_column("Value")
-    table.add_row("Kind", spec.kind)
-    table.add_row("Source", "built-in" if is_built_in(name) else "saved")
-    table.add_row("Definition", spec.summary)
-    if isinstance(spec, (JsonFormatSpec, ColumnsFormatSpec, PatternFormatSpec)) and (
-        spec.time_format
-    ):
-        table.add_row("Time format", spec.time_format)
-    if isinstance(spec, ColumnsFormatSpec):
-        table.add_row("Separator", {" ": "space", ",": "comma", "\t": "tab"}[spec.separator])
-        table.add_row("Columns", ", ".join(spec.columns) if spec.columns else "from the log")
-    if spec.description:
-        table.add_row("Note", spec.description)
-    console.print(table)
-
-
-@formats_app.command("check")
-def formats_check(
-    directive: Annotated[str, typer.Argument(help="The LogFormat directive to try.")],
-    log: Annotated[Path, typer.Option("--log", help="A log file to try it against.")],
-    lines: Annotated[int, typer.Option("--lines", min=1, help="How many lines to read.")] = 5,
-) -> None:
-    """Try a directive against a real log and show what it pulls out.
-
-    Writing a directive blind is guesswork, and a wrong one does not announce
-    itself — it quarantines every line and presents as an empty case. This is
-    the answer to that: look at the fields before saving anything.
-    """
-    try:
-        parser = LogFormatSpec(name="check", directive=directive).build()
-    except LogFormatError as exc:
-        raise _fail(str(exc)) from exc
-
-    if _read_back(parser, log, lines, f"{directive}  ·  {log.name}") == 0:
-        raise _fail("this directive reads nothing in that log; the fields are in another order")
-
-
-def _load_or_fail() -> list[FormatSpec]:
-    try:
-        return load_library()
-    except FormatLibraryError as exc:
-        raise _fail(str(exc)) from exc
+        path_line(f"Measurements written to {out}")
