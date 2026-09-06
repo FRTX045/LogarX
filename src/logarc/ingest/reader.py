@@ -25,6 +25,8 @@ from enum import Enum
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, BinaryIO, Final, cast
 
+from logarc.ingest.scan import BOM
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
@@ -115,24 +117,30 @@ class LogStream:
     Line numbers are 1-based to match what an investigator sees in an editor.
     """
 
-    def __init__(self, source: Path, compression: Compression, size_bytes: int) -> None:
+    def __init__(
+        self,
+        source: Path,
+        compression: Compression,
+        size_bytes: int,
+        *,
+        stream: IO[bytes],
+        hasher: _HashingReader,
+    ) -> None:
         self.path = source
         self.compression = compression
         self.size_bytes = size_bytes
-        self._hasher: _HashingReader | None = None
-        self._stream: IO[bytes] | None = None
+        self._hasher = hasher
+        self._stream = stream
         self._exhausted = False
 
     def __iter__(self) -> Iterator[tuple[int, str]]:
-        if self._stream is None:  # pragma: no cover - guarded by open_log
-            raise LogSourceError(f"{self.path} is not open")
         for number, raw in enumerate(self._stream, start=1):
             text = raw.decode("utf-8", errors="surrogateescape").rstrip("\r\n")
             # A leading byte order mark is an encoding artefact, not data. Left
             # in place it becomes part of the first field, which quietly splits
             # one client into two everywhere downstream. Only the very first
             # line can carry one; a mark anywhere else is content.
-            if number == 1 and text.startswith("﻿"):
+            if number == 1 and text.startswith(BOM):
                 text = text[1:]
             yield number, text
         self._exhausted = True
@@ -140,7 +148,7 @@ class LogStream:
     @property
     def bytes_read(self) -> int:
         """Compressed bytes consumed so far. Drives progress reporting."""
-        return self._hasher.bytes_read if self._hasher else 0
+        return self._hasher.bytes_read
 
     @property
     def sha256(self) -> str:
@@ -149,7 +157,7 @@ class LogStream:
         Only available once the stream has been read to the end: a digest over
         part of a file looks like an integrity record but identifies nothing.
         """
-        if not self._exhausted or self._hasher is None:
+        if not self._exhausted:
             raise LogSourceError(f"{self.path} has not been fully read; digest is incomplete")
         return self._hasher.hexdigest()
 
@@ -171,9 +179,7 @@ def open_log(path: Path) -> Iterator[LogStream]:
         hasher = _HashingReader(handle)
         byte_stream = _decompressed(compression, io.BufferedReader(hasher))
 
-        stream = LogStream(path, compression, size)
-        stream._hasher = hasher
-        stream._stream = byte_stream
+        stream = LogStream(path, compression, size, stream=byte_stream, hasher=hasher)
         try:
             yield stream
         finally:
