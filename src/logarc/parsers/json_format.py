@@ -19,6 +19,7 @@ import json
 from typing import TYPE_CHECKING, Any
 
 from logarc.core.event import NormalizedEvent
+from logarc.parsers.base import split_request_line
 from logarc.parsers.fieldnames import MAPPABLE, REQUIRED
 from logarc.parsers.fieldnames import guess_mapping as guess_from_names
 from logarc.parsers.times import TimeFormatError, check_time_format, read_time
@@ -86,26 +87,6 @@ def _as_int(value: Any) -> int | None:
         return int(str(value))
     except (TypeError, ValueError):
         return None
-
-
-def _split_request_line(raw: str) -> tuple[str | None, str | None, str | None, str | None]:
-    """Split `GET /a?b=c HTTP/1.1`, the same way the directive compiler does.
-
-    Duplicated deliberately rather than imported: the two compilers share no
-    other code, and the day one of them needs to treat a malformed line
-    differently, an import would make that a change to both.
-    """
-    parts = raw.split(" ")
-    if len(parts) >= 3 and parts[-1].startswith("HTTP/"):
-        method, protocol = parts[0], parts[-1]
-        target = " ".join(parts[1:-1])
-    elif len(parts) == 2:
-        method, target, protocol = parts[0], parts[1], None
-    else:
-        return None, None, None, None
-
-    path, separator, query = target.partition("?")
-    return method, path, (query if separator else None), protocol
 
 
 class JsonParser:
@@ -183,7 +164,7 @@ class JsonParser:
         }
 
         if (request_line := _as_text(mapped("request_line"))) is not None:
-            method, path, query, protocol = _split_request_line(request_line)
+            method, path, query, protocol = split_request_line(request_line)
             if method is None:
                 extra["malformed_request_line"] = request_line
 

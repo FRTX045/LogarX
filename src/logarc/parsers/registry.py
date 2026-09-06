@@ -27,12 +27,14 @@ what it was handed. See `logarc.parsers.library`.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import islice
 from typing import TYPE_CHECKING, Final
 
 from logarc.core.evidence import EvidenceRef
 from logarc.parsers.base import skips
 from logarc.parsers.builtins import BUILT_INS
 from logarc.parsers.library import load_library
+from logarc.parsers.spec import LogFormatSpec
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
@@ -151,8 +153,6 @@ def register_spec(spec: FormatSpec) -> None:
 
 def register_logformat(name: str, directive: str) -> None:
     """Register an Apache-style format from its directive string."""
-    from logarc.parsers.spec import LogFormatSpec
-
     register_spec(LogFormatSpec(name=name, directive=directive))
 
 
@@ -277,7 +277,7 @@ def detect_format(
     surface as "tell me the format" rather than guessing — silently picking a
     wrong parser would quarantine an entire log and look like an empty result.
     """
-    lines = [line for line in sample][:sample_size]  # noqa: C416 - accepts any iterable
+    lines = list(islice(sample, sample_size))
     if not any(line.strip() for line in lines):
         return None
 

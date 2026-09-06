@@ -26,6 +26,7 @@ import csv
 from typing import TYPE_CHECKING, Final
 
 from logarc.core.event import NormalizedEvent
+from logarc.parsers.base import split_request_line
 from logarc.parsers.fieldnames import JOIN, MAPPABLE, REQUIRED
 from logarc.parsers.times import TimeFormatError, check_time_format, read_time
 
@@ -127,20 +128,6 @@ def _as_int(raw: str | None) -> int | None:
         return int(text)
     except ValueError:
         return None
-
-
-def _split_request_line(raw: str) -> tuple[str | None, str | None, str | None, str | None]:
-    parts = raw.split(" ")
-    if len(parts) >= 3 and parts[-1].startswith("HTTP/"):
-        method, protocol = parts[0], parts[-1]
-        target = " ".join(parts[1:-1])
-    elif len(parts) == 2:
-        method, target, protocol = parts[0], parts[1], None
-    else:
-        return None, None, None, None
-
-    path, separator, query = target.partition("?")
-    return method, path, (query if separator else None), protocol
 
 
 class ColumnsParser:
@@ -256,7 +243,7 @@ class ColumnsParser:
         }
 
         if (request_line := _clean(cell("request_line"))) is not None:
-            method, path, query, protocol = _split_request_line(request_line)
+            method, path, query, protocol = split_request_line(request_line)
             if method is None:
                 extra["malformed_request_line"] = request_line
 
