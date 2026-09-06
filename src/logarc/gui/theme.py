@@ -1,6 +1,6 @@
-"""Dressing the window in the theme `gui.style` decides.
+"""Dressing the window in the theme `logarc.style` decides.
 
-The Qt half of a split `gui.style` makes on purpose: what a colour *means* is
+The Qt half of a split `logarc.style` makes on purpose: what a colour *means* is
 plain data and testable without a display, while handing those colours to
 `QPalette` needs a running `QApplication`. This file is the second half and
 holds no judgements of its own — every value here comes from `style.THEME`.
@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Final
 
 from PyQt6.QtGui import QColor, QFont, QPalette
 
-from logarc.gui.style import THEME
+from logarc.style import THEME
 
 if TYPE_CHECKING:
     from PyQt6.QtWidgets import QApplication

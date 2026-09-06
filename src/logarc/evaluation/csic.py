@@ -28,6 +28,7 @@ would mean measuring a tool nobody can deploy.
 from __future__ import annotations
 
 import re
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Final
@@ -257,17 +258,10 @@ def _format(request: _Request, address: str, moment: datetime, include_bodies: b
     )
 
 
-class _NoTruth:
-    def __enter__(self) -> None:
-        return None
-
-    def __exit__(self, *_: object) -> None:
-        return None
-
-
-def _open_truth(path: Path | None, *, source_file_id: str) -> TruthWriter | _NoTruth:
+def _open_truth(path: Path | None, *, source_file_id: str) -> TruthWriter | nullcontext[None]:
+    """A truth writer, or a context that yields `None` when none was asked for."""
     if path is None:
-        return _NoTruth()
+        return nullcontext()
     return TruthWriter(
         path,
         scenario="csic-2010",

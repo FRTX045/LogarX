@@ -1,6 +1,6 @@
 """The cases opened lately, and what to do with them when the window opens.
 
-No Qt, for the same reason `gui.style` and `gui.evidence_view` have none: what
+No Qt, for the same reason `logarc.style` and `gui.evidence_view` have none: what
 the window does on startup is a decision, and a decision should be checkable
 without a display.
 

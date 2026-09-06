@@ -135,8 +135,8 @@ class Reading:
         self._index = 0
         self._done_lines = 0
         self._done_bytes = 0
-        #: The whole-ingest line count as of the last report, so that
-        #: `next_file` can credit it without being told again.
+        # The whole-ingest line count as of the last report, so that
+        # `next_file` can credit it without being told again.
         self._lines = 0
 
     def next_file(self) -> None:

@@ -31,7 +31,8 @@ from PyQt6.QtWidgets import (
 
 from logarc.gui._qt import SORT_KEY, SortableItem, required
 from logarc.gui.evidence_view import ALERT_COLOUR, COLUMNS, Cell, Detail, cells_for, detail_for
-from logarc.gui.style import (
+from logarc.gui.theme import PAD, TIGHT, caption_font, mono_font
+from logarc.style import (
     EVIDENCE_INK,
     EVIDENCE_MUTED,
     PAPER,
@@ -42,7 +43,6 @@ from logarc.gui.style import (
     format_requests,
     severity_colour,
 )
-from logarc.gui.theme import PAD, TIGHT, caption_font, mono_font
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -51,22 +51,6 @@ if TYPE_CHECKING:
     from logarc.evidence import EvidenceLine
 
 __all__ = ["EvidencePanel"]
-
-#: The evidence surface, taken from `gui.style` rather than restated here: it is
-#: the same ground the canvas draws on, and a second copy of the colour is a
-#: second chance for one of them to move.
-#:
-#: `_INK` and `_REFERENCE` were the two that did move. They were written out as
-#: literals while everything around them came from `gui.style`, so when the
-#: window went dark the table above kept up and the detail pane below did not —
-#: and what it drew in `_INK` is `detail.raw`, the original log line, which is
-#: the one thing on screen that is evidence rather than a reading of it. Dark on
-#: dark, present and unreadable. The theme tests did not catch it because they
-#: compare a palette against these names, and it was the names that were stale.
-_PAPER = PAPER
-_STRIPE = PAPER_STRIPE
-_INK = EVIDENCE_INK
-_REFERENCE = EVIDENCE_MUTED
 
 #: The two columns whose values are numbers, and the one of them that is often
 #: absent. Right-aligned so their digits line up under a heading wider than any
@@ -277,19 +261,19 @@ class EvidencePanel(QWidget):
 
     def _show_detail(self, detail: Detail) -> None:
         self._detail.clear()
-        self._write(detail.source, _REFERENCE, bold=True)
+        self._write(detail.source, EVIDENCE_MUTED, bold=True)
         for label, value, colour in detail.fields:
             self._write(f"{label:<4} {value}" if label else value, colour)
         if detail.note:
             self._write(f"! {detail.note}", ALERT_COLOUR)
         if detail.raw is not None:
             self._write("")
-            self._write("as logged", _REFERENCE)
-            self._write(detail.raw, _INK)
+            self._write("as logged", EVIDENCE_MUTED)
+            self._write(detail.raw, EVIDENCE_INK)
         self._detail.moveCursor(QTextCursor.MoveOperation.Start)
         self._detail.ensureCursorVisible()
 
-    def _write(self, text: str, colour: str = _INK, *, bold: bool = False) -> None:
+    def _write(self, text: str, colour: str = EVIDENCE_INK, *, bold: bool = False) -> None:
         self._detail.setTextColor(QColor(colour))
         self._detail.setFontWeight(QFont.Weight.Bold if bold else QFont.Weight.Normal)
         self._detail.append(text)
@@ -313,16 +297,16 @@ def _build_table(font: QFont) -> QTableWidget:
     # grey lands on dark grey. Evidence nobody can read is the one failure this
     # panel cannot have, and it would not look like a fault.
     paper = table.palette()
-    paper.setColor(QPalette.ColorRole.Base, QColor(_PAPER))
-    paper.setColor(QPalette.ColorRole.AlternateBase, QColor(_STRIPE))
-    paper.setColor(QPalette.ColorRole.Text, QColor(_INK))
+    paper.setColor(QPalette.ColorRole.Base, QColor(PAPER))
+    paper.setColor(QPalette.ColorRole.AlternateBase, QColor(PAPER_STRIPE))
+    paper.setColor(QPalette.ColorRole.Text, QColor(EVIDENCE_INK))
     # The selected row, pinned for the same reason as the rest. Left to the
     # system it was dark teal, and every cell in this table carries its own
     # colour — chosen against pale paper — so the status on the selected row came
     # out grey on teal at 2.25:1. `HighlightedText` cannot rescue it: an item's
     # own foreground wins over the palette's.
     paper.setColor(QPalette.ColorRole.Highlight, QColor(SELECTION_TINT))
-    paper.setColor(QPalette.ColorRole.HighlightedText, QColor(_INK))
+    paper.setColor(QPalette.ColorRole.HighlightedText, QColor(EVIDENCE_INK))
     table.setPalette(paper)
     # Framed for the same reason the canvas is: the ground is pinned light
     # whatever the machine is themed, and an unframed sheet of it against dark
@@ -362,8 +346,8 @@ def _build_detail(font: QFont) -> QTextEdit:
     # leaves `palette()` reporting the inherited colour, which would make a test
     # of this pass while the panel is unreadable.
     paper = detail.palette()
-    paper.setColor(QPalette.ColorRole.Base, QColor(_PAPER))
-    paper.setColor(QPalette.ColorRole.Text, QColor(_INK))
+    paper.setColor(QPalette.ColorRole.Base, QColor(PAPER))
+    paper.setColor(QPalette.ColorRole.Text, QColor(EVIDENCE_INK))
     detail.setPalette(paper)
     detail.setStyleSheet(f"QTextEdit {{ border: 1px solid {PAPER_EDGE}; }}")
     return detail

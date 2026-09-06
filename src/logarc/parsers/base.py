@@ -1,4 +1,11 @@
-"""The contract every log format adapter implements."""
+"""The contract every log format adapter implements, and what they share.
+
+`split_request_line` lives here rather than in any one format because every
+kind reads a request line the same way: `%r` in a directive, `request` in a
+JSON log, `cs-request` in a table, and a `request_line` group in a pattern all
+split into the same four fields, and the same traffic has to reconstruct the
+same way whichever kind of format read it.
+"""
 
 from __future__ import annotations
 
@@ -41,6 +48,27 @@ class LogParser(Protocol):
         `skips`, which every caller goes through.
         """
         ...
+
+
+def split_request_line(raw: str) -> tuple[str | None, str | None, str | None, str | None]:
+    """Split ``GET /a?b=c HTTP/1.1`` into method, path, query and protocol.
+
+    Returns all-`None` for a request line that cannot be split. That is not an
+    error worth discarding the line over: malformed request lines are routine
+    in attack traffic (TLS handshakes sent to a plaintext port, deliberately
+    corrupted verbs) and are themselves a signal. The caller keeps the raw text.
+    """
+    parts = raw.split(" ")
+    if len(parts) >= 3 and parts[-1].startswith("HTTP/"):
+        method, protocol = parts[0], parts[-1]
+        target = " ".join(parts[1:-1])
+    elif len(parts) == 2:
+        method, target, protocol = parts[0], parts[1], None
+    else:
+        return None, None, None, None
+
+    path, separator, query = target.partition("?")
+    return method, path, (query if separator else None), protocol
 
 
 def skips(parser: LogParser, line: str) -> bool:

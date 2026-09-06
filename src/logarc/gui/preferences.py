@@ -33,8 +33,8 @@ from PyQt6.QtWidgets import (
 
 from logarc.gui import prefs
 from logarc.gui.density import Density
-from logarc.gui.style import THEME
 from logarc.gui.theme import GAP, ROOM, caption_font
+from logarc.style import THEME
 
 if TYPE_CHECKING:
     from logarc.gui.prefs import Setting

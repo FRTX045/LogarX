@@ -15,7 +15,7 @@ captioned "119,880 clients": the reader cannot select 119,380 of them.
 
 from __future__ import annotations
 
-from logarc.gui.style import plural
+from logarc.style import plural
 
 __all__ = ["caption", "matches"]
 

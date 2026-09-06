@@ -1,6 +1,6 @@
 """What the evidence table says, decided without Qt.
 
-The same seam `gui/style.py` gives the canvas: these are the judgements that
+The same seam `style.py` gives the canvas: these are the judgements that
 decide whether a piece of evidence reads correctly — whether a served injection
 stands out from a refused one, whether a payload is legible, whether a number
 sorts as a number — and they should be checkable without starting a window.
@@ -14,7 +14,7 @@ from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
 from logarc.evidence import EvidenceLine
 from logarc.gui.evidence_view import COLUMNS, Cell, cells_for
-from logarc.gui.style import EVIDENCE_INK, EVIDENCE_MUTED
+from logarc.style import EVIDENCE_INK, EVIDENCE_MUTED
 
 WHEN = datetime(2026, 8, 3, 22, 35, 18, tzinfo=UTC)
 

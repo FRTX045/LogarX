@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from PyQt6.QtCore import QSettings, Qt
-from PyQt6.QtGui import QAction, QKeyEvent, QKeySequence
+from PyQt6.QtGui import QAction, QColor, QImage, QKeyEvent, QKeySequence, QPainter
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
@@ -59,15 +59,15 @@ from logarc.gui.progress import Progress, Reading
 from logarc.gui.progress_card import IngestCard
 from logarc.gui.quarantine_notice import notice_for
 from logarc.gui.recent import RecentCase
-from logarc.gui.style import THEME, format_requests, plural
 from logarc.gui.theme import GAP, MONO_FAMILIES, PAD, TIGHT, apply_theme, heading_font
 from logarc.gui.time_filter import TimeFilterBar
-from logarc.gui.timerange import nobody_here, summary
 from logarc.gui.workers import run_job
 from logarc.ingest.pipeline import IngestCancelled
 from logarc.ingest.quarantine import DIRECTORY_NAME as QUARANTINE_DIR
 from logarc.report import export
 from logarc.storage.case import CaseManifest
+from logarc.style import THEME, format_requests, plural
+from logarc.timerange import nobody_here, summary
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -273,15 +273,10 @@ class MainWindow(QMainWindow):
         # The case's own traffic, kept so the band can be handed back whenever
         # no client is being read.
         self._case_bars: list[TimeSlot] = []
-        # How finely to count it. Read before the menu is built, because the
-        # menu shows what is in force rather than deciding it.
         # Every preference, read once through the catalogue rather than key by
-        # key. Kept because the dialog is opened showing what is in force, and
-        # a window that had to ask five widgets what they were set to would be
-        # asking the widgets rather than knowing.
-        # Whether the graph has the screen to itself, and what was taken off
-        # it to give it that. The list matters: coming back must put back only
-
+        # key, so the dialog opens showing what is in force. The density is
+        # read before the menu is built, because the menu shows what is in
+        # force rather than deciding it.
         self._prefs = prefs.read(_settings().value)
         self._density = prefs.density_in(self._prefs)
         self._result: AnalysisResult | None = None
@@ -289,15 +284,15 @@ class MainWindow(QMainWindow):
         # reconstruction that arrives describing anything else is stale and is
         # thrown away — see the guard in `_reconstruct`.
         self._awaiting: tuple[str, TimeWindow] | None = None
-        #: What CRS contributed to the open case. Empty until one is opened, so
-        #: a reconstruction before then applies nothing rather than failing.
+        # What CRS contributed to the open case. Empty until one is opened, so
+        # a reconstruction before then applies nothing rather than failing.
         self._crs = CrsEvidence(index=None, fingerprint=None)
         self._kind = GraphKind.TRACE
-        #: The activity whose evidence is in the panel, so a redraw can put the
-        #: reader back on it in the graph that replaces this one.
+        # The activity whose evidence is in the panel, so a redraw can put the
+        # reader back on it in the graph that replaces this one.
         self._selected: GraphNode | None = None
         self._stop: threading.Event | None = None
-        #: Up only while an ingest is running.
+        # Up only while an ingest is running.
         self._ingest_card: IngestCard | None = None
 
         self._notice = NoticeBanner()
@@ -692,7 +687,7 @@ class MainWindow(QMainWindow):
 
     def _ingest_failed(self, message: str, detail: str) -> None:
         self._close_ingest_card()
-        self._report_error(message, detail)
+        self.report_error(message, detail)
 
     def _ingest_finished(self, case_dir: Path, outcome: object) -> None:
         self._close_ingest_card()
@@ -879,7 +874,7 @@ class MainWindow(QMainWindow):
             if notice is not None and notice.is_blocking:
                 warn_about_dead_files(self, notice)
 
-        run_job(work, on_done=done, on_error=self._report_error, on_progress=self._status.setText)
+        run_job(work, on_done=done, on_error=self.report_error, on_progress=self._status.setText)
 
     # -- the stretch of time being read ------------------------------------
 
@@ -937,7 +932,7 @@ class MainWindow(QMainWindow):
             if self._result is not None:
                 self._reselect(self._result.client_ip)
 
-        run_job(work, on_done=done, on_error=self._report_error, on_progress=self._status.setText)
+        run_job(work, on_done=done, on_error=self.report_error, on_progress=self._status.setText)
 
     def _say_what_is_left(self, result: AnalysisResult | None = None) -> None:
         """The line beside the control: what the range left of the case.
@@ -975,27 +970,6 @@ class MainWindow(QMainWindow):
             window_tag=self._window.tag,
         )
 
-    def _select_quietly(self, client_ip: str) -> bool:
-        """Put the table back on `client_ip` without asking for a reconstruction.
-
-        `False` when that client is not in the list at all.
-
-        The block is the point. `ClientTable` emits `client_chosen` from
-        `itemSelectionChanged`, and `gui.panels` records what a selection that
-        comes back unblocked does: the row came back, the choice was emitted a
-        second time, and the window reconstructed the client it had just
-        dropped. Two callers need this now, so there is one copy of it.
-        """
-        table = self._clients._table
-        for row in range(table.rowCount()):
-            cell = table.item(row, 0)
-            if cell is not None and cell.text() == client_ip:
-                blocked = table.blockSignals(True)
-                table.selectRow(row)
-                table.blockSignals(blocked)
-                return True
-        return False
-
     def _reselect(self, client_ip: str) -> None:
         """Put the reader back on the client they were reading, if it is listed.
 
@@ -1005,7 +979,7 @@ class MainWindow(QMainWindow):
         and emits nothing — so the graph went on showing the reconstruction it
         had, over a range that was no longer in force.
         """
-        if self._select_quietly(client_ip):
+        if self._clients.select_quietly(client_ip):
             self._reconstruct(client_ip)
             return
         # Gone from this range. The graph would otherwise go on showing a
@@ -1024,7 +998,7 @@ class MainWindow(QMainWindow):
         """
         if not self._arrangements_kept.may_leave():
             if self._result is not None:
-                self._select_quietly(self._result.client_ip)
+                self._clients.select_quietly(self._result.client_ip)
             return
         self._let_go_of_client()
 
@@ -1068,7 +1042,7 @@ class MainWindow(QMainWindow):
             # `itemSelectionChanged`, which fires before the window hears about
             # it. Refusing the move means putting the row back as well.
             if self._result is not None:
-                self._select_quietly(self._result.client_ip)
+                self._clients.select_quietly(self._result.client_ip)
             return
         path = self._case_path
         # Read once here, on the interface thread, rather than from inside the
@@ -1144,7 +1118,7 @@ class MainWindow(QMainWindow):
             self._say_what_is_left(result)
             self._idle(f"{client_ip}: {plural(len(result.episodes), 'activity', 'activities')}")
 
-        run_job(work, on_done=done, on_error=self._report_error, on_progress=self._status.setText)
+        run_job(work, on_done=done, on_error=self.report_error, on_progress=self._status.setText)
 
     def _redraw(self) -> None:
         """Draw the current view, and keep the reader's place across it.
@@ -1342,7 +1316,7 @@ class MainWindow(QMainWindow):
             reading = self._result.client_ip if self._result is not None else None
             self._time_filter.set_bars(mine if mine and reading == client else whole)
 
-        run_job(work, on_done=done, on_error=self._report_error)
+        run_job(work, on_done=done, on_error=self.report_error)
 
     def _apply_wrap(self, wrap: bool) -> None:
         """Fold long traces or stop folding them.
@@ -1395,7 +1369,7 @@ class MainWindow(QMainWindow):
         run_job(
             work,
             on_done=lambda lines: self._evidence.show_evidence(node, lines),
-            on_error=self._report_error,
+            on_error=self.report_error,
         )
 
     # -- export ------------------------------------------------------------
@@ -1451,13 +1425,11 @@ class MainWindow(QMainWindow):
         run_job(
             work,
             on_done=lambda written: self._idle(f"Written to {written}"),
-            on_error=self._report_error,
+            on_error=self.report_error,
         )
 
     def _export_png(self, target: Path) -> None:
         """Rendered here rather than on a worker: painting needs the GUI thread."""
-        from PyQt6.QtGui import QColor, QImage, QPainter
-
         scene = self._canvas.graph_scene
         bounds = scene.sceneRect()
         image = QImage(
@@ -1477,7 +1449,7 @@ class MainWindow(QMainWindow):
         if image.save(str(target)):
             self._idle(f"Written to {target}")
         else:
-            self._report_error(f"Could not write {target}", "")
+            self.report_error(f"Could not write {target}", "")
 
     # -- status ------------------------------------------------------------
 
@@ -1506,7 +1478,7 @@ class MainWindow(QMainWindow):
             self._ingest_card.stopping()
         self._status.setText("Stopping after the batch in flight…")
 
-    def _report_error(self, message: str, detail: str) -> None:
+    def report_error(self, message: str, detail: str) -> None:
         self._progress.hide()
         self._status.setText(message)
         if detail:
@@ -1539,7 +1511,7 @@ def main() -> int:
     # The net goes up as soon as there is somewhere to show a problem. Before
     # it, a mistake anywhere in the interface reached Qt's own handler, which
     # ends the process without printing anything at all — see `gui.crash`.
-    crash.install(window._report_error)
+    crash.install(window.report_error)
     window.show()
     window.offer_start()
     return app.exec()

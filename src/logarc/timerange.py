@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from logarc.gui.style import plural
+from logarc.style import plural
 
 if TYPE_CHECKING:
     from datetime import datetime

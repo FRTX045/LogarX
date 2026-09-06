@@ -12,8 +12,8 @@ from logarc.core.activity import ActivityCategory, Severity
 from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
 from logarc.detect.crs import CrsDetection
-from logarc.detect.engine import RuleEngine
-from logarc.detect.rules import load_rules
+from logarc.detect.engine import RuleEngine, _metric, _metric_holds
+from logarc.detect.rules import WINDOW_METRICS, WindowCondition, load_rules
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 
@@ -164,9 +164,6 @@ def test_every_window_metric_measures_its_own_thing() -> None:
     The window below has four requests, three distinct canonical paths, and
     statuses 404, 403, 500 and 200 across two seconds.
     """
-    from logarc.detect.engine import _metric
-    from logarc.detect.rules import WINDOW_METRICS
-
     window = [
         event(0, path="/a.css", status=404, referer="https://example.test/"),
         event(1, path="/a.css//", status=403),
@@ -212,9 +209,6 @@ def test_every_threshold_operator_compares_the_way_it_reads(
     Both sides of each are asserted, because an arm hardwired to `True` passes
     every test that only checks the firing case.
     """
-    from logarc.detect.engine import _metric_holds
-    from logarc.detect.rules import WindowCondition
-
     window = [event(index) for index in range(4)]
     condition = WindowCondition(metric="request_count", op=op, value=target)
 

@@ -1,6 +1,6 @@
 """The activity canvas: boxes and arrows on a QGraphicsView.
 
-Draws what `graphbuild.layout` decided and `gui.style` described, and does no
+Draws what `graphbuild.layout` decided and `logarc.style` described, and does no
 deciding of its own. That split is what keeps the appearance of a finding
 testable without a display.
 
@@ -45,9 +45,9 @@ from PyQt6.QtWidgets import (
 )
 
 from logarc.core.graph import reciprocal_pairs
-from logarc.graphbuild.layout import _COLUMN, _ROW, Point, layout_graph
+from logarc.graphbuild.layout import COLUMN, ROW, Point, layout_graph
 from logarc.gui.arrangement import Move, MoveHistory, Positions
-from logarc.gui.style import (
+from logarc.style import (
     CAPTION_COLOUR,
     PAPER,
     PAPER_EDGE,
@@ -164,8 +164,8 @@ def _spread(positions: dict[str, Point], graph: ActivityGraph) -> dict[str, Poin
         widest = max(widest, max(metrics.horizontalAdvance(line) for line in lines))
         tallest = max(tallest, len(lines) * metrics.lineSpacing() + style_for(node).radius)
 
-    across = max(1.0, (widest + _CAPTION_MARGIN) / _COLUMN)
-    down = max(1.0, (tallest + _CAPTION_MARGIN) / _ROW)
+    across = max(1.0, (widest + _CAPTION_MARGIN) / COLUMN)
+    down = max(1.0, (tallest + _CAPTION_MARGIN) / ROW)
     if across == 1.0 and down == 1.0:
         return positions
     return {
@@ -997,19 +997,7 @@ class ActivityCanvas(QGraphicsView):
         ones must not leave the new ones stacked on the origin.
         """
         self._graph = graph
-        self._scene.clear()
-        self._nodes.clear()
-        # `QGraphicsScene.clear` deletes the items these hold. Left behind, the
-        # next drag would reshape arrows whose C++ side is already gone.
-        self._edge_art.clear()
-        self._edges_by_node.clear()
-        self._halo = None
-        self._selected = None
-        self._lit = None
-        # The nodes the history names are gone. Undoing onto their replacements
-        # would move whichever activity inherited the id.
-        self._history.clear()
-        self._base.clear()
+        self._forget_drawing()
 
         laid_out = _spread(layout_graph(graph, wrap=self._wrap), graph)
         if not laid_out:
@@ -1064,20 +1052,26 @@ class ActivityCanvas(QGraphicsView):
         questions: before a case is open there is no client to pick.
         """
         self._graph = None
+        self._forget_drawing()
+        self._show_message(text)
+
+    def _forget_drawing(self) -> None:
+        """Clear the scene and everything that pointed into it.
+
+        `QGraphicsScene.clear` deletes the items the edge art holds. Left
+        behind, the next drag would reshape arrows whose C++ side is already
+        gone. The history goes too: the nodes it names are gone, and undoing
+        onto their replacements would move whichever activity inherited the id.
+        """
         self._scene.clear()
         self._nodes.clear()
-        # `QGraphicsScene.clear` deletes the items these hold. Left behind, the
-        # next drag would reshape arrows whose C++ side is already gone.
         self._edge_art.clear()
         self._edges_by_node.clear()
         self._halo = None
         self._selected = None
         self._lit = None
-        # The nodes the history names are gone. Undoing onto their replacements
-        # would move whichever activity inherited the id.
         self._history.clear()
         self._base.clear()
-        self._show_message(text)
 
     def _show_message(self, text: str) -> None:
         item = QGraphicsSimpleTextItem(text)

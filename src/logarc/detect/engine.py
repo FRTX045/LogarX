@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 
     from logarc.core.event import NormalizedEvent
     from logarc.detect.crs import CrsDetection, DetectionIndex
-    from logarc.detect.rules import Rule, WindowCondition
+    from logarc.detect.rules import MatchBlock, Rule, WindowCondition
 
 __all__ = ["LabelledEvent", "RuleEngine"]
 
@@ -237,8 +237,12 @@ class RuleEngine:
         property a forensic result may have — the same evidence and the same
         ruleset must always produce the same answer.
         """
+        # One view per request for the whole pass. Every window rule tests the
+        # same requests, and a view built per rule would normalise each one
+        # again for every rule that looks at it.
+        views = [RequestView(item.event) for item in labelled]
         for rule in self._windows:
-            members = [index for index, item in enumerate(labelled) if _is_member(rule, item)]
+            members = [index for index, view in enumerate(views) if _is_member(rule, view)]
             label = _to_label(rule)
             for index in _members_of_matching_windows(rule, labelled, members):
                 labelled[index].all_labels.append(label)
@@ -248,14 +252,24 @@ class RuleEngine:
                 item.label = _most_severe(item.all_labels)
 
 
-def _is_member(rule: WindowRule, item: LabelledEvent) -> bool:
-    if rule.member is None:
-        return True
-    conditions = rule.member.conditions
-    view = RequestView(item.event)
-    if rule.member.requires_all:
-        return all(_condition_holds(condition, view) for condition in conditions)
-    return any(_condition_holds(condition, view) for condition in conditions)
+def _is_member(rule: WindowRule, view: RequestView) -> bool:
+    return rule.member is None or _block_holds(rule.member, view)
+
+
+def _covered(members: Sequence[int], coverage: Sequence[int]) -> list[int]:
+    """Resolve a difference array of window starts and ends into request indices.
+
+    `coverage[p]` is +1 where a matching window begins at member position `p`
+    and -1 one past where it ends, so the running total is how many windows
+    cover a position and any positive count means the member is labelled.
+    """
+    active = 0
+    covered: list[int] = []
+    for position, index in enumerate(members):
+        active += coverage[position]
+        if active:
+            covered.append(index)
+    return covered
 
 
 def _members_of_matching_windows(
@@ -277,14 +291,7 @@ def _members_of_matching_windows(
 
     _cover_maximal_windows(rule, labelled, members, coverage, reverse=False)
     _cover_maximal_windows(rule, labelled, members, coverage, reverse=True)
-
-    active = 0
-    covered: list[int] = []
-    for position, index in enumerate(members):
-        active += coverage[position]
-        if active:
-            covered.append(index)
-    return covered
+    return _covered(members, coverage)
 
 
 def _static_guard_thresholds(rule: WindowRule) -> tuple[int, Fraction] | None:
@@ -360,13 +367,7 @@ def _members_of_static_guarded_windows(
             if not distinct_paths[paths[start]]:
                 del distinct_paths[paths[start]]
 
-    active = 0
-    covered: list[int] = []
-    for position, index in enumerate(members):
-        active += coverage[position]
-        if active:
-            covered.append(index)
-    return covered
+    return _covered(members, coverage)
 
 
 def _range_min_tree(values: Sequence[int]) -> tuple[list[float], int]:
@@ -537,8 +538,13 @@ def _in_range(status: int | None, low: int, high: int) -> bool:
 
 
 def _matches(rule: SignatureRule, view: RequestView) -> bool:
-    conditions = rule.match.conditions
-    if rule.match.requires_all:
+    return _block_holds(rule.match, view)
+
+
+def _block_holds(block: MatchBlock, view: RequestView) -> bool:
+    """Whether a rule's `any`/`all` block of conditions holds for one request."""
+    conditions = block.conditions
+    if block.requires_all:
         return all(_condition_holds(condition, view) for condition in conditions)
     return any(_condition_holds(condition, view) for condition in conditions)
 

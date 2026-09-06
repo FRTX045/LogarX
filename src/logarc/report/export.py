@@ -9,7 +9,7 @@ neither half would look wrong where it was written.
 
 No Qt. Which formats exist and what each one produces are decisions, and a
 decision should be checkable without starting a window - the same reason
-`gui.style` and `gui.prefs` have none.
+`logarc.style` and `gui.prefs` have none.
 
 PNG is not here. It is a picture of the canvas rather than a serialisation of
 the reconstruction, so only something holding a canvas can produce it; the

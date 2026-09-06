@@ -2,7 +2,7 @@
 
 Draws what `EventStore.activity_over_time` counted and reports what the reader
 dragged. It decides nothing about the case: which stretch is in force is the
-window's business, and what the words say is `gui.timerange`'s.
+window's business, and what the words say is `logarc.timerange`'s.
 
 Why a picture and not two fields alone. The fields can say *which* stretch but
 never *where the traffic is* — and finding the busy hour is most of the reason
@@ -25,7 +25,7 @@ from PyQt6.QtGui import QBrush, QColor, QFont, QPainter, QPen
 from PyQt6.QtWidgets import QWidget
 
 from logarc.core.window import EVERYTHING, TimeWindow
-from logarc.gui.style import THEME
+from logarc.style import THEME
 
 if TYPE_CHECKING:
     from datetime import datetime, timedelta

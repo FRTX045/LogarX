@@ -295,7 +295,7 @@ def test_the_line_beside_the_control_carries_both_counts(
     qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
 ) -> None:
     """One line, both numbers, so a reader can see them agree without looking
-    from the list to the heading and back. `gui.timerange` decides the wording;
+    from the list to the heading and back. `logarc.timerange` decides the wording;
     this is what proves the window fills it with the right figures."""
     window = reading(qt_app, two_bursts, BUSY)
     assert window._time_filter._summary.text() == "whole case"

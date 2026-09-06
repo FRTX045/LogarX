@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from logarc.core.window import EVERYTHING, TimeWindow
-from logarc.gui.timerange import nobody_here, spoken, summary
+from logarc.timerange import nobody_here, spoken, summary
 
 FROM = datetime(2024, 5, 2, 1, 25, 0, tzinfo=UTC)
 TO = datetime(2024, 5, 2, 2, 0, 0, tzinfo=UTC)

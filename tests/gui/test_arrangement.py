@@ -1,6 +1,6 @@
 """Where the investigator put the nodes, and how to take it back.
 
-Qt-free, like `gui/recent.py` and `gui/style.py`: what an undo means and which
+Qt-free, like `gui/recent.py` and `style.py`: what an undo means and which
 saved arrangement belongs to which graph are decisions, and a decision should be
 checkable without starting a window.
 """

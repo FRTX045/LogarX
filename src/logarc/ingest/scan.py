@@ -31,13 +31,15 @@ from typing import TYPE_CHECKING, Final
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-__all__ = ["Chunk", "ScanResult", "read_range", "scan_chunks"]
+__all__ = ["BOM", "Chunk", "ScanResult", "read_range", "scan_chunks"]
 
 #: Bytes read per step of the scan. Large enough that the syscall cost vanishes,
 #: small enough not to matter against the ingest that follows.
 _BLOCK: Final = 4 << 20
 
-_BOM: Final = "﻿"
+#: The byte order mark, spelled out: the character itself is invisible in an
+#: editor, and an invisible literal is one nobody can see is there.
+BOM: Final = "\ufeff"
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,7 +163,7 @@ def read_range(path: Path, chunk: Chunk) -> Iterator[tuple[int, str]]:
             text = raw.decode("utf-8", errors="surrogateescape").rstrip("\r\n")
             # Only the true first line of the file can carry a mark; anywhere
             # else the same bytes are content.
-            if line_no == 1 and text.startswith(_BOM):
+            if line_no == 1 and text.startswith(BOM):
                 text = text[1:]
             yield line_no, text
             line_no += 1

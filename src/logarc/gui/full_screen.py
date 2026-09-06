@@ -44,9 +44,9 @@ class FullScreen:
         self._action: QAction | None = None
         self._on = False
 
-        #: What was hidden on the way in, so only that is shown on the way out.
-        #: A reader who turned the traffic band off in Preferences must not find
-        #: it back on because they used full screen.
+        # What was hidden on the way in, so only that is shown on the way out.
+        # A reader who turned the traffic band off in Preferences must not find
+        # it back on because they used full screen.
         self._covered: list[QWidget] = []
 
     def offer(self, action: QAction) -> None:

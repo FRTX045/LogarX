@@ -30,7 +30,7 @@ from logarc.core.activity import ActivityCategory, Outcome, Severity
 from logarc.core.evidence import EvidenceRef
 from logarc.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
 from logarc.gui.canvas import _EDGE_COLOUR, ActivityCanvas, _edge_shape, _EdgeArt
-from logarc.gui.style import SELECTION_COLOUR
+from logarc.style import SELECTION_COLOUR
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 

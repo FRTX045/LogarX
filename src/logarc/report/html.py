@@ -18,8 +18,8 @@ from typing import TYPE_CHECKING, Final
 from logarc.core.activity import Outcome, Severity
 from logarc.core.graph import GraphKind, reciprocal_pairs
 from logarc.graphbuild.layout import layout_graph
-from logarc.gui.style import edge_label, severity_colour, severity_legend
-from logarc.gui.timerange import spoken
+from logarc.style import edge_label, severity_colour, severity_legend
+from logarc.timerange import spoken
 
 if TYPE_CHECKING:
     from logarc.analysis import AnalysisResult
@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
 __all__ = ["render_report"]
 
-# Severity colours come from `logarc.gui.style`, which holds them as plain data
+# Severity colours come from `logarc.style`, which holds them as plain data
 # with no Qt import for exactly this reason — the module says on its own face
 # that its judgements are "reused by the HTML report". They were copied here
 # instead, and the copy drifted: every one of the five differed, so a critical
@@ -126,13 +126,13 @@ def _legend() -> str:
 def _edge_label(kind: GraphKind, edge: GraphEdge) -> str:
     """What to write beside an arrow — the same words the window writes.
 
-    A thin adapter over `gui.style.edge_label`, which takes the fields rather
+    A thin adapter over `logarc.style.edge_label`, which takes the fields rather
     than the edge. This file used to hold a second copy of the rule with a
     duration formatter of its own, and the two had drifted: nine of eleven
     sample gaps disagreed, so one transition read `1h 0m` in the window and
     `60m` in the report, and half a second was reported as no gap at all.
 
-    `gui.style` says on its own face that its judgements are reused by the HTML
+    `logarc.style` says on its own face that its judgements are reused by the HTML
     report. Reusing them is what makes screen and paper unable to disagree, the
     same reason the severity colours are taken from there rather than restated.
     """

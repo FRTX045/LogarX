@@ -89,11 +89,11 @@ class ArrangementKeeper:
         self._undo: QAction | None = None
         self._reset: QAction | None = None
 
-        #: Whether to warn before an arrangement nobody kept is lost. A plain
-        #: attribute rather than a settings read, because the window already
-        #: holds its switches in one dictionary and reads them once at startup:
-        #: two readers of one stored value disagree the moment one is updated
-        #: and the other is not.
+        # Whether to warn before an arrangement nobody kept is lost. A plain
+        # attribute rather than a settings read, because the window already
+        # holds its switches in one dictionary and reads them once at startup:
+        # two readers of one stored value disagree the moment one is updated
+        # and the other is not.
         self.ask_before_leaving = True
 
     # -- what it is wired to -----------------------------------------------

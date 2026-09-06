@@ -46,9 +46,9 @@ from logarc.gui.panels import ClientTable, format_seen
 from logarc.gui.progress import Progress
 from logarc.gui.progress_card import IngestCard
 from logarc.gui.quarantine_notice import notice_for
-from logarc.gui.style import NOTICE_TINT, THEME, format_bytes
 from logarc.storage.base import IpSummary
 from logarc.storage.case import CaseManifest, SourceRecord
+from logarc.style import NOTICE_TINT, THEME, format_bytes
 
 NEWLINE = chr(10)
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
@@ -318,7 +318,7 @@ def test_a_swatch_and_the_word_it_explains_cannot_be_split_across_rows(
     alone on the next. A colour on one line and its meaning on another is the
     one thing a key cannot do."""
     from logarc.gui.panels import LegendBar
-    from logarc.gui.style import outcome_legend, severity_legend
+    from logarc.style import outcome_legend, severity_legend
 
     # Held, not discarded: a temporary bar takes its children with it and every
     # item would report an empty widget for reasons that have nothing to do with
@@ -987,7 +987,7 @@ def test_the_number_on_an_arrow_is_not_read_past(qt_app: QApplication) -> None:
     is right — the activity is the subject and the transition is the detail.
     """
     from logarc.gui import canvas as canvas_module
-    from logarc.gui.style import CAPTION_COLOUR, THEME
+    from logarc.style import CAPTION_COLOUR, THEME
 
     assert contrast(canvas_module._LABEL_COLOUR, THEME.chrome) >= 8.0
     assert canvas_module._LABEL_SIZE >= 7.5
@@ -1606,15 +1606,15 @@ def test_the_evidence_detail_does_not_depend_on_the_system_theme(
     """The panel writes dark text. If it also inherited the window background,
     a machine themed dark renders the evidence dark-on-dark — the one panel an
     investigator cannot do without, invisible, with nothing to indicate why."""
-    from logarc.gui.evidence_panel import _INK, _PAPER
+    from logarc.style import EVIDENCE_INK, PAPER
 
     # Held in a name: chaining off the constructor lets Python drop the panel
     # before the palette is read, and Qt deletes the widget underneath it.
     panel = EvidencePanel()
     palette = panel._detail.palette()
 
-    assert palette.color(QPalette.ColorRole.Base).name() == _PAPER
-    assert palette.color(QPalette.ColorRole.Text).name() == _INK
+    assert palette.color(QPalette.ColorRole.Base).name() == PAPER
+    assert palette.color(QPalette.ColorRole.Text).name() == EVIDENCE_INK
 
 
 def test_the_decode_choice_outlives_the_window(qt_app: QApplication) -> None:
@@ -1690,13 +1690,13 @@ def test_the_evidence_table_does_not_depend_on_the_system_theme(
     """The detail pane is pinned to a pale ground for a reason; the table above
     it is read the same way and needs the same treatment, or a dark theme puts
     muted grey on dark grey."""
-    from logarc.gui.evidence_panel import _INK, _PAPER
+    from logarc.style import EVIDENCE_INK, PAPER
 
     panel = EvidencePanel()
     palette = panel._table.palette()
 
-    assert palette.color(QPalette.ColorRole.Base).name() == _PAPER
-    assert palette.color(QPalette.ColorRole.Text).name() == _INK
+    assert palette.color(QPalette.ColorRole.Base).name() == PAPER
+    assert palette.color(QPalette.ColorRole.Text).name() == EVIDENCE_INK
 
 
 def test_the_framed_evidence_surface_is_still_paper_when_it_is_painted(
@@ -1719,7 +1719,7 @@ def test_the_framed_evidence_surface_is_still_paper_when_it_is_painted(
     from PyQt6.QtCore import QPoint
     from PyQt6.QtGui import QColor
 
-    from logarc.gui.evidence_panel import _PAPER
+    from logarc.style import PAPER
 
     node, lines = _injection_evidence(campaign)
 
@@ -1745,7 +1745,7 @@ def test_the_framed_evidence_surface_is_still_paper_when_it_is_painted(
             assert viewport is not None
             inside = QPoint(viewport.width() // 2, viewport.height() - 4)
             point = viewport.mapTo(panel, inside)
-            assert painted.pixelColor(point).name() == _PAPER, f"the {what} lost its ground"
+            assert painted.pixelColor(point).name() == PAPER, f"the {what} lost its ground"
         panel.close()
     finally:
         qt_app.setPalette(was)
@@ -1844,7 +1844,7 @@ def test_every_outcome_sample_actually_draws_something(qt_app: QApplication) -> 
     from PyQt6.QtWidgets import QLabel
 
     from logarc.gui.panels import LegendBar
-    from logarc.gui.style import THEME, outcome_legend
+    from logarc.style import THEME, outcome_legend
 
     bar = LegendBar()
     samples = [
@@ -1944,7 +1944,7 @@ def test_a_case_that_will_not_open_is_not_remembered(
     app._settings().clear()
     reported: list[str] = []
     monkeypatch.setattr(
-        MainWindow, "_report_error", lambda _self, message, _detail="": reported.append(message)
+        MainWindow, "report_error", lambda _self, message, _detail="": reported.append(message)
     )
     window = MainWindow()
     not_a_case = tmp_path / "just-a-folder"
@@ -2638,7 +2638,7 @@ def test_a_failed_ingest_takes_the_card_down_with_it(
         app_module.QFileDialog, "getExistingDirectory", lambda *_a, **_k: str(case_dir)
     )
     monkeypatch.setattr(app_module.FormatChoice, "exec", lambda _self: 1)
-    monkeypatch.setattr(MainWindow, "_report_error", lambda *_a, **_k: None)
+    monkeypatch.setattr(MainWindow, "report_error", lambda *_a, **_k: None)
 
     window = MainWindow()
     window._ingest_new_case()

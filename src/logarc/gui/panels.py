@@ -28,13 +28,13 @@ from PyQt6.QtWidgets import (
 from logarc.gui._qt import SORT_KEY, SortableItem, required
 from logarc.gui.client_filter import caption as filter_caption
 from logarc.gui.client_filter import matches
-from logarc.gui.style import (
+from logarc.gui.theme import PAD, TIGHT, caption_font, mono_font
+from logarc.style import (
     SIZE_NOTE,
     THEME,
     outcome_legend,
     severity_legend,
 )
-from logarc.gui.theme import PAD, TIGHT, caption_font, mono_font
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
@@ -266,6 +266,27 @@ class ClientTable(QWidget):
         finally:
             header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
 
+    def select_quietly(self, client_ip: str) -> bool:
+        """Put the table back on `client_ip` without emitting a choice.
+
+        `False` when that client is not in the list at all.
+
+        The block is the point. `client_chosen` comes from
+        `itemSelectionChanged`, and a selection put back unblocked emits the
+        choice a second time, so the window reconstructs the client it has
+        just dropped. The window needs this on three paths, so it lives here
+        with the table that owns the signal.
+        """
+        table = self._table
+        for row in range(table.rowCount()):
+            cell = table.item(row, _ADDRESS)
+            if cell is not None and cell.text() == client_ip:
+                blocked = table.blockSignals(True)
+                table.selectRow(row)
+                table.blockSignals(blocked)
+                return True
+        return False
+
     def _apply_filter(self) -> None:
         """Hide the rows that do not match what has been typed.
 
@@ -489,7 +510,7 @@ class LegendBar(QWidget):
     meant nothing to whoever was looking at one. The encoding is what makes the
     graph more than a picture, and an unexplained encoding is decoration.
 
-    Built from `gui.style`, which is the same source the canvas draws from, so
+    Built from `logarc.style`, which is the same source the canvas draws from, so
     the key cannot describe a colour the canvas no longer uses.
     """
 

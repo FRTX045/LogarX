@@ -300,12 +300,24 @@ class ParquetEventStore:
 
     # -- analysis ----------------------------------------------------------
 
+    @property
+    def _events_glob(self) -> Path:
+        """Every finalised event file, as the pattern the query engine reads."""
+        return self._events / "**" / "*.parquet"
+
+    def _has_events(self) -> bool:
+        """Whether finalisation wrote any event file at all.
+
+        An empty case is legitimate and has an index but no events, and a glob
+        over nothing is a query error rather than an empty result.
+        """
+        return any(self._events.rglob("*.parquet"))
+
     def events_for_ip(
         self, client_ip: str, *, window: TimeWindow | None = None
     ) -> list[NormalizedEvent]:
         self._require_finalized()
-        pattern = self._events / "**" / "*.parquet"
-        if not any(self._events.rglob("*.parquet")):
+        if not self._has_events():
             return []
 
         clause, bounds = _window_sql(window)
@@ -318,7 +330,7 @@ class ParquetEventStore:
             SELECT timestamp, client_ip, method, path, query, protocol, status,
                    bytes_sent, referer, user_agent, host, source_file_id,
                    source_line_no, extra
-            FROM read_parquet({self._sql_path(pattern)}, hive_partitioning = true)
+            FROM read_parquet({self._sql_path(self._events_glob)}, hive_partitioning = true)
             WHERE bucket = hash(?) % {BUCKETS} AND client_ip = ?{clause}
             ORDER BY timestamp, source_line_no
             """,
@@ -337,8 +349,7 @@ class ParquetEventStore:
         source's requests contiguously.
         """
         self._require_finalized()
-        pattern = self._events / "**" / "*.parquet"
-        if not any(self._events.rglob("*.parquet")):
+        if not self._has_events():
             return
 
         cursor = self._connect().execute(
@@ -346,7 +357,7 @@ class ParquetEventStore:
             SELECT timestamp, client_ip, method, path, query, protocol, status,
                    bytes_sent, referer, user_agent, host, source_file_id,
                    source_line_no, extra
-            FROM read_parquet({self._sql_path(pattern)}, hive_partitioning = true)
+            FROM read_parquet({self._sql_path(self._events_glob)}, hive_partitioning = true)
             ORDER BY source_file_id, source_line_no
             """
         )
@@ -404,8 +415,7 @@ class ParquetEventStore:
         self, *, buckets: int = 200, client_ip: str | None = None
     ) -> list[TimeSlot]:
         self._require_finalized()
-        pattern = self._events / "**" / "*.parquet"
-        if not any(self._events.rglob("*.parquet")):
+        if not self._has_events():
             return []
 
         # Constraining `bucket` as well lets DuckDB skip whole partition files,
@@ -417,7 +427,7 @@ class ParquetEventStore:
         span = connection.execute(
             f"""
             SELECT min(timestamp), max(timestamp)
-            FROM read_parquet({self._sql_path(pattern)}, hive_partitioning = true)
+            FROM read_parquet({self._sql_path(self._events_glob)}, hive_partitioning = true)
             {whose}
             """,
             who,
@@ -436,7 +446,7 @@ class ParquetEventStore:
         rows = connection.execute(
             f"""
             SELECT time_bucket(INTERVAL '{seconds} seconds', timestamp) AS slot, count(*)
-            FROM read_parquet({self._sql_path(pattern)}, hive_partitioning = true)
+            FROM read_parquet({self._sql_path(self._events_glob)}, hive_partitioning = true)
             {whose}
             GROUP BY slot
             ORDER BY slot
@@ -499,7 +509,6 @@ class ParquetEventStore:
         if window is None or window.is_open:
             return f"SELECT * FROM read_parquet({self._sql_path(self._ip_index)})", []
         clause, bounds = _window_sql(window)
-        pattern = self._events / "**" / "*.parquet"
         return (
             f"""
             SELECT client_ip,
@@ -510,7 +519,7 @@ class ParquetEventStore:
                    avg(CASE WHEN status BETWEEN 400 AND 499 THEN 1.0 ELSE 0.0 END)
                        AS client_error_ratio,
                    coalesce(sum(bytes_sent), 0) AS bytes_total
-            FROM read_parquet({self._sql_path(pattern)}, hive_partitioning = true)
+            FROM read_parquet({self._sql_path(self._events_glob)}, hive_partitioning = true)
             WHERE TRUE{clause}
             GROUP BY client_ip
             """,

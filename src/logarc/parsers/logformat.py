@@ -37,6 +37,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Final
 
 from logarc.core.event import NormalizedEvent
+from logarc.parsers.base import split_request_line
 from logarc.parsers.times import TimeFormatError, check_time_format
 
 if TYPE_CHECKING:
@@ -544,30 +545,9 @@ def _clean(raw: str | None) -> str | None:
     real case, and accept that a request deliberately crafted with a ``-``
     User-Agent will be recorded as having none.
     """
-    if raw is None or raw == "-" or raw == "":
+    if raw in (None, "-", ""):
         return None
     return raw
-
-
-def _split_request_line(raw: str) -> tuple[str | None, str | None, str | None, str | None]:
-    """Split ``GET /a?b=c HTTP/1.1`` into method, path, query and protocol.
-
-    Returns all-`None` for a request line that cannot be split. That is not an
-    error worth discarding the line over — malformed request lines are routine
-    in attack traffic (TLS handshakes sent to a plaintext port, deliberately
-    corrupted verbs) and are themselves a signal. The caller keeps the raw text.
-    """
-    parts = raw.split(" ")
-    if len(parts) >= 3 and parts[-1].startswith("HTTP/"):
-        method, protocol = parts[0], parts[-1]
-        target = " ".join(parts[1:-1])
-    elif len(parts) == 2:
-        method, target, protocol = parts[0], parts[1], None
-    else:
-        return None, None, None, None
-
-    path, separator, query = target.partition("?")
-    return method, path, (query if separator else None), protocol
 
 
 class LogFormatParser:
@@ -650,7 +630,7 @@ class LogFormatParser:
         protocol = _clean(values[slots.protocol])
 
         if (request_line := _clean(values[slots.request_line])) is not None:
-            method, path, query, protocol = _split_request_line(request_line)
+            method, path, query, protocol = split_request_line(request_line)
             if method is None:
                 extra["malformed_request_line"] = request_line
 

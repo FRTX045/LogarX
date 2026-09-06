@@ -11,7 +11,7 @@ from colours import apart, chroma, contrast, hue_apart
 from logarc.core.activity import ActivityCategory, Outcome, Severity
 from logarc.core.evidence import EvidenceRef
 from logarc.core.graph import GraphKind, GraphNode
-from logarc.gui.style import (
+from logarc.style import (
     EVIDENCE_INK,
     EVIDENCE_MUTED,
     LIGHT,
@@ -577,7 +577,7 @@ def test_an_outcome_outline_is_still_visible_where_it_crosses_the_fill(level: Se
 
 
 def test_the_outcome_channel_does_not_lean_on_colour() -> None:
-    """`gui.style` says on its own face that an outline "must not be a shade of
+    """`logarc.style` says on its own face that an outline "must not be a shade of
     the same colour that already means something else". Severity owns colour;
     outcome owns line style and weight. Holding the dark theme to that is what
     freed its outlines to be the one colour that reads on every fill.
