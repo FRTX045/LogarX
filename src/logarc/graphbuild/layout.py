@@ -20,7 +20,7 @@ from logarc.core.graph import GraphKind
 if TYPE_CHECKING:
     from logarc.core.graph import ActivityGraph
 
-__all__ = ["Point", "layout_graph"]
+__all__ = ["COLUMN", "ROW", "Point", "layout_graph"]
 
 #: Spacing in abstract units. Renderers scale from here.
 #:
@@ -33,8 +33,8 @@ __all__ = ["Point", "layout_graph"]
 #: than picked. At 220x130 nothing hit another caption but fourteen captions
 #: were drawn under a circle; 260x150 left eight; 300x165 was the first with
 #: none of either. Larger steps were clear too and buy nothing but panning.
-_COLUMN: Final = 300.0
-_ROW: Final = 165.0
+COLUMN: Final = 300.0
+ROW: Final = 165.0
 
 #: Gap between one session's block and the next, as a multiple of the row height.
 #: Larger than a wrap on purpose: once a trace wraps, a session boundary drawn at
@@ -131,7 +131,7 @@ def _chronological_layout(graph: ActivityGraph, *, wrap: bool = True) -> dict[st
             # Odd rows run right to left, so the last node of one row sits above
             # the first of the next.
             column = offset if line % 2 == 0 else width - 1 - offset
-            positions[node_id] = Point(x=column * _COLUMN, y=(row + line) * _ROW)
+            positions[node_id] = Point(x=column * COLUMN, y=(row + line) * ROW)
         row += (len(node_ids) - 1) // width
 
     return positions
@@ -153,7 +153,7 @@ def _radial_layout(graph: ActivityGraph) -> dict[str, Point]:
     if count == 1:
         return {ordered[0].node_id: Point(0.0, 0.0)}
 
-    radius = max(_COLUMN, _COLUMN * count / 4)
+    radius = max(COLUMN, COLUMN * count / 4)
     return {
         node.node_id: Point(
             x=radius * math.cos(2 * math.pi * index / count - math.pi / 2),

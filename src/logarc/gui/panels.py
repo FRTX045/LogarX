@@ -266,6 +266,27 @@ class ClientTable(QWidget):
         finally:
             header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
 
+    def select_quietly(self, client_ip: str) -> bool:
+        """Put the table back on `client_ip` without emitting a choice.
+
+        `False` when that client is not in the list at all.
+
+        The block is the point. `client_chosen` comes from
+        `itemSelectionChanged`, and a selection put back unblocked emits the
+        choice a second time, so the window reconstructs the client it has
+        just dropped. The window needs this on three paths, so it lives here
+        with the table that owns the signal.
+        """
+        table = self._table
+        for row in range(table.rowCount()):
+            cell = table.item(row, _ADDRESS)
+            if cell is not None and cell.text() == client_ip:
+                blocked = table.blockSignals(True)
+                table.selectRow(row)
+                table.blockSignals(blocked)
+                return True
+        return False
+
     def _apply_filter(self) -> None:
         """Hide the rows that do not match what has been typed.
 

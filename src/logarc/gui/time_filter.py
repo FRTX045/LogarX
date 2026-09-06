@@ -13,6 +13,7 @@ out to each of them would be three chances for them to disagree.
 
 from __future__ import annotations
 
+from datetime import UTC
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import QDateTime, Qt, pyqtSignal
@@ -259,6 +260,4 @@ def _qt(when: datetime) -> QDateTime:
 
 
 def _py(when: QDateTime) -> datetime:
-    from datetime import UTC
-
     return when.toPyDateTime().replace(tzinfo=UTC)
