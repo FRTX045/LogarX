@@ -285,7 +285,7 @@ case holds everything its logs did.
 It is verified by hand against [docs/manual-test-plan.md](docs/manual-test-plan.md) — whether the
 node you clicked is the one whose evidence appeared is a judgement about what a person sees.
 The decisions that determine whether a graph *misinforms* are kept out of Qt, in
-`logarc.gui.style`, and tested directly.
+`logarc.style`, and tested directly.
 
 ### Checking that it works
 

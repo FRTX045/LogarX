@@ -32,14 +32,14 @@ from PyQt6.QtWidgets import (
 
 from logarc.gui import recent
 from logarc.gui._qt import required
-from logarc.gui.style import (
+from logarc.gui.theme import GAP, PAD, caption_font, heading_font, ui_font
+from logarc.style import (
     EVIDENCE_MUTED,
     PIN_COLOUR,
     PIN_MARK,
     display_safe,
     format_requests,
 )
-from logarc.gui.theme import GAP, PAD, caption_font, heading_font, ui_font
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence

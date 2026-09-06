@@ -31,7 +31,8 @@ from PyQt6.QtWidgets import (
 
 from logarc.gui._qt import SORT_KEY, SortableItem, required
 from logarc.gui.evidence_view import ALERT_COLOUR, COLUMNS, Cell, Detail, cells_for, detail_for
-from logarc.gui.style import (
+from logarc.gui.theme import PAD, TIGHT, caption_font, mono_font
+from logarc.style import (
     EVIDENCE_INK,
     EVIDENCE_MUTED,
     PAPER,
@@ -42,7 +43,6 @@ from logarc.gui.style import (
     format_requests,
     severity_colour,
 )
-from logarc.gui.theme import PAD, TIGHT, caption_font, mono_font
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -52,12 +52,12 @@ if TYPE_CHECKING:
 
 __all__ = ["EvidencePanel"]
 
-#: The evidence surface, taken from `gui.style` rather than restated here: it is
+#: The evidence surface, taken from `logarc.style` rather than restated here: it is
 #: the same ground the canvas draws on, and a second copy of the colour is a
 #: second chance for one of them to move.
 #:
 #: `_INK` and `_REFERENCE` were the two that did move. They were written out as
-#: literals while everything around them came from `gui.style`, so when the
+#: literals while everything around them came from `logarc.style`, so when the
 #: window went dark the table above kept up and the detail pane below did not —
 #: and what it drew in `_INK` is `detail.raw`, the original log line, which is
 #: the one thing on screen that is evidence rather than a reading of it. Dark on

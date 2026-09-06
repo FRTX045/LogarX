@@ -44,7 +44,7 @@ which is more machinery for the same result.
 ## Consequences
 
 **Positive.** A bundle small enough to hand over. No JavaScript runtime evaluating evidence.
-Node appearance is decided in `logarc.gui.style`, which imports no Qt and is unit-tested, so
+Node appearance is decided in `logarc.style`, which imports no Qt and is unit-tested, so
 whether a critical finding *reads* as critical is checkable without a display.
 
 **Negative.** Everything is drawn by hand — edge trimming to circle boundaries, arrowheads,

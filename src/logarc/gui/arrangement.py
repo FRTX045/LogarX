@@ -1,6 +1,6 @@
 """Where the investigator put the nodes, and how to take it back.
 
-No Qt, for the same reason `gui.recent` and `gui.style` have none: what an undo
+No Qt, for the same reason `gui.recent` and `logarc.style` have none: what an undo
 means, and which saved arrangement belongs to which graph, are decisions — and a
 decision should be checkable without a display.
 
@@ -16,7 +16,7 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
 
-from logarc.gui.style import plural
+from logarc.style import plural
 
 if TYPE_CHECKING:
     from logarc.core.graph import GraphKind

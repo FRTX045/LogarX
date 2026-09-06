@@ -59,15 +59,15 @@ from logarc.gui.progress import Progress, Reading
 from logarc.gui.progress_card import IngestCard
 from logarc.gui.quarantine_notice import notice_for
 from logarc.gui.recent import RecentCase
-from logarc.gui.style import THEME, format_requests, plural
 from logarc.gui.theme import GAP, MONO_FAMILIES, PAD, TIGHT, apply_theme, heading_font
 from logarc.gui.time_filter import TimeFilterBar
-from logarc.gui.timerange import nobody_here, summary
 from logarc.gui.workers import run_job
 from logarc.ingest.pipeline import IngestCancelled
 from logarc.ingest.quarantine import DIRECTORY_NAME as QUARANTINE_DIR
 from logarc.report import export
 from logarc.storage.case import CaseManifest
+from logarc.style import THEME, format_requests, plural
+from logarc.timerange import nobody_here, summary
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence

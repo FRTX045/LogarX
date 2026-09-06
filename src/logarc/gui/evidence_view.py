@@ -1,6 +1,6 @@
 """What the evidence table says, as plain data.
 
-No Qt here, for the same reason `gui.style` has none. These are the decisions
+No Qt here, for the same reason `logarc.style` has none. These are the decisions
 that determine whether a piece of evidence reads correctly — whether a served
 injection stands out from a refused one, whether a payload is legible, whether a
 number sorts as a number — and they should be checkable without starting a
@@ -22,7 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
-from logarc.gui.style import (
+from logarc.style import (
     EVIDENCE_INK,
     EVIDENCE_MUTED,
     THEME,

@@ -28,7 +28,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from logarc.gui.style import plural
+from logarc.style import plural
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

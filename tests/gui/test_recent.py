@@ -1,6 +1,6 @@
 """Which cases are offered, and what happens when the window opens.
 
-Qt-free, like `gui/style.py` and `gui/evidence_view.py`: the rule for what to do
+Qt-free, like `style.py` and `gui/evidence_view.py`: the rule for what to do
 at startup is a decision, not a drawing, and a decision should be checkable
 without starting a window.
 """

@@ -46,9 +46,9 @@ from logarc.gui.panels import ClientTable, format_seen
 from logarc.gui.progress import Progress
 from logarc.gui.progress_card import IngestCard
 from logarc.gui.quarantine_notice import notice_for
-from logarc.gui.style import NOTICE_TINT, THEME, format_bytes
 from logarc.storage.base import IpSummary
 from logarc.storage.case import CaseManifest, SourceRecord
+from logarc.style import NOTICE_TINT, THEME, format_bytes
 
 NEWLINE = chr(10)
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
@@ -318,7 +318,7 @@ def test_a_swatch_and_the_word_it_explains_cannot_be_split_across_rows(
     alone on the next. A colour on one line and its meaning on another is the
     one thing a key cannot do."""
     from logarc.gui.panels import LegendBar
-    from logarc.gui.style import outcome_legend, severity_legend
+    from logarc.style import outcome_legend, severity_legend
 
     # Held, not discarded: a temporary bar takes its children with it and every
     # item would report an empty widget for reasons that have nothing to do with
@@ -987,7 +987,7 @@ def test_the_number_on_an_arrow_is_not_read_past(qt_app: QApplication) -> None:
     is right — the activity is the subject and the transition is the detail.
     """
     from logarc.gui import canvas as canvas_module
-    from logarc.gui.style import CAPTION_COLOUR, THEME
+    from logarc.style import CAPTION_COLOUR, THEME
 
     assert contrast(canvas_module._LABEL_COLOUR, THEME.chrome) >= 8.0
     assert canvas_module._LABEL_SIZE >= 7.5
@@ -1844,7 +1844,7 @@ def test_every_outcome_sample_actually_draws_something(qt_app: QApplication) -> 
     from PyQt6.QtWidgets import QLabel
 
     from logarc.gui.panels import LegendBar
-    from logarc.gui.style import THEME, outcome_legend
+    from logarc.style import THEME, outcome_legend
 
     bar = LegendBar()
     samples = [

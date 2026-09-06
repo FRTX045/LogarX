@@ -1,7 +1,7 @@
 """The control that narrows a case to one stretch of time.
 
 Two fields, a way back to the whole case, and a line saying what is left. It
-holds no opinions: what the words say is decided in `gui.timerange`, and what a
+holds no opinions: what the words say is decided in `logarc.timerange`, and what a
 window means is decided in `core.window`. This puts them on screen and reports
 when the reader changes one.
 
@@ -27,9 +27,9 @@ from PyQt6.QtWidgets import (
 )
 
 from logarc.core.window import EVERYTHING, TimeWindow
-from logarc.gui.style import THEME
 from logarc.gui.theme import GAP, TIGHT
 from logarc.gui.timeline import Timeline
+from logarc.style import THEME
 
 if TYPE_CHECKING:
     from datetime import datetime

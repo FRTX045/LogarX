@@ -2,7 +2,7 @@
 
 Holds no wording and no judgement — `gui.quarantine_notice` decides both, and
 this renders the result at the weight that notice asks for. The split is the one
-`gui.style` exists for: what to say is testable without a display, and only the
+`logarc.style` exists for: what to say is testable without a display, and only the
 drawing of it needs Qt.
 
 A strip rather than a dialog for ordinary damage, because the count is read from
@@ -31,8 +31,8 @@ from PyQt6.QtWidgets import (
 )
 
 from logarc.core.activity import Severity
-from logarc.gui.style import NOTICE_TINT, THEME
 from logarc.gui.theme import GAP, PAD, ROOM, caption_font, heading_font
+from logarc.style import NOTICE_TINT, THEME
 
 if TYPE_CHECKING:
     from pathlib import Path

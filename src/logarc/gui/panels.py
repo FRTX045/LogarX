@@ -28,13 +28,13 @@ from PyQt6.QtWidgets import (
 from logarc.gui._qt import SORT_KEY, SortableItem, required
 from logarc.gui.client_filter import caption as filter_caption
 from logarc.gui.client_filter import matches
-from logarc.gui.style import (
+from logarc.gui.theme import PAD, TIGHT, caption_font, mono_font
+from logarc.style import (
     SIZE_NOTE,
     THEME,
     outcome_legend,
     severity_legend,
 )
-from logarc.gui.theme import PAD, TIGHT, caption_font, mono_font
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
@@ -489,7 +489,7 @@ class LegendBar(QWidget):
     meant nothing to whoever was looking at one. The encoding is what makes the
     graph more than a picture, and an unexplained encoding is decoration.
 
-    Built from `gui.style`, which is the same source the canvas draws from, so
+    Built from `logarc.style`, which is the same source the canvas draws from, so
     the key cannot describe a colour the canvas no longer uses.
     """
 

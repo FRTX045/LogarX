@@ -37,8 +37,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from logarc.gui.style import THEME
 from logarc.gui.theme import MONO_FAMILIES, PAD, ROOM, TIGHT, ui_font
+from logarc.style import THEME
 
 if TYPE_CHECKING:
     from collections.abc import Callable

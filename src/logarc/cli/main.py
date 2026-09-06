@@ -37,7 +37,6 @@ from logarc.evaluation.csic import CsicError, convert_csic
 from logarc.evaluation.generator import DEFAULT_SEED, describe_scenarios, write_log
 from logarc.evaluation.scoring import evaluate as score_case
 from logarc.evaluation.truth import TruthError, read_truth
-from logarc.gui.style import plural
 from logarc.ingest.pipeline import FormatDetectionError
 from logarc.ingest.reader import LogSourceError, open_log
 from logarc.parsers.base import LogParser
@@ -70,6 +69,7 @@ from logarc.parsers.spec import (
 from logarc.report import export as export_formats
 from logarc.sessionize.segmenter import SessionPolicy
 from logarc.storage.event_store import SORT_KEYS, StoreStateError
+from logarc.style import plural
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Sequence

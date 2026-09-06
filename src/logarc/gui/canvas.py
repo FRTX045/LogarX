@@ -1,6 +1,6 @@
 """The activity canvas: boxes and arrows on a QGraphicsView.
 
-Draws what `graphbuild.layout` decided and `gui.style` described, and does no
+Draws what `graphbuild.layout` decided and `logarc.style` described, and does no
 deciding of its own. That split is what keeps the appearance of a finding
 testable without a display.
 
@@ -47,7 +47,7 @@ from PyQt6.QtWidgets import (
 from logarc.core.graph import reciprocal_pairs
 from logarc.graphbuild.layout import _COLUMN, _ROW, Point, layout_graph
 from logarc.gui.arrangement import Move, MoveHistory, Positions
-from logarc.gui.style import (
+from logarc.style import (
     CAPTION_COLOUR,
     PAPER,
     PAPER_EDGE,

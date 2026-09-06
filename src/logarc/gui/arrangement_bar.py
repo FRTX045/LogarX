@@ -20,8 +20,8 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton
 
 from logarc.gui.arrangement import notice
-from logarc.gui.style import THEME
 from logarc.gui.theme import GAP, PAD, caption_font
+from logarc.style import THEME
 
 __all__ = ["ArrangementBar"]
 

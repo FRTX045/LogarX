@@ -54,7 +54,6 @@ from logarc.gui.format_preview import (
     preview_mapping,
     preview_pattern,
 )
-from logarc.gui.style import THEME
 from logarc.gui.theme import GAP, ROOM, caption_font
 from logarc.parsers.columns import FIELDS_DIRECTIVE, declared_columns
 from logarc.parsers.fieldnames import MAPPABLE
@@ -73,6 +72,7 @@ from logarc.parsers.spec import (
     LogFormatSpec,
     PatternFormatSpec,
 )
+from logarc.style import THEME
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

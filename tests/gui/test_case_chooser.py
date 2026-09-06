@@ -18,7 +18,7 @@ from tables import cell
 from colours import contrast
 from logarc.gui.case_chooser import COLUMNS, CaseChooser
 from logarc.gui.recent import RecentCase
-from logarc.gui.style import PIN_COLOUR, PIN_MARK, THEME
+from logarc.style import PIN_COLOUR, PIN_MARK, THEME
 
 WHEN = datetime(2026, 8, 15, 13, 4, tzinfo=UTC)
 

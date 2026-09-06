@@ -20,7 +20,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
 from logarc.core.evidence import EvidenceRef
-from logarc.gui.style import plural
 from logarc.parsers.columns import FIELDS_DIRECTIVE, ColumnsFormatError
 from logarc.parsers.json_format import JsonFormatError, flatten
 from logarc.parsers.logformat import LogFormatError
@@ -32,6 +31,7 @@ from logarc.parsers.spec import (
     LogFormatSpec,
     PatternFormatSpec,
 )
+from logarc.style import plural
 
 __all__ = ["Preview", "preview", "preview_columns", "preview_mapping", "preview_pattern"]
 
