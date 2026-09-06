@@ -287,9 +287,7 @@ class SegmentationReport:
     @property
     def boundary_f1(self) -> float:
         precision, recall = self.boundary_precision, self.boundary_recall
-        if not precision + recall:
-            return 0.0
-        return 2 * precision * recall / (precision + recall)
+        return _ratio(2 * precision * recall, precision + recall)
 
     @property
     def fragmentation(self) -> float:

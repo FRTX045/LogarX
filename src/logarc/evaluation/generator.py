@@ -17,6 +17,7 @@ generates in constant space.
 from __future__ import annotations
 
 import time
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from heapq import heappop, heappush
@@ -268,19 +269,10 @@ def _format(live: _Live, step: Step, stamp: str) -> str:
     )
 
 
-class _NoTruth:
-    """Stands in for a truth writer when none was asked for."""
-
-    def __enter__(self) -> None:
-        return None
-
-    def __exit__(self, *_: object) -> None:
-        return None
-
-
 def _open_truth(
     path: Path | None, *, scenario: str, seed: int, source_file_id: str
-) -> TruthWriter | _NoTruth:
+) -> TruthWriter | nullcontext[None]:
+    """A truth writer, or a context that yields `None` when none was asked for."""
     if path is None:
-        return _NoTruth()
+        return nullcontext()
     return TruthWriter(path, scenario=scenario, seed=seed, source_file_id=source_file_id)
