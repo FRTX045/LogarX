@@ -15,6 +15,17 @@ consistently here:
 * **enumeration** — sweeping a wordlist to find out what exists at all. Many
   requests, no prior knowledge of any of them.
 
+The truth is written at the grain of what the client is doing, not of what each
+request is. A shopper reading a page, the assets that page pulls in and the
+cart call it fires are one activity: the shopper did one thing, and it took
+three kinds of request. So every ordinary-use step of one script shares one
+activity, and only a pause ends it. This is a statement about the script, and
+it is the grain `episode.builder` draws at, which is what lets the boundary
+score measure the segmenter rather than a disagreement over what a page load is.
+Hostile steps keep an activity of their own however they are made: probing,
+sweeping and trying restricted areas are three things, and an attack between
+two page loads is never part of either.
+
 Clients are addressed out of the shared address space (100.64.0.0/10), one /16
 per role. It routes nowhere, so no synthetic finding can ever be mistaken for
 one about a real host, and it is a range that genuinely appears in access logs
@@ -230,7 +241,7 @@ def _browse(rng: Random) -> Actor:
         for _ in range(rng.randint(3, 9)):
             page = rng.choice(_PAGES)
             yield Step(
-                "reading a page",
+                "reading the site",
                 Category.BROWSING,
                 path=page,
                 status=200,
@@ -254,7 +265,7 @@ def _browse(rng: Random) -> Actor:
                 # mixed corpus into an almost entirely hostile one.
                 page = rng.choice(_PAGES)
                 yield Step(
-                    "reading a page",
+                    "reading the site",
                     Category.BROWSING,
                     path=page,
                     status=200,
@@ -265,7 +276,7 @@ def _browse(rng: Random) -> Actor:
                 referer = f"{_SITE}{page}"
             for asset in rng.sample(_ASSETS, rng.randint(1, 4)):
                 yield Step(
-                    "loading page assets",
+                    "reading the site",
                     Category.STATIC_ASSET,
                     path=asset,
                     status=200,
@@ -275,7 +286,7 @@ def _browse(rng: Random) -> Actor:
                 )
             if rng.random() < 0.25:
                 yield Step(
-                    "using the cart",
+                    "reading the site",
                     Category.API_CALL,
                     path="/api/v1/cart",
                     method="POST",
@@ -331,7 +342,7 @@ def _follow_broken_links(rng: Random) -> Actor:
     def steps() -> Iterator[Step]:
         page = rng.choice(_PAGES)
         yield Step(
-            "reading a stale page",
+            "following links from a stale page",
             Category.BROWSING,
             path=page,
             status=200,
@@ -341,7 +352,7 @@ def _follow_broken_links(rng: Random) -> Actor:
         referer = f"{_SITE}{page}"
         for path in _BROKEN_LINKS:
             yield Step(
-                "following broken links",
+                "following links from a stale page",
                 Category.BROWSING,
                 path=path,
                 status=404,

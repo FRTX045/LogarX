@@ -8,7 +8,9 @@ the same seed differ, every accuracy number downstream is meaningless.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from itertools import pairwise
 from pathlib import Path
+from random import Random
 
 import pytest
 
@@ -21,6 +23,7 @@ from logarc.evaluation.generator import (
     generate,
     write_log,
 )
+from logarc.evaluation.scenarios import BROKEN_LINK_BROWSER, BROWSER
 from logarc.evaluation.truth import read_truth
 from logarc.parsers.registry import get_parser
 
@@ -87,20 +90,63 @@ def test_truth_reports_the_client_that_the_line_belongs_to() -> None:
 
 
 def test_an_activity_instance_is_stable_while_the_activity_lasts() -> None:
-    """One id per intended activity, so segmentation has something to score."""
+    """One id per intended activity, so segmentation has something to score.
+
+    An instance may hold several ordinary-use categories, because a page load
+    is one activity however many kinds of request it is made of. It never
+    holds a hostile category beside anything else: an attack is its own act.
+    """
     per_client: dict[str, list[tuple[str, ActivityCategory]]] = {}
     for _, truth in emitted("sqli_campaign", 400):
         per_client.setdefault(truth.client_ip, []).append((truth.instance_id, truth.category))
 
     for steps in per_client.values():
-        seen: dict[str, ActivityCategory] = {}
+        seen: dict[str, set[ActivityCategory]] = {}
         for instance, category in steps:
-            # An id never comes back with a different category, and never
-            # reappears after another id has taken over.
-            assert seen.setdefault(instance, category) == category
+            seen.setdefault(instance, set()).add(category)
+        for categories in seen.values():
+            if any(category.is_hostile for category in categories):
+                assert len(categories) == 1, categories
+        # An id never reappears after another id has taken over.
         ordered = [instance for instance, _ in steps]
         first_seen = list(dict.fromkeys(ordered))
         assert ordered == sorted(ordered, key=first_seen.index)
+
+
+ORDINARY_USE = {ActivityCategory.BROWSING, ActivityCategory.STATIC_ASSET, ActivityCategory.API_CALL}
+
+
+def test_a_page_load_is_one_activity() -> None:
+    """A page, the assets it pulls in and the cart call it fires are one thing
+    the shopper did, and the truth says so at the grain the tool draws.
+
+    Written from the client's intent, not from the episode builder's output: a
+    shopper reading a page is doing one thing, and that is a fact about the
+    script. It happens to be the grain `episode.builder` draws at, which is
+    what lets the boundary score measure the segmenter rather than a policy.
+    """
+    per_client: dict[str, list[tuple[str, ActivityCategory]]] = {}
+    for _, truth in emitted("normal_browsing", 5_000):
+        per_client.setdefault(truth.client_ip, []).append((truth.instance_id, truth.category))
+
+    joins = 0
+    for steps in per_client.values():
+        for (before_id, before), (after_id, after) in pairwise(steps):
+            if before in ORDINARY_USE and after in ORDINARY_USE and before is not after:
+                joins += 1
+                assert before_id == after_id, (
+                    f"{before.value} -> {after.value} began a new activity"
+                )
+    assert joins, "premise: the shoppers loaded pages with assets"
+
+
+def test_ordinary_use_scripts_carry_one_activity_until_the_client_goes_away() -> None:
+    """The shopper and the broken-link follower each do one thing, however
+    many kinds of request it takes. Only a pause starts a new activity."""
+    for role in (BROWSER, BROKEN_LINK_BROWSER):
+        steps = list(role.build(Random(1)).steps)
+        ordinary = [step for step in steps if step.category in ORDINARY_USE]
+        assert len({step.activity for step in ordinary}) == 1, role.name
 
 
 @pytest.mark.parametrize(
