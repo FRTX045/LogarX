@@ -159,17 +159,23 @@ def test_an_ordinary_search_is_not_flagged(engine: RuleEngine) -> None:
 A rule that fires on real traffic is worse than a rule that misses. A missed
 attack leaves the investigator where they started; a false positive sends them
 to write up something that never happened, and enough of them make the whole
-report untrustworthy. The measured results report **zero false positives across
-240,000 requests** — that number is the thing a new rule most easily breaks.
+report untrustworthy. On a real server's log, every client of which was doing
+something ordinary, the measured result is **16 false alarms across 225,881
+requests**, 0.0071%. That number is the thing a new rule most easily breaks.
 
-Run the rule pack tests, then check nothing else moved:
+Run the rule pack tests, then check nothing else moved. The fast check is the
+small dataset build; `samples/README.md` says how to get it:
 
 ```bash
-pytest tests/detect -q
-logarc generate -s mixed -n 40000 -o sample.log -t sample.truth.jsonl
-logarc ingest sample.log --case ./case-check
-logarc evaluate --case ./case-check --truth sample.truth.jsonl
+pytest tests/detect tests/evaluation -q
+B=samples/apache-shopfront/2026-08-23-small
+logarc ingest $B/access.log --case ./case-check
+logarc enrich --case ./case-check
+logarc evaluate --case ./case-check --truth $B/truth.jsonl
 ```
+
+`docs/evaluation.md` has what that prints today, so a change is a comparison
+rather than a guess.
 
 ## How a request gets its label
 

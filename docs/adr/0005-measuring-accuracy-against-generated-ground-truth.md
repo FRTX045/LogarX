@@ -94,3 +94,11 @@ which point generated traffic should become the regression suite and the real co
 regression corpus as a second external check, scored as a per-family detection rate. It does not
 trigger the revisit clause above: CRS carries per-request attack families but no responses at all,
 so generated traffic remains the headline.
+
+**2026-09-08.** The revisit clause above was triggered. The BlackHat-Dataset
+shopfront carries real responses and per-request attack types, and
+[ADR-0011](0011-a-real-server-log-is-the-headline-corpus.md) makes it the
+headline corpus. That ADR also goes further than the clause anticipated: the
+generator is removed rather than kept as the regression suite, for the reason
+given there. The decisions in this record about *how* to score (per category,
+at the boundary, with CSIC as a binary-only check) stand.

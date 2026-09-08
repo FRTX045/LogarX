@@ -1,4 +1,4 @@
-"""The ground-truth sidecar: what the generator claims it wrote."""
+"""The ground-truth sidecar: what its writer claims the log holds."""
 
 from __future__ import annotations
 

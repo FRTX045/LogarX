@@ -39,9 +39,8 @@ class BenchmarkResult:
     """What one size cost."""
 
     lines: int
-    scenario: str
+    source: str
     bytes_read: int
-    generate_seconds: float
     ingest_seconds: float
     peak_rss_bytes: int
     store_bytes: int
@@ -73,7 +72,7 @@ class BenchmarkResult:
     def to_dict(self) -> dict[str, Any]:
         return {
             "lines": self.lines,
-            "scenario": self.scenario,
+            "source": self.source,
             "bytes_read": self.bytes_read,
             "ingest_seconds": self.ingest_seconds,
             "lines_per_second": self.lines_per_second,
@@ -93,42 +92,42 @@ class BenchmarkResult:
 def run_benchmark(
     sizes: Iterable[int],
     *,
-    scenario: str = "mixed",
-    seed: int = 1,
+    log: Path,
     workdir: Path,
     on_start: Callable[[int], None] | None = None,
 ) -> Iterator[BenchmarkResult]:
-    """Measure each size in a fresh process, smallest first.
+    """Measure each prefix size of `log` in a fresh process, smallest first.
 
     Yields as each run finishes so a long benchmark prints its rows as it goes
-    rather than after the last one.
+    rather than after the last one. A size below one line, or one the log
+    cannot supply, is an error rather than a shorter run: a row labelled with a
+    size it did not measure is the kind of number this module exists to avoid.
     """
-    for lines in sorted(sizes):
+    wanted = sorted(sizes)
+    # Checked before the first run rather than inside the loop, so a bad size
+    # cannot be reported after earlier rows have already been printed.
+    for lines in wanted:
+        if lines < 1:
+            raise BenchmarkError(f"{lines:,} is not a corpus size; ask for at least one line")
+    for lines in wanted:
         if on_start is not None:
             on_start(lines)
-        yield _run_one(lines, scenario=scenario, seed=seed, workdir=workdir)
+        yield _run_one(lines, log=log, workdir=workdir)
 
 
-def _run_one(lines: int, *, scenario: str, seed: int, workdir: Path) -> BenchmarkResult:
+def _run_one(lines: int, *, log: Path, workdir: Path) -> BenchmarkResult:
     command: Sequence[str] = (
         sys.executable,
         "-m",
         _WORKER,
+        "--log",
+        str(log),
         "--lines",
         str(lines),
-        "--scenario",
-        scenario,
-        "--seed",
-        str(seed),
         "--workdir",
         str(workdir),
     )
-    completed = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    completed = subprocess.run(command, capture_output=True, text=True, check=False)
     if completed.returncode != 0:
         raise BenchmarkError(
             f"benchmark run of {lines:,} lines failed:\n{completed.stderr.strip()}"
@@ -143,9 +142,8 @@ def _run_one(lines: int, *, scenario: str, seed: int, workdir: Path) -> Benchmar
 
     return BenchmarkResult(
         lines=payload["lines"],
-        scenario=payload["scenario"],
+        source=payload["source"],
         bytes_read=payload["bytes_read"],
-        generate_seconds=payload["generate_seconds"],
         ingest_seconds=payload["ingest_seconds"],
         peak_rss_bytes=payload["peak_rss_bytes"],
         store_bytes=payload["store_bytes"],

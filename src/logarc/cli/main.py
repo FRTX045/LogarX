@@ -34,7 +34,6 @@ from logarc.detect.rules import RulePackError, load_rules
 from logarc.episode.builder import EpisodePolicy
 from logarc.evaluation.benchmark import BenchmarkError, BenchmarkResult, run_benchmark
 from logarc.evaluation.csic import CsicError, convert_csic
-from logarc.evaluation.generator import DEFAULT_SEED, describe_scenarios, write_log
 from logarc.evaluation.scoring import evaluate as score_case
 from logarc.evaluation.truth import TruthError, read_truth
 from logarc.ingest.pipeline import FormatDetectionError
@@ -56,10 +55,6 @@ if TYPE_CHECKING:
 
     from logarc.analysis import AnalysisResult
     from logarc.core.event import NormalizedEvent
-
-#: Sizes the benchmark measures when none are named. Ten million is deliberately
-#: not here: it takes minutes, and a default should not.
-DEFAULT_BENCHMARK_SIZES: Final = (100_000, 1_000_000)
 
 _SEVERITY_STYLE: Final[dict[Severity, str]] = {
     Severity.INFO: "dim",
@@ -423,57 +418,6 @@ def export(
 
 
 @app.command()
-def generate(
-    out: Annotated[Path | None, typer.Option("--out", "-o", help="Log file to write.")] = None,
-    scenario: Annotated[
-        str, typer.Option("--scenario", "-s", help="Which traffic to generate.")
-    ] = "mixed",
-    lines: Annotated[int, typer.Option("--lines", "-n", help="How many lines.")] = 100_000,
-    seed: Annotated[int, typer.Option("--seed", help="Same seed, same log.")] = DEFAULT_SEED,
-    truth: Annotated[
-        Path | None,
-        typer.Option("--truth", "-t", help="Write the ground truth here, for evaluate."),
-    ] = None,
-    list_scenarios: Annotated[
-        bool, typer.Option("--list", "-l", help="List the scenarios and stop.")
-    ] = False,
-) -> None:
-    """Write a synthetic access log with a known answer."""
-    if list_scenarios:
-        table = Table(title="Scenarios")
-        table.add_column("Name")
-        table.add_column("Contains")
-        for name, description in describe_scenarios():
-            table.add_row(name, description)
-        console.print(table)
-        return
-
-    if out is None:
-        raise fail("--out is required unless --list is given")
-
-    with console.status(f"Generating {lines:,} lines…") as status:
-        try:
-            result = write_log(
-                out,
-                scenario=scenario,
-                lines=lines,
-                seed=seed,
-                truth_path=truth,
-                on_progress=lambda done: status.update(f"Generated {done:,} of {lines:,} lines…"),
-            )
-        except USER_ERRORS as exc:
-            raise fail(str(exc)) from exc
-
-    console.print(
-        f"Wrote {result.lines:,} lines ({result.megabytes:,.1f} MB) of "
-        f"[bold]{result.scenario}[/bold] to {result.path} "
-        f"in {result.elapsed_seconds:.1f}s (seed {result.seed})"
-    )
-    if result.truth_path is not None:
-        path_line(f"Ground truth written to {result.truth_path}")
-
-
-@app.command()
 def evaluate(
     case: Annotated[Path, typer.Option("--case", "-c", help="Case directory to read.")],
     truth: Annotated[Path, typer.Option("--truth", "-t", help="Ground truth for its log.")],
@@ -733,16 +677,18 @@ def enrich(
     )
 
 
+def _count_lines(log: Path) -> int:
+    with log.open("rb") as handle:
+        return sum(1 for _ in handle)
+
+
 @app.command()
 def benchmark(
+    log: Annotated[Path, typer.Option("--log", help="An access log to measure on.")],
     lines: Annotated[
         list[int] | None,
-        typer.Option("--lines", "-n", help="Corpus size to measure. Repeatable."),
+        typer.Option("--lines", "-n", help="Measure the first N lines. Repeatable. Default: all."),
     ] = None,
-    scenario: Annotated[str, typer.Option("--scenario", "-s", help="Traffic to measure on.")] = (
-        "mixed"
-    ),
-    seed: Annotated[int, typer.Option("--seed", help="Same seed, same corpus.")] = 1,
     work: Annotated[
         Path | None, typer.Option("--work", help="Where to put the working files.")
     ] = None,
@@ -757,7 +703,9 @@ def benchmark(
     for the life of a process, so measuring several sizes in one would report
     the largest run's peak for every run after it.
     """
-    sizes = lines or list(DEFAULT_BENCHMARK_SIZES)
+    if not log.is_file():
+        raise fail(f"{log} is not a file")
+    sizes = lines or [_count_lines(log)]
 
     # Always work inside a directory of our own making, even when the user
     # named where to put it. Cleanup then removes only what this run created,
@@ -766,7 +714,7 @@ def benchmark(
     root.mkdir(parents=True, exist_ok=True)
     workdir = Path(tempfile.mkdtemp(prefix="logarc-bench-", dir=root))
 
-    table = Table(title=f"Ingest — {scenario}")
+    table = Table(title=f"Ingest: {log.name}")
     table.add_column("Lines", justify="right")
     for column in ("MB", "Seconds", "Lines/s", "MB/s", "Peak RSS", "Store", "Ratio", "Analyse"):
         table.add_column(column, justify="right")
@@ -776,8 +724,7 @@ def benchmark(
         with console.status("Measuring…") as status:
             for result in run_benchmark(
                 sizes,
-                scenario=scenario,
-                seed=seed,
+                log=log,
                 workdir=workdir,
                 on_start=lambda size: status.update(f"Measuring {size:,} lines…"),
             ):
@@ -816,8 +763,7 @@ def benchmark(
                     "tool": f"logarc {__version__}",
                     "python": platform.python_version(),
                     "platform": platform.platform(),
-                    "scenario": scenario,
-                    "seed": seed,
+                    "log": str(log),
                     "runs": [result.to_dict() for result in measurements],
                 },
                 indent=2,

@@ -7,18 +7,31 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Evaluation
 
-- **The truth is written at the grain the tool draws.** `logarc generate` wrote a shopper's page
-  view, the assets it pulled in and its cart call as three activities, while the episode builder
-  has drawn them as one since 25 August. Nobody re-ran the evaluation across that change, and
-  `docs/evaluation.md` went on publishing a boundary recall of 0.98 that the current tool scored
-  at 0.27. The generator now writes ordinary use as one activity until the client goes away,
-  every request keeps its exact category, and hostile steps are never merged. Same seed, same
-  log byte for byte; only the `instance_id` grouping in the truth file changes. A truth file
-  written by an earlier version scores the old grain and needs regenerating to be comparable.
-- **`docs/evaluation.md` re-measured**, every table, with the current ruleset and CRS enrichment
-  at paranoia level 2 as the notes require, the CRS revision recorded beside the figures, the
-  before-and-after of the regraining kept, and a first single-build measurement against the
-  real-server BlackHat-Dataset shopfront.
+- **The evaluation corpus is a real server's log, and the generator is gone.** `logarc generate`
+  and its scenario scripts have been removed. The headline figures are now measured on the
+  BlackHat-Dataset `apache-shopfront` medium build (243,908 lines over seven days, a real Apache
+  serving a real PHP shop, driven by real security tools and six reactive attack campaigns)
+  with the small build as a fast check and a committed 3,825-line excerpt of it as the test
+  fixture. What forced this: the generator wrote a shopper's page view, the assets it pulled in
+  and its cart call as three activities, while the episode builder has drawn them as one since
+  25 August. Nobody re-ran the evaluation across that change, and `docs/evaluation.md` went on
+  publishing a boundary recall of 0.98 that the tool scored at 0.27. Regraining the generator
+  fixed the figure but left it grading the tool against the tool's own model of an activity,
+  which is the circularity ADR-0005 warned about. See ADR-0011.
+- **`logarc benchmark` measures a log it is given** (`--log`, with `--lines` for prefixes)
+  rather than generating one, and refuses a size the log cannot supply instead of quietly
+  measuring a shorter run.
+- **`docs/evaluation.md` re-measured**, every table, on the pinned dataset builds with CRS
+  enrichment at paranoia level 2 as the notes require, and the CRS revision recorded beside the
+  figures. The headline numbers are lower than the generated ones; that is the first honest
+  measurement, not a regression. The dataset's truth cuts episodes at a finer grain than the
+  tool draws: of the 2,738 cuts it makes between ordinary requests, 152 fall inside the episode
+  gap, and the tool misses 114 of those, 89% of every boundary the headline run misses. Recorded
+  rather than adjusted for.
+- **The builds are pinned by SHA-256, not versioned.** They are 22 MB and 80 MB and are not in
+  the repository; `samples/README.md` says how to get or rebuild one. A rebuild at the same seed
+  reproduces the plan of requests but not the bytes, because the campaigns react to a live
+  server, so a rebuilt corpus scores close rather than identically.
 
 ### Log formats
 

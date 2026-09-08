@@ -21,16 +21,18 @@ What is left below is everything that needs eyes.
 
 ## Fixture
 
-One command, and the same log every time — the seed is fixed, so a failure here
-is reproducible on someone else's machine.
+The dataset builds under `samples\apache-shopfront\`. See
+[samples/README.md](../samples/README.md) for where to get them. The same files
+every time, pinned by checksum, so a failure here is reproducible on someone
+else's machine.
 
-```powershell
-# ~1.2 GB, enough that ingest takes long enough to watch
-.venv\Scripts\logarc.exe generate -s mixed -n 10000000 -o fixture\big.log
-
-# small, fast, and with a known attacker in it
-.venv\Scripts\logarc.exe generate -s sqli_campaign -n 40000 -o fixture\small.log
-```
+- **Small, fast, with known attackers in it:** `2026-08-23-small`, 66,305
+  lines. Its `MANIFEST.json` lists every attack command line with the address it
+  came from, so there is something to check a finding against.
+- **Big enough to watch:** `2026-09-07-medium`, 243,908 lines over seven days.
+  For an ingest slow enough to watch the progress bar behave, build the
+  dataset's `large` tier: about a million lines and 250 MB, roughly an hour of
+  `tools/build.py apache-shopfront large`.
 
 Start the application with `.venv\Scripts\logarc-gui.exe`, or the packaged
 `dist\logarc\logarc.exe` when checking a build.
@@ -609,9 +611,11 @@ empty ground it was dragged across.
 ## 16. A case can be read over one stretch of time
 
 **Why:** the suite checks that both halves narrow together and that the numbers
-agree. What it cannot judge is whether the band is worth having — on the
-synthetic log it is nearly flat, because generated traffic is uniform, and the
-whole argument for drawing it rests on a real log not being.
+agree. What it cannot judge is whether the band is worth having, which is a
+question about shape rather than arithmetic: a band that is nearly flat tells a
+reader nothing. The dataset builds carry a diurnal and weekly arrival curve, so
+the medium tier's seven days are where to look. Note that those timestamps
+are modelled rather than captured, which the dataset documents.
 
 Measured, so there is something to compare against: opening a case 1.1 s at
 200 k events and 1.3 s at 3 million; applying a range 0.35 s and 0.44 s; going

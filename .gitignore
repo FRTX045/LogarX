@@ -53,7 +53,13 @@ case-*/
 *.log.gz
 *.truth.json
 *.truth.jsonl
-!tests/data/*.log
+!tests/data/**/*.log
+!tests/data/**/*.truth.jsonl
+
+# Dataset builds. Tens of megabytes each, and the evaluation figures are pinned to
+# their SHA-256 rather than to a seed, so they are checksummed instead of versioned.
+# samples/README.md says how to obtain one; docs/evaluation.md records the hashes.
+samples/apache-shopfront/
 
 # Benchmark and evaluation output
 benchmarks/results/

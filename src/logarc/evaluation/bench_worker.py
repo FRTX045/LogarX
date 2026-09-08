@@ -23,23 +23,37 @@ from typing import Any
 
 from logarc.analysis import analyse_ip
 from logarc.case import Case
-from logarc.evaluation.generator import write_log
 from logarc.evaluation.memory import peak_rss_bytes
 
 __all__ = ["measure"]
 
 
-def measure(*, lines: int, scenario: str, seed: int, workdir: Path) -> dict[str, Any]:
-    """Generate, ingest, and reconstruct one client; time each part."""
+def measure(*, log: Path, lines: int, workdir: Path) -> dict[str, Any]:
+    """Ingest the first `lines` of `log` and reconstruct one client; time each part.
+
+    The prefix is copied into `workdir` as its own file so what ingest reads
+    is exactly the size being measured, and `bytes_read` is that file's size.
+    """
+    if lines < 1:
+        raise SystemExit(f"{lines:,} is not a corpus size; ask for at least one line")
+
     workdir.mkdir(parents=True, exist_ok=True)
-    log = workdir / f"bench-{lines}.log"
+    prefix = workdir / f"bench-{lines}.log"
     case_dir = workdir / f"case-{lines}"
 
-    generated = write_log(log, scenario=scenario, lines=lines, seed=seed, truth_path=None)
+    copied = 0
+    with log.open("rb") as source, prefix.open("wb") as target:
+        for raw in source:
+            if copied == lines:
+                break
+            target.write(raw)
+            copied += 1
+    if copied < lines:
+        raise SystemExit(f"{log} has only {copied:,} lines; {lines:,} were asked for")
 
     began = time.perf_counter()
     with Case.create(case_dir) as case:
-        results = case.ingest([log])
+        results = case.ingest([prefix])
     ingest_seconds = time.perf_counter() - began
 
     with Case.open(case_dir) as case:
@@ -53,10 +67,8 @@ def measure(*, lines: int, scenario: str, seed: int, workdir: Path) -> dict[str,
 
     return {
         "lines": lines,
-        "scenario": scenario,
-        "seed": seed,
-        "bytes_read": generated.bytes_written,
-        "generate_seconds": generated.elapsed_seconds,
+        "source": log.name,
+        "bytes_read": prefix.stat().st_size,
         "ingest_seconds": ingest_seconds,
         "peak_rss_bytes": peak_rss_bytes(),
         "store_bytes": _tree_size(case_dir),
@@ -75,22 +87,14 @@ def _tree_size(root: Path) -> int:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--log", type=Path, required=True)
     parser.add_argument("--lines", type=int, required=True)
-    parser.add_argument("--scenario", default="mixed")
-    parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--workdir", type=Path, required=True)
     args = parser.parse_args()
+    if not args.log.is_file():
+        raise SystemExit(f"{args.log} is not a file")
 
-    print(
-        json.dumps(
-            measure(
-                lines=args.lines,
-                scenario=args.scenario,
-                seed=args.seed,
-                workdir=args.workdir,
-            )
-        )
-    )
+    print(json.dumps(measure(log=args.log, lines=args.lines, workdir=args.workdir)))
 
 
 if __name__ == "__main__":
