@@ -2,9 +2,10 @@
 
 How the tool is checked, what the numbers say, and what they do not.
 
-Every figure here is reproducible from the commands shown. See
-[ADR-0005](adr/0005-measuring-accuracy-against-generated-ground-truth.md) for why it is measured
-this way.
+Every figure here is reproducible from the commands shown, against the builds named below.
+See [ADR-0011](adr/0011-a-real-server-log-is-the-headline-corpus.md) for why it is measured on a
+real server's log, and [ADR-0005](adr/0005-measuring-accuracy-against-generated-ground-truth.md)
+for the scoring method it kept.
 
 ## What is being measured
 
@@ -23,101 +24,183 @@ run, including on sources that cannot support anything finer.
 
 ## Where the ground truth comes from
 
-Real access logs cannot be used to measure accuracy, because nobody knows what is in them. That
-is the problem the tool exists to solve.
+The corpus is a real server's log. The companion repository
+[BlackHat-Dataset](https://github.com/FRTX045/BlackHat-Dataset) stands up Apache 2.4 serving a
+PHP shop in a container, drives scripted shoppers, crawlers and a real Chromium at it, runs five
+real security tools (whatweb, dirb, gobuster, nmap, sqlmap) alongside six attack campaigns that
+read each response and decide what to do next, and ships the log Apache wrote.
 
-`logarc generate` writes synthetic Apache logs from scripted client roles — shoppers, a search
-engine crawler, a content scanner, a password guesser, someone walking out of the document root,
-and an attacker who works a site up to a successful injection and returns later to use it.
-Clients run concurrently and are merged on time, so they interleave the way a real server sees
-them rather than arriving in tidy blocks. Alongside the log it writes a record of which activity
-produced every line.
+What makes it scoreable is how the labels are obtained. Every request passes through a tagging
+proxy that gives it an id, and every client writes a ledger of what it was doing. The truth file
+is the join of the two, so a label says which client made the request and why, rather than what a
+pattern-matcher thought of it afterwards. Nothing in this project produced it, which is the
+property the previous generated corpus could not have.
 
-That record is written from the client's script, never from what the rules match. The generator
-does not import the detection engine. A burst is labelled enumeration because the client is
-sweeping a wordlist, not because the enumeration rule fires on it.
+The truth is JSON Lines, one record per log line, in order: the client address, one of fourteen
+category names, and an `instance_id` whose consecutive repeats mark one activity.
 
-Two categories sit close enough together to need a stated boundary, applied consistently:
+**Timestamps are computed, not captured.** The driver issues its plan as fast as the sockets
+allow, so the captured log covers minutes at an impossible rate; arrival times are then rewritten
+onto the diurnal and weekly curves the traffic was planned against, and the raw capture ships
+beside the result. Everything else on every line is as Apache wrote it. Anything measured against
+the clock, and the threshold sweeps below most of all, is therefore measuring that model as much as
+it is measuring this tool.
 
-- **reconnaissance** — probing for particular known-interesting artefacts: configuration files,
-  backups, debug endpoints, a dependency manifest. Few requests, chosen deliberately.
-- **enumeration** — sweeping a wordlist to discover what exists at all. Many requests, no prior
-  knowledge of any of them.
+### The grain of an episode
 
-The truth is written at the grain of what the client is *doing*, not of what each request *is*.
-A shopper reading a page, the assets that page pulls in and the cart call it fires are one
-activity: the shopper did one thing, and it took three kinds of request. Every request still
-carries its exact category — `browsing`, `static_asset`, `api_call` — so classification is
-scored per request, while segmentation is scored on the activity. This is the grain the episode
-builder draws at, and it has to be: scored against a truth that cuts a page load into three,
-the boundary score measures a disagreement about what a page load is rather than the segmenter.
-That is not hypothetical; see the ninth row under *What the evaluation found*. Hostile steps keep
-an activity of their own however they are made, and an attack between two page loads is never
-part of either.
+The dataset and this tool disagree slightly about when one activity ends, and the disagreement is
+measured rather than removed.
+
+The dataset cuts a shopper's visit into browsing, searching and using the basket, and for the
+traffic it labels through the proxy rather than from a driver ledger it cuts on every change of
+category, so a page and the assets it pulls in become separate episodes. The episode builder
+draws all ordinary use as one activity until the client goes quiet (`_ORDINARY_USE` in
+`episode/builder.py`, chosen 2026-08-25 with its own measured argument).
+
+On the medium build, of 196,746 adjacent pairs of ordinary requests from the same client:
+
+| | pairs |
+|---|---:|
+| truth keeps them in one activity | 194,008 |
+| truth cuts, and the gap is over 300 s so the tool cuts too | 2,586 |
+| **truth cuts inside the gap, where the two grains differ** | **152** |
+
+Those 152 are 5.6% of the cuts the truth makes between ordinary requests, and the tool does not
+decline all of them: it draws 38 anyway, for a reason that has nothing to do with the grain. In
+every one of those 38 the client changes its `User-Agent`, which ends the session
+(`split_on_user_agent_change` in `sessionize/segmenter.py`) and so starts a new episode. Both
+sides are ordinary use in all 38, and the tool's label agrees with the truth's on both. The
+boundary comes from session segmentation, not from classification.
+
+It misses the other **114**, and that is where this policy actually costs recall: 114 of the 128
+boundaries the headline run misses in total. The score is allowed to be lower for them. Adjusting
+the truth to match the tool is what the previous generated corpus ended up doing, and
+[ADR-0011](adr/0011-a-real-server-log-is-the-headline-corpus.md) records why that is not repeated
+here. Hostile activities are never merged into anything, so a missed boundary around an attack,
+the part a forensic reader cares about, counts in full.
+
+## The builds
+
+Two builds of the same project, both scored below.
+
+| | `2026-09-07-medium` | `2026-08-23-small` |
+|---|---|---|
+| Role | **the headline** | fast check |
+| Lines | 243,908 | 66,305 |
+| Span | 7 days, 2026-03-09 to 03-16 | 1 day |
+| Sessions | 7,822 | 2,368 |
+| Scenario seed | 19 | 7 |
+| Dataset commit | `0485a9a6` | `8217bce3` |
+
+The figures belong to these exact bytes, so the digests are recorded here in full. The builds
+themselves are not in this repository, and neither are the `SHA256SUMS` files that ship beside
+them:
+
+```
+# 2026-09-07-medium
+a61205732cfcb9ce0369e95326c7daef3be60156b9be2553fcdf07e200e96e8e  access.log
+5ad028400eb64cf50b8317a353a1016f6e5c0254aba50f010052daf26483e406  truth.jsonl
+94ed6380e17774f7f25fe693badcc50f66e0a783d5e3d288661caef3fd9e1ff0  MANIFEST.json
+
+# 2026-08-23-small
+3a48f1ee558b9d58995b7c43d6d1d6f1d05f6f571a5d72c09331a6261910736a  access.log
+d1c4599ec127ddb9a5b76bdc943b492a5f56302db032b3749f7e3485bd6621f2  truth.jsonl
+da2e65809692e465677a3c0bb814a87a102544f315afafbe32489321722b358a  MANIFEST.json
+```
+
+**The figures below belong to those bytes, not to those seeds.** The dataset reproduces its plan
+of requests from a seed, and says outright that it does not reproduce its output byte for byte:
+six campaigns react to a live, mutating application and requests interleave differently on every
+run. A rebuild at the same seed scores close to what is printed here, not identically. Anyone
+checking these numbers should verify the checksums first; anyone who rebuilds should expect the
+last decimal to move and should say which build they measured.
+
+The builds are not in this repository. They are 22 MB and 80 MB.
+[samples/README.md](../samples/README.md) says how to obtain or rebuild one. The test suite does
+not need them: it scores a committed 3,825-line excerpt under `tests/data/apache-shopfront/`,
+pinned by its own checksums.
 
 ## Reproducing
 
 ```bash
-logarc generate --scenario mixed --lines 40000 --seed 7 -o mixed.log -t mixed.truth.jsonl
-logarc ingest mixed.log --case ./case-mixed
-logarc enrich --case ./case-mixed
-logarc evaluate --case ./case-mixed --truth mixed.truth.jsonl --out mixed.json
+B=samples/apache-shopfront/2026-09-07-medium
+logarc ingest $B/access.log --case ./case-medium
+logarc enrich --case ./case-medium
+logarc evaluate --case ./case-medium --truth $B/truth.jsonl --out medium.json
+logarc evaluate --case ./case-medium --truth $B/truth.jsonl --no-absorb --out medium-noabsorb.json
 ```
 
-The same seed reproduces the same log byte for byte. The `enrich` step is part of the
-measurement, not an extra: every headline figure below is of the complete tool, with OWASP CRS
-applied at the project's default paranoia level 2. The native-only figures are reported beside
-them where they differ, which on generated traffic is nowhere.
+The `enrich` step is part of the measurement, not an extra: every headline figure is of the
+complete tool, with OWASP CRS applied at the project's default paranoia level 2. Native-only runs
+are reported beside them as labelled comparisons, and on this corpus, unlike on the generated
+one, the two differ.
 
 ## Classification
 
-40,000 requests per scenario, seed 7, default thresholds. Measured 2026-09-07 with ruleset
-`e81ace93…` (33 rules) and CRS `d694d465` at paranoia level 2, configuration `f357d142fbcc4441`.
-Every figure in this section came out **identical** with and without enrichment, to the last
-decimal — CRS fired on 7,592 of `mixed`'s requests and changed no label, because the native rules
-already fire on everything CRS catches here. ADR-0008 records why that is expected of generated
-traffic, and why it says nothing about CRS's value on real traffic.
+Measured 2026-09-08, ruleset `e81ace93…` (33 rules), CRS `d694d465` at paranoia level 2,
+configuration `f357d142fbcc4441`. Every line of both builds was scored; none went missing.
 
-| Scenario | Clients | Accuracy | Macro F1 | Weighted F1 | Attack P | Attack R | False alarms |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| `mixed` | 2,099 | 0.966 | 0.958 | 0.966 | 1.000 | 0.994 | 0 |
-| `sqli_campaign` | 1,141 | 0.934 | 0.930 | 0.919 | 1.000 | 1.000 | 0 |
-| `wordpress_scan` | 1,757 | 0.946 | 0.971 | 0.944 | 1.000 | 1.000 | 0 |
-| `brute_force` | 1,344 | 0.982 | 0.941 | 0.985 | 1.000 | 0.970 | 0 |
-| `path_traversal` | 3,012 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 0 |
-| `normal_browsing` | 2,983 | 1.000 | 1.000 | 1.000 | — | — | 0 |
+| Build | Requests | Clients | | Accuracy | Macro F1 | Weighted F1 | Attack P | Attack R | False alarms |
+|---|---:|---:|---|---:|---:|---:|---:|---:|---:|
+| medium | 243,908 | 2,760 | native | 0.968 | 0.634 | 0.970 | 0.999 | 0.940 | 0.009% |
+| medium | 243,908 | 2,760 | **with CRS** | **0.967** | **0.633** | **0.969** | **0.998** | **0.941** | **0.016%** |
+| small | 66,305 | 937 | native | 0.972 | 0.631 | 0.974 | 0.993 | 0.938 | 0.045% |
+| small | 66,305 | 937 | **with CRS** | **0.972** | **0.638** | **0.974** | **0.991** | **0.940** | **0.056%** |
 
-**Not one false positive** in 240,000 requests, including 40,000 lines of purely ordinary
-traffic. `normal_browsing` has no attacks in it, so its attack precision and recall are
-undefined; the tool reported none, which is the right answer and the reason the cells are empty
-rather than zero.
+Per category, medium build with CRS:
 
-Per category on `mixed`:
+| Activity | Support | Precision | Recall | F1 |
+|---|---:|---:|---:|---:|
+| `static_asset` | 168,257 | 0.998 | 1.000 | 0.999 |
+| `crawling` | 26,204 | 1.000 | 0.986 | 0.993 |
+| `browsing` | 19,716 | 0.944 | 0.998 | 0.970 |
+| `enumeration` | 14,242 | 0.999 | 0.542 | 0.703 |
+| `api_call` | 11,249 | 0.962 | 1.000 | 0.981 |
+| `reconnaissance` | 2,648 | 0.294 | 0.856 | 0.438 |
+| `authentication` | 1,007 | 0.998 | 0.872 | 0.931 |
+| `unknown` | 442 | 0.000 | 0.000 | 0.000 |
+| `injection` | 57 | 0.678 | 0.702 | 0.690 |
+| `credential_attack` | 39 | 1.000 | 0.667 | 0.800 |
+| `access_control` | 28 | 0.000 | 0.000 | 0.000 |
+| `exploitation` | 8 | 0.000 | 0.000 | 0.000 |
+| `path_traversal` | 6 | 0.600 | 1.000 | 0.750 |
+| `ssrf` | 5 | 0.500 | 0.800 | 0.615 |
 
-| Activity | Support | Precision | Recall | F1 | Recall (any) |
-|---|---:|---:|---:|---:|---:|
-| enumeration | 9,712 | 0.928 | 1.000 | 0.963 | 1.000 |
-| static asset | 5,754 | 1.000 | 1.000 | 1.000 | 1.000 |
-| reconnaissance | 5,484 | 1.000 | 0.784 | 0.879 | 1.000 |
-| credential attack | 5,369 | 1.000 | 0.970 | 0.985 | 0.970 |
-| browsing | 4,361 | 1.000 | 1.000 | 1.000 | 1.000 |
-| crawling | 2,764 | 1.000 | 1.000 | 1.000 | 1.000 |
-| path traversal | 2,704 | 1.000 | 1.000 | 1.000 | 1.000 |
-| access control | 2,680 | 0.862 | 1.000 | 0.926 | 1.000 |
-| API call | 562 | 1.000 | 1.000 | 1.000 | 1.000 |
-| injection | 316 | 1.000 | 1.000 | 1.000 | 1.000 |
-| authentication | 294 | 0.643 | 1.000 | 0.783 | 1.000 |
+The five most frequent category confusions on the medium build with CRS:
 
-The two weak rows are both taxonomy overlaps rather than detection failures, and the lenient
-recall column is what shows it:
+| Truth category | Predicted category | Requests |
+|---|---|---:|
+| `enumeration` | `reconnaissance` | 5,390 |
+| `enumeration` | `browsing` | 669 |
+| `enumeration` | `access_control` | 455 |
+| `unknown` | `api_call` | 438 |
+| `crawling` | `browsing` | 339 |
 
-- **reconnaissance, recall 0.784, lenient recall 1.000.** Every one of these requests matched a
-  reconnaissance rule. They lost the ranking to a behavioural rule covering the same window: a
-  scanner that probes for `/composer.json` in the middle of a wordlist sweep is doing both things
-  at once, and the sweep is the stronger signal. 753 went to enumeration, 430 to access control.
-- **authentication, precision 0.643.** 163 of the requests it claims are the successful login at
-  the end of a password-guessing run. Truth calls those part of the attack; the tool sees a
-  request to `/login` that succeeded. Both readings are defensible.
+**Macro F1 of 0.633 is the number to be careful with**, and the table says why: it is an unweighted
+mean over fourteen categories, three of which score zero and three of which have support in single
+digits. Weighted F1 is 0.969 and accuracy 0.967 over the same predictions. Neither is the honest
+headline on its own. Macro F1 refuses to let a rare category hide, which is the point of
+reporting it. But a reader comparing 0.633 against the 0.958 this document used to print for
+generated traffic is comparing two different corpora, not two versions of the tool.
+
+Four groups deserve naming individually.
+
+- **`unknown`, 0.000 over 442 requests, and it cannot be anything else.** These are the dataset's
+  deliberately malformed requests. `ActivityCategory.UNKNOWN` exists in this codebase but no rule
+  ever assigns it, so there is no prediction that could match. It is a structural zero, not a
+  detection failure, and it costs the macro average 0.049 on its own.
+- **`enumeration`, recall 0.542, against `reconnaissance`, precision 0.294.** These are one
+  finding seen from both ends: requests the dataset calls a wordlist sweep are read as probing for
+  known artefacts. The boundary between the two is a judgement (few deliberate requests against
+  many blind ones), and on real tool traffic the tool draws it in a different place than the
+  dataset's driver does. It is the largest single source of classification error here and it is
+  a rule question, recorded rather than acted on.
+- **`access_control` and `exploitation`, 0.000 over 28 and 8 requests.** Real ground that is
+  genuinely uncovered: forced browsing to admin areas and webshell use, in volumes too small for
+  the per-class figure to be stable but large enough to say the rules do not reach them.
+- **`static_asset`, `crawling`, `browsing`, `api_call`**, the bulk of any access log, are at
+  0.97 to 0.999. Ordinary traffic is read correctly, which is what keeps the false-alarm rate
+  where it is.
 
 ## An external corpus: OWASP CRS regression tests
 
@@ -127,10 +210,12 @@ recall column is what shows it:
 > they were measured against coreruleset `d694d465` and can be re-derived by reverting the removal.
 > See the postscript in [ADR-0007](adr/0007-scoring-detection-against-the-crs-regression-corpus.md).
 
-Every figure above is measured on traffic this project wrote, against rules this project wrote.
-That is a real weakness, and the `+`-as-space defect is the proof: it survived every generated
-scenario and surfaced only when someone else's dataset was converted. A generator cannot find a
-blind spot it shares.
+The figures above measure this project's rules against traffic somebody else produced, which is
+the harder half of the problem. What they still do not do is test those rules against payloads
+somebody else chose: the attacks in the corpus come from five tools and six campaigns the
+dataset's authors selected, and a payload none of them sends is a payload the rules are never
+asked about. The `+`-as-space defect is the proof that this gap is real: it survived every
+scenario written here and surfaced only when an outside dataset was converted.
 
 The OWASP Core Rule Set ships a regression suite — 4,224 cases across the nine attack families
 relevant here, each a concrete payload with an assertion about which of *their* rules must fire.
@@ -222,30 +307,34 @@ cases are visible to an access-log tool at all.
 ### What was done about it
 
 CRS itself was adopted, through Coraza in a Go sidecar — see
-[ADR-0008](adr/0008-crs-as-a-signature-layer-beside-the-rule-packs.md). Three measurements decided
-whether the rescue rule was safe, and they are the numbers that matter more than the 12.3%:
+[ADR-0008](adr/0008-crs-as-a-signature-layer-beside-the-rule-packs.md). What it does to the
+complete tool is measured on both builds, and on a negative control of ordinary traffic only:
 
 | Corpus | Native only | With CRS |
 |---|---|---|
-| `normal_browsing`, 20,000 generated requests | 0 hostile episodes | **0 hostile episodes** |
-| Real 2010 WordPress traffic, 365 lines | 5 hostile episodes | **5 hostile episodes** |
-| `mixed`, 100,000 generated requests | acc 0.965, prec 1.000 | **identical** |
+| medium, 243,908 real requests | acc 0.968, macro F1 0.634, 21 false alarms | acc 0.967, macro F1 0.633, **37** false alarms |
+| small, 66,305 real requests | acc 0.972, macro F1 0.631, 28 false alarms | acc 0.972, **macro F1 0.638**, 35 false alarms |
+| ordinary-only clients, 225,881 real requests | | **16 false alarms, 0.0071%** |
 
-Zero false positives on both negative controls at the shipped paranoia level of 2 — and this is
-what fixed that level. The generated corpus produces no CRS detections at any level, so the real
-log is the only control with anything to say: PL1 and PL2 leave its five hostile episodes alone,
-while PL3 flags a plain `GET /` as "Unix Shell Code Found in Request" and invents a sixth. Against
-CRS's own 1,194 regression payloads, PL1 classifies 67% as hostile and PL2 reaches 90%, so the
-level is the highest one no control objects to rather than the most cautious available. And no
-change
-at all on the generated corpus, despite 54,720 CRS detections across 17,439 of its requests —
-because the native rules already fire on everything CRS catches there, so nothing is rescued.
+**On real traffic CRS is a trade, not a free gain**, and the previous version of this document
+could not have shown that: on generated traffic the two columns were identical to the last
+decimal, because the native rules already fired on everything CRS caught. Here it raises recall
+where the native packs are thin (`ssrf` from 0.600 to 0.800, `injection` from 0.684 to 0.702 on
+the medium build), and it costs `injection` precision, 1.000 down to 0.678, which is why medium's
+macro F1 moves by −0.001 while small's moves by +0.007. The false-alarm rate roughly doubles from
+a very low base, 21 to 37 requests in 243,908.
 
-**That last row is ADR-0005's blind spot again, and it is worth stating plainly: the generated
-corpus cannot demonstrate the benefit of this change.** The generator writes payloads the rules
-were written for, so it contains nothing for CRS to rescue. The benefit only appears on payloads
-from the miss list — where 42 requests reported as one Info-level `Scripted Client` episode became
-three activities with the attack correctly named Critical.
+The negative control is the sharper test. Every client whose truth is entirely ordinary (225,881
+requests from 2,358 clients, with all 402 clients carrying any hostile or malformed line removed)
+scores **16 false alarms, 0.0071% of ordinary traffic**, with CRS on at paranoia level 2. That is
+the number a deployment would feel, and it is measured on real browsing rather than on a corpus
+built to be scored.
+
+Paranoia level 2 was fixed by an earlier measurement, on 365 lines of real 2010 WordPress traffic:
+PL1 and PL2 leave its five hostile episodes alone, while PL3 flags a plain `GET /` as "Unix Shell
+Code Found in Request" and invents a sixth. Against CRS's own 1,194 regression payloads, PL1
+classifies 67% as hostile and PL2 reaches 90%, so the level is the highest one no control objects
+to rather than the most cautious available.
 
 ### It is not a decoding problem
 
@@ -287,156 +376,114 @@ this is not a false-positive rate.
 `--out` writes all 1,001 uncaught payloads with their source file, test id and URI. The rate is
 the summary; that list is the part that can inform which rules to write next.
 
-## A real server: the BlackHat-Dataset shopfront
-
-Everything above is traffic this project wrote. The companion repository
-[BlackHat-Dataset](https://github.com/FRTX045/BlackHat-Dataset) stands up a real Apache serving a
-real PHP shop, drives real browsers and real security tools at it — sqlmap, dirb, gobuster,
-whatweb, nmap — and writes its truth from the driver's ledger of what each client was told to do.
-Its `2026-08-23-small` build, 66,305 lines, scored 2026-09-07 with the same ruleset and CRS
-configuration as above:
-
-| | Native | With CRS |
-|---|---:|---:|
-| Accuracy | 0.972 | 0.972 |
-| Macro F1 | 0.631 | 0.638 |
-| Attack precision / recall | 0.993 / 0.938 | 0.991 / 0.940 |
-| False alarms, share of ordinary traffic | 0.045% | 0.056% |
-| Boundary F1, absorption on | 0.824 | 0.823 |
-| Boundary F1, absorption off | | 0.751 |
-
-**One build, one sample.** That repository measured the spread between builds of the same seed
-at a few hundredths of precision and a few tenths of a point of false-alarm rate, so nothing
-narrower than that is a difference. The two numbers worth reading are the ones outside that
-spread. Macro F1 is 0.64 against 0.96 on generated traffic, and the confusion table says why:
-1,139 requests the dataset calls enumeration were read as reconnaissance. That is a rule finding
-on real traffic that the generator cannot produce, and it is recorded here rather than acted on.
-And absorption, which changes nothing on generated traffic, lifts boundary precision from 0.625
-to 0.731 here: real clients fetch a favicon in the middle of a sweep, and scripted ones do not.
-
 ## Segmentation, and what noise absorption costs
 
-Measured 2026-09-07, same runs as the classification tables, CRS applied. `--no-absorb` runs the
-same evaluation with noise absorption off:
+Same runs as the classification tables, with native-only comparisons beside the CRS-enriched
+results. `--no-absorb` runs the same evaluation with noise absorption off, so the merge rule
+is measured in both configurations. The discussion below uses the CRS-enriched headline run.
 
-| Scenario | Truth activities | Episodes | Precision | Recall | Boundary F1 | Boundary F1 (off) |
-|---|---:|---:|---:|---:|---:|---:|
-| `mixed` | 4,082 | 5,098 | 0.611 | 0.924 | 0.736 | 0.736 |
-| `sqli_campaign` | 3,113 | 5,000 | 0.442 | 0.865 | 0.585 | 0.585 |
-| `wordpress_scan` | 3,355 | 4,963 | 0.427 | 0.856 | 0.570 | 0.570 |
-| `brute_force` | 3,554 | 4,202 | 0.751 | 0.971 | 0.847 | 0.847 |
-| `path_traversal` | 6,229 | 6,142 | 1.000 | 0.973 | 0.986 | 0.986 |
-| `normal_browsing` | 4,303 | 4,203 | 1.000 | 0.924 | 0.961 | 0.961 |
+| Build | Detection | Absorption | Truth activities | Episodes | Precision | Recall | Boundary F1 |
+|---|---|---|---:|---:|---:|---:|---:|
+| medium | native | on | 7,822 | 9,590 | 0.722 | 0.975 | 0.830 |
+| medium | native | off | 7,822 | 10,676 | 0.624 | 0.975 | 0.761 |
+| medium | with CRS | on | 7,822 | 9,619 | 0.719 | 0.975 | **0.828** |
+| medium | with CRS | off | 7,822 | 10,709 | 0.621 | 0.975 | 0.759 |
+| small | native | on | 2,368 | 2,770 | 0.734 | 0.940 | 0.824 |
+| small | native | off | 2,368 | 3,080 | 0.629 | 0.941 | 0.754 |
+| small | with CRS | on | 2,368 | 2,776 | 0.731 | 0.940 | **0.823** |
+| small | with CRS | off | 2,368 | 3,092 | 0.625 | 0.941 | 0.751 |
 
-**Recall is the segmenter's number, and it is 0.86–0.97.** What it misses is one thing: the
-pauses the shoppers take, drawn from 120–1,800 s, of which those under the 300 s episode gap
-end an activity in the truth and not on the graph. The threshold sweep below is that same fact
-seen from the other side.
+**Recall is the segmenter's number, and it is 0.975 on the headline build.** Nearly every join the
+truth places, the reconstruction places too: of 5,062 boundaries the truth has, 4,934 are drawn
+and 128 are missed. 114 of those 128 are the grain disagreement described above, ordinary-use
+cuts the tool declines to draw, which leaves 14 misses from every other cause combined.
 
-**Precision is the ranking's number, not the segmenter's.** On the two scenarios with no probing
-in them it is 1.000: every boundary the tool drew is one the truth has. On the four with a
-scanner it falls to 0.43–0.75, and the extra boundaries are the reconnaissance-versus-enumeration
-contest from the classification section: a window rule relabels part of a probing run, and a
-label change is a boundary. The lines are all correctly hostile; the graph cuts them one time
-more than the truth does.
+**Precision is the ranking's number.** The tool draws 9,619 episodes where the truth has 7,822,
+and the extra cuts are mostly the reconnaissance-versus-enumeration contest from the classification
+section: a window rule relabels part of a probing run, and a label change is a boundary. Those
+lines are all correctly hostile; the graph cuts them one time more than the truth does.
 
-**Absorption changes nothing on generated traffic, and that is a fact about the generator.**
-The episode counts and every score are identical with the rule on and off, on all six scenarios.
-Absorption merges two same-category runs split by a benign interlude of at most three requests
-inside sixty seconds, and no script here produces one: the scripted attackers do not fetch a
-favicon mid-sweep. Real ones do — the section above measured absorption lifting boundary
-precision from 0.625 to 0.731 on the shopfront dataset — so the rule's value is established on
-real traffic and cannot be established here.
-
-### The measurement before the truth was regrained
-
-The table above is the second measurement of the day, and the first is kept because the
-difference is the finding. Until 2026-09-07 the generator wrote a shopper's page view, the assets
-it pulled in and its cart call as three activities, while since 2026-08-25 the episode builder
-has drawn them as one (`_ORDINARY_USE` in `episode/builder.py`, with its own measured argument).
-Nobody re-ran the evaluation across that change, and the previous version of this section went
-on publishing 0.98 recall from before it. Scored against the old truth, the current tool came out:
-
-| Scenario | Truth activities | Precision | Recall | Boundary F1 |
-|---|---:|---:|---:|---:|
-| `mixed` | 8,987 | 0.611 | 0.266 | 0.371 |
-| `sqli_campaign` | 5,875 | 0.442 | 0.360 | 0.397 |
-| `wordpress_scan` | 5,858 | 0.427 | 0.334 | 0.374 |
-| `brute_force` | 11,548 | 0.751 | 0.210 | 0.329 |
-| `path_traversal` | 17,305 | 1.000 | 0.219 | 0.359 |
-| `normal_browsing` | 18,936 | 1.000 | 0.076 | 0.142 |
-
-Precision is unchanged to the third decimal, which is what says the drop was not the segmenter.
-Between 63% and 98% of the expected boundaries lay between two ordinary-use requests, and the
-tool declines to draw those on purpose. Regraining the truth restored recall; it could not have
-restored the old 0.98, which was a property of the finer grouping the tool no longer produces.
-
-The regraining is a decision, and it is worth stating what keeps it from being the scorer
-grading itself. The grain was chosen on 2026-08-25 for the reader's benefit — more than half of
-all episodes had become a single request — and without reference to this score, which nobody
-had looked at. The truth states the client's intent at that grain rather than copying the
-builder's output: a script that merged an attack into a page load would still disagree with the
-truth, and the score would still fall. Hostile activities are never merged with anything, so a
-missed boundary between an attack and whatever surrounds it counts in full, which is the part of
-segmentation a forensic reader cares about.
+**Noise absorption is worth 0.069 of boundary F1, and this is the first corpus that could show
+it.** Turning it off adds 1,090 episodes to the medium build and drops precision from 0.719 to
+0.621, with recall unmoved at 0.975. That is exactly the shape the rule was designed for: it removes
+boundaries that a brief benign interlude would otherwise create, and removes no others. On
+generated traffic every one of these figures was *identical* with the rule on and off, because no
+scripted attacker ever fetched a favicon in the middle of a sweep. Real ones do.
 
 ## Thresholds
 
-The defaults came from web-analytics literature rather than from this problem, so they were swept
-against ground truth on `mixed`.
+Swept on the medium build, against its ground truth.
 
-**Episode gap** — the silence that ends an activity:
+**Episode gap**, the silence that ends an activity:
 
-| Gap | Precision | Recall | Boundary F1 |
-|---|---:|---:|---:|
-| 60 s | 0.616 | 0.942 | 0.745 |
-| 120 s | 0.616 | 0.942 | 0.745 |
-| **300 s (default)** | **0.611** | **0.924** | **0.736** |
-| 600 s | 0.602 | 0.890 | 0.718 |
-| 900 s | 0.594 | 0.860 | 0.703 |
+| Gap | Precision | Recall | Boundary F1 | F1 with absorption off |
+|---|---:|---:|---:|---:|
+| 60 s | 0.706 | 0.992 | 0.824 | 0.757 |
+| 120 s | 0.720 | 0.986 | **0.832** | 0.763 |
+| **300 s (default)** | **0.719** | **0.975** | **0.828** | 0.759 |
+| 600 s | 0.716 | 0.958 | 0.819 | 0.751 |
+| 900 s | 0.713 | 0.945 | 0.813 | 0.744 |
 
-Absorption on and off are identical at every value, for the reason given above. Monotone, and
-almost flat: 0.042 of F1 across a fifteen-fold range. Shorter scores marginally
-better, and the reason is a caution rather than a result — the generated pauses are drawn from
-120–1800 s, so any threshold below 120 s catches all of them and thresholds above it begin to
-miss some. **The sweep recovers the generator's own pause distribution, not a fact about real
-traffic.** It establishes that the threshold does what it is supposed to do; choosing a value for
-a real corpus needs real logs. The default is kept: the difference is not material, and a longer
-gap is the more forgiving choice for slow clients.
+Shallow and single-peaked: 0.019 of F1 across a fifteen-fold range, best at 120 s and 0.004 above
+the default. Recall falls monotonically as the gap grows, because a longer silence swallows more
+of the cuts the truth makes; precision peaks in the middle. **The difference is not material and
+the default is kept**. A longer gap is the more forgiving choice for a slow client, and choosing
+120 s to gain 0.004 on one build of one application would be tuning to the measurement. Note also
+that this sweep runs against modelled arrival times, which is the one caveat that does not apply
+to the rest of this document.
 
-**Idle timeout** — the silence that ends a session. Classification is *identical* at every value
-from 30 seconds to eight hours (macro F1 0.958, accuracy 0.966). Boundary F1 moves only at the
-extreme, and downwards: 0.622 at 30 s against 0.736 at 300 s and above, because a session cut
-every thirty seconds draws boundaries through activities that were still going on.
+**Idle timeout**, the silence that ends a session:
 
-This is structural, not a shortcoming of the corpus. Every gap long enough to end a session is
-also long enough to end an episode, so the session boundary never decides anything the episode
-boundary has not already decided. It would only affect classification if it fell below a
-behavioural rule's window span and cut one in half — and even at 30 s it does not, because the
-requests those rules match are seconds apart. **On this evidence the idle timeout should be
-chosen for how one wants a "session" reported, not tuned for accuracy.**
+| Idle timeout | Accuracy | Macro F1 | Boundary F1 | Episodes |
+|---|---:|---:|---:|---:|
+| 30 s | 0.963 | 0.623 | 0.735 | 11,381 |
+| 300 s | 0.967 | 0.633 | 0.828 | 9,619 |
+| **1,800 s (default)** | **0.967** | **0.633** | **0.828** | **9,619** |
+| 28,800 s | 0.967 | 0.633 | 0.827 | 9,626 |
+
+Identical from 300 seconds to eight hours, and worse only at the extreme: a session cut every
+thirty seconds draws boundaries through activities that were still going on, costing 0.093 of
+boundary F1 and 0.010 of macro F1. This is structural. Every gap long enough to end a session is
+also long enough to end an episode, so the session boundary decides nothing the episode boundary
+has not already decided. **The idle timeout should be chosen for how one wants a "session"
+reported, not tuned for accuracy.**
 
 ## Throughput and memory
 
-`logarc benchmark`, Windows 11, Python 3.12, one machine, `mixed` traffic. Each size runs in a
-process of its own so peak memory is that run's and not the previous one's.
+`logarc benchmark`, Windows 11, Python 3.13, one machine, on the medium build's real log. Each
+size runs in a process of its own so peak memory is that run's and not the previous one's.
 
-| Lines | Log | Ingest | Lines/s | MB/s | Peak RSS | Store | Ratio | Clients | Reconstruct |
-|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 100,000 | 19.7 MB | 3.8 s | 26,313 | 5.2 | 236 MB | 1.1 MB | 17.3× | 4,899 | 64 ms |
-| 1,000,000 | 198 MB | 34.5 s | 29,008 | 5.8 | 626 MB | 8.3 MB | 23.8× | 49,175 | 81 ms |
-| 10,000,000 | 1.99 GB | 321 s | 31,159 | 6.2 | 1,186 MB | 75.5 MB | 26.3× | 368,179 | 84 ms |
+| Lines | Log | Ingest | Lines/s | MB/s | Peak RSS | Store | Ratio | Clients |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 100,000 | 22.0 MB | 4.0 s | 25,170 | 5.5 | 258 MB | 1.0 MB | 22.3× | 1,454 |
+| 243,908 | 52.4 MB | 8.5 s | 28,532 | 6.1 | 293 MB | 1.9 MB | 27.4× | 2,760 |
 
-Those are the rates before the parse path was reworked; see [Taking the marshalling
-out](#taking-the-marshalling-out) below, which re-measured 1,000,000 lines at 33,435. The rows are
-kept as they were taken rather than restated, because the comparison is the point.
+Lines per second is lower than the 26,000–31,000 this document previously reported on generated
+logs, and megabytes per second is not: a real combined line here averages 225 bytes against the
+generator's 208, so the same work is spread over fewer, longer lines. The store is 22 to 27 times
+smaller than the log it came from.
 
-**Reconstruction stays flat while the corpus grows a hundredfold.** 64 ms against 84 ms, over a
-store that went from five thousand clients to three hundred and sixty-eight thousand. That is the
-two-pass architecture doing what it was chosen to do, and it is the number that matters most:
-ingest is paid once, and every question after it is cheap.
+**Reconstruction costs 210 microseconds per request, and that is the architectural claim.** The
+benchmark reconstructs the busiest client in the store, and on a real log that client grows with
+the corpus, which the generated corpus never showed:
 
-Throughput is flat too — slightly *rising* with size, as fixed costs amortise.
+| Lines in store | Busiest client's requests | Reconstruct | Per request |
+|---:|---:|---:|---:|
+| 100,000 | 6,173 | 1,324 ms | 214.5 µs |
+| 243,908 | 16,860 | 3,529 ms | 209.3 µs |
+
+Wall-clock nearly tripled while the corpus grew 2.4×, and the per-request cost held to within 3%.
+That is the two-pass design behaving as intended (analysis is O(k) in one client's requests, not
+O(n) in the corpus), and it is a stronger demonstration than the old table gave, where every
+corpus size had about twenty requests per client and the busiest client barely varied. It also
+means the honest way to quote reconstruction latency is per request: three and a half seconds is
+what a week of one persistent crawler costs to reconstruct, and an ordinary client of fifty
+requests costs about ten milliseconds.
+
+The upper sizes are no longer measured. The million- and ten-million-line rows this section used
+to carry came from generated logs that no longer exist; rebuilding them means the dataset's
+`large` tier, about a million lines. The memory table below is kept because it was measured
+directly against the store rather than against any particular corpus.
 
 Memory is bounded rather than proportional. Measured separately, each size in a fresh process:
 
@@ -452,8 +499,10 @@ ceiling: eight million rows to twelve moved it by 3 MB, where four million used 
 
 ### Where the time goes
 
-Before trying to make ingest faster, it was worth establishing what it spends its time on. On
-`samples/mixed.log`, 50,000 lines:
+Before trying to make ingest faster, it was worth establishing what it spends its time on. These
+three subsections were measured in August on a 50,000-line generated log, which no longer ships;
+they are kept because the finding is about where CPU time goes inside the parser, which the
+corpus does not change. The rates are not comparable with the table above.
 
 | Stage | Time | Throughput | Share |
 |---|---:|---:|---:|
@@ -531,10 +580,11 @@ Python reaches 100,000 lines/s from here.
 
 ## What the evaluation found
 
-Running it was not a formality. It found nine defects, all fixed, all locked by tests. Six were
-in the tool; three were in the evaluation itself, which is the more uncomfortable half.
+Running it was not a formality. The first ten findings below concern defects in the tool or
+the evaluation. The eleventh records a disagreement between the dataset and the tool about
+episode boundaries; it is retained in the score, not treated as a defect to fix.
 
-| Found by | Defect |
+| Found by | Finding |
 |---|---|
 | Evaluation run 1 | Enumeration counted refusals as well as "no such thing", so it covered forced browsing's traffic and outranked it. Access control had **0.000 recall over 2,097 requests** while lenient recall was 1.000 — the rule fired every time and lost every time. |
 | Evaluation run 1 | Error-based SQL injection matched no rule at all: injection recall 0.885 against precision 1.000, every miss the same technique. |
@@ -545,6 +595,8 @@ in the tool; three were in the evaluation itself, which is the more uncomfortabl
 | Threshold sweep | Every threshold from 60 s to eight hours scored **identically**, twice over. First because no generated client ever paused; then, after adding pauses, because each landed beside a request of a different category, where the category change decides the boundary before the gap is ever consulted. The tuning deliverable had been measuring nothing. |
 | CRS follow-up | `distinct_paths` counted raw paths, so `/a/b`, `/a//b` and `/a/./b` counted as three. That metric is a threshold in three window rules, so **how a path happened to be written decided whether a behaviour was detected**. Eight requests across two resources were labelled enumeration. |
 | Re-measurement, 2026-09-07 | The truth's grain fell behind the tool's. The episode builder had merged a page load into one activity thirteen days earlier, the generator still wrote it as three, and this document went on publishing a boundary recall of 0.98 that the current tool scored at **0.27** — 0.08 on ordinary browsing — while nothing had regressed. Found only because the tables were re-run for a new ruleset fingerprint. |
+| Re-measurement, 2026-09-08 | The claim that reconstruction stays flat as the corpus grows was measured where it could not fail. Every generated corpus had about twenty requests per client at every size, so the busiest client, the one the benchmark times, barely varied, and a flat wall-clock said almost nothing. On a real log the busiest client grew from 6,173 requests to 16,860 and the wall-clock nearly tripled; the claim survives, restated per request at 214.5 µs against 209.3 µs, but the old table was not evidence for it. |
+| Dataset grain comparison, 2026-09-08 | **Recorded, not fixed.** Of 152 ordinary-use truth boundaries within the episode gap, the tool draws 38 because a `User-Agent` change starts a new session. It misses the other **114**, accounting for 114 of the headline run's 128 missed boundaries. The truth is retained unchanged; see [the grain comparison](#the-grain-of-an-episode). |
 
 The fourth is worth dwelling on. Four scenarios of hand-written attack traffic did not find it,
 because the same person wrote the generator and the rules. A dataset written by someone else found
@@ -566,39 +618,58 @@ started measuring a policy instead of the segmenter. The only defence is the one
 re-running the tables whenever the ruleset fingerprint changes, and refusing to reprint a figure
 the current code has not produced.
 
+The tenth is the seventh's lesson in another place: nothing failed, the number was true,
+and the measurement behind it could not have come out any other way.
+
 ## Limits of these numbers
 
-**They come from traffic this project wrote.** A generator shares the blind spots of whoever wrote
-it, as the `+` defect demonstrates. Read them as an upper bound, not a prediction of field
-performance.
+**One build of one application.** Both builds are the same PHP shop, driven by the same roster of
+personas and tools. Nothing here separates what is true of this tool from what is true of that
+shop. A second project in the dataset is what would answer it.
 
-**The corpus is far more hostile than a real site.** About a third of `mixed` is ordinary traffic;
-a real log is overwhelmingly ordinary. That is deliberate — attack categories need enough support
-to be scored — but it means the false-positive rate measured here is measured on less benign
-traffic than a deployment would present.
+**A rebuild is not byte-identical.** The figures belong to the checksummed files in the table
+above. The dataset reproduces its plan of requests from a seed but not its output, because the
+attack campaigns react to a live application. Expect the last decimal to move.
 
-**Segmentation is scored at the grain the tool draws.** A page load is one activity in the truth
-because it is one activity on the graph, and the section above says what keeps that from being
-the scorer grading itself. The finer measurement is kept beside it for the record. Absorption
-cannot be evaluated on generated traffic at all; the shopfront dataset is where it is measured.
+**Timestamps are modelled.** Arrival times were rewritten onto diurnal and weekly curves; only
+the ordering within a session is as captured. The threshold sweeps are the part of this document
+most exposed to that, and the episode-gap table should be read as establishing that the parameter
+behaves sensibly rather than as choosing a value for a real deployment.
 
-**The CRS rate has a ceiling of 27%.** Only 1,138 of the corpus's 4,224 cases are visible to a
-tool reading an access log at all; the rest carry their payload in a body or an unlogged header,
-or assert that nothing should match. `score-crs` counted every exclusion by reason and printed the
-accounting on every run, so the ceiling travelled with the figure rather than living in this list.
-The 12.3% is also a floor within that ceiling: status is synthesised as 200, which disables the one
-bundled rule that needs a 4xx.
+**Three categories score zero, and one of them structurally.** `unknown` cannot be predicted at
+all, because no rule assigns it, so it enters the macro average as a guaranteed zero over 442
+requests.
+`access_control` and `exploitation` are genuine gaps at supports of 28 and 8. Any per-class figure
+below about fifty requests of support should be read as an indication, not a measurement; five
+categories are below it on each build.
+
+**The truth's grain differs from the tool's, and it costs 114 boundaries.** The truth cuts inside
+the episode gap at 152 places between ordinary requests; the tool draws 38 of those for other
+reasons and misses 114, which is 89% of every boundary the headline run misses. That is measured
+in the grain section rather than corrected for.
+
+**Outcome is not scored here at all.** The attempt-versus-breach distinction the reconstruction is
+built around has no ground truth to be scored against: the truth format carries a category and an
+episode id and nothing about what a request achieved. It is covered by unit tests over hand-built
+events in `tests/episode/test_builder.py`, which is a weaker guarantee than a corpus, and it is
+the largest hole in this evaluation. The dataset does record what each campaign achieved, so
+closing it is possible.
+
+**The false-alarm rate is measured on a corpus that is mostly ordinary**, which is the right
+shape: 225,881 of 243,908 lines come from clients doing nothing hostile. That is a change from
+the generated corpus, where a third of traffic was an attack and the rate was measured on less
+benign traffic than a deployment would present.
+
+**The CRS regression rate has a ceiling of 27%.** Only 1,138 of that corpus's 4,224 cases are
+visible to a tool reading an access log at all; the rest carry their payload in a body or an
+unlogged header, or assert that nothing should match. The 12.3% is also a floor within that
+ceiling: status is synthesised as 200, which disables the one bundled rule that needs a 4xx.
 
 **Recall on CSIC 2010 has a ceiling below 100%.** A substantial share of its attacks carry their
 payload in a POST body, and a web server access log records the request line and nothing after it.
 `logarc convert-csic` counts them in the corpus it is given and prints the resulting ceiling, so
 the figure quoted alongside a CSIC result is measured on that copy of the dataset rather than
 repeated from elsewhere.
-
-**Outcome cannot be evaluated on CSIC at all.** The traces have no responses, so the
-attempt-versus-breach distinction the reconstruction is built around has nothing to be scored
-against. It is checked only on generated traffic, where the generator decides which injection
-succeeded.
 
 **Throughput is a single-machine figure**, reported to show that cost per line does not grow with
 the corpus rather than to compete on absolute speed.
