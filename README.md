@@ -289,22 +289,26 @@ The decisions that determine whether a graph *misinforms* are kept out of Qt, in
 
 ### Checking that it works
 
-Accuracy is measured against logs whose contents are known, because real logs cannot be:
-nobody knows what is in them, which is the problem this tool exists to solve.
+Accuracy is measured against a real server's log whose contents are known: the
+BlackHat-Dataset shopfront builds, where a tagging proxy joins every line to a record of
+which client made the request and why. [samples/README.md](samples/README.md) says where to
+get them; [docs/evaluation.md](docs/evaluation.md) has the numbers.
 
 ```bash
-# Write a synthetic log together with a record of what is in it
-logarc generate --scenario sqli_campaign --lines 200000 -o sample.log -t sample.truth.jsonl
-logarc ingest sample.log --case ./case-demo
+# A pinned dataset build, with OWASP CRS applied. The headline figures include it
+export B=samples/apache-shopfront/2026-08-23-small
+logarc ingest $B/access.log --case ./case-demo
+logarc enrich --case ./case-demo
 
 # Precision, recall and F1 per activity, and how well the boundaries were found
-logarc evaluate --case ./case-demo --truth sample.truth.jsonl --out scores.json
+logarc evaluate --case ./case-demo --truth $B/truth.jsonl --out scores.json
 
 # The same, with noise absorption off, to see what the merge rule costs
-logarc evaluate --case ./case-demo --truth sample.truth.jsonl --no-absorb
+logarc evaluate --case ./case-demo --truth $B/truth.jsonl --no-absorb
 
-# Throughput, peak memory and reconstruction latency by corpus size
-logarc benchmark --lines 100000 --lines 1000000 --lines 10000000 --out bench.json
+# Throughput, peak memory and reconstruction latency, at two sizes of one log
+logarc benchmark --log samples/apache-shopfront/2026-09-07-medium/access.log \
+    -n 100000 -n 243908 --out bench.json
 
 # Convert the CSIC 2010 dataset and score against it
 logarc convert-csic --normal normalTrafficTest.txt --anomalous anomalousTrafficTest.txt \
