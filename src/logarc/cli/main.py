@@ -33,7 +33,6 @@ from logarc.detect.rulepacks import default_rules
 from logarc.detect.rules import RulePackError, load_rules
 from logarc.episode.builder import EpisodePolicy
 from logarc.evaluation.benchmark import BenchmarkError, BenchmarkResult, run_benchmark
-from logarc.evaluation.generator import DEFAULT_SEED, describe_scenarios, write_log
 from logarc.evaluation.csic import CsicError, convert_csic
 from logarc.evaluation.scoring import evaluate as score_case
 from logarc.evaluation.truth import TruthError, read_truth
@@ -416,57 +415,6 @@ def export(
 
     export_formats.write_reconstruction(result, manifest, kind=output_format, target=out)
     path_line(f"Report written to {out}")
-
-
-@app.command()
-def generate(
-    out: Annotated[Path | None, typer.Option("--out", "-o", help="Log file to write.")] = None,
-    scenario: Annotated[
-        str, typer.Option("--scenario", "-s", help="Which traffic to generate.")
-    ] = "mixed",
-    lines: Annotated[int, typer.Option("--lines", "-n", help="How many lines.")] = 100_000,
-    seed: Annotated[int, typer.Option("--seed", help="Same seed, same log.")] = DEFAULT_SEED,
-    truth: Annotated[
-        Path | None,
-        typer.Option("--truth", "-t", help="Write the ground truth here, for evaluate."),
-    ] = None,
-    list_scenarios: Annotated[
-        bool, typer.Option("--list", "-l", help="List the scenarios and stop.")
-    ] = False,
-) -> None:
-    """Write a synthetic access log with a known answer."""
-    if list_scenarios:
-        table = Table(title="Scenarios")
-        table.add_column("Name")
-        table.add_column("Contains")
-        for name, description in describe_scenarios():
-            table.add_row(name, description)
-        console.print(table)
-        return
-
-    if out is None:
-        raise fail("--out is required unless --list is given")
-
-    with console.status(f"Generating {lines:,} lines…") as status:
-        try:
-            result = write_log(
-                out,
-                scenario=scenario,
-                lines=lines,
-                seed=seed,
-                truth_path=truth,
-                on_progress=lambda done: status.update(f"Generated {done:,} of {lines:,} lines…"),
-            )
-        except USER_ERRORS as exc:
-            raise fail(str(exc)) from exc
-
-    console.print(
-        f"Wrote {result.lines:,} lines ({result.megabytes:,.1f} MB) of "
-        f"[bold]{result.scenario}[/bold] to {result.path} "
-        f"in {result.elapsed_seconds:.1f}s (seed {result.seed})"
-    )
-    if result.truth_path is not None:
-        path_line(f"Ground truth written to {result.truth_path}")
 
 
 @app.command()

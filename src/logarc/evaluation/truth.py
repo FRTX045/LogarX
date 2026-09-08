@@ -1,11 +1,13 @@
-"""Ground truth: what a generated log is known to contain.
+"""Ground truth: what a log is known to contain.
 
 A claim that the tool is accurate needs something to be accurate *about*. This
-is that something — a sidecar written alongside a synthetic log, recording for
-every line which activity produced it.
+is that something: a sidecar beside a log, recording for every line which
+activity produced it. The BlackHat-Dataset shopfront builds write it from the
+ledger of the client that made each request; `convert-csic` writes it from
+CSIC's own labels.
 
-It is JSON Lines rather than one JSON document because the generator streams:
-at ten million lines a truth file that has to be held in memory before it can be
+It is JSON Lines rather than one JSON document because both ends stream: at a
+million lines a truth file that has to be held in memory before it can be
 written is a truth file that cannot be written. The first line is a header, the
 rest are one record per log line, and both ends of the pipe work line by line.
 """
