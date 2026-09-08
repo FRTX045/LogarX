@@ -1,8 +1,9 @@
-"""The generate and evaluate commands, as a user meets them."""
+"""The evaluate command, as a user meets it."""
 
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -14,65 +15,21 @@ from logarc.evaluation.truth import TruthRecord, TruthWriter
 
 runner = CliRunner()
 
+EXCERPT = Path(__file__).parent.parent / "data" / "apache-shopfront"
+
 
 @pytest.fixture
-def generated(tmp_path: Path) -> tuple[Path, Path]:
-    log = tmp_path / "sample.log"
-    result = runner.invoke(
-        app,
-        [
-            "generate",
-            "--scenario", "sqli_campaign",
-            "--lines", "1200",
-            "--seed", "4",
-            "--out", str(log),
-            "--truth", str(tmp_path / "sample.truth.jsonl"),
-        ],
-    )  # fmt: skip
-    assert result.exit_code == 0, result.stdout
-    return log, tmp_path / "sample.truth.jsonl"
+def excerpt(tmp_path: Path) -> tuple[Path, Path]:
+    """The fixture copied out, so a test that writes beside it cannot touch the original."""
+    log = tmp_path / "excerpt.log"
+    truth = tmp_path / "excerpt.truth.jsonl"
+    shutil.copyfile(EXCERPT / "excerpt.log", log)
+    shutil.copyfile(EXCERPT / "excerpt.truth.jsonl", truth)
+    return log, truth
 
 
-def test_generate_writes_a_log_and_its_truth(generated: tuple[Path, Path]) -> None:
-    log, truth = generated
-
-    assert len(log.read_text(encoding="utf-8").splitlines()) == 1200
-    assert truth.exists()
-
-
-def test_generate_lists_the_scenarios_it_knows() -> None:
-    result = runner.invoke(app, ["generate", "--list"])
-
-    assert result.exit_code == 0
-    assert "sqli_campaign" in result.stdout
-    assert "normal_browsing" in result.stdout
-
-
-def test_generate_rejects_an_unknown_scenario(tmp_path: Path) -> None:
-    result = runner.invoke(
-        app,
-        ["generate", "--scenario", "nope", "--lines", "10", "--out", str(tmp_path / "x.log")],
-    )
-
-    assert result.exit_code == 1
-    assert "nope" in result.output
-
-
-def test_generate_can_skip_truth(tmp_path: Path) -> None:
-    log = tmp_path / "big.log"
-
-    result = runner.invoke(
-        app, ["generate", "--scenario", "mixed", "--lines", "50", "--out", str(log)]
-    )
-
-    assert result.exit_code == 0
-    assert not list(tmp_path.glob("*.truth.jsonl"))
-
-
-def test_evaluate_reports_accuracy_per_category(
-    generated: tuple[Path, Path], tmp_path: Path
-) -> None:
-    log, truth = generated
+def test_evaluate_reports_accuracy_per_category(excerpt: tuple[Path, Path], tmp_path: Path) -> None:
+    log, truth = excerpt
     case = tmp_path / "case"
     runner.invoke(app, ["ingest", str(log), "--case", str(case)])
 
@@ -85,9 +42,9 @@ def test_evaluate_reports_accuracy_per_category(
 
 
 def test_evaluate_can_write_the_numbers_for_a_paper(
-    generated: tuple[Path, Path], tmp_path: Path
+    excerpt: tuple[Path, Path], tmp_path: Path
 ) -> None:
-    log, truth = generated
+    log, truth = excerpt
     case = tmp_path / "case"
     runner.invoke(app, ["ingest", str(log), "--case", str(case)])
     out = tmp_path / "evaluation.json"
@@ -98,7 +55,7 @@ def test_evaluate_can_write_the_numbers_for_a_paper(
 
     assert result.exit_code == 0
     payload = json.loads(out.read_text(encoding="utf-8"))
-    assert payload["scenario"] == "sqli_campaign"
+    assert payload["scenario"] == "apache-shopfront-medium-excerpt"
     assert payload["classification"]["macro_f1"] > 0
     assert payload["ruleset_fingerprint"]
 
@@ -158,9 +115,9 @@ def test_turning_off_absorption_finds_more_boundaries_and_more_episodes(
 
 
 def test_thresholds_can_be_overridden_for_tuning(
-    generated: tuple[Path, Path], tmp_path: Path
+    excerpt: tuple[Path, Path], tmp_path: Path
 ) -> None:
-    log, truth = generated
+    log, truth = excerpt
     case = tmp_path / "case"
     runner.invoke(app, ["ingest", str(log), "--case", str(case)])
     out = tmp_path / "tuned.json"
