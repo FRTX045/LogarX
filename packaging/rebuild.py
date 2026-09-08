@@ -53,6 +53,12 @@ DIST = ROOT / "dist"
 LIVE = DIST / "logarc"
 STAGING = DIST / ".staging"
 PREVIOUS = DIST / ".previous"
+
+#: PyInstaller's own work directory, and the half-built executable it leaves
+#: there. `--distpath` moves the finished bundle; the work directory is not
+#: `--distpath`'s to move, so this one stays behind after every build.
+WORK = ROOT / "build" / "logarc"
+INTERMEDIATE = WORK / "logarc.exe"
 LOCK = DIST / ".rebuild.lock"
 STATUS = DIST / "BUILD-STATUS.txt"
 MARKER = GIT_DIR / "logarc-build-failed"
@@ -275,6 +281,13 @@ def swap(staged: Path) -> None:
     where it was. That window is short, but landing in it would leave no
     application at all, which is the one outcome this whole path exists to
     prevent.
+
+    Once it holds, PyInstaller's intermediate executable goes too. That file
+    has the application's name and icon and can never run: it looks beside
+    itself for the `_internal` directory that only COLLECT writes, so opening
+    it gives "Failed to load Python DLL" and nothing else. Leaving it in the
+    tree means a search for `logarc.exe` answers with two indistinguishable
+    hits, one of them broken by construction. Someone did open it.
     """
     shutil.rmtree(PREVIOUS, ignore_errors=True)
     displaced = False
@@ -289,6 +302,7 @@ def swap(staged: Path) -> None:
         raise
     shutil.rmtree(PREVIOUS, ignore_errors=True)
     shutil.rmtree(STAGING, ignore_errors=True)
+    INTERMEDIATE.unlink(missing_ok=True)
 
 
 def size_mb(path: Path) -> float:
