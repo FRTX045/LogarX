@@ -53,7 +53,8 @@ case-*/
 *.log.gz
 *.truth.json
 *.truth.jsonl
-!tests/data/*.log
+!tests/data/**/*.log
+!tests/data/**/*.truth.jsonl
 
 # Benchmark and evaluation output
 benchmarks/results/
