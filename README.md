@@ -69,6 +69,7 @@ Requires Python 3.11+.
 git clone https://github.com/FRTX045/BlackHat.git
 cd BlackHat
 python -m venv .venv
+source .venv/bin/activate        # Linux, macOS
 .venv\Scripts\activate          # Windows
 pip install -e ".[dev,gui]"
 ```
