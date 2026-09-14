@@ -24,8 +24,9 @@ commit, and every attack command line with its source address) and
 
 ## Getting them
 
-Copy the folder from the dataset repository's `datasets/apache-shopfront/`,
-then check it:
+Copy the folder from
+[BlackHat-Dataset](https://github.com/FRTX045/BlackHat-Dataset)'s
+`datasets/apache-shopfront/`, then check it:
 
 ```bash
 cd samples/apache-shopfront/2026-09-07-medium && sha256sum -c SHA256SUMS
