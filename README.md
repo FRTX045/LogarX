@@ -26,8 +26,9 @@ Every box links back to the exact raw log lines that produced it.
 
 ## Try it in two minutes
 
-A real Apache log ships with the repository — 3,825 lines from a shop that was
-genuinely attacked — so this works in a fresh clone with nothing downloaded.
+A real Apache log ships with the repository — 3,825 lines a real server wrote
+while real attack tools were pointed at it — so this works in a fresh clone with
+nothing downloaded.
 
 ```bash
 git clone https://github.com/FRTX045/logarc.git
