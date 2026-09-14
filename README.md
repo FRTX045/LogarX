@@ -418,7 +418,7 @@ turns that skip into a failure; CI sets it.
 
 ## Status
 
-Early development, version 0.1.0. The engine and both front ends work and are
+Early development, version 0.2.0. The engine and both front ends work and are
 tested on every push; interfaces may still change. Outside contributions are not
 open yet.
 
