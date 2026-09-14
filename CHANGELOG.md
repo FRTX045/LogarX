@@ -532,3 +532,8 @@ and draws it as an activity graph.
 - Four OWASP categories are not observable from an access log and are not claimed.
 - Recall on CSIC 2010 is capped below 100%, because a substantial share of its attacks carry the
   payload in a POST body and an access log records the request line only.
+
+<!-- Reference links for the version headings above. `0.1.0` was never tagged,
+     so it points at the history rather than at a release that does not exist. -->
+[Unreleased]: https://github.com/FRTX045/logarc/commits/main
+[0.1.0]: https://github.com/FRTX045/logarc/commits/main
