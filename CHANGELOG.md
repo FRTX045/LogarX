@@ -35,6 +35,15 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Documentation
 
+- **The enumeration/reconnaissance confusion is partly structural, and the document now says so.**
+  It had been recorded as "a rule question". Measured on the committed excerpt, the truth labels a
+  request by which campaign sent it rather than by what the request is, and the campaigns' path
+  sets overlap: 70 of 444 distinct `(path, status)` pairs carry more than one truth category,
+  covering 37.5% of scored requests. `GET /backup.zip` answered 404 is enumeration from a client
+  forging a User-Agent and reconnaissance from one sending none — the same request line. No rule
+  reading only the request line can be right on both sides. Most of it is already resolved by the
+  User-Agent, which is why `crawling` scores precision 1.000; the residual is deliberately not
+  chased, because closing it would mean encoding the dataset's own convention as a security rule.
 - **The 100,000 lines/s ingest target is retired**, and `docs/evaluation.md` says so where the
   measurement is. It named a rate without naming the hardware, so it could be cited but never
   passed or failed; and lines per second moved on its own when the corpus changed to real logs
