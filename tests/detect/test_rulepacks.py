@@ -90,6 +90,35 @@ def test_owasp_mappings_use_the_expected_notation() -> None:
         ("/p?id=1 AND UPDATEXML(1,CONCAT(0x7e,@@datadir),1)", ActivityCategory.INJECTION),
         ("/search?q=<script>alert(1)</script>", ActivityCategory.INJECTION),
         ("/p?next=javascript:alert(1)", ActivityCategory.INJECTION),
+        # sqlmap's default boolean-blind series, exactly as it sends them.
+        # Every one of these was reaching the rules as nothing at all: the
+        # tautology rule wanted the comparison to end at a comment or at the
+        # end of the string, and sqlmap wraps it in parentheses, compares with
+        # LIKE, or leaves a `%` inside the quoted operand.
+        (
+            "/search?q=oak%27%29%29%20AND%205481%3D5481%20AND%20%28%28%27SUiH%27%3D%27SUiH",
+            ActivityCategory.INJECTION,
+        ),
+        (
+            "/search?q=oak%27%29%20AND%201646%3D4348%20AND%20%28%27fkFQ%27%20LIKE%20%27fkFQ",
+            ActivityCategory.INJECTION,
+        ),
+        (
+            "/search?q=oak%25%27%20AND%203812%3D6291%20AND%20%27ZxzJ%25%27%3D%27ZxzJ",
+            ActivityCategory.INJECTION,
+        ),
+        # Column counting, the step between finding the injection point and
+        # building the UNION. No rule covered it, so the whole reconnaissance
+        # half of a UNION attack was invisible while the UNION itself was not.
+        ("/search?q=oak%25%27%20ORDER%20BY%201--%20BwtS", ActivityCategory.INJECTION),
+        # Time-based blind without a sleep function: the delay comes from making
+        # the database do expensive work instead. `sleep()` is often disabled;
+        # this is what sqlmap falls back to, and it is also a small denial of
+        # service in its own right.
+        (
+            "/search?q=%27%20AND%201%3D%28SELECT%20LENGTH%28HEX%28RANDOMBLOB%28200000000%29%29%29%29--%2B",
+            ActivityCategory.INJECTION,
+        ),
         ("/ping?host=127.0.0.1;cat /etc/passwd", ActivityCategory.PATH_TRAVERSAL),
         ('/api?filter={"$where":"1==1"}', ActivityCategory.INJECTION),
         ("/download?file=../../../../etc/passwd", ActivityCategory.PATH_TRAVERSAL),
