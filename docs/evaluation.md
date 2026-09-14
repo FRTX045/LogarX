@@ -142,15 +142,37 @@ one, the two differ.
 Measured 2026-09-08, ruleset `e81ace93…` (33 rules), CRS `d694d465` at paranoia level 2,
 configuration `f357d142fbcc4441`. Every line of both builds was scored; none went missing.
 
-> **These tables predate three rule changes and have not been re-run.** On
-> 2026-09-14 the pack gained `admin_area_redirect` and
-> `webshell_double_extension`, `admin_area_probe` stopped matching 404, and the
+> **These tables predate four rule changes and have not been re-run.** On
+> 2026-09-14 the pack gained `admin_area_redirect`, `webshell_double_extension`
+> and `known_software_probe`, `admin_area_probe` stopped matching 404, and the
 > classifier stopped calling an unreadable request a page view. Every one of
-> those moves a figure below. They were measured on the committed excerpt, where
-> the numbers went: access control precision 0.146 to 1.000, exploitation recall
-> 0.000 to 0.500, overall agreement 0.889 to 0.893 — but the excerpt is 3,825
-> requests and these tables are 243,908, so those are an indication of direction
-> and nothing more.
+> those moves a figure below.
+>
+> They were measured on the committed excerpt, 3,825 requests, where the numbers
+> went:
+>
+> | | Before | After |
+> |---|---:|---:|
+> | Accuracy | 0.900 | **0.924** |
+> | Macro F1 | 0.794 | **0.815** |
+> | Attack-or-not recall | 0.852 | **0.928** |
+> | Attacks missed | 179 | **87** |
+> | False alarms | 0.765% | 0.765% |
+> | `enumeration` recall | 0.629 | **0.843** |
+> | `enumeration` precision | 0.975 | **0.981** |
+> | `browsing` precision | 0.394 | **0.535** |
+> | `access_control` precision | 0.146 | **1.000** |
+> | `exploitation` recall | 0.000 | **0.500** |
+> | **Boundary F1** | **0.642** | **0.619** |
+>
+> The last row is the cost and is not an error: labelling 92 more requests as
+> hostile cuts more episodes, 567 to 595 against 297 in the truth. Recall held at
+> 0.996 throughout — nothing went missing, the cuts are finer than the truth's.
+>
+> The excerpt is 3,825 requests and these tables are 243,908, so all of that is
+> an indication of direction and nothing more. The medium build's `enumeration`
+> recall is 0.542, lower than the excerpt's 0.629 starting point, so the gain
+> there may differ in size.
 >
 > **Re-run them on the pinned builds before quoting them again.** This document
 > has been wrong in exactly this way once already: figures went stale across a

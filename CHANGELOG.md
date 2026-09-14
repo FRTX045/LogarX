@@ -5,6 +5,34 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Detection
+
+- **A probe for software the site does not run is now enumeration.** New rule
+  `known_software_probe`: a path naming software by that software's own convention —
+  `/wp-admin/`, `/phpmyadmin/`, `/administrator/`, `/xmlrpc.php`, `/vendor/phpunit/...` — answered
+  404 or 410, from a client that sent a User-Agent. One request is enough, which is why it is a
+  signature rule and not another window: the scanner in the committed excerpt asks for four to six
+  of these, waits hours, and asks again, so `directory_enumeration_low_slow` — which wants eight —
+  never fired. 92 requests the truth calls enumeration were reaching the report as ordinary
+  browsing.
+
+  Measured on the committed excerpt: `enumeration` recall 0.629 → **0.843** with precision rising
+  0.975 → **0.981**, `browsing` precision 0.394 → **0.535**, accuracy 0.900 → **0.924**, and 92
+  fewer attacks missed (179 → 87) with false alarms unchanged at 0.765%. Reconnaissance is
+  untouched at precision 0.822 and recall 0.866.
+
+  **The cost, recorded rather than restated: boundary F1 fell 0.642 → 0.619.** More hostile labels
+  cut more episodes — 567 became 595, against 297 activities in the truth. Boundary recall held at
+  0.996, so nothing was lost; the cuts are finer than the truth draws them.
+
+  Two conditions carry the whole rule and both are tested. The status condition is what makes it
+  defensible at all: `/wp-admin/` answered 200 is a WordPress site's own administrator, and only a
+  404 means the software is not there. The User-Agent condition keeps it from outranking
+  `absent_user_agent`: the same paths appear in the excerpt from a client sending no User-Agent at
+  all, which the truth calls reconnaissance, and which was already being read correctly. `.env` and
+  `.git/` are deliberately excluded for the same reason — `config_file_exposure` has them, and the
+  truth agrees.
+
 ### Documentation
 
 - **The 100,000 lines/s ingest target is retired**, and `docs/evaluation.md` says so where the

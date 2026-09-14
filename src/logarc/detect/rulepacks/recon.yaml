@@ -39,6 +39,40 @@ rules:
         - field: user_agent
           equals: ""
 
+  # A path that names software by that software's own convention, answered
+  # "no such thing". One request is enough here, which is why this is a
+  # signature rule and not another window: the scanner in the committed
+  # excerpt asks for four to six of these, waits hours, and asks again. The
+  # low-and-slow window rule below wants eight, so it never fired, and 92
+  # requests the truth calls enumeration were reported as ordinary browsing.
+  #
+  # The status condition is the whole discrimination, and without it this rule
+  # would be indefensible. `/wp-admin/` answered 200 is a WordPress site's
+  # administrator opening their own admin page. Answered 404 it is someone
+  # asking a site that has no WordPress at all.
+  #
+  # `.env` and `.git/` are deliberately absent, though they are 404s for
+  # well-known paths and would fit the shape. The dataset's truth calls those
+  # reconnaissance and these enumeration, and the line holds: one is reaching
+  # for a secret that would be readable if it were there, the other is finding
+  # out which software is installed. `config_file_exposure` reads them already,
+  # at a higher severity, so it keeps them either way.
+  - id: known_software_probe
+    name: Probe for Software the Site Does Not Run
+    category: enumeration
+    owasp: "A01:2021"
+    severity: medium
+    confidence: 0.85
+    references: ["CAPEC-127"]
+    match:
+      all:
+        - field: path_decoded
+          regex: '^/(?:wp-admin|wp-login\.php|wp-content|wp-includes|xmlrpc\.php|administrator|phpmyadmin|pma|myadmin|adminer(?:\.php)?|admin\.php|shell\.php|test\.php|old|vendor/phpunit)(?:[/?]|$)'
+        - field: status
+          any_of: ["404", "410"]
+        - field: user_agent
+          regex: '\S'
+
   # Every rule below declares `member`: the requests it is actually about.
   # Without it a window is only a span of time, so a burst of 404s next to a
   # stretch of ordinary browsing produces a window covering both — and the
