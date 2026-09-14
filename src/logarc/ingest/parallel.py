@@ -36,7 +36,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from logarc.core.evidence import EvidenceRef
-from logarc.ingest.pipeline import ResolvedFormat, resolve_format
+from logarc.ingest.pipeline import (
+    _TOO_LONG,
+    DEFAULT_MAX_LINE_BYTES,
+    ResolvedFormat,
+    resolve_format,
+)
 from logarc.ingest.quarantine import Quarantine
 from logarc.ingest.reader import Compression, open_log
 from logarc.ingest.scan import Chunk, read_range, scan_chunks
@@ -152,6 +157,11 @@ class _Task:
     shard: str
     batch_size: int
 
+    max_line_bytes: int
+    """The sequential path bounds the line it hands a parser; so must this one.
+    A worker runs its own loop rather than calling `ingest_file`, so a bound
+    written only there would mean `--workers` reopened what it closed."""
+
 
 @dataclass(frozen=True, slots=True)
 class _Counts:
@@ -182,6 +192,15 @@ def _parse_chunk(task: _Task) -> _Counts:
                 # the sequential path: neither parsed nor quarantined.
                 if not text.strip() or skips(parser, text):
                     continue
+                if len(text) > task.max_line_bytes:
+                    quarantine.record(
+                        task.file_id,
+                        line_no,
+                        text[:1024],
+                        reason=f"{_TOO_LONG} ({len(text)} characters)",
+                    )
+                    lines_quarantined += 1
+                    continue
                 event = parser.parse_line(text, EvidenceRef(task.file_id, line_no))
                 if event is None:
                     quarantine.record(task.file_id, line_no, text, reason=_UNPARSEABLE)
@@ -209,6 +228,7 @@ def ingest_file_parallel(
     log_format: str | None = None,
     workers: int,
     batch_size: int,
+    max_line_bytes: int = DEFAULT_MAX_LINE_BYTES,
     on_progress: Callable[[int, int], None] | None = None,
 ) -> tuple[_Counts, str, int, ResolvedFormat, float]:
     """Parse `path` into the case at `case_root` using `workers` processes.
@@ -236,6 +256,7 @@ def ingest_file_parallel(
             format_spec=resolved.spec,
             shard=f"{index:02d}",
             batch_size=batch_size,
+            max_line_bytes=max_line_bytes,
         )
         for index, chunk in enumerate(scan.chunks)
     ]

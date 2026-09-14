@@ -140,6 +140,26 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   after the measurement was taken. A filename cannot say any of that, and these records are never
   renamed.
 
+### Security
+
+- **A line is now bounded before it is parsed** (`--max-line-bytes`, default 1 MB). Parsing one
+  costs about **327 times its own length in memory** — measured 5.5 GB for a 16 MB line and 20.9 GB
+  for a 64 MB one. The parse is linear; the multiplier is simply very large. Nothing bounded the
+  line, and nothing bounds the gzip ratio that delivers it either: 31.9 KB of gzip expanded to a
+  32 MB line in the same audit, a factor of 1,028.
+
+  Composed, that was a denial of service from a file small enough to email. Measured end to end: a
+  **63.9 KB archive** holding one 67 MB line went from **20.9 GB and 168 s** to **201 MB and
+  0.44 s**. The remaining 201 MB is reading the line, which is still unbounded and roughly 3x its
+  length; the 327x multiplier was the part worth closing.
+
+  The over-long line is **quarantined with its length**, not dropped, so the case still accounts
+  for every line. The bound is applied in two places — the sequential loop and the worker loop,
+  which does not call `ingest_file` — and in the detection sample, which is scored against every
+  registered parser before the log's real format is even chosen. A test pins each.
+
+  A megabyte is about 120 times the longest line Apache will write, so no real log reaches it.
+
 ### Fixed
 
 - **A crafted line no longer ends a whole ingest.** A log line nested deeper than Python will
