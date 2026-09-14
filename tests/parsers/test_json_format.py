@@ -181,6 +181,23 @@ def test_a_json_array_is_refused() -> None:
     assert MAPPED.build().parse_line("[1, 2, 3]", REF) is None
 
 
+def test_a_line_nested_past_the_recursion_limit_is_refused_not_fatal() -> None:
+    """`json.loads` raises `RecursionError`, which is not a `ValueError`.
+
+    Found by auditing the tool as a target rather than as an examiner. A line
+    of twenty thousand `[` characters ended a whole ingest: format detection
+    scores every registered parser against the sample, this one recursed past
+    Python's limit, and the error travelled out through `score_parser`,
+    `detect_format` and `ingest_file` untouched.
+
+    Detection happens before the log's real format is chosen, so a single
+    crafted line stopped a case being made at all, whatever kind of log it
+    was — and the quarantine record, which exists so that a line too damaged
+    to read is counted rather than fatal, never saw it.
+    """
+    assert MAPPED.build().parse_line("[" * 20_000 + "]" * 20_000, REF) is None
+
+
 def test_a_line_with_no_time_is_refused() -> None:
     """No timestamp, no event — the same rule the directive compiler applies,
     and for the same reason: everything downstream is ordered by time."""

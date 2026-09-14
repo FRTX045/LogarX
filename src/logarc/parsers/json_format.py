@@ -131,7 +131,18 @@ class JsonParser:
         """Parse one line, or return `None` if it is not a line of this log."""
         try:
             payload = json.loads(line)
-        except (json.JSONDecodeError, ValueError):
+        except (json.JSONDecodeError, ValueError, RecursionError):
+            # `RecursionError` is not a `ValueError`, so it used to travel out
+            # of here untouched and end the whole ingest. It is raised by a line
+            # nested deeper than Python will decode — twenty thousand `[` will
+            # do it — and detection scores every registered parser against the
+            # sample, so one such line stopped a case being made at all,
+            # whatever kind of log the file actually was.
+            #
+            # A line this tool cannot decode is a line that is not of this
+            # format, which is what `None` means here. Refusing it puts the
+            # line into the quarantine record, where a line too damaged to read
+            # is supposed to be counted rather than fatal.
             return None
         if not isinstance(payload, dict):
             # Valid JSON and not a log line. Accepting it would let this format
