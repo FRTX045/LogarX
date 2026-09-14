@@ -21,6 +21,18 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The throughput tables said Python 3.13 and were measured on 3.12.** No 3.13 exists on the
+  machine that produced them — the venv is 3.12.10, `py -0p` lists nothing else, and CI tests
+  3.11 and 3.12. The version was changed in `a3743df` alongside a genuine re-measurement on the
+  new corpus; the corpus changed and the interpreter did not. A later note then reasoned from the
+  wrong figure, calling the older memory table "the previous interpreter" when both tables are on
+  the same one. Both corrected, and what actually separates those two tables — the date, and rows
+  pushed into the store rather than log lines parsed — is now what the note says.
+- **The path cache's retention is recorded.** `canonical_path` memoises 8,192 entries capped by
+  count rather than by bytes, and nothing clears it, so it outlives the case that filled it: 0.05
+  MB on the committed excerpt, 132 MB if every path is distinct and at Apache's 8 KB request-line
+  limit. Bounded, measured, and accepted at that size — but invisible to a memory table that
+  measures each size in a fresh process, which is why it is now written beside one.
 - **The packaged application no longer tells its reader to run `go build`.** CRS enrichment is
   unavailable in a frozen build, and the error said to build the sidecar from a `crs/` directory
   the bundle does not carry, with a toolchain it does not include. It now says what is missing,
