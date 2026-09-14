@@ -113,3 +113,30 @@ jobs:
           # step that broke would land us back where we started, silently.
           LOGARC_REQUIRE_CRS: "1"
         run: pytest --cov=logarc --cov-report=term-missing --cov-report=xml
+
+      # Coverage was measured on every run and then thrown away: `coverage.xml`
+      # was written and nothing ever read it, so the only way to learn the
+      # number was to run the suite yourself.
+      #
+      # A badge would need an account with a coverage service, which this
+      # project does not have and does not need one for. The job summary is
+      # where a reader already goes to see whether the run passed, and it costs
+      # nothing. `fail_under` in pyproject.toml is still the thing that can fail
+      # the build; this step only reports.
+      # `--fail-under=0` on both calls, deliberately. `coverage report` exits
+      # non-zero below pyproject's floor, so without it a coverage dip would
+      # fail the build twice: once correctly, in the step above, and once here
+      # for nothing. Reporting must not be able to fail a run.
+      - name: Report coverage
+        if: always()
+        shell: bash
+        run: |
+          total=$(python -m coverage report --format=total --fail-under=0 2>/dev/null || echo "?")
+          {
+            echo "### Coverage: ${total}% — floor is 94%"
+            echo ""
+            echo '```'
+            python -m coverage report --skip-covered --sort=cover --fail-under=0 2>/dev/null \
+              | tail -25 || echo "no coverage data for this run"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
