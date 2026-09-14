@@ -277,8 +277,15 @@ complete and is not.
 
 ## Installing
 
-Requires **Python 3.11 or newer**. Tested on Linux and Windows, Python 3.11 and
-3.12, on every push.
+Requires **Python 3.11 or newer**. The engine and the command line are tested on
+Linux and Windows, Python 3.11 and 3.12, on every push.
+
+**The desktop application is only known to work on Windows.** Its tests run on
+Linux too, but headless — `QT_QPA_PLATFORM=offscreen`, which proves the widgets
+behave and says nothing about a real X11 or Wayland session. Nobody has launched
+it on a Linux desktop. It may well work; it is untested rather than unsupported,
+and the honest word for that is untested. macOS has neither a runner nor a
+report.
 
 ```bash
 pip install -e ".[gui]"      # the tool and the desktop application
