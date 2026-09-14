@@ -238,7 +238,7 @@
     "max_duration_seconds": 28800,
     "split_on_user_agent_change": true
   },
-  "ruleset_fingerprint": "1e779ab6a4fedbba5d603d11dc4ec5343bc0008d6ec18b9b21e38e5300cf5718",
+  "ruleset_fingerprint": "ecefd18d646130103fe4cf8db80dfc68ca146e831975ff7395baddab02b8e48f",
   "scenario": "apache-shopfront-medium-excerpt",
   "segmentation": {
     "boundaries_agreed": 244,
