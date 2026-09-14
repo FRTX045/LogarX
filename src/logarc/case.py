@@ -18,12 +18,7 @@ from logarc.ingest.parallel import (
     ingest_file_parallel,
     worth_splitting,
 )
-from logarc.ingest.pipeline import (
-    DEFAULT_BATCH_SIZE,
-    DEFAULT_MAX_LINE_BYTES,
-    IngestResult,
-    ingest_file,
-)
+from logarc.ingest.pipeline import DEFAULT_BATCH_SIZE, IngestResult, ingest_file
 from logarc.ingest.quarantine import Quarantine
 from logarc.ingest.reader import Compression
 from logarc.parsers.spec import spec_to_dict
@@ -122,7 +117,6 @@ class Case:
         *,
         log_format: str | None = None,
         batch_size: int = DEFAULT_BATCH_SIZE,
-        max_line_bytes: int = DEFAULT_MAX_LINE_BYTES,
         on_progress: Callable[[int, int], None] | None = None,
         should_cancel: Callable[[], bool] | None = None,
         workers: int = DEFAULT_WORKERS,
@@ -161,7 +155,6 @@ class Case:
                             file_id=file_id,
                             log_format=log_format,
                             batch_size=batch_size,
-                            max_line_bytes=max_line_bytes,
                             workers=workers,
                             on_progress=on_progress,
                         )
@@ -173,7 +166,6 @@ class Case:
                             file_id=file_id,
                             log_format=log_format,
                             batch_size=batch_size,
-                            max_line_bytes=max_line_bytes,
                             on_progress=on_progress,
                             should_cancel=should_cancel,
                         )
@@ -193,7 +185,6 @@ class Case:
         file_id: str,
         log_format: str | None,
         batch_size: int,
-        max_line_bytes: int,
         workers: int,
         on_progress: Callable[[int, int], None] | None,
     ) -> IngestResult:
@@ -210,7 +201,6 @@ class Case:
             log_format=log_format,
             workers=workers,
             batch_size=batch_size,
-            max_line_bytes=max_line_bytes,
             on_progress=on_progress,
         )
         return IngestResult(

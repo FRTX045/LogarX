@@ -61,12 +61,9 @@ def split_small_logs(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("logarc.ingest.parallel.MIN_PARALLEL_BYTES", 1)
 
 
-def ingest(
-    root: Path, log: Path, *, workers: int, max_line_bytes: int | None = None
-) -> tuple[list[tuple[str, int, str]], object]:
-    extra = {} if max_line_bytes is None else {"max_line_bytes": max_line_bytes}
+def ingest(root: Path, log: Path, *, workers: int) -> tuple[list[tuple[str, int, str]], object]:
     with Case.create(root) as case:
-        results = case.ingest([log], workers=workers, **extra)
+        results = case.ingest([log], workers=workers)
         case.finalize()
     return stored(root), results[0]
 
@@ -135,32 +132,6 @@ def test_damaged_lines_are_all_quarantined_whoever_finds_them(tmp_path: Path) ->
     assert many.lines_quarantined == 6
     merged = (tmp_path / "par" / "quarantine" / "unparsed.jsonl").read_text(encoding="utf-8")
     assert len(merged.strip().splitlines()) == 6
-
-
-def test_the_line_length_bound_holds_on_the_parallel_path_too(tmp_path: Path) -> None:
-    """A worker runs its own loop, not `ingest_file`.
-
-    So the bound that stops a 16 MB line costing 5.5 GB to parse had to be put
-    in two places, and a fix present in only one of them would mean `--workers`
-    quietly reopened the hole — the shape of defect this whole suite exists to
-    catch: the sequential path passing while the parallel one loses or eats
-    something.
-    """
-    log = write_log(tmp_path / "access.log", 400)
-    huge = (
-        '203.0.113.5 - - [10/Oct/2020:13:55:36 +0000] "GET /'
-        + "a" * 300_000
-        + ' HTTP/1.1" 200 1 "-" "x"'
-    )
-    with log.open("a", encoding="utf-8") as handle:
-        handle.write(huge + "\n")
-
-    _events, one = ingest(tmp_path / "seq", log, workers=1, max_line_bytes=50_000)
-    _events, many = ingest(tmp_path / "par", log, workers=3, max_line_bytes=50_000)
-
-    assert one.lines_quarantined == 1
-    assert many.lines_quarantined == 1, "the worker path must bound it too"
-    assert one.events_parsed == many.events_parsed == 400
 
 
 @pytest.mark.slow

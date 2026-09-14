@@ -59,25 +59,7 @@ DEFAULT_BATCH_SIZE: Final = 100_000
 #: lines a second this parses at, it is about twenty reports a second.
 PROGRESS_STRIDE: Final = 2_000
 
-#: Longest line handed to a parser, in characters.
-#:
-#: Parsing costs about 327 times the line's own length in memory — measured
-#: 2026-09-14 while auditing the tool as a target, at 5.5 GB for a 16 MB line
-#: and 20.9 GB for a 64 MB one. The parse is linear; the multiplier is simply
-#: very large. Nothing bounded the line, and nothing bounds the compression
-#: ratio that can deliver it either: 31.9 KB of gzip expanded to a 32 MB line
-#: in the same audit, so a small archive could ask for more memory than the
-#: machine has.
-#:
-#: A megabyte is about 120 times the longest line Apache will write — its
-#: `LimitRequestLine` default is 8,190 bytes — so no real log reaches it, while
-#: the worst case falls from 21 GB to about 327 MB. `--max-line-bytes` raises
-#: it for a log that genuinely needs more.
-DEFAULT_MAX_LINE_BYTES: Final = 1_048_576
-
 _UNPARSEABLE: Final = "line does not match the log format"
-
-_TOO_LONG: Final = "line is longer than the limit and was not parsed"
 
 
 class FormatDetectionError(RuntimeError):
@@ -138,7 +120,6 @@ def ingest_file(
     file_id: str | None = None,
     log_format: str | None = None,
     batch_size: int = DEFAULT_BATCH_SIZE,
-    max_line_bytes: int = DEFAULT_MAX_LINE_BYTES,
     on_progress: Callable[[int, int], None] | None = None,
     should_cancel: Callable[[], bool] | None = None,
 ) -> IngestResult:
@@ -166,14 +147,7 @@ def ingest_file(
     with open_log(path) as stream:
         lines = iter(stream)
         sample = list(islice(lines, DEFAULT_SAMPLE_SIZE))
-        # Detection runs before the loop below and scores every registered
-        # parser against this sample, so an over-long line left in it would be
-        # parsed by all of them — on the path that runs first, and the one a
-        # `RecursionError` already came out of once. Excluded here rather than
-        # only in the loop.
-        resolved = resolve_format(
-            path, log_format, [text for _, text in sample if len(text) <= max_line_bytes]
-        )
+        resolved = resolve_format(path, log_format, [text for _, text in sample])
         parser = resolved.parser
 
         batch: list[NormalizedEvent] = []
@@ -203,16 +177,6 @@ def ingest_file(
             # of those open every IIS file, and quarantining them would put a
             # "lines could not be parsed" strip over every such case.
             if not text.strip() or skips(parser, text):
-                continue
-
-            # Recorded rather than dropped, and only the head of it is kept:
-            # what matters as evidence is that something wrote a line no server
-            # would write, not the megabytes it used to say so.
-            if len(text) > max_line_bytes:
-                quarantine.record(
-                    file_id, line_no, text[:1024], reason=f"{_TOO_LONG} ({len(text)} characters)"
-                )
-                lines_quarantined += 1
                 continue
 
             event = parser.parse_line(text, EvidenceRef(file_id, line_no))
