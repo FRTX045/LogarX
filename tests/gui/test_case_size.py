@@ -28,9 +28,9 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 from PyQt6.QtWidgets import QApplication
 
 from conftest import settled
+from logarc import caseview
 from logarc.case import Case
 from logarc.core.window import TimeWindow
-from logarc.gui import app
 from logarc.gui.app import MainWindow
 
 #: Noon, so the quiet client two hours earlier is still the same day and the
@@ -50,13 +50,14 @@ LATE_AT = START + timedelta(hours=5)
 
 #: Small enough that the fixture does not need five hundred clients to prove
 #: what a cap does. `read_case` reads it when it runs, so patching the module
-#: attribute is enough.
+#: attribute is enough — `logarc.caseview` now, which is where `read_case` lives
+#: and therefore whose globals it reads.
 CAP = 2
 
 
 @pytest.fixture(autouse=True)
 def capped(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(app, "_CLIENT_LIMIT", CAP)
+    monkeypatch.setattr(caseview, "CLIENT_LIMIT", CAP)
 
 
 def _line(client: str, when: datetime, target: str) -> str:
