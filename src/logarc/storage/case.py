@@ -40,6 +40,19 @@ class SourceRecord:
     events_parsed: int
     lines_quarantined: int
 
+    lines_filtered: int = 0
+    """Lines skipped because they belong to a client the ingest was not asked
+    for. Zero for an ordinary ingest, and defaulted so a `case.json` written
+    before this field existed still loads."""
+
+    only_clients: list[str] = field(default_factory=list)
+    """The addresses this file was narrowed to, sorted; empty when it was not.
+
+    The case's own record that it holds part of a log rather than all of it. A
+    partial case that reads as a complete one is the failure this tool is built
+    against, so this is written down beside the integrity record rather than
+    reported once and lost."""
+
     format_spec: dict[str, Any] | None = None
     """The format definition this file was read with, as it was written down.
 
@@ -77,6 +90,28 @@ class CaseManifest:
     @property
     def total_lines_quarantined(self) -> int:
         return sum(source.lines_quarantined for source in self.sources)
+
+    @property
+    def total_lines_filtered(self) -> int:
+        return sum(source.lines_filtered for source in self.sources)
+
+    @property
+    def filtered_clients(self) -> tuple[str, ...]:
+        """Every address any source was narrowed to, sorted and deduplicated.
+
+        Empty when the case holds whole logs. One narrowed source is enough to
+        make the case partial, which is why this unions rather than intersects:
+        the question it answers is "is there a log here that was not read in
+        full", and the answer has to be yes if any of them was not.
+        """
+        found: set[str] = set()
+        for source in self.sources:
+            found.update(source.only_clients)
+        return tuple(sorted(found))
+
+    @property
+    def is_filtered(self) -> bool:
+        return bool(self.filtered_clients)
 
     def save(self, case_root: Path) -> Path:
         case_root.mkdir(parents=True, exist_ok=True)
