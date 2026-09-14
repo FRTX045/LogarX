@@ -168,7 +168,20 @@ rules:
           min: 400
     window:
       span_seconds: 300
-      min_requests: 10
+      # Five, not ten. A detection threshold has to sit below the defence it is
+      # watching, or it cannot see an attack against a server that defends
+      # itself: the excerpt's server rate-limits a login after six failures,
+      # the attacker stops at six and returns hours later, and a rule counting
+      # to ten never fired on either burst. Thirteen requests reached the report
+      # as a scripted client instead.
+      #
+      # Five is the floor because it is the one almost every authentication
+      # system already uses to lock an account — the point at which failures
+      # stop looking like a forgotten password. Measured on the excerpt, no
+      # client that is not this attacker has more than *one* failed login in any
+      # window, so the cost here was nil; the floor is set by what is defensible
+      # in general rather than by what this log happens to contain.
+      min_requests: 5
       conditions:
         - metric: distinct_paths
           op: "<="

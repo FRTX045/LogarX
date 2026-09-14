@@ -7,6 +7,21 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Detection
 
+- **A credential attack the server locks out is still a credential attack.** `credential_attack`
+  wanted ten failed logins inside five minutes. The excerpt's server rate-limits a login after
+  six, so the attacker stops at six and comes back hours later — and a rule counting to ten could
+  never fire against a server that defends itself sooner than the rule counts. 13 requests reached
+  the report as a scripted client rather than as part of the attack they belonged to.
+
+  The floor is now five, which is the count almost every authentication system already uses to lock
+  an account: the point at which failures stop looking like a forgotten password. Measured on the
+  excerpt, no client other than the attacker has more than *one* failed login in any window, so
+  nothing was paid for it — but the number is chosen for being defensible in general, not for what
+  this log happens to contain, and a test pins that two fumbled passwords are still not an attack.
+
+  `credential_attack` recall 0.667 → **0.974**, precision unchanged at **1.000**. Macro F1 0.825 →
+  0.840, accuracy 0.927 → 0.930.
+
 - **sqlmap's default boolean-blind series is no longer invisible.** Four of the five payload shapes
   a default `sqlmap` run sends were reaching the rules as *nothing at all*, while the `UNION ALL
   SELECT` payloads from the same scan were caught — so a case showed an attack's conclusion and
