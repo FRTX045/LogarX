@@ -122,6 +122,12 @@ jobs:
       #
       # `--cov-append` on the second run is what keeps one coverage figure
       # across the two.
+      #
+      # And the floor is checked once, at the end. The engine alone covers 56%
+      # of the package — the window is a third of it and none of that is run
+      # here — so enforcing the 94% floor on this half would fail every build
+      # for the arithmetic rather than for anything wrong. The number only
+      # means something once both halves are in it.
       - name: Test the engine
         env:
           # Turns the contract tests' skip into a failure. Without it a build
@@ -130,6 +136,7 @@ jobs:
         run: >
           pytest --ignore=tests/gui
           --cov=logarc --cov-report=term-missing --cov-report=xml
+          --cov-fail-under=0
 
       - name: Test the window
         env:
