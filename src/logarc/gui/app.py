@@ -2,8 +2,16 @@
 
 Holds no analysis. Every action here calls the same `logarc.case` and
 `logarc.analysis` functions the CLI calls, on a worker thread, and displays what
-comes back — which is what makes "anything the GUI can do is scriptable" true by
-construction rather than by promise.
+comes back, so the two front ends cannot disagree about what a case contains.
+
+Two results here have no command-line equivalent, both on purpose. `_export`
+offers PNG, which `report.export` deliberately does not carry because it is a
+picture of the canvas rather than a serialisation of the reconstruction. And the
+time filter reconstructs over a window, which `analyze`, `evidence` and `export`
+have no option for. Every other analysis this window can ask for, a command can
+ask for too — saying which two are the exceptions is cheaper than a reader
+finding out. Window state is a separate matter: preferences, saved arrangements
+and the recent-case list belong to the window and have no command behind them.
 """
 
 from __future__ import annotations
