@@ -277,6 +277,40 @@ def test_an_unmatched_request_falls_back_to_benign_classification(
     assert labelled.label.severity is Severity.INFO
 
 
+def test_a_request_whose_line_could_not_be_read_is_not_called_a_page_view(
+    engine: RuleEngine,
+) -> None:
+    """A malformed request line has no path, and `browsing` would be a claim.
+
+    `parsers.base.split_request_line` returns all-`None` for a line it cannot
+    split, and those lines are kept rather than discarded because attack traffic
+    is where they come from: a TLS handshake sent to a plaintext port, a verb
+    deliberately corrupted, a line truncated mid-write.
+
+    Falling through every benign branch used to land them on `Page View`, which
+    says the client browsed a page. Nothing here knows that. `unknown` is the
+    honest answer, and it is what the truth format uses for the same thing.
+    """
+    unreadable = replace(event(), method=None, path=None, query=None, status=None)
+
+    (labelled,) = engine.label_events([unreadable])
+
+    assert labelled.label.category is ActivityCategory.UNKNOWN
+    assert labelled.label.severity is Severity.INFO
+
+
+def test_a_path_that_is_present_but_empty_is_also_unknown(engine: RuleEngine) -> None:
+    """`%00` and friends can leave a request line that splits into nothing.
+
+    An empty path is no more classifiable than a missing one, and the two arrive
+    by different routes — one from a line that would not split, one from a line
+    that split into emptiness.
+    """
+    (labelled,) = engine.label_events([replace(event(), path="")])
+
+    assert labelled.label.category is ActivityCategory.UNKNOWN
+
+
 def test_static_assets_are_recognised(engine: RuleEngine) -> None:
     (labelled,) = engine.label_events([event(path="/assets/app.css")])
 

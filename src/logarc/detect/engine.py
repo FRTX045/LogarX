@@ -58,6 +58,21 @@ def _benign(category: ActivityCategory, name: str) -> ActivityLabel:
     )
 
 
+#: What a request is called when its line could not be read.
+#:
+#: Not a `benign:` label, because it is not a claim that the request was
+#: harmless — it is the absence of a claim. Confidence is zero for the same
+#: reason: nothing here was classified, and a reader comparing labels should see
+#: that this one rests on nothing.
+_UNREADABLE: Final = ActivityLabel(
+    rule_id="unreadable",
+    name="Unreadable Request",
+    category=ActivityCategory.UNKNOWN,
+    severity=Severity.INFO,
+    confidence=0.0,
+)
+
+
 class RequestView:
     """One request, with its normalised forms computed once and reused.
 
@@ -686,6 +701,19 @@ def _classify_benign(view: RequestView) -> ActivityLabel:
     event = view.event
     agent = (event.user_agent or "").lower()
     path = view.value("path_decoded")
+
+    # Before anything else, because every branch below reads the path and would
+    # otherwise fall through to `Page View` — telling the reader the client
+    # browsed a page when nothing here knows what it asked for. Malformed
+    # request lines are routine in attack traffic, which is exactly why they are
+    # kept rather than discarded, and exactly why they must not be described as
+    # ordinary use.
+    #
+    # Ahead of the crawler check too: that branch answers *who*, and a
+    # user-agent is the cheapest thing in a request to forge. Knowing who
+    # claimed to send an unreadable line is not knowing what was sent.
+    if not event.path:
+        return _UNREADABLE
 
     if any(hint in agent for hint in _CRAWLER_HINTS):
         return _benign(ActivityCategory.CRAWLING, "Crawler Traffic")
