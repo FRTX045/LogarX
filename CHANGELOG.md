@@ -7,6 +7,21 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **The evaluation's own numbers are now committed and checked on every run.**
+  `tests/data/apache-shopfront/excerpt.scores.json` holds the complete scoring output for the
+  committed 3,825-line excerpt, beside the log and the truth it came from, and a test re-runs the
+  whole chain — ingest, evaluate, compare — against it.
+
+  The comparison is exact and covers the whole file. Every rule change moves a number, so every
+  rule change now fails that test and has to update the fixture out loud. That is the gate that
+  was missing: the episode builder changed on 25 August, nobody re-ran the evaluation, and a
+  boundary recall of 0.98 stayed published for weeks while the tool scored 0.27. Proved armed by
+  moving one rule threshold, which fails it with the regeneration command in the message.
+
+  Only this corpus, and it is the one a fresh clone already has. The two pinned dataset builds are
+  22 MB and 80 MB and stay out of the repository, so their tables remain re-derivable only with the
+  download.
+
 - **Ingest uses the machine's cores without being asked.** `--workers` has existed for a while and
   defaulted to one, so almost nobody used it. It now defaults to the cores available, capped at
   four. On the 84 MB log below that is 2.6x faster out of the box.
