@@ -69,6 +69,78 @@ def test_unparseable_lines_are_quarantined_rather_than_dropped(tmp_path: Path, c
     assert result.lines_quarantined == 1
 
 
+def test_ingesting_one_client_keeps_only_that_client(log: Path, case: Path) -> None:
+    """When the address is already known, reading the rest is work thrown away."""
+    store = ParquetEventStore(case)
+    with Quarantine(case) as quarantine:
+        result = ingest_file(log, store, quarantine, only_clients={"203.0.113.5"})
+    store.finalize()
+
+    assert result.events_parsed == 2
+    assert [event.client_ip for event in store.all_events()] == ["203.0.113.5"] * 2
+
+
+def test_a_filtered_line_is_counted_but_is_not_damage(log: Path, case: Path) -> None:
+    """The accounting has to keep adding up, and a fourth outcome needs a fourth
+    count.
+
+    Every line of a case is parsed, quarantined, or blank. A line skipped because
+    it belongs to another client is none of those: quarantining it would report
+    damage that did not happen and put a "lines could not be parsed" warning over
+    a case that read perfectly, and dropping it silently would leave a case whose
+    counts do not reach the number of lines it says it read.
+    """
+    store = ParquetEventStore(case)
+    with Quarantine(case) as quarantine:
+        result = ingest_file(log, store, quarantine, only_clients={"203.0.113.5"})
+
+    assert result.lines_read == 3, "the tool still saw every line"
+    assert result.events_parsed == 2
+    assert result.lines_quarantined == 0, "another client's line is not damage"
+    assert result.lines_filtered == 1
+    assert result.events_parsed + result.lines_quarantined + result.lines_filtered == 3
+
+
+def test_an_unfiltered_ingest_reports_no_filter(log: Path, case: Path) -> None:
+    """So that "filtered" is a positive claim, never an absence of one."""
+    store = ParquetEventStore(case)
+    with Quarantine(case) as quarantine:
+        result = ingest_file(log, store, quarantine)
+
+    assert result.only_clients == ()
+    assert result.lines_filtered == 0
+
+
+def test_the_filter_is_recorded_on_the_result(log: Path, case: Path) -> None:
+    """A partial case that cannot be told from a complete one is the exact
+    failure this tool is built against, so the filter travels with the record."""
+    store = ParquetEventStore(case)
+    with Quarantine(case) as quarantine:
+        result = ingest_file(log, store, quarantine, only_clients={"203.0.113.5", "198.51.100.9"})
+
+    assert set(result.only_clients) == {"203.0.113.5", "198.51.100.9"}
+    assert result.only_clients == tuple(sorted(result.only_clients)), "recorded in a stable order"
+
+
+def test_a_client_that_appears_only_inside_a_url_is_not_kept(tmp_path: Path, case: Path) -> None:
+    """The cheap test is a substring of the raw line, which is how the filter
+    pays for itself — but it is a sieve, not the answer. The address has to be
+    the client that made the request, not merely a string that occurs in it."""
+    path = tmp_path / "access.log"
+    path.write_text(
+        "198.51.100.9 - - [10/Oct/2020:13:56:00 +0000] "
+        '"GET /redirect?to=203.0.113.5 HTTP/1.1" 200 1 "-" "curl/8.0"\n',
+        encoding="utf-8",
+    )
+
+    store = ParquetEventStore(case)
+    with Quarantine(case) as quarantine:
+        result = ingest_file(path, store, quarantine, only_clients={"203.0.113.5"})
+
+    assert result.events_parsed == 0, "it is in the query string, not the client field"
+    assert result.lines_filtered == 1
+
+
 def test_a_line_longer_than_the_limit_is_quarantined_rather_than_parsed(
     tmp_path: Path, case: Path
 ) -> None:

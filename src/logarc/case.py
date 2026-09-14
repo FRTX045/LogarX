@@ -27,7 +27,7 @@ from logarc.storage.case import MANIFEST_NAME, CaseManifest, SourceRecord
 from logarc.storage.event_store import ParquetEventStore
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Collection, Sequence
 
     from logarc.core.evidence import EvidenceRef
 
@@ -112,6 +112,21 @@ class Case:
 
     # -- ingest ------------------------------------------------------------
 
+    @property
+    def is_filtered(self) -> bool:
+        """Whether any log in this case was read only in part.
+
+        The window, the reports and `list-ips` all have to be able to say so:
+        a case holding one client's traffic answers "who else was there" with
+        silence, and silence reads exactly like nobody.
+        """
+        return self.manifest.is_filtered
+
+    @property
+    def filtered_clients(self) -> tuple[str, ...]:
+        """Every address this case was narrowed to, sorted; empty if it was not."""
+        return self.manifest.filtered_clients
+
     def ingest(
         self,
         paths: Sequence[Path],
@@ -119,6 +134,7 @@ class Case:
         log_format: str | None = None,
         batch_size: int = DEFAULT_BATCH_SIZE,
         max_line_bytes: int = DEFAULT_MAX_LINE_BYTES,
+        only_clients: Collection[str] | None = None,
         on_progress: Callable[[int, int], None] | None = None,
         should_cancel: Callable[[], bool] | None = None,
         workers: int = 1,
@@ -158,6 +174,7 @@ class Case:
                             log_format=log_format,
                             batch_size=batch_size,
                             max_line_bytes=max_line_bytes,
+                            only_clients=only_clients,
                             workers=workers,
                             on_progress=on_progress,
                         )
@@ -170,6 +187,7 @@ class Case:
                             log_format=log_format,
                             batch_size=batch_size,
                             max_line_bytes=max_line_bytes,
+                            only_clients=only_clients,
                             on_progress=on_progress,
                             should_cancel=should_cancel,
                         )
@@ -190,6 +208,7 @@ class Case:
         log_format: str | None,
         batch_size: int,
         max_line_bytes: int,
+        only_clients: Collection[str] | None,
         workers: int,
         on_progress: Callable[[int, int], None] | None,
     ) -> IngestResult:
@@ -207,6 +226,7 @@ class Case:
             workers=workers,
             batch_size=batch_size,
             max_line_bytes=max_line_bytes,
+            only_clients=only_clients,
             on_progress=on_progress,
         )
         return IngestResult(
@@ -220,6 +240,8 @@ class Case:
             lines_read=counts.lines_read,
             events_parsed=counts.events_parsed,
             lines_quarantined=counts.lines_quarantined,
+            lines_filtered=counts.lines_filtered,
+            only_clients=tuple(sorted(only_clients or ())),
             duration_seconds=duration,
         )
 
@@ -257,4 +279,6 @@ def _to_source_record(result: IngestResult) -> SourceRecord:
         lines_read=result.lines_read,
         events_parsed=result.events_parsed,
         lines_quarantined=result.lines_quarantined,
+        lines_filtered=result.lines_filtered,
+        only_clients=list(result.only_clients),
     )

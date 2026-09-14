@@ -61,9 +61,18 @@ def split_small_logs(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def ingest(
-    root: Path, log: Path, *, workers: int, max_line_bytes: int | None = None
+    root: Path,
+    log: Path,
+    *,
+    workers: int,
+    max_line_bytes: int | None = None,
+    only_clients: set[str] | None = None,
 ) -> tuple[list[tuple[str, int, str]], object]:
-    extra = {} if max_line_bytes is None else {"max_line_bytes": max_line_bytes}
+    extra: dict[str, object] = {}
+    if max_line_bytes is not None:
+        extra["max_line_bytes"] = max_line_bytes
+    if only_clients is not None:
+        extra["only_clients"] = only_clients
     with Case.create(root) as case:
         results = case.ingest([log], workers=workers, **extra)
         case.finalize()
@@ -160,6 +169,24 @@ def test_the_line_length_bound_holds_on_the_parallel_path_too(tmp_path: Path) ->
     assert one.lines_quarantined == 1
     assert many.lines_quarantined == 1, "the worker path must bound it too"
     assert one.events_parsed == many.events_parsed == 400
+
+
+def test_narrowing_to_one_client_holds_on_the_parallel_path_too(tmp_path: Path) -> None:
+    """The worker runs its own loop, so the filter had to go in twice.
+
+    Present in only one of them, `--workers` would quietly hand back the whole
+    log for a case whose manifest says it was narrowed — a case that lies about
+    its own contents in the safe direction, which is still a lie.
+    """
+    log = write_log(tmp_path / "access.log", 400)
+
+    _events, one = ingest(tmp_path / "seq", log, workers=1, only_clients={"203.0.113.5"})
+    _events, many = ingest(tmp_path / "par", log, workers=3, only_clients={"203.0.113.5"})
+
+    assert one.events_parsed == many.events_parsed
+    assert one.lines_filtered == many.lines_filtered
+    assert many.events_parsed < 400, "the premise: most of the log is other clients"
+    assert many.events_parsed + many.lines_filtered == 400
 
 
 @pytest.mark.slow

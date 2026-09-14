@@ -5,6 +5,28 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`logarc ingest --only-ip` reads one client out of a large log.** When the address is already
+  known, parsing the rest is work thrown away. Most lines are rejected on a substring of the raw
+  text before any parsing happens, which is where the saving comes from: measured on the committed
+  excerpt, **28,279 to 73,786 lines a second, 2.6x**. The substring is a sieve rather than an
+  answer, so what survives it is confirmed against the parsed client field — an address in a query
+  string is not the client that sent the request, and a test pins that.
+
+  **What it costs is that the case holds part of the log, and every place that could mislead a
+  reader now says so.** `case.json` records the addresses per source and the count of lines
+  skipped; `logarc ingest` says how many belonged to other clients; `list-ips` warns that these are
+  "the clients that were kept, not the clients that were there" and titles its table *Clients
+  kept*; and the window puts up a strip of its own, separate from the quarantine and format ones so
+  that dismissing one does not lose another. A case narrowed at ingest answers "who else was
+  there" with silence, and silence reads exactly like nobody.
+
+  A skipped line is **counted but not quarantined**. Every line of a case is parsed, quarantined or
+  blank, and one belonging to another client is none of those: quarantining it would report damage
+  that did not happen, and dropping it silently would leave a case whose numbers do not reach the
+  lines it says it read. `lines_filtered` is the fourth count, and the sum is asserted.
+
 ### Detection
 
 - **Template injection past the arithmetic probe.** `template_injection` matched `{{7*7}}` and

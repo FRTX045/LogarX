@@ -61,6 +61,7 @@ from logarc.gui.canvas import ActivityCanvas
 from logarc.gui.case_chooser import CaseChooser
 from logarc.gui.density import Density, buckets_for
 from logarc.gui.evidence_panel import EvidencePanel
+from logarc.gui.filter_notice import filter_notice
 from logarc.gui.format_editor import FormatChoice, FormatEditor
 from logarc.gui.format_notice import drift_notice
 from logarc.gui.full_screen import FullScreen
@@ -178,6 +179,11 @@ class MainWindow(QMainWindow):
         # been edited — and a reader who has taken in the first should be able
         # to dismiss it without losing the second.
         self._format_notice = NoticeBanner()
+        # A third strip rather than wording folded into one of the others:
+        # "some lines could not be read" and "this case is only part of the
+        # log" are different claims, and a reader dismissing one must not lose
+        # the other.
+        self._filter_notice = NoticeBanner()
         self._clients = ClientTable()
         self._canvas = ActivityCanvas()
         self._legend = LegendBar()
@@ -330,6 +336,7 @@ class MainWindow(QMainWindow):
         stack.setSpacing(0)
         stack.addWidget(self._notice)
         stack.addWidget(self._format_notice)
+        stack.addWidget(self._filter_notice)
         # Beside the notice for the same reason, and it matters more here than
         # it looks: the range governs the client list as well as the graph, so
         # sitting over the graph alone it would claim to narrow one of the two
@@ -692,12 +699,15 @@ class MainWindow(QMainWindow):
             # it belongs on the worker beside the rest of the reading. The engine
             # never does this: the case was read from its own copy long before.
             drifted = drift_notice(drifted_sources(manifest.sources))
-            return view, snapshot, notice, drifted
+            narrowed = filter_notice(
+                manifest.filtered_clients, lines_filtered=manifest.total_lines_filtered
+            )
+            return view, snapshot, notice, drifted, narrowed
 
         self._busy(f"Opening {path}…")
 
         def done(loaded: Any) -> None:
-            view, snapshot, notice, drifted = loaded
+            view, snapshot, notice, drifted, narrowed = loaded
             summaries = view.listed
             self._remember_case(snapshot)
             self._case_path = path
@@ -734,6 +744,10 @@ class MainWindow(QMainWindow):
             # No quarantine folder: nothing was refused. Passing one would offer
             # a button that opens a directory holding nothing to do with this.
             self._format_notice.show_notice(drifted)
+            # Passed every time, `None` included: a strip left up from the
+            # previous case is worse than none, because it is attached to the
+            # wrong evidence.
+            self._filter_notice.show_notice(narrowed)
             self._heading.setText("")
             self._tabs.setVisible(False)
             self._clients.show_clients(summaries, total=view.whole.clients)
@@ -1076,6 +1090,7 @@ class MainWindow(QMainWindow):
             self._time_filter,
             self._notice,
             self._format_notice,
+            self._filter_notice,
             self._tabs,
             self._heading,
             self._legend,

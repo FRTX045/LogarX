@@ -23,7 +23,7 @@ from logarc.parsers.registry import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Collection
     from pathlib import Path
 
     from logarc.core.event import NormalizedEvent
@@ -125,6 +125,22 @@ class IngestResult:
     lines_quarantined: int
     duration_seconds: float
 
+    lines_filtered: int = 0
+    """Lines belonging to a client the ingest was not asked for.
+
+    A fourth outcome needs a fourth count. Every other line is parsed,
+    quarantined or blank; one skipped because it is somebody else's is none of
+    those. Quarantining it would report damage that did not happen, and dropping
+    it silently would leave a case whose numbers do not reach the lines it says
+    it read."""
+
+    only_clients: tuple[str, ...] = ()
+    """The addresses this file was narrowed to, sorted; empty when it was not.
+
+    Recorded because a partial case that cannot be told from a complete one is
+    the failure this whole tool is built against. Empty means the whole file was
+    read — a positive claim rather than the absence of one."""
+
     @property
     def lines_per_second(self) -> float:
         return self.lines_read / self.duration_seconds if self.duration_seconds else 0.0
@@ -139,6 +155,7 @@ def ingest_file(
     log_format: str | None = None,
     batch_size: int = DEFAULT_BATCH_SIZE,
     max_line_bytes: int = DEFAULT_MAX_LINE_BYTES,
+    only_clients: Collection[str] | None = None,
     on_progress: Callable[[int, int], None] | None = None,
     should_cancel: Callable[[], bool] | None = None,
 ) -> IngestResult:
@@ -180,6 +197,15 @@ def ingest_file(
         lines_read = 0
         events_parsed = 0
         lines_quarantined = 0
+        lines_filtered = 0
+
+        # Sorted once, and kept as a set for the test in the loop. The cheap
+        # form is a substring of the raw line: an address that is not anywhere
+        # in the text cannot be the client, so most lines are rejected without
+        # being parsed at all, which is the whole point of the option. It is a
+        # sieve rather than the answer — `203.0.113.5` can appear in a query
+        # string — so what survives it is confirmed against the parsed client.
+        wanted = frozenset(only_clients or ())
 
         reported_at = 0
 
@@ -205,6 +231,10 @@ def ingest_file(
             if not text.strip() or skips(parser, text):
                 continue
 
+            if wanted and not any(address in text for address in wanted):
+                lines_filtered += 1
+                continue
+
             # Recorded rather than dropped, and only the head of it is kept:
             # what matters as evidence is that something wrote a line no server
             # would write, not the megabytes it used to say so.
@@ -219,6 +249,12 @@ def ingest_file(
             if event is None:
                 quarantine.record(file_id, line_no, text, reason=_UNPARSEABLE)
                 lines_quarantined += 1
+                continue
+
+            if wanted and event.client_ip not in wanted:
+                # Through the sieve but not the client: the address was in the
+                # line somewhere else.
+                lines_filtered += 1
                 continue
 
             batch.append(event)
@@ -252,6 +288,8 @@ def ingest_file(
             events_parsed=events_parsed,
             lines_quarantined=lines_quarantined,
             duration_seconds=time.perf_counter() - started,
+            lines_filtered=lines_filtered,
+            only_clients=tuple(sorted(wanted)),
         )
 
 
