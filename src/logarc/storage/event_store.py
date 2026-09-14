@@ -26,7 +26,6 @@ from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
 from logarc.core.window import TimeWindow
 from logarc.storage.base import CaseOverview, IpSummary, TimeSlot
-from logarc.suspicion import ordering_sql as suspicion_ordering_sql
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -70,10 +69,6 @@ SORT_KEYS: Final[dict[str, str]] = {
     "errors": "client_error_ratio DESC, request_count DESC",
     "bytes": "bytes_total DESC",
     "paths": "distinct_paths DESC",
-    # The expression lives in `logarc.suspicion` beside the Python that explains
-    # a score, so the ordering and the reasons shown against it cannot drift
-    # into disagreeing about what was counted.
-    "suspicion": suspicion_ordering_sql(),
 }
 
 #: Timestamps are stored without a zone. The parser normalises everything to UTC
