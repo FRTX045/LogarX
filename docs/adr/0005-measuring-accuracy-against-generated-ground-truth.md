@@ -1,7 +1,14 @@
 # ADR-0005: Measure accuracy against generated ground truth, and segmentation at the boundary
 
-- **Status:** Accepted
+- **Status:** Partly superseded by
+  [ADR-0011](0011-a-real-server-log-is-the-headline-corpus.md) (2026-09-08)
 - **Date:** 2026-08-09
+
+> **Read this first.** The corpus decision here no longer holds: the generator
+> was removed and a real server's log is the headline corpus. What still stands
+> is everything this record says about *how* to score — per category, at the
+> boundary, with CSIC 2010 as a binary-only external check. The revisit clause
+> below worked as intended, and the Amendments section at the end says how.
 
 ## Context
 
