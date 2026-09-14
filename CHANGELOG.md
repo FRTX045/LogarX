@@ -7,6 +7,32 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`logarc check-log` looks for signs a log was edited before logarc read it.** The SHA-256 taken
+  at ingest proves the file has not changed *since*; this asks the question no hash can answer,
+  which is whether what arrived was already the whole of it. An attacker who gets in often tidies
+  up behind themselves, and a log that looks clean may be a log that was cleaned.
+
+  Four checks so far: entries whose timestamp runs backwards against the file's own order, a log
+  with no refused request in it at all, a log with no automated traffic at all, and a last entry
+  landing exactly on the hour or on midnight.
+
+  **Nothing it reports is proof, and refusing to overclaim is most of the design.** A log cannot
+  establish that it was edited. Every observation names what was seen, what else produces it — the
+  innocent readings first, because they are usually the right ones — and what would actually settle
+  the question, which is always something outside the file: the rotation schedule, the server's NTP
+  record, whether a following log picks up where this one stops. A test asserts that no observation
+  contains the words *proves*, *confirms* or *definitely*, and that none is offered without an
+  innocent reading beside it — an observation with no innocent reading is an accusation.
+
+  It is quiet on real logs, which was checked both ways against the committed excerpt: untouched it
+  reports nothing; with every refusal removed it raises exactly one observation; with every bot
+  removed, one; with two entries transposed, one. And "nothing remarkable" is not phrased as a
+  clean bill of health, because a careful edit leaves no trace in a log at all.
+
+  One number needed explaining and now explains itself: transposing two entries 400 apart reports
+  400 entries out of order, because a line moved past 400 others makes every one of them read as
+  out of sequence. The report says to read the count as a size rather than as a number of edits.
+
 - **Ingest uses the machine's cores without being asked.** `--workers` has existed for a while and
   defaulted to one, so almost nobody used it. It now defaults to the cores available, capped at
   four. On the 84 MB log below that is 2.6x faster out of the box.

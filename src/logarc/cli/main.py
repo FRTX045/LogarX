@@ -50,6 +50,7 @@ from logarc.report import export as export_formats
 from logarc.sessionize.segmenter import SessionPolicy
 from logarc.storage.event_store import SORT_KEYS, StoreStateError
 from logarc.style import plural
+from logarc.tampering import inspect
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -287,6 +288,63 @@ def ingest(
             f"[yellow]{plural(quarantined, 'line')} could not be parsed[/yellow] — "
             f"see {case / 'quarantine' / 'unparsed.jsonl'}"
         )
+
+
+@app.command("check-log")
+def check_log(
+    case: Annotated[Path, typer.Option("--case", "-c", help="Case directory to read.")],
+) -> None:
+    """Look for signs a log was edited before logarc read it.
+
+    The SHA-256 taken at ingest proves the file has not changed *since*. This
+    asks the other question, which no hash can answer: whether what arrived was
+    already the whole of it.
+
+    **Nothing here is proof, and it is not phrased as any.** A log cannot
+    establish that it was edited. Each observation names what was seen, what
+    else produces it — the innocent readings first, because they are usually the
+    right ones — and what would actually settle it, which is always something
+    outside the file.
+    """
+    try:
+        with Case.open(case) as opened:
+            events = list(opened.store.all_events())
+            narrowed = opened.filtered_clients
+    except USER_ERRORS as exc:
+        raise fail(str(exc)) from exc
+
+    if narrowed:
+        console.print(
+            "[yellow]This case was narrowed at ingest, so most of these checks "
+            "cannot mean anything: a log filtered to one client has no crawlers "
+            "and no background noise by construction.[/yellow]\n"
+        )
+
+    found = inspect(events)
+    if not found:
+        console.print(
+            f"Nothing remarkable across {len(events):,} requests. "
+            "That is the ordinary answer, and it is not a clean bill of health — "
+            "a careful edit leaves no trace in a log at all."
+        )
+        return
+
+    console.print(
+        f"[yellow]{len(found)} observation{'' if len(found) == 1 else 's'} "
+        f"across {len(events):,} requests.[/yellow] "
+        "None of these is proof of anything.\n"
+    )
+    for observation in found:
+        console.print(f"[bold]{observation.headline}[/bold]")
+        for line in observation.detail.split("\n"):
+            console.print(f"  {line}" if line else "")
+        console.print("\n  [dim]This is also what you would see if:[/dim]")
+        for reading in observation.consistent_with:
+            console.print(f"    - {reading}")
+        console.print("  [dim]What would settle it:[/dim]")
+        for step in observation.would_settle_it:
+            console.print(f"    - {step}")
+        console.print()
 
 
 @app.command("list-ips")
