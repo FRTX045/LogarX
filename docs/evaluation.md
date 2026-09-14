@@ -139,6 +139,26 @@ one, the two differ.
 
 ## Classification
 
+**One corpus here can be re-derived from a fresh clone**, and is checked on every
+CI run. `tests/data/apache-shopfront/excerpt.scores.json` holds the complete
+evaluation output for the committed 3,825-line excerpt, beside the log and the
+truth it was scored against:
+
+```bash
+logarc ingest tests/data/apache-shopfront/excerpt.log --case /tmp/c
+logarc evaluate -c /tmp/c -t tests/data/apache-shopfront/excerpt.truth.jsonl
+```
+
+`tests/evaluation/test_published_scores.py` re-runs exactly that and compares
+the whole file, so a rule change that moves a number fails the build instead of
+leaving the prose here quietly wrong. That is the gate that was missing when the
+episode builder changed on 25 August and a boundary recall of 0.98 stayed
+published for weeks against a tool scoring 0.27.
+
+The tables below are the two pinned dataset builds, which are **not** committed
+— 22 MB and 80 MB — and remain re-derivable only with the download.
+
+
 Measured 2026-09-08, ruleset `e81ace93…` (33 rules), CRS `d694d465` at paranoia level 2,
 configuration `f357d142fbcc4441`. Every line of both builds was scored; none went missing.
 
