@@ -609,6 +609,40 @@ def test_credential_attack_is_seen_across_requests(engine: RuleEngine) -> None:
     assert any(item.label.rule_id == "credential_attack" for item in labelled)
 
 
+def test_an_attack_the_server_locks_out_is_still_an_attack(engine: RuleEngine) -> None:
+    """The threshold has to sit below the defence it is watching.
+
+    The excerpt's server rate-limits a login after six failures, and the
+    attacker stops there and comes back later. This rule wanted ten in a window,
+    so against a server that locks out sooner than the rule counts it could
+    never fire at all — 13 requests were reported as a scripted client rather
+    than as the credential attack they were part of.
+
+    Five failures on one endpoint inside five minutes is the condition almost
+    every authentication system already treats as abnormal. That is what makes
+    it a defensible floor rather than a tuned one.
+    """
+    events = [request("/login", status=401, seconds=n * 20) for n in range(5)]
+
+    labelled = engine.label_events(events)
+
+    assert all(item.label.rule_id == "credential_attack" for item in labelled)
+
+
+def test_one_fumbled_password_is_not_an_attack(engine: RuleEngine) -> None:
+    """The other side of that floor, and the reason it is not lower.
+
+    Someone mistyping a password twice is the most ordinary thing on any login
+    page, and it must not reach a report as a credential attack.
+    """
+    events = [request("/login", status=401, seconds=n * 20) for n in range(2)]
+    events.append(request("/login", status=302, seconds=60))
+
+    labelled = engine.label_events(events)
+
+    assert not any(item.label.category.is_hostile for item in labelled)
+
+
 @pytest.mark.parametrize(
     "target",
     [
