@@ -1,9 +1,13 @@
 """The desktop interface.
 
-The only layer that imports Qt. Everything it can do is also reachable from the
-CLI, because the workflow lives in `logarc.case` and `logarc.analysis` and both
-interfaces drive the same functions — the rule holds by construction rather than
-by discipline.
+The only layer that imports Qt. The workflow lives in `logarc.case` and
+`logarc.analysis`, and both interfaces drive those same functions, so a
+reconstruction is the same reconstruction whichever one asked for it — a rule
+that holds by construction rather than by discipline.
+
+Two results are the window's alone: the canvas as a PNG, and a reconstruction
+over a stretch of time. Both are named in `app`'s docstring with the reason.
+Every other analysis it can ask for is reachable from the command line.
 
 The decisions about how a finding should *look* are not made here at all.
 They are plain data in `logarc.style`, with no Qt import, so they can be tested

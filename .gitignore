@@ -61,6 +61,16 @@ case-*/
 # samples/README.md says how to obtain one; docs/evaluation.md records the hashes.
 samples/apache-shopfront/
 
+# Credentials and local environment. This tool is pointed at production access
+# logs, so a stray `.env` here would be someone's infrastructure rather than
+# someone's toy project.
+.env
+.env.*
+.envrc
+*.pem
+*.key
+*.pfx
+
 # Benchmark and evaluation output
 benchmarks/results/
 

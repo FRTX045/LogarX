@@ -1,54 +1,125 @@
-# logarc — Log Activity Reconstruction
+# logarc
 
-Forensic (offline) reconstruction of what a given IP address actually *did* on a web server,
-recovered from access logs and rendered as an **activity graph**.
+**Reconstruct what one IP address actually did on a web server, from its access logs.**
 
-> **Status:** early development. See [docs/](docs/) for the design and architecture decisions.
+[![CI](https://github.com/FRTX045/logarc/actions/workflows/ci.yml/badge.svg)](https://github.com/FRTX045/logarc/actions/workflows/ci.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Runs offline](https://img.shields.io/badge/runs-offline-informational)](#no-network-no-account-no-api-key)
+
+An access log is a flat list of requests. Reading one visitor's story out of it
+means reading thousands of lines by hand — slow, easy to get wrong, and not
+reproducible by the next person. logarc turns that list into a small number of
+**activity episodes** and connects them into a graph:
+
+```
+browsing → reconnaissance → directory enumeration → SQL injection → data access
+```
+
+Every box links back to the exact raw log lines that produced it.
+
+![The logarc window: the client list, one client's trace, and the 19 log lines behind the selected SQL injection](docs/images/screenshot-trace.png)
+
+<sub>sqlmap against a shop. The selected activity is 19 requests of `UNION ALL SELECT`, and the outcome is **success** — the server answered 200. The panel on the right is the evidence: line numbers, statuses, and the raw line exactly as Apache wrote it.</sub>
 
 ---
 
-## The problem
+## Try it in two minutes
 
-A web server access log is a flat list of requests. To understand what one visitor did, an
-investigator reads thousands of lines by hand — slow, error-prone, and not reproducible.
+A real Apache log ships with the repository — 3,825 lines a real server wrote
+while real attack tools were pointed at it — so this works in a fresh clone with
+nothing downloaded.
 
-`logarc` turns that list into a small number of **meaningful activities** and connects them
-into a directed graph, so the log reads as a map of behaviour:
+```bash
+git clone https://github.com/FRTX045/logarc.git
+cd logarc
+python -m venv .venv
+.venv\Scripts\activate            # Windows
+source .venv/bin/activate         # Linux and macOS
+pip install -e ".[gui]"
 
+# 1. Read the log into a case. The format is detected; nothing is configured.
+logarc ingest tests/data/apache-shopfront/excerpt.log --case ./case-shop
+
+# 2. Who looks like they were probing? Sort by the share of 4xx responses.
+logarc list-ips --case ./case-shop --sort errors --limit 8
+
+# 3. Reconstruct one of them.
+logarc analyze --case ./case-shop --ip 192.0.2.31
+
+# 4. Read the log lines that finding rests on.
+logarc evidence --case ./case-shop --ip 192.0.2.31 --limit 3
+
+# 5. A standalone HTML report, or the desktop application.
+logarc export --case ./case-shop --ip 192.0.2.31 --format html --out report.html
+logarc-gui
 ```
-  browsing  →  reconnaissance  →  directory enumeration  →  SQL injection probing  →  data access
-```
 
-Each box is an *activity episode*; each arrow is an observed transition. Every box links back to
-the exact raw log lines that produced it.
+Step 3 prints this:
 
-## The research question
+![logarc analyze reduces 48 requests to 8 activities, naming two successful SQL injections](docs/images/cli-analyze.png)
 
-> How do you separate one action from another, and then classify it — at log sizes measured in
-> gigabytes, offline?
+Forty-eight requests, three sessions, eight activities — and the two that matter
+are named, dated, mapped to OWASP, and marked `success` rather than `blocked`.
 
-`logarc` answers this with **deterministic three-level segmentation** and a **two-pass ingest
-architecture**. Both are described in [docs/architecture.md](docs/architecture.md).
+Step 4 shows why you can believe it:
 
-Determinism is a deliberate constraint, not a limitation: a forensic finding must be explainable
-and reproducible. Every boundary the tool draws can be traced to a stated rule and a recorded
-threshold.
+![logarc evidence prints the raw log lines behind each activity](docs/images/cli-evidence.png)
 
-## Scope
+---
+
+## What it does
 
 | | |
 |---|---|
-| **Input** | Apache access logs (Combined, Common, and any custom `LogFormat` directive) |
-| **Designed for** | nginx, IIS W3C and JSON logs — added as parser plugins, no core changes |
-| **Detects** | OWASP Top 10 categories observable in access logs, plus benign context activity |
+| **Reads** | Apache, nginx, IIS W3C, Caddy, Traefik, Cloudflare, Google Cloud, ECS, CloudFront — fourteen formats built in, plus any format you write yourself |
+| **Finds** | OWASP Top 10 categories that are observable in an access log, plus the ordinary traffic between them |
+| **Produces** | An activity graph per client, an HTML or JSON report, and a line-level evidence trail |
 | **Runs** | Offline. Evidence never leaves the machine. |
+| **Costs** | Nothing. MIT licensed. |
 
-### A note on OWASP Top 10 coverage
+### No network, no account, no API key
 
-OWASP Top 10 is a taxonomy of *vulnerabilities*, not *behaviours*. Only part of it leaves a trace
-in an access log:
+logarc makes no outbound connections. Its runtime dependencies are pyarrow,
+duckdb, pyyaml, pydantic, typer and rich — no cloud SDK, no model, no telemetry.
+The optional OWASP CRS step runs a local Go binary against a local copy of the
+ruleset; it is not a service.
 
-| Observable | Not observable from access logs |
+This matters because the input is a production access log, which is evidence.
+
+---
+
+## What it detects
+
+Eight hostile categories and five kinds of ordinary use, because **a graph of
+attacks alone loses the thread between them** — it cannot tell a scanner that
+only probed from an attacker who probed, succeeded, and then used what they had
+opened.
+
+| Ordinary use | Attack behaviour |
+|---|---|
+| `browsing` · `static_asset` · `api_call` · `authentication` · `crawling` | `reconnaissance` · `enumeration` · `injection` · `path_traversal` · `access_control` · `credential_attack` · `ssrf` · `exploitation` |
+
+Two rule families do the labelling. **Signature** rules test one request against
+a pattern. **Window** rules test a run of requests against aggregate thresholds,
+catching what no single request reveals — twenty 404s in a minute across fifteen
+distinct paths is enumeration, while any one of them is a missing page.
+
+Matching runs against **normalised** text, because signatures match text and
+attackers know it: `%2553ELECT`, `UNI/**/ON`, fullwidth `ＳＥＬＥＣＴ` and
+`SeLeCt` are one request to the server and four strings to a naive rule. Decoding
+is bounded to three iterations and the depth is kept, because ordinary traffic is
+encoded once and anything beyond that is a deliberate act.
+
+Adding a detection needs no Python — the rules are YAML. See
+[docs/writing-rules.md](docs/writing-rules.md).
+
+### About OWASP Top 10 coverage
+
+OWASP Top 10 classifies *vulnerabilities*, not *behaviour*, and only part of it
+leaves a trace in a request line at all:
+
+| Observable from an access log | Not observable |
 |---|---|
 | A01 Broken Access Control | A02 Cryptographic Failures |
 | A03 Injection | A04 Insecure Design |
@@ -57,332 +128,293 @@ in an access log:
 | A06 Vulnerable Components *(partial)* | |
 | A10 SSRF *(partial)* | |
 
-`logarc` therefore classifies **observable behaviour** and maps it *onto* OWASP as an attribute,
-rather than forcing the taxonomy to be the structure. Coverage is reported honestly rather than
-inflated.
+logarc classifies observable behaviour and maps it *onto* OWASP as an attribute,
+rather than forcing the taxonomy to be the structure. Coverage is reported
+honestly rather than inflated.
 
-## Installation
+---
 
-Requires Python 3.11+.
-
-```bash
-git clone https://github.com/FRTX045/BlackHat.git
-cd BlackHat
-python -m venv .venv
-source .venv/bin/activate        # Linux, macOS
-.venv\Scripts\activate          # Windows
-pip install -e ".[dev,gui]"
-```
-
-## Usage
-
-```bash
-# Ingest a log into a case directory (streaming; memory is bounded by batch size, not file size)
-logarc ingest access.log --case ./case-001
-
-# Parse across processes on a large log. Faster, and costs memory in step with
-# the worker count — which is why it is opt-in rather than the default.
-logarc ingest access.log --case ./case-001 --workers 4
-
-# List the IPs seen. `--sort errors` ranks by the share of 4xx responses, which
-# is what a client probing for things that are not there looks like.
-# Also: requests, recent, bytes, paths.
-logarc list-ips --case ./case-001 --sort errors
-
-# Reconstruct one IP's activity graph
-logarc analyze --case ./case-001 --ip 203.0.113.45 --out graph.json
-
-# Read the raw log lines a finding rests on — the other half of the chain of
-# custody. `analyze` says what happened; this says which lines say so.
-logarc evidence --case ./case-001 --ip 203.0.113.45
-
-# Produce a self-contained HTML report for the case file
-logarc export --case ./case-001 --ip 203.0.113.45 --format html --out report.html
-```
-
-logarc ships fourteen formats — Apache's, nginx's text and JSON, Caddy,
-Traefik, Cloudflare, Google Cloud, Elastic Common Schema, IIS W3C and
-CloudFront — and `logarc formats` lists what each one reads.
-
-The format is detected from the first lines of a log. When it cannot be — a
-site with its own `LogFormat`, or a file that is not an access log — ingest
-refuses rather than guessing, because the wrong parser quarantines everything
-and presents as an empty result.
-
-A format you write yourself is a first-class one: saved by name, offered
-wherever the built-ins are, and usable in every later case.
-
-```bash
-logarc formats                    # every format, built-in and saved
-
-# See what a directive reads before committing to it. A wrong one does not
-# announce itself — it quarantines every line and looks like an empty case.
-logarc formats check '%h|%t|"%r"|%>s|%b' --log access.log
-
-logarc formats add log-kantor '%h|%t|"%r"|%>s|%b'
-logarc ingest access.log --case ./case-001 --format log-kantor
-```
-
-A log that writes one JSON object per line is a mapping rather than a directive,
-and logarc proposes the mapping for you — JSON keys are self-describing in a way
-`%h` and `%v` are not. Nested paths are read, including the `user_agent.original`
-shape ECS uses.
-
-```bash
-logarc formats check-json --log gateway.jsonl        # see the guess and what it reads
-logarc formats add-json gateway --log gateway.jsonl  # save it
-logarc formats add-json gateway --log gateway.jsonl --map client_ip=http_x_real_ip
-```
-
-A log laid out as a table needs less still, because it names its own columns: an
-IIS W3C log declares them in its `#Fields:` line and most CSVs in the first row.
-
-```bash
-logarc formats check-columns --log u_ex240501.log
-logarc formats add-columns iis --log u_ex240501.log
-logarc formats add-columns edge --log edge.csv --separator comma
-```
-
-The saved format keeps no columns of its own — IIS writes different fields on
-different servers — and each case records the ones that were in the file it
-read.
-
-When a log is none of those — syslog-wrapped, an appliance with a syntax of its
-own — write a regular expression. Its named groups are the mapping.
-
-```bash
-logarc formats check-pattern '^(?P<timestamp>\S+) (?P<client_ip>\S+) …' --log proxy.log
-logarc formats add-pattern gw-proxy '…' --time-format '%Y %b %d %H:%M:%S'
-```
-
-A time format that names no year is refused rather than accepted: `strptime`
-supplies 1900 for a missing year, and a case where every event is dated 1900 is
-the kind of number this tool exists not to emit.
-
-In the desktop application the same thing lives under **Case → Log formats…**,
-where a pasted log line is read back field by field as the rule is written —
-a directive for a text log, a field mapping for a JSON one, shown beside what
-it read.
-
-Saved formats live in a plain JSON file you own — `logarc formats` prints its
-path. Each case also records the definition it was ingested with, so editing or
-deleting a saved format later cannot make an existing case unreadable; the
-window says so on a case whose format has since changed.
-
-### The desktop application
+## The desktop application
 
 ```bash
 logarc-gui
 ```
 
-![The logarc window: client list, session trace, and the log lines behind the selected activity](docs/images/screenshot-trace.png)
+![557 requests folded into five activities, with the wordlist behind the selected one](docs/images/screenshot-behaviour.png)
 
-*Session trace — what happened, in order. A scanner's 61 requests reduced to 10 activities. Long
-chains wrap onto further rows, alternating direction, because a trace drawn on one line is as wide
-as it is long and shrinks to an unreadable smudge when fitted to the window. **View → Wrap long
-traces** (Alt+Z) turns the fold off when the straight timeline is worth more than legible captions;
-the graph is then panned rather than fitted, opening on its first activity, and the choice is
-remembered between launches. Activities can be dragged where you want them — their
-arrows and the selection ring come along, **Ctrl+Z** takes the last move back, and **View → Save
-this arrangement** keeps it for the next time this client is opened; **Reset layout** returns to
-the computed one and forgets what was saved. The panel on the right is the evidence the selected node was built
-from, a row per request: sort it by size to find the one that got data out, or by status to find
-what was served rather than refused. Payloads are decoded, so `' OR '1'='1` reads as the tautology
-it is instead of `%27+OR+%271%27%3D%271`. The pane beneath holds the selected request in full,
-including the source line exactly as the log holds it — every finding traces back to a line.*
+<sub>The **behaviour map**: the same reconstruction folded by activity type, so repetition becomes structure. 201 episodes become five nodes, and `x23` on an arrow says the client went round that loop twenty-three times — the thing a chronological trace cannot show. The evidence panel holds all 242 requests of the selected one: `/admin.php`, `/vendor/`, `/db.sql`, `/backup.zip`, `/phpmyadmin/` — a wordlist, being worked through.</sub>
 
-![The same client drawn as a behaviour map](docs/images/screenshot-behaviour.png)
+Pick a client, read the graph, click a node to see the lines behind it, narrow
+the case to a stretch of time, export the same report the CLI produces.
 
-*Behaviour map — the same reconstruction folded by activity type, so repetition becomes structure.
-The four `Directory Enumeration` episodes of the trace are one 45-request node here, and the `x3` on
-each arrow says the scanner went round that loop three times — the thing the trace cannot show. The
-ring marks the activity whose evidence is open; the key along the bottom says what colour, outline
-and size each mean.*
+**Full guide, with every screen: [docs/desktop-app.md](docs/desktop-app.md).**
 
-![The log format screen: the built-in formats and the reader's own, with a pasted log line read back field by field](docs/images/screenshot-log-formats.png)
+Two results the window can produce that the command line cannot, both
+deliberately: the canvas as a **PNG** (a picture of the graph, not a
+serialisation of the reconstruction) and a reconstruction narrowed to a
+**stretch of time**. Every analysis either can run is the same analysis — both
+front ends call the same `logarc.case` and `logarc.analysis` functions, so they
+cannot disagree about what a case contains.
 
-*Log formats — **Case → Log formats…**. The three that ship with logarc above,
-yours below, and neither can be confused for the other: a built-in is readable
-and not editable, because registration order is preference order and an edited
-copy of `apache-combined` would never be reached. Paste one line from your log
-and the directive is tried against it as you type — here a pipe-separated
-format with a forwarded-for header, read into seven of the eleven canonical
-fields plus the header itself, which is usually the whole reason a site has its
-own format. A directive that reads nothing says so, and names the built-in that
-does read the line if there is one. That check is the point of the screen: a
-wrong directive does not announce itself at ingest — it quarantines every line
-and presents as an empty case.*
+---
 
-A Windows GUI (PyQt6) wraps the same engine — the CLI and the GUI share one code path, so
-anything the GUI can do is scriptable. Pick a client from the table, read the activity graph,
-click a node to see the raw log lines that node was built from, and export the same report the
-CLI produces. Long work runs on a worker thread and can be cancelled. A running ingest says how
-far it has got — the log being read, a real percentage of the bytes, the lines
-parsed so far and the rate — because reading a gigabyte takes minutes and a busy
-tool is otherwise indistinguishable from a hung one. The estimate of what is left
-is withheld until the read has settled and always reads *about*: the first
-seconds are the least representative, and a confident figure drawn from them is
-the kind of number this tool is built not to print. A cancelled ingest leaves the
-case un-finalised, so a partial read can never be analysed as if it were complete.
+## Log formats
 
-Opening the window offers the cases you have worked on before; **Case → Recently opened…**
-(Ctrl+Shift+O) brings that list back at any time, and **View → Reopen the last case on start** skips
-it and goes straight to the one you were in. Ctrl-click chooses several rows and **Forget these**
-takes them off the list, which stays open — so tidying a list of ten is one pass rather than ten
-openings. Right-click a row to pin it to the top, rename it in the list, or show its folder. A
-rename is a label here only — `case.json` keeps the case id that every exported report prints.
+![The format library: fourteen built in, one written by the reader](docs/images/screenshot-log-formats.png)
 
-**That list is kept on the machine you are working at.** It records which cases were opened
-here — their folders, when, and how much was in them — under `HKCU\Software\logarc`, beside the
-view preferences. That is a record of what was investigated, not merely of how the window looked,
-so it has to be removable: **Ctrl+A** then **Forget these** takes every entry, and an emptied list
-removes the registry key rather than storing an empty one in it.
-
-**A case can be read over one stretch of time.** The band above the panels shows where the
-traffic sits — the day-night rhythm, and the bursts standing out of it — and a stretch is dragged
-out of it or typed into the two fields beside it. Both halves of the window narrow together: the
-client list shows only who was active in that stretch, with that stretch's own counts, and the
-graph is *reconstructed* from those requests rather than drawn with parts hidden. An activity that
-straddles the edge reports what is inside it, not what it would have been over the whole case.
-
-Because that is a different answer, it is given different names: identifiers carry the range, so
-`100.67.0.86@20240502T012500-20240502T020000#1/1` can never be mistaken for the whole-case
-`100.67.0.86#1/1` in a folder holding both reports. Without a range nothing changes — every case
-and report made before this existed still reads exactly as it did. **Whole case** goes back.
-
-**Pressing the client you are on lets go of it.** The graph goes back to waiting, and the band goes
-back to the whole case — which is how you leave the stretch of time one client's life pins the band
-to. Pressing a different row moves to that client as it always did.
-
-**The band follows whoever is being read.** Before a client is picked it draws the whole case.
-Pick one and it becomes that client's own history, across that client's own life — first request to
-last — so a client alive for ninety minutes fills the band instead of being a hairline in the middle
-of two days. The bars are then that client's requests and nobody else's: when it worked, when it
-went quiet. Letting go of the client, or narrowing to a stretch it was not there for, hands the case
-back.
-
-The band itself is optional: **View → Show the traffic band** turns the drawing off and gives its
-62 pixels back to the graph. Only the picture goes — the fields and **Whole case** stay, because
-they are the precise control and the one to fall back on for a stretch too narrow to drag onto.
-The choice is remembered between launches.
-
-**A saved arrangement is the same kind of record.** It is filed under the case, the client, the
-view and the wrap setting, and the coordinates it holds are keyed by activity id — which for a
-trace carries the client's address in plain text. So `View → Save this arrangement` writes down
-which client of which case you were reading, in the same place and with the same consequences.
-**Reset layout** removes the one for the graph in front of you; nothing else is kept once every
-arrangement has been reset.
-
-A case that could not read all of its logs says so, every time it is opened — an
-amber strip naming how many lines were refused and what share of the file that
-was. When a whole log produced *no* events, that is not damage but the wrong
-parser, so it interrupts instead, naming the file and the format it was read as;
-that name is the part that separates a wrong parser from a log that genuinely
-holds nothing. The counts come from the case manifest rather than from having
-watched the ingest, so they are still there when a colleague opens the case a
-week later. Nothing is shown when nothing was quarantined — silence means the
-case holds everything its logs did.
-
-It is verified by hand against [docs/manual-test-plan.md](docs/manual-test-plan.md) — whether the
-node you clicked is the one whose evidence appeared is a judgement about what a person sees.
-The decisions that determine whether a graph *misinforms* are kept out of Qt, in
-`logarc.style`, and tested directly.
-
-### Checking that it works
-
-Accuracy is measured against a real server's log whose contents are known: the
-BlackHat-Dataset shopfront builds, where a tagging proxy joins every line to a record of
-which client made the request and why. [samples/README.md](samples/README.md) says where to
-get them; [docs/evaluation.md](docs/evaluation.md) has the numbers.
+The format is detected from the first lines of a log. When it cannot be, ingest
+**refuses rather than guessing** — the wrong parser quarantines every line and
+presents as an empty result, which is the worst failure this tool has.
 
 ```bash
-# A pinned dataset build, with OWASP CRS applied. The headline figures include it
-export B=samples/apache-shopfront/2026-08-23-small
-logarc ingest $B/access.log --case ./case-demo
-logarc enrich --case ./case-demo
-
-# Precision, recall and F1 per activity, and how well the boundaries were found
-logarc evaluate --case ./case-demo --truth $B/truth.jsonl --out scores.json
-
-# The same, with noise absorption off, to see what the merge rule costs
-logarc evaluate --case ./case-demo --truth $B/truth.jsonl --no-absorb
-
-# Throughput, peak memory and reconstruction latency, at two sizes of one log
-logarc benchmark --log samples/apache-shopfront/2026-09-07-medium/access.log \
-    -n 100000 -n 243908 --out bench.json
-
-# Convert the CSIC 2010 dataset and score against it
-logarc convert-csic --normal normalTrafficTest.txt --anomalous anomalousTrafficTest.txt \
-    -o csic.log -t csic.truth.jsonl
+logarc formats                     # every format, built in and saved
 ```
 
-### OWASP CRS
+![logarc formats lists what each built-in reads](docs/images/cli-formats.png)
 
-The bundled rules classify *behaviour*; OWASP CRS enumerates payload *syntax*, which is a different
-job and one it does far better. Both run, and CRS never overrides a rule that examined the request —
-it names the ones nothing else recognised.
+A format you write yourself is a first-class one: saved by name, offered wherever
+the built-ins are, usable in every later case. There are four kinds, and none of
+them needs Python.
 
 ```bash
-cd crs && go build -o crs-sidecar .    # once; see crs/README.md
-logarc enrich --case ./case            # replay the case past CRS
+# A text log: write the Apache LogFormat directive down.
+logarc formats check '%h|%t|"%r"|%>s|%b' --log access.log
+logarc formats add office-edge '%h|%t|"%r"|%>s|%b'
+
+# One JSON object per line: the mapping is proposed for you, nested keys included.
+logarc formats check-json --log gateway.jsonl
+logarc formats add-json gateway --log gateway.jsonl --map client_ip=http_x_real_ip
+
+# A table: IIS declares its columns in `#Fields:`, most CSVs in the first row.
+logarc formats add-columns iis --log u_ex240501.log
+logarc formats add-columns edge --log edge.csv --separator comma
+
+# Anything else — syslog-wrapped, an appliance with a syntax of its own.
+logarc formats add-pattern gw-proxy '^(?P<timestamp>\S+) (?P<client_ip>\S+) …' \
+    --time-format '%Y %b %d %H:%M:%S'
 ```
 
-Optional. Without it a case analyses on the bundled rules alone, and says so on every run.
+A time format naming no year is **refused** rather than accepted: `strptime`
+supplies 1900 for a missing year, and a case where every event is dated 1900 is
+exactly the kind of number this tool exists not to emit.
 
-Measured results, and what they do and do not establish, are in
-[docs/evaluation.md](docs/evaluation.md).
+**A format is a definition, not a name.** Each case records the definition it was
+ingested with, so editing or deleting a saved format later cannot make an
+existing case unreadable. See
+[ADR-0010](docs/adr/0010-a-log-format-is-data-that-travels-with-the-work.md).
 
-## Development
+Deliberately absent: AWS ALB, Envoy and HAProxy, which write the client as
+`address:port`. Stripping the port is not safe without deciding what to do about
+IPv6, where the colons are part of the address, and a wrong answer turns every
+connection from one client into a client of its own. All three are readable today
+with a pattern of your own.
+
+---
+
+## How well does it work
+
+Measured on a real Apache log whose contents are known: the
+[BlackHat-Dataset](https://github.com/FRTX045/BlackHat-Dataset) `apache-shopfront`
+medium build — 243,908 requests over seven days, a real PHP shop driven by real
+security tools, where a tagging proxy joins every line to a record of which
+client made the request and why.
+
+Measured 2026-09-08, with OWASP CRS applied at paranoia level 2, which is part of
+the measurement rather than an extra.
+
+| | |
+|---:|---|
+| **0.967** | accuracy over 243,908 requests |
+| **0.969** | weighted F1 |
+| **0.633** | macro F1 — *see below* |
+| **0.998 / 0.941** | attack precision / recall |
+| **0.016%** | false alarms — 37 requests in 243,908 |
+| **28,532** | lines per second ingesting, one core |
+| **293 MB** | peak memory on the whole 52.4 MB log |
+| **27×** | smaller on disk than the log it was read from |
+
+**Macro F1 of 0.633 is the number to be careful with.** It is an unweighted mean
+over fourteen categories, so a category with eight requests in it counts as much
+as one with 168,257. Three score zero — `unknown` is a structural zero, because
+no rule can assign it, and it alone costs 0.049. Weighted F1 and accuracy are
+over the same predictions. Macro F1 refuses to let a rare category hide, which is
+the point of reporting it.
+
+**This is lower than the figure this project used to publish, and that is not a
+regression.** Until September 2026 accuracy was measured against a corpus this
+project generated itself, which scored macro F1 0.958. Moving to a log written by
+a real server dropped it to 0.633. It was the first honest measurement, and
+[ADR-0011](docs/adr/0011-a-real-server-log-is-the-headline-corpus.md) records why
+the generator was deleted rather than kept.
+
+Per-category figures below about fifty requests of support are an indication, not
+a measurement, and [docs/evaluation.md](docs/evaluation.md) names which those are,
+along with every caveat these headline numbers carry.
+
+---
+
+## How it refuses to lie to you
+
+The failure this tool is built against is not a crash. It is a case that looks
+complete and is not.
+
+- **A log it cannot read is refused, not guessed at.** A wrong parser quarantines
+  every line and presents as a clean, empty case.
+- **Malformed lines are quarantined and counted, never dropped.** A case that
+  could not read all of its logs says so every time it is opened.
+- **A cancelled ingest leaves the case un-finalised**, so a partial read cannot be
+  analysed as if it were whole.
+- **An analysis that ran without CRS says so on every run**, rather than quietly
+  reporting less.
+- **A time format with no year is refused**, rather than dating every event 1900.
+- **No progress estimate is shown until the read has settled**, and it always
+  reads *about*.
+- **`case.json` records every threshold used**, the rule-pack versions and hashes,
+  the CRS revision, and a SHA-256 of every source file — so a finding can be
+  reproduced from the manifest alone, or shown not to be.
+
+---
+
+## Installing
+
+Requires **Python 3.11 or newer**. Tested on Linux and Windows, Python 3.11 and
+3.12, on every push.
 
 ```bash
-ruff check . && ruff format --check .
-mypy src/logarc
-mypy --platform linux src/logarc    # CI runs on both; some code is platform-shaped
-pytest --cov=logarc --cov-report=term-missing
+pip install -e ".[gui]"      # the tool and the desktop application
+pip install -e "."           # the command line alone
+pip install -e ".[dev]"      # add the test and lint toolchain
 ```
 
-The second type check is not redundant. `mypy` analyses for the platform it runs
-on, so a Windows-only branch guarded by `sys.platform` is skipped on Windows and
-checked on Linux — and the reverse. Checking one platform passes code that the
-other rejects.
-
-### Building the Windows bundle
+### A packaged Windows build
 
 ```bash
 pip install -e ".[gui,package]"
 python packaging/rebuild.py
 ```
 
-Produces `dist/logarc/` (~250 MB), which runs without Python installed. One folder rather than
-one file: a one-file build unpacks the whole bundle to `%TEMP%` on every launch, which with Qt
-and Arrow in it costs seconds each time and leaves copies of the tool behind.
+Produces `dist/logarc/` (~250 MB), which runs without Python installed. One
+folder rather than one file: a one-file build unpacks the whole bundle to
+`%TEMP%` on every launch, which with Qt and Arrow in it costs seconds each time
+and leaves copies of the tool behind.
 
-`rebuild.py` rather than `pyinstaller` directly, because **PyInstaller exits 0 on a bundle that is
-missing what it could not see.** Two things a freezer drops silently, and the spec therefore
-carries explicitly: the rule packs, which are data that nothing imports, and the package metadata,
-which is where the case manifest gets the tool version it records. Both fail at runtime rather than
-at build time, and the first fails *quietly* — no rules means every request reads as benign. The
-script runs the tests, builds into a staging directory, checks for both of those and for a browser
-engine that ADR-0006 says must not be there, and only then swaps the result into place. A red suite
-or a failed check leaves the working bundle exactly where it was.
+Use `rebuild.py` rather than `pyinstaller` directly, because **PyInstaller exits
+0 on a bundle that is missing what it could not see** — the rule packs are data
+that nothing imports, and a build without them reports every request as benign.
+The script runs the tests, builds into a staging directory, checks for the things
+an exit code cannot, and only then swaps the result into place.
+
+### OWASP CRS (optional)
+
+The bundled rules classify *behaviour*; OWASP CRS enumerates payload *syntax*,
+which is a different job and one it does far better. Both run, and CRS never
+overrides a rule that examined the request — it names the ones nothing else
+recognised.
 
 ```bash
-cat dist/BUILD-STATUS.txt      # what the last build did, and to which commit
-pyinstaller --clean --noconfirm packaging/logarc.spec   # the raw build, unchecked
+git clone https://github.com/coreruleset/coreruleset.git vendor/coreruleset
+git -C vendor/coreruleset checkout d694d465951ee06347214f1291ae096e40700001
+cd crs && go build -o crs-sidecar .        # needs Go 1.25+; see crs/README.md
+logarc enrich --case ./case-shop           # replay the case past CRS
 ```
 
-Check 7 of the manual test plan covers the same ground on the packaged result.
+Without it a case analyses on the bundled rules alone, and says so on every run.
+
+---
+
+## Command line
+
+![logarc ingest reads 3,825 lines with nothing quarantined](docs/images/cli-ingest.png)
+
+| Command | What it does |
+|---|---|
+| `logarc ingest` | Read logs into a case. Streaming; memory is bounded by batch size, not file size. `--workers N` spreads the parse across processes. |
+| `logarc list-ips` | List the clients seen. `--sort errors` ranks by the share of 4xx, which is what probing looks like. Also `requests`, `recent`, `bytes`, `paths`. |
+| `logarc analyze` | Reconstruct one client's activity as a graph. `--out` writes it as JSON. |
+| `logarc evidence` | The raw log lines a finding rests on — the other half of the chain of custody. |
+| `logarc export` | A standalone HTML or JSON report for one client. |
+| `logarc enrich` | Add OWASP CRS detections to a case. |
+| `logarc formats` | See, write and try out log formats. |
+| `logarc evaluate` | Measure the reconstruction against a log whose content is known. |
+| `logarc benchmark` | Throughput, peak memory and reconstruction time, on a log you give it. |
+| `logarc convert-csic` | Turn the CSIC 2010 dataset into an access log logarc can read. |
+
+![logarc list-ips ranked by the share of 4xx responses](docs/images/cli-list-ips.png)
+
+---
+
+## How it works
+
+The research question is: **how do you separate one action from another, and then
+classify it** — at log sizes measured in gigabytes, offline?
+
+logarc answers it with deterministic three-level segmentation and a two-pass
+ingest architecture. Determinism is a deliberate constraint: a forensic finding
+must be explainable and reproducible, so every boundary the tool draws can be
+traced to a stated rule and a recorded threshold.
+
+**Two passes.** Ingest is O(n) over the log and happens once per case. Analysis
+is O(k) over one client's events and happens many times, interactively. After
+ingest, selecting a client reads roughly 1/64 of the store, so everything after
+retrieval runs in memory instantly.
+
+**Three levels of segmentation.**
+
+1. **Session** — new session on an idle gap over 30 minutes, a User-Agent change
+   (same address, different client: the NAT case), or 8 hours elapsed.
+2. **Request label** — signature and window rules, over normalised text.
+3. **Episode** — new episode when the category changes or the gap exceeds 5
+   minutes, then one merge pass absorbs short benign interludes between
+   same-category episodes. Without that pass a single `favicon.ico` fetch splits
+   one attack into three.
+
+Full detail in [docs/architecture.md](docs/architecture.md), and the reasoning
+behind each choice in [docs/adr/](docs/adr/).
+
+---
+
+## Development
+
+```bash
+ruff check . && ruff format --check .
+mypy src/logarc
+mypy --platform linux src/logarc    # not redundant — some code is platform-shaped
+pytest --cov=logarc --cov-report=term-missing
+```
+
+The second type check matters: `mypy` analyses for the platform it runs on, so a
+Windows-only branch guarded by `sys.platform` is skipped on Windows and checked
+on Linux, and the reverse.
+
+`pytest`'s default temp root is unwritable on some Windows machines; set
+`PYTEST_DEBUG_TEMPROOT` to a short writable path if the suite fails to start.
+
+The four CRS contract tests skip without the Go binary. `LOGARC_REQUIRE_CRS=1`
+turns that skip into a failure; CI sets it.
+
+---
 
 ## Documentation
 
-- [docs/architecture.md](docs/architecture.md) — layers, data flow, extension points
-- [docs/writing-rules.md](docs/writing-rules.md) — adding detection without writing Python
-- [docs/adding-a-parser.md](docs/adding-a-parser.md) — supporting another log format
-- [docs/evaluation.md](docs/evaluation.md) — how accuracy is measured, the numbers, and their limits
-- [docs/manual-test-plan.md](docs/manual-test-plan.md) — what the automated suite cannot check
-- [docs/adr/](docs/adr/) — architecture decision records
-- [CHANGELOG.md](CHANGELOG.md) — what is in this release, including what falls short
+| | |
+|---|---|
+| [docs/architecture.md](docs/architecture.md) | Layers, data flow, extension points |
+| [docs/desktop-app.md](docs/desktop-app.md) | The desktop application, screen by screen |
+| [docs/writing-rules.md](docs/writing-rules.md) | Adding detection without writing Python |
+| [docs/adding-a-parser.md](docs/adding-a-parser.md) | Supporting another log format |
+| [docs/evaluation.md](docs/evaluation.md) | How accuracy is measured, the numbers, and their limits |
+| [docs/manual-test-plan.md](docs/manual-test-plan.md) | What the automated suite cannot check |
+| [docs/adr/](docs/adr/) | Eleven architecture decision records, including the ones that were wrong |
+| [CHANGELOG.md](CHANGELOG.md) | What has changed, including what falls short |
+
+---
+
+## Status
+
+Early development, version 0.1.0. The engine and both front ends work and are
+tested on every push; interfaces may still change. Outside contributions are not
+open yet.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE). Third-party notices in [NOTICE](NOTICE).
