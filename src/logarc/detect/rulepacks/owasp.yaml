@@ -202,6 +202,35 @@ rules:
         - field: status
           min: 400
 
+  # The same behaviour, refused a different way — and the far more common way.
+  #
+  # The rule above assumes an application answers an unauthenticated admin
+  # request with 401 or 403. Most do not: they redirect to the login form, and
+  # that is a 302. Measured on the committed excerpt, whose truth marks 24
+  # requests as `access_control`, the rule above reached *none* of them. This one
+  # reaches 13, and claims nothing the pack did not already claim.
+  #
+  # A separate rule rather than a wider status test on that one, because a match
+  # block takes exactly one combinator: "path matches AND (refused OR
+  # redirected)" cannot be written as a single block. Two named rules also read
+  # better in a report than one whose name no longer says what it matched.
+  #
+  # Deliberately not "any status". That reaches 19 of the 24 and also claims
+  # five `injection` and two `exploitation` requests as access control — a
+  # confident wrong answer in place of a miss, which is the worse trade.
+  - id: admin_area_redirect
+    name: Administrative Area, Redirected Away
+    category: access_control
+    owasp: "A01:2021"
+    severity: medium
+    confidence: 0.55
+    match:
+      all:
+        - field: path_decoded
+          regex: '/(admin|administrator|wp-admin|phpmyadmin|manager/html|console)\b'
+        - field: status
+          any_of: ["302", "303"]
+
   # -- A05: Security Misconfiguration --------------------------------------
 
   - id: config_file_exposure
@@ -238,6 +267,32 @@ rules:
       any:
         - field: path_decoded
           regex: '/(phpinfo|server-status|server-info|actuator|debug|trace|env)\b'
+
+  # A file named so the upload check sees an image and the server still runs it
+  # as code. `/uploads/shell.php.jpg` is the classic shape, and the tool used to
+  # read it the same way the vulnerable upload filter did: `is_static_asset`
+  # looks at the last extension, so a live webshell being driven came back as
+  # `Static Asset`.
+  #
+  # Four of these sit in the committed excerpt, answered 200, with the command in
+  # the query — `?c=id`, `?c=cat /etc/passwd`. The truth calls them
+  # `exploitation`; this pack called them images.
+  #
+  # Both halves of the pair are listed rather than matching "any two
+  # extensions", which would claim `backup.tar.gz` and every other compressed
+  # file. `critical` because a 200 here means the command ran, and 0.95 because
+  # there is no innocent reason to name a file this way.
+  - id: webshell_double_extension
+    name: Webshell Disguised by a Double Extension
+    category: exploitation
+    owasp: "A03:2021"
+    severity: critical
+    confidence: 0.95
+    references: ["CAPEC-650"]
+    match:
+      any:
+        - field: path_decoded
+          regex: '\.(php\d?|phtml|phar|asp|aspx|ashx|jsp|jspx|cgi|pl|py|rb|sh|exe|dll)\.(jpe?g|png|gif|bmp|webp|svg|ico|txt|pdf|zip|csv|log|bak)\b'
 
   # -- A06: Vulnerable and Outdated Components -----------------------------
 

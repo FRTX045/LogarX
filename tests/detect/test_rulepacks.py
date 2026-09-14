@@ -212,6 +212,81 @@ def test_refused_paths_are_forced_browsing_rather_than_enumeration(engine: RuleE
     assert all(item.label.category is ActivityCategory.ACCESS_CONTROL for item in labelled)
 
 
+def test_a_redirect_away_from_an_admin_page_is_a_refusal(engine: RuleEngine) -> None:
+    """Most applications refuse an unauthenticated admin request with a 302.
+
+    `admin_area_probe` tested `status >= 400`, which assumes the server answers
+    a refusal with 401 or 403. Real applications mostly do not: they redirect to
+    the login form, and a redirect is 302.
+
+    Measured on the committed excerpt, where the ground truth marks 24 requests
+    as `access_control`: the rule as written reached **none** of them, and that
+    is the whole of why the category scored 0.000 on the headline corpus.
+    Accepting 302 and 303 reaches 13 of the 24 and claims nothing it did not
+    claim before.
+    """
+    (labelled,) = engine.label_events([request("/admin/users", status=302)])
+
+    assert labelled.label.rule_id == "admin_area_redirect"
+    assert labelled.label.category is ActivityCategory.ACCESS_CONTROL
+
+
+def test_reaching_an_admin_page_successfully_is_not_a_refusal(
+    engine: RuleEngine,
+) -> None:
+    """The rule is about being turned away, so a 200 must not match it.
+
+    Widening to "any status" would have reached 19 of the excerpt's 24 rather
+    than 13 — and would also have claimed five `injection` and two
+    `exploitation` requests as access control, which is a worse answer than
+    missing them. A successful admin request is somebody's ordinary Tuesday
+    until another rule says otherwise.
+    """
+    (labelled,) = engine.label_events([request("/admin/users", status=200)])
+
+    assert labelled.label.rule_id not in {"admin_area_probe", "admin_area_redirect"}
+
+
+def test_a_script_wearing_an_image_extension_is_not_a_static_asset(
+    engine: RuleEngine,
+) -> None:
+    """`/uploads/shell.php.jpg` was being called an image, because it ends `.jpg`.
+
+    This is the upload-filter bypass: name the file so the check sees `.jpg` and
+    the server still hands it to the PHP interpreter. The excerpt carries four of
+    these, answered 200, with the command in the query — `?c=id`,
+    `?c=cat /etc/passwd`. The truth calls them `exploitation`.
+
+    `is_static_asset` reads the last extension, so all four came back
+    `static_asset`: the tool looked at a live webshell being driven and reported
+    an image being served. Of everything in this pack, that was the most
+    dangerous thing it got wrong.
+    """
+    (labelled,) = engine.label_events([request("/uploads/shell.php.jpg?c=id")])
+
+    assert labelled.label.category is ActivityCategory.EXPLOITATION
+    assert labelled.label.rule_id == "webshell_double_extension"
+
+
+def test_an_ordinary_image_is_still_an_ordinary_image(engine: RuleEngine) -> None:
+    """The guard on the rule above. One extension is not two."""
+    (labelled,) = engine.label_events([request("/uploads/holiday.jpg")])
+
+    assert labelled.label.category is ActivityCategory.STATIC_ASSET
+
+
+def test_a_compressed_archive_is_not_a_webshell(engine: RuleEngine) -> None:
+    """`backup.tar.gz` has two extensions and neither is a script.
+
+    Worth a test of its own: a rule written as "any two extensions" would claim
+    every compressed file on the internet, and this is the shape it would trip on
+    first.
+    """
+    (labelled,) = engine.label_events([request("/backups/backup.tar.gz")])
+
+    assert labelled.label.rule_id != "webshell_double_extension"
+
+
 def test_a_fast_page_load_is_not_reconnaissance(engine: RuleEngine) -> None:
     """A browser pulling one page's sub-resources is not a scan.
 

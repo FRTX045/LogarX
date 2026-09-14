@@ -115,7 +115,9 @@ run. A rebuild at the same seed scores close to what is printed here, not identi
 checking these numbers should verify the checksums first; anyone who rebuilds should expect the
 last decimal to move and should say which build they measured.
 
-The builds are not in this repository. They are 22 MB and 80 MB.
+The builds are not in this repository. They are 22 MB and 80 MB — whole builds,
+log plus truth plus manifest, which is why those figures sit above the 52.4 MB
+the throughput table gives for the medium build's `access.log` on its own.
 [samples/README.md](../samples/README.md) says how to obtain or rebuild one. The test suite does
 not need them: it scores a committed 3,825-line excerpt under `tests/data/apache-shopfront/`,
 pinned by its own checksums.
@@ -262,6 +264,19 @@ figure quoted without it is not re-derivable.
 ### The result
 
 Ruleset `9edf8587…` (33 rules) against coreruleset `d694d465951e`, 200 case files.
+
+**That is not the ruleset shipping today, and the figure still holds.** The
+current one fingerprints `e81ace93…`, also 33 rules. Everything that moved
+between them is a *window* rule: one confidence raised, a `static_asset_ratio`
+condition added to `directory_enumeration`, and `directory_enumeration_low_slow`
+added. `owasp.yaml`, where every signature rule lives, is byte-identical to the
+commit that produced this table (`cf59dfc`), and `recon.yaml`'s three signature
+rules are unchanged.
+
+A window rule cannot affect this measurement: each CRS case file is one request,
+and a window rule needs a run of them. So the rate below describes the shipping
+ruleset as well as the one it was measured on — which is worth stating, because
+two different fingerprints in one document otherwise read as two different tools.
 
 | Family | Attack | Scoreable | Detected | Rate | In URI | In header |
 |---|---|---:|---:|---:|---:|---:|
@@ -485,7 +500,14 @@ to carry came from generated logs that no longer exist; rebuilding them means th
 `large` tier, about a million lines. The memory table below is kept because it was measured
 directly against the store rather than against any particular corpus.
 
-Memory is bounded rather than proportional. Measured separately, each size in a fresh process:
+Memory is bounded rather than proportional. Measured separately, each size in a fresh process.
+
+**Measured 2026-08-09, on Python 3.12** — a month before the figures above it and
+on the previous interpreter, so it does not belong to the Python 3.13 heading
+this section opens with. It is kept rather than re-run because it measures the
+store directly, in rows pushed into it, and nothing about that path has changed
+since. Rows, not log lines: a line becomes one row, but the two are counted at
+different ends of the pipeline and the numbers should not be read as throughput.
 
 | Rows | Peak during ingest | Peak after finalize | Finalize |
 |---:|---:|---:|---:|

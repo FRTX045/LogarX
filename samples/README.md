@@ -7,7 +7,8 @@ Chromium for some sessions, real security tools and six scripted attack
 campaigns, with every log line joined to a record of which client made it and
 why. Nothing in it was written by a template.
 
-The files are not in this repository. They are 22 MB and 80 MB, and the numbers
+The files are not in this repository. They are 22 MB and 80 MB for the whole
+build — the log, its truth file and the manifest together — and the numbers
 in [docs/evaluation.md](../docs/evaluation.md) are tied to the exact bytes, so
 they are pinned by checksum rather than versioned.
 

@@ -24,10 +24,9 @@ if TYPE_CHECKING:
 
 __all__ = ["nobody_here", "spoken", "summary"]
 
-#: How a moment is written when the whole stretch sits inside one day, and when
-#: it does not. Two formats rather than one so a window inside an afternoon does
-#: not say the date twice for no reason.
-_DAY_AND_TIME = "%-d %b %H:%M"
+#: How the far end of a stretch is written when both ends sit inside one day:
+#: the time alone, so a window inside an afternoon does not say the date twice
+#: for no reason. The other end goes through `_moment`, which writes the date.
 _TIME_ONLY = "%H:%M"
 
 
