@@ -48,9 +48,9 @@ def filter_notice(clients: Sequence[str], *, lines_filtered: int = 0) -> Notice 
             f"{'that client' if one else 'those clients'}, not the whole log."
         ),
         detail=(
-            "The log was narrowed at ingest, so everything here describes "
-            f"{'the client that was' if one else 'the clients that were'} kept "
-            f"and nothing else.{skipped}\n\n"
+            "The log was narrowed at ingest, so everything here describes the "
+            f"{'client' if one else 'clients'} that were kept and nothing else."
+            f"{skipped}\n\n"
             "That matters most where the window looks complete: the client list "
             "holds no one else, the traffic band draws no one else, and a "
             "question about another address cannot be answered from this case "
