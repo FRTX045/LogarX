@@ -11,3 +11,11 @@
 *.parquet binary
 *.gz binary
 tests/data/** -text
+
+# Fixture data is carried so the suite can score against a real log without a
+# download. It is a capture, not something this project wrote, so it is kept out
+# of GitHub's language statistics — otherwise a 725 KB access log and its
+# 386 KB truth file describe the repository's languages more than `src/` does.
+tests/data/**/*.log       linguist-vendored
+tests/data/**/*.jsonl     linguist-vendored
+tests/data/**/SHA256SUMS  linguist-vendored
