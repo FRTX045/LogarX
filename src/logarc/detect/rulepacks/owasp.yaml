@@ -189,8 +189,19 @@ rules:
         - field: target_decoded
           regex: '/etc/(passwd|shadow|hosts)|[/\\](win\.ini|boot\.ini)|/proc/self/environ'
 
+  # A refusal, not a miss. 404 says the thing is not there; 401 and 403 say it is
+  # there and this client may not have it — opposite findings, and this pack
+  # already draws the line. `directory_enumeration`'s own comment puts it best:
+  # "enumeration is finding out what exists; a refusal means the thing exists and
+  # is protected", and `forced_browsing` keeps to it with `any_of: [401, 403]`.
+  #
+  # This rule did not. `status >= 400` swept 404 in with the refusals, and on the
+  # committed excerpt that was the whole of its behaviour: 140 matches on admin
+  # paths, every one a 404 or a 400, not one a real refusal. The truth calls them
+  # enumeration or reconnaissance. Precision was 0.146 — the worst in the pack —
+  # and this clause was all of it.
   - id: admin_area_probe
-    name: Administrative Area Probe
+    name: Administrative Area Refusal
     category: access_control
     owasp: "A01:2021"
     severity: medium
@@ -200,7 +211,7 @@ rules:
         - field: path_decoded
           regex: '/(admin|administrator|wp-admin|phpmyadmin|manager/html|console)\b'
         - field: status
-          min: 400
+          any_of: ["401", "403"]
 
   # The same behaviour, refused a different way — and the far more common way.
   #

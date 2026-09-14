@@ -247,6 +247,35 @@ def test_reaching_an_admin_page_successfully_is_not_a_refusal(
     assert labelled.label.rule_id not in {"admin_area_probe", "admin_area_redirect"}
 
 
+def test_a_missing_admin_page_is_not_an_access_control_finding(
+    engine: RuleEngine,
+) -> None:
+    """404 says the thing is not there. 403 says it is there and you may not.
+
+    Those are opposite findings, and this pack already states the distinction —
+    `directory_enumeration`'s own comment says "enumeration is finding out what
+    exists; a refusal means the thing exists and is protected". `forced_browsing`
+    keeps to it with `any_of: [401, 403]`.
+
+    `admin_area_probe` did not: it took `status >= 400`, which sweeps 404 in with
+    the refusals. On the committed excerpt every one of its 140 matches on admin
+    paths was a 404 or a 400 — not one was a real refusal — and the truth calls
+    them enumeration or reconnaissance. It was the worst precision in the pack,
+    0.146, and every point of it was this clause.
+    """
+    (labelled,) = engine.label_events([request("/wp-admin/", status=404)])
+
+    assert labelled.label.category is not ActivityCategory.ACCESS_CONTROL
+
+
+def test_a_forbidden_admin_page_still_is_one(engine: RuleEngine) -> None:
+    """The other half. A 403 is what the rule was always meant to catch."""
+    (labelled,) = engine.label_events([request("/admin/settings", status=403)])
+
+    assert labelled.label.rule_id == "admin_area_probe"
+    assert labelled.label.category is ActivityCategory.ACCESS_CONTROL
+
+
 def test_a_script_wearing_an_image_extension_is_not_a_static_asset(
     engine: RuleEngine,
 ) -> None:
