@@ -524,9 +524,20 @@ and draws it as an activity graph.
 
 ### Known limitations
 
-- **Ingest throughput is ~31,000 lines/s against a 100,000 target.** Cost per line does not grow
-  with the corpus, but the constant misses the goal. Parallel ingest over byte-range splits is
-  the named remedy and is not implemented.
+- **Ingest throughput is 28,532 lines/s against a 100,000 target**, and the target is not
+  reachable on this class of hardware. Cost per line does not grow with the corpus — that part of
+  the design holds — but the constant misses the goal.
+
+  The named remedy *was* parallel ingest over byte-range splits, and that shipped: `--workers`
+  and [ADR-0009](docs/adr/0009-parallel-ingest-rather-than-a-native-parser.md). It reaches 69,655
+  lines/s with eight workers, 2.55x the sequential rate on the same log. That is close to what the
+  hardware has to give: four physical cores behind eight logical ones, and adding workers past
+  four moves 2.42x to 2.55x.
+
+  So the gap is no longer a missing feature. 100,000 lines/s needs either more cores than a
+  laptop has or a parser that costs less per line, and the second is what ADR-0009 decided
+  against rewriting in another language. The figure stands as measured rather than as a target
+  about to be met.
 - No plugin discovery for parsers — registering one means importing a module that calls
   `register_format`.
 - Four OWASP categories are not observable from an access log and are not claimed.
