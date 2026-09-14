@@ -31,13 +31,14 @@ from colours import contrast
 from conftest import settled
 from logarc.analysis import analyse_ip
 from logarc.case import Case
+from logarc.caseview import read_case, reconstruct_client
 from logarc.core.activity import ActivityCategory, Outcome, Severity
 from logarc.core.evidence import EvidenceRef
 from logarc.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
 from logarc.core.window import TimeWindow
 from logarc.detect.crs import CrsDetection, write_detections
 from logarc.gui import app
-from logarc.gui.app import MainWindow, read_case, reconstruct_client
+from logarc.gui.app import MainWindow
 from logarc.gui.arrangement_keeper import LAYOUT_KEY
 from logarc.gui.canvas import MIN_FIT_SCALE, ActivityCanvas
 from logarc.gui.evidence_panel import EvidencePanel
@@ -1346,13 +1347,13 @@ def test_the_busiest_matching_activity_is_the_one_carried_across(
     three trace nodes. The ring lands on the one that dominated what was being
     read — and on the same one every run, because a forensic tool that ringed a
     different node on each pass would invite doubt about what else moved."""
-    from logarc.gui.app import _node_for_episodes
+    from logarc.caseview import node_for_episodes
 
     with Case.open(recurring) as case:
         result = analyse_ip(case.store, CLIENT)
     behaviour = max(result.behaviour.nodes, key=lambda item: item.episode_count)
 
-    found = _node_for_episodes(result.trace, frozenset(behaviour.episode_ids))
+    found = node_for_episodes(result.trace, frozenset(behaviour.episode_ids))
 
     assert found is not None
     assert found.request_count == 20, "the busiest of the three enumeration episodes"
@@ -1364,12 +1365,12 @@ def test_an_activity_with_no_counterpart_leaves_nothing_ringed(
     """The other half of carrying a selection across: when the new graph has no
     node for it, the answer is no ring and an empty panel — not the previous
     graph's evidence left sitting beside a graph that does not show it."""
-    from logarc.gui.app import _node_for_episodes
+    from logarc.caseview import node_for_episodes
 
     with Case.open(recurring) as case:
         result = analyse_ip(case.store, CLIENT)
 
-    assert _node_for_episodes(result.trace, frozenset({"nothing/1"})) is None
+    assert node_for_episodes(result.trace, frozenset({"nothing/1"})) is None
 
 
 def test_switching_view_leaves_the_panel_describing_what_is_ringed(
@@ -1485,7 +1486,7 @@ def test_the_table_stops_at_what_it_can_draw_and_says_so(
     there is a ceiling, and it is a limit on what can be *drawn* rather than on
     what is kept. Reached, it is stated rather than passed over in silence.
     """
-    monkeypatch.setattr(app, "_EVIDENCE_LIMIT", 5)
+    monkeypatch.setattr(app, "EVIDENCE_LIMIT", 5)
     window = _reconstructed(qt_app, campaign)
     biggest = max(window._result.trace.nodes, key=lambda item: item.request_count)
 
