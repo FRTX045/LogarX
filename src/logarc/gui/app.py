@@ -215,6 +215,72 @@ class MainWindow(QMainWindow):
         self._heading.setTextFormat(Qt.TextFormat.RichText)
         self._heading.setFont(heading_font(self._heading.font()))
 
+        self._build_tabs()
+
+        # Under the canvas rather than over it. The note beside `Undo` in the
+        # Edit menu says why: a strip floating on the graph covers a patch of it,
+        # has to be moved on every resize, and swallows clicks meant for whatever
+        # node is underneath.
+        self._arrangement_bar = ArrangementBar()
+        # Handed the canvas rather than owning it: every part of the window uses
+        # that. What it owns is the store, the key, the strip and the question
+        # asked before an arrangement nobody kept is lost.
+        self._arrangements_kept = ArrangementKeeper(
+            self._canvas,
+            self._arrangement_bar,
+            settings=_settings,
+            say=self._idle,
+            parent=self,
+            showing=self._showing_now,
+        )
+        self._full_screen = FullScreen(self, self._canvas, cover=self._what_to_cover)
+        self._arrangement_bar.save_requested.connect(self._arrangements_kept.save)
+        self._arrangement_bar.reset_requested.connect(self._arrangements_kept.reset)
+
+        centre = QWidget()
+        column = QVBoxLayout(centre)
+        # Matching the panels either side, and what lets the canvas read as a
+        # framed document rather than a hole cut in the window.
+        column.setContentsMargins(PAD, TIGHT, PAD, TIGHT)
+        column.setSpacing(TIGHT)
+        column.addWidget(self._tabs)
+        column.addWidget(self._heading)
+        column.addWidget(self._canvas)
+        column.addWidget(self._arrangement_bar)
+        column.addWidget(self._legend)
+
+        splitter = self._build_splitter(centre)
+        # Kept as an attribute for the tests that size it directly, now that
+        # the strip sits between it and the window.
+        self._splitter = splitter
+
+        # Above the splitter rather than inside a panel: the strip is about the
+        # whole case, and every panel beneath it is about one part of one.
+        frame = QWidget()
+        stack = QVBoxLayout(frame)
+        stack.setContentsMargins(0, 0, 0, 0)
+        stack.setSpacing(0)
+        stack.addWidget(self._notice)
+        stack.addWidget(self._format_notice)
+        # Beside the notice for the same reason, and it matters more here than
+        # it looks: the range governs the client list as well as the graph, so
+        # sitting over the graph alone it would claim to narrow one of the two
+        # things it narrows. Inside the middle column it also forced that column
+        # wider than the client table could spare — measured at 279 pixels for a
+        # table that needs 420 to show its columns.
+        self._time_filter = TimeFilterBar()
+        self._time_filter.changed.connect(self._apply_window)
+        stack.addWidget(self._time_filter)
+        stack.addWidget(splitter, 1)
+        self.setCentralWidget(frame)
+
+    def _build_tabs(self) -> None:
+        """The bar that says which of the two readings is in front of you.
+
+        Lifted out of `_build_layout` because it is the one block there that
+        genuinely closes over itself: it builds `self._tabs`, dresses it, fills
+        it and wires it, and hands nothing else back to the layout around it.
+        """
         # Which view you are looking at, said on screen rather than only in a
         # menu. Trace and behaviour are two readings of one reconstruction and
         # the window drew them into the same rectangle with nothing to tell them
@@ -260,38 +326,14 @@ class MainWindow(QMainWindow):
         # Nothing to switch between until a client has been reconstructed.
         self._tabs.setVisible(False)
 
-        # Under the canvas rather than over it. The note beside `Undo` in the
-        # Edit menu says why: a strip floating on the graph covers a patch of it,
-        # has to be moved on every resize, and swallows clicks meant for whatever
-        # node is underneath.
-        self._arrangement_bar = ArrangementBar()
-        # Handed the canvas rather than owning it: every part of the window uses
-        # that. What it owns is the store, the key, the strip and the question
-        # asked before an arrangement nobody kept is lost.
-        self._arrangements_kept = ArrangementKeeper(
-            self._canvas,
-            self._arrangement_bar,
-            settings=_settings,
-            say=self._idle,
-            parent=self,
-            showing=self._showing_now,
-        )
-        self._full_screen = FullScreen(self, self._canvas, cover=self._what_to_cover)
-        self._arrangement_bar.save_requested.connect(self._arrangements_kept.save)
-        self._arrangement_bar.reset_requested.connect(self._arrangements_kept.reset)
+    def _build_splitter(self, centre: QWidget) -> QSplitter:
+        """The three columns, given the middle one.
 
-        centre = QWidget()
-        column = QVBoxLayout(centre)
-        # Matching the panels either side, and what lets the canvas read as a
-        # framed document rather than a hole cut in the window.
-        column.setContentsMargins(PAD, TIGHT, PAD, TIGHT)
-        column.setSpacing(TIGHT)
-        column.addWidget(self._tabs)
-        column.addWidget(self._heading)
-        column.addWidget(self._canvas)
-        column.addWidget(self._arrangement_bar)
-        column.addWidget(self._legend)
-
+        The other block in `_build_layout` worth its own name, and the better
+        of the two: it takes an argument and returns a widget rather than
+        reaching into `self` for both ends, so what it needs and what it
+        produces are both visible from the call.
+        """
         # Small enough to leave the panel adjustable, which is the whole point
         # of a splitter. A floor of 430 was set here to stop the client table
         # being squeezed until three of its six columns hid — it worked, and it
@@ -318,29 +360,7 @@ class MainWindow(QMainWindow):
         # anyway. Continuous down to the minimum, and no further.
         splitter.setChildrenCollapsible(False)
         splitter.setSizes([440, 560, 400])
-        # Kept as an attribute for the tests that size it directly, now that
-        # the strip sits between it and the window.
-        self._splitter = splitter
-
-        # Above the splitter rather than inside a panel: the strip is about the
-        # whole case, and every panel beneath it is about one part of one.
-        frame = QWidget()
-        stack = QVBoxLayout(frame)
-        stack.setContentsMargins(0, 0, 0, 0)
-        stack.setSpacing(0)
-        stack.addWidget(self._notice)
-        stack.addWidget(self._format_notice)
-        # Beside the notice for the same reason, and it matters more here than
-        # it looks: the range governs the client list as well as the graph, so
-        # sitting over the graph alone it would claim to narrow one of the two
-        # things it narrows. Inside the middle column it also forced that column
-        # wider than the client table could spare — measured at 279 pixels for a
-        # table that needs 420 to show its columns.
-        self._time_filter = TimeFilterBar()
-        self._time_filter.changed.connect(self._apply_window)
-        stack.addWidget(self._time_filter)
-        stack.addWidget(splitter, 1)
-        self.setCentralWidget(frame)
+        return splitter
 
     def _build_menu(self) -> None:
         menu_bar = required(self.menuBar())
