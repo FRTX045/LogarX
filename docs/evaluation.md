@@ -231,10 +231,36 @@ Four groups deserve naming individually.
   detection failure, and it costs the macro average 0.049 on its own.
 - **`enumeration`, recall 0.542, against `reconnaissance`, precision 0.294.** These are one
   finding seen from both ends: requests the dataset calls a wordlist sweep are read as probing for
-  known artefacts. The boundary between the two is a judgement (few deliberate requests against
-  many blind ones), and on real tool traffic the tool draws it in a different place than the
-  dataset's driver does. It is the largest single source of classification error here and it is
-  a rule question, recorded rather than acted on.
+  known artefacts. It is the largest single source of classification error here.
+
+  This document used to call it "a rule question". **Measured on 2026-09-14, it is partly not
+  one**, and the part that is not has a floor. The truth labels a request by *which campaign sent
+  it*, not by what the request is, and the campaigns' path sets overlap. On the committed excerpt,
+  **70 of 444 distinct `(path, status)` pairs carry more than one truth category, covering 1,355
+  of 3,615 scored requests — 37.5%**:
+
+  | Request | Truth says | Sent by |
+  |---|---|---|
+  | `GET /backup.zip` → 404 | `enumeration` ×31 | two clients forging a browser User-Agent |
+  | | `reconnaissance` ×11 | one client sending no User-Agent |
+  | `GET /admin.php` → 404 | `enumeration` ×30 | three clients with a User-Agent |
+  | | `reconnaissance` ×15 | the same no-User-Agent client |
+  | `GET /` → 200 | `crawling` ×70, `browsing` ×20, `reconnaissance` ×17 | 42 clients between them |
+
+  The request lines are identical. What separates them is the client, so **no rule reading only
+  the request line can be right on both sides** — which is a property of real traffic, not a defect
+  in the truth: the same request does mean different things depending on who sends it.
+
+  That is a ceiling on signature rules, not on the tool. Most of this is already resolved by the
+  features that *are* observable: `crawling` scores precision 1.000 because the User-Agent settles
+  it, and `known_software_probe` reads `/wp-admin/` at 404 as enumeration only when a User-Agent
+  is present, which is what keeps the 49 requests from the no-User-Agent client where they belong.
+
+  **What is left is deliberately not chased.** Closing the residual 67 would mean making
+  `backup_file_probe` and `config_file_exposure` yield to enumeration whenever a User-Agent is
+  present. That is this dataset's convention for telling its two campaigns apart, not a fact about
+  security — a scanner forging a User-Agent and asking for `/backup.zip` is doing what one without
+  a User-Agent is doing. Writing it into a rule would buy a figure by encoding the answer sheet.
 - **`access_control` and `exploitation`, 0.000 over 28 and 8 requests.** Real ground that is
   genuinely uncovered: forced browsing to admin areas and webshell use, in volumes too small for
   the per-class figure to be stable but large enough to say the rules do not reach them.
