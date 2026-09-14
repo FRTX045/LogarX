@@ -142,6 +142,22 @@ one, the two differ.
 Measured 2026-09-08, ruleset `e81ace93…` (33 rules), CRS `d694d465` at paranoia level 2,
 configuration `f357d142fbcc4441`. Every line of both builds was scored; none went missing.
 
+> **These tables predate three rule changes and have not been re-run.** On
+> 2026-09-14 the pack gained `admin_area_redirect` and
+> `webshell_double_extension`, `admin_area_probe` stopped matching 404, and the
+> classifier stopped calling an unreadable request a page view. Every one of
+> those moves a figure below. They were measured on the committed excerpt, where
+> the numbers went: access control precision 0.146 to 1.000, exploitation recall
+> 0.000 to 0.500, overall agreement 0.889 to 0.893 — but the excerpt is 3,825
+> requests and these tables are 243,908, so those are an indication of direction
+> and nothing more.
+>
+> **Re-run them on the pinned builds before quoting them again.** This document
+> has been wrong in exactly this way once already: figures went stale across a
+> behaviour change, nobody re-measured, and a boundary recall of 0.98 was
+> published for weeks while the tool scored 0.27. The note is here so the same
+> gap cannot open quietly a second time.
+
 | Build | Requests | Clients | | Accuracy | Macro F1 | Weighted F1 | Attack P | Attack R | False alarms |
 |---|---:|---:|---|---:|---:|---:|---:|---:|---:|
 | medium | 243,908 | 2,760 | native | 0.968 | 0.634 | 0.970 | 0.999 | 0.940 | 0.009% |
