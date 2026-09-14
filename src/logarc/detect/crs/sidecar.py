@@ -126,6 +126,20 @@ class SidecarConfig:
     def check(self) -> None:
         """Raise `CrsUnavailableError` unless both the binary and ruleset are present."""
         if not self.binary.exists():
+            # The packaged build carries neither `crs/` nor a Go toolchain, and
+            # its reader has no reason to have either — handed the build command
+            # they would go looking for a directory that is not on their disk.
+            # The error still has to read as "unbuilt" rather than "broken", so
+            # it says what would actually get them there.
+            if getattr(sys, "frozen", False):
+                raise CrsUnavailableError(
+                    f"CRS enrichment is not available in the packaged application.\n"
+                    f"It needs the sidecar binary, which is not bundled: "
+                    f"use a source install to build it, or set {BINARY_ENV} to a "
+                    f"build you already have.\n"
+                    f"Everything else works without it, and every analysis says "
+                    f"when CRS was not consulted."
+                )
             raise CrsUnavailableError(
                 f"CRS sidecar not found at {self.binary}.\n"
                 f"Build it with:\n"

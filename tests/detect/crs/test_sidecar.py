@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -124,6 +125,30 @@ def test_an_absent_sidecar_says_how_to_build_one(tmp_path: Path) -> None:
         config.check()
 
     assert "go build" in str(raised.value)
+
+
+def test_the_packaged_application_is_not_told_to_run_go_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`cd crs && go build` is good advice from a source tree and useless from a bundle.
+
+    The packaged Windows build carries neither the `crs/` directory nor a Go
+    toolchain, and its user has no reason to have either. Handed that message
+    they would go looking for a folder that is not on their disk.
+
+    The message that reaches them has to say the true thing instead: enrichment
+    needs a source install. Everything else about the error stays — it is still
+    the first thing a new user meets, and it still must not read as "broken".
+    """
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    config = SidecarConfig(binary=tmp_path / "nope", rules=tmp_path)
+
+    with pytest.raises(CrsUnavailableError) as raised:
+        config.check()
+
+    message = str(raised.value)
+    assert "go build" not in message
+    assert "source install" in message
 
 
 def test_an_absent_ruleset_says_where_to_clone_it(tmp_path: Path) -> None:
