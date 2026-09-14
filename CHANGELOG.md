@@ -5,7 +5,26 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Nothing yet.
+### Documentation
+
+- **The 100,000 lines/s ingest target is retired**, and `docs/evaluation.md` says so where the
+  measurement is. It named a rate without naming the hardware, so it could be cited but never
+  passed or failed; and lines per second moved on its own when the corpus changed to real logs
+  with longer lines, while megabytes per second held. What is kept in its place is throughput
+  reported with its hardware in both units, and one claim that does have a pass and a fail in
+  it — reconstruction cost per request staying flat as the corpus grows, 214.5 µs against
+  209.3 µs over a 2.4x corpus, which is the O(k) claim the two-pass architecture makes.
+- **`docs/adr/` has an index**, carrying each record's status: which decisions still hold, that
+  0005's corpus decision was superseded by 0011, and that 0007's scoring tooling was removed
+  after the measurement was taken. A filename cannot say any of that, and these records are never
+  renamed.
+
+### Fixed
+
+- **The packaged application no longer tells its reader to run `go build`.** CRS enrichment is
+  unavailable in a frozen build, and the error said to build the sidecar from a `crs/` directory
+  the bundle does not carry, with a toolchain it does not include. It now says what is missing,
+  the two ways to get it, and that nothing else depends on it.
 
 ## [0.2.0] — 2026-09-14
 

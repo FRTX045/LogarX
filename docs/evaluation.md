@@ -584,6 +584,42 @@ four buys almost nothing: 2.42× to 2.55×.
 [ADR-0009](adr/0009-parallel-ingest-rather-than-a-native-parser.md) records why the parser was not
 rewritten in Go instead, given that the project already builds a Go binary for CRS.
 
+#### The 100,000 target is retired
+
+Decided 2026-09-14, and recorded here because the measurement is here.
+
+The number is not being met and is not going to be, but that is the smaller half of the reason.
+The larger half is that **it was never a target** — it names a rate without naming the hardware
+that should reach it, so it cannot be passed or failed, only cited.
+
+It is also in the wrong unit. This document has already caught lines per second moving for a
+reason that has nothing to do with the parser: a real combined line averages 225 bytes against
+the generator's 208, 8% longer, so the same work spreads over fewer lines and the rate drops
+while megabytes per second does not. A goal that moves when the log's lines get longer is
+measuring the corpus.
+
+And the one remaining route to it is closed by decision rather than by effort. Parallel ingest
+shipped and reached 69,655 lines/s, 2.55× sequential and close to what four physical cores have
+to give. Taking the marshalling out bought another 14%. What is left is the regex, the timestamp
+and the object construction, none of them dominant, which is the profile of code with no large
+win remaining in it. The next real gain needs a parser that is not CPython, and ADR-0009 declined
+to write one.
+
+**What is kept instead**, both already measured above:
+
+- **Throughput is reported, with its hardware and in both units** — 28,532 lines/s and 6.1 MB/s
+  sequential, 69,655 lines/s with eight workers, on four physical cores. A figure to compare
+  against the next measurement, not a bar to clear.
+- **Reconstruction cost per request stays flat as the corpus grows** — 214.5 µs against 209.3 µs
+  over a 2.4× corpus. *This* is the claim with a pass and a fail in it, because it is the one the
+  architecture makes: analysis is O(k) in one client's requests, not O(n) in the corpus. If it
+  ever starts climbing with corpus size, the two-pass design has stopped working and the number
+  says so.
+
+The gap is worth keeping in proportion. Ingest at 3.5× the hoped-for cost means a week of this
+server's traffic — 243,908 lines — takes 8.5 seconds instead of 2.4, once, and never again for
+that case. Reconstruction going non-linear would cost the reader the tool.
+
 ### Taking the marshalling out
 
 The step named above as "the honest next step" was then taken. Two changes to `parse_line`:
