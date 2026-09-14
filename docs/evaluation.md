@@ -142,12 +142,13 @@ one, the two differ.
 Measured 2026-09-08, ruleset `e81ace93…` (33 rules), CRS `d694d465` at paranoia level 2,
 configuration `f357d142fbcc4441`. Every line of both builds was scored; none went missing.
 
-> **These tables predate seven rule changes and have not been re-run.** On
+> **These tables predate eight rule changes and have not been re-run.** On
 > 2026-09-14 the pack gained `admin_area_redirect`, `webshell_double_extension`,
 > `known_software_probe` and `sqli_column_count`; `sqli_tautology` was broadened
 > and `sqli_time_based` gained `randomblob`; `credential_attack` dropped its window
-> floor from ten requests to five; `admin_area_probe` stopped matching 404; and the
-> classifier stopped calling an unreadable request a page view.
+> floor from ten requests to five; `template_injection` grew past the arithmetic
+> probe; `admin_area_probe` stopped matching 404; and the classifier stopped calling
+> an unreadable request a page view.
 > Every one of those moves a figure below.
 >
 > They were measured on the committed excerpt, 3,825 requests, where the numbers
@@ -155,7 +156,7 @@ configuration `f357d142fbcc4441`. Every line of both builds was scored; none wen
 >
 > | | Before | After |
 > |---|---:|---:|
-> | Accuracy | 0.900 | **0.930** |
+> | Accuracy | 0.900 | **0.931** |
 > | Macro F1 | 0.794 | **0.840** |
 > | Weighted F1 | 0.907 | **0.934** |
 > | Attack-or-not recall | 0.852 | **0.928** |

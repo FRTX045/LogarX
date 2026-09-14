@@ -7,6 +7,27 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Detection
 
+- **Template injection past the arithmetic probe.** `template_injection` matched `{{7*7}}` and
+  `${7*7}` and nothing else — which is how an attacker *finds* the hole, not what they send once
+  they have it. Four of the seven standard payload shapes were passing every signature, including
+  `{{''.__class__.__mro__[1].__subclasses__()}}`, the most-used server-side template RCE payload
+  there is. Now covered: Python's object graph, Jinja2's globals, any call inside `{{ }}`, ERB and
+  JSP scriptlets, `#{ }`, and the Java runtime a Freemarker or Spring EL payload reaches for.
+
+  **This buys almost nothing on the corpus and is worth having anyway** — accuracy 0.930 → 0.931,
+  because the one such request in the excerpt was already being caught under a different label.
+  The gain is coverage for logs this corpus does not contain.
+
+  **The first draft of it was a denial of service.** Written as `\{\{[^}]{0,200}(…)`, it cost
+  **53 ms on a single 8 KB request line** of repeated `{{` — linear, but a 1,500x per-line tax that
+  a crafted log could apply to every line it holds, which `SECURITY.md` names as in scope. Two
+  changes fixed it: the distinctive literals are matched bare, so the engine can use a fast literal
+  search instead of scanning from every brace, and the remaining bounded scans are 64 rather than
+  200. Worst case is now 1.2 ms, and `runtime.` and `getclass` were dropped rather than anchored —
+  bare, `runtime.` matches the `runtime.js` half the bundlers on earth emit. Measured cost on
+  ordinary traffic: labelling went 232.9 to 239.8 µs per request, **+2.9%**, median of seven runs
+  of 500.
+
 - **A credential attack the server locks out is still a credential attack.** `credential_attack`
   wanted ten failed logins inside five minutes. The excerpt's server rate-limits a login after
   six, so the attacker stops at six and comes back hours later — and a rule counting to ten could

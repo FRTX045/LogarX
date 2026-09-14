@@ -119,6 +119,16 @@ def test_owasp_mappings_use_the_expected_notation() -> None:
             "/search?q=%27%20AND%201%3D%28SELECT%20LENGTH%28HEX%28RANDOMBLOB%28200000000%29%29%29%29--%2B",
             ActivityCategory.INJECTION,
         ),
+        # Template injection past the arithmetic probe. `{{7*7}}` is how an
+        # attacker finds the hole; these are what they send once they have. The
+        # rule matched only the probe, so a scan showed its first request and
+        # none of the ones that mattered — including the Jinja2 sandbox escape,
+        # which is the most-used server-side template RCE payload there is.
+        ("/p?tpl={{config.items()}}", ActivityCategory.INJECTION),
+        ("/p?tpl={{''.__class__.__mro__[1].__subclasses__()}}", ActivityCategory.INJECTION),
+        ("/p?tpl={{file_get_contents('/etc/passwd')}}", ActivityCategory.INJECTION),
+        ("/p?name=<%= 7*7 %>", ActivityCategory.INJECTION),
+        ("/p?q=#{7*7}", ActivityCategory.INJECTION),
         ("/ping?host=127.0.0.1;cat /etc/passwd", ActivityCategory.PATH_TRAVERSAL),
         ('/api?filter={"$where":"1==1"}', ActivityCategory.INJECTION),
         ("/download?file=../../../../etc/passwd", ActivityCategory.PATH_TRAVERSAL),
