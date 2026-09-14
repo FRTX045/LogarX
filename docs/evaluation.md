@@ -481,7 +481,7 @@ reported, not tuned for accuracy.**
 
 ## Throughput and memory
 
-`logarc benchmark`, Windows 11, Python 3.13, one machine, on the medium build's real log. Each
+`logarc benchmark`, Windows 11, Python 3.12, one machine, on the medium build's real log. Each
 size runs in a process of its own so peak memory is that run's and not the previous one's.
 
 | Lines | Log | Ingest | Lines/s | MB/s | Peak RSS | Store | Ratio | Clients |
@@ -518,12 +518,13 @@ directly against the store rather than against any particular corpus.
 
 Memory is bounded rather than proportional. Measured separately, each size in a fresh process.
 
-**Measured 2026-08-09, on Python 3.12** — a month before the figures above it and
-on the previous interpreter, so it does not belong to the Python 3.13 heading
-this section opens with. It is kept rather than re-run because it measures the
-store directly, in rows pushed into it, and nothing about that path has changed
-since. Rows, not log lines: a line becomes one row, but the two are counted at
-different ends of the pipeline and the numbers should not be read as throughput.
+**Measured 2026-08-09**, a month before the figures above it, on the same
+interpreter. It is kept rather than re-run because it measures the store
+directly, in rows pushed into it, and nothing about that path has changed since.
+Rows, not log lines: a line becomes one row, but the two are counted at different
+ends of the pipeline and the numbers should not be read as throughput. That
+difference, and the date, are what separate this table from the one above — not
+the interpreter, which is 3.12 for both.
 
 | Rows | Peak during ingest | Peak after finalize | Finalize |
 |---:|---:|---:|---:|
@@ -534,6 +535,22 @@ different ends of the pipeline and the numbers should not be read as throughput.
 
 Ingest is flat at ~296 MB by construction. `finalize` converges on the configured 1 GB engine
 ceiling: eight million rows to twelve moved it by 3 MB, where four million used to fail outright.
+
+One thing this table cannot show, because each row is a fresh process: **the path cache is
+module-level and outlives the case that filled it.** `canonical_path` memoises 8,192 entries, and
+the cap is on entries rather than bytes, so its size follows how long the paths are. Measured with
+`tracemalloc` on 2026-09-14:
+
+| | Entries | Held |
+|---|---:|---:|
+| The committed 3,825-line excerpt | 372 | 0.05 MB |
+| 8,192 distinct paths at Apache's 8 KB request-line limit | 8,192 | 132 MB |
+
+Real traffic is the first row and not close to the second — median path 11 bytes, 90% of lookups
+hitting the cache, which is what it is there for. The second row needs a log whose paths are all
+distinct and all maximal. It is recorded because it is bounded but not released: nothing calls
+`cache_clear`, so a second case opened in the same window inherits whatever the first one left.
+Accepted at that size rather than fixed.
 
 ### Where the time goes
 
