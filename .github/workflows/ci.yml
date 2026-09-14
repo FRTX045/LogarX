@@ -106,13 +106,38 @@ jobs:
             go build -o crs-sidecar .
           fi
 
-      - name: Test
+      # The engine and the window are run separately, and the reason is a
+      # crash rather than tidiness. The GUI suite segfaults on the Linux
+      # runners now and then — twice so far, on different Python versions and
+      # in different tests, always inside `MainWindow.__init__` building a
+      # `QAction`. Exit 139 takes the whole pytest process with it, so in one
+      # run that meant losing the result of 1,100 tests that had nothing to do
+      # with Qt.
+      #
+      # Split, a crash in the window costs the window's results and nothing
+      # else, and the failure reads as "the GUI suite crashed" instead of
+      # "pytest exited 139". It does not fix the crash and is not meant to:
+      # `TODO.md` carries what is known about it, including three attempted
+      # fixes that measured worse.
+      #
+      # `--cov-append` on the second run is what keeps one coverage figure
+      # across the two.
+      - name: Test the engine
         env:
-          QT_QPA_PLATFORM: offscreen
           # Turns the contract tests' skip into a failure. Without it a build
           # step that broke would land us back where we started, silently.
           LOGARC_REQUIRE_CRS: "1"
-        run: pytest --cov=logarc --cov-report=term-missing --cov-report=xml
+        run: >
+          pytest --ignore=tests/gui
+          --cov=logarc --cov-report=term-missing --cov-report=xml
+
+      - name: Test the window
+        env:
+          QT_QPA_PLATFORM: offscreen
+          LOGARC_REQUIRE_CRS: "1"
+        run: >
+          pytest tests/gui
+          --cov=logarc --cov-append --cov-report=term-missing --cov-report=xml
 
       # Coverage was measured on every run and then thrown away: `coverage.xml`
       # was written and nothing ever read it, so the only way to learn the
