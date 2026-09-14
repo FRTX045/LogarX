@@ -13,7 +13,11 @@ from typing import TYPE_CHECKING
 
 from logarc.detect.crs.store import CrsEvidence
 from logarc.evidence import EvidenceLine, read_evidence
-from logarc.ingest.parallel import ingest_file_parallel, worth_splitting
+from logarc.ingest.parallel import (
+    DEFAULT_WORKERS,
+    ingest_file_parallel,
+    worth_splitting,
+)
 from logarc.ingest.pipeline import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_MAX_LINE_BYTES,
@@ -137,7 +141,7 @@ class Case:
         only_clients: Collection[str] | None = None,
         on_progress: Callable[[int, int], None] | None = None,
         should_cancel: Callable[[], bool] | None = None,
-        workers: int = 1,
+        workers: int = DEFAULT_WORKERS,
     ) -> list[IngestResult]:
         """Read logs into the case and record them in the manifest.
 

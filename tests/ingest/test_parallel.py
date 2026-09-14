@@ -14,6 +14,7 @@ missing, and a lost line looks like a successful run.
 
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -342,3 +343,53 @@ def test_parallel_and_sequential_record_the_same_definition(tmp_path: Path) -> N
 
     with Case.open(tmp_path / "seq") as one, Case.open(tmp_path / "par") as many:
         assert one.manifest.sources[0].format_spec == many.manifest.sources[0].format_spec
+
+
+def test_the_default_worker_count_is_bounded_rather_than_the_core_count() -> None:
+    """Measured 2026-09-15 on an 84 MB log, four physical cores behind eight
+    logical, polling RSS across the whole process tree:
+
+        workers   speed-up   peak RSS
+              1      1.00x      326 MB
+              2      1.86x      603 MB
+              4      2.61x      969 MB
+              6      2.75x    1,339 MB
+              8      2.68x    1,448 MB
+
+    Two things decide the default. Speed peaks at six and *falls* at eight, so
+    "one worker per logical core" is slower than stopping earlier as well as
+    hungrier. And memory grows faster than speed everywhere: four buys 2.61x for
+    2.98x the memory, and going on to six buys 5% more speed for 38% more.
+
+    So the default is capped rather than taken from the core count. A
+    sixty-four-core server must not try sixty-four workers and ask for twenty
+    gigabytes on a log it could have read in one process.
+    """
+    from logarc.ingest.parallel import DEFAULT_WORKERS, MAX_DEFAULT_WORKERS
+
+    assert 1 <= DEFAULT_WORKERS <= MAX_DEFAULT_WORKERS
+    assert (os.cpu_count() or 1) >= DEFAULT_WORKERS, "never more workers than cores"
+
+
+def test_a_single_core_machine_does_not_try_to_split(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Spawning costs more than it saves when there is nowhere to spawn to."""
+    from logarc.ingest import parallel
+
+    monkeypatch.setattr(parallel.os, "cpu_count", lambda: 1)
+    assert parallel.default_workers() == 1
+
+
+def test_a_large_machine_is_capped(monkeypatch: pytest.MonkeyPatch) -> None:
+    from logarc.ingest import parallel
+
+    monkeypatch.setattr(parallel.os, "cpu_count", lambda: 64)
+    assert parallel.default_workers() == parallel.MAX_DEFAULT_WORKERS
+
+
+def test_an_unknown_core_count_falls_back_to_one(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`os.cpu_count()` is documented as returning None when it cannot tell.
+    Reading that as "lots" would be the wrong way to be wrong."""
+    from logarc.ingest import parallel
+
+    monkeypatch.setattr(parallel.os, "cpu_count", lambda: None)
+    assert parallel.default_workers() == 1
