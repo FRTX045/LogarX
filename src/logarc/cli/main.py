@@ -50,6 +50,7 @@ from logarc.report import export as export_formats
 from logarc.sessionize.segmenter import SessionPolicy
 from logarc.storage.event_store import SORT_KEYS, StoreStateError
 from logarc.style import plural
+from logarc.suspicion import explain
 from logarc.tampering import inspect
 
 if TYPE_CHECKING:
@@ -378,6 +379,31 @@ def list_ips(
 
     if not summaries:
         console.print("[yellow]No events in this case.[/yellow]")
+        return
+
+    if sort == "suspicion":
+        # A table of its own, because the reason is the point. The ordinary one
+        # is already at the width of the terminal and a column added to it
+        # would have room for a number and none for a sentence — and a ranking
+        # a reader cannot account for is one they should not act on.
+        table = Table(title="Where to start" + (" (of the clients kept)" if narrowed else ""))
+        table.add_column("IP")
+        table.add_column("Requests", justify="right")
+        table.add_column("Why")
+        for summary in summaries:
+            ranked = explain(summary)
+            table.add_row(
+                summary.client_ip,
+                f"{summary.request_count:,}",
+                "\n".join(reason.because for reason in ranked.reasons)
+                or "[dim]nothing unusual counted[/dim]",
+            )
+        console.print(table)
+        console.print(
+            "[dim]This orders a worklist. It is not a verdict, and it is built "
+            "only from what was counted at ingest — no rule has been run.[/dim]"
+        )
+        path_line(f"Case: {case}")
         return
 
     table = Table(title="Clients kept" if narrowed else "Clients")

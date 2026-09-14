@@ -7,6 +7,33 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`logarc list-ips --sort suspicion` orders the client list by where to start.** The default
+  ordering is request count, and the busiest client is very often not the one worth opening first.
+  On the committed excerpt, whose truth names 11 hostile clients among 52, ordering by request
+  count puts **2 of the top 5** right. This puts **5 of 5, and 10 of the top 10**.
+
+  **It is built only from what ingest already counted.** `IpSummary` exists so that choosing a
+  client never scans the store, and a ranking that ran detection over a hundred thousand clients to
+  sort them would undo the two-pass design it sits inside. The same score is expressed in SQL so
+  the store can order without loading every row, and the expression lives beside the Python that
+  explains it so the two cannot drift into sorting by one rule and annotating by another.
+
+  **Every row says why it is where it is**, in a table of its own because the reason is the point:
+  *"100% of its requests were refused or missing"*, *"48 requests across only 1 page — 48 times
+  each on average"*. A ranking nobody can account for is one nobody should act on. A test holds the
+  wording to describing what was counted: the words *attacker*, *malicious* and *hostile* are
+  refused, because this orders a worklist and does not decide guilt.
+
+  **Two signals survived measurement and two did not.** Refusals carry most of it — every client in
+  the excerpt with any 4xx at all was hostile bar one at 2%. Repetition finds the one refusals
+  cannot: an sqlmap run against a single endpoint, answered 200 every time. *Request rate* was
+  dropped as anti-correlated — the three fastest clients in the excerpt are ordinary visitors and
+  the most prolific attacker managed 0.1 requests a minute. *Many distinct paths* was dropped
+  because the data ran the other way: attackers hammered a few endpoints and shoppers browsed
+  widely, so the intuitive signal had the wrong sign.
+
+  The window's client table is unchanged for now — this is on the command line only.
+
 - **`logarc check-log` looks for signs a log was edited before logarc read it.** The SHA-256 taken
   at ingest proves the file has not changed *since*; this asks the question no hash can answer,
   which is whether what arrived was already the whole of it. An attacker who gets in often tidies
