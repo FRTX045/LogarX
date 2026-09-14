@@ -185,16 +185,63 @@ rules:
         - field: target_decoded
           regex: '<!entity|<!doctype[^>]*\bsystem\b'
 
+  # `{{7*7}}` is how an attacker finds the hole. It was also the only thing this
+  # rule matched, so a scan showed its first request and none of the ones that
+  # followed — the payload that reads a file, dumps the configuration, or walks
+  # Python's class hierarchy to reach `os.system`. That last one,
+  # `{{''.__class__.__mro__[1].__subclasses__()}}`, is the most-used server-side
+  # template RCE payload there is, and it was passing every signature here.
+  #
+  # The alternatives below are ordered probe, then exploitation, then the three
+  # other syntaxes a template engine might use.
+  #
+  # **Every bounded scan here is bounded tightly, and the reason is measured.**
+  # An earlier draft of this rule wrote `\{\{[^}]{0,200}(...)`, which is linear
+  # but carries a brutal constant: a request line of `{{` repeated to Apache's
+  # 8 KB limit cost **53 ms in that one pattern**, against an ingest budget of
+  # about 36 µs a line. That is not a hang, it is a 1,500x per-line tax that a
+  # crafted log can apply to every line it contains — the kind of thing
+  # `SECURITY.md` names as a denial of service in scope.
+  #
+  # Two changes fixed it. The bound is 64 rather than 200, because every real
+  # marker appears within a few characters of the braces. And Python's dunders
+  # are matched *bare*, with no `{{` prefix to scan from: no innocent URL
+  # contains `__subclasses__`, so the prefix bought nothing and cost everything.
   - id: template_injection
     name: Server-Side Template Injection
     category: injection
     owasp: "A03:2021"
     severity: high
     confidence: 0.7
+    references: ["CAPEC-242"]
     match:
       any:
+        # The arithmetic probe, in the three syntaxes that carry it.
         - field: target_decoded
-          regex: '\{\{\s*[0-9]+\s*[*+]\s*[0-9]+\s*\}\}|\$\{\s*[0-9]+\s*[*+]'
+          regex: '\{\{\s*\d+\s*[*+]\s*\d+\s*\}\}|\$\{\s*\d+\s*[*+]|#\{\s*\d+\s*[*+]\s*\d+\s*\}'
+        # Python's object graph: how a Jinja2 sandbox is escaped. Matched bare —
+        # these names do not occur in innocent URLs, so there is nothing to gain
+        # by anchoring them to the braces and a great deal to pay for it.
+        - field: target_decoded
+          regex: '__class__|__mro__|__subclasses__|__globals__|__builtins__|__import__'
+        # Jinja2's own globals, and the Java runtime a Freemarker or Spring EL
+        # payload reaches for. Matched bare for the same reason as the dunders.
+        #
+        # `runtime.` and `getclass` were dropped rather than anchored: bare,
+        # `runtime.` matches the `runtime.js` that half the bundlers on earth
+        # emit, and anchored to `${` it cost 11 ms on a crafted line. The names
+        # kept here are the ones a payload cannot do without and a URL does not
+        # contain by accident.
+        - field: target_decoded
+          regex: 'config\.items|lipsum|cycler|self\.__dict__|processbuilder|javax\.|java\.lang|getruntime'
+        # Any call at all inside the braces. `{{ foo() }}` in a query string has
+        # no innocent reading. Cheap despite the braces: `[\w.]+` fails on the
+        # first character of a `{{{{…` run rather than scanning past it.
+        - field: target_decoded
+          regex: '\{\{\s*[\w.]+\s*\([^)]{0,64}\)'
+        # ERB and JSP scriptlets.
+        - field: target_decoded
+          regex: '<%=?[^%]{0,64}%>'
 
   # -- A01: Broken Access Control -----------------------------------------
 
