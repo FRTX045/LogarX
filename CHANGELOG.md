@@ -51,6 +51,31 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Detection
 
+- **PHP has rules of its own for the first time.** Every `php` in either pack was a filename
+  pattern; nothing looked at the language. Against the CRS regression corpus family 933 scored
+  **0.012 over 173 cases**, and the two that matched did so through a reconnaissance rule catching
+  a path — `docs/evaluation.md` calls that "a hole, not a framing artefact".
+
+  Four rules, covering what an access log can actually see in a parameter: `php_stream_wrapper`
+  (`php://filter`, `php://input`, `data:`, `phar:` — reading a file the application never meant to
+  serve, or feeding it code outright), `remote_file_inclusion` (a URL on a parameter named like it
+  will be included), `php_code_execution` (`system`, `shell_exec`, `passthru`, `eval` and the rest)
+  and `php_object_injection` (a serialised object reaching `unserialize`). Nine payload shapes that
+  reached the pack as **nothing at all** are now caught.
+
+  `command_injection` also gained two shapes it was missing: a newline before a command, and brace
+  expansion (`{cat,/etc/passwd}`, which needs no space and so slips a filter looking for one). Both
+  were previously caught only when the payload happened to name a well-known file — the filename
+  was doing the work, not the injection. The newline one matches the **raw** target, because
+  `normalize` collapses every run of whitespace to a single space and the evidence that it was a
+  newline survives only in the encoding.
+
+  **Measured cost on the committed excerpt: none at all.** The scores gate reports exactly one
+  change across the whole evaluation — the ruleset fingerprint. Every category, count and ratio is
+  identical, so none of these fires on any of its 3,825 real requests. What the corpus cannot say
+  is what they are worth, and the honest answer is that it will not say until there is a corpus
+  that can score them. They are committed for the logs this one does not contain.
+
 - **Template injection past the arithmetic probe.** `template_injection` matched `{{7*7}}` and
   `${7*7}` and nothing else — which is how an attacker *finds* the hole, not what they send once
   they have it. Four of the seven standard payload shapes were passing every signature, including
