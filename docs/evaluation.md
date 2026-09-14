@@ -142,32 +142,40 @@ one, the two differ.
 Measured 2026-09-08, ruleset `e81ace93…` (33 rules), CRS `d694d465` at paranoia level 2,
 configuration `f357d142fbcc4441`. Every line of both builds was scored; none went missing.
 
-> **These tables predate four rule changes and have not been re-run.** On
-> 2026-09-14 the pack gained `admin_area_redirect`, `webshell_double_extension`
-> and `known_software_probe`, `admin_area_probe` stopped matching 404, and the
-> classifier stopped calling an unreadable request a page view. Every one of
-> those moves a figure below.
+> **These tables predate six rule changes and have not been re-run.** On
+> 2026-09-14 the pack gained `admin_area_redirect`, `webshell_double_extension`,
+> `known_software_probe` and `sqli_column_count`; `sqli_tautology` was broadened
+> and `sqli_time_based` gained `randomblob`; `admin_area_probe` stopped matching
+> 404; and the classifier stopped calling an unreadable request a page view.
+> Every one of those moves a figure below.
 >
 > They were measured on the committed excerpt, 3,825 requests, where the numbers
 > went:
 >
 > | | Before | After |
 > |---|---:|---:|
-> | Accuracy | 0.900 | **0.924** |
-> | Macro F1 | 0.794 | **0.815** |
+> | Accuracy | 0.900 | **0.927** |
+> | Macro F1 | 0.794 | **0.825** |
+> | Weighted F1 | 0.907 | **0.930** |
 > | Attack-or-not recall | 0.852 | **0.928** |
 > | Attacks missed | 179 | **87** |
 > | False alarms | 0.765% | 0.765% |
 > | `enumeration` recall | 0.629 | **0.843** |
-> | `enumeration` precision | 0.975 | **0.981** |
+> | `injection` recall | 0.684 | **0.877** |
 > | `browsing` precision | 0.394 | **0.535** |
 > | `access_control` precision | 0.146 | **1.000** |
 > | `exploitation` recall | 0.000 | **0.500** |
-> | **Boundary F1** | **0.642** | **0.619** |
+> | **Boundary F1** | **0.642** | **0.621** |
 >
-> The last row is the cost and is not an error: labelling 92 more requests as
-> hostile cuts more episodes, 567 to 595 against 297 in the truth. Recall held at
-> 0.996 throughout — nothing went missing, the cuts are finer than the truth's.
+> Precision did not pay for any of it: `injection`, `access_control`,
+> `exploitation`, `credential_attack` and `authentication` all sit at 1.000,
+> `enumeration` rose 0.975 to 0.981, and false alarms are unchanged to three
+> decimal places.
+>
+> The last row is the one cost and it is not an error: labelling 92 more requests
+> as hostile cuts more episodes, 567 to 593 against 297 in the truth. Boundary
+> recall held at 0.996 throughout — nothing went missing, the cuts are finer than
+> the truth's.
 >
 > The excerpt is 3,825 requests and these tables are 243,908, so all of that is
 > an indication of direction and nothing more. The medium build's `enumeration`

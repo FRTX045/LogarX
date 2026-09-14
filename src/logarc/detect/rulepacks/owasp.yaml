@@ -27,6 +27,18 @@ rules:
         - field: target_decoded
           regex: 'union[\s/(]+(all[\s/(]+)?select'
 
+  # The terminator — a comment or the end of the string — is what keeps this
+  # rule honest: it is what says the comparison was appended to close off a
+  # query rather than being part of one. Everything before it is deliberately
+  # loose, because sqlmap's default boolean series varies exactly there:
+  #
+  #   oak')) AND 5481=5481 AND (('SUiH'='SUiH     parenthesised
+  #   oak')  AND 1646=4348 AND ('fkFQ' LIKE 'fkFQ compared with LIKE
+  #   oak%'  AND 3812=6291 AND 'ZxzJ%'='ZxzJ      a % inside the operand
+  #
+  # All three reached the rules as nothing at all while the UNION payloads from
+  # the same run were caught, so a scan showed its conclusion and not its
+  # working.
   - id: sqli_tautology
     name: SQL Injection (always-true condition)
     category: injection
@@ -37,7 +49,22 @@ rules:
     match:
       any:
         - field: target_decoded
-          regex: "(or|and)\\s+['\"]?[0-9a-z]+['\"]?\\s*=\\s*['\"]?[0-9a-z]+['\"]?\\s*(--|#|/\\*|$)"
+          regex: "(or|and)[\\s(]+['\"]?[0-9a-z%_]+['\"]?\\s*(=|like)\\s*['\"]?[0-9a-z%_]+['\"]?\\s*(--|#|/\\*|$)"
+
+  # Counting columns, the step between finding an injection point and building
+  # a UNION that fits it. Nothing covered it, so the tool saw the UNION and not
+  # the dozen requests of preparation that name the attack for what it is.
+  - id: sqli_column_count
+    name: SQL Injection (column counting)
+    category: injection
+    owasp: "A03:2021"
+    severity: high
+    confidence: 0.85
+    references: ["CAPEC-66"]
+    match:
+      any:
+        - field: target_decoded
+          regex: '\border\s+by\s+\d+\s*(--|#|/\*|$)'
 
   - id: sqli_time_based
     name: SQL Injection (time-based blind)
@@ -46,10 +73,15 @@ rules:
     severity: high
     confidence: 0.9
     references: ["CAPEC-7"]
+    # `randomblob` is the fallback when `sleep()` is unavailable, which it
+    # often is: the delay comes from making the database do expensive work
+    # instead of asking it to wait. `SELECT LENGTH(HEX(RANDOMBLOB(200000000)))`
+    # is sqlmap's SQLite form of it, and it is a small denial of service as
+    # well as a timing oracle.
     match:
       any:
         - field: target_decoded
-          regex: '\b(sleep|pg_sleep|benchmark)\s*\(|waitfor\s+delay'
+          regex: '\b(sleep|pg_sleep|benchmark|randomblob)\s*\(|waitfor\s+delay'
 
   - id: sqli_schema_probe
     name: SQL Injection (schema enumeration)

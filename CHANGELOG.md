@@ -7,6 +7,25 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Detection
 
+- **sqlmap's default boolean-blind series is no longer invisible.** Four of the five payload shapes
+  a default `sqlmap` run sends were reaching the rules as *nothing at all*, while the `UNION ALL
+  SELECT` payloads from the same scan were caught — so a case showed an attack's conclusion and
+  none of its working.
+
+  `sqli_tautology` required the comparison to end at a comment or at the end of the string, which
+  is the right guard and was the only part worth keeping strict. Everything before it was too
+  narrow: sqlmap wraps the comparison in parentheses (`oak')) AND 5481=5481 AND (('SUiH'='SUiH`),
+  compares with `LIKE` rather than `=`, and leaves a `%` inside the quoted operand
+  (`'ZxzJ%'='ZxzJ`). All three now match. New rule `sqli_column_count` covers `ORDER BY n--`, the
+  step between finding an injection point and building a UNION to fit it. `sqli_time_based` gained
+  `randomblob(`, which is what sqlmap falls back to when `sleep()` is unavailable — a timing oracle
+  built from expensive work, and a small denial of service in its own right.
+
+  Measured on the committed excerpt: `injection` recall 0.684 → **0.877** with precision unchanged
+  at **1.000**, and `reconnaissance` precision rose 0.822 → 0.836 as those requests moved to where
+  they belonged. Accuracy 0.924 → 0.927, macro F1 0.815 → 0.825, false alarms unchanged at 0.765%.
+  Every broadened pattern was timed against adversarial input first and is linear.
+
 - **A probe for software the site does not run is now enumeration.** New rule
   `known_software_probe`: a path naming software by that software's own convention —
   `/wp-admin/`, `/phpmyadmin/`, `/administrator/`, `/xmlrpc.php`, `/vendor/phpunit/...` — answered
