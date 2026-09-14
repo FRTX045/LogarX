@@ -50,7 +50,7 @@ from logarc.parsers.registry import DEFAULT_SAMPLE_SIZE, get_parser
 from logarc.storage.event_store import ParquetEventStore
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection
+    from collections.abc import Callable
 
     from logarc.parsers.spec import FormatSpec
 
@@ -157,10 +157,6 @@ class _Task:
     shard: str
     batch_size: int
 
-    only_clients: tuple[str, ...]
-    """Addresses this ingest was narrowed to, or empty. Applied here as well as
-    in the sequential loop, and for the same reason the line bound is."""
-
     max_line_bytes: int
     """The sequential path bounds the line it hands a parser; so must this one.
     A worker runs its own loop rather than calling `ingest_file`, so a bound
@@ -172,7 +168,6 @@ class _Counts:
     lines_read: int
     events_parsed: int
     lines_quarantined: int
-    lines_filtered: int = 0
 
 
 def _parse_chunk(task: _Task) -> _Counts:
@@ -185,8 +180,7 @@ def _parse_chunk(task: _Task) -> _Counts:
     having stored nothing.
     """
     parser = task.format_spec.build() if task.format_spec else get_parser(task.log_format)
-    lines_read = events_parsed = lines_quarantined = lines_filtered = 0
-    wanted = frozenset(task.only_clients)
+    lines_read = events_parsed = lines_quarantined = 0
 
     store = ParquetEventStore(task.case_root, shard=task.shard)
     try:
@@ -197,9 +191,6 @@ def _parse_chunk(task: _Task) -> _Counts:
                 # Blanks and the log's own bookkeeping, on the same footing as
                 # the sequential path: neither parsed nor quarantined.
                 if not text.strip() or skips(parser, text):
-                    continue
-                if wanted and not any(address in text for address in wanted):
-                    lines_filtered += 1
                     continue
                 if len(text) > task.max_line_bytes:
                     quarantine.record(
@@ -215,9 +206,6 @@ def _parse_chunk(task: _Task) -> _Counts:
                     quarantine.record(task.file_id, line_no, text, reason=_UNPARSEABLE)
                     lines_quarantined += 1
                     continue
-                if wanted and event.client_ip not in wanted:
-                    lines_filtered += 1
-                    continue
                 batch.append(event)
                 events_parsed += 1
                 if len(batch) >= task.batch_size:
@@ -229,7 +217,7 @@ def _parse_chunk(task: _Task) -> _Counts:
     finally:
         store.close()
 
-    return _Counts(lines_read, events_parsed, lines_quarantined, lines_filtered)
+    return _Counts(lines_read, events_parsed, lines_quarantined)
 
 
 def ingest_file_parallel(
@@ -241,7 +229,6 @@ def ingest_file_parallel(
     workers: int,
     batch_size: int,
     max_line_bytes: int = DEFAULT_MAX_LINE_BYTES,
-    only_clients: Collection[str] | None = None,
     on_progress: Callable[[int, int], None] | None = None,
 ) -> tuple[_Counts, str, int, ResolvedFormat, float]:
     """Parse `path` into the case at `case_root` using `workers` processes.
@@ -270,19 +257,17 @@ def ingest_file_parallel(
             shard=f"{index:02d}",
             batch_size=batch_size,
             max_line_bytes=max_line_bytes,
-            only_clients=tuple(sorted(only_clients or ())),
         )
         for index, chunk in enumerate(scan.chunks)
     ]
 
-    lines = events = quarantined = filtered = 0
+    lines = events = quarantined = 0
     if tasks:
         with ProcessPoolExecutor(max_workers=min(workers, len(tasks))) as pool:
             for counts in pool.map(_parse_chunk, tasks):
                 lines += counts.lines_read
                 events += counts.events_parsed
                 quarantined += counts.lines_quarantined
-                filtered += counts.lines_filtered
                 if on_progress:
                     on_progress(lines, scan.size_bytes)
 
@@ -291,7 +276,7 @@ def ingest_file_parallel(
     Quarantine.merge(Path(case_root))
 
     return (
-        _Counts(lines, events, quarantined, filtered),
+        _Counts(lines, events, quarantined),
         scan.sha256,
         scan.size_bytes,
         resolved,

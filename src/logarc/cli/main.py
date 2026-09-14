@@ -208,15 +208,6 @@ def ingest(
             "times its length in memory.",
         ),
     ] = DEFAULT_MAX_LINE_BYTES,
-    only_ip: Annotated[
-        list[str] | None,
-        typer.Option(
-            "--only-ip",
-            help="Keep only this client. Repeatable. The case then holds part "
-            "of the log, and says so — a question about another address needs "
-            "another ingest over the same file.",
-        ),
-    ] = None,
 ) -> None:
     """Read logs into a new case.
 
@@ -224,13 +215,6 @@ def ingest(
     Apache will write. No real log reaches it; a crafted one can, and parsing a
     16 MB line was measured holding 5.5 GB. A line over the limit is recorded in
     the quarantine with its length, so the case still accounts for every line.
-
-    `--only-ip` narrows the case to the clients named, which is worth doing when
-    the address is already known: most lines are rejected on a substring of the
-    raw text, before any parsing. What it costs is that the case holds part of
-    the log. That is recorded in `case.json` and reported by every command that
-    reads the case, because a partial case nobody can tell from a complete one
-    is the failure this tool exists to prevent.
 
     `--workers` parses the file in byte ranges across processes, and now
     defaults to the cores available, capped at four. Measured on an 84 MB log
@@ -250,7 +234,6 @@ def ingest(
                 log_format=log_format,
                 workers=workers,
                 max_line_bytes=max_line_bytes,
-                only_clients=set(only_ip) if only_ip else None,
             )
     except USER_ERRORS as exc:
         raise fail(str(exc)) from exc
@@ -272,13 +255,6 @@ def ingest(
             f"{result.lines_per_second:,.0f}",
         )
     console.print(table)
-    if only_ip:
-        filtered = sum(result.lines_filtered for result in results)
-        console.print(
-            f"[yellow]Narrowed to {', '.join(sorted(set(only_ip)))} — "
-            f"{filtered:,} lines belonging to other clients were not read. "
-            f"This case holds part of the log.[/yellow]"
-        )
     path_line(f"Case: {case}")
 
     quarantined = sum(result.lines_quarantined for result in results)
@@ -297,32 +273,18 @@ def list_ips(
         str, typer.Option("--sort", "-s", help=f"One of: {', '.join(SORT_KEYS)}.")
     ] = "requests",
 ) -> None:
-    """List the clients seen in a case.
-
-    On a case narrowed at ingest this cannot answer the question it appears to:
-    the clients it lists are the ones that were kept, not the ones that were
-    there. It says so rather than refusing, because the listing is still useful
-    and a refusal would send the reader hunting for a broken case.
-    """
+    """List the clients seen in a case."""
     try:
         with Case.open(case) as opened:
             summaries = opened.store.ip_summaries(limit=limit, order_by=sort)
-            narrowed = opened.filtered_clients
     except USER_ERRORS as exc:
         raise fail(str(exc)) from exc
-
-    if narrowed:
-        console.print(
-            f"[yellow]This case was narrowed at ingest to "
-            f"{', '.join(narrowed)}. These are the clients that were kept, "
-            f"not the clients that were there.[/yellow]"
-        )
 
     if not summaries:
         console.print("[yellow]No events in this case.[/yellow]")
         return
 
-    table = Table(title="Clients kept" if narrowed else "Clients")
+    table = Table(title="Clients")
     table.add_column("IP")
     for column in ("Requests", "Paths", "4xx", "Bytes"):
         table.add_column(column, justify="right")
