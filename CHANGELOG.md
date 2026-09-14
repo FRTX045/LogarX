@@ -113,6 +113,23 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A crafted line no longer ends a whole ingest.** A log line nested deeper than Python will
+  decode — twenty thousand `[` characters will do it — raised `RecursionError` out of the JSON
+  parser. That is not a `ValueError`, so it travelled untouched out through `score_parser`,
+  `detect_format` and `ingest_file`, and the ingest stopped.
+
+  It happened during **format detection**, which scores every registered parser against the sample,
+  so it did not matter what kind of log the file actually was: one such line in the first 200 lines
+  stopped a case being made at all. The quarantine record — which exists precisely so a line too
+  damaged to read is counted rather than fatal — never saw it.
+
+  A line this tool cannot decode is a line that is not of that format, so it is now refused like
+  any other. The crafted line is quarantined and counted, and the rest of the log is read. Found by
+  auditing logarc as a target rather than as an examiner; **not reachable through an ordinary
+  request**, which was tested rather than assumed — a User-Agent of 8,000 `[` characters ingests
+  cleanly, because an Apache line begins with the client address and `json.loads` fails at the
+  first character without recursing.
+
 - **The throughput tables said Python 3.13 and were measured on 3.12.** No 3.13 exists on the
   machine that produced them — the venv is 3.12.10, `py -0p` lists nothing else, and CI tests
   3.11 and 3.12. The version was changed in `a3743df` alongside a genuine re-measurement on the
