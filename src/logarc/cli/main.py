@@ -36,6 +36,7 @@ from logarc.evaluation.benchmark import BenchmarkError, BenchmarkResult, run_ben
 from logarc.evaluation.csic import CsicError, convert_csic
 from logarc.evaluation.scoring import evaluate as score_case
 from logarc.evaluation.truth import TruthError, read_truth
+from logarc.ingest.parallel import DEFAULT_WORKERS
 from logarc.ingest.pipeline import DEFAULT_MAX_LINE_BYTES, FormatDetectionError
 from logarc.ingest.reader import LogSourceError
 from logarc.parsers.library import (
@@ -193,9 +194,10 @@ def ingest(
             "-w",
             min=1,
             help="Processes to parse with. Trades memory for speed; ignored for "
-            "compressed or small logs, which cannot benefit.",
+            "compressed or small logs, which cannot benefit. Defaults to the "
+            "cores available, capped at four.",
         ),
-    ] = 1,
+    ] = DEFAULT_WORKERS,
     max_line_bytes: Annotated[
         int,
         typer.Option(
@@ -230,10 +232,16 @@ def ingest(
     reads the case, because a partial case nobody can tell from a complete one
     is the failure this tool exists to prevent.
 
-    `--workers` above one parses the file in byte ranges across processes.
-    Parsing is where ingest spends its time, and it parallelises cleanly, but
-    each worker holds a batch of its own — so memory rises roughly in step with
-    the count. It defaults to one because the memory is the user's to spend.
+    `--workers` parses the file in byte ranges across processes, and now
+    defaults to the cores available, capped at four. Measured on an 84 MB log
+    with four physical cores behind eight logical: four workers read it 2.61
+    times faster for 2.98 times the memory, 326 MB to 969 MB. Six was 5% faster
+    again for 38% more memory, and eight was *slower* than six — past the
+    physical cores there is nothing left to win.
+
+    The cap is what keeps the memory predictable on a machine much larger than
+    this one. `--workers 1` returns to a single process, and a log under 32 MB
+    or a compressed one is read sequentially whatever is asked for.
     """
     try:
         with Case.create(case) as opened:

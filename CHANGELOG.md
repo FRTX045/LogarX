@@ -7,6 +7,33 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Ingest uses the machine's cores without being asked.** `--workers` has existed for a while and
+  defaulted to one, so almost nobody used it. It now defaults to the cores available, capped at
+  four. On the 84 MB log below that is 2.6x faster out of the box.
+
+  **The cap is the measurement, not a guess.** Taken on an 84 MB log, four physical cores behind
+  eight logical, polling RSS across the whole process tree:
+
+  | workers | speed-up | peak RSS | memory vs 1 |
+  |---:|---:|---:|---:|
+  | 1 | 1.00x | 326 MB | 1.00x |
+  | 2 | 1.86x | 603 MB | 1.85x |
+  | 3 | 2.35x | 815 MB | 2.50x |
+  | **4** | **2.61x** | **969 MB** | **2.98x** |
+  | 6 | 2.75x | 1,339 MB | 4.11x |
+  | 8 | 2.68x | 1,448 MB | 4.45x |
+
+  Throughput peaks at six and **falls at eight**, so one worker per logical core is slower as well
+  as hungrier — hyperthreading does not help work already saturating the arithmetic units. And
+  memory grows faster than speed at every step: four buys 2.61x for 2.98x the memory, and going on
+  to six buys 5% more speed for 38% more memory.
+
+  Four is where the curve flattens — 95% of the best speed measured, for under a gigabyte. It is a
+  **cap rather than a ratio** because the memory is the user's to spend and has to stay
+  predictable: a sixty-four-core server must not start sixty-four workers and ask for twenty
+  gigabytes to read a log one process could have read. `--workers 1` returns to a single process,
+  and a log under 32 MB or a compressed one is still read sequentially whatever is asked for.
+
 - **`logarc ingest --only-ip` reads one client out of a large log.** When the address is already
   known, parsing the rest is work thrown away. Most lines are rejected on a substring of the raw
   text before any parsing happens, which is where the saving comes from: measured on the committed

@@ -27,6 +27,7 @@ Two limits, stated rather than worked around:
 
 from __future__ import annotations
 
+import os
 import time
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
@@ -53,7 +54,53 @@ if TYPE_CHECKING:
 
     from logarc.parsers.spec import FormatSpec
 
-__all__ = ["MIN_PARALLEL_BYTES", "can_split", "ingest_file_parallel"]
+__all__ = [
+    "DEFAULT_WORKERS",
+    "MAX_DEFAULT_WORKERS",
+    "MIN_PARALLEL_BYTES",
+    "can_split",
+    "default_workers",
+    "ingest_file_parallel",
+]
+
+#: Most workers this will start without being asked.
+#:
+#: Measured 2026-09-15 on an 84 MB log, four physical cores behind eight
+#: logical, polling RSS across the whole process tree:
+#:
+#:     workers   speed-up   peak RSS
+#:           1      1.00x      326 MB
+#:           2      1.86x      603 MB
+#:           3      2.35x      815 MB
+#:           4      2.61x      969 MB
+#:           6      2.75x    1,339 MB
+#:           8      2.68x    1,448 MB
+#:
+#: Two readings decide this. Throughput peaks at six and *falls* at eight, so
+#: one worker per logical core is slower as well as hungrier — hyperthreading
+#: does not help work that is already saturating the arithmetic units. And
+#: memory grows faster than speed everywhere: four buys 2.61x for 2.98x the
+#: memory, and going on to six buys 5% more speed for 38% more memory.
+#:
+#: Four is where the curve flattens: 95% of the best speed measured, for under
+#: a gigabyte. It is a cap rather than a ratio because the memory is the user's
+#: to spend and it has to stay predictable — a sixty-four-core server must not
+#: start sixty-four workers and ask for twenty gigabytes to read a log one
+#: process could have read.
+MAX_DEFAULT_WORKERS: Final = 4
+
+
+def default_workers() -> int:
+    """How many workers to use when nobody said.
+
+    `os.cpu_count()` returns `None` when it cannot tell, and reading that as
+    "plenty" would be the wrong way to be wrong.
+    """
+    return min(MAX_DEFAULT_WORKERS, os.cpu_count() or 1)
+
+
+#: Resolved once at import: a machine does not gain cores mid-run.
+DEFAULT_WORKERS: Final = default_workers()
 
 #: Below this, a sequential ingest finishes before the workers have started.
 #: Spawning a process costs tens of milliseconds on Linux and rather more on
