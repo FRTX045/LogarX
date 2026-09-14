@@ -36,7 +36,7 @@ from logarc.evaluation.benchmark import BenchmarkError, BenchmarkResult, run_ben
 from logarc.evaluation.csic import CsicError, convert_csic
 from logarc.evaluation.scoring import evaluate as score_case
 from logarc.evaluation.truth import TruthError, read_truth
-from logarc.ingest.pipeline import FormatDetectionError
+from logarc.ingest.pipeline import DEFAULT_MAX_LINE_BYTES, FormatDetectionError
 from logarc.ingest.reader import LogSourceError
 from logarc.parsers.library import (
     FormatLibraryError,
@@ -196,8 +196,23 @@ def ingest(
             "compressed or small logs, which cannot benefit.",
         ),
     ] = 1,
+    max_line_bytes: Annotated[
+        int,
+        typer.Option(
+            "--max-line-bytes",
+            min=1_024,
+            help="Longest line to parse. Anything longer is quarantined and "
+            "counted rather than read, because parsing one costs about 327 "
+            "times its length in memory.",
+        ),
+    ] = DEFAULT_MAX_LINE_BYTES,
 ) -> None:
     """Read logs into a new case.
+
+    `--max-line-bytes` defaults to a megabyte, about 120 times the longest line
+    Apache will write. No real log reaches it; a crafted one can, and parsing a
+    16 MB line was measured holding 5.5 GB. A line over the limit is recorded in
+    the quarantine with its length, so the case still accounts for every line.
 
     `--workers` above one parses the file in byte ranges across processes.
     Parsing is where ingest spends its time, and it parallelises cleanly, but
@@ -206,7 +221,12 @@ def ingest(
     """
     try:
         with Case.create(case) as opened:
-            results = opened.ingest(logs, log_format=log_format, workers=workers)
+            results = opened.ingest(
+                logs,
+                log_format=log_format,
+                workers=workers,
+                max_line_bytes=max_line_bytes,
+            )
     except USER_ERRORS as exc:
         raise fail(str(exc)) from exc
 

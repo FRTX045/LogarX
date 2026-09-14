@@ -74,6 +74,19 @@ Anything that lets a crafted log, format or rule harm the person running logarc:
   it is unclear which side a defect is on.
 - **Anything that needs a modified logarc**, a debugger attached, or a rule pack
   the user did not choose to install.
+- **A catastrophic regular expression in a format *you* wrote.** A custom format
+  can carry any pattern, and logarc compiles and runs it. Some patterns take
+  exponential time: `(?:\w+\s*)+` — a natural way to write "some words here" —
+  was measured running for over 25 seconds on a single 81-character line, and it
+  does not stop. Nothing checks a pattern's cost, and this is documented rather
+  than fixed because every guard we measured either missed the textbook case or
+  refused patterns that are fine, and a guard that misses is worse than none.
+
+  It is narrower than it looks: saved formats are loaded from your own
+  `~/.logarc/formats.json` at startup and **never from a case**, so opening
+  someone else's case does not run their pattern. Treat a format definition from
+  someone else the way you would treat their code.
+
 - **The packaged Windows build being unsigned.** Known, and not a finding: the
   build carries no code-signing identity, so SmartScreen will warn on a
   downloaded copy. Build from source if that matters to you.
