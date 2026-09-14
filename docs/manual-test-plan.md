@@ -9,6 +9,12 @@ checklist that makes those judgements repeatable instead of impressionistic.
 Run it before tagging a release, and after any change to `src/logarc/gui/` or to
 the packaging spec.
 
+**This is for whoever is about to ship a change, not for someone trying the
+tool.** Nothing here needs doing to use logarc — the README's quickstart is that
+page. It is published rather than kept aside because a reader deciding whether to
+trust the tool is entitled to see what its own maintainers check by hand, and how
+specific those checks are.
+
 ## What is already automated, and therefore not here
 
 | Covered by | What it proves |
