@@ -268,6 +268,32 @@ rules:
         - field: path_decoded
           regex: '/(phpinfo|server-status|server-info|actuator|debug|trace|env)\b'
 
+  # A file named so the upload check sees an image and the server still runs it
+  # as code. `/uploads/shell.php.jpg` is the classic shape, and the tool used to
+  # read it the same way the vulnerable upload filter did: `is_static_asset`
+  # looks at the last extension, so a live webshell being driven came back as
+  # `Static Asset`.
+  #
+  # Four of these sit in the committed excerpt, answered 200, with the command in
+  # the query — `?c=id`, `?c=cat /etc/passwd`. The truth calls them
+  # `exploitation`; this pack called them images.
+  #
+  # Both halves of the pair are listed rather than matching "any two
+  # extensions", which would claim `backup.tar.gz` and every other compressed
+  # file. `critical` because a 200 here means the command ran, and 0.95 because
+  # there is no innocent reason to name a file this way.
+  - id: webshell_double_extension
+    name: Webshell Disguised by a Double Extension
+    category: exploitation
+    owasp: "A03:2021"
+    severity: critical
+    confidence: 0.95
+    references: ["CAPEC-650"]
+    match:
+      any:
+        - field: path_decoded
+          regex: '\.(php\d?|phtml|phar|asp|aspx|ashx|jsp|jspx|cgi|pl|py|rb|sh|exe|dll)\.(jpe?g|png|gif|bmp|webp|svg|ico|txt|pdf|zip|csv|log|bak)\b'
+
   # -- A06: Vulnerable and Outdated Components -----------------------------
 
   - id: log4shell_jndi

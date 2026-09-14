@@ -247,6 +247,46 @@ def test_reaching_an_admin_page_successfully_is_not_a_refusal(
     assert labelled.label.rule_id not in {"admin_area_probe", "admin_area_redirect"}
 
 
+def test_a_script_wearing_an_image_extension_is_not_a_static_asset(
+    engine: RuleEngine,
+) -> None:
+    """`/uploads/shell.php.jpg` was being called an image, because it ends `.jpg`.
+
+    This is the upload-filter bypass: name the file so the check sees `.jpg` and
+    the server still hands it to the PHP interpreter. The excerpt carries four of
+    these, answered 200, with the command in the query — `?c=id`,
+    `?c=cat /etc/passwd`. The truth calls them `exploitation`.
+
+    `is_static_asset` reads the last extension, so all four came back
+    `static_asset`: the tool looked at a live webshell being driven and reported
+    an image being served. Of everything in this pack, that was the most
+    dangerous thing it got wrong.
+    """
+    (labelled,) = engine.label_events([request("/uploads/shell.php.jpg?c=id")])
+
+    assert labelled.label.category is ActivityCategory.EXPLOITATION
+    assert labelled.label.rule_id == "webshell_double_extension"
+
+
+def test_an_ordinary_image_is_still_an_ordinary_image(engine: RuleEngine) -> None:
+    """The guard on the rule above. One extension is not two."""
+    (labelled,) = engine.label_events([request("/uploads/holiday.jpg")])
+
+    assert labelled.label.category is ActivityCategory.STATIC_ASSET
+
+
+def test_a_compressed_archive_is_not_a_webshell(engine: RuleEngine) -> None:
+    """`backup.tar.gz` has two extensions and neither is a script.
+
+    Worth a test of its own: a rule written as "any two extensions" would claim
+    every compressed file on the internet, and this is the shape it would trip on
+    first.
+    """
+    (labelled,) = engine.label_events([request("/backups/backup.tar.gz")])
+
+    assert labelled.label.rule_id != "webshell_double_extension"
+
+
 def test_a_fast_page_load_is_not_reconnaissance(engine: RuleEngine) -> None:
     """A browser pulling one page's sub-resources is not a scan.
 
