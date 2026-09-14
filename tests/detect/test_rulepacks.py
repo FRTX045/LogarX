@@ -212,6 +212,103 @@ def test_refused_paths_are_forced_browsing_rather_than_enumeration(engine: RuleE
     assert all(item.label.category is ActivityCategory.ACCESS_CONTROL for item in labelled)
 
 
+@pytest.mark.parametrize(
+    "target",
+    [
+        "/wp-admin/",
+        "/wp-login.php",
+        "/wp-includes/wlwmanifest.xml",
+        "/wp-content/plugins/wp-file-manager/readme.txt",
+        "/xmlrpc.php",
+        "/administrator/",
+        "/administrator/index.php",
+        "/phpmyadmin/",
+        "/adminer.php",
+        "/admin.php",
+        "/shell.php",
+        "/test.php",
+        "/old/",
+        "/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php",
+    ],
+)
+def test_a_probe_for_software_the_site_does_not_run_is_enumeration(
+    engine: RuleEngine, target: str
+) -> None:
+    """One request is enough when the path names software by its own convention.
+
+    The window rules need a burst, and this behaviour does not come in bursts:
+    the scanner in the committed excerpt asks for four to six of these, waits
+    hours, and asks again. Every one is a 404, so `directory_enumeration_low_slow`
+    — which wants eight requests — never fires, and 92 requests the truth calls
+    enumeration reached the report as ordinary browsing.
+
+    These paths do not need a burst to be legible. `/wp-admin/` on a site with no
+    WordPress is not a mistyped URL.
+    """
+    (labelled,) = engine.label_events([request(target, status=404)])
+
+    assert labelled.label.category is ActivityCategory.ENUMERATION, (
+        f"{target!r} matched {[label.rule_id for label in labelled.all_labels] or 'nothing'}"
+    )
+
+
+@pytest.mark.parametrize("target", ["/wp-admin/", "/phpmyadmin/", "/administrator/"])
+def test_the_same_path_answered_normally_is_the_site_running_that_software(
+    engine: RuleEngine, target: str
+) -> None:
+    """The whole discrimination, and the reason the rule can be this broad.
+
+    `/wp-admin/` answered 200 means the site runs WordPress and someone opened
+    its admin page. Answered 404 it means the site does not, and someone asked
+    anyway. Without the status condition this rule would label every WordPress
+    site's own administrator a scanner.
+    """
+    (labelled,) = engine.label_events([request(target, status=200)])
+
+    assert not labelled.label.category.is_hostile, (
+        f"{target!r} at 200 matched {[label.rule_id for label in labelled.all_labels]}"
+    )
+
+
+@pytest.mark.parametrize("target", ["/admin.php", "/shell.php", "/phpmyadmin/"])
+def test_a_probe_that_sends_no_user_agent_stays_reconnaissance(
+    engine: RuleEngine, target: str
+) -> None:
+    """A client not even pretending to be a browser is already identified.
+
+    The same four paths appear in the excerpt twice: once from a client
+    forging a browser User-Agent, which the truth calls enumeration, and once
+    from one sending none at all, which it calls reconnaissance. The request
+    lines are otherwise identical, so the User-Agent is the only thing that
+    separates them — and `absent_user_agent` had already read the second group
+    correctly. Without this condition the path rule outranks it and takes 49
+    requests that were being reported right.
+    """
+    (labelled,) = engine.label_events([request(target, status=404, user_agent="")])
+
+    assert labelled.label.category is ActivityCategory.RECONNAISSANCE
+    assert labelled.label.rule_id == "absent_user_agent"
+
+
+@pytest.mark.parametrize("target", ["/.env", "/.git/config"])
+def test_a_secret_probe_stays_reconnaissance_rather_than_becoming_enumeration(
+    engine: RuleEngine, target: str
+) -> None:
+    """Where the truth draws the line, and it is not where it first looks.
+
+    Both are 404s for well-known paths, so a rule written by shape alone would
+    take them. The dataset's truth calls `/.env` and `/.git/*` reconnaissance
+    and `/wp-admin/` enumeration, and the distinction holds up: one is looking
+    for a secret that would be readable if present, the other is finding out
+    which software is installed. `config_file_exposure` already reads them
+    correctly, and the enumeration rule must not outrank it.
+    """
+    (labelled,) = engine.label_events([request(target, status=404)])
+
+    assert labelled.label.category is ActivityCategory.RECONNAISSANCE
+    assert labelled.label.rule_id == "config_file_exposure"
+
+
 def test_a_redirect_away_from_an_admin_page_is_a_refusal(engine: RuleEngine) -> None:
     """Most applications refuse an unauthenticated admin request with a 302.
 
