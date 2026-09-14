@@ -80,9 +80,10 @@ Anything that lets a crafted log, format or rule harm the person running logarc:
 
 ## Supported versions
 
-Early development, version 0.1.0, no releases tagged yet. **Only the current
-`main` is supported.** When releases begin, this section will name which ones
-still receive fixes.
+Early development. The current release is **0.2.0**, and **only the current
+`main` is supported** — fixes land there and are carried into the next tag rather
+than backported. When that stops being a reasonable policy, this section will
+name which releases still receive them.
 
 ## What logarc does not do
 

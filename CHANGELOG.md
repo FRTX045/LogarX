@@ -5,6 +5,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.2.0] — 2026-09-14
+
 ### Evaluation
 
 - **The evaluation corpus is a real server's log, and the generator is gone.** `logarc generate`
@@ -546,5 +550,6 @@ and draws it as an activity graph.
 
 <!-- Reference links for the version headings above. `0.1.0` was never tagged,
      so it points at the history rather than at a release that does not exist. -->
-[Unreleased]: https://github.com/FRTX045/logarc/commits/main
+[Unreleased]: https://github.com/FRTX045/logarc/compare/v0.2.0...main
+[0.2.0]: https://github.com/FRTX045/logarc/releases/tag/v0.2.0
 [0.1.0]: https://github.com/FRTX045/logarc/commits/main
