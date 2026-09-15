@@ -33,6 +33,7 @@ from logarc.detect.rulepacks import default_rules
 from logarc.detect.rules import RulePackError, load_rules
 from logarc.episode.builder import EpisodePolicy
 from logarc.evaluation.benchmark import BenchmarkError, BenchmarkResult, run_benchmark
+from logarc.evaluation.crs_corpus import CorpusError, score_corpus
 from logarc.evaluation.csic import CsicError, convert_csic
 from logarc.evaluation.scoring import evaluate as score_case
 from logarc.evaluation.truth import TruthError, read_truth
@@ -263,6 +264,80 @@ def ingest(
             f"[yellow]{plural(quarantined, 'line')} could not be parsed[/yellow] — "
             f"see {case / 'quarantine' / 'unparsed.jsonl'}"
         )
+
+
+@app.command("score-crs")
+def score_crs(
+    corpus: Annotated[
+        Path,
+        typer.Option(
+            "--corpus",
+            help="The CRS regression corpus. Arrives with the ruleset clone, "
+            "not with this package.",
+        ),
+    ] = Path("vendor/coreruleset/tests/regression/tests"),
+    family: Annotated[
+        list[str] | None,
+        typer.Option("--family", help="CRS family to score, e.g. 933. Repeatable."),
+    ] = None,
+    rules: Annotated[list[Path] | None, RULES_OPTION] = None,
+) -> None:
+    """Score this project's detection rules against the OWASP CRS corpus.
+
+    A question paper written by somebody else, for somebody else's tool, years
+    before this project existed — which is what makes the number worth quoting.
+    Rules measured only against payloads their own author chose are rules that
+    have marked their own homework.
+
+    **Two things about the figure, both of which make it softer than it looks.**
+
+    Recall is over what an access log could *see*, never over every case. A
+    combined log records the request line, the Referer and the User-Agent and
+    nothing else, so a payload in a POST body is out of reach for any tool of
+    this kind — counted apart rather than as a miss, because scoring those would
+    measure the log format and print it as a score for the rules.
+
+    And a case counts as caught when *any* hostile rule fires, without asking
+    whether the category was right. The number is a ceiling, not a floor.
+    """
+    try:
+        scores = score_corpus(
+            corpus, engine=_rule_engine(rules) or RuleEngine(default_rules()), families=family
+        )
+    except (CorpusError, *USER_ERRORS) as exc:
+        raise fail(str(exc)) from exc
+
+    table = Table(title="Detection against the OWASP CRS corpus")
+    table.add_column("Family")
+    for column in ("Cases", "A log can see", "Caught", "Recall"):
+        table.add_column(column, justify="right")
+    for score in scores:
+        table.add_row(
+            f"{score.family} {score.name}",
+            f"{score.cases:,}",
+            f"{score.in_reach:,}",
+            f"{score.caught:,}",
+            f"{score.recall:.0%}" if score.in_reach else "—",
+        )
+    console.print(table)
+
+    out_of_reach = sum(score.out_of_reach for score in scores)
+    console.print(
+        f"[dim]{out_of_reach:,} cases carry their payload in a body or a header no "
+        f"access log writes down. They are not misses — no tool reading a log can "
+        f"reach them — so they are left out of the recall above.[/dim]\n"
+    )
+
+    for score in scores:
+        if not score.missed:
+            continue
+        console.print(f"[bold]{score.family} {score.name}[/bold] — what got through:")
+        for example in score.missed:
+            console.print(f"  [yellow]{example}[/yellow]")
+        if score.by_rule:
+            caught_by = ", ".join(f"{rule} x{n}" for rule, n in list(score.by_rule.items())[:3])
+            console.print(f"  [dim]caught by: {caught_by}[/dim]")
+        console.print()
 
 
 @app.command("list-ips")
