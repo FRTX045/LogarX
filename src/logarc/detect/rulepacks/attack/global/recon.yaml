@@ -24,9 +24,31 @@ rules:
         - field: user_agent_decoded
           regex: '\b(sqlmap|nikto|nmap|masscan|zgrab|acunetix|nessus|openvas|wpscan|dirbuster|gobuster|ffuf|feroxbuster|nuclei|arachni|w3af|havij)\b'
 
+  # A program, not a person — and that is the whole claim. `crawling`, not
+  # `reconnaissance`, and the difference is not cosmetic: `is_hostile` is
+  # derived from the category, so this rule was reporting every scripted client
+  # as an attack while its own `severity: info` said the opposite.
+  #
+  # It was the entire false-alarm figure on the real log. All 20 of the 0.765%
+  # were `python-requests/2.32.3` fetching `/c/garden`, `/search?q=socket`,
+  # `/cart` and `/download?file=returns-policy.txt` — a script shopping, which
+  # the labelled corpus calls browsing and no reasonable reader calls
+  # reconnaissance.
+  #
+  # ADR-0008 recorded this mistake once already, in the other direction:
+  # `attack-generic` reads like a family of attacks, is actually "method not
+  # allowed", and mapped to `injection` it reported seven proxy requests as
+  # injection attempts. The resolution there was to stop asserting what the
+  # evidence does not support. A User-Agent supports "automated". It does not
+  # support "hostile" — it is the cheapest field in a request to forge, which
+  # is also why the confidence is 0.4.
+  #
+  # The observation still survives in `all_labels` and still shows in the
+  # report, and a script that asks for something it should not is still caught
+  # by the rule that names what it asked for.
   - id: http_library_user_agent
     name: Scripted Client
-    category: reconnaissance
+    category: crawling
     severity: info
     confidence: 0.4
     match:

@@ -1,28 +1,28 @@
 {
   "binary": {
-    "accuracy": 0.9720261437908497,
-    "f1": 0.954487452148022,
-    "false_negatives": 87,
-    "false_positive_rate": 0.00764525993883792,
-    "false_positives": 20,
+    "accuracy": 0.9819607843137255,
+    "f1": 0.9706257982120051,
+    "false_negatives": 69,
+    "false_positive_rate": 0.0,
+    "false_positives": 0,
     "has_attacks": true,
-    "precision": 0.9824868651488616,
-    "recall": 0.9280397022332506,
+    "precision": 1.0,
+    "recall": 0.9429280397022333,
     "total": 3825,
-    "true_negatives": 2596,
-    "true_positives": 1122
+    "true_negatives": 2616,
+    "true_positives": 1140
   },
   "classification": {
-    "accuracy": 0.9309803921568628,
-    "macro_f1": 0.8436190396321039,
+    "accuracy": 0.9377777777777778,
+    "macro_f1": 0.8451451376895547,
     "per_category": [
       {
         "category": "crawling",
-        "f1": 0.9743196627060177,
+        "f1": 0.9650721336370539,
         "false_negatives": 67,
-        "false_positives": 0,
-        "precision": 1.0,
-        "predicted": 1271,
+        "false_positives": 25,
+        "precision": 0.9807098765432098,
+        "predicted": 1296,
         "recall": 0.9499252615844545,
         "recall_any": 0.9499252615844545,
         "support": 1338,
@@ -30,11 +30,11 @@
       },
       {
         "category": "static_asset",
-        "f1": 0.9851461427886918,
+        "f1": 0.9966068831798351,
         "false_negatives": 0,
-        "false_positives": 31,
-        "precision": 0.9707271010387157,
-        "predicted": 1059,
+        "false_positives": 7,
+        "precision": 0.9932367149758454,
+        "predicted": 1035,
         "recall": 1.0,
         "recall_any": 1.0,
         "support": 1028,
@@ -42,15 +42,15 @@
       },
       {
         "category": "reconnaissance",
-        "f1": 0.8593508500772797,
-        "false_negatives": 86,
-        "false_positives": 96,
-        "precision": 0.852760736196319,
-        "predicted": 652,
-        "recall": 0.8660436137071651,
-        "recall_any": 0.8722741433021807,
+        "f1": 0.8947368421052632,
+        "false_negatives": 64,
+        "false_positives": 72,
+        "precision": 0.8892307692307693,
+        "predicted": 650,
+        "recall": 0.9003115264797508,
+        "recall_any": 0.9112149532710281,
         "support": 642,
-        "true_positives": 556
+        "true_positives": 578
       },
       {
         "category": "enumeration",
@@ -66,15 +66,15 @@
       },
       {
         "category": "browsing",
-        "f1": 0.6650602409638553,
-        "false_negatives": 20,
-        "false_positives": 119,
-        "precision": 0.5369649805447471,
+        "f1": 0.6843373493975904,
+        "false_negatives": 16,
+        "false_positives": 115,
+        "precision": 0.5525291828793775,
         "predicted": 257,
-        "recall": 0.8734177215189873,
+        "recall": 0.8987341772151899,
         "recall_any": 0.8987341772151899,
         "support": 158,
-        "true_positives": 138
+        "true_positives": 142
       },
       {
         "category": "api_call",
@@ -126,11 +126,11 @@
       },
       {
         "category": "authentication",
-        "f1": 1.0,
+        "f1": 0.962962962962963,
         "false_negatives": 0,
-        "false_positives": 0,
-        "precision": 1.0,
-        "predicted": 13,
+        "false_positives": 1,
+        "precision": 0.9285714285714286,
+        "predicted": 14,
         "recall": 1.0,
         "recall_any": 1.0,
         "support": 13,
@@ -185,24 +185,24 @@
         "predicted": "browsing"
       },
       {
-        "count": 51,
+        "count": 47,
         "expected": "reconnaissance",
         "predicted": "browsing"
       },
       {
-        "count": 27,
-        "expected": "reconnaissance",
-        "predicted": "static_asset"
-      },
-      {
-        "count": 20,
+        "count": 16,
         "expected": "browsing",
-        "predicted": "reconnaissance"
+        "predicted": "crawling"
       },
       {
         "count": 7,
         "expected": "reconnaissance",
         "predicted": "enumeration"
+      },
+      {
+        "count": 6,
+        "expected": "reconnaissance",
+        "predicted": "crawling"
       },
       {
         "count": 5,
@@ -225,7 +225,7 @@
         "predicted": "ssrf"
       }
     ],
-    "weighted_f1": 0.9341799172096207
+    "weighted_f1": 0.9406349644673555
   },
   "granularity": "category",
   "policy": {
@@ -238,17 +238,17 @@
     "max_duration_seconds": 28800,
     "split_on_user_agent_change": true
   },
-  "ruleset_fingerprint": "d182fea915e985b4eb8f056633b7afa385a6d7b9500a3fb9ef925d5d5912bda6",
+  "ruleset_fingerprint": "e71796c16409852618ca8d6a1dbba3e8b669b644d5e67244ca0e67eaef237df1",
   "scenario": "apache-shopfront-medium-excerpt",
   "segmentation": {
     "boundaries_agreed": 244,
     "boundaries_expected": 245,
-    "boundaries_found": 541,
-    "boundary_f1": 0.6208651399491094,
-    "boundary_precision": 0.4510166358595194,
+    "boundaries_found": 535,
+    "boundary_f1": 0.6256410256410256,
+    "boundary_precision": 0.45607476635514016,
     "boundary_recall": 0.9959183673469387,
-    "fragmentation": 1.9966329966329965,
-    "predicted_episodes": 593,
+    "fragmentation": 1.9764309764309764,
+    "predicted_episodes": 587,
     "truth_activities": 297
   },
   "source_file_id": "excerpt.log",
