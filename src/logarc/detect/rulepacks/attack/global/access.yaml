@@ -101,3 +101,57 @@ rules:
           regex: '/(composer|yarn|gemfile|package)\.lock$|/(gemfile|pipfile|go\.mod|pom\.xml)$'
         - field: path_decoded
           regex: '/requirements(-[a-z]+)?\.txt$'
+
+  # Source-tree filenames asked for over HTTP.
+  #
+  # A deployment that serves `/LICENSE`, `/.gitignore` or `/Dockerfile` has its
+  # repository where its document root should be, and a client asking for them
+  # is finding that out. The run is the tell: `/`, `HEAD /`, `/LICENSE`,
+  # `/.gitignore`, `/.well-known/security.txt`, `/CHANGELOG.md`, most of them
+  # 404, in under a minute.
+  #
+  # This exists because those sixteen requests were previously caught by the
+  # *User-Agent* — `python-requests` — and nothing else. That was evidence of
+  # automation and was being read as evidence of intent, at the cost of twenty
+  # false alarms on a script that was merely shopping. The behaviour is the
+  # evidence; the client's choice of HTTP library is not. The same run from a
+  # browser User-Agent had been going entirely unnoticed, and is now caught too.
+  #
+  # ## What is deliberately not in the list
+  #
+  # `/robots.txt` and `/sitemap.xml` sit at the same place in the tree and look
+  # like they belong here. They are fetched 47 times each in the measured corpus
+  # and the truth calls every one of them *crawling* — they are what a crawler
+  # is supposed to read. `/favicon.ico` and `/apple-touch-icon.png` likewise.
+  # A list assembled by theme rather than by evidence would have swept up all
+  # four.
+  #
+  # `/.well-known/` is named one file at a time rather than as a prefix, because
+  # the tree is a live standard: ACME challenges renew certificates, and
+  # browsers fetch `change-password` on their own. Only `security.txt` appears
+  # in the corpus, and only `security.txt` is claimed here.
+  #
+  # LOW, at 0.6. One request for `/LICENSE` is weak — a software vendor might
+  # genuinely publish one — and it is the run that carries the meaning, which
+  # `forced_browsing` and `server_errors_provoked` are already shaped to see.
+  - id: project_metadata_probe
+    name: Project Metadata Probe
+    category: reconnaissance
+    owasp: "A05:2021"
+    severity: low
+    confidence: 0.6
+    references: ["CAPEC-118"]
+    match:
+      any:
+        # Files a repository has and a web root should not.
+        - field: path_decoded
+          regex: '^/(license|readme|changelog|changes|contributing|authors|notice|install|upgrade)(\.(md|txt|rst))?$'
+        - field: path_decoded
+          regex: '^/(makefile|dockerfile|docker-compose\.ya?ml|procfile|vagrantfile|gruntfile\.js|gulpfile\.js|webpack\.config\.js|rollup\.config\.js|tsconfig\.json|jest\.config\.js)$'
+        # Dotfiles that configure a checkout, not a site.
+        - field: path_decoded
+          regex: '^/\.(gitignore|gitattributes|gitmodules|editorconfig|dockerignore|npmrc|nvmrc|yarnrc|babelrc|eslintrc(\.\w+)?|prettierrc(\.\w+)?|travis\.yml|circleci)'
+        # Cross-domain policy files, and the one `.well-known` entry that is a
+        # disclosure target rather than a live protocol.
+        - field: path_decoded
+          regex: '^/(crossdomain\.xml|clientaccesspolicy\.xml|\.well-known/security\.txt)$'

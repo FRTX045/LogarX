@@ -278,6 +278,28 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Detection no longer raises a false alarm on the measured log, and catches more than before.**
+  Attack-or-not precision **0.982 → 1.000**, recall **0.928 → 0.943**, false alarms **20 → 0**
+  (0.765% of ordinary traffic → nothing). Classification accuracy 0.9310 → 0.9378 and
+  reconnaissance F1 0.859 → 0.895 with it.
+
+  Every one of the twenty was `Scripted Client`: the rule matched `python-requests` and filed it
+  under `reconnaissance` while its own `severity: info` said it was not calling this an attack.
+  Those contradict, because whether a finding counts as hostile is read from the category. The
+  traffic underneath was one script fetching `/c/garden`, `/search?q=socket` and `/cart` — a
+  shopper, not a scanner. A User-Agent is the cheapest field in a request to forge, so it can
+  support "a program, not a person" and nothing further. It now says `crawling`.
+
+  That cost sixteen catches, and they came back with eighteen more. Printed side by side the lost
+  requests were one shape — `/`, `HEAD /`, `/LICENSE`, `/.gitignore`,
+  `/.well-known/security.txt`, `/CHANGELOG.md`, mostly 404, inside a minute — which is a tool
+  fingerprinting the stack before it picks an exploit. The new `project_metadata_probe` names that
+  behaviour, so the same run is now caught from a browser User-Agent too, which it never was.
+
+  `/robots.txt` and `/sitemap.xml` are deliberately not in that rule. They sit in the same place
+  and look like they belong; they are fetched 47 times each in the corpus and are crawling in
+  every one.
+
 - **Rule packs are grouped by what they are about.** Two files of 32 and 9 rules become ten, in
   folders: `attack/global/` holds what presumes no technology, `attack/php.yaml` and its
   neighbours hold what only means something to one runtime, and `action/` holds ordinary use.

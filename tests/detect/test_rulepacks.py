@@ -982,3 +982,104 @@ def test_an_action_is_named_by_what_it_was(
     )
     assert labelled.label.category is expected_category
     assert not labelled.label.category.is_hostile
+
+
+#: Real lines from the shopfront excerpt: a `python-requests` client shopping.
+#: The truth calls every one of them browsing.
+SCRIPTED_BUT_ORDINARY: list[str] = [
+    "/c/garden",
+    "/search?q=socket",
+    "/cart",
+    "/download?file=returns-policy.txt",
+    "/c/power-tools",
+]
+
+
+@pytest.mark.parametrize("target", SCRIPTED_BUT_ORDINARY)
+def test_a_script_doing_ordinary_things_is_not_an_attack(engine: RuleEngine, target: str) -> None:
+    """`Scripted Client` may say the client is a program. It may not say the
+    client is hostile, because a User-Agent cannot support that claim.
+
+    These twenty requests were the *entire* false-alarm figure on the real log
+    — 0.765% of ordinary traffic, all of it one rule reporting `python-requests`
+    fetching a catalogue page as reconnaissance. The rule is right that this is
+    automated and wrong that it is an attack, and the two had been conflated
+    because `is_hostile` is derived from the category.
+
+    ADR-0008 recorded the same mistake once already: `attack-generic` read like
+    a family of attacks, was mapped to `injection`, and reported seven proxy
+    requests as injection attempts. The fix there was to stop asserting what
+    the evidence did not support, and it is the fix here.
+    """
+    (labelled,) = engine.label_events([request(target, user_agent="python-requests/2.32.3")])
+
+    assert any(item.rule_id == "http_library_user_agent" for item in labelled.all_labels), (
+        "the observation itself is useful and must survive"
+    )
+    assert not labelled.label.category.is_hostile, (
+        f"{target!r} from a script was called {labelled.label.category.value}"
+    )
+
+
+def test_a_script_reaching_for_something_it_should_not_is_still_an_attack(
+    engine: RuleEngine,
+) -> None:
+    """The other half, and the reason the rule is not simply deleted. Being a
+    script is not an accusation; what the script asked for still is."""
+    (labelled,) = engine.label_events(
+        [request("/.env", user_agent="python-requests/2.32.3")]
+    )
+
+    assert labelled.label.category.is_hostile
+    assert labelled.label.rule_id != "http_library_user_agent"
+
+
+#: Source-tree filenames asked for over HTTP. Every one is a real request from
+#: the shopfront excerpt, and the truth calls every one reconnaissance.
+METADATA_PROBES: list[str] = [
+    "/LICENSE",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/.gitignore",
+    "/crossdomain.xml",
+    "/.well-known/security.txt",
+    "/Dockerfile",
+    "/Makefile",
+    "/.editorconfig",
+    "/.npmrc",
+]
+
+
+@pytest.mark.parametrize("target", METADATA_PROBES)
+def test_a_probe_for_project_metadata_is_reconnaissance(engine: RuleEngine, target: str) -> None:
+    """What the scripted-client rule was catching by accident, named properly.
+
+    A run of these — `/`, `HEAD /`, `/LICENSE`, `/.gitignore`,
+    `/.well-known/security.txt`, `/CHANGELOG.md`, most of them 404 — is a tool
+    fingerprinting the stack before it picks an exploit. Sixteen of them were
+    being caught only because the client happened to send a `python-requests`
+    User-Agent, which is not evidence of anything; the same run from a browser
+    User-Agent went entirely unnoticed.
+    """
+    (labelled,) = engine.label_events([request(target, status=404)])
+
+    matched = {item.category for item in labelled.all_labels}
+    assert ActivityCategory.RECONNAISSANCE in matched, (
+        f"{target!r} matched {[item.rule_id for item in labelled.all_labels] or 'nothing'}"
+    )
+
+
+@pytest.mark.parametrize("target", ["/robots.txt", "/sitemap.xml", "/favicon.ico"])
+def test_the_files_every_crawler_fetches_are_not_probes(engine: RuleEngine, target: str) -> None:
+    """The line the rule above must not cross.
+
+    `/robots.txt` and `/sitemap.xml` are fetched 47 times each in this corpus
+    and the truth calls every one of them crawling, not reconnaissance. They sit
+    at the site root beside the files that *are* probes, and a list assembled by
+    theme rather than by evidence would have swept them up.
+    """
+    (labelled,) = engine.label_events([request(target)])
+
+    assert not any(item.category.is_hostile for item in labelled.all_labels), (
+        f"{target!r} was claimed by {[item.rule_id for item in labelled.all_labels]}"
+    )
