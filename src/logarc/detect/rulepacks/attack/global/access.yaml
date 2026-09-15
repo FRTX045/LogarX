@@ -155,3 +155,50 @@ rules:
         # disclosure target rather than a live protocol.
         - field: path_decoded
           regex: '^/(crossdomain\.xml|clientaccesspolicy\.xml|\.well-known/security\.txt)$'
+
+  # A session identifier arriving in the URL, from a link somewhere else.
+  #
+  # Session fixation: the attacker picks a session id, sends you a link that
+  # carries it, and waits for you to sign in. The session you authenticate is
+  # one they already know. It is the oldest trick against an application that
+  # accepts a session id from anywhere but a cookie.
+  #
+  # ## Both halves are required, and the corpus is unusually clear about why
+  #
+  # The URL alone decides nothing. These two are character-for-character
+  # identical and the corpus scores them opposite ways:
+  #
+  #   /login?sessionid=abc123   Referer: https://myapp.com/previous   harmless
+  #   /login?sessionid=abc123   Referer: https://attacker.com/        attack
+  #
+  # Plenty of older applications put a session id in the URL by design — PHP's
+  # `session.use_trans_sid`, Java's `;jsessionid` — so matching the parameter on
+  # its own would fire on every page of them. And an off-domain Referer on its
+  # own is just an inbound link: the corpus has `myapp.com` with an
+  # `attacker.com` Referer and *no* session parameter, marked harmless.
+  #
+  # `referer_offsite` compares hosts exactly rather than by registrable domain.
+  # One corpus case is `app.example.com` with an `attacker.example.com` Referer,
+  # described as "subdomain should not match" and expecting a detection.
+  #
+  # ## What this cannot do, said plainly
+  #
+  # It needs the Host header, and **`apache-combined` does not record one** —
+  # nor does `apache-common` or `nginx-combined-forwarded`. On those logs
+  # `referer_offsite` has no answer, reads 0, and this rule never fires. That is
+  # deliberate: a rule with no evidence must be silent, not optimistic. It works
+  # on the vhost Apache formats, every JSON format here (Caddy, Cloudflare,
+  # nginx, ECS, GCP, Traefik) and `iis-w3c`, all of which carry the host.
+  - id: session_fixation
+    name: Session Fixation
+    category: credential_attack
+    owasp: "A07:2021"
+    severity: high
+    confidence: 0.8
+    references: ["CAPEC-61"]
+    match:
+      all:
+        - field: query_decoded
+          regex: '(^|&)[a-z0-9_.:-]{0,24}(sess(ion)?[_.-]?id|sessionid|jsessionid|phpsessid|phpsession|sid|cfid|cftoken|cfsid|asp\.net_sessionid|aspsessionid|jservsession|jwsession|weblogicsession|_session_id|_rails_session|laravel_session|connect\.sid|koa[.:]sess|play_session|rack\.session|sails\.sid|zend_session_id|cakephp|_flask_session|next-auth\.session-token|meteor_login_token|shiny-token)[a-z0-9_.-]{0,20}=\S'
+        - field: referer_offsite
+          min: 1

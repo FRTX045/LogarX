@@ -241,6 +241,10 @@ def _as_event(payload: Case, line_no: int) -> NormalizedEvent:
         query=query or None,
         status=200,
         bytes_sent=512,
+        # Carried through because `referer_offsite` is meaningless without it,
+        # and family 943 is nothing but that comparison. The corpus sets a
+        # different Host per case for exactly this reason.
+        host=headers.get("host"),
         referer=headers.get("referer"),
         # A corpus case that writes no User-Agent is not a request that had
         # none; it is a fixture whose author had no interest in the field. Left

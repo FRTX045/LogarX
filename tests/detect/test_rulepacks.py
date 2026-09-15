@@ -1026,9 +1026,7 @@ def test_a_script_reaching_for_something_it_should_not_is_still_an_attack(
 ) -> None:
     """The other half, and the reason the rule is not simply deleted. Being a
     script is not an accusation; what the script asked for still is."""
-    (labelled,) = engine.label_events(
-        [request("/.env", user_agent="python-requests/2.32.3")]
-    )
+    (labelled,) = engine.label_events([request("/.env", user_agent="python-requests/2.32.3")])
 
     assert labelled.label.category.is_hostile
     assert labelled.label.rule_id != "http_library_user_agent"

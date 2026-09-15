@@ -48,6 +48,37 @@ _CRAWLER_HINTS: Final[tuple[str, ...]] = ("bot", "crawler", "spider", "slurp")
 _BENIGN_CONFIDENCE: Final = 0.5
 
 
+def _bare_host(value: str | None) -> str:
+    """A host with its scheme, port, userinfo and trailing dot removed.
+
+    Both sides of the off-domain comparison go through this, so `example.com`,
+    `EXAMPLE.com:443` and `http://user@example.com./` all reduce to the same
+    string and only a genuine difference of host survives.
+    """
+    if not value:
+        return ""
+    host = value.strip().lower()
+    _, _, host = host.rpartition("//")  # drop any scheme
+    host = host.partition("/")[0]  # and anything after the authority
+    host = host.rpartition("@")[2]  # and any userinfo
+    if host.startswith("["):  # an IPv6 literal keeps its brackets
+        head, sep, _ = host.partition("]")
+        return head + sep if sep else host
+    return host.partition(":")[0].rstrip(".")
+
+
+def _referer_host(referer: str) -> str:
+    """The host a Referer points at, or empty when it does not name one.
+
+    A relative Referer — some proxies rewrite them — names no host and cannot
+    be off-domain, so it reads as empty and the comparison declines to fire.
+    """
+    value = referer.strip()
+    if "//" not in value:
+        return ""
+    return _bare_host(value)
+
+
 def _benign(category: ActivityCategory, name: str) -> ActivityLabel:
     return ActivityLabel(
         rule_id=f"benign:{category.value}",
@@ -118,6 +149,43 @@ class RequestView:
     def is_static_asset(self) -> bool:
         return self.extension in _STATIC_EXTENSIONS
 
+    @cached_property
+    def referer_offsite(self) -> bool:
+        """Whether the Referer names a different host than the request itself.
+
+        The one comparison the rule language could not make, and two whole CRS
+        families turn on it. Session fixation and remote file inclusion are both
+        *identical requests* apart from where the link came from:
+
+            /login?sessionid=abc123   Referer: https://myapp.com/previous  harmless
+            /login?sessionid=abc123   Referer: https://attacker.com/       attack
+
+        Computed here rather than exposed as a general field-to-field operator
+        because the comparison has three decisions in it, and each is easier to
+        get right once in Python than to re-derive in every rule that needs it:
+
+        **Hosts, not domains.** `app.example.com` and `attacker.example.com`
+        share a registrable domain and are not the same site. The corpus is
+        explicit — one case is described as "subdomain should not match" and
+        expects a detection.
+
+        **Scheme and port are not part of it.** `http://example.com/x` is the
+        same site as an HTTPS request to `example.com:443`, and the corpus has
+        that pair as a harmless case.
+
+        **Absence is not evidence.** No Referer is a separate and weaker signal
+        that CRS scores with its own rule; conflating it with an off-domain one
+        would make every bookmarked visit a fixation attempt. And a log that
+        records no Host — `apache-combined`, which is most of them — cannot
+        answer at all, so it answers `False` and the rules that read this stay
+        silent rather than guess.
+        """
+        host = _bare_host(self.event.host)
+        if not host or not self.event.referer:
+            return False
+        origin = _referer_host(self.event.referer)
+        return bool(origin) and origin != host
+
     def value(self, field_name: str) -> str:
         """The text of one matchable field, as a string."""
         event = self.event
@@ -156,6 +224,10 @@ class RequestView:
                 return str(event.bytes_sent) if event.bytes_sent is not None else ""
             case "decode_depth":
                 return str(self._target.decode_depth)
+            case "referer_offsite":
+                # Numeric like `had_null` and `decode_depth`, so a rule writes
+                # `min: 1` rather than the schema growing a boolean form.
+                return "1" if self.referer_offsite else "0"
             case "had_null":
                 # Numeric so a rule can write `min: 1`, matching how
                 # `decode_depth` is tested rather than inventing a boolean form.
