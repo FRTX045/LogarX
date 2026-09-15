@@ -1,0 +1,81 @@
+# Attacks that are about a file on the server: reaching one that was never
+# meant to be served, or leaving one behind that will be.
+#
+# The distinction from `injection.yaml` is what the request is *for*. These ask
+# the server for something; those send it something to run.
+
+version: 1
+rules:
+
+  - id: path_traversal
+    name: Path Traversal
+    category: path_traversal
+    owasp: "A01:2021"
+    severity: high
+    confidence: 0.9
+    references: ["CAPEC-126"]
+    match:
+      any:
+        - field: target_decoded
+          regex: '(^|[/\\])\.\.[/\\]'
+
+  - id: sensitive_file_access
+    name: Sensitive System File Access
+    category: path_traversal
+    owasp: "A01:2021"
+    severity: critical
+    confidence: 0.95
+    match:
+      any:
+        - field: target_decoded
+          regex: '/etc/(passwd|shadow|hosts)|[/\\](win\.ini|boot\.ini)|/proc/self/environ'
+
+  - id: config_file_exposure
+    name: Configuration File Probe
+    category: reconnaissance
+    owasp: "A05:2021"
+    severity: high
+    confidence: 0.9
+    match:
+      any:
+        - field: path_decoded
+          regex: '/\.(env|git/|svn/|hg/|aws/|ssh/|htpasswd|htaccess)'
+        - field: path_decoded
+          regex: '/(web|app|application)\.config\b|/config\.(php|json|yml|yaml)$'
+
+  - id: backup_file_probe
+    name: Backup or Source File Probe
+    category: reconnaissance
+    owasp: "A05:2021"
+    severity: medium
+    confidence: 0.75
+    match:
+      any:
+        - field: path_decoded
+          regex: '\.(bak|old|orig|save|swp|sql|tar\.gz|tgz|zip|rar|7z)$'
+
+  # A file named so the upload check sees an image and the server still runs it
+  # as code. `/uploads/shell.php.jpg` is the classic shape, and the tool used to
+  # read it the same way the vulnerable upload filter did: `is_static_asset`
+  # looks at the last extension, so a live webshell being driven came back as
+  # `Static Asset`.
+  #
+  # Four of these sit in the committed excerpt, answered 200, with the command in
+  # the query — `?c=id`, `?c=cat /etc/passwd`. The truth calls them
+  # `exploitation`; this pack called them images.
+  #
+  # Both halves of the pair are listed rather than matching "any two
+  # extensions", which would claim `backup.tar.gz` and every other compressed
+  # file. `critical` because a 200 here means the command ran, and 0.95 because
+  # there is no innocent reason to name a file this way.
+  - id: webshell_double_extension
+    name: Webshell Disguised by a Double Extension
+    category: exploitation
+    owasp: "A03:2021"
+    severity: critical
+    confidence: 0.95
+    references: ["CAPEC-650"]
+    match:
+      any:
+        - field: path_decoded
+          regex: '\.(php\d?|phtml|phar|asp|aspx|ashx|jsp|jspx|cgi|pl|py|rb|sh|exe|dll)\.(jpe?g|png|gif|bmp|webp|svg|ico|txt|pdf|zip|csv|log|bak)\b'

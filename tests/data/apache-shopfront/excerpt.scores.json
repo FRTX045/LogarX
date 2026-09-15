@@ -13,8 +13,8 @@
     "true_positives": 1122
   },
   "classification": {
-    "accuracy": 0.930718954248366,
-    "macro_f1": 0.840419139439618,
+    "accuracy": 0.9309803921568628,
+    "macro_f1": 0.8436190396321039,
     "per_category": [
       {
         "category": "crawling",
@@ -66,13 +66,13 @@
       },
       {
         "category": "browsing",
-        "f1": 0.6634615384615385,
+        "f1": 0.6650602409638553,
         "false_negatives": 20,
-        "false_positives": 120,
-        "precision": 0.5348837209302325,
-        "predicted": 258,
+        "false_positives": 119,
+        "precision": 0.5369649805447471,
+        "predicted": 257,
         "recall": 0.8734177215189873,
-        "recall_any": 0.8734177215189873,
+        "recall_any": 0.8987341772151899,
         "support": 158,
         "true_positives": 138
       },
@@ -126,15 +126,15 @@
       },
       {
         "category": "authentication",
-        "f1": 0.9600000000000001,
-        "false_negatives": 1,
+        "f1": 1.0,
+        "false_negatives": 0,
         "false_positives": 0,
         "precision": 1.0,
-        "predicted": 12,
-        "recall": 0.9230769230769231,
-        "recall_any": 0.9230769230769231,
+        "predicted": 13,
+        "recall": 1.0,
+        "recall_any": 1.0,
         "support": 13,
-        "true_positives": 12
+        "true_positives": 13
       },
       {
         "category": "exploitation",
@@ -225,7 +225,7 @@
         "predicted": "ssrf"
       }
     ],
-    "weighted_f1": 0.9339779315899172
+    "weighted_f1": 0.9341799172096207
   },
   "granularity": "category",
   "policy": {
@@ -238,7 +238,7 @@
     "max_duration_seconds": 28800,
     "split_on_user_agent_change": true
   },
-  "ruleset_fingerprint": "ecefd18d646130103fe4cf8db80dfc68ca146e831975ff7395baddab02b8e48f",
+  "ruleset_fingerprint": "d182fea915e985b4eb8f056633b7afa385a6d7b9500a3fb9ef925d5d5912bda6",
   "scenario": "apache-shopfront-medium-excerpt",
   "segmentation": {
     "boundaries_agreed": 244,

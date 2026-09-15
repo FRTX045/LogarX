@@ -343,8 +343,9 @@ restraint as failure, so they are held out of the rate and reported separately.
 
 ### Reproducing
 
-The command has been removed, so reproducing these figures means restoring it first. It was added
-in `cf59dfc` and removed in `2868e78`; reverting the removal restores a working `score-crs`:
+The command was removed in `2868e78` and a *differently pointed* one of the same
+name returned on 2026-09-15 — see ADR-0008's amendment. Reproducing the figures
+below means restoring the original, which scored a fixed corpus revision:
 
 ```bash
 git revert 2868e78
@@ -360,18 +361,20 @@ figure quoted without it is not re-derivable.
 
 Ruleset `9edf8587…` (33 rules) against coreruleset `d694d465951e`, 200 case files.
 
-**That is not the ruleset shipping today, and the figure still holds.** The
-current one fingerprints `e81ace93…`, also 33 rules. Everything that moved
-between them is a *window* rule: one confidence raised, a `static_asset_ratio`
-condition added to `directory_enumeration`, and `directory_enumeration_low_slow`
-added. `owasp.yaml`, where every signature rule lives, is byte-identical to the
-commit that produced this table (`cf59dfc`), and `recon.yaml`'s three signature
-rules are unchanged.
+**This is history, not the ruleset shipping today.** It was true when written and
+is kept because the analysis under *Reading it* is what motivated ADR-0008 — but
+the rules have since changed substantially and the figures below are stale. The
+tree now holds 67 rules across eight attack packs and two action packs; family
+933 alone went from 0.012 to 0.68 on 2026-09-15.
 
-A window rule cannot affect this measurement: each CRS case file is one request,
-and a window rule needs a run of them. So the rate below describes the shipping
-ruleset as well as the one it was measured on — which is worth stating, because
-two different fingerprints in one document otherwise read as two different tools.
+For current figures run `logarc score-crs`, which reports both directions —
+what was caught, and what fired on traffic CRS certifies as harmless. The
+second column did not exist when this table was made.
+
+An earlier version of this passage argued the old figure still described the
+shipping ruleset because only *window* rules had moved since. That reasoning was
+sound and is no longer true: the signature rules are where nearly all of the
+change has been.
 
 | Family | Attack | Scoreable | Detected | Rate | In URI | In header |
 |---|---|---:|---:|---:|---:|---:|

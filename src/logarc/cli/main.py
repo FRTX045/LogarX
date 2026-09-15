@@ -648,7 +648,13 @@ def evaluate(
     )
 
     if out is not None:
-        out.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
+        # Sorted, and with a closing newline. One of these files is committed as
+        # the drift gate, so it is regenerated whenever a rule changes — and a
+        # writer that reshuffles 261 lines of unchanged values buries the one
+        # line that moved. Sorting makes the diff say what actually changed.
+        out.write_text(
+            json.dumps(report.to_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
         path_line(f"\nFull numbers written to {out}")
 
 

@@ -705,3 +705,52 @@ def test_the_most_confident_crs_account_names_the_request(engine: RuleEngine) ->
 
     assert labelled.label.rule_id == "crs:932140"
     assert "Windows FOR/IF" in labelled.label.name
+
+
+#: A benign rule and a hostile one that agree on severity, so that only the
+#: precedence between them decides. Both INFO: this is the shape that arrives
+#: once rule packs describe ordinary use as well as attacks, and it did not
+#: exist while every rule in the tree was about an attack.
+BENIGN_AND_HOSTILE = """
+version: 1
+rules:
+  - id: scripted_client
+    name: Scripted Client
+    category: reconnaissance
+    severity: info
+    confidence: 0.4
+    match:
+      any:
+        - field: user_agent
+          contains: curl
+  - id: action_view_cart
+    name: View Cart
+    category: browsing
+    severity: info
+    confidence: 0.85
+    match:
+      any:
+        - field: path
+          equals: /cart
+"""
+
+
+def test_an_action_label_does_not_take_the_lead_from_a_hostile_one(tmp_path: Path) -> None:
+    """A rule describing ordinary use must never outrank one describing an
+    attack, however sure of itself it is.
+
+    Severity decides first and these two tie, so without this the more
+    confident label wins — and the confident one is `View Cart`. A report that
+    leads with "View Cart" for a request that also told us the client is a
+    script has buried the only part worth reading.
+    """
+    path = tmp_path / "pack.yaml"
+    path.write_text(BENIGN_AND_HOSTILE, encoding="utf-8")
+    engine = RuleEngine(load_rules([path]))
+
+    (labelled,) = engine.label_events([event(path="/cart", user_agent="curl/8.4.0")])
+
+    assert {item.rule_id for item in labelled.all_labels} == {"scripted_client", "action_view_cart"}
+    assert labelled.label.rule_id == "scripted_client", (
+        "the hostile observation leads, even though the benign one is more confident"
+    )

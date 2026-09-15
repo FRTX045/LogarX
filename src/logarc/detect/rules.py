@@ -273,11 +273,29 @@ def load_rules(sources: list[Path]) -> list[Rule]:
 
 
 def _expand(sources: list[Path]) -> list[Path]:
+    """Every pack file under the given files and directories.
+
+    Directories are searched all the way down, because the bundled packs are
+    grouped into folders — `attack/php.yaml`, `action/commerce.yaml` — and so
+    is any collection large enough to want organising. A one-level search read
+    a grouped directory as empty and returned no rules, without an error: the
+    tool then analysed the case with its detection layer quietly absent, which
+    is the one failure this project treats as worse than crashing.
+
+    An empty directory is refused for the same reason. Zero rules is not an
+    answer, and a mistyped path or a `.yml` spelling produces exactly that.
+    """
     paths: list[Path] = []
     for source in sources:
         source = Path(source)
         if source.is_dir():
-            paths.extend(sorted(source.glob("*.yaml")))
+            found = sorted(source.rglob("*.yaml"))
+            if not found:
+                raise RulePackError(
+                    f"no rule packs under {source}. Rule packs are YAML files "
+                    f"ending in .yaml, and subdirectories are searched too."
+                )
+            paths.extend(found)
         elif source.exists():
             paths.append(source)
         else:

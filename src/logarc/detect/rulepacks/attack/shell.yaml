@@ -1,0 +1,23 @@
+# Payloads aimed at a Unix shell reached through the web server — CGI, and the
+# environment it hands to the process it spawns.
+#
+# Separate from `global/injection.yaml`'s `command_injection` on purpose: that
+# one is about shell metacharacters appearing in a parameter, which any stack
+# can pass along. This is about the shell itself being the target.
+
+version: 1
+rules:
+
+  - id: shellshock
+    name: Shellshock Function Definition
+    category: exploitation
+    owasp: "A06:2021"
+    severity: critical
+    confidence: 0.95
+    references: ["CVE-2014-6271"]
+    match:
+      any:
+        - field: user_agent_decoded
+          regex: '\(\s*\)\s*\{.*;\s*\}\s*;'
+        - field: referer_decoded
+          regex: '\(\s*\)\s*\{.*;\s*\}\s*;'

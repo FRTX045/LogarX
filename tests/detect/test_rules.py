@@ -46,7 +46,11 @@ rules:
 """
 
 
-def write_pack(tmp_path: Path, text: str, name: str = "pack.yaml") -> Path:
+def write_pack(
+    tmp_path: Path, text: str, name: str = "pack.yaml", *, parents: bool = False
+) -> Path:
+    if parents:
+        tmp_path.mkdir(parents=True, exist_ok=True)
     path = tmp_path / name
     path.write_text(text, encoding="utf-8")
     return path
@@ -196,6 +200,41 @@ def test_a_directory_of_packs_can_be_loaded(tmp_path: Path) -> None:
     write_pack(tmp_path, WINDOW_PACK, "b.yaml")
 
     assert len(load_rules([tmp_path])) == 2
+
+
+def test_packs_in_subdirectories_are_loaded(tmp_path: Path) -> None:
+    """The packs are grouped into folders, so the loader has to go in.
+
+    It used to look one level deep. A pack moved into a folder was not
+    reported missing — it produced no rules at all, silently, and the tool
+    went on analysing with a hole in its detection where that file had been.
+    """
+    write_pack(tmp_path, SIGNATURE_PACK, "flat.yaml")
+    nested = tmp_path / "attack"
+    nested.mkdir()
+    write_pack(nested, WINDOW_PACK, "deep.yaml")
+
+    assert len(load_rules([tmp_path])) == 2
+
+
+def test_a_duplicate_id_across_folders_still_names_both_files(tmp_path: Path) -> None:
+    """Folders make it easier to define the same rule twice by accident, so
+    the check that catches it has to reach across them too."""
+    write_pack(tmp_path / "a", SIGNATURE_PACK, "one.yaml", parents=True)
+    write_pack(tmp_path / "b", SIGNATURE_PACK, "two.yaml", parents=True)
+
+    with pytest.raises(RulePackError, match="sqli_union_select"):
+        load_rules([tmp_path])
+
+
+def test_a_directory_with_no_packs_is_refused(tmp_path: Path) -> None:
+    """Zero rules is never a useful answer, and it is what a mistyped path or
+    a wrong-extension file produces. Saying so beats analysing a case with a
+    detection layer that quietly is not there."""
+    (tmp_path / "rules.yml").write_text("version: 1\nrules: []\n", encoding="utf-8")
+
+    with pytest.raises(RulePackError, match="no rule packs"):
+        load_rules([tmp_path])
 
 
 def test_duplicate_rule_ids_are_rejected(tmp_path: Path) -> None:

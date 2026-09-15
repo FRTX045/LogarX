@@ -685,11 +685,28 @@ def _to_label(rule: Rule) -> ActivityLabel:
 def _most_severe(labels: Sequence[ActivityLabel]) -> ActivityLabel:
     """Pick the label a report should lead with.
 
-    Severity first, then confidence, then rule id. The last is a tie-break with
-    no meaning of its own; it exists so that two equally severe, equally
-    confident rules always resolve the same way rather than by load order.
+    Severity first, then whether the label describes an attack at all, then
+    confidence, then rule id. The last is a tie-break with no meaning of its
+    own; it exists so that two equally severe, equally confident rules always
+    resolve the same way rather than by load order.
+
+    Hostility sits above confidence because the packs now describe ordinary use
+    as well as attacks, and the two meet at INFO. `Scripted Client` is INFO at
+    0.4 — deliberately unsure, because a user-agent is a claim — while
+    `View Cart` on `/cart` is INFO at 0.85 and nearly certain. Ranking by
+    confidence alone leads a report on a `curl` request to `/cart` with
+    "View Cart", which is true and useless: it buries the only part worth
+    reading under the part nobody needed telling.
     """
-    return max(labels, key=lambda label: (label.severity, label.confidence, label.rule_id))
+    return max(
+        labels,
+        key=lambda label: (
+            label.severity,
+            label.category.is_hostile,
+            label.confidence,
+            label.rule_id,
+        ),
+    )
 
 
 def _classify_benign(view: RequestView) -> ActivityLabel:

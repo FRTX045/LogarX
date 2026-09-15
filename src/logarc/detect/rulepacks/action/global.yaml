@@ -1,0 +1,229 @@
+# What a client did *with* the site, as opposed to *to* it.
+#
+# ## Why these are rules and not code
+#
+# Until now every rule in the tree described an attack, and ordinary traffic was
+# described by a ladder of `if` statements in `detect/engine.py` with seven
+# outcomes: unreadable, crawler, static asset, authentication, API call,
+# non-idempotent request, page view. That ladder still runs — it is the last
+# resort, and it is what guarantees every request gets *some* description — but
+# it cannot say "this client checked out", and nobody can teach it to without
+# editing Python.
+#
+# These can. `POST /checkout` stops being "Non-idempotent Request".
+#
+# ## How they sit beside the attack packs
+#
+# Every rule here is `severity: info`, which means two things precisely:
+#
+#   * A rule describing an attack always leads the report instead, whatever its
+#     severity. `/search?q=' OR 1=1--` is an SQL injection that happens to have
+#     arrived at the search box, and it is reported as an injection.
+#   * The CRS sidecar is still consulted. INFO is this ruleset saying "I noticed
+#     something and I am not calling it an attack", which leaves the request
+#     effectively unclassified — see ADR-0008.
+#
+# ## Confidence is doing real work here
+#
+# An episode is named after its most significant label, and among labels that
+# tie on severity that means the most confident one. So confidence is a claim
+# about how sure the *description* is, and it orders what a reader sees: a run
+# of requests that includes a checkout is named "Checkout" rather than
+# "Page View", because `/checkout` says what it is and an unrecognised path
+# does not. The fallback ladder sits at 0.5; everything here is above it.
+#
+# ## Why there is no rule for product or category pages
+#
+# Because they are browsing, the ladder already says so, and claiming them here
+# would take them away from the crawler check that runs first. On the shopfront
+# excerpt 767 of 814 requests to `/p/...` are a crawler working through the
+# catalogue, and a "Product View" rule would relabel every one of them.
+#
+# Each rule below carries the same crawler guard for the same reason: a bot
+# fetching `/cart` is a bot, and the ladder's answer stays the right one.
+
+version: 1
+rules:
+
+  # Looking for something. The distinguishing act of a visitor who arrived with
+  # an intention rather than a link — and the single most attacked input on most
+  # sites, which is why the search rules and the injection rules meet here so
+  # often. The injection rule wins the report; this one keeps the context.
+  #
+  # Anchored at the start of the path, and only there. An earlier draft also
+  # allowed the word at the *end* — `/(search|autocomplete|suggest)$` — to pick
+  # up `/api/autocomplete`, and it matched `/assets/js/autocomplete.js` instead:
+  # 38 static assets and 6 API calls on the shopfront excerpt were relabelled as
+  # searches, and classification accuracy fell 1.2 points. The bundle of a shop
+  # is named after the shop's features, so every word a rule here looks for is
+  # also a filename there.
+  - id: action_search
+    name: Search
+    category: browsing
+    severity: info
+    confidence: 0.8
+    match:
+      all:
+        - field: path_decoded
+          regex: '^/(search|suche|recherche|busca|find|lookup)(/|$)'
+        - field: user_agent_decoded
+          regex: '^(?!.*(bot|crawler|spider|slurp))'
+
+  # The same act as a call rather than a page — `/api/autocomplete` while
+  # somebody types. `api_call`, not `browsing`: nobody navigated here, and the
+  # labelled corpus agrees.
+  #
+  # Above `action_search_query`, not level with it. At the same confidence the
+  # two tie and the winner is decided by rule id, which is alphabetical and
+  # means nothing — `/api/autocomplete?q=oa` matches both and came out
+  # `browsing` on all six of the corpus's requests to it.
+  - id: action_search_api
+    name: Search
+    category: api_call
+    severity: info
+    confidence: 0.78
+    match:
+      any:
+        - field: path_decoded
+          regex: '^/(api|rest|v\d+|graphql)/[a-z0-9/_-]{0,40}(search|autocomplete|suggest|typeahead|query)(/|$)'
+
+  # The same act reached through a query parameter rather than a path, which is
+  # how most storefronts and every WordPress site do it.
+  #
+  # The loosest rule in the pack, so it carries the guard the others get from
+  # being anchored: a stylesheet fetched with `?q=` on the end is a
+  # cache-buster, not a search.
+  - id: action_search_query
+    name: Search
+    category: browsing
+    severity: info
+    confidence: 0.75
+    match:
+      all:
+        - field: query_decoded
+          regex: '(^|&)(q|query|search|keyword|kw|term|st)='
+        - field: extension
+          regex: '^(?!(css|js|mjs|map|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|eot|mp4|webm|mp3|pdf|txt|xml)$)'
+        - field: user_agent_decoded
+          regex: '^(?!.*(bot|crawler|spider|slurp))'
+
+  # Becoming someone. The moment a trace stops being about an address and starts
+  # being about an account, which is why `authentication` is deliberately left
+  # out of the episode builder's "ordinary use" group: a trace that reads
+  # "browsed, signed in, browsed" is the point of having a trace.
+  #
+  # CMS login paths — `wp-login.php`, `administrator/index.php` — are absent on
+  # purpose. On a site that does not run that CMS they are a probe, not a sign
+  # in, and on the shopfront excerpt they arrive from scanners.
+  - id: action_sign_in
+    name: Sign In
+    category: authentication
+    severity: info
+    confidence: 0.9
+    match:
+      all:
+        - field: path_decoded
+          regex: '^/(login|signin|sign-in|log-in|auth(/(login|signin|token|callback))?|session|users?/(sign_in|login)|account/(login|signin))(/|$)'
+        - field: user_agent_decoded
+          regex: '^(?!.*(bot|crawler|spider|slurp))'
+
+  - id: action_sign_out
+    name: Sign Out
+    category: authentication
+    severity: info
+    confidence: 0.9
+    match:
+      all:
+        - field: path_decoded
+          regex: '^/(logout|signout|sign-out|log-out|users?/sign_out|account/logout)(/|$)'
+        - field: user_agent_decoded
+          regex: '^(?!.*(bot|crawler|spider|slurp))'
+
+  - id: action_register
+    name: Register
+    category: authentication
+    severity: info
+    confidence: 0.9
+    match:
+      all:
+        - field: path_decoded
+          regex: '^/(register|signup|sign-up|join|users?/new|account/(register|create))(/|$)'
+        - field: user_agent_decoded
+          regex: '^(?!.*(bot|crawler|spider|slurp))'
+
+  # Worth its own name rather than folding into `Sign In`. A password reset is
+  # the standard way to take an account over once an email address is known, so
+  # a reset that a sign-in did not follow is a question worth being able to ask.
+  - id: action_password_reset
+    name: Password Reset
+    category: authentication
+    severity: info
+    confidence: 0.9
+    match:
+      all:
+        - field: path_decoded
+          regex: '(password[-_/]?(reset|forgot|recover|change)|forgot[-_/]?password|reset[-_/]?password)'
+        - field: user_agent_decoded
+          regex: '^(?!.*(bot|crawler|spider|slurp))'
+
+  # Managing the account once inside it. `browsing` rather than
+  # `authentication`: signing in is an event, and reading your own settings is
+  # an ordinary page view that happens to be behind a login.
+  - id: action_account_area
+    name: Account Area
+    category: browsing
+    severity: info
+    confidence: 0.8
+    match:
+      all:
+        - field: path_decoded
+          regex: '^/(account|profile|settings|preferences|dashboard|my[-_]?account)(/|$)'
+        - field: user_agent_decoded
+          regex: '^(?!.*(bot|crawler|spider|slurp))'
+
+  # Putting a file on the server. Higher confidence than the other writes
+  # because of what it leads to: a webshell arrives this way, and the rule that
+  # catches the shell afterwards is `webshell_double_extension`, three packs
+  # over. Knowing an upload happened at all is what makes that finding a story.
+  - id: action_file_upload
+    name: File Upload
+    category: api_call
+    severity: info
+    confidence: 0.9
+    match:
+      all:
+        - field: method
+          regex: '^(POST|PUT|PATCH)$'
+        - field: path_decoded
+          regex: '(upload|import|attachment|media|avatar|file)s?(/|$|\.\w+$)'
+
+  # A call to a JSON or GraphQL endpoint. Low confidence on purpose: this says
+  # what *kind* of request it was, not what it did, so it should lose the naming
+  # of an episode to anything that knows more.
+  - id: action_api_call
+    name: API Call
+    category: api_call
+    severity: info
+    confidence: 0.7
+    match:
+      any:
+        - field: path_decoded
+          regex: '^/(api|graphql|rest|v\d+|rpc|jsonrpc)(/|$)'
+        - field: path_decoded
+          regex: '^/[a-z0-9/_-]{0,60}\.(json|graphql)$'
+
+  # Anything else that changed state. The end of the ladder, kept because
+  # "something was written and we do not know what" is still worth saying, and
+  # because the fallback's own wording for it — "Non-idempotent Request" —
+  # describes the HTTP method rather than the act.
+  - id: action_form_submission
+    name: Form Submission
+    category: api_call
+    severity: info
+    confidence: 0.55
+    match:
+      all:
+        - field: method
+          regex: '^(POST|PUT|PATCH|DELETE)$'
+        - field: path_decoded
+          regex: '^(?!/(api|graphql|rest|rpc)(/|$))'

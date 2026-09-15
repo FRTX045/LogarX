@@ -283,10 +283,15 @@ def _representative(run: Sequence[LabelledEvent]) -> ActivityLabel:
         (item.label for item in run),
         key=lambda activity: (
             activity.severity,
-            activity.confidence,
-            # Before the benign order, so a benign label can never name an
-            # episode over a hostile one that merely happens to tie with it.
+            # Above confidence, not below it, so a benign label can never name
+            # an episode over a hostile one that ties with it on severity.
+            # `Scripted Client` is INFO at 0.4 because a user-agent is a claim
+            # rather than a fact; an action rule that recognised `/checkout` is
+            # INFO at 0.9 because the path says so. Ordering by confidence first
+            # names that episode "Checkout" and loses the only surprising thing
+            # in it — that the checkout came from a script.
             activity.category.is_hostile,
+            activity.confidence,
             _naming_rank(activity.category),
         ),
     )

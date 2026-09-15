@@ -287,7 +287,15 @@ def score_corpus(
 
             event = _as_event(payload, cases)
             (labelled,) = engine.label_events([event])
-            rules = [item.rule_id for item in labelled.all_labels]
+            # Hostile labels only. The packs describe ordinary use too, and
+            # every corpus request lands on `/get` or `/post` — which an action
+            # rule recognises. Counting any match at all was right while every
+            # rule was about an attack; the moment `action/` existed it moved
+            # RCE from 9% to 20% and session from 5% to 65% with nothing new
+            # detected, and reported a `Form Submission` on a POST as a false
+            # alarm eleven times. Both halves of the score were wrong, and both
+            # looked like results.
+            rules = [item.rule_id for item in labelled.all_labels if item.category.is_hostile]
             target = str(payload.get("uri") or "/")[:96]
 
             if expected == "attack":

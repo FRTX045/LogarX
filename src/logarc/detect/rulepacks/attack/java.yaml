@@ -1,0 +1,22 @@
+# Payloads that only mean something to a JVM. Loaded against every log for the
+# reason given in `php.yaml`: what was attempted is evidence whether or not it
+# could have worked.
+
+version: 1
+rules:
+
+  - id: log4shell_jndi
+    name: Log4Shell JNDI Lookup
+    category: exploitation
+    owasp: "A06:2021"
+    severity: critical
+    confidence: 0.98
+    references: ["CVE-2021-44228"]
+    match:
+      any:
+        - field: target_decoded
+          regex: '\$\{\s*jndi\s*:'
+        - field: user_agent_decoded
+          regex: '\$\{\s*jndi\s*:'
+        - field: referer_decoded
+          regex: '\$\{\s*jndi\s*:'

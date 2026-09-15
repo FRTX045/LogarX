@@ -184,13 +184,23 @@ def check_executable(bundle: Path) -> str | None:
 
 
 def check_rule_packs(bundle: Path) -> str | None:
-    """Data files nothing imports. Missing means every request reads benign."""
+    """Data files nothing imports. Missing means every request reads benign.
+
+    Compared by path rather than by name, and found by walking rather than by a
+    glob, because the packs are grouped into folders. Matching on names alone
+    would pass a bundle that had flattened `attack/php.yaml` to `php.yaml` —
+    which loads, but stops the grouping meaning anything.
+    """
     source = ROOT / "src" / "logarc" / "detect" / "rulepacks"
     packed = bundle / "_internal" / "logarc" / "detect" / "rulepacks"
-    wanted = {path.name for path in source.glob("*.yaml")}
+    wanted = {path.relative_to(source).as_posix() for path in source.rglob("*.yaml")}
     if not wanted:
         return "no rule packs in the source tree to compare against"
-    got = {path.name for path in packed.glob("*.yaml")} if packed.is_dir() else set()
+    got = (
+        {path.relative_to(packed).as_posix() for path in packed.rglob("*.yaml")}
+        if packed.is_dir()
+        else set()
+    )
     if missing := wanted - got:
         return f"rule packs missing from the bundle: {', '.join(sorted(missing))}"
     return None

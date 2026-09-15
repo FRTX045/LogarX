@@ -1,9 +1,14 @@
-# Reconnaissance and enumeration.
+# Who is asking, how often, and for what — as opposed to what they sent.
 #
-# Mostly window rules, because this is behaviour no single request reveals: one
-# 404 is a missing page, and forty in a minute across forty paths is someone
-# working through a wordlist. These are the rules that make the difference
-# between a graph of isolated hits and one that shows a campaign.
+# Most of these are window rules: they fire on a run of requests whose shape
+# crosses a threshold, and say nothing about any single one. Twenty 404s in a
+# minute is enumeration; any one of them is a missing page. These are the rules
+# that make the difference between a graph of isolated hits and one that shows
+# a campaign.
+#
+# `multiply_encoded_request` sits here rather than with the payload rules
+# because it carries no payload of its own. Encoding something twice is a
+# statement about intent, not about what was sent.
 
 version: 1
 rules:
@@ -228,3 +233,14 @@ rules:
         - metric: request_count
           op: ">="
           value: 5
+
+  - id: multiply_encoded_request
+    name: Multiply Encoded Request
+    category: reconnaissance
+    owasp: "A03:2021"
+    severity: low
+    confidence: 0.6
+    match:
+      any:
+        - field: decode_depth
+          min: 2
