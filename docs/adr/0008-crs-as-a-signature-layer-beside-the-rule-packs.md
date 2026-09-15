@@ -1,6 +1,6 @@
 # ADR-0008: Run OWASP CRS beside the rule packs, not instead of them
 
-- **Status:** Accepted
+- **Status:** Accepted; amended 2026-09-15 — see *Amendment* at the end
 - **Date:** 2026-08-11
 
 ## Context
@@ -119,3 +119,48 @@ figures are kept as the evidence for this decision.
 
 **Revisit if** the rescue is shown to fire on genuinely benign traffic in the field. The response is
 to shrink the mapping table, not to widen it — the same direction taken with `attack-generic`.
+
+
+## Amendment, 2026-09-15 — `score-crs` returns, pointed the other way
+
+This record retired `score-crs` "for good", and the reasoning was: *rules scored
+against the corpus their own project maintains grade themselves.* That still
+holds, exactly as written, for the thing that was removed. It scored **CRS's**
+rules against **CRS's** corpus.
+
+A command of the same name is back, and it is not that thing. It scores **this
+project's** rule packs against that corpus — a question paper written by someone
+else, for someone else's tool, years before logarc existed. The objection in the
+sentence above is about who wrote the answer key relative to who wrote the
+rules, and reversing that reverses the objection with it.
+
+**What made this worth doing now.** The corpus turned out to have been in the
+repository the whole time, at `vendor/coreruleset/tests/regression/`, carried in
+with the ruleset clone. The blocker was never the data; it was that nothing
+could read it. `docs/evaluation.md` had recorded two holes found against that
+corpus — family 933 at 0.012 and family 932 at 0.079 — with no way to check
+whether anything had since closed them.
+
+**The first run, and it is not flattering.** Counting a case as caught when
+*any* hostile rule fires, which is generous:
+
+| Family | Cases | A log can see | Caught | Recall |
+|---|---:|---:|---:|---:|
+| 933 PHP | 429 | 272 | 29 | 11% |
+| 932 RCE | 1,006 | 537 | 43 | 8% |
+| 941 XSS | 263 | 104 | 14 | 13% |
+| 942 SQLi | 1,033 | 184 | 31 | 17% |
+
+SQLi and XSS have had rules for months and sit beside PHP, whose rules are days
+old. That makes this a measurement of the pack rather than of any one
+afternoon's work.
+
+**Recall is over what a log can see.** A combined access log holds the request
+line, the Referer and the User-Agent. 626 of the PHP and RCE cases put their
+payload in a body or a header it never writes, and those are counted apart
+rather than as misses: scoring them would measure the log format and publish the
+result as a score for the rules.
+
+**What does not change.** Nothing here revives scoring CRS against itself, and
+nothing here treats CRS's rule ids as ground truth for a category — the mapping
+table and its withholdings stand exactly as decided above.

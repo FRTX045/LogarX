@@ -7,6 +7,35 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`logarc score-crs` scores this project's rules against a corpus somebody else wrote.** Until
+  now every number the detection layer produced came from payloads its own author chose — rules
+  marking their own homework. This runs them against the OWASP CRS regression suite: a question
+  paper written for a different tool, years before this project existed.
+
+  **The corpus was never missing.** It has been in the repository the whole time at
+  `vendor/coreruleset/tests/regression/`, carried in with the ruleset clone. What was missing was
+  anything that could read it, and ADR-0008 — which retired the old `score-crs` — is amended rather
+  than contradicted: that one scored *CRS's* rules with *CRS's* corpus, which is the objection, and
+  reversing the direction reverses the objection.
+
+  The first run, counting a case as caught when *any* hostile rule fires:
+
+  | Family | Cases | A log can see | Caught | Recall |
+  |---|---:|---:|---:|---:|
+  | 933 PHP | 429 | 272 | 29 | **11%** |
+  | 932 RCE | 1,006 | 537 | 43 | **8%** |
+  | 941 XSS | 263 | 104 | 14 | **13%** |
+  | 942 SQLi | 1,033 | 184 | 31 | **17%** |
+
+  SQLi and XSS have had rules for months and sit beside PHP, whose rules are days old — so this
+  measures the pack, not one afternoon's work.
+
+  **Recall is over what a log can see, never over everything.** 626 of the PHP and RCE cases put
+  their payload in a body or a header a combined log never writes, and those are counted apart:
+  scoring them would measure the log format and publish it as a score for the rules. The command
+  prints that number too, and prints the requests that got through, because a bare percentage says
+  a pack is weak while the misses say how.
+
 - **The evaluation's own numbers are now committed and checked on every run.**
   `tests/data/apache-shopfront/excerpt.scores.json` holds the complete scoring output for the
   committed 3,825-line excerpt, beside the log and the truth it came from, and a test re-runs the
