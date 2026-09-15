@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
+import yaml
 
 from logarc.core.activity import ActivityCategory
 from logarc.core.event import NormalizedEvent
@@ -53,6 +54,43 @@ def test_the_bundled_packs_load() -> None:
 
     assert len(rules) > 20
     assert DEFAULT_RULEPACK_DIR.is_dir()
+
+
+def test_every_pack_in_the_tree_contributes_rules() -> None:
+    """The packs are grouped into folders, and a folder is easy to lose.
+
+    `default_rules()` returning *something* is not enough: it returned the
+    other packs perfectly well while one whole directory went unread. This
+    counts files on disk against rules loaded, so a pack that stops being
+    reached fails here rather than quietly narrowing what the tool detects.
+    """
+    on_disk = sorted(DEFAULT_RULEPACK_DIR.rglob("*.yaml"))
+    assert on_disk, "the bundled packs are the detection layer; there must be some"
+
+    expected = 0
+    for path in on_disk:
+        pack = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        count = len(pack.get("rules") or [])
+        assert count, f"{path.relative_to(DEFAULT_RULEPACK_DIR)} holds no rules"
+        expected += count
+
+    assert len(default_rules()) == expected
+
+
+def test_the_packs_are_grouped_by_what_they_are_about() -> None:
+    """Attack packs and action packs are separate trees, and a technology pack
+    sits beside `global/` rather than inside it. The layout is the
+    documentation — someone adding a PHP rule should not have to ask where."""
+    names = {
+        path.relative_to(DEFAULT_RULEPACK_DIR).as_posix()
+        for path in DEFAULT_RULEPACK_DIR.rglob("*.yaml")
+    }
+
+    assert any(name.startswith("attack/") for name in names)
+    assert "attack/php.yaml" in names, "PHP rules live in one place, by technology"
+    assert any(name.startswith("attack/global/") for name in names), (
+        "and rules that presume no technology live under global/"
+    )
 
 
 def test_every_bundled_rule_has_a_unique_id() -> None:

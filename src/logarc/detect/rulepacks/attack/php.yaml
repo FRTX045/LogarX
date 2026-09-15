@@ -1,0 +1,85 @@
+# Payloads that only mean something to a PHP runtime.
+#
+# **Loaded against every log, including logs from servers that run no PHP.**
+# That is deliberate. An attacker throwing PHP at a Python backend has told us
+# what they were trying to do, and a request that could never have worked is
+# still a request worth recording — often a more revealing one, because it says
+# the attacker was guessing.
+
+version: 1
+rules:
+
+  # PHP had no rule of its own in either pack until now — every `php` in them
+  # was a filename pattern rather than anything about the language. Measured
+  # against the CRS regression corpus, family 933 scored 0.012 over 173 cases,
+  # and the two that matched did so through a reconnaissance rule catching a
+  # path. `docs/evaluation.md` calls that "a hole, not a framing artefact".
+  #
+  # What an access log can see is the parameter, so these are the shapes that
+  # travel in one: a stream wrapper, a URL, a function name, a serialised
+  # object. A payload that arrives in a POST body is invisible here and always
+  # will be.
+
+  - id: php_stream_wrapper
+    name: PHP Stream Wrapper in a Parameter
+    category: injection
+    owasp: "A03:2021"
+    severity: critical
+    confidence: 0.9
+    references: ["CAPEC-252"]
+    # `php://filter` reads a file the application never meant to serve;
+    # `php://input` and `data:` feed it code directly; `phar://` triggers
+    # deserialisation on an uploaded file. None has an innocent reading in a
+    # query string — an application that wants a wrapper supplies it itself.
+    match:
+      any:
+        - field: target_decoded
+          regex: '\b(php|data|phar|expect|glob|ogg)://'
+
+  - id: remote_file_inclusion
+    name: Remote File Inclusion
+    category: injection
+    owasp: "A03:2021"
+    severity: critical
+    confidence: 0.8
+    references: ["CAPEC-253"]
+    # A parameter holding a URL somewhere else, on a name that reads like it
+    # will be included. Narrowed to those names on purpose: a bare URL in a
+    # parameter is an ordinary redirect or callback, and matching every one of
+    # those would drown the rule.
+    match:
+      any:
+        - field: query_decoded
+          regex: '\b(file|page|include|inc|path|template|tpl|doc|document|load|read|src|conf|lang|view)=(https?|ftps?)://'
+
+  - id: php_code_execution
+    name: PHP Execution Function in a Parameter
+    category: injection
+    owasp: "A03:2021"
+    severity: critical
+    confidence: 0.9
+    references: ["CAPEC-242"]
+    # The functions that run something. `base64_decode` and `file_get_contents`
+    # are deliberately absent: both appear in ordinary application URLs often
+    # enough that they would cost more than they find.
+    match:
+      any:
+        - field: target_decoded
+          regex: '\b(system|shell_exec|passthru|popen|proc_open|pcntl_exec|assert|create_function|preg_replace)\s*\('
+        - field: target_decoded
+          regex: '\beval\s*\(|\bexec\s*\(\s*[''"$]'
+
+  - id: php_object_injection
+    name: PHP Object Injection
+    category: injection
+    owasp: "A08:2021"
+    severity: critical
+    confidence: 0.9
+    references: ["CAPEC-586"]
+    # A serialised PHP object reaching `unserialize`, which runs whatever magic
+    # method the class in scope exposes. The shape is unmistakable: a type
+    # letter, a length, a quoted class name, a brace.
+    match:
+      any:
+        - field: target_decoded
+          regex: '\b[oc]:\d+:"[^"]+":\d+:\{'

@@ -1,0 +1,103 @@
+# Reaching for a door rather than picking a lock: administrative areas, debug
+# endpoints, and the manifests that say which version of what is installed.
+#
+# Mostly low-severity on their own. Their value is cumulative — one request to
+# `/wp-admin` is noise, and a run of them alongside a `sensitive_file_access`
+# hit is a story.
+
+version: 1
+rules:
+
+  # A refusal, not a miss. 404 says the thing is not there; 401 and 403 say it is
+  # there and this client may not have it — opposite findings, and this pack
+  # already draws the line. `directory_enumeration`'s own comment puts it best:
+  # "enumeration is finding out what exists; a refusal means the thing exists and
+  # is protected", and `forced_browsing` keeps to it with `any_of: [401, 403]`.
+  #
+  # This rule did not. `status >= 400` swept 404 in with the refusals, and on the
+  # committed excerpt that was the whole of its behaviour: 140 matches on admin
+  # paths, every one a 404 or a 400, not one a real refusal. The truth calls them
+  # enumeration or reconnaissance. Precision was 0.146 — the worst in the pack —
+  # and this clause was all of it.
+  - id: admin_area_probe
+    name: Administrative Area Refusal
+    category: access_control
+    owasp: "A01:2021"
+    severity: medium
+    confidence: 0.6
+    match:
+      all:
+        - field: path_decoded
+          regex: '/(admin|administrator|wp-admin|phpmyadmin|manager/html|console)\b'
+        - field: status
+          any_of: ["401", "403"]
+
+  # The same behaviour, refused a different way — and the far more common way.
+  #
+  # The rule above assumes an application answers an unauthenticated admin
+  # request with 401 or 403. Most do not: they redirect to the login form, and
+  # that is a 302. Measured on the committed excerpt, whose truth marks 24
+  # requests as `access_control`, the rule above reached *none* of them. This one
+  # reaches 13, and claims nothing the pack did not already claim.
+  #
+  # A separate rule rather than a wider status test on that one, because a match
+  # block takes exactly one combinator: "path matches AND (refused OR
+  # redirected)" cannot be written as a single block. Two named rules also read
+  # better in a report than one whose name no longer says what it matched.
+  #
+  # Deliberately not "any status". That reaches 19 of the 24 and also claims
+  # five `injection` and two `exploitation` requests as access control — a
+  # confident wrong answer in place of a miss, which is the worse trade.
+  - id: admin_area_redirect
+    name: Administrative Area, Redirected Away
+    category: access_control
+    owasp: "A01:2021"
+    severity: medium
+    confidence: 0.55
+    match:
+      all:
+        - field: path_decoded
+          regex: '/(admin|administrator|wp-admin|phpmyadmin|manager/html|console)\b'
+        - field: status
+          any_of: ["302", "303"]
+
+  - id: debug_endpoint_probe
+    name: Debug or Status Endpoint Probe
+    category: reconnaissance
+    owasp: "A05:2021"
+    severity: medium
+    confidence: 0.8
+    match:
+      any:
+        - field: path_decoded
+          regex: '/(phpinfo|server-status|server-info|actuator|debug|trace|env)\b'
+
+  - id: known_vulnerable_component_path
+    name: Known Vulnerable Component Path
+    category: reconnaissance
+    owasp: "A06:2021"
+    severity: low
+    confidence: 0.5
+    match:
+      any:
+        - field: path_decoded
+          regex: '/(cgi-bin|struts|jenkins|solr|elasticsearch)/|/wp-content/plugins/'
+
+  - id: dependency_manifest_probe
+    name: Dependency Manifest Probe
+    category: reconnaissance
+    owasp: "A06:2021"
+    severity: low
+    confidence: 0.5
+    # A manifest names every library and version the application runs, which is
+    # the step before looking up what those versions are vulnerable to. Kept at
+    # low confidence: these files are occasionally served on purpose, and this
+    # is a hint about intent rather than evidence of an attack.
+    match:
+      any:
+        - field: path_decoded
+          regex: '/(composer|package|package-lock|bower)\.json$'
+        - field: path_decoded
+          regex: '/(composer|yarn|gemfile|package)\.lock$|/(gemfile|pipfile|go\.mod|pom\.xml)$'
+        - field: path_decoded
+          regex: '/requirements(-[a-z]+)?\.txt$'

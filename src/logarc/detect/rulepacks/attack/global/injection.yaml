@@ -1,0 +1,257 @@
+# Payloads that mean the same thing whatever the server is written in.
+#
+# SQL, JavaScript, shell metacharacters and template syntax are understood by
+# every stack that speaks them, so nothing here presumes a technology. The
+# packs beside `global/` do: `../php.yaml` and the rest hold patterns that only
+# mean something to one runtime.
+#
+# Patterns are matched against normalised text, which has already been
+# percent-decoded (recursively), Unicode-folded, case-folded and stripped of
+# SQL comments. Rules are therefore written once, in canonical form, rather
+# than once per evasion.
+
+version: 1
+rules:
+
+  - id: sqli_union_select
+    name: SQL Injection (UNION SELECT)
+    category: injection
+    owasp: "A03:2021"
+    severity: high
+    confidence: 0.95
+    references: ["CAPEC-66"]
+    match:
+      any:
+        - field: target_decoded
+          regex: 'union[\s/(]+(all[\s/(]+)?select'
+
+  # The terminator — a comment or the end of the string — is what keeps this
+  # rule honest: it is what says the comparison was appended to close off a
+  # query rather than being part of one. Everything before it is deliberately
+  # loose, because sqlmap's default boolean series varies exactly there:
+  #
+  #   oak')) AND 5481=5481 AND (('SUiH'='SUiH     parenthesised
+  #   oak')  AND 1646=4348 AND ('fkFQ' LIKE 'fkFQ compared with LIKE
+  #   oak%'  AND 3812=6291 AND 'ZxzJ%'='ZxzJ      a % inside the operand
+  #
+  # All three reached the rules as nothing at all while the UNION payloads from
+  # the same run were caught, so a scan showed its conclusion and not its
+  # working.
+  - id: sqli_tautology
+    name: SQL Injection (always-true condition)
+    category: injection
+    owasp: "A03:2021"
+    severity: high
+    confidence: 0.85
+    references: ["CAPEC-7"]
+    match:
+      any:
+        - field: target_decoded
+          regex: "(or|and)[\\s(]+['\"]?[0-9a-z%_]+['\"]?\\s*(=|like)\\s*['\"]?[0-9a-z%_]+['\"]?\\s*(--|#|/\\*|$)"
+
+  # Counting columns, the step between finding an injection point and building
+  # a UNION that fits it. Nothing covered it, so the tool saw the UNION and not
+  # the dozen requests of preparation that name the attack for what it is.
+  - id: sqli_column_count
+    name: SQL Injection (column counting)
+    category: injection
+    owasp: "A03:2021"
+    severity: high
+    confidence: 0.85
+    references: ["CAPEC-66"]
+    match:
+      any:
+        - field: target_decoded
+          regex: '\border\s+by\s+\d+\s*(--|#|/\*|$)'
+
+  - id: sqli_time_based
+    name: SQL Injection (time-based blind)
+    category: injection
+    owasp: "A03:2021"
+    severity: high
+    confidence: 0.9
+    references: ["CAPEC-7"]
+    # `randomblob` is the fallback when `sleep()` is unavailable, which it
+    # often is: the delay comes from making the database do expensive work
+    # instead of asking it to wait. `SELECT LENGTH(HEX(RANDOMBLOB(200000000)))`
+    # is sqlmap's SQLite form of it, and it is a small denial of service as
+    # well as a timing oracle.
+    match:
+      any:
+        - field: target_decoded
+          regex: '\b(sleep|pg_sleep|benchmark|randomblob)\s*\(|waitfor\s+delay'
+
+  - id: sqli_schema_probe
+    name: SQL Injection (schema enumeration)
+    category: injection
+    owasp: "A03:2021"
+    severity: high
+    confidence: 0.9
+    match:
+      any:
+        - field: target_decoded
+          regex: 'information_schema|sysobjects|pg_catalog\.|\bsqlite_master\b'
+
+  - id: sqli_error_based
+    name: SQL Injection (error-based)
+    category: injection
+    owasp: "A03:2021"
+    severity: high
+    confidence: 0.85
+    references: ["CAPEC-7"]
+    # These payloads never return rows. They provoke a database error whose
+    # text leaks the answer, so they carry no UNION, no tautology and no sleep,
+    # and every other injection rule misses them.
+    match:
+      any:
+        - field: target_decoded
+          regex: '@@(version|servername|datadir|hostname|basedir)|\bversion\s*\(\s*\)'
+        - field: target_decoded
+          regex: '\b(extractvalue|updatexml)\s*\(|\bdbms_pipe\.receive_message\b'
+        - field: target_decoded
+          regex: '\b(convert|cast)\s*\(.*\b(int|integer|char|varchar|nvarchar|signed)\b'
+
+  - id: sqli_stacked_query
+    name: SQL Injection (stacked statement)
+    category: injection
+    owasp: "A03:2021"
+    severity: critical
+    confidence: 0.85
+    match:
+      any:
+        - field: target_decoded
+          regex: ';\s*(drop|insert|update|delete|truncate|alter)\s+'
+
+  - id: xss_script_tag
+    name: Cross-Site Scripting (script tag)
+    category: injection
+    owasp: "A03:2021"
+    severity: medium
+    confidence: 0.9
+    references: ["CAPEC-63"]
+    match:
+      any:
+        - field: target_decoded
+          regex: '<\s*script|<\s*/\s*script\s*>'
+
+  - id: xss_event_handler
+    name: Cross-Site Scripting (event handler)
+    category: injection
+    owasp: "A03:2021"
+    severity: medium
+    confidence: 0.8
+    match:
+      any:
+        - field: target_decoded
+          regex: '\bon(error|load|click|mouseover|focus|toggle)\s*='
+        - field: target_decoded
+          regex: 'javascript\s*:'
+
+  - id: command_injection
+    name: OS Command Injection
+    category: injection
+    owasp: "A03:2021"
+    severity: critical
+    confidence: 0.85
+    references: ["CAPEC-88"]
+    match:
+      any:
+        - field: target_decoded
+          regex: '[;|&`]\s*(cat|ls|id|whoami|uname|curl|wget|nc|bash|sh|powershell|cmd)\b'
+        - field: target_decoded
+          regex: '\$\(\s*\w+|\|\s*(bash|sh)\b'
+        # A newline ends the intended command and starts the attacker's. Caught
+        # before only when the payload happened to name a well-known file, so
+        # the file was doing the work rather than the injection.
+        #
+        # Matched on the raw target, not the decoded one, and that is not a
+        # detail: `normalize` collapses every run of whitespace to a single
+        # space, so by the time a rule sees the decoded text the newline is an
+        # ordinary space and indistinguishable from one. The evidence that it
+        # was a newline survives only in the encoding.
+        - field: target
+          regex: '%0[ad](%20|\+)*(cat|ls|id|whoami|uname|curl|wget|nc|bash|sh|ping|dir|type)\b'
+        # Brace expansion needs no space, so it slips a filter looking for one:
+        # `{cat,/etc/passwd}` is `cat /etc/passwd`.
+        - field: target_decoded
+          regex: '\{(cat|ls|id|whoami|uname|curl|wget|nc|bash|sh|ping),'
+
+  - id: nosql_injection
+    name: NoSQL Injection
+    category: injection
+    owasp: "A03:2021"
+    severity: high
+    confidence: 0.8
+    match:
+      any:
+        - field: target_decoded
+          regex: '\$(where|ne|gt|lt|regex|exists)\b'
+
+  - id: xxe_entity
+    name: XML External Entity
+    category: injection
+    owasp: "A03:2021"
+    severity: high
+    confidence: 0.85
+    match:
+      any:
+        - field: target_decoded
+          regex: '<!entity|<!doctype[^>]*\bsystem\b'
+
+  # `{{7*7}}` is how an attacker finds the hole. It was also the only thing this
+  # rule matched, so a scan showed its first request and none of the ones that
+  # followed — the payload that reads a file, dumps the configuration, or walks
+  # Python's class hierarchy to reach `os.system`. That last one,
+  # `{{''.__class__.__mro__[1].__subclasses__()}}`, is the most-used server-side
+  # template RCE payload there is, and it was passing every signature here.
+  #
+  # The alternatives below are ordered probe, then exploitation, then the three
+  # other syntaxes a template engine might use.
+  #
+  # **Every bounded scan here is bounded tightly, and the reason is measured.**
+  # An earlier draft of this rule wrote `\{\{[^}]{0,200}(...)`, which is linear
+  # but carries a brutal constant: a request line of `{{` repeated to Apache's
+  # 8 KB limit cost **53 ms in that one pattern**, against an ingest budget of
+  # about 36 µs a line. That is not a hang, it is a 1,500x per-line tax that a
+  # crafted log can apply to every line it contains — the kind of thing
+  # `SECURITY.md` names as a denial of service in scope.
+  #
+  # Two changes fixed it. The bound is 64 rather than 200, because every real
+  # marker appears within a few characters of the braces. And Python's dunders
+  # are matched *bare*, with no `{{` prefix to scan from: no innocent URL
+  # contains `__subclasses__`, so the prefix bought nothing and cost everything.
+  - id: template_injection
+    name: Server-Side Template Injection
+    category: injection
+    owasp: "A03:2021"
+    severity: high
+    confidence: 0.7
+    references: ["CAPEC-242"]
+    match:
+      any:
+        # The arithmetic probe, in the three syntaxes that carry it.
+        - field: target_decoded
+          regex: '\{\{\s*\d+\s*[*+]\s*\d+\s*\}\}|\$\{\s*\d+\s*[*+]|#\{\s*\d+\s*[*+]\s*\d+\s*\}'
+        # Python's object graph: how a Jinja2 sandbox is escaped. Matched bare —
+        # these names do not occur in innocent URLs, so there is nothing to gain
+        # by anchoring them to the braces and a great deal to pay for it.
+        - field: target_decoded
+          regex: '__class__|__mro__|__subclasses__|__globals__|__builtins__|__import__'
+        # Jinja2's own globals, and the Java runtime a Freemarker or Spring EL
+        # payload reaches for. Matched bare for the same reason as the dunders.
+        #
+        # `runtime.` and `getclass` were dropped rather than anchored: bare,
+        # `runtime.` matches the `runtime.js` that half the bundlers on earth
+        # emit, and anchored to `${` it cost 11 ms on a crafted line. The names
+        # kept here are the ones a payload cannot do without and a URL does not
+        # contain by accident.
+        - field: target_decoded
+          regex: 'config\.items|lipsum|cycler|self\.__dict__|processbuilder|javax\.|java\.lang|getruntime'
+        # Any call at all inside the braces. `{{ foo() }}` in a query string has
+        # no innocent reading. Cheap despite the braces: `[\w.]+` fails on the
+        # first character of a `{{{{…` run rather than scanning past it.
+        - field: target_decoded
+          regex: '\{\{\s*[\w.]+\s*\([^)]{0,64}\)'
+        # ERB and JSP scriptlets.
+        - field: target_decoded
+          regex: '<%=?[^%]{0,64}%>'

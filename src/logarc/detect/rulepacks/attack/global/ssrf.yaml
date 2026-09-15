@@ -1,0 +1,28 @@
+# Asking the server to fetch something on the attacker's behalf. The target is
+# in the request, which is the only reason an access log can see this at all.
+
+version: 1
+rules:
+
+  - id: ssrf_internal_target
+    name: SSRF (internal address in parameter)
+    category: ssrf
+    owasp: "A10:2021"
+    severity: high
+    confidence: 0.85
+    references: ["CAPEC-664"]
+    match:
+      any:
+        - field: query_decoded
+          regex: '(url|uri|target|dest|destination|redirect|next|path|src|feed|host)=[^&]*(127\.0\.0\.1|localhost|169\.254\.169\.254|0\.0\.0\.0|\[::1\]|metadata\.google)'
+
+  - id: ssrf_alternate_scheme
+    name: SSRF (non-HTTP scheme in parameter)
+    category: ssrf
+    owasp: "A10:2021"
+    severity: high
+    confidence: 0.8
+    match:
+      any:
+        - field: query_decoded
+          regex: '=\s*(file|gopher|dict|ftp|jar)://'

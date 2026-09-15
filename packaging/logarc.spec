@@ -10,17 +10,30 @@
 # seconds each time and leaves copies of the tool in %TEMP%. Neither is
 # something an investigator should have to explain.
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from PyInstaller.utils.hooks import collect_submodules, copy_metadata
 
 PROJECT = Path(SPECPATH).parent
 
+# Rule packs are data, not code, so nothing imports them and PyInstaller cannot
+# see them. Without them the build starts, finds no rules, and reports every
+# request as benign — a failure that looks like a clean log.
+#
+# Collected by walking rather than by a glob, and each one is placed back at the
+# path it came from. The packs are grouped into folders (`attack/php.yaml`), and
+# a `*.yaml` glob sees one level: it would have bundled nothing at all here,
+# quietly, while every other part of the build succeeded.
+RULEPACKS = PROJECT / "src" / "logarc" / "detect" / "rulepacks"
+_packs = sorted(RULEPACKS.rglob("*.yaml"))
+if not _packs:
+    raise SystemExit(f"no rule packs under {RULEPACKS}; the build would detect nothing")
+
 datas = [
-    # Rule packs are data, not code, so nothing imports them and PyInstaller
-    # cannot see them. Without this the build starts, finds no rules, and
-    # reports every request as benign — a failure that looks like a clean log.
-    (str(PROJECT / "src" / "logarc" / "detect" / "rulepacks" / "*.yaml"), "logarc/detect/rulepacks"),
+    *(
+        (str(pack), (PurePosixPath("logarc/detect/rulepacks") / pack.relative_to(RULEPACKS).parent).as_posix())
+        for pack in _packs
+    ),
     (str(PROJECT / "LICENSE"), "."),
 ]
 
