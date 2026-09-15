@@ -18,23 +18,40 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   than contradicted: that one scored *CRS's* rules with *CRS's* corpus, which is the objection, and
   reversing the direction reverses the objection.
 
-  The first run, counting a case as caught when *any* hostile rule fires:
+  Counting a case as caught when *any* hostile rule fires:
 
-  | Family | Cases | A log can see | Caught | Recall |
-  |---|---:|---:|---:|---:|
-  | 933 PHP | 429 | 272 | 29 | **11%** |
-  | 932 RCE | 1,006 | 537 | 43 | **8%** |
-  | 941 XSS | 263 | 104 | 14 | **13%** |
-  | 942 SQLi | 1,033 | 184 | 31 | **17%** |
+  | Family | Cases | Should match | Caught | Recall | Should not | Fired wrongly |
+  |---|---:|---:|---:|---:|---:|---:|
+  | 933 PHP | 429 | 184 | 28 | **15%** | 38 | 0 |
+  | 932 RCE | 1,006 | 406 | 33 | **8%** | 64 | 0 |
+  | 941 XSS | 263 | 72 | 13 | **18%** | 4 | 0 |
+  | 942 SQLi | 1,033 | 135 | 31 | **23%** | 12 | 0 |
 
   SQLi and XSS have had rules for months and sit beside PHP, whose rules are days old — so this
   measures the pack, not one afternoon's work.
 
-  **Recall is over what a log can see, never over everything.** 626 of the PHP and RCE cases put
-  their payload in a body or a header a combined log never writes, and those are counted apart:
-  scoring them would measure the log format and publish it as a score for the rules. The command
-  prints that number too, and prints the requests that got through, because a bare percentage says
-  a pack is weak while the misses say how.
+  **The corpus asks three questions and only two of them are ours.** `expect_ids` is an attack, and
+  it is the recall denominator. A `no_expect_ids` case CRS describes as a false positive is traffic
+  it certifies as harmless — `firstname.dockery@host.tld`, `a timeless cinematic icon` — and that is
+  the second denominator, the one that stops a pack scoring well by matching everything. But
+  `no_expect_ids` on its own names *CRS rule IDs*, not traffic: one such case is
+  `system('echo cd /tmp;wget …;rm -rf')`, an attack marked so that rule 932230 stays out of another
+  rule's way. logarc has no mapping onto CRS rule numbers, so 469 cases like it are counted, named
+  and scored in neither column.
+
+  Across every family, **one** false alarm in 134 certified-benign cases: `template_injection` on a
+  bare ERB output tag, which CRS holds is legitimate unless the tag evaluates something.
+
+  **Recall is over what a log can see, never over everything.** 2,650 cases put their payload in a
+  body or a header a combined log never writes, and those are counted apart: scoring them would
+  measure the log format and publish it as a score for the rules. The command prints that number
+  too, and prints the requests that got through, because a bare percentage says a pack is weak
+  while the misses say how.
+
+  **These figures replace a first run that was wrong.** It read every case as an attack, so the
+  quarter of the corpus that must *not* match was counted as misses — publishing 11%, 8%, 13% and
+  17% for the four families above. The tool's own standard is that a number which looks like a
+  result and is not one is the worst thing it can emit, and that applies to its own scoreboard.
 
 - **The evaluation's own numbers are now committed and checked on every run.**
   `tests/data/apache-shopfront/excerpt.scores.json` holds the complete scoring output for the
