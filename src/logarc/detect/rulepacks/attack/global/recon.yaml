@@ -13,6 +13,25 @@
 version: 1
 rules:
 
+  # The names here are the ones a tool sends when it is not trying to hide, and
+  # that is the whole claim: a default User-Agent is a tool announcing itself.
+  # The behavioural rules below are what catch the same tool with `-H` set,
+  # which is why this one is allowed to be a plain list.
+  #
+  # `dirb(?:uster)?` rather than `dirbuster`, because `\bdirb\b` never matched
+  # inside `dirbuster` — the boundary fails on the `u` — so the shorter tool was
+  # not covered by the longer one's name and had to be said separately.
+  #
+  # `httpx` is deliberately absent. ProjectDiscovery's scanner and the Python
+  # HTTP library share the name, and `python-httpx/0.27` is a script, not a
+  # scan. Matching it here would call an ordinary client a Security Scanner at
+  # confidence 0.95 — the exact false alarm the comment below this rule
+  # describes, reintroduced by a different route. It belongs in
+  # `http_library_user_agent`, and that is where it now is.
+  #
+  # `zaproxy` and `burpsuite` are listed for completeness and will rarely fire:
+  # ZAP mimics a browser by default and Burp forwards whatever the browser it
+  # proxies sent. Neither is evidence when absent.
   - id: scanner_user_agent
     name: Security Scanner User-Agent
     category: reconnaissance
@@ -22,7 +41,7 @@ rules:
     match:
       any:
         - field: user_agent_decoded
-          regex: '\b(sqlmap|nikto|nmap|masscan|zgrab|acunetix|nessus|openvas|wpscan|dirbuster|gobuster|ffuf|feroxbuster|nuclei|arachni|w3af|havij)\b'
+          regex: '\b(sqlmap|nikto|nmap|masscan|zgrab|acunetix|nessus|openvas|wpscan|arachni|w3af|havij|wapiti|skipfish|whatweb|commix|dirb(?:uster)?|dirsearch|gobuster|ffuf|feroxbuster|wfuzz|nuclei|katana|gospider|hydra|zaproxy|burpsuite)\b'
 
   # A program, not a person — and that is the whole claim. `crawling`, not
   # `reconnaissance`, and the difference is not cosmetic: `is_hostile` is
@@ -54,7 +73,7 @@ rules:
     match:
       any:
         - field: user_agent_decoded
-          regex: '^(curl|wget|python-requests|python-urllib|go-http-client|java|libwww-perl|okhttp|axios)\b'
+          regex: '^(curl|wget|python-requests|python-urllib|python-httpx|go-http-client|java|libwww-perl|okhttp|axios)\b'
 
   - id: absent_user_agent
     name: Request Without User-Agent
