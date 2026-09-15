@@ -233,6 +233,72 @@ rules:
           op: "<="
           value: 3
 
+  # Separate from `credential_attack` rather than folded into it, because they
+  # are different behaviours that happen to share a category. Credential
+  # stuffing is many guesses at accounts that already exist; this is many
+  # accounts being made that should not be. The remedy differs too — one is
+  # answered by lockout and rate limiting, the other by whatever stands between
+  # a signup form and a real person — so a report that calls both
+  # "Credential Attack" has told the reader the less useful half.
+  #
+  # `credential_attack` cannot be stretched to cover it in any case: its member
+  # regex is `login|signin|auth|oauth|session|token`, and `register` is in none
+  # of them. A registration flood currently reaches the report as
+  # `forced_browsing` — "repeated refusals" — which is true of the statuses and
+  # says nothing about what was being attempted.
+  #
+  # Confidence 0.85 against that rule's 0.8, at equal severity, is what makes
+  # the more specific name win: labels rank by severity, then hostility, then
+  # confidence. The same correction `directory_enumeration` records against
+  # `forced_browsing` further up, for the same reason.
+  #
+  # ## Only refusals are members, and that is a decision
+  #
+  # A burst of *successful* registrations from one address is not claimed here.
+  # It is the more damaging case and the more ambiguous one: an office behind
+  # one NAT address, a shared VPN exit, or a genuinely popular launch all
+  # produce it, and nothing in a request line separates those from a bot farm.
+  # A rule with no evidence must be silent rather than optimistic. What is left
+  # is the case the server itself has already judged — repeated refusals at a
+  # signup endpoint, which is what a defended server records while it is being
+  # hammered.
+  #
+  # ## Why `distinct_paths` earns its condition
+  #
+  # Members are already registration paths at 4xx and 5xx, so most window
+  # metrics would be true by construction. This one is not: six different
+  # signup paths asked for once each is a client finding out which one the site
+  # has, which is enumeration and has its own rules. Hammering one form is this.
+  #
+  # Unmeasured, deliberately. Written against a real log that shows the
+  # behaviour, but not yet scored on the pinned builds, and the pack README's
+  # standard is that a rule raising recall and false alarms together has not
+  # earned its place. Run `pytest tests/evaluation` and the medium build before
+  # quoting any figure that includes it.
+  - id: bulk_account_creation
+    name: Bulk Account Creation
+    category: credential_attack
+    owasp: "A07:2021"
+    severity: medium
+    confidence: 0.85
+    member:
+      all:
+        # `/api/register` and `/v1/register` as well as `/register`. The action
+        # pack's `action_register` anchors at `^/(register|...)` and so reads
+        # none of the API-prefixed forms, which is where a signup endpoint
+        # usually lives on anything with a front end of its own.
+        - field: path_decoded
+          regex: '^/(?:api/)?(?:v[0-9]{1,2}/)?(register|signup|sign-up|join|users?/new|account/(register|create))(/|$)'
+        - field: status
+          min: 400
+    window:
+      span_seconds: 300
+      min_requests: 5
+      conditions:
+        - metric: distinct_paths
+          op: "<="
+          value: 3
+
   # `rapid_request_burst` was here: 50 requests in 10 seconds, at 5 a second,
   # called reconnaissance. Retired rather than repaired.
   #
