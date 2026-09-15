@@ -5,70 +5,332 @@
 # what they were trying to do, and a request that could never have worked is
 # still a request worth recording — often a more revealing one, because it says
 # the attacker was guessing.
+#
+# ## What these rules are for, next to the CRS sidecar
+#
+# CRS matches PHP far more exhaustively than anything here ever will, and
+# ADR-0008 is the decision not to compete with it. But the sidecar is optional,
+# and a case analysed without it must still be worth reading. So these cover the
+# shapes that are both common and unambiguous, and leave the long tail to CRS.
+#
+# ## Every pattern here was checked against the requests that must NOT match
+#
+# The CRS corpus ships false-positive tests — traffic a user reported one of its
+# rules firing on — and family 933's are specifically about PHP's habit of
+# naming functions after ordinary words. They are why these rules look the way
+# they do:
+#
+#   /get?foo=executor()      `exec` is a prefix of an innocent word
+#   /get?foo=ecosystem()     `system` is an infix of one
+#   /get?foo=cheval($foo)    so is `eval`
+#   /get?foo=exec (          an opening paren alone is a truncated string
+#   /get?foo=filemtime($foo) a real function, too common in prose to claim
+#   /get?foo=<?xml ... ?>    an XML declaration is not a PHP short tag
+#   /post/?test=PaintValdosta        `intval`, as letters inside a word
+#   /post/?test=Moreover, phpinfo…   a function *named*, not called
+#
+# Two rules come out of that. A name must sit on word boundaries, and it must be
+# **called** — an open paren that closes. Naming a function is talking about it.
 
 version: 1
 rules:
 
-  # PHP had no rule of its own in either pack until now — every `php` in them
-  # was a filename pattern rather than anything about the language. Measured
-  # against the CRS regression corpus, family 933 scored 0.012 over 173 cases,
-  # and the two that matched did so through a reconnaissance rule catching a
-  # path. `docs/evaluation.md` calls that "a hole, not a framing artefact".
+  # The unmistakable ones. There is no innocent reason for a PHP open tag to
+  # appear in a request line, a Referer or a User-Agent: no browser produces
+  # one, no framework encodes one, and the only thing that reads it is an
+  # interpreter that has been persuaded to treat input as source.
   #
-  # What an access log can see is the parameter, so these are the shapes that
-  # travel in one: a stream wrapper, a URL, a function name, a serialised
-  # object. A payload that arrives in a POST body is invisible here and always
-  # will be.
-
-  - id: php_stream_wrapper
-    name: PHP Stream Wrapper in a Parameter
+  # `[php]` and `{php}` are the same attack against templating layers that
+  # accept a bracketed form — Smarty, and several CMS plugins. `[\php]` appears
+  # in the wild as a filter bypass, which is why the backslash is optional.
+  - id: php_open_tag
+    name: PHP Open Tag in a Request
     category: injection
     owasp: "A03:2021"
     severity: critical
-    confidence: 0.9
-    references: ["CAPEC-252"]
-    # `php://filter` reads a file the application never meant to serve;
-    # `php://input` and `data:` feed it code directly; `phar://` triggers
-    # deserialisation on an uploaded file. None has an innocent reading in a
-    # query string — an application that wants a wrapper supplies it itself.
+    confidence: 0.95
+    references: ["CAPEC-242"]
     match:
       any:
         - field: target_decoded
-          regex: '\b(php|data|phar|expect|glob|ogg)://'
+          regex: '<\?(php\b|=)'
+        - field: target_decoded
+          regex: '[\[{]\s*[\\/]?\s*php\s*[\]}]'
+        - field: user_agent_decoded
+          regex: '<\?(php\b|=)'
+        - field: referer_decoded
+          regex: '<\?(php\b|=)'
 
-  - id: remote_file_inclusion
-    name: Remote File Inclusion
+  # The short tag, which is the same attack with `short_open_tag=On` assumed.
+  #
+  # Separate from the rule above, and one severity lower, for one reason: `<?`
+  # is two characters and also opens an XML declaration. Five of the corpus's
+  # false-positive tests are XML documents passed as a parameter, which is a
+  # real thing APIs do — so `xml` is excluded by name rather than the rule being
+  # dropped. A `<?xml` that also carries a function call is still caught, by
+  # `php_function_call` below; the corpus has exactly that polyglot.
+  #
+  # `?>` on its own is deliberately *not* matched. Every one of those same XML
+  # declarations ends in `?>`, so a rule for it would fail all five while
+  # catching nothing the open tag misses.
+  - id: php_short_tag
+    name: PHP Short Tag in a Request
     category: injection
     owasp: "A03:2021"
-    severity: critical
-    confidence: 0.8
-    references: ["CAPEC-253"]
-    # A parameter holding a URL somewhere else, on a name that reads like it
-    # will be included. Narrowed to those names on purpose: a bare URL in a
-    # parameter is an ordinary redirect or callback, and matching every one of
-    # those would drown the rule.
+    severity: high
+    confidence: 0.75
+    references: ["CAPEC-242"]
     match:
       any:
-        - field: query_decoded
-          regex: '\b(file|page|include|inc|path|template|tpl|doc|document|load|read|src|conf|lang|view)=(https?|ftps?)://'
+        - field: target_decoded
+          regex: '<\?(?!xml)'
+        - field: user_agent_decoded
+          regex: '<\?(?!xml)'
 
+  # PHP's variables, which arrive when someone is reading the request back at
+  # the server rather than sending it data.
+  #
+  # `${` covers interpolation, and the whitespace is not decoration: the corpus
+  # evades with `$ {'fdf'}`, `$          {$a}` and `$ {'_VAR'.'IABLE_NAME'}`,
+  # all of which PHP resolves identically. Normalisation collapses the runs to
+  # one space, so `\s*` is enough to catch every spacing the corpus tries.
+  #
+  # Log4Shell's `${jndi:` matches this too, and that is fine — it also matches
+  # its own rule in `java.yaml`, which is more severe and wins the label.
+  - id: php_superglobal
+    name: PHP Superglobal or Variable Interpolation
+    category: injection
+    owasp: "A03:2021"
+    severity: high
+    confidence: 0.85
+    match:
+      any:
+        - field: target_decoded
+          regex: '\$_(get|post|request|cookie|files|env|server|session)\b'
+        - field: target_decoded
+          regex: '\$globals\b'
+        - field: target_decoded
+          regex: '\$\s*\{'
+        - field: target_decoded
+          regex: '\$\$[a-z_]'
+        - field: user_agent_decoded
+          regex: '\$_(get|post|request|cookie|files|env|server|session)\b'
+
+  # A call to a function that runs something, reads something, or unpacks
+  # something into memory.
+  #
+  # ## The shape of the pattern, which is doing more work than it looks
+  #
+  #   \b(name|name|…)     word boundary, so `executor` is not `exec`
+  #   [\s"']*             the separator PHP allows before the paren. Tabs and
+  #                       newlines are already one space by here; the quotes
+  #                       are for `return"system"(x)`, which PHP accepts.
+  #   (?://|\#)[^(]{0,80} an optional line comment. `/*…*/` never reaches this
+  #                       — normalisation strips it — but `//` and `#` survive
+  #                       with their newline turned into a space.
+  #   \([^)]{0,300}\)     and the call must close. `exec (` is a corpus false
+  #                       positive precisely because it does not; `pi()` is a
+  #                       real detection precisely because it does.
+  #
+  # The bounds on both character runs are there to keep the cost linear on a
+  # long line rather than leaving an unbounded `.*` to backtrack over.
   - id: php_code_execution
-    name: PHP Execution Function in a Parameter
+    name: PHP Code Execution Function
     category: injection
     owasp: "A03:2021"
     severity: critical
     confidence: 0.9
     references: ["CAPEC-242"]
-    # The functions that run something. `base64_decode` and `file_get_contents`
-    # are deliberately absent: both appear in ordinary application URLs often
-    # enough that they would cost more than they find.
     match:
       any:
         - field: target_decoded
-          regex: '\b(system|shell_exec|passthru|popen|proc_open|pcntl_exec|assert|create_function|preg_replace)\s*\('
-        - field: target_decoded
-          regex: '\beval\s*\(|\bexec\s*\(\s*[''"$]'
+          regex: '\b(eval|assert|system|exec|shell_exec|passthru|popen|proc_open|pcntl_exec|create_function|call_user_func(_array)?|preg_replace(_callback)?|register_(shutdown|tick)_function|array_map|array_filter|usort|uasort|array_walk)[\s"'']*((//|\#)[^(]{0,80})?\([^)]{0,300}\)'
+        - field: user_agent_decoded
+          regex: '\b(eval|assert|system|exec|shell_exec|passthru|popen|proc_open|create_function)[\s"'']*\([^)]{0,300}\)'
 
+  # A PHP function call of any kind, which is a weaker claim than the rule
+  # above and a useful one: it says somebody put PHP *syntax* in a URL.
+  #
+  # `pi()` does nothing dangerous. `intval(foo)` does nothing at all. But a
+  # parameter value shaped like a function call is how an attacker finds out
+  # whether the parameter is evaluated, and finding out is the step before the
+  # payload — the same act as `{{7*7}}` in a template. So: medium, not
+  # critical, and a category that says injection because that is what is being
+  # probed for.
+  #
+  # ## Where the list comes from, and what was done to it
+  #
+  # The bulk is OWASP CRS's `php-function-names-933150.data` (Apache-2.0; see
+  # NOTICE), which its own false-positive tooling generated — a decade of user
+  # reports is in the choice of which names are safe to match. It was not taken
+  # on trust: every name was re-tested here against all 134 requests the corpus
+  # certifies as harmless, across every family, and `filemtime`, `header`,
+  # `dirname`, `basename`, `getcwd` and `number_format` were removed as too
+  # common in prose. Nothing else fired.
+  #
+  # Split across conditions by family rather than written as one alternation of
+  # 215 names, because a person has to be able to read this and say "that one
+  # should not be there".
+  - id: php_function_call
+    name: PHP Function Call in a Request
+    category: injection
+    owasp: "A03:2021"
+    severity: medium
+    confidence: 0.7
+    match:
+      any:
+        # Arrays and iteration.
+        - field: target_decoded
+          regex: '\b(array_(combine|diff_uassoc|diff_ukey|fill|flip|intersect_uassoc|intersect_ukey|key_exists|push|reduce|shift|slice|splice|udiff|udiff_assoc|udiff_uassoc|uintersect|uintersect_assoc|uintersect_uassoc|values)|compact|iterator_apply|uksort|range|in_array)[\s"'']*((//|\#)[^(]{0,80})?\([^)]{0,300}\)'
+        # Strings, numbers and type juggling.
+        - field: target_decoded
+          regex: '\b(str_(replace|split)|substr_replace|strip_tags|strip[cs]?slashes|strlen|strpos|strrev|strto(lower|upper|time)|ucfirst|s?printf|vs?printf|print_r|var_dump|intval|floatval|strval|strtotime|settype|is_(array|bool|callable|float|int|null|numeric|object|string|writeable)|chr|ord|pi|checkdate|date_add|serialize|http_build_query|html(entities|specialchars|specialchars_decode|_entity_decode)|raw(urldecode|urlencode)|urldecode|urlencode|json_encode|md5_file|sha1_file|hash_(file|hmac_file|update_file))[\s"'']*((//|\#)[^(]{0,80})?\([^)]{0,300}\)'
+        # Reflection and redefinition — PHP letting a request rewrite the
+        # program. `runkit_*` exists to do that and nothing else.
+        - field: target_decoded
+          regex: '\b(class_exists|function_exists|method_exists|get_class(_methods|_vars)?|debug_backtrace|spl_autoload_register|set_(error|exception)_handler|set_magic_quotes_runtime|rename_function|runkit_\w+|register_(shutdown|tick)_function|session_(start|set_save_handler)|putenv|setdefaultstub|php_strip_whitespace|show_source|highlight_file)[\s"'']*((//|\#)[^(]{0,80})?\([^)]{0,300}\)'
+        # Databases and directory services reached straight from a parameter.
+        - field: target_decoded
+          regex: '\b(mysql_query|pg_(connect|execute|prepare|query)|odbc_(connect|exec|execute|result|result_all)|sqlite_(array_query|create_aggregate|create_function|exec|open|popen|query|single_query|unbuffered_query)|ldap_(bind|connect|get_entries)|imap_open|mail|simplexml_load_(file|string)|socket_(connect|create)|stream_(context_create|socket_client))[\s"'']*((//|\#)[^(]{0,80})?\([^)]{0,300}\)'
+        # The process, the filesystem and the machine.
+        - field: target_decoded
+          regex: '\b(posix_\w+|proc_(close|get_status|nice|terminate)|getmy(gid|inode|pid|uid)|getlastmod|get_meta_tags|readdir|readgzfile|gz(file|open|read|write)|bzopen|zlib_decode|escapeshell(arg|cmd)|finfo_open|parse_url|ftp_nb_(get|put)|ob_(start|clean|flush|end_clean|end_flush|get_clean|get_contents|get_flush))[\s"'']*((//|\#)[^(]{0,80})?\([^)]{0,300}\)'
+        # Images and EXIF, which is where several PHP RCEs have lived.
+        - field: target_decoded
+          regex: '\b(exif_(imagetype|read_data|tagname|thumbnail)|read_exif_data|getimagesize|image(2wbmp|gd2?|createfrom(gif|jpeg|png|wbmp|xbm|xpm))|iptcembed|bson_(de|en)code|mb_ereg\w*|mb_parse_str|preg_(match|match_all|split|replace_callback_array)|tidy_parse_(file|string)|assert_options)[\s"'']*((//|\#)[^(]{0,80})?\([^)]{0,300}\)'
+
+  # Reading a file into the response, writing one, or opening a socket. Not
+  # execution on its own, which is why it is one step down — but `file_get_
+  # contents` against a URL is remote inclusion, and `fsockopen` is a shell.
+  #
+  # `filemtime` is deliberately absent. It is a real PHP function and the corpus
+  # certifies `filemtime($foo)` as harmless traffic: it turns up in ordinary
+  # prose and query strings often enough that CRS took it out, and a rule that
+  # cannot be trusted on ordinary traffic is worth less than no rule.
+  - id: php_file_function
+    name: PHP File or Socket Function
+    category: injection
+    owasp: "A03:2021"
+    severity: high
+    confidence: 0.8
+    match:
+      any:
+        - field: target_decoded
+          regex: '\b(file_(get|put)_contents|readfile|fopen|fwrite|fputs|fread|fscanf|file_exists|is_(file|dir|readable|writable|executable)|scandir|opendir|glob|symlink|link|chroot|chmod|chown|touch|unlink|rename|copy|move_uploaded_file|(p)?fsockopen|stream_(socket_client|context_create)|curl_(init|exec|setopt|file_create)|ftp_(connect|get|put)|filegroup|fileowner|fileperms)[\s"'']*((//|\#)[^(]{0,80})?\([^)]{0,300}\)'
+
+  # Unpacking something the request brought with it. Every one of these is a
+  # step in the same move: get a payload past a filter as bytes, then turn it
+  # back into code. A webshell dropper is usually two of them nested.
+  - id: php_payload_decoding
+    name: PHP Payload Decoding Function
+    category: injection
+    owasp: "A03:2021"
+    severity: high
+    confidence: 0.85
+    match:
+      any:
+        - field: target_decoded
+          regex: '\b(base64_(de|en)code|gz(inflate|uncompress|decode|deflate|encode|compress)|bz(decompress|compress)|str_rot13|convert_uu(de|en)code|hex2bin|bin2hex|pack|unpack|unserialize|json_decode|mb_convert_encoding|iconv)[\s"'']*((//|\#)[^(]{0,80})?\([^)]{0,300}\)'
+        - field: target_decoded
+          regex: '\bo:\d+:"'
+
+  # Asking the server to describe itself: which PHP, which extensions, which
+  # paths, which environment. Reconnaissance rather than attack, and scored
+  # that way — the value is in what it sits next to.
+  #
+  # `phpinfo` without a paren is not here on purpose. The corpus's false
+  # positive is a sentence *about* phpinfo leaking configuration, which is the
+  # kind of thing that appears in a search box on a security blog.
+  - id: php_environment_probe
+    name: PHP Environment Disclosure Function
+    category: reconnaissance
+    owasp: "A05:2021"
+    severity: medium
+    confidence: 0.8
+    match:
+      any:
+        - field: target_decoded
+          regex: '\b(phpinfo|php_uname|phpversion|get_(cfg_var|current_user|defined_(vars|constants|functions)|include_path|loaded_extensions)|getenv|getmy(pid|uid|gid)|posix_get\w+|sys_get_temp_dir|disk_free_space|memory_get_usage|extension_loaded|ini_(get|get_all|set)|set_include_path|error_reporting|parse_ini_file|parse_str|extract|get_defined_vars)[\s"'']*((//|\#)[^(]{0,80})?\([^)]{0,300}\)'
+
+  # A PHP configuration directive carried in the request. These turn up when an
+  # attacker is trying to set one — through a `.user.ini` upload, a query the
+  # application feeds to `ini_set`, or a request smuggled into a FastCGI
+  # parameter. `allow_url_include` is the setting that turns file inclusion into
+  # remote code execution, and there is no reason for its name to be in a URL.
+  - id: php_config_directive
+    name: PHP Configuration Directive in a Request
+    category: injection
+    owasp: "A05:2021"
+    severity: high
+    confidence: 0.8
+    match:
+      any:
+        - field: target_decoded
+          regex: '\b(allow_url_(include|fopen)|auto_(prepend|append)_file|disable_functions|open_basedir|safe_mode|register_globals|magic_quotes_gpc|suhosin\.[a-z_.]+)\b'
+        - field: target_decoded
+          regex: '\b(memory_limit|max_execution_time|upload_max_filesize|post_max_size|extension_dir|include_path|error_log|session\.save_path)\s*=\s*\S'
+
+  # Stream wrappers, which are PHP's way of making a string behave like a file.
+  # `php://input` reads the request body, `php://filter` reads a file through a
+  # transformation that survives most filters, and `expect://` runs a command.
+  - id: php_stream_wrapper
+    name: PHP Stream Wrapper
+    category: injection
+    owasp: "A03:2021"
+    severity: critical
+    confidence: 0.9
+    references: ["CAPEC-242"]
+    match:
+      any:
+        - field: target_decoded
+          regex: 'php://(input|filter|memory|temp|stdin|fd)'
+        - field: target_decoded
+          regex: '\b(expect|phar|zip|compress\.(zlib|bzip2)|ogg|rar|glob|data):/{0,2}'
+
+  # Including a file the request names, where that file is somewhere else.
+  #
+  # ## Why this is not simply "a URL in a parameter"
+  #
+  # It was, for about an hour, and the corpus caught it: `/page?url=https://
+  # example.com` is certified harmless, and so is an ad server's
+  # `lg.php?...&loc=https%3A%2F%2Fwww.example.com`. Passing a URL in a query
+  # string is one of the most ordinary things on the web — redirects, OAuth
+  # callbacks, share links, analytics — and a rule that fires on all of them
+  # fires constantly on real traffic while calling itself a detection.
+  #
+  # CRS separates the two by comparing the URL's host against the site's own,
+  # which needs two fields at once and no rule here can express. So this asks
+  # for a second signal instead, and gives up the corpus cases that carry
+  # nothing but a bare off-domain URL. That is the honest trade: those cases
+  # are indistinguishable from a redirect in one line of a log.
+  - id: remote_file_inclusion
+    name: Remote File Inclusion
+    category: injection
+    owasp: "A03:2021"
+    severity: critical
+    confidence: 0.85
+    references: ["CAPEC-253"]
+    match:
+      any:
+        # A parameter whose *name* says it names a file to load. `_CONF[path]`,
+        # `mosConfig_absolute_path` and `src` are all real ones, from real
+        # advisories. `url` and `loc` are deliberately not in this list.
+        #
+        # `(^|&)`, not `[?&]`: `query_decoded` is the query string with the
+        # question mark already removed, so a `[?&]` class silently skips the
+        # first parameter — which is where a payload usually is.
+        - field: query_decoded
+          regex: '(^|&)[a-z0-9_\[\]]{0,40}(path|file|include|template|require|dir|root|conf|load|src|mod)[a-z0-9_\[\]]{0,40}=\s*(https?|ftps?|file)://'
+        # Or a URL that points at something executable, wherever it is going.
+        - field: query_decoded
+          regex: '=\s*(https?|ftps?)://[^\s&]{1,160}\.(php\d?|phtml|phar|asp|aspx|jsp|cgi|pl|py|rb|sh)\b'
+        # Or a scheme no browser would have put there.
+        - field: query_decoded
+          regex: '=\s*(url:|jar:|local_file://|net\.|\\\\)'
+
+  # A serialised PHP object arriving as input. `O:8:"stdClass"` is the wire
+  # format; reaching `unserialize` with attacker-chosen contents is how a gadget
+  # chain starts, and the payload is recognisable long before it lands.
   - id: php_object_injection
     name: PHP Object Injection
     category: injection
@@ -76,10 +338,9 @@ rules:
     severity: critical
     confidence: 0.9
     references: ["CAPEC-586"]
-    # A serialised PHP object reaching `unserialize`, which runs whatever magic
-    # method the class in scope exposes. The shape is unmistakable: a type
-    # letter, a length, a quoted class name, a brace.
     match:
       any:
         - field: target_decoded
-          regex: '\b[oc]:\d+:"[^"]+":\d+:\{'
+          regex: '\b[oc]:\d{1,4}:"[a-z_\\][a-z0-9_\\]*":\d{1,4}:\{'
+        - field: target_decoded
+          regex: 'a:\d{1,4}:\{[is]:\d{1,4}'

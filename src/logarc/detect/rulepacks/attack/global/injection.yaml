@@ -252,6 +252,18 @@ rules:
         # first character of a `{{{{…` run rather than scanning past it.
         - field: target_decoded
           regex: '\{\{\s*[\w.]+\s*\([^)]{0,64}\)'
-        # ERB and JSP scriptlets.
+        # ERB and JSP scriptlets — but not a tag that merely prints a variable.
+        #
+        # `<%=title%>` is certified harmless by the corpus and it is right to
+        # be: emitting one value is what an output tag is *for*, and the string
+        # turns up whenever a template is quoted, discussed, or passed through a
+        # preview. The attack is an *expression* — `<%=7*7%>`, `<% if True %>`,
+        # `<% system('id') %>` — so the lookahead rejects exactly one shape: a
+        # single bare identifier and nothing else.
+        #
+        # The lookahead sits before the `=`, not after it. Placed after, the
+        # optional `[=@!]?` simply backtracks to match nothing, the lookahead
+        # then tests against `=title%>` — which does not start with a word
+        # character, so it trivially passes — and the whole guard is bypassed.
         - field: target_decoded
-          regex: '<%=?[^%]{0,64}%>'
+          regex: '<%(?![=@!]?\s*\w+\s*%>)[=@!]?\s*[^%]{0,64}%>'

