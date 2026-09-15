@@ -150,6 +150,9 @@ def test_every_matchable_field_reads_its_own_value() -> None:
         # Double-encoded above: `%2561dmin` is `%61dmin` is `admin`.
         "decode_depth": "2",
         "had_null": "0",
+        # `referer.example` is not `shop.example.com`, so this request did
+        # arrive from somewhere else.
+        "referer_offsite": "1",
     }
     assert set(expected) == set(MATCH_FIELDS), "a field can be named but not read"
     assert {name: view.value(name) for name in sorted(MATCH_FIELDS)} == expected
@@ -754,3 +757,116 @@ def test_an_action_label_does_not_take_the_lead_from_a_hostile_one(tmp_path: Pat
     assert labelled.label.rule_id == "scripted_client", (
         "the hostile observation leads, even though the benign one is more confident"
     )
+
+
+#: A request carrying a session identifier, which is the shape session fixation
+#: takes. The URL is identical in both the attack and the harmless case; only
+#: the Referer's host separates them, which is why no single-field rule can.
+FIXATION = """
+version: 1
+rules:
+  - id: session_fixation
+    name: Session Fixation
+    category: credential_attack
+    severity: high
+    confidence: 0.8
+    match:
+      all:
+        - field: query_decoded
+          regex: 'sessionid='
+        - field: referer_offsite
+          min: 1
+"""
+
+
+def _fixation_engine(tmp_path: Path) -> RuleEngine:
+    path = tmp_path / "fixation.yaml"
+    path.write_text(FIXATION, encoding="utf-8")
+    return RuleEngine(load_rules([path]))
+
+
+def _request(host: str | None, referer: str | None) -> NormalizedEvent:
+    return NormalizedEvent(
+        timestamp=START,
+        client_ip="203.0.113.5",
+        evidence=EvidenceRef("access.log", 1),
+        method="GET",
+        path="/login",
+        query="sessionid=abc123",
+        status=200,
+        bytes_sent=100,
+        referer=referer,
+        user_agent="Mozilla/5.0",
+        host=host,
+    )
+
+
+def test_a_referer_from_another_host_is_offsite(tmp_path: Path) -> None:
+    """The one comparison two whole CRS families turn on, and the only one the
+    rule language could not make: `/login?sessionid=abc123` is harmless from
+    your own page and session fixation from an attacker's."""
+    engine = _fixation_engine(tmp_path)
+
+    (labelled,) = engine.label_events([_request("myapp.com", "https://attacker.example.com/")])
+
+    assert labelled.label.rule_id == "session_fixation"
+
+
+def test_a_referer_from_the_same_host_is_not(tmp_path: Path) -> None:
+    engine = _fixation_engine(tmp_path)
+
+    (labelled,) = engine.label_events([_request("myapp.com", "https://myapp.com/previous")])
+
+    assert not labelled.all_labels
+
+
+def test_scheme_and_port_are_not_part_of_the_comparison(tmp_path: Path) -> None:
+    """`http://example.com/x` is the same site as an https request to
+    `example.com:443`. The corpus has exactly this pair as a harmless case."""
+    engine = _fixation_engine(tmp_path)
+
+    (labelled,) = engine.label_events([_request("example.com:443", "http://example.com/other")])
+
+    assert not labelled.all_labels
+
+
+def test_a_sibling_subdomain_is_offsite(tmp_path: Path) -> None:
+    """`app.example.com` and `attacker.example.com` share a registrable domain
+    and are not the same site. The corpus marks this one an attack explicitly —
+    its description is "subdomain should not match" — so the comparison is of
+    hosts, not of domains."""
+    engine = _fixation_engine(tmp_path)
+
+    (labelled,) = engine.label_events(
+        [_request("app.example.com", "https://attacker.example.com/")]
+    )
+
+    assert labelled.label.rule_id == "session_fixation"
+
+
+def test_a_log_that_records_no_host_stays_silent(tmp_path: Path) -> None:
+    """The reach of this whole feature, pinned.
+
+    `apache-combined` — the most common web log format there is, and the one
+    this project's own headline corpus uses — does not record the Host header.
+    Without it the comparison has no answer, and a rule with no answer must say
+    nothing rather than guess. Guessing "offsite" would fire on every request in
+    every combined log on earth; guessing "same site" would at least be quiet,
+    but it would also be a claim nothing supports.
+    """
+    engine = _fixation_engine(tmp_path)
+
+    (labelled,) = engine.label_events([_request(None, "https://attacker.example.com/")])
+
+    assert not labelled.all_labels
+
+
+def test_no_referer_at_all_is_not_offsite(tmp_path: Path) -> None:
+    """Absence is not evidence of another host. CRS scores "no referrer" as its
+    own, separate and weaker signal, and conflating the two would make every
+    bookmarked visit a fixation attempt."""
+    engine = _fixation_engine(tmp_path)
+
+    (labelled,) = engine.label_events([_request("myapp.com", None)])
+
+    assert not labelled.all_labels
