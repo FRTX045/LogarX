@@ -7,6 +7,36 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **PHP detection goes from 15% to 68% against the OWASP CRS corpus, with no new false alarms.**
+  Thirteen rules covering the shapes that were getting through: the open tag in all its forms
+  (`<?php`, `<?=`, `<?`, `[php]`, `{php}`), superglobals and `${}` interpolation, function calls
+  with every separator the corpus evades through, stream wrappers, configuration directives and
+  serialised objects.
+
+  Every family rises with it, because a PHP pattern in a parameter is a PHP pattern whatever the
+  server runs — RFI 21% to 45%, XSS 18% to 35%, generic 15% to 17%, RCE 8% to 9%. Across all nine
+  families, matches on the 134 requests CRS certifies as harmless go from **1 to 0**; on 3,825
+  lines of real shopfront traffic, nothing moves at all.
+
+  The rules were written against the corpus's false-positive tests as much as its attacks. PHP
+  named its functions after ordinary words, so `executor()` is not `exec`, `ecosystem()` is not
+  `system`, `exec (` is a truncated string while `pi()` is a real call, and `<?xml` is not a short
+  tag.
+
+- **Rule packs now describe ordinary use, not only attacks.** A new `action/` tree names what a
+  client *did*: Checkout, Modify Cart, Payment, Sign In, Password Reset, Order History, Search,
+  File Upload. `POST /checkout` was previously reported as "Non-idempotent Request", which names
+  the HTTP verb and tells a reader nothing.
+
+  "Which of these addresses was a customer?" is the question a person actually asks of a log with
+  fifty thousand clients in it, and no attack rule can answer it. On the labelled shopfront
+  excerpt this *improves* classification — accuracy 0.9307 to 0.9310, macro F1 0.8404 to 0.8436,
+  authentication F1 0.96 to **1.00** — while attack detection is untouched.
+
+  Action rules are `severity: info`, and a hostile label now outranks a benign one at equal
+  severity whatever its confidence: a `curl` request to `/cart` is still reported as a scripted
+  client rather than as a cart view.
+
 - **`logarc score-crs` scores this project's rules against a corpus somebody else wrote.** Until
   now every number the detection layer produced came from payloads its own author chose — rules
   marking their own homework. This runs them against the OWASP CRS regression suite: a question
@@ -246,7 +276,32 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
   A megabyte is about 120 times the longest line Apache will write, so no real log reaches it.
 
+### Changed
+
+- **Rule packs are grouped by what they are about.** Two files of 32 and 9 rules become ten, in
+  folders: `attack/global/` holds what presumes no technology, `attack/php.yaml` and its
+  neighbours hold what only means something to one runtime, and `action/` holds ordinary use.
+  `src/logarc/detect/rulepacks/README.md` explains the two axes — what a rule is about is the
+  directory, what stack it presumes is the file name, and the OWASP category is neither because it
+  already sits on every rule's `category:` line.
+
+  Everything still loads at once. A PHP payload aimed at a Python backend is a PHP payload, and
+  the folders are for the person editing them rather than for the engine.
+
+- **`logarc evaluate -o` writes sorted JSON with a closing newline.** One of those files is
+  committed as the drift gate and regenerated whenever a rule changes; the old writer reshuffled
+  261 lines of unchanged values and buried the line that had actually moved.
+
 ### Fixed
+
+- **Rule packs inside a folder were silently not loaded.** `load_rules` globbed one level deep,
+  so a pack in a subdirectory contributed no rules and raised nothing: the engine started, the
+  case analysed, and the report came out looking complete with a hole where that file's detection
+  should have been. Anyone pointing `--rules` at a directory with packs organised inside it has
+  been hitting this. A directory holding no packs at all is now refused for the same reason.
+
+  **The packaging spec had the same one-level assumption**, so the first build after the packs
+  were grouped would have shipped an executable with no rules in it.
 
 - **A crafted line no longer ends a whole ingest.** A log line nested deeper than Python will
   decode — twenty thousand `[` characters will do it — raised `RecursionError` out of the JSON
