@@ -6,6 +6,7 @@ each case is a payload seen in the wild, asserted to reach the right category.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -890,3 +891,94 @@ def test_traffic_certified_harmless_stays_quiet(engine: RuleEngine, target: str)
 
     fired = [label.rule_id for label in labelled.all_labels if label.category.is_hostile]
     assert not fired, f"{target!r} was claimed by {fired}"
+
+
+#: Real paths from the shopfront excerpt's asset bundle, chosen because each
+#: one contains a word an action rule is interested in.
+STATIC_ASSETS: list[str] = [
+    "/assets/js/autocomplete.js",
+    "/assets/js/cart.js",
+    "/assets/js/search.js",
+    "/assets/js/checkout.js",
+    "/assets/css/account.css",
+    "/assets/css/layout.css",
+    "/assets/img/logo.png",
+    "/assets/fonts/inter-400.woff2",
+    "/assets/js/app.js?q=1",
+    "/assets/css/site.css?v=8",
+]
+
+
+@pytest.mark.parametrize("target", STATIC_ASSETS)
+def test_an_action_rule_never_claims_a_static_asset(engine: RuleEngine, target: str) -> None:
+    """The bug this guards against cost 1.2 points of accuracy once.
+
+    Action rules run before the fallback that recognises static assets, so an
+    unanchored pattern takes the asset with it: `/(search|autocomplete)$` was
+    written to catch `/api/autocomplete` and caught `/assets/js/autocomplete.js`
+    on 38 requests instead. The bundle of a shop is named after the shop's
+    features, so every word an action rule looks for is also a filename there.
+    """
+    (labelled,) = engine.label_events([request(target)])
+
+    assert labelled.label.category is ActivityCategory.STATIC_ASSET, (
+        f"{target!r} was claimed by {[item.rule_id for item in labelled.all_labels]}"
+    )
+
+
+def test_an_action_rule_never_claims_a_crawler(engine: RuleEngine) -> None:
+    """A bot fetching `/cart` is a bot. The fallback's crawler branch answers
+    *who*, runs before everything else it knows, and must keep doing so once
+    rules describe *what* — on this corpus 767 of 814 product-page requests are
+    one crawler working through the catalogue."""
+    for target in ("/cart", "/checkout", "/search?q=oak", "/account", "/p/67"):
+        (labelled,) = engine.label_events([request(target, user_agent="Googlebot/2.1")])
+
+        assert labelled.label.category is ActivityCategory.CRAWLING, (
+            f"{target!r} was claimed by {[item.rule_id for item in labelled.all_labels]}"
+        )
+
+
+@pytest.mark.parametrize(
+    ("target", "method", "expected_name", "expected_category"),
+    [
+        ("/cart", "GET", "View Cart", ActivityCategory.BROWSING),
+        ("/api/cart/add", "POST", "Modify Cart", ActivityCategory.API_CALL),
+        ("/checkout", "POST", "Checkout", ActivityCategory.BROWSING),
+        ("/payment/stripe", "GET", "Payment", ActivityCategory.API_CALL),
+        ("/account/orders", "GET", "Order History", ActivityCategory.BROWSING),
+        ("/track/12345", "GET", "Order Tracking", ActivityCategory.BROWSING),
+        ("/search?q=oak", "GET", "Search", ActivityCategory.BROWSING),
+        # A search reached as a call, not a page. Two rules match this and the
+        # category is the whole difference between them, so asserting the name
+        # alone passed while all six of the corpus's requests to it were
+        # labelled `browsing`.
+        ("/api/autocomplete?q=oa", "GET", "Search", ActivityCategory.API_CALL),
+        ("/login", "POST", "Sign In", ActivityCategory.AUTHENTICATION),
+        ("/account/password/reset", "POST", "Password Reset", ActivityCategory.AUTHENTICATION),
+        ("/upload", "POST", "File Upload", ActivityCategory.API_CALL),
+        ("/api/stock?id=3", "GET", "Stock Check", ActivityCategory.API_CALL),
+        ("/contact", "POST", "Form Submission", ActivityCategory.API_CALL),
+    ],
+)
+def test_an_action_is_named_by_what_it_was(
+    engine: RuleEngine,
+    target: str,
+    method: str,
+    expected_name: str,
+    expected_category: ActivityCategory,
+) -> None:
+    """The point of the whole `action/` tree.
+
+    `POST /checkout` used to be described as "Non-idempotent Request", which
+    names the HTTP verb and tells a reader nothing. These names are what makes
+    "which of these addresses was a customer?" a question the report answers.
+    """
+    event = request(target)
+    (labelled,) = engine.label_events([replace(event, method=method)])
+
+    assert labelled.label.name == expected_name, (
+        f"{method} {target} was called {labelled.label.name!r}"
+    )
+    assert labelled.label.category is expected_category
+    assert not labelled.label.category.is_hostile

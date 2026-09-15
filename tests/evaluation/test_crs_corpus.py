@@ -19,6 +19,7 @@ import pytest
 
 from logarc.detect.engine import RuleEngine
 from logarc.detect.rulepacks import default_rules
+from logarc.detect.rules import load_rules
 from logarc.evaluation.crs_corpus import CorpusError, score_corpus
 
 #: One case per shape, so each assertion below has exactly one thing to fail on.
@@ -251,3 +252,37 @@ def test_a_rule_specific_negative_is_not_treated_as_harmless_traffic(
     assert rce.negatives == 0, "nothing certified this request as harmless"
     assert rce.false_alarms == 0
     assert rce.in_reach == 0, "and the corpus never asked for a match either"
+
+
+def test_a_benign_label_is_not_a_detection(mixed: Path) -> None:
+    """The rule packs describe ordinary use as well as attacks, and a corpus
+    request lands on `/get` or `/post` — which an action rule recognises.
+
+    Counting any match at all was right while every rule was about an attack.
+    It stopped being right the moment `action/` existed: adding those rules
+    moved RCE from 9% to 20% and session from 5% to 65% without a single new
+    attack being detected, and produced eleven "false alarms" in PHP that were
+    a `Form Submission` label on a POST. Both directions of the score were
+    wrong, and both looked like results.
+    """
+    pack = """
+version: 1
+rules:
+  - id: action_form_submission
+    name: Form Submission
+    category: api_call
+    severity: info
+    confidence: 0.55
+    match:
+      any:
+        - field: path
+          contains: /get
+"""
+    path = mixed.parent / "action.yaml"
+    path.write_text(pack, encoding="utf-8")
+    engine = RuleEngine(load_rules([path]))
+
+    (php,) = score_corpus(mixed, engine=engine, families=["933"])
+
+    assert php.caught == 0, "recognising the request is not detecting the attack"
+    assert php.false_alarms == 0, "and it is not a false alarm either"

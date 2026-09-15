@@ -1,0 +1,142 @@
+# Buying something, and the steps that lead to it.
+#
+# Separate from `global.yaml` on the same axis the attack packs use: these
+# presume the site sells things, as `../attack/php.yaml` presumes the site runs
+# PHP. And loaded for the same reason whether it does or not — a request to
+# `/checkout` on a site with no checkout is a scanner guessing at one, and the
+# guess is worth recording.
+#
+# ## Why this is the pack that answers the question
+#
+# "Which of these addresses was a customer?" is not a question the attack rules
+# can answer, and it is the one a person actually asks when a log has 50,000
+# clients in it. A client that browsed, searched, put something in a cart and
+# paid is a customer. A client that did the first two and then asked for
+# `/.env` is not, and the difference is visible in one line of the report
+# rather than in twenty minutes of reading.
+#
+# The confidences run high here — 0.85 to 0.95, against a 0.5 fallback —
+# because these paths say plainly what they are, and because when one of these
+# appears in a run of ordinary browsing it is the thing the run was *for*. An
+# episode holding forty product views and one checkout is a checkout.
+
+version: 1
+rules:
+
+  # Reading the basket. `browsing` rather than `api_call`: it is a page.
+  - id: action_view_cart
+    name: View Cart
+    category: browsing
+    severity: info
+    confidence: 0.85
+    match:
+      all:
+        - field: method
+          regex: '^(GET|HEAD)$'
+        - field: path_decoded
+          regex: '^/(cart|basket|bag|shopping[-_]?(cart|bag))(/|$)'
+        - field: user_agent_decoded
+          regex: '^(?!.*(bot|crawler|spider|slurp))'
+
+  # Changing it. The write that separates a visitor from a shopper, and on most
+  # storefronts the first request of the session that the server had to think
+  # about.
+  - id: action_modify_cart
+    name: Modify Cart
+    category: api_call
+    severity: info
+    confidence: 0.9
+    match:
+      any:
+        - field: path_decoded
+          regex: '^/(api/)?(cart|basket|bag)/(add|remove|update|delete|items?|lines?)(/|$)'
+        - field: path_decoded
+          regex: '^/(add[-_]?to[-_]?(cart|bag|basket)|update[-_]?cart|remove[-_]?from[-_]?cart)(/|$)'
+        - field: query_decoded
+          regex: '(^|&)(action|do|cmd)=(add|remove|update)[-_]?(to[-_]?)?(cart|basket|bag)'
+
+  # The decision. Highest confidence in the pack, because there is nothing else
+  # `/checkout` can reasonably be and because this is the label a reader is
+  # scanning for.
+  - id: action_checkout
+    name: Checkout
+    category: browsing
+    severity: info
+    confidence: 0.95
+    match:
+      all:
+        - field: path_decoded
+          regex: '^/(checkout|check-out|onepage|order/(new|create|place|submit)|place[-_]?order)(/|$)'
+        - field: user_agent_decoded
+          regex: '^(?!.*(bot|crawler|spider|slurp))'
+
+  # Money moving, or being told to. Kept apart from checkout because the two
+  # fail independently: a checkout with no payment after it is an abandoned
+  # basket, and a payment with no checkout before it is worth a second look.
+  - id: action_payment
+    name: Payment
+    category: api_call
+    severity: info
+    confidence: 0.95
+    match:
+      all:
+        - field: path_decoded
+          regex: '^/(payment|pay|billing|charge|purchase|transaction)s?(/|$)|/(stripe|paypal|adyen|braintree|klarna|razorpay|midtrans|xendit)(/|$)'
+        - field: user_agent_decoded
+          regex: '^(?!.*(bot|crawler|spider|slurp))'
+
+  # Looking at what was bought before. Ordinary for a customer, and one of the
+  # first places an attacker goes after taking an account over — the addresses
+  # and the last four digits are there.
+  - id: action_order_history
+    name: Order History
+    category: browsing
+    severity: info
+    confidence: 0.85
+    match:
+      all:
+        - field: path_decoded
+          regex: '^/(account/)?(orders?|purchases?|invoices?|receipts?)(/|$)'
+        - field: user_agent_decoded
+          regex: '^(?!.*(bot|crawler|spider|slurp))'
+
+  - id: action_wishlist
+    name: Wishlist
+    category: api_call
+    severity: info
+    confidence: 0.8
+    match:
+      all:
+        - field: path_decoded
+          regex: '^/(wishlist|wish-list|favou?rites?|saved[-_]?items?|compare)(/|$)'
+        - field: user_agent_decoded
+          regex: '^(?!.*(bot|crawler|spider|slurp))'
+
+  # The background call a product page makes while someone reads it. Low
+  # confidence: it describes the page's plumbing rather than the person's
+  # intent, so it should never name an episode that holds anything else. Just
+  # above `action_api_call`'s 0.7, which is the same statement with less in it.
+  - id: action_stock_check
+    name: Stock Check
+    category: api_call
+    severity: info
+    confidence: 0.72
+    match:
+      any:
+        - field: path_decoded
+          regex: '^/(api/)?(stock|inventory|availability|price)(/|$)'
+
+  # Asking where a parcel is. Almost always a returning customer, and almost
+  # never a first visit — which makes it one of the more telling single
+  # requests in a log when it appears without a sign-in before it.
+  - id: action_order_tracking
+    name: Order Tracking
+    category: browsing
+    severity: info
+    confidence: 0.85
+    match:
+      all:
+        - field: path_decoded
+          regex: '^/(track|tracking|shipment|delivery|order[-_]?status)(/|$)'
+        - field: user_agent_decoded
+          regex: '^(?!.*(bot|crawler|spider|slurp))'

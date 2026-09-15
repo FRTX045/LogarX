@@ -16,7 +16,30 @@ rulepacks/
 │   ├── java.yaml        only means something to a JVM
 │   └── shell.yaml       aimed at a Unix shell behind the web server
 └── action/              what somebody did *with* the server
+    ├── global.yaml      search, sign in, upload, submit — any site
+    └── commerce.yaml    cart, checkout, payment — a site that sells
 ```
+
+## Attacks are half of it
+
+`action/` describes ordinary use, and it exists because "which of these
+addresses was a customer?" is the question a person actually asks of a log with
+fifty thousand clients in it — and no attack rule can answer it. `POST /checkout`
+used to be reported as "Non-idempotent Request", which names the HTTP verb.
+
+Three rules keep the two halves from interfering:
+
+- **Action rules are `severity: info`.** A rule describing an attack always
+  leads the report instead. `/search?q=' OR 1=1--` is an injection that happened
+  to arrive at the search box, and it is reported as one.
+- **A hostile label outranks a benign one at equal severity**, whatever the
+  confidence. `Scripted Client` is INFO at 0.4 because a user-agent is a claim;
+  `View Cart` is INFO at 0.85 because the path is a fact. The report still leads
+  with the script.
+- **Confidence orders what a reader sees.** An episode is named after its most
+  significant label, so a run of forty product views containing one checkout is
+  named "Checkout". The fallback ladder in `detect/engine.py` sits at 0.5 and
+  still answers for everything no rule claimed.
 
 ## Two axes, and only one of them is a folder
 
