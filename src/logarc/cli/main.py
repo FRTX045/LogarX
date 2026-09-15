@@ -309,7 +309,7 @@ def score_crs(
 
     table = Table(title="Detection against the OWASP CRS corpus")
     table.add_column("Family")
-    for column in ("Cases", "A log can see", "Caught", "Recall"):
+    for column in ("Cases", "Should match", "Caught", "Recall", "Should not", "Fired", "Wrongly"):
         table.add_column(column, justify="right")
     for score in scores:
         table.add_row(
@@ -318,17 +318,35 @@ def score_crs(
             f"{score.in_reach:,}",
             f"{score.caught:,}",
             f"{score.recall:.0%}" if score.in_reach else "—",
+            f"{score.negatives:,}",
+            f"{score.false_alarms:,}",
+            f"{score.false_alarm_rate:.0%}" if score.negatives else "—",
         )
     console.print(table)
 
     out_of_reach = sum(score.out_of_reach for score in scores)
+    unscored = sum(score.unscored for score in scores)
     console.print(
         f"[dim]{out_of_reach:,} cases carry their payload in a body or a header no "
         f"access log writes down. They are not misses — no tool reading a log can "
-        f"reach them — so they are left out of the recall above.[/dim]\n"
+        f"reach them — so they are left out of both columns above."
+        + (
+            f" {unscored:,} more are checked some other way than by a request rule."
+            if unscored
+            else ""
+        )
+        + "[/dim]\n"
     )
 
     for score in scores:
+        if score.fired_wrongly:
+            console.print(
+                f"[bold]{score.family} {score.name}[/bold] — fired on traffic CRS "
+                f"certifies as harmless:"
+            )
+            for example in score.fired_wrongly:
+                console.print(f"  [red]{example}[/red]")
+            console.print()
         if not score.missed:
             continue
         console.print(f"[bold]{score.family} {score.name}[/bold] — what got through:")

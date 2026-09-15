@@ -141,26 +141,53 @@ could read it. `docs/evaluation.md` had recorded two holes found against that
 corpus — family 933 at 0.012 and family 932 at 0.079 — with no way to check
 whether anything had since closed them.
 
-**The first run, and it is not flattering.** Counting a case as caught when
-*any* hostile rule fires, which is generous:
+**The result, and it is not flattering.** Counting a case as caught when *any*
+hostile rule fires, which is generous:
 
-| Family | Cases | A log can see | Caught | Recall |
-|---|---:|---:|---:|---:|
-| 933 PHP | 429 | 272 | 29 | 11% |
-| 932 RCE | 1,006 | 537 | 43 | 8% |
-| 941 XSS | 263 | 104 | 14 | 13% |
-| 942 SQLi | 1,033 | 184 | 31 | 17% |
+| Family | Cases | Should match | Caught | Recall | Should not | Fired wrongly |
+|---|---:|---:|---:|---:|---:|---:|
+| 933 PHP | 429 | 184 | 28 | 15% | 38 | 0 |
+| 932 RCE | 1,006 | 406 | 33 | 8% | 64 | 0 |
+| 941 XSS | 263 | 72 | 13 | 18% | 4 | 0 |
+| 942 SQLi | 1,033 | 135 | 31 | 23% | 12 | 0 |
 
 SQLi and XSS have had rules for months and sit beside PHP, whose rules are days
 old. That makes this a measurement of the pack rather than of any one
 afternoon's work.
 
 **Recall is over what a log can see.** A combined access log holds the request
-line, the Referer and the User-Agent. 626 of the PHP and RCE cases put their
-payload in a body or a header it never writes, and those are counted apart
-rather than as misses: scoring them would measure the log format and publish the
-result as a score for the rules.
+line, the Referer and the User-Agent. 2,650 cases put their payload in a body or
+a header it never writes, and those are counted apart rather than as misses:
+scoring them would measure the log format and publish the result as a score for
+the rules.
+
+**The corpus asks three questions; two of them are ours.** This decision is
+about not letting one project mark its own homework, and reading the answer key
+carelessly reintroduces the same fault by another route.
+
+- `expect_ids` — an attack. The recall denominator.
+- `no_expect_ids` *described* as a false positive — traffic CRS certifies as
+  harmless after a user reported one of its rules firing on it. The false-alarm
+  denominator, and the more valuable of the two: a pack reaches any recall it
+  likes by matching everything, and only this number stops that scoring well.
+- `no_expect_ids` otherwise — **not a question this tool is asked.** The key
+  names CRS rule *ids*, not traffic. One case under it is
+  `system('echo cd /tmp;wget …;rm -rf')`, marked so that rule 932230 stays out
+  of a neighbouring rule's way. logarc has no mapping onto CRS rule numbers —
+  by the paragraph below, deliberately — so it can be neither right nor wrong
+  there. 469 such cases are counted, named, and scored in neither column.
+
+Across every family, one false alarm in 134 certified-benign cases:
+`template_injection` on a bare ERB output tag, which CRS holds is legitimate
+unless the tag evaluates something.
+
+**A correction.** The figures first published here — 11%, 8%, 13% and 17% —
+were produced by a scorer that read every case as an attack, counting the
+quarter of the corpus that must not match as misses. They understated the pack.
+The correction is recorded rather than quietly swapped, because an ADR that
+edits away its own wrong numbers is worth less than one that keeps them.
 
 **What does not change.** Nothing here revives scoring CRS against itself, and
 nothing here treats CRS's rule ids as ground truth for a category — the mapping
-table and its withholdings stand exactly as decided above.
+table and its withholdings stand exactly as decided above. The third bucket is
+that same refusal, applied to the answer key rather than to the findings.
