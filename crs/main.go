@@ -1,10 +1,11 @@
-// Command crs-sidecar replays parsed Apache access-log records through OWASP
-// Core Rule Set via Coraza and emits the matched rules as JSONL evidence.
+// Command crs-sidecar replays parsed access-log records through OWASP Core Rule
+// Set via Coraza and emits the matched rules as JSONL evidence.
 //
 // It contains no attack knowledge of its own: CRS supplies every detection, and
 // this program is transport plus configuration. Input is pre-parsed JSON rather
-// than raw log lines so that actmap/parse.py stays the single source of truth
-// for log parsing.
+// than raw log lines, so logarc's parsers stay the single source of truth for
+// reading a log — this program never sees a log format and does not need to
+// know there are fourteen of them.
 package main
 
 import (
