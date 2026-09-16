@@ -64,6 +64,34 @@ def test_the_report_names_the_client_and_what_it_did(campaign: Case) -> None:
         assert episode.label in page
 
 
+@pytest.mark.parametrize(
+    ("target", "category", "owasp"),
+    [
+        ("/p?id=1%20UNION%20SELECT%20pw%20FROM%20users", ActivityCategory.INJECTION, "A05:2025"),
+        ("/fetch?url=http://169.254.169.254/latest/meta-data/", ActivityCategory.SSRF, "A01:2025"),
+        (
+            "/p?u=O:8:%22stdClass%22:1:{s:3:%22cmd%22;s:2:%22id%22;}",
+            ActivityCategory.INJECTION,
+            "A08:2025",
+        ),
+    ],
+)
+def test_2025_annotations_reach_analysis_graphs_and_html(
+    tmp_path: Path,
+    target: str,
+    category: ActivityCategory,
+    owasp: str,
+) -> None:
+    with build_case(tmp_path, [line(0, target)]) as case:
+        result = analyse_ip(case.store, ATTACKER)
+
+        assert result.assignments[0].category == category
+        assert result.episodes[0].activity.owasp == owasp
+        for graph in ("trace", "behaviour"):
+            assert result.to_dict()[graph]["nodes"][0]["owasp"] == owasp
+        assert f"<td>{owasp}</td>" in render_report(result, case.manifest)
+
+
 def test_the_report_carries_the_provenance_of_the_case(campaign: Case) -> None:
     """A finding without the manifest behind it cannot be reproduced."""
     result = analyse_ip(campaign.store, ATTACKER)

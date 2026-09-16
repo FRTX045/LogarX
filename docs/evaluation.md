@@ -7,6 +7,25 @@ See [ADR-0011](adr/0011-a-real-server-log-is-the-headline-corpus.md) for why it 
 real server's log, and [ADR-0005](adr/0005-measuring-accuracy-against-generated-ground-truth.md)
 for the scoring method it kept.
 
+**Provenance note, 2026-09-17.** The bundled OWASP annotations migrated from
+Top 10:2021 to Top 10:2025 without changing detection rules or reconstruction.
+The committed 3,825-request excerpt was compared before and after, across all
+52 clients, both native-only and with CRS enrichment at paranoia level 2.
+Classifications, all matching labels apart from their OWASP annotations,
+evidence references, sessions, episodes and graph transitions were identical.
+CRS used revision `d694d465951ee06347214f1291ae096e40700001`, configuration
+fingerprint `f357d142fbcc4441`, and host `localhost` in both runs.
+
+The native-only regression fixture `excerpt.scores.json` was regenerated through
+the evaluator. Every numerical result stayed identical; its native ruleset
+fingerprint changed from
+`5d14fa1f6be3cb8ae8c2d16782ad8a7f733241679224bbd470aed990b4b1d79f` to
+`2661e2144bb698535ddf1bbbe48a17953e5c1b4735fed06dff4ff430c1301c57` because
+annotations are part of the hashed rule definitions. This fixture is a native
+regression check, not a complete-product accuracy measurement. Historical
+measurements and their original fingerprints below remain as recorded; this
+metadata migration does not remeasure those larger datasets.
+
 ## What is being measured
 
 Two questions, scored separately, because a tool can be good at one and bad at the other.

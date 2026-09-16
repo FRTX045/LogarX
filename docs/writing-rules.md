@@ -30,7 +30,7 @@ rules:
     name: SQL injection probe (UNION)
     category: injection
     severity: high
-    owasp: "A03:2021"
+    owasp: "A05:2025"
     confidence: 0.9
     references: ["CAPEC-66"]
     match:
@@ -43,9 +43,17 @@ rules:
 rather than letting the later one win, because which pack was loaded first is
 not something a report should depend on.
 
-`category` decides which episode a request joins, so it is the field that shapes
-the graph. `severity` decides the colour and, on a tie, which label wins.
-`confidence` is recorded but does not currently affect ranking.
+`category` controls activity grouping, so it helps shape episodes and the graph.
+Labels rank by severity first, then hostile over benign at equal severity,
+then confidence, and finally rule ID for a deterministic tie-break. Severity
+also determines colour.
+
+`owasp` is optional metadata, independent of that ranking and grouping. Bundled
+rules use edition-qualified OWASP Top 10:2025 values, such as `A05:2025` for
+Injection. Custom annotations such as `A03:2021` remain accepted and appear
+unchanged in findings and exports; the loader does not translate editions.
+Keep the edition in the value because category numbers change between editions.
+The pack's `version: 1` is its schema version, not an OWASP edition.
 
 ## Two kinds of rule
 
@@ -59,7 +67,7 @@ Use a signature rule when a single line is damning on its own. `match` takes
     name: Shellshock probe
     category: injection
     severity: critical
-    owasp: "A03:2021"
+    owasp: "A05:2025"
     match:
       all:
         - {field: user_agent, contains: "() {"}
@@ -92,9 +100,9 @@ distinction cannot be drawn from a single line, so it needs a window.
 ```yaml
   - id: directory_enumeration
     name: Directory enumeration
-    category: recon
+    category: enumeration
     severity: medium
-    owasp: "A01:2021"
+    owasp: "A01:2025"
     member:
       all:
         - {field: status, min: 404}
@@ -194,9 +202,11 @@ absorption rule needs in order to decide whether they are one act or two.
 ## Which ruleset produced a finding
 
 Every reconstruction carries a `ruleset_fingerprint`, derived from the rules
-that were loaded, and the HTML report prints it under Provenance. Add a rule and
-re-run, and the fingerprint moves — so two reports about the same client cannot
-silently claim the same provenance while disagreeing about what happened.
+that were loaded, and the HTML report prints it under Provenance. Changing any
+rule definition, including only its `owasp` annotation, changes this fingerprint.
+An annotation-only migration can therefore change provenance without changing
+matching, classifications, episode boundaries or graph transitions. Previously
+exported reports retain their original annotations and fingerprints.
 
 That is the property to preserve when extending detection. A finding that cannot
 be tied back to the rules that produced it is not reproducible, and a

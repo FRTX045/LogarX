@@ -11,7 +11,7 @@ rules:
   - id: shellshock
     name: Shellshock Function Definition
     category: exploitation
-    owasp: "A06:2021"
+    owasp: "A03:2025"
     severity: critical
     confidence: 0.95
     references: ["CVE-2014-6271"]

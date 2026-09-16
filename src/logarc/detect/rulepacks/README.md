@@ -47,10 +47,11 @@ A rule sits somewhere on two independent axes: **what it is about** (an attack,
 or an ordinary use of the site) and **what it presumes about the stack** (PHP,
 a JVM, or nothing at all).
 
-The first is the folder. The second is the file name. The OWASP category is
-neither — it is already inside every rule, on the `category:` line, so making
-it a folder as well would give `php_code_execution` two homes that are equally
-correct and force a coin-flip every time a rule is written.
+The first is the folder. The second is the file name. The `category:` field
+names internal behaviour, such as `injection` or `ssrf`, and determines how
+requests are grouped. The optional `owasp:` field attaches a vulnerability-risk
+mapping. Neither field determines the folder, and an OWASP edition change does
+not change the activity taxonomy.
 
 Inside `global/` the technology axis is already spent, so the files there split
 by subject instead. That is a convenience for reading, not a taxonomy.
@@ -66,13 +67,26 @@ says they were guessing. `php.yaml` is a statement about what a pattern
 The folders are for the person editing them. The engine flattens all of it into
 one list and tests every request against every rule.
 
-## What is deliberately absent
+## OWASP mappings and their limits
 
-Four OWASP Top 10 categories have no rules here and are not oversights.
-**A02** (Cryptographic Failures), **A04** (Insecure Design), **A08** (Software
-and Data Integrity Failures) and **A09** (Logging and Monitoring Failures) leave
-no signature in a request line. Writing rules that pretend otherwise would
-raise apparent coverage without detecting anything, which is worse than the gap.
+Bundled annotations use **OWASP Top 10:2025** and represent six categories:
+A01 Broken Access Control (including SSRF), A02 Security Misconfiguration,
+A03 Software Supply Chain Failures, A05 Injection, A07 Authentication Failures,
+and A08 Software or Data Integrity Failures. See the root README's coverage
+table for the limits of each mapping. Representation is not complete coverage.
+
+The four A03 rules concern component paths, dependency manifests, Log4Shell
+and Shellshock. They do not detect the wider software supply chain. A08 is
+represented by `php_object_injection`, which recognises serialised PHP payloads;
+an access log cannot establish whether the server deserialised them unsafely.
+
+No bundled annotations claim A04 Cryptographic Failures, A06 Insecure Design,
+A09 Security Logging and Alerting Failures, or A10 Mishandling of Exceptional
+Conditions. `server_errors_provoked` remains unannotated: repeated errors alone
+do not establish A10. Other unannotated rules remain unannotated too.
+
+`owasp` remains an optional string. Custom rules can use older edition-qualified
+values such as `A03:2021`, which findings and exports retain unchanged.
 
 ## Writing one
 

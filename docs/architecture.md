@@ -154,6 +154,15 @@ on every run rather than quietly reporting less.
 
 **Replacing storage.** Implement `storage.base.EventStore`.
 
+**OWASP annotations.** Bundled rules map to Top 10:2025 through optional `owasp`
+strings. These are report metadata, independent of behavioural `category`,
+label precedence, episode boundaries and graph structure. Custom rules can
+retain annotations from earlier editions, including `:2021`; the loader and
+report paths preserve their values. Updating an annotation changes the native
+ruleset fingerprint but needs no API, case-schema or rule-pack-schema change.
+The CRS integration is independent: external CRS rules are unchanged, and
+CRS-only labels retain their existing lack of an OWASP annotation.
+
 ## Forensic integrity
 
 - Input files are opened read-only and never modified. SHA-256 is recorded at ingest.

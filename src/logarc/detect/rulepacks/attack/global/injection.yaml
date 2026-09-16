@@ -16,7 +16,7 @@ rules:
   - id: sqli_union_select
     name: SQL Injection (UNION SELECT)
     category: injection
-    owasp: "A03:2021"
+    owasp: "A05:2025"
     severity: high
     confidence: 0.95
     references: ["CAPEC-66"]
@@ -40,7 +40,7 @@ rules:
   - id: sqli_tautology
     name: SQL Injection (always-true condition)
     category: injection
-    owasp: "A03:2021"
+    owasp: "A05:2025"
     severity: high
     confidence: 0.85
     references: ["CAPEC-7"]
@@ -55,7 +55,7 @@ rules:
   - id: sqli_column_count
     name: SQL Injection (column counting)
     category: injection
-    owasp: "A03:2021"
+    owasp: "A05:2025"
     severity: high
     confidence: 0.85
     references: ["CAPEC-66"]
@@ -67,7 +67,7 @@ rules:
   - id: sqli_time_based
     name: SQL Injection (time-based blind)
     category: injection
-    owasp: "A03:2021"
+    owasp: "A05:2025"
     severity: high
     confidence: 0.9
     references: ["CAPEC-7"]
@@ -84,7 +84,7 @@ rules:
   - id: sqli_schema_probe
     name: SQL Injection (schema enumeration)
     category: injection
-    owasp: "A03:2021"
+    owasp: "A05:2025"
     severity: high
     confidence: 0.9
     match:
@@ -95,7 +95,7 @@ rules:
   - id: sqli_error_based
     name: SQL Injection (error-based)
     category: injection
-    owasp: "A03:2021"
+    owasp: "A05:2025"
     severity: high
     confidence: 0.85
     references: ["CAPEC-7"]
@@ -114,7 +114,7 @@ rules:
   - id: sqli_stacked_query
     name: SQL Injection (stacked statement)
     category: injection
-    owasp: "A03:2021"
+    owasp: "A05:2025"
     severity: critical
     confidence: 0.85
     match:
@@ -125,7 +125,7 @@ rules:
   - id: xss_script_tag
     name: Cross-Site Scripting (script tag)
     category: injection
-    owasp: "A03:2021"
+    owasp: "A05:2025"
     severity: medium
     confidence: 0.9
     references: ["CAPEC-63"]
@@ -137,7 +137,7 @@ rules:
   - id: xss_event_handler
     name: Cross-Site Scripting (event handler)
     category: injection
-    owasp: "A03:2021"
+    owasp: "A05:2025"
     severity: medium
     confidence: 0.8
     match:
@@ -150,7 +150,7 @@ rules:
   - id: command_injection
     name: OS Command Injection
     category: injection
-    owasp: "A03:2021"
+    owasp: "A05:2025"
     severity: critical
     confidence: 0.85
     references: ["CAPEC-88"]
@@ -179,7 +179,7 @@ rules:
   - id: nosql_injection
     name: NoSQL Injection
     category: injection
-    owasp: "A03:2021"
+    owasp: "A05:2025"
     severity: high
     confidence: 0.8
     match:
@@ -190,7 +190,7 @@ rules:
   - id: xxe_entity
     name: XML External Entity
     category: injection
-    owasp: "A03:2021"
+    owasp: "A05:2025"
     severity: high
     confidence: 0.85
     match:
@@ -223,7 +223,7 @@ rules:
   - id: template_injection
     name: Server-Side Template Injection
     category: injection
-    owasp: "A03:2021"
+    owasp: "A05:2025"
     severity: high
     confidence: 0.7
     references: ["CAPEC-242"]

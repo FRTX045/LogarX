@@ -5,6 +5,30 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Bundled OWASP mappings now use Top 10:2025.** Updated 49 annotations across
+  eight rule files. Injection maps to A05, misconfiguration to A02, component
+  indicators to A03, and SSRF to A01 while retaining its `ssrf` activity category.
+  A01, A07 and A08 retain their numbers. These six represented categories are
+  partial mappings, not claims of complete detection coverage.
+
+  Detection patterns, thresholds, label ranking, episodes, evidence and graph
+  structure are unchanged. Custom `:2021` annotations remain accepted and are
+  preserved in findings and exports. No API or schema changes, new detectors,
+  or changes to external CRS rules are included.
+
+  All 3,825 requests from the committed excerpt were compared before and after,
+  native-only and CRS-enriched at paranoia level 2. Reconstruction was identical
+  apart from OWASP annotations and the native ruleset fingerprint. Regenerated
+  native evaluation scores changed only that fingerprint. See
+  [the dated provenance note](docs/evaluation.md) for the CRS configuration and
+  both native fingerprints.
+
+  Verification: 1,893 tests passed with CRS contract tests required. Ruff,
+  formatting, and Windows and Linux mypy checks passed. The new mapping and
+  export checks first failed on the 2021 annotations, then passed on 2025.
+
 ### Added
 
 - **PHP detection goes from 15% to 68% against the OWASP CRS corpus, with no new false alarms.**
