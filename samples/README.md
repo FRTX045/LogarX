@@ -19,6 +19,19 @@ they are pinned by checksum rather than versioned.
 | `apache-shopfront/2026-09-07-medium/` | 243,908 | 7 days | The headline evaluation. |
 | `apache-shopfront/2026-08-23-small/` | 66,305 | 1 day | Fast checks and demos. |
 
+## `demo/` is the exception, and is not one of these
+
+[`demo/demo.log`](demo/README.md) **was** written by a template — this project
+wrote every line of it — and it is in the repository rather than pinned by
+checksum, because a demonstration has to work the moment somebody opens it.
+
+It is 788 lines and reaches all 71 detection rules, which the logs above do not:
+they are real traffic, so they contain what real traffic contains and nothing
+else. Use `demo/` to show what the tool can do. Use the builds above to find
+out how well it does it — and never the other way round, because scoring rules
+against traffic written to suit them means nothing. `demo/` ships no truth file
+for that reason.
+
 Each folder holds `access.log`, `truth.jsonl`, `MANIFEST.json` (seed, dataset
 commit, and every attack command line with its source address) and
 `SHA256SUMS`.
