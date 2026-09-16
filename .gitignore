@@ -56,6 +56,13 @@ case-*/
 !tests/data/**/*.log
 !tests/data/**/*.truth.jsonl
 
+# The demo log is the exception to the rule above, and small enough to be one:
+# it is the file you open to show somebody what this tool does, so it has to be
+# in the repository rather than a command away. `samples/demo/make_demo.py`
+# rebuilds it byte-for-byte, and README.md there says which client demonstrates
+# what. No truth sidecar ships with it, deliberately — see that README.
+!samples/demo/demo.log
+
 # Dataset builds. Tens of megabytes each, and the evaluation figures are pinned to
 # their SHA-256 rather than to a seed, so they are checksummed instead of versioned.
 # samples/README.md says how to obtain one; docs/evaluation.md records the hashes.
