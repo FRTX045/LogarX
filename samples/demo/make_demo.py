@@ -1025,7 +1025,13 @@ def main(argv: list[str]) -> int:
     build()
     lines.sort(key=lambda pair: pair[0])
     body = [text for _, text in lines] + DAMAGED
-    OUT.write_text("\n".join(body) + "\n", encoding="utf-8")
+    # Written as bytes with explicit LF rather than through write_text, which
+    # translates newlines to the platform's. That translation made the first
+    # committed copy CRLF, so the file's bytes — and therefore the checksum this
+    # script prints and the README quotes — depended on who ran it. A server
+    # writes LF, `.gitattributes` checks out LF, and a fixture whose digest
+    # changes with the operating system is not a fixture.
+    OUT.write_bytes(("\n".join(body) + "\n").encode("utf-8"))
 
     clients = {line.split(" ")[1] for _, line in lines}
     span = lines[-1][0] - lines[0][0]

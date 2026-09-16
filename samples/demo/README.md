@@ -38,7 +38,7 @@ python samples/demo/make_demo.py          # rebuilds; prints line count and sha2
 
 The build is deterministic — no randomness anywhere — so the same script always
 produces the same bytes. The current file is
-`8b7ce4e3cab81a4a2caab7792dfe9d6651dca0755395c6beb6290e130cf0d40a`.
+`ce1194e7086eea4ae51dbff5d3a90b67e25b6169dc7777a5240217fd438ee310`.
 
 ## The format, and why it is that one
 
