@@ -8,7 +8,7 @@ rules:
   - id: log4shell_jndi
     name: Log4Shell JNDI Lookup
     category: exploitation
-    owasp: "A06:2021"
+    owasp: "A03:2025"
     severity: critical
     confidence: 0.98
     references: ["CVE-2021-44228"]

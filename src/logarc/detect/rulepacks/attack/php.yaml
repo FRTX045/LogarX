@@ -46,7 +46,7 @@ rules:
   - id: php_open_tag
     name: PHP Open Tag in a Request
     category: injection
-    owasp: "A03:2021"
+    owasp: "A05:2025"
     severity: critical
     confidence: 0.95
     references: ["CAPEC-242"]
@@ -76,7 +76,7 @@ rules:
   - id: php_short_tag
     name: PHP Short Tag in a Request
     category: injection
-    owasp: "A03:2021"
+    owasp: "A05:2025"
     severity: high
     confidence: 0.75
     references: ["CAPEC-242"]
@@ -100,7 +100,7 @@ rules:
   - id: php_superglobal
     name: PHP Superglobal or Variable Interpolation
     category: injection
-    owasp: "A03:2021"
+    owasp: "A05:2025"
     severity: high
     confidence: 0.85
     match:
@@ -137,7 +137,7 @@ rules:
   - id: php_code_execution
     name: PHP Code Execution Function
     category: injection
-    owasp: "A03:2021"
+    owasp: "A05:2025"
     severity: critical
     confidence: 0.9
     references: ["CAPEC-242"]
@@ -174,7 +174,7 @@ rules:
   - id: php_function_call
     name: PHP Function Call in a Request
     category: injection
-    owasp: "A03:2021"
+    owasp: "A05:2025"
     severity: medium
     confidence: 0.7
     match:
@@ -210,7 +210,7 @@ rules:
   - id: php_file_function
     name: PHP File or Socket Function
     category: injection
-    owasp: "A03:2021"
+    owasp: "A05:2025"
     severity: high
     confidence: 0.8
     match:
@@ -224,7 +224,7 @@ rules:
   - id: php_payload_decoding
     name: PHP Payload Decoding Function
     category: injection
-    owasp: "A03:2021"
+    owasp: "A05:2025"
     severity: high
     confidence: 0.85
     match:
@@ -244,7 +244,7 @@ rules:
   - id: php_environment_probe
     name: PHP Environment Disclosure Function
     category: reconnaissance
-    owasp: "A05:2021"
+    owasp: "A02:2025"
     severity: medium
     confidence: 0.8
     match:
@@ -260,7 +260,7 @@ rules:
   - id: php_config_directive
     name: PHP Configuration Directive in a Request
     category: injection
-    owasp: "A05:2021"
+    owasp: "A02:2025"
     severity: high
     confidence: 0.8
     match:
@@ -276,7 +276,7 @@ rules:
   - id: php_stream_wrapper
     name: PHP Stream Wrapper
     category: injection
-    owasp: "A03:2021"
+    owasp: "A05:2025"
     severity: critical
     confidence: 0.9
     references: ["CAPEC-242"]
@@ -306,7 +306,7 @@ rules:
   - id: remote_file_inclusion
     name: Remote File Inclusion
     category: injection
-    owasp: "A03:2021"
+    owasp: "A05:2025"
     severity: critical
     confidence: 0.85
     references: ["CAPEC-253"]
@@ -334,7 +334,7 @@ rules:
   - id: php_object_injection
     name: PHP Object Injection
     category: injection
-    owasp: "A08:2021"
+    owasp: "A08:2025"
     severity: critical
     confidence: 0.9
     references: ["CAPEC-586"]
