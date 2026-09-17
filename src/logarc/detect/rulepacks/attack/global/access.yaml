@@ -22,7 +22,7 @@ rules:
   - id: admin_area_probe
     name: Administrative Area Refusal
     category: access_control
-    owasp: "A01:2021"
+    owasp: "A01:2025"
     severity: medium
     confidence: 0.6
     match:
@@ -51,7 +51,7 @@ rules:
   - id: admin_area_redirect
     name: Administrative Area, Redirected Away
     category: access_control
-    owasp: "A01:2021"
+    owasp: "A01:2025"
     severity: medium
     confidence: 0.55
     match:
@@ -64,7 +64,7 @@ rules:
   - id: debug_endpoint_probe
     name: Debug or Status Endpoint Probe
     category: reconnaissance
-    owasp: "A05:2021"
+    owasp: "A02:2025"
     severity: medium
     confidence: 0.8
     match:
@@ -75,7 +75,7 @@ rules:
   - id: known_vulnerable_component_path
     name: Known Vulnerable Component Path
     category: reconnaissance
-    owasp: "A06:2021"
+    owasp: "A03:2025"
     severity: low
     confidence: 0.5
     match:
@@ -86,7 +86,7 @@ rules:
   - id: dependency_manifest_probe
     name: Dependency Manifest Probe
     category: reconnaissance
-    owasp: "A06:2021"
+    owasp: "A03:2025"
     severity: low
     confidence: 0.5
     # A manifest names every library and version the application runs, which is
@@ -137,7 +137,7 @@ rules:
   - id: project_metadata_probe
     name: Project Metadata Probe
     category: reconnaissance
-    owasp: "A05:2021"
+    owasp: "A02:2025"
     severity: low
     confidence: 0.6
     references: ["CAPEC-118"]
@@ -192,7 +192,7 @@ rules:
   - id: session_fixation
     name: Session Fixation
     category: credential_attack
-    owasp: "A07:2021"
+    owasp: "A07:2025"
     severity: high
     confidence: 0.8
     references: ["CAPEC-61"]

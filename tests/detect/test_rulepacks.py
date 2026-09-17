@@ -101,9 +101,48 @@ def test_every_bundled_rule_has_a_unique_id() -> None:
 
 
 def test_owasp_mappings_use_the_expected_notation() -> None:
-    for rule in default_rules():
-        if rule.owasp is not None:
-            assert rule.owasp.startswith("A") and ":2021" in rule.owasp
+    represented = {"A01:2025", "A02:2025", "A03:2025", "A05:2025", "A07:2025", "A08:2025"}
+    assert {rule.owasp for rule in default_rules() if rule.owasp is not None} == represented
+
+
+@pytest.mark.parametrize(
+    ("target", "status", "count", "category", "owasp"),
+    [
+        ("/admin", 403, 1, ActivityCategory.ACCESS_CONTROL, "A01:2025"),
+        ("/phpinfo", 200, 1, ActivityCategory.RECONNAISSANCE, "A02:2025"),
+        ("/wp-content/plugins/example/", 200, 1, ActivityCategory.RECONNAISSANCE, "A03:2025"),
+        ("/p?id=1 UNION SELECT pw FROM users", 200, 1, ActivityCategory.INJECTION, "A05:2025"),
+        ("/login", 401, 5, ActivityCategory.CREDENTIAL_ATTACK, "A07:2025"),
+        (
+            '/p?u=O:8:"stdClass":1:{s:3:"cmd";s:2:"id";}',
+            200,
+            1,
+            ActivityCategory.INJECTION,
+            "A08:2025",
+        ),
+        (
+            "/fetch?url=http://169.254.169.254/latest/meta-data/",
+            200,
+            1,
+            ActivityCategory.SSRF,
+            "A01:2025",
+        ),
+    ],
+)
+def test_matched_rules_carry_2025_annotations(
+    engine: RuleEngine,
+    target: str,
+    status: int,
+    count: int,
+    category: ActivityCategory,
+    owasp: str,
+) -> None:
+    labelled = engine.label_events(
+        [request(target, status=status, seconds=i) for i in range(count)]
+    )
+
+    assert all(event.label.category == category for event in labelled)
+    assert all(event.label.owasp == owasp for event in labelled)
 
 
 @pytest.mark.parametrize(

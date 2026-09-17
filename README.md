@@ -116,21 +116,27 @@ Adding a detection needs no Python — the rules are YAML. See
 
 ### About OWASP Top 10 coverage
 
-OWASP Top 10 classifies *vulnerabilities*, not *behaviour*, and only part of it
-leaves a trace in a request line at all:
+Bundled rules use [OWASP Top 10:2025](https://top10.owasp.org/2025/).
+OWASP classifies vulnerability risks; logarc classifies behaviour visible in
+access logs and attaches an optional OWASP annotation. These six categories
+are represented, but representation does not mean complete detection coverage:
 
-| Observable from an access log | Not observable |
+| OWASP Top 10:2025 annotation | What the bundled rules can indicate |
 |---|---|
-| A01 Broken Access Control | A02 Cryptographic Failures |
-| A03 Injection | A04 Insecure Design |
-| A05 Security Misconfiguration | A08 Software & Data Integrity Failures |
-| A07 Identification & Auth Failures | A09 Security Logging & Monitoring Failures |
-| A06 Vulnerable Components *(partial)* | |
-| A10 SSRF *(partial)* | |
+| A01:2025 Broken Access Control | Access refusals, traversal, forced browsing and SSRF-shaped parameters. These do not prove a successful access-control bypass. |
+| A02:2025 Security Misconfiguration | Requests for exposed configuration files, debug endpoints and project metadata. |
+| A03:2025 Software Supply Chain Failures | Component paths, dependency manifests, Log4Shell and Shellshock payloads. These four rules concern component risk, not the wider build, distribution or dependency supply chain. |
+| A05:2025 Injection | SQL, script, command, template and PHP payload patterns. |
+| A07:2025 Authentication Failures | Repeated failed authentication requests and session-fixation indicators where the required fields are logged. |
+| A08:2025 Software or Data Integrity Failures | PHP serialised-object payloads that suggest object injection, not proof of unsafe deserialisation. |
 
-logarc classifies observable behaviour and maps it *onto* OWASP as an attribute,
-rather than forcing the taxonomy to be the structure. Coverage is reported
-honestly rather than inflated.
+No bundled annotations claim A04 Cryptographic Failures, A06 Insecure Design,
+A09 Security Logging and Alerting Failures, or A10 Mishandling of Exceptional
+Conditions. Repeated server errors alone do not establish A10.
+
+Internal activity categories, including `ssrf`, remain independent of OWASP
+numbers. Custom rules may retain older edition-qualified annotations such as
+`A03:2021`; findings and exports preserve those values.
 
 ---
 

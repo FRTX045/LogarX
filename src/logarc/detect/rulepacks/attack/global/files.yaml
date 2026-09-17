@@ -10,7 +10,7 @@ rules:
   - id: path_traversal
     name: Path Traversal
     category: path_traversal
-    owasp: "A01:2021"
+    owasp: "A01:2025"
     severity: high
     confidence: 0.9
     references: ["CAPEC-126"]
@@ -22,7 +22,7 @@ rules:
   - id: sensitive_file_access
     name: Sensitive System File Access
     category: path_traversal
-    owasp: "A01:2021"
+    owasp: "A01:2025"
     severity: critical
     confidence: 0.95
     match:
@@ -33,7 +33,7 @@ rules:
   - id: config_file_exposure
     name: Configuration File Probe
     category: reconnaissance
-    owasp: "A05:2021"
+    owasp: "A02:2025"
     severity: high
     confidence: 0.9
     match:
@@ -46,7 +46,7 @@ rules:
   - id: backup_file_probe
     name: Backup or Source File Probe
     category: reconnaissance
-    owasp: "A05:2021"
+    owasp: "A02:2025"
     severity: medium
     confidence: 0.75
     match:
@@ -71,7 +71,7 @@ rules:
   - id: webshell_double_extension
     name: Webshell Disguised by a Double Extension
     category: exploitation
-    owasp: "A03:2021"
+    owasp: "A05:2025"
     severity: critical
     confidence: 0.95
     references: ["CAPEC-650"]

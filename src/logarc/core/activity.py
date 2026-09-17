@@ -5,10 +5,13 @@ observed in an access log. The **OWASP mapping** is an attribute hung off that,
 not the structure itself.
 
 That way round because OWASP Top 10 classifies vulnerabilities, not behaviour,
-and only part of it leaves a trace in a log at all: A02, A04, A08 and A09 have
-no observable signature in a request line. Structuring by behaviour keeps the
-taxonomy honest about what is being detected, and leaves room to map onto MITRE
-ATT&CK or CAPEC later without rearranging anything.
+and only part of it leaves a trace in a log. Bundled mappings use Top 10:2025:
+A01, A02, A03, A05, A07 and A08 are represented, with limited coverage of each.
+A08 includes PHP object-injection indicators; A03 covers component-related
+indicators, not the whole software supply chain. No bundled mappings claim
+A04, A06, A09 or A10. Custom mappings may retain other editions. Structuring
+by behaviour keeps the taxonomy independent of these annotations and leaves
+room to map onto MITRE ATT&CK or CAPEC without rearranging anything.
 """
 
 from __future__ import annotations

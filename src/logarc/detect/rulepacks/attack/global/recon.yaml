@@ -35,7 +35,7 @@ rules:
   - id: scanner_user_agent
     name: Security Scanner User-Agent
     category: reconnaissance
-    owasp: "A01:2021"
+    owasp: "A01:2025"
     severity: medium
     confidence: 0.95
     match:
@@ -106,7 +106,7 @@ rules:
   - id: known_software_probe
     name: Probe for Software the Site Does Not Run
     category: enumeration
-    owasp: "A01:2021"
+    owasp: "A01:2025"
     severity: medium
     confidence: 0.85
     references: ["CAPEC-127"]
@@ -129,7 +129,7 @@ rules:
   - id: directory_enumeration
     name: Directory Enumeration
     category: enumeration
-    owasp: "A01:2021"
+    owasp: "A01:2025"
     severity: medium
     confidence: 0.9
     references: ["CAPEC-127"]
@@ -158,7 +158,7 @@ rules:
   - id: directory_enumeration_low_slow
     name: Directory Enumeration (Low and Slow)
     category: enumeration
-    owasp: "A01:2021"
+    owasp: "A01:2025"
     severity: medium
     confidence: 0.85
     references: ["CAPEC-127"]
@@ -182,7 +182,7 @@ rules:
   - id: forced_browsing
     name: Forced Browsing (repeated refusals)
     category: access_control
-    owasp: "A01:2021"
+    owasp: "A01:2025"
     severity: medium
     confidence: 0.8
     member:
@@ -200,7 +200,7 @@ rules:
   - id: credential_attack
     name: Credential Attack
     category: credential_attack
-    owasp: "A07:2021"
+    owasp: "A07:2025"
     severity: high
     confidence: 0.8
     references: ["CAPEC-49"]
@@ -278,7 +278,7 @@ rules:
   - id: bulk_account_creation
     name: Bulk Account Creation
     category: credential_attack
-    owasp: "A07:2021"
+    owasp: "A07:2025"
     severity: medium
     confidence: 0.85
     member:
@@ -344,7 +344,7 @@ rules:
   - id: multiply_encoded_request
     name: Multiply Encoded Request
     category: reconnaissance
-    owasp: "A03:2021"
+    owasp: "A05:2025"
     severity: low
     confidence: 0.6
     match:
