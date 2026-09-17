@@ -48,6 +48,30 @@ rules:
   # Deliberately not "any status". That reaches 19 of the 24 and also claims
   # five `injection` and two `exploitation` requests as access control — a
   # confident wrong answer in place of a miss, which is the worse trade.
+  #
+  # KNOWN FALSE POSITIVE, measured 2026-09-18 and not yet acted on. Every figure
+  # above comes from a corpus that contained no legitimate administrator: no
+  # persona in it ever requested an admin path, and the crawler avoids `/admin/`
+  # per robots.txt. So the only clients ever bounced to a login form there were
+  # attackers, and 13 for 13 was the arithmetic of an absent case rather than a
+  # working distinction.
+  #
+  # On `2026-09-17-small`, the first build to carry one, the same match block
+  # scores 12 hostile against 57 benign — precision 0.174. Every benign match is
+  # an administrator's first request of a visit, because the application answers
+  # an unauthenticated admin request with a 302 to its login form, which is
+  # exactly what this rule was written to catch and exactly what a real
+  # administrator receives.
+  #
+  # The rule is not measuring access control. It is measuring "somebody was sent
+  # to a login form", and until that build existed, only attackers ever were.
+  #
+  # Left as it stands deliberately, pending a decision measured on this project's
+  # own corpus rather than a relayed figure. The candidates are a category that
+  # does not imply hostility, a confidence low enough to lose to any real signal,
+  # or requiring a second admin request in the same session — an attacker keeps
+  # going after the bounce, an administrator signs in. Whichever is chosen has to
+  # be scored on both axes before it lands; see the rulepack ledger.
   - id: admin_area_redirect
     name: Administrative Area, Redirected Away
     category: access_control
