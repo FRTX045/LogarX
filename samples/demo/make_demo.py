@@ -47,6 +47,11 @@ from pathlib import Path
 
 OUT = Path(__file__).parent / "demo.log"
 
+#: Written by this script rather than by hand, because a rebuild changes the log
+#: and a digest somebody has to remember to update is a digest that goes stale.
+#: `tests/samples/test_demo_log.py` reads it and fails when it stops matching.
+SUMS = Path(__file__).parent / "SHA256SUMS"
+
 #: The site the log belongs to. Written into every line's vhost field, and the
 #: thing an off-domain Referer is off-domain *from*.
 SITE = "shop.test"
@@ -1039,10 +1044,14 @@ def main(argv: list[str]) -> int:
     print(f"  {len(body):,} lines ({len(DAMAGED)} deliberately unreadable)")
     print(f"  {len(clients)} clients over {span.days} days {span.seconds // 3600} hours")
 
-    # Printed so a change to the log is visible as a change to one line, and so
-    # the README's figure can be checked without re-reading the file.
+    # Recorded as well as printed. Printed, a digest is something the person at
+    # the terminal may or may not copy into the README; recorded, it is a file
+    # the suite checks on every run. LF for the same reason the log itself is
+    # written that way.
     digest = hashlib.sha256(OUT.read_bytes()).hexdigest()
+    SUMS.write_bytes(f"{digest}  {OUT.name}\n".encode())
     print(f"  sha256 {digest}")
+    print(f"  recorded in {SUMS.name}; update the digest quoted in README.md to match")
     return 0
 
 
