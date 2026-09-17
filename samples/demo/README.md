@@ -40,6 +40,12 @@ The build is deterministic — no randomness anywhere — so the same script alw
 produces the same bytes. The current file is
 `ce1194e7086eea4ae51dbff5d3a90b67e25b6169dc7777a5240217fd438ee310`.
 
+That digest is recorded beside the log in `SHA256SUMS`, and
+`tests/samples/test_demo_log.py` checks it on every run of the suite — including
+the copy quoted in the sentence above, so the two cannot drift apart. Until that
+test existed the digest was printed here and verified by nothing, which is a
+claim rather than a check.
+
 ## The format, and why it is that one
 
 `apache-vhost-combined`, not the more common `apache-combined`. The difference
@@ -142,13 +148,17 @@ This log answers "what can the tool show me". It must never be used to answer
 **This file is permanent, and that is a commitment to maintain it.** When a
 feature lands that the demo log cannot show, add a client to
 `make_demo.py` — a block with a comment saying what it is for — then re-run the
-script and commit both the script and the log.
+script and commit the script, the log and `SHA256SUMS`.
 
-The check that matters is rule coverage, and the script does it for you. It is
-71 of 71 today; a rule added to a pack that nothing in this log triggers makes
-it fail and names the rule:
+The check that matters is rule coverage, and nobody has to remember to run it:
+the suite runs it. It is 71 of 71 today, and a rule added to a pack that nothing
+in this log triggers fails the build and names the rule. To run it on its own:
 
 ```bash
-python samples/demo/make_demo.py            # rebuild
+python samples/demo/make_demo.py            # rebuild; also rewrites SHA256SUMS
 python samples/demo/make_demo.py --check    # exits non-zero if a rule is unreachable
 ```
+
+A rebuild moves three things: the log, `SHA256SUMS`, and the digest quoted
+earlier in this file. The script writes the first two. The third is yours, and
+the suite stays red until you do it.
