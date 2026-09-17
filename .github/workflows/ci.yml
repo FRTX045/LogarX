@@ -10,9 +10,17 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Pinned to a commit rather than a branch, and stated once here so the CI
-  # build and crs/README.md cannot drift apart. CRS changes weekly; a detection
-  # measurement that cannot name the ruleset that produced it is not reproducible.
+  # Pinned to a commit rather than a branch. CRS changes weekly, and a detection
+  # measurement that cannot name the ruleset that produced it is not reproducible
+  # — docs/evaluation.md prints this revision beside its figures for that reason.
+  #
+  # This line is the source of truth, but it is not the only place the revision
+  # appears: README.md, crs/README.md and docs/evaluation.md all quote it, in
+  # five places altogether. An earlier version of this comment claimed they
+  # "cannot drift apart", which was a hope rather than a mechanism — nothing
+  # compared them. tests/test_documented_figures.py now does, and it also fails
+  # when a new file starts quoting the revision without being listed there.
+  # Bump this value and the suite names every file still on the old one.
   CRS_COMMIT: d694d465951ee06347214f1291ae096e40700001
 
 jobs:
