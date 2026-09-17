@@ -19,6 +19,9 @@ they are pinned by checksum rather than versioned.
 | `apache-shopfront/2026-09-07-medium/` | 243,908 | 7 days | The headline evaluation. |
 | `apache-shopfront/2026-08-23-small/` | 66,305 | 1 day | Fast checks and demos. |
 
+Both are **unobtainable** as of 2026-09-18 — see "Getting them" below before
+going looking for them.
+
 ## `demo/` is the exception, and is not one of these
 
 [`demo/demo.log`](demo/README.md) **was** written by a template — this project
@@ -38,13 +41,28 @@ commit, and every attack command line with its source address) and
 
 ## Getting them
 
-Copy the folder from
+**Neither of the two builds above can be obtained, and the steps below no longer
+reach them.** Checked on 2026-09-18: that repository's
+`datasets/apache-shopfront/` does not contain either folder, and the dataset
+commits recorded for them in [docs/evaluation.md](../docs/evaluation.md) are not
+valid objects in its history. Following these steps lands you on a different
+build, and the `sha256sum -c` then fails — correctly, because the bytes are not
+the ones the figures were measured on. The rebuild route below does not recover
+them either. [docs/evaluation.md](../docs/evaluation.md#the-builds) explains what
+is known and what is being done about it.
+
+The method is unchanged and a newer build is worth having. Copy a folder from
 [BlackHat-Dataset](https://github.com/FRTX045/BlackHat-Dataset)'s
 `datasets/apache-shopfront/`, then check it:
 
 ```bash
-cd samples/apache-shopfront/2026-09-07-medium && sha256sum -c SHA256SUMS
+cd samples/apache-shopfront/<build> && sha256sum -c SHA256SUMS
 ```
+
+Prefer a build whose `MANIFEST.json` records that the tree was clean when it was
+made. That project began shipping them on 2026-09-17; anything older was built
+from a modified working tree, so its recorded commit does not identify it and
+`git checkout` does not reproduce it.
 
 A build can also be regenerated with the dataset's own
 `tools/build.py apache-shopfront medium`, which needs Docker and about half an

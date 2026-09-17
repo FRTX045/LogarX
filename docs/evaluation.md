@@ -110,6 +110,7 @@ Two builds of the same project, both scored below.
 | Sessions | 7,822 | 2,368 |
 | Scenario seed | 19 | 7 |
 | Dataset commit | `0485a9a6` | `8217bce3` |
+| Tree clean when built | **not recorded** | **not recorded** |
 
 The figures belong to these exact bytes, so the digests are recorded here in full. The builds
 themselves are not in this repository, and neither are the `SHA256SUMS` files that ship beside
@@ -127,6 +128,50 @@ d1c4599ec127ddb9a5b76bdc943b492a5f56302db032b3749f7e3485bd6621f2  truth.jsonl
 da2e65809692e465677a3c0bb814a87a102544f315afafbe32489321722b358a  MANIFEST.json
 ```
 
+### The headline build cannot be obtained, and the commit above does not identify it
+
+Checked on 2026-09-18. `2026-09-07-medium` is not in this repository, is not on the machine that
+produced these figures, and is not in
+[BlackHat-Dataset](https://github.com/FRTX045/BlackHat-Dataset) either: `0485a9a6` is not a valid
+object there, and neither is `8217bce3`. That history is 54 commits, none newer than 2026-08-17,
+with nothing dangling and no sign of a rewrite. No `MANIFEST.json` for either build exists
+anywhere, so the digests above cannot even be checked against the manifests they came from.
+
+The likely explanation is provenance rather than loss. The generator records a `commit_is_clean`
+flag in every manifest, and every build that project had shipped up to 2026-09-17 carried
+`commit_is_clean: false` — built from a modified working tree, so the recorded commit does not
+determine the output and `git checkout <hash>` does not reproduce it.
+
+**This document recorded the commit and never recorded the flag, and that is the mistake here.** A
+hash printed beside a figure reads as a chain of custody. This one is decoration. A provenance
+field earns its place only when something fails when it is wrong; nothing ever failed on these.
+
+What remains true is narrow and worth stating plainly. The figures were measured on the bytes whose
+digests are printed above, those digests still identify those bytes, and a recovered copy can still
+be checked against them. What cannot be answered is which corpus the committed excerpt is an
+excerpt *of*.
+
+**One further defect, upstream, with an effect on these figures that is unmeasured.** On 2026-09-17
+the dataset project found that its driver shared a single cookie jar across every simulated client,
+so one visitor signing in authenticated the others. It is confined to `/account`: on the corpus
+this build descends from, 103 of 401 responses there were reached by addresses that had not signed
+in. The committed excerpt carries 16 such responses, 3 of them from one address with no sign-in
+inside the window — but the window is 3,825 lines of 243,908, and a sign-in just outside it would
+look identical, so **the excerpt can neither confirm nor rule it out.** Every rule here that keys
+on a status code was checked, and none distinguishes an authenticated request from an
+unauthenticated one, so the attack packs are not reading the artefact. The effect on activity
+labelling has not been measured.
+
+**The test suite is unaffected by all of this.** It scores a committed 3,825-line excerpt under
+`tests/data/apache-shopfront/`, pinned by its own `SHA256SUMS` and enforced by
+`tests/evaluation/test_fixture.py`. Every figure measured against those bytes is reproducible by
+anyone who clones this repository.
+
+These numbers are not being re-measured on another unreproducible build to replace one broken chain
+with another. As of 2026-09-17 that project ships builds carrying a full source state and a rebuild
+recipe that holds; the next baseline will be taken once, against one of those, and will record the
+clean flag alongside the commit.
+
 **The figures below belong to those bytes, not to those seeds.** The dataset reproduces its plan
 of requests from a seed, and says outright that it does not reproduce its output byte for byte:
 six campaigns react to a live, mutating application and requests interleave differently on every
@@ -142,6 +187,11 @@ not need them: it scores a committed 3,825-line excerpt under `tests/data/apache
 pinned by its own checksums.
 
 ## Reproducing
+
+**These commands cannot be run today.** They are the commands that produced the figures, kept so
+that the method is on the record, but the build they name cannot be obtained — see
+[the note above](#the-headline-build-cannot-be-obtained-and-the-commit-above-does-not-identify-it).
+Point them at any build you do have and expect different numbers.
 
 ```bash
 B=samples/apache-shopfront/2026-09-07-medium
