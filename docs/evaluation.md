@@ -128,23 +128,44 @@ d1c4599ec127ddb9a5b76bdc943b492a5f56302db032b3749f7e3485bd6621f2  truth.jsonl
 da2e65809692e465677a3c0bb814a87a102544f315afafbe32489321722b358a  MANIFEST.json
 ```
 
-### The headline build cannot be obtained, and the commit above does not identify it
+### The headline build's bytes are gone, and this document never recorded enough to rebuild them
 
-Checked on 2026-09-18. `2026-09-07-medium` is not in this repository, is not on the machine that
-produced these figures, and is not in
-[BlackHat-Dataset](https://github.com/FRTX045/BlackHat-Dataset) either: `0485a9a6` is not a valid
-object there, and neither is `8217bce3`. That history is 54 commits, none newer than 2026-08-17,
-with nothing dangling and no sign of a rewrite. No `MANIFEST.json` for either build exists
-anywhere, so the digests above cannot even be checked against the manifests they came from.
+**An earlier version of this section, published on 2026-09-18, said `0485a9a6` was "not a valid
+object" in the dataset repository and that its history held nothing newer than 2026-08-17. Both
+statements were false, and they are retracted here rather than quietly edited away.** They came
+from a check run against a clone that had never fetched; the answer described that working copy
+and was presented as describing the repository. It was not re-verified here before being published,
+which it could have been in one call. A claim about a remote is not a claim a local `git cat-file`
+can settle.
 
-The likely explanation is provenance rather than loss. The generator records a `commit_is_clean`
-flag in every manifest, and every build that project had shipped up to 2026-09-17 carried
-`commit_is_clean: false` — built from a modified working tree, so the recorded commit does not
-determine the output and `git checkout <hash>` does not reproduce it.
+What is actually true, verified on 2026-09-18 against the GitHub API rather than any clone:
 
-**This document recorded the commit and never recorded the flag, and that is the mistake here.** A
-hash printed beside a figure reads as a chain of custody. This one is decoration. A provenance
-field earns its place only when something fails when it is wrong; nothing ever failed on these.
+| | |
+|---|---|
+| `0485a9a6` | exists, dated 2026-08-24 — and is the **tip** of that repository's default branch |
+| `8217bce3` | exists, dated 2026-08-20 |
+| `datasets/apache-shopfront/` | holds `2026-08-17-{small,medium,large}` — neither build below |
+
+So the generator state is obtainable: `git checkout 0485a9a6` gets the code that made
+`2026-09-07-medium`. What is gone is the output. The build is not in this repository, not on the
+machine that produced these figures, and not in the dataset repository, and no `MANIFEST.json` for
+it survives anywhere, so the digests above cannot be checked against the manifests they came from.
+
+**The defect that is genuinely ours is narrower, and it stands on its own.** The generator records a
+`commit_is_clean` flag in every manifest. This document recorded the commit and never recorded that
+flag, so whether the tree was modified when the build was made is unanswerable — and if it was, the
+commit does not determine the output and the checkout above reproduces something else. A hash
+printed beside a figure reads as a chain of custody; without the flag beside it, this one cannot
+carry that. A provenance field earns its place only when something fails when it is wrong, and
+nothing ever failed on these.
+
+That the flag matters here is not hypothetical. All three builds that repository does publish —
+`2026-08-17-{small,medium,large}` — record `commit_is_clean: false`, checked the same day. Whether
+the two below did is exactly what was never written down.
+
+A rebuild at `0485a9a6` with seed 19 is therefore worth attempting and is not a reproduction. The
+dataset says outright that a seed reproduces its plan of requests and not its bytes, for the reasons
+in the paragraph below. It would produce a *comparable* corpus whose lineage holds, not these bytes.
 
 What remains true is narrow and worth stating plainly. The figures were measured on the bytes whose
 digests are printed above, those digests still identify those bytes, and a recovered copy can still
@@ -167,10 +188,12 @@ labelling has not been measured.
 `tests/evaluation/test_fixture.py`. Every figure measured against those bytes is reproducible by
 anyone who clones this repository.
 
-These numbers are not being re-measured on another unreproducible build to replace one broken chain
-with another. As of 2026-09-17 that project ships builds carrying a full source state and a rebuild
-recipe that holds; the next baseline will be taken once, against one of those, and will record the
-clean flag alongside the commit.
+The next baseline will be taken once, and will record the clean flag alongside the commit and the
+digests. Two candidates exist and neither is ready yet: a rebuild at `0485a9a6` with seed 19, which
+gets a comparable corpus with a lineage that holds but not these bytes, and the dataset project's
+newer builds, which carry a full source state and an honest rebuild recipe but were made on a branch
+that is not yet reachable from its default branch. Taking a baseline against either one today would
+mean pinning a headline figure to something still in motion.
 
 **The figures below belong to those bytes, not to those seeds.** The dataset reproduces its plan
 of requests from a seed, and says outright that it does not reproduce its output byte for byte:
@@ -190,7 +213,7 @@ pinned by its own checksums.
 
 **These commands cannot be run today.** They are the commands that produced the figures, kept so
 that the method is on the record, but the build they name cannot be obtained — see
-[the note above](#the-headline-build-cannot-be-obtained-and-the-commit-above-does-not-identify-it).
+[the note above](#the-headline-builds-bytes-are-gone-and-this-document-never-recorded-enough-to-rebuild-them).
 Point them at any build you do have and expect different numbers.
 
 ```bash
