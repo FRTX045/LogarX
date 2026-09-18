@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import tomllib
 from pathlib import Path
 
 from logarc.detect.rules import load_rules
@@ -96,3 +97,49 @@ def test_the_documented_rule_count_is_the_real_one() -> None:
             assert int(stated) == live, (
                 f"{name} states {stated} rules near '{found.group(0)}'; the tree holds {live}"
             )
+
+
+# --------------------------------------------------------------------------
+# The coverage floor
+
+
+def test_the_floor_ci_prints_is_the_floor_that_is_enforced() -> None:
+    # pyproject's fail_under is what can fail a build. ci.yml writes the floor
+    # into the job summary as a literal, which is where a reader actually looks,
+    # so the two disagreeing means the summary quietly misreports the standard.
+    enforced = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    floor = enforced["tool"]["coverage"]["report"]["fail_under"]
+
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    printed = re.search(r"floor is (\d+)%", workflow)
+
+    assert printed, "ci.yml no longer prints the floor — reworded? update this test"
+    assert int(printed.group(1)) == floor, (
+        f"ci.yml prints a floor of {printed.group(1)}%; pyproject enforces {floor}%"
+    )
+
+
+# --------------------------------------------------------------------------
+# How big the demo log is
+
+#: The line count is stated in prose in two places. It cannot drift unnoticed on
+#: its own — SHA256SUMS pins the bytes — but regenerating the log makes that
+#: test fail, and the fix for *it* is to rewrite the digest, which leaves these
+#: sentences behind. This is the gap between the two.
+STATES_THE_DEMO_SIZE = (
+    ("samples/README.md", r"It is (\d+) lines and reaches"),
+    ("samples/demo/README.md", r"It is (\d+) lines of three days"),
+    ("samples/demo/README.md", r"Lines / events / quarantined \| (\d+) /"),
+)
+
+
+def test_the_documented_demo_log_size_is_the_real_one() -> None:
+    lines = len((ROOT / "samples/demo/demo.log").read_bytes().decode("utf-8").splitlines())
+
+    for name, pattern in STATES_THE_DEMO_SIZE:
+        text = (ROOT / name).read_text(encoding="utf-8")
+        found = re.search(pattern, text)
+        assert found, f"{name}: no sentence matched /{pattern}/ — reworded? update this test"
+        assert int(found.group(1)) == lines, (
+            f"{name} states {found.group(1)} lines near '{found.group(0)}'; the log has {lines}"
+        )
