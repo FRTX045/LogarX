@@ -42,14 +42,18 @@ commit, and every attack command line with its source address) and
 ## Getting them
 
 **Neither of the two builds above can be obtained, and the steps below no longer
-reach them.** Checked on 2026-09-18: that repository's
-`datasets/apache-shopfront/` does not contain either folder, and the dataset
-commits recorded for them in [docs/evaluation.md](../docs/evaluation.md) are not
-valid objects in its history. Following these steps lands you on a different
-build, and the `sha256sum -c` then fails — correctly, because the bytes are not
-the ones the figures were measured on. The rebuild route below does not recover
-them either. [docs/evaluation.md](../docs/evaluation.md#the-builds) explains what
-is known and what is being done about it.
+reach them.** Checked on 2026-09-18 against the GitHub API: that repository's
+`datasets/apache-shopfront/` holds `2026-08-17-{small,medium,large}` and neither
+of the folders named above. Following these steps lands you on a different build,
+and the `sha256sum -c` then fails — correctly, because the bytes are not the ones
+the figures were measured on.
+
+The *generator* is another matter and is obtainable: the dataset commits recorded
+in [docs/evaluation.md](../docs/evaluation.md) both exist, and `0485a9a6` is the
+tip of that repository's default branch. An earlier version of this paragraph
+said they did not exist; that was wrong and is corrected there in full. So the
+rebuild route below can be attempted — it just produces a comparable corpus
+rather than these bytes, for the reason given under it.
 
 The method is unchanged and a newer build is worth having. Copy a folder from
 [BlackHat-Dataset](https://github.com/FRTX045/BlackHat-Dataset)'s
@@ -60,9 +64,11 @@ cd samples/apache-shopfront/<build> && sha256sum -c SHA256SUMS
 ```
 
 Prefer a build whose `MANIFEST.json` records that the tree was clean when it was
-made. That project began shipping them on 2026-09-17; anything older was built
-from a modified working tree, so its recorded commit does not identify it and
-`git checkout` does not reproduce it.
+made — otherwise the recorded commit does not determine the output and
+`git checkout` reproduces something else. **None of the three published there
+today qualify.** Checked on 2026-09-18: `2026-08-17-{small,medium,large}` each
+carry `commit_is_clean: false`. Builds that record a full source state and a
+rebuild recipe do exist, but are not on that repository's default branch yet.
 
 A build can also be regenerated with the dataset's own
 `tools/build.py apache-shopfront medium`, which needs Docker and about half an
