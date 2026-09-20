@@ -8,9 +8,7 @@ import shutil
 import tempfile
 from dataclasses import replace
 from datetime import timedelta
-from itertools import chain
 from pathlib import Path
-from time import perf_counter
 from typing import TYPE_CHECKING, Annotated, Final
 
 import typer
@@ -25,12 +23,11 @@ from logarc.core.activity import Severity
 from logarc.detect.crs import (
     CrsUnavailableError,
     SidecarConfig,
-    run_sidecar,
-    write_detections,
 )
 from logarc.detect.engine import RuleEngine
 from logarc.detect.rulepacks import default_rules
 from logarc.detect.rules import RulePackError, load_rules
+from logarc.enrich import enrich_case
 from logarc.episode.builder import EpisodePolicy
 from logarc.evaluation.benchmark import BenchmarkError, BenchmarkResult, run_benchmark
 from logarc.evaluation.crs_corpus import CorpusError, score_corpus
@@ -53,10 +50,7 @@ from logarc.storage.event_store import SORT_KEYS, StoreStateError
 from logarc.style import plural
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator
-
     from logarc.analysis import AnalysisResult
-    from logarc.core.event import NormalizedEvent
 
 _SEVERITY_STYLE: Final[dict[Severity, str]] = {
     Severity.INFO: "dim",
@@ -747,41 +741,17 @@ def enrich(
         paranoia=paranoia,
     )
 
-    # Counted while streaming rather than by taking a length first. `enrich` is
-    # the one command that reads a whole case, so it is the one command where
-    # materialising the events would put the corpus in memory — which is exactly
-    # what `EventStore.all_events()` streams to avoid.
-    replayed = 0
-
-    def counting(source: Iterable[NormalizedEvent]) -> Iterator[NormalizedEvent]:
-        nonlocal replayed
-        for stored in source:
-            replayed += 1
-            yield stored
-
+    # The work itself lives in `logarc.enrich`, shared with the window. It used
+    # to be written out here, and the window growing a CRS button would have
+    # meant a second copy of it — which is how two callers come to disagree
+    # about what enrichment does.
     try:
-        with Case.open(case) as opened:
-            stream = opened.store.all_events()
-            # One event is pulled to tell an empty case from a full one, then put
-            # back. Checking after the run instead would report a missing sidecar
-            # to someone whose real problem is that they have not ingested yet.
-            first = next(stream, None)
-            if first is None:
-                raise fail(f"no events in {case}; ingest a log first")
-
-            with console.status("Replaying requests through CRS…"):
-                started = perf_counter()
-                detections = run_sidecar(counting(chain([first], stream)), config=config)
-                elapsed = perf_counter() - started
-
-            path = write_detections(opened.root, detections)
-            opened.manifest.config.update(config.as_config())
-            opened.manifest.save(opened.root)
+        with console.status("Replaying requests through CRS…"):
+            outcome = enrich_case(case, config=config)
+    except ValueError as exc:
+        raise fail(str(exc)) from exc
     except (CrsUnavailableError, *USER_ERRORS) as exc:
         raise fail(str(exc)) from exc
-
-    covered = len({(item.source_file_id, item.line_no) for item in detections})
-    rate = replayed / elapsed if elapsed else 0.0
 
     table = Table(title="CRS enrichment")
     table.add_column("Requests", justify="right")
@@ -790,14 +760,14 @@ def enrich(
     table.add_column("Paranoia", justify="right")
     table.add_column("Rules/s", justify="right")
     table.add_row(
-        f"{replayed:,}",
-        f"{covered:,}",
-        f"{len(detections):,}",
+        f"{outcome.replayed:,}",
+        f"{outcome.covered:,}",
+        f"{len(outcome.detections):,}",
         str(config.paranoia),
-        f"{rate:,.0f}",
+        f"{outcome.rate:,.0f}",
     )
     console.print(table)
-    path_line(f"\nWritten to {path}")
+    path_line(f"\nWritten to {outcome.path}")
     console.print(
         f"CRS {config.revision() or 'unknown'}, configuration {config.fingerprint()} — "
         "recorded in the case manifest so a finding can name what produced it."

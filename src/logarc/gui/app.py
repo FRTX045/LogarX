@@ -50,7 +50,8 @@ from logarc.caseview import (
 )
 from logarc.core.graph import GraphKind
 from logarc.core.window import EVERYTHING, TimeWindow
-from logarc.detect.crs import CrsEvidence
+from logarc.detect.crs import CrsEvidence, CrsUnavailableError, SidecarConfig
+from logarc.enrich import EnrichOutcome, EnrichProgress, enrich_case
 from logarc.episode.builder import DEFAULT_EVIDENCE_SAMPLE
 from logarc.formats import drifted_sources
 from logarc.gui import crash, prefs, recent
@@ -59,6 +60,7 @@ from logarc.gui.arrangement_bar import ArrangementBar
 from logarc.gui.arrangement_keeper import ArrangementKeeper, Showing
 from logarc.gui.canvas import ActivityCanvas
 from logarc.gui.case_chooser import CaseChooser
+from logarc.gui.crs import CrsCard, CrsOffer, CrsUnavailable
 from logarc.gui.density import Density, buckets_for
 from logarc.gui.evidence_panel import EvidencePanel
 from logarc.gui.format_editor import FormatChoice, FormatEditor
@@ -104,6 +106,11 @@ _SETTINGS = ("logarc", "logarc")
 #: arrangement is keyed by activity id, and a trace's activity ids carry the
 #: client's address.
 _RECENT_KEY = "cases/recent"
+
+#: What to do about CRS when a scan finishes: unset asks, "always" and "never"
+#: are the answers a ticked "Remember this choice" writes, and "quiet" means the
+#: sidecar is absent and the reader asked to stop being told so.
+_CRS_KEY = "crs/after-ingest"
 
 #: The two views, in the order the tab bar shows them. One list rather than a
 #: pair of indices spelled out at each end, so a tab and the view it selects
@@ -170,6 +177,8 @@ class MainWindow(QMainWindow):
         self._stop: threading.Event | None = None
         # Up only while an ingest is running.
         self._ingest_card: IngestCard | None = None
+        self._crs_card: CrsCard | None = None
+        self._crs_offer: CrsOffer | CrsUnavailable | None = None
 
         self._notice = NoticeBanner()
         # Its own strip rather than a paragraph added to the one above. The two
@@ -589,6 +598,7 @@ class MainWindow(QMainWindow):
         self._close_ingest_card()
         if not isinstance(outcome, IngestCancelled):
             self._load_case(case_dir)
+            self._offer_crs(case_dir)
             return
 
         self._idle(f"Cancelled after {outcome.lines_read:,} lines.")
@@ -599,6 +609,112 @@ class MainWindow(QMainWindow):
             f"{case_dir} holds what had been read by then and was not finalised, so it "
             "cannot be analysed. It is left in place rather than deleted — delete the "
             "folder yourself if you want to start over.",
+        )
+
+    # -- CRS, offered once a scan has something to enrich --------------------
+
+    def _offer_crs(self, case_dir: Path) -> None:
+        """Ask whether to run CRS, unless the reader has already answered.
+
+        Availability is checked before the offer rather than after it, so that
+        somebody without the sidecar is told their case is complete instead of
+        being asked a question and then refused.
+        """
+        answered = str(_settings().value(_CRS_KEY, "") or "")
+        if answered == "never":
+            return
+
+        try:
+            SidecarConfig().check()
+        except CrsUnavailableError as exc:
+            if answered != "quiet":
+                self._crs_missing(str(exc))
+            return
+
+        if answered == "always":
+            self._run_crs(case_dir)
+            return
+
+        offer = CrsOffer(self)
+        # Held on the window, not only in the closure: a dialog whose last
+        # Python reference is a lambda argument is collectable the moment this
+        # method returns, and it is `show()` rather than `exec()` precisely so
+        # that this method does return.
+        self._crs_offer = offer
+        offer.finished.connect(lambda result: self._crs_answered(case_dir, result))
+        offer.show()
+
+    def _crs_answered(self, case_dir: Path, result: int) -> None:
+        offer, self._crs_offer = self._crs_offer, None
+        if offer is None:
+            return
+        wanted = result == QDialog.DialogCode.Accepted
+        if offer.remembered():
+            _settings().setValue(_CRS_KEY, "always" if wanted else "never")
+        if wanted:
+            self._run_crs(case_dir)
+
+    def _crs_missing(self, reason: str) -> None:
+        told = CrsUnavailable(reason, self)
+        self._crs_offer = told
+        told.finished.connect(lambda _result: self._crs_missing_closed())
+        told.show()
+
+    def _crs_missing_closed(self) -> None:
+        told, self._crs_offer = self._crs_offer, None
+        if isinstance(told, CrsUnavailable) and told.remembered():
+            _settings().setValue(_CRS_KEY, "quiet")
+
+    def _run_crs(self, case_dir: Path) -> None:
+        stop = threading.Event()
+
+        def work(report: Callable[[object], None]) -> object:
+            report("Replaying requests through CRS…")
+            return enrich_case(case_dir, report=report, should_stop=stop.is_set)
+
+        self._crs_card = CrsCard(self, on_stop=stop.set)
+        self._crs_card.show()
+        self._busy("Running OWASP CRS…", stop=stop)
+        run_job(
+            work,
+            on_done=lambda outcome: self._crs_finished(case_dir, outcome),
+            on_error=self._crs_failed,
+            on_progress=self._status.setText,
+            on_advance=self._show_crs_progress,
+        )
+
+    def _show_crs_progress(self, snapshot: object) -> None:
+        if self._crs_card is not None and isinstance(snapshot, EnrichProgress):
+            self._crs_card.update_progress(snapshot)
+
+    def _close_crs_card(self) -> None:
+        if self._crs_card is not None:
+            self._crs_card.close()
+            self._crs_card = None
+
+    def _crs_failed(self, message: str, detail: str) -> None:
+        self._close_crs_card()
+        self.report_error(message, detail)
+
+    def _crs_finished(self, case_dir: Path, outcome: object) -> None:
+        """Reload, so the findings CRS added are the ones on screen.
+
+        A case is reopened rather than patched in place: the enrichment was
+        written to the case by the engine, and re-reading is the only way the
+        window is showing what the case holds rather than what it remembers.
+        """
+        self._close_crs_card()
+        if not isinstance(outcome, EnrichOutcome):
+            return
+        self._load_case(case_dir)
+        # Requests flagged, not detections found: one request can match several
+        # CRS rules, and the larger number would read as the more alarming
+        # result while describing the same traffic.
+        stopped = " Stopped early." if outcome.stopped else ""
+        self._idle(
+            f"CRS read {outcome.replayed:,} "
+            f"{plural(outcome.replayed, 'request')} and flagged "
+            f"{outcome.covered:,}.{stopped}"
         )
 
     # -- the cases opened before -------------------------------------------
