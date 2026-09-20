@@ -116,9 +116,12 @@ jobs:
 
       # The engine and the window are run separately, and the reason is a
       # crash rather than tidiness. The GUI suite segfaults on the Linux
-      # runners now and then — twice so far, on different Python versions and
-      # in different tests, always inside `MainWindow.__init__` building a
-      # `QAction`. Exit 139 takes the whole pytest process with it, so in one
+      # runners now and then — three times so far, on different Python versions
+      # and in different tests, always inside `MainWindow.__init__` building a
+      # `QAction`. The third, on 2026-09-21, was a documentation-only commit
+      # with no Python changed at all, which is the clearest sign yet that it
+      # belongs to the runner rather than to anything a change introduces.
+      # Exit 139 takes the whole pytest process with it, so in one
       # run that meant losing the result of 1,100 tests that had nothing to do
       # with Qt.
       #
