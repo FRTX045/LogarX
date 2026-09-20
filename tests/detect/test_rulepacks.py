@@ -417,6 +417,34 @@ def test_the_same_path_answered_normally_is_the_site_running_that_software(
     )
 
 
+@pytest.mark.parametrize("target", ["/admin/users", "/admin/", "/administrator/"])
+def test_an_admin_path_redirected_to_a_login_form_is_not_an_attack(
+    engine: RuleEngine, target: str
+) -> None:
+    """The first request of every legitimate administrator's visit.
+
+    An application that protects `/admin` with a login form answers an
+    unauthenticated request to it with a 302 to that form. So does one being
+    probed. The redirect alone does not separate them, and for a long time this
+    ruleset acted as though it did.
+
+    Measured on `2026-09-18-medium`, the first corpus to contain an
+    administrator doing ordinary work: the rule fired on 179 requests, 13 of
+    them hostile and 166 not, a precision of 0.073. Those 166 were 166 of the
+    167 false alarms the whole ruleset produced across 236,505 requests — one
+    rule accounting for all but one of them.
+
+    It is kept rather than deleted because being sent to a login form is worth
+    reporting; it is `authentication` because that is what it is, and it is what
+    the ground truth calls all 165 of the administrator's.
+    """
+    (labelled,) = engine.label_events([request(target, status=302)])
+
+    assert not labelled.label.category.is_hostile, (
+        f"{target!r} at 302 matched {[label.rule_id for label in labelled.all_labels]}"
+    )
+
+
 @pytest.mark.parametrize("target", ["/admin.php", "/shell.php", "/phpmyadmin/"])
 def test_a_probe_that_sends_no_user_agent_stays_reconnaissance(
     engine: RuleEngine, target: str
@@ -456,23 +484,25 @@ def test_a_secret_probe_stays_reconnaissance_rather_than_becoming_enumeration(
     assert labelled.label.rule_id == "config_file_exposure"
 
 
-def test_a_redirect_away_from_an_admin_page_is_a_refusal(engine: RuleEngine) -> None:
-    """Most applications refuse an unauthenticated admin request with a 302.
+def test_a_redirect_away_from_an_admin_page_is_still_noticed(engine: RuleEngine) -> None:
+    """The redirect is reported; what changed is what it is reported as.
 
-    `admin_area_probe` tested `status >= 400`, which assumes the server answers
-    a refusal with 401 or 403. Real applications mostly do not: they redirect to
-    the login form, and a redirect is 302.
+    `admin_area_probe` tests 401 and 403, which assumes the server refuses that
+    way. Real applications mostly redirect to a login form instead, and a
+    redirect is 302 — so on the committed excerpt, where the truth marks 24
+    requests `access_control`, that rule reached none of them. This one was
+    added to reach them, and it does.
 
-    Measured on the committed excerpt, where the ground truth marks 24 requests
-    as `access_control`: the rule as written reached **none** of them, and that
-    is the whole of why the category scored 0.000 on the headline corpus.
-    Accepting 302 and 303 reaches 13 of the 24 and claims nothing it did not
-    claim before.
+    It was then filed as `access_control` for a month, and that part was wrong:
+    a legitimate administrator receives exactly the same redirect. See
+    `test_an_admin_path_redirected_to_a_login_form_is_not_an_attack` for the
+    measurement that settled it. This test keeps the half that was right — the
+    redirect is still something the tool notices and reports — so that a future
+    fix for the category cannot quietly stop it firing at all.
     """
     (labelled,) = engine.label_events([request("/admin/users", status=302)])
 
     assert labelled.label.rule_id == "admin_area_redirect"
-    assert labelled.label.category is ActivityCategory.ACCESS_CONTROL
 
 
 def test_reaching_an_admin_page_successfully_is_not_a_refusal(
