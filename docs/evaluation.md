@@ -98,9 +98,105 @@ the truth to match the tool is what the previous generated corpus ended up doing
 here. Hostile activities are never merged into anything, so a missed boundary around an attack,
 the part a forensic reader cares about, counts in full.
 
+## The current baseline — 2026-09-20
+
+**These are the live figures.** Everything below this section was measured on an earlier pair of
+builds whose bytes can no longer be obtained; that measurement is kept because the analysis built
+on it is still the analysis, but its headline numbers are superseded by this table.
+
+Measured on two builds of the same dataset project, taken at one commit with the working tree
+clean — the first pair in this project's history where that was recorded and therefore the first
+whose provenance can be checked rather than assumed:
+
+| | `2026-09-18-medium` | `2026-09-18-small` |
+|---|---|---|
+| Role | **the headline** | fast check |
+| Lines / clients | 236,505 / 2,785 | 64,751 / 920 |
+| Scenario seed | 19 | 7 |
+| Dataset commit | `c46476d` | `c46476d` |
+| Tree clean when built | **yes** | **yes** |
+| Quarantined on ingest | 0 | 0 |
+| Truth lines unmatched | 0 | 0 |
+
+The commit is reachable from that repository's default branch and the recipe in its README can be
+followed. Both builds carry a `SHA256SUMS`, both verified here before scoring — every file, not
+only the two that matter:
+
+```
+# 2026-09-18-medium
+e7c640e1150861c6d97bc2fed8879ffa01c24b8c8dbb52f79f9835f4deb7a40d  access.log
+8886f9b05fa45d22772eaf4ed7554bf12170af43397a3e5656a67e4a7ce3c40e  truth.jsonl
+0993cfd46104aab4ce1ca2e2ba7735a23411662238243dcabad057f8992ecceb  MANIFEST.json
+
+# 2026-09-18-small
+1137e17b8144c5b990f5743bd91896e1ce7b2933f4976f93422f2ea111762841  access.log
+3ee05824f1006cd1182b5cd3b7467ca35af0185df9e6a465b200a539f101d905  truth.jsonl
+e7f1f8a0d336d3a0447be1f5532ddfe3575927368d347e341692014a0b145b01  MANIFEST.json
+```
+
+All four runs below are the same ruleset, fingerprint `98c5169f90600aef`, recorded in each output.
+
+| | medium native | medium + CRS | small native | small + CRS |
+|---|---:|---:|---:|---:|
+| Classification accuracy | **0.975** | 0.974 | **0.977** | 0.977 |
+| Weighted F1 | 0.977 | 0.977 | 0.978 | 0.978 |
+| Macro F1 | 0.722 | 0.683 | 0.721 | 0.700 |
+| Attack-or-not precision | **1.000** | 0.995 | **1.000** | 0.993 |
+| Attack-or-not recall | 0.994 | 0.994 | 0.982 | 0.983 |
+| Caught / missed | 17,045 / 111 | 17,047 / 109 | 4,063 / 73 | 4,067 / 69 |
+| **False alarms** | **1** | 81 | **1** | 29 |
+| Boundary F1 | 0.848 | 0.838 | 0.842 | 0.830 |
+
+Against the superseded medium — accuracy 0.968, macro F1 0.634, 21 false alarms native — every
+column moved the right way except one, and the exception is the interesting one.
+
+**CRS now costs more than it did, because the native baseline got so much cleaner.** On the old
+corpus CRS took false alarms from 21 to 37 and macro F1 by −0.001, which read as a mild trade.
+Here it takes them from 1 to 81 and macro F1 by −0.039. Nothing about CRS changed: the pinned
+revision is the same `d694d465`. What changed is that there is almost nothing left for it to add
+on the precision side, so what it adds is visible. `ssrf` is where it shows: precision 0.429
+native, 0.059 with CRS, for a recall gain of 0.600 to 0.800. **CRS remains enrichment somebody
+switches on, and this is the clearest measurement of that this project has.**
+
+**One false alarm in 236,505 requests is not a claim that the rules are nearly perfect.** It is one
+axis. Macro F1 of 0.722 is the other, and it says what the per-category tables below say: several
+categories are read as neighbouring ones — `enumeration` as `reconnaissance` 5,335 times on the
+medium build — which costs nothing on the attack-or-not axis and a great deal on the classification
+one. A tool that calls an attack an attack and then names it slightly wrong is a different failure
+from one that misses it, and both numbers are printed so neither can hide the other.
+
+### What moved the false-alarm figure, and it was one rule
+
+167 to 1 is not a general improvement. **166 of those 167 false alarms came from a single rule**,
+`admin_area_redirect`, which claimed `access_control` on any redirect away from an admin path.
+
+These builds are the first to contain a legitimate administrator doing ordinary work. An
+application that protects `/admin` with a login form answers an unauthenticated request with a 302
+to that form, so the administrator's first request of every visit looked exactly like the probe the
+rule was written for. Measured before the change: 179 fires, 13 hostile, 166 not, precision 0.073.
+
+The rule is now `authentication` at `info` severity, which is what the request is and what the
+ground truth calls all 165 of the administrator's. **The 13 detections are genuinely lost** — none
+was independently claimed by another hostile rule — and losing them is written down rather than
+argued away, because at 13 against 166 it is a trade this project will take and say so.
+
+Two things follow that are worth being uncomfortable about:
+
+- **`access_control` now has no rule that reaches anything on either corpus.** `admin_area_probe`
+  tests 401 and 403, which real applications rarely answer with. The category is in the vocabulary
+  and nothing currently detects it. That is a gap, recorded as a gap.
+- **On the committed excerpt the same change scores worse** — macro F1 0.845 to 0.767,
+  `access_control` F1 0.703 to 0.000, 13 fewer caught — because that corpus contains no legitimate
+  administrator and so cannot see the cost the rule was imposing. `tests/data/apache-shopfront/
+  excerpt.scores.json` records the new figures. A ruleset cannot be judged on a corpus that lacks
+  the case it gets wrong, and this is the clearest example of that this project has hit.
+
+---
+
 ## The builds
 
-Two builds of the same project, both scored below.
+Two builds of the same project, both scored below. **Superseded by the section above**; the
+analysis that follows is theirs and is kept for that reason.
 
 | | `2026-09-07-medium` | `2026-08-23-small` |
 |---|---|---|

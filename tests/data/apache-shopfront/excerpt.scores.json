@@ -1,20 +1,20 @@
 {
   "binary": {
-    "accuracy": 0.9819607843137255,
-    "f1": 0.9706257982120051,
-    "false_negatives": 69,
+    "accuracy": 0.978562091503268,
+    "f1": 0.9648972602739726,
+    "false_negatives": 82,
     "false_positive_rate": 0.0,
     "false_positives": 0,
     "has_attacks": true,
     "precision": 1.0,
-    "recall": 0.9429280397022333,
+    "recall": 0.9321753515301903,
     "total": 3825,
     "true_negatives": 2616,
-    "true_positives": 1140
+    "true_positives": 1127
   },
   "classification": {
-    "accuracy": 0.9377777777777778,
-    "macro_f1": 0.8451451376895547,
+    "accuracy": 0.9343790849673203,
+    "macro_f1": 0.7670170095614266,
     "per_category": [
       {
         "category": "crawling",
@@ -114,23 +114,23 @@
       },
       {
         "category": "access_control",
-        "f1": 0.7027027027027027,
-        "false_negatives": 11,
+        "f1": 0.0,
+        "false_negatives": 24,
         "false_positives": 0,
-        "precision": 1.0,
-        "predicted": 13,
-        "recall": 0.5416666666666666,
-        "recall_any": 0.5416666666666666,
+        "precision": 0.0,
+        "predicted": 0,
+        "recall": 0.0,
+        "recall_any": 0.0,
         "support": 24,
-        "true_positives": 13
+        "true_positives": 0
       },
       {
         "category": "authentication",
-        "f1": 0.962962962962963,
+        "f1": 0.65,
         "false_negatives": 0,
-        "false_positives": 1,
-        "precision": 0.9285714285714286,
-        "predicted": 14,
+        "false_positives": 14,
+        "precision": 0.48148148148148145,
+        "predicted": 27,
         "recall": 1.0,
         "recall_any": 1.0,
         "support": 13,
@@ -195,6 +195,11 @@
         "predicted": "crawling"
       },
       {
+        "count": 13,
+        "expected": "access_control",
+        "predicted": "authentication"
+      },
+      {
         "count": 7,
         "expected": "reconnaissance",
         "predicted": "enumeration"
@@ -218,14 +223,9 @@
         "count": 4,
         "expected": "crawling",
         "predicted": "static_asset"
-      },
-      {
-        "count": 3,
-        "expected": "access_control",
-        "predicted": "ssrf"
       }
     ],
-    "weighted_f1": 0.9406349644673555
+    "weighted_f1": 0.9351621844978435
   },
   "granularity": "category",
   "policy": {
@@ -238,7 +238,7 @@
     "max_duration_seconds": 28800,
     "split_on_user_agent_change": true
   },
-  "ruleset_fingerprint": "2661e2144bb698535ddf1bbbe48a17953e5c1b4735fed06dff4ff430c1301c57",
+  "ruleset_fingerprint": "98c5169f90600aefaa700a029ca10a64b1431d4ee0745ad4cca474edf7a4ddc3",
   "scenario": "apache-shopfront-medium-excerpt",
   "segmentation": {
     "boundaries_agreed": 244,
