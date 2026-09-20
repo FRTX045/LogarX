@@ -98,112 +98,112 @@ the truth to match the tool is what the previous generated corpus ended up doing
 here. Hostile activities are never merged into anything, so a missed boundary around an attack,
 the part a forensic reader cares about, counts in full.
 
-## The current baseline — 2026-09-20
+## The current baseline — 2026-09-21
 
-**These are the live figures.** Everything below this section was measured on an earlier pair of
-builds whose bytes can no longer be obtained; that measurement is kept because the analysis built
-on it is still the analysis, but its headline numbers are superseded by this table.
+**These are the live figures.** Everything below this section was measured on builds whose bytes can
+no longer be obtained; that measurement is kept because the analysis built on it is still the
+analysis, but its headline numbers are superseded by this table.
 
-Measured on two builds of the same dataset project, taken at one commit with the working tree
-clean — the first pair in this project's history where that was recorded and therefore the first
-whose provenance can be checked rather than assumed:
+Measured on two builds taken at one commit with the working tree clean, from a dataset that had
+just had a defect fixed in it — its forced-browsing attacker never signed in, so the application's
+role check was never exercised and no log line it shipped had ever carried a 403. That matters
+below.
 
-| | `2026-09-18-medium` | `2026-09-18-small` |
+| | `2026-09-20-medium` | `2026-09-20-small` |
 |---|---|---|
 | Role | **the headline** | fast check |
-| Lines / clients | 236,505 / 2,785 | 64,751 / 920 |
+| Lines / clients | 237,278 / 2,785 | 64,738 / 920 |
 | Scenario seed | 19 | 7 |
-| Dataset commit | `c46476d` | `c46476d` |
+| Dataset commit | `e0bbd52` | `e0bbd52` |
 | Tree clean when built | **yes** | **yes** |
 | Quarantined on ingest | 0 | 0 |
 | Truth lines unmatched | 0 | 0 |
 
-The commit is reachable from that repository's default branch and the recipe in its README can be
-followed. Both builds carry a `SHA256SUMS`, both verified here before scoring — every file, not
-only the two that matter:
+`e0bbd52` is the tip of that repository's default branch, so the recipe in its README can be
+followed. Both builds ship a `SHA256SUMS` and both were verified here before scoring — every file,
+not only the two that matter:
 
 ```
-# 2026-09-18-medium
-e7c640e1150861c6d97bc2fed8879ffa01c24b8c8dbb52f79f9835f4deb7a40d  access.log
-8886f9b05fa45d22772eaf4ed7554bf12170af43397a3e5656a67e4a7ce3c40e  truth.jsonl
-0993cfd46104aab4ce1ca2e2ba7735a23411662238243dcabad057f8992ecceb  MANIFEST.json
+# 2026-09-20-medium
+f5748a414fc3b774321f8f0661ba3e173d69899bf9920b5b99862a90bb49a8e2  access.log
+021f5441edb090c3d037f42faec9cc3fd962430b1fbb35705257b750defc09b5  truth.jsonl
+87a1d094cbc317aaa0234ceff36519c26153c97f1009a958e3563eb243c2e119  MANIFEST.json
 
-# 2026-09-18-small
-1137e17b8144c5b990f5743bd91896e1ce7b2933f4976f93422f2ea111762841  access.log
-3ee05824f1006cd1182b5cd3b7467ca35af0185df9e6a465b200a539f101d905  truth.jsonl
+# 2026-09-20-small
+ed59b172aba47f0bafc858b37d8963a2a3d69e5c040d8ce4a3d8edbe933a6504  access.log
+44a6146010806dd28500da19394de24dca61b35afb470081d8127005ba830a1e  truth.jsonl
 e7f1f8a0d336d3a0447be1f5532ddfe3575927368d347e341692014a0b145b01  MANIFEST.json
 ```
 
-All four runs below are the same ruleset, fingerprint `98c5169f90600aef`, recorded in each output.
+All four runs are the same ruleset, fingerprint `98c5169f90600aef`, recorded in each output.
 
 | | medium native | medium + CRS | small native | small + CRS |
 |---|---:|---:|---:|---:|
-| Classification accuracy | **0.975** | 0.974 | **0.977** | 0.977 |
-| Weighted F1 | 0.977 | 0.977 | 0.978 | 0.978 |
-| Macro F1 | 0.722 | 0.683 | 0.721 | 0.700 |
-| Attack-or-not precision | **1.000** | 0.995 | **1.000** | 0.993 |
-| Attack-or-not recall | 0.994 | 0.994 | 0.982 | 0.983 |
-| Caught / missed | 17,045 / 111 | 17,047 / 109 | 4,063 / 73 | 4,067 / 69 |
-| **False alarms** | **1** | 81 | **1** | 29 |
-| Boundary F1 | 0.848 | 0.838 | 0.842 | 0.830 |
+| Classification accuracy | **0.975** | 0.975 | **0.977** | 0.977 |
+| Weighted F1 | 0.978 | 0.977 | 0.979 | 0.978 |
+| Macro F1 | 0.742 | 0.701 | 0.740 | 0.717 |
+| Attack-or-not precision | **1.000** | 0.994 | **1.000** | 0.993 |
+| Attack-or-not recall | 0.993 | 0.993 | 0.981 | 0.982 |
+| Caught / missed | 17,070 / 114 | 17,072 / 112 | 4,029 / 76 | 4,033 / 72 |
+| **False alarms** | **1** | 96 | **1** | 29 |
+| Boundary F1 | 0.847 | 0.835 | 0.841 | 0.830 |
 
 Against the superseded medium — accuracy 0.968, macro F1 0.634, 21 false alarms native — every
-column moved the right way except one, and the exception is the interesting one.
+column moved the right way.
 
-**CRS now costs more than it did, because the native baseline got so much cleaner.** On the old
-corpus CRS took false alarms from 21 to 37 and macro F1 by −0.001, which read as a mild trade.
-Here it takes them from 1 to 81 and macro F1 by −0.039. Nothing about CRS changed: the pinned
-revision is the same `d694d465`. What changed is that there is almost nothing left for it to add
-on the precision side, so what it adds is visible. `ssrf` is where it shows: precision 0.429
-native, 0.059 with CRS, for a recall gain of 0.600 to 0.800. **CRS remains enrichment somebody
-switches on, and this is the clearest measurement of that this project has.**
+**One false alarm in 237,278 requests is not a claim that the rules are nearly perfect.** It is one
+axis. Macro F1 of 0.742 is the other, and it says what the per-category tables below say: several
+categories are read as neighbouring ones, `enumeration` as `reconnaissance` thousands of times,
+which costs nothing on the attack-or-not axis and a great deal on the classification one. A tool
+that calls an attack an attack and then names it slightly wrong is a different failure from one that
+misses it, and both numbers are printed so neither can hide the other.
 
-**One false alarm in 236,505 requests is not a claim that the rules are nearly perfect.** It is one
-axis. Macro F1 of 0.722 is the other, and it says what the per-category tables below say: several
-categories are read as neighbouring ones — `enumeration` as `reconnaissance` 5,335 times on the
-medium build — which costs nothing on the attack-or-not axis and a great deal on the classification
-one. A tool that calls an attack an attack and then names it slightly wrong is a different failure
-from one that misses it, and both numbers are printed so neither can hide the other.
+### What one rule did to the false-alarm figure
 
-### What moved the false-alarm figure, and it was one rule
-
-167 to 1 is not a general improvement. **166 of those 167 false alarms came from a single rule**,
+The superseded corpus scored **167** false alarms native, and 166 of them came from a single rule —
 `admin_area_redirect`, which claimed `access_control` on any redirect away from an admin path.
 
-These builds are the first to contain a legitimate administrator doing ordinary work. An
+Those builds were the first to contain a legitimate administrator doing ordinary work. An
 application that protects `/admin` with a login form answers an unauthenticated request with a 302
 to that form, so the administrator's first request of every visit looked exactly like the probe the
-rule was written for. Measured before the change: 179 fires, 13 hostile, 166 not, precision 0.073.
+rule was written for: 179 fires, 13 hostile, 166 not, precision 0.073.
 
 The rule is now `authentication` at `info` severity, which is what the request is and what the
 ground truth calls all 165 of the administrator's. **The 13 detections are genuinely lost** — none
 was independently claimed by another hostile rule — and losing them is written down rather than
 argued away, because at 13 against 166 it is a trade this project will take and say so.
 
-Two things follow that are worth being uncomfortable about:
+### `access_control`, and why it needed the corpus fixed rather than the rule changed
 
-- **`access_control` now has no rule that reaches anything on either corpus, and the reason is in
-  the corpus rather than in the rule.** `admin_area_probe` requires a 401 or 403, and measured here:
-  **zero requests to any admin path in either tier are answered with one.** Every 401 and 403 in
-  both logs belongs to something else — 310 on `/server-status` and nine on `/.ht*` in the medium
-  build, which are Apache's own configuration rather than the application's authorization, and 185
-  on `/login`, which are failed sign-ins.
+When the rule above was recategorised, this document recorded that nothing detected `access_control`
+at all, and gave the reason as real applications rarely answering with 401 or 403. **That
+explanation was wrong.** `admin_area_probe` requires one of those and is correct; the corpus simply
+never produced one on an admin path, because its forced-browsing attacker issued bare GETs and the
+login check redirected it before the role check could run.
 
-  The application does produce the 403. An authenticated non-admin asking for `/admin/users` is
-  refused by its role check, and a passing test in that project asserts exactly that. No shipped log
-  line contains one, because the forced-browsing attacker never signs in: it issues bare GETs, so
-  the login check redirects it with a 302 before the role check is ever reached.
+Fixed upstream on 2026-09-20, and the rule works on the first build that exercises it:
 
-  That makes the missing signal a clean one rather than an ambiguous one. A 403 on `/admin/users`
-  cannot be an ordinary administrator, because the shop's own staff are answered 200 there — it is
-  the case `admin_area_redirect` could never separate, available without the ambiguity that forced
-  this section's change. The rule is right and has nothing to match. Recorded as a gap in the data,
-  reported upstream, and not worked around here.
-- **On the committed excerpt the same change scores worse** — macro F1 0.845 to 0.767,
-  `access_control` F1 0.703 to 0.000, 13 fewer caught — because that corpus contains no legitimate
-  administrator and so cannot see the cost the rule was imposing. `tests/data/apache-shopfront/
-  excerpt.scores.json` records the new figures. A ruleset cannot be judged on a corpus that lacks
-  the case it gets wrong, and this is the clearest example of that this project has hit.
+| `access_control`, medium | |
+|---|---:|
+| In the truth | 37 |
+| Claimed by `admin_area_probe` | 6 |
+| Correct | **6** |
+| Precision / recall | **1.000** / 0.162 |
+
+Perfect precision on a small denominator, and recall of 0.162 because the other 31 are the 302
+bounces and the successful 200s, neither of which a single request distinguishes from an
+administrator's. **Six for six is a count, not a rate** — it is reported that way because
+`forced_browsing` runs once per campaign instance, so these do not scale with the log the way 404s
+do, and a precision figure over six records would read far more solid than it is.
+
+**The remaining gap is sharper than the one it replaced.** The corpus now contains 21 requests that
+are a 200 on an admin path from an address also refused 403 there — forced browsing that *succeeded*
+— and the truth calls all 21 hostile. Our rules flag 13 of them, mostly because the attacker was
+also injecting something the payload packs reach. **Eight are read as ordinary browsing, six of them
+the pure case: a client that simply walked in.** The separating signal is correlation rather than
+shape — a legitimate administrator is never refused 403 on a sibling path — and `WindowRule` cannot
+currently express it. Eight requests in 237,278 is a small number; that they are the requests where
+an attacker *succeeded* is why it is written down.
 
 ---
 

@@ -221,7 +221,7 @@ with a pattern of your own.
 
 Measured on a real Apache log whose contents are known: the
 [BlackHat-Dataset](https://github.com/FRTX045/BlackHat-Dataset) `apache-shopfront`
-`2026-09-18-medium` build — 236,505 requests over seven days, a real PHP shop
+`2026-09-20-medium` build — 237,278 requests over seven days, a real PHP shop
 driven by real security tools, where a tagging proxy joins every line to a record
 of which client made the request and why. It includes an administrator doing
 ordinary work, which matters more than it sounds: see the false-alarm figure.
@@ -232,16 +232,16 @@ below, because on this corpus CRS is a trade rather than a free gain.
 
 | | |
 |---:|---|
-| **0.975** | accuracy over 236,505 requests |
-| **0.977** | weighted F1 |
-| **0.722** | macro F1 — *see below* |
+| **0.975** | accuracy over 237,278 requests |
+| **0.978** | weighted F1 |
+| **0.742** | macro F1 — *see below* |
 | **1.000 / 0.994** | attack precision / recall |
-| **1 request** | false alarms, in 236,505 |
+| **1 request** | false alarms, in 237,278 |
 | **31,102** | lines per second ingesting |
 | **0** | lines quarantined, and 0 truth lines unmatched |
 
-**Both numbers, or neither.** One false alarm in 236,505 requests is one axis and
-not a claim that the rules are nearly right. Macro F1 of 0.722 is the other, and
+**Both numbers, or neither.** One false alarm in 237,278 requests is one axis and
+not a claim that the rules are nearly right. Macro F1 of 0.742 is the other, and
 it is an unweighted mean over fourteen categories, so a category with eight
 requests counts as much as one with tens of thousands. `unknown` is a structural
 zero — no rule can assign it — and costs about 0.05 on its own. The tool's
@@ -250,17 +250,17 @@ commonest mistake is calling an attack by a neighbouring name, 5,335 times
 a great deal on the second. Both are printed so neither can hide the other.
 
 **With OWASP CRS at paranoia level 2** the same corpus scores accuracy 0.974,
-macro F1 0.683, and **81 false alarms**. That is not a defect in CRS — the
+macro F1 0.701, and **96 false alarms**. That is not a defect in CRS — the
 revision is pinned and unchanged. It is what a generic ruleset costs once the
 native packs have very little left to give it, and
-[docs/evaluation.md](docs/evaluation.md#the-current-baseline--2026-09-20) has the
+[docs/evaluation.md](docs/evaluation.md#the-current-baseline--2026-09-21) has the
 measurement.
 
 **Macro F1 is lower than the figure this project once published, and that is not
 a regression.** Until September 2026 accuracy was measured against a corpus this
 project generated itself, which scored macro F1 0.958. Moving to a log written by
 a real server dropped it to 0.633, and careful work has since brought it back to
-0.722 — against real traffic, not against a corpus built to be scored. That first
+0.742 — against real traffic, not against a corpus built to be scored. That first
 drop was the first honest measurement, and
 [ADR-0011](docs/adr/0011-a-real-server-log-is-the-headline-corpus.md) records why
 the generator was deleted rather than kept.
