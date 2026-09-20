@@ -182,9 +182,23 @@ argued away, because at 13 against 166 it is a trade this project will take and 
 
 Two things follow that are worth being uncomfortable about:
 
-- **`access_control` now has no rule that reaches anything on either corpus.** `admin_area_probe`
-  tests 401 and 403, which real applications rarely answer with. The category is in the vocabulary
-  and nothing currently detects it. That is a gap, recorded as a gap.
+- **`access_control` now has no rule that reaches anything on either corpus, and the reason is in
+  the corpus rather than in the rule.** `admin_area_probe` requires a 401 or 403, and measured here:
+  **zero requests to any admin path in either tier are answered with one.** Every 401 and 403 in
+  both logs belongs to something else — 310 on `/server-status` and nine on `/.ht*` in the medium
+  build, which are Apache's own configuration rather than the application's authorization, and 185
+  on `/login`, which are failed sign-ins.
+
+  The application does produce the 403. An authenticated non-admin asking for `/admin/users` is
+  refused by its role check, and a passing test in that project asserts exactly that. No shipped log
+  line contains one, because the forced-browsing attacker never signs in: it issues bare GETs, so
+  the login check redirects it with a 302 before the role check is ever reached.
+
+  That makes the missing signal a clean one rather than an ambiguous one. A 403 on `/admin/users`
+  cannot be an ordinary administrator, because the shop's own staff are answered 200 there — it is
+  the case `admin_area_redirect` could never separate, available without the ambiguity that forced
+  this section's change. The rule is right and has nothing to match. Recorded as a gap in the data,
+  reported upstream, and not worked around here.
 - **On the committed excerpt the same change scores worse** — macro F1 0.845 to 0.767,
   `access_control` F1 0.703 to 0.000, 13 fewer caught — because that corpus contains no legitimate
   administrator and so cannot see the cost the rule was imposing. `tests/data/apache-shopfront/
