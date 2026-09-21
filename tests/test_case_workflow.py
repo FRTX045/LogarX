@@ -182,3 +182,80 @@ def test_naming_no_domains_clears_an_earlier_answer(tmp_path: Path) -> None:
 
     assert case.site_hosts == ()
     assert Case.open(tmp_path / "case").site_hosts == ()
+
+
+# -- proposing an answer to the domain question ------------------------------
+
+VHOST = [
+    "shop.test:443 203.0.113.5 - - [10/Oct/2020:13:55:36 +0000] "
+    '"GET /page?url=https://cdn.other.test/x.txt HTTP/1.1" 200 120 "-" "curl/8.0"',
+    "shop.test:443 203.0.113.5 - - [10/Oct/2020:13:55:40 +0000] "
+    '"GET /cart HTTP/1.1" 200 900 "-" "curl/8.0"',
+]
+
+NO_URLS = [
+    "shop.test:443 203.0.113.5 - - [10/Oct/2020:13:55:36 +0000] "
+    '"GET /cart HTTP/1.1" 200 900 "-" "curl/8.0"',
+    "shop.test:443 203.0.113.5 - - [10/Oct/2020:13:55:40 +0000] "
+    '"GET /search?q=socks HTTP/1.1" 200 900 "-" "curl/8.0"',
+]
+
+
+def _scanned(tmp_path: Path, lines: list[str], log_format: str | None = None) -> Case:
+    """Ingest and finalise, then reopen — the state the question is asked in.
+
+    `suggest_site_hosts` reads the event store, which refuses until the case is
+    finalised. Both front ends already reach it that way: the GUI asks after
+    `with Case.create(...)` has closed, and the CLI after `ingest` returned.
+    """
+    with Case.create(tmp_path / "case") as case:
+        case.ingest([write_log(tmp_path / "log", lines)], log_format=log_format)
+    return Case.open(tmp_path / "case")
+
+
+def test_a_log_that_passes_urls_around_is_worth_asking_about(tmp_path: Path) -> None:
+    """The question is put only where the answer would change something."""
+    case = _scanned(tmp_path, VHOST, "apache-vhost-combined")
+
+    suggestion = case.suggest_site_hosts()
+
+    assert suggestion.worth_asking
+    assert suggestion.hosts == ("shop.test",)
+    assert suggestion.urls_seen == 1
+
+
+def test_a_log_that_passes_no_urls_is_not_worth_asking_about(tmp_path: Path) -> None:
+    """**Most logs are this one.** A shop whose requests carry no URLs in their
+    parameters gets no dialog, because answering would change nothing — and a
+    question that never changes anything is the kind of prompt people learn to
+    dismiss without reading."""
+    case = _scanned(tmp_path, NO_URLS, "apache-vhost-combined")
+
+    assert not case.suggest_site_hosts().worth_asking
+
+
+def test_a_log_with_no_host_field_proposes_nothing_but_still_asks(tmp_path: Path) -> None:
+    """`apache-combined` records no Host, which is most of the logs there are.
+
+    There is nothing to propose, and the question is still worth putting —
+    the reader knows the answer even though the log does not.
+    """
+    case = _scanned(
+        tmp_path,
+        [
+            "203.0.113.5 - - [10/Oct/2020:13:55:36 +0000] "
+            '"GET /page?url=https://cdn.other.test/x.txt HTTP/1.1" 200 120 "-" "curl/8.0"',
+        ],
+    )
+
+    suggestion = case.suggest_site_hosts()
+
+    assert suggestion.worth_asking
+    assert suggestion.hosts == ()
+
+
+def test_a_case_that_already_has_an_answer_is_not_asked_again(tmp_path: Path) -> None:
+    case = _scanned(tmp_path, VHOST, "apache-vhost-combined")
+    case.set_site_hosts(["shop.test"])
+
+    assert not case.suggest_site_hosts().worth_asking

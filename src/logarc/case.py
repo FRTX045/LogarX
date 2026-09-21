@@ -7,12 +7,14 @@ is scriptable" true by construction instead of by discipline.
 
 from __future__ import annotations
 
+from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
 from typing import TYPE_CHECKING, ClassVar
 
 from logarc.detect.crs.store import CrsEvidence
-from logarc.detect.engine import RuleEngine, _bare_host
+from logarc.detect.engine import _URL_IN_PARAM, RuleEngine, _bare_host
 from logarc.detect.rulepacks import default_rules
 from logarc.detect.rules import load_rules
 from logarc.evidence import EvidenceLine, read_evidence
@@ -38,7 +40,34 @@ if TYPE_CHECKING:
 
     from logarc.core.evidence import EvidenceRef
 
-__all__ = ["Case", "CaseError"]
+__all__ = ["Case", "CaseError", "SiteHostSuggestion"]
+
+#: How many events `suggest_site_hosts` reads before it stops looking.
+#:
+#: It is proposing an answer for a person to confirm, not measuring anything, so
+#: it does not have to see the whole case — and it runs while somebody is
+#: waiting for a dialog, so it must not be able to take long on a large one.
+_SCAN_BUDGET = 20_000
+
+
+@dataclass(frozen=True, slots=True)
+class SiteHostSuggestion:
+    """What to propose when asking a case which domains are its own."""
+
+    hosts: tuple[str, ...]
+    """Every host the log names, commonest first. Empty when it records none —
+    `apache-combined` does not, and that is most of the logs there are."""
+
+    urls_seen: int
+    """Requests in the scanned prefix carrying a URL in a query parameter."""
+
+    worth_asking: bool
+    """Whether to put the question at all.
+
+    False when the case already has an answer, and false when nothing in it
+    passes a URL around — on that log the answer changes nothing and the
+    dialog is noise.
+    """
 
 
 class CaseError(RuntimeError):
@@ -128,6 +157,43 @@ class Case:
         else:
             self.manifest.config.pop(self.SITE_HOSTS_KEY, None)
         self.manifest.save(self.root)
+
+    def suggest_site_hosts(self) -> SiteHostSuggestion:
+        """Read the case and work out what to propose, and whether to ask at all.
+
+        Both halves matter. Proposing turns the question into a confirmation on
+        any log that records a Host; deciding whether to ask keeps it off the
+        screen entirely on the logs where the answer would change nothing, which
+        is most of them. A prompt that never changes anything is the kind people
+        learn to dismiss without reading, and then dismiss the one that mattered.
+
+        Bounded on purpose. `_SCAN_BUDGET` events is a fraction of a second on
+        a case of any size, and the result is a suggestion a person confirms —
+        not a measurement, so it does not need to be exhaustive. The failure
+        mode of the bound is that a log whose only URL-carrying request sits
+        past it goes unasked, which costs a finding rather than inventing one.
+        """
+        if self.site_hosts:
+            return SiteHostSuggestion(hosts=(), urls_seen=0, worth_asking=False)
+
+        hosts: Counter[str] = Counter()
+        urls = 0
+        for index, event in enumerate(self.store.all_events()):
+            if index >= _SCAN_BUDGET:
+                break
+            host = _bare_host(event.host)
+            if host:
+                hosts[host] += 1
+            if event.query and _URL_IN_PARAM.search("?" + event.query):
+                urls += 1
+        return SiteHostSuggestion(
+            # Every host the log names, commonest first — a site behind a vhost
+            # log often answers to two or three, and naming one of them while
+            # leaving out the `www.` is exactly the wrong answer to give.
+            hosts=tuple(name for name, _ in hosts.most_common()),
+            urls_seen=urls,
+            worth_asking=urls > 0,
+        )
 
     def rule_engine(self, extra_packs: Sequence[Path] = ()) -> RuleEngine:
         """The engine this case is analysed with, knowing its own domains.

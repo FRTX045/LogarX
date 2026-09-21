@@ -41,7 +41,7 @@ from PyQt6.QtWidgets import (
 )
 
 from logarc import __version__
-from logarc.case import Case
+from logarc.case import Case, CaseError
 from logarc.caseview import (
     EVIDENCE_LIMIT,
     node_for_episodes,
@@ -73,6 +73,7 @@ from logarc.gui.progress import Progress, Reading
 from logarc.gui.progress_card import IngestCard
 from logarc.gui.quarantine_notice import notice_for
 from logarc.gui.recent import RecentCase
+from logarc.gui.site_hosts import SiteHostsOffer
 from logarc.gui.theme import GAP, MONO_FAMILIES, PAD, TIGHT, apply_theme, heading_font
 from logarc.gui.time_filter import TimeFilterBar
 from logarc.gui.workers import run_job
@@ -111,6 +112,11 @@ _RECENT_KEY = "cases/recent"
 #: are the answers a ticked "Remember this choice" writes, and "quiet" means the
 #: sidecar is absent and the reader asked to stop being told so.
 _CRS_KEY = "crs/after-ingest"
+
+#: Whether to stop asking which domains a site owns. Global, because the answer
+#: itself is per case and saved with it — what a reader suppresses is the
+#: question, not an answer.
+_SITE_HOSTS_KEY = "site-hosts/after-ingest"
 
 #: The two views, in the order the tab bar shows them. One list rather than a
 #: pair of indices spelled out at each end, so a tab and the view it selects
@@ -179,6 +185,7 @@ class MainWindow(QMainWindow):
         self._ingest_card: IngestCard | None = None
         self._crs_card: CrsCard | None = None
         self._crs_offer: CrsOffer | CrsUnavailable | None = None
+        self._site_hosts_offer: SiteHostsOffer | None = None
 
         self._notice = NoticeBanner()
         # Its own strip rather than a paragraph added to the one above. The two
@@ -597,8 +604,14 @@ class MainWindow(QMainWindow):
     def _ingest_finished(self, case_dir: Path, outcome: object) -> None:
         self._close_ingest_card()
         if not isinstance(outcome, IngestCancelled):
-            self._load_case(case_dir)
-            self._offer_crs(case_dir)
+            # Asked *before* the case is opened, not alongside it. `_load_case`
+            # reads the same store on a worker, and `suggest_site_hosts` reads
+            # it here — two readers on one case, which cost this test its
+            # `_case_path` and reported no error while doing it. Serialised, the
+            # answer is also in hand before the view is built, so the findings
+            # it unlocks are on screen the first time rather than after a
+            # reload.
+            self._ask_site_hosts(case_dir)
             return
 
         self._idle(f"Cancelled after {outcome.lines_read:,} lines.")
@@ -610,6 +623,80 @@ class MainWindow(QMainWindow):
             "cannot be analysed. It is left in place rather than deleted — delete the "
             "folder yourself if you want to start over.",
         )
+
+    # -- the site's own domains, asked once and only where it matters --------
+
+    def _ask_site_hosts(self, case_dir: Path) -> None:
+        """Put the domain question, then hand over to the CRS one either way.
+
+        Chained rather than shown alongside: both arrive at the end of the same
+        ingest and both are modal, so together they would stack. This one goes
+        first because it is instant and CRS can start a five-minute job — a
+        reader should finish answering before anything begins running.
+
+        It is skipped entirely unless the case holds requests that pass URLs
+        around, which most do not. A prompt that changes nothing is the kind
+        people learn to dismiss without reading, and then dismiss the one that
+        mattered.
+        """
+        if str(_settings().value(_SITE_HOSTS_KEY, "") or "") == "never":
+            self._open_and_offer_crs(case_dir)
+            return
+
+        try:
+            with Case.open(case_dir) as opened:
+                suggestion = opened.suggest_site_hosts()
+        except (CaseError, OSError):
+            # Not worth a dialog of its own: opening the case is the very next
+            # thing that happens, and it reports its own failures properly.
+            self._open_and_offer_crs(case_dir)
+            return
+
+        if not suggestion.worth_asking:
+            self._open_and_offer_crs(case_dir)
+            return
+
+        offer = SiteHostsOffer(suggestion, self)
+        # Held on the window rather than only in the closure, for the reason
+        # `_crs_offer` is: a dialog whose last Python reference is a lambda
+        # argument is collectable the moment this method returns.
+        self._site_hosts_offer = offer
+        offer.finished.connect(lambda result: self._site_hosts_answered(case_dir, result))
+        offer.show()
+
+    def _site_hosts_answered(self, case_dir: Path, result: int) -> None:
+        """Save the answer to the case, reload, then ask about CRS.
+
+        Skipping writes nothing at all. A case that was skipped and one that was
+        never asked have to read the same on disk, because `rfi_offsite_url`
+        treats both as "say nothing" and no rule should behave differently for a
+        question that was declined than for one never put.
+        """
+        offer, self._site_hosts_offer = self._site_hosts_offer, None
+        if offer is None:
+            return
+
+        if result == QDialog.DialogCode.Accepted and offer.answer():
+            try:
+                with Case.open(case_dir) as opened:
+                    opened.set_site_hosts(offer.answer())
+            except (CaseError, OSError) as exc:
+                self.report_error("The domains could not be saved.", str(exc))
+
+        if offer.remembered():
+            _settings().setValue(_SITE_HOSTS_KEY, "never")
+
+        self._open_and_offer_crs(case_dir)
+
+    def _open_and_offer_crs(self, case_dir: Path) -> None:
+        """Every way out of the domain question ends here.
+
+        One place rather than five returns each remembering to do both, because
+        forgetting either is silent: a case that never opens, or a reader never
+        asked about CRS.
+        """
+        self._load_case(case_dir)
+        self._offer_crs(case_dir)
 
     # -- CRS, offered once a scan has something to enrich --------------------
 
