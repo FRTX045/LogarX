@@ -35,6 +35,7 @@ import pytest
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
+from conftest import settled
 from logarc.case import Case
 from logarc.gui.app import MainWindow
 
@@ -103,8 +104,6 @@ def test_a_window_that_loaded_a_case_is_collectable(qt_app: QApplication, tmp_pa
     regresses, this test fails here rather than as a segfault on a Linux runner
     forty tests later.
     """
-    from tests.gui.conftest import settled
-
     window = MainWindow()
     window.show()
     window._load_case(a_case(tmp_path))
