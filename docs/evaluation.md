@@ -566,7 +566,7 @@ Ruleset `9edf8587…` (33 rules) against coreruleset `d694d465951e`, 200 case fi
 **This is history, not the ruleset shipping today.** It was true when written and
 is kept because the analysis under *Reading it* is what motivated ADR-0008 — but
 the rules have since changed substantially and the figures below are stale. The
-tree now holds 71 rules across eight attack packs and two action packs; family
+tree now holds 74 rules across nine attack packs and two action packs; family
 933 alone went from 0.012 to 0.68 on 2026-09-15.
 
 For current figures run `logarc score-crs`, which reports both directions —

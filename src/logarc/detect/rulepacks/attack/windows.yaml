@@ -1,0 +1,115 @@
+# Payloads aimed at a Windows command interpreter reached through the web
+# server — `cmd.exe` batch syntax and PowerShell, injected into a request in the
+# hope that the application passes it to a shell.
+#
+# **This is not support for Windows log formats.** `iis-w3c` has been read for a
+# while and is a different axis entirely. Every case behind this pack is an
+# ordinary HTTP request to a web application, e.g.
+# `GET /get?foo=for %variable in (set) do command` with `Host: localhost`. It is
+# the same shape as `attack/php.yaml`: a payload that only means something on one
+# stack, tested against every log, because what an attacker *tried* is evidence
+# whether or not it could have worked.
+#
+# The gap it closes was the largest in the tree. CRS family 932 sat at 9% — 368
+# of 406 in-reach cases missed, more than every other family combined — and 163
+# of those misses are the Windows shapes below. ADR-0007 named Windows batch as
+# the single biggest hole a year before this pack existed.
+#
+# ## What the harmless half of the corpus taught
+#
+# The 64 requests CRS certifies as *not* attacks are the specification here, more
+# than the attacks are: each one is traffic somebody reported a CRS rule firing
+# on. Three of them decided the shape of these patterns:
+#
+#   /get?x=find x for y        a bare `for` is an English word
+#   /get?foo=time warner       `time` is a Windows command and a common noun
+#   /get?cmd=go to store.      `cmd` is the commonest parameter name there is
+#
+# So no rule here matches a bare keyword. `for` needs a batch switch or a
+# `%var in (` loop header; `if` needs a batch operator; `cmd` needs `.exe` or a
+# `/c`-style switch. Matching the word alone would have cost three false alarms
+# out of 64 to gain nothing a narrower pattern does not already reach.
+
+version: 1
+rules:
+
+  # `for /f "tokens=*" %i in ('cmd /c ...') do ...` and its /d /r /l siblings,
+  # plus the switchless `for %variable in (set) do` form.
+  #
+  # The switch or the loop header is required, never the bare word. `find x for
+  # y` is in the corpus as a harmless request and is exactly what a bare `\bfor\b`
+  # would take; so is any English sentence in a search box.
+  - id: windows_batch_for
+    name: Windows Batch FOR Loop
+    category: injection
+    owasp: "A03:2025"
+    severity: critical
+    confidence: 0.9
+    references: ["CAPEC-88"]
+    match:
+      any:
+        # for /f, /d, /r, /l — the four switches cmd.exe accepts.
+        - field: target_decoded
+          regex: '\bfor\s*/\s*[dlrf]\b'
+        # for %i in (…) do — one or two percent signs, any variable name.
+        - field: target_decoded
+          regex: '\bfor\s+%{1,2}[a-z0-9_]+\s+in\s*\('
+
+  # `if` in its batch forms, which is three different syntaxes wearing one word.
+  #
+  # Split into three patterns rather than one, because the three have nothing in
+  # common after the keyword: `if exist path`, `if a==b`, and `if a geq b`. One
+  # pattern covering all of them would have to be loose enough in the middle to
+  # match most English.
+  #
+  # Every quantifier is bounded. `[^\s=]{1,40}` rather than `.*` is what keeps a
+  # long line linear — an unbounded version of this on an 8 KB query is the
+  # backtracking case this project has measured at 53 ms before.
+  - id: windows_batch_if
+    name: Windows Batch IF Test
+    category: injection
+    owasp: "A03:2025"
+    severity: critical
+    confidence: 0.9
+    references: ["CAPEC-88"]
+    match:
+      any:
+        # if [/i] [not] exist|defined|errorlevel|cmdextversion
+        - field: target_decoded
+          regex: '\bif\s+(?:(?:/i|not)\s+)*(?:exist|defined|errorlevel|cmdextversion)\b'
+        # if [%1]==[] — batch string comparison, two or three equals signs.
+        - field: target_decoded
+          regex: '\bif\s+(?:(?:/i|not)\s+)*[^\s=]{1,40}\s*={2,3}'
+        # if 2 geq 15 — the word operators, which have no English meaning.
+        - field: target_decoded
+          regex: '\bif\s+(?:(?:/i|not)\s+)*\(?[^\s]{1,40}\s+(?:equ|neq|lss|leq|gtr|geq)\b'
+
+  # Naming the interpreter itself, rather than writing syntax for it.
+  #
+  # **`cmd` alone is never enough.** It is the commonest parameter name on the
+  # web and the corpus carries `/get?cmd=go to store.` as a harmless request, so
+  # this wants `.exe` or a `/c`-style switch before it will believe an
+  # invocation. The same care is not needed for `powershell`, which is nobody's
+  # parameter name and nobody's English.
+  - id: windows_shell_invocation
+    name: Windows Shell Invocation
+    category: injection
+    owasp: "A03:2025"
+    severity: critical
+    confidence: 0.9
+    references: ["CAPEC-88"]
+    match:
+      any:
+        # cmd.exe, or cmd /c "…" — the switch or the extension, never the word.
+        - field: target_decoded
+          regex: '\bcmd(?:\.exe\b|\s*/\s*[ckq]\b)'
+        # %comspec% and the other expansions that name an interpreter or a root.
+        - field: target_decoded
+          regex: '%(?:comspec|systemroot|windir|programfiles)%'
+        - field: target_decoded
+          regex: '\b(?:powershell|pwsh)(?:\.exe)?\b'
+        # PowerShell verbs and their aliases. The short ones are deliberate:
+        # `iwr`, `iex` and `iwmi` are how a payload keeps itself brief, and they
+        # are not words in any language a shop's customers search in.
+        - field: target_decoded
+          regex: '\b(?:invoke-(?:webrequest|expression|command|item|wmimethod)|iwr|iex|iwmi|new-object|start-process|downloadstring)\b'

@@ -641,10 +641,15 @@ def xss_attempts(ip: str, day: int, hour: int) -> None:
 def command_injection(ip: str, day: int, hour: int) -> None:
     """Unix first, then Windows batch.
 
-    The Windows lines are here deliberately even though most of them are not
-    caught: family 932 sits at 9% and `attack/windows.yaml` does not exist yet.
-    A demo log that only contained things the rules already catch would flatter
-    the tool, and the gap is easier to argue about when you can point at it.
+    The Windows lines were here before anything could read them — family 932 sat
+    at 9% and `attack/windows.yaml` did not exist — on the principle that a demo
+    log containing only what the rules already catch flatters the tool, and a gap
+    is easier to argue about when you can point at it.
+
+    **The pack exists now**, and these are the lines it was written from: a FOR
+    loop with a switch, `cmd.exe /c`, PowerShell with an encoded command, and an
+    `if exist` test. Each of the three rules in that pack fires on one of them,
+    which is how the demo log keeps its promise that every rule is reachable.
     """
     t = at(day, hour)
     for probe in (
@@ -655,6 +660,9 @@ def command_injection(ip: str, day: int, hour: int) -> None:
         "/ping?host=for%20%2Ff%20%22tokens%3D%2A%22%20%25%25G%20IN%20%28%27dir%20%2Fb%27%29%20DO%20echo%20%25%25G",
         "/ping?host=cmd.exe%20%2Fc%20whoami",
         "/ping?host=powershell%20-enc%20SQBFAFgA",
+        # `if exist … ` — the batch conditional, which is the third shape in
+        # the pack and the one the other lines here do not carry.
+        "/ping?host=if%20exist%20c%3A%5Cwindows%5Csystem32%20echo%20yes",
     ):
         write(t, ip, f"GET {probe} HTTP/1.1", 500, 0, agent=CURL)
         t += timedelta(seconds=11)
