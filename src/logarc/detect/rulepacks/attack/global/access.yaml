@@ -74,11 +74,10 @@ rules:
   # half of the same behaviour — and splitting them would leave half a comment
   # beside each.
   #
-  # The better fix, not taken because `WindowRule` cannot express it: fire only
-  # on a bounce that no successful sign-in follows in the same session. An
-  # attacker keeps probing after the redirect; an administrator signs in. That
-  # would keep the 13. `window` fires on a threshold over matching requests and
-  # has no way to say "not followed by". See TODO.md.
+  # The 13 are not recovered here and are not meant to be. `forced_browsing_
+  # succeeded` below reads the same behaviour from the other end — a client that
+  # collects both a refusal and a success on admin paths — and catches the case
+  # this rule was reaching for without accusing anybody who merely signed in.
   #
   # A separate rule rather than a wider status test on `admin_area_probe`,
   # because a match block takes exactly one combinator: "path matches AND
@@ -99,6 +98,54 @@ rules:
           regex: '/(admin|administrator|wp-admin|phpmyadmin|manager/html|console)\b'
         - field: status
           any_of: ["302", "303"]
+
+  # Forced browsing that *succeeded*, which is the one request in the sequence
+  # nothing else here reaches.
+  #
+  # Measured on `2026-09-20-medium`: 21 requests are a 200 on an admin path from
+  # an address that was also refused 403 on one, and the ground truth calls all
+  # 21 hostile. The payload packs already flag 13, because the attacker was
+  # usually injecting something as well. **Eight read as ordinary browsing, six
+  # of them the pure case: a client that simply walked in.** They are few, and
+  # they are the requests where an attacker got through.
+  #
+  # A single request cannot say this. `GET /admin/ 200` is the same line from an
+  # administrator and from somebody who should not be there. What separates them
+  # is what else the client did, so this is a window rule and not a signature.
+  #
+  # **`client_error_ratio` is the whole discrimination, and a 302 is not a 4xx.**
+  # A legitimate administrator's admin traffic is a bounce to the login form and
+  # then successes — 302, 200, 200 — so the ratio is zero and this never fires on
+  # them. Forced browsing is 302, 403, 403, 200: refused on the routes that check
+  # a role, through on the ones that do not.
+  #
+  # An earlier note in this file said `WindowRule` could not express this. That
+  # was wrong, and it was written without reading `WINDOW_METRICS`.
+  - id: forced_browsing_succeeded
+    name: Forced Browsing, Partly Successful
+    category: access_control
+    owasp: "A01:2025"
+    severity: high
+    confidence: 0.85
+    references: ["CAPEC-87"]
+    member:
+      all:
+        - field: path_decoded
+          regex: '/(admin|administrator|wp-admin|phpmyadmin|manager/html|console)\b'
+    window:
+      # Wide enough for a sign-in to happen mid-sequence, which is how the
+      # credentialed half of the attack begins.
+      span_seconds: 300
+      min_requests: 3
+      conditions:
+        # At least one refusal, which an administrator never collects.
+        - metric: client_error_ratio
+          op: ">"
+          value: 0.0
+        # And at least one that worked, which is what makes it worth reporting.
+        - metric: success_ratio
+          op: ">"
+          value: 0.0
 
   - id: debug_endpoint_probe
     name: Debug or Status Endpoint Probe

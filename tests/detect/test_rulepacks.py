@@ -303,6 +303,46 @@ def test_directory_enumeration_is_seen_across_requests(engine: RuleEngine) -> No
     assert any(item.label.rule_id == "directory_enumeration" for item in labelled)
 
 
+def test_forced_browsing_that_succeeds_is_seen_across_requests(engine: RuleEngine) -> None:
+    """A refusal and a success on admin paths, from one client, inside a window.
+
+    The single request `GET /admin/ 200` is the same line whether an
+    administrator sent it or somebody who should not be there did. What
+    separates them is what else the client collected, which is why this is a
+    window rule.
+    """
+    refused = [
+        request(f"/admin/{name}", status=403, seconds=n * 5)
+        for n, name in enumerate(("users", "orders", "keys"))
+    ]
+    through = [request("/admin/ping", status=200, seconds=20)]
+
+    labelled = engine.label_events([*refused, *through])
+
+    assert any(item.label.rule_id == "forced_browsing_succeeded" for item in labelled)
+
+
+def test_an_administrator_who_is_never_refused_is_left_alone(engine: RuleEngine) -> None:
+    """The control, and the reason `client_error_ratio` is the discrimination.
+
+    A legitimate administrator's admin traffic is a bounce to the login form and
+    then successes. A 302 is not a 4xx, so the ratio stays zero and the rule
+    above never sees them — which is the whole difference between this rule and
+    the false alarm that `admin_area_redirect` used to be.
+    """
+    events = [
+        request("/admin/users", status=302, seconds=0),
+        request("/admin/users", status=200, seconds=5),
+        request("/admin/orders", status=200, seconds=10),
+        request("/admin/", status=200, seconds=15),
+    ]
+
+    labelled = engine.label_events(events)
+
+    fired = [item.label.rule_id for item in labelled]
+    assert "forced_browsing_succeeded" not in fired, f"fired on an administrator: {fired}"
+
+
 def test_human_paced_directory_enumeration_is_detected(engine: RuleEngine) -> None:
     seconds = [0, 40, 80, 120, 160, 200, 240, 300]
     targets = [f"/quiet-probe-{n % 6}" for n in range(8)]

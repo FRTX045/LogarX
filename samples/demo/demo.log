@@ -512,6 +512,8 @@ shop.test:443 192.0.2.116 - - [10/Mar/2026:22:01:30 +0000] "GET /internal/debug 
 shop.test:443 192.0.2.116 - - [10/Mar/2026:22:01:39 +0000] "GET /staff/rota HTTP/1.1" 403 1180 "-" "curl/8.6.0"
 shop.test:443 192.0.2.116 - - [10/Mar/2026:22:01:48 +0000] "GET /admin HTTP/1.1" 302 - "-" "curl/8.6.0"
 shop.test:443 192.0.2.116 - - [10/Mar/2026:22:01:57 +0000] "GET /phpmyadmin HTTP/1.1" 302 - "-" "curl/8.6.0"
+shop.test:443 192.0.2.116 - - [10/Mar/2026:22:02:06 +0000] "GET /admin/ping HTTP/1.1" 200 940 "-" "curl/8.6.0"
+shop.test:443 192.0.2.116 - - [10/Mar/2026:22:02:15 +0000] "GET /admin/template HTTP/1.1" 200 940 "-" "curl/8.6.0"
 shop.test:443 192.0.2.112 - - [11/Mar/2026:02:00:00 +0000] "POST /register HTTP/1.1" 400 380 "-" "python-requests/2.32.3"
 shop.test:443 192.0.2.112 - - [11/Mar/2026:02:00:17 +0000] "POST /register HTTP/1.1" 400 380 "-" "python-requests/2.32.3"
 shop.test:443 192.0.2.112 - - [11/Mar/2026:02:00:34 +0000] "POST /register HTTP/1.1" 400 380 "-" "python-requests/2.32.3"
