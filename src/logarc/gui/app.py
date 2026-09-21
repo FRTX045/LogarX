@@ -1,21 +1,12 @@
-"""The main window.
+"""The main window coordinates case reading, prioritization and reconstruction.
 
-Holds no analysis. Every action here calls the same `logarc.case` and
-`logarc.analysis` functions the CLI calls, on a worker thread, and displays what
-comes back, so the two front ends cannot disagree about what a case contains.
-
-Two results here have no command-line equivalent, both on purpose. `_export`
-offers PNG, which `report.export` deliberately does not carry because it is a
-picture of the canvas rather than a serialisation of the reconstruction. And the
-time filter reconstructs over a window, which `analyze`, `evidence` and `export`
-have no option for. Every other analysis this window can ask for, a command can
-ask for too — saying which two are the exceptions is cheaper than a reader
-finding out. Window state is a separate matter: preferences, saved arrangements
-and the recent-case list belong to the window and have no command behind them.
+Analysis stays in Qt-independent modules. Workers return results for the
+window to display, and case/range guards discard answers no longer requested.
 """
 
 from __future__ import annotations
 
+import multiprocessing
 import sys
 import threading
 import traceback
@@ -23,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from PyQt6.QtCore import QSettings, Qt
-from PyQt6.QtGui import QAction, QColor, QImage, QKeyEvent, QKeySequence, QPainter
+from PyQt6.QtGui import QAction, QCloseEvent, QColor, QImage, QKeyEvent, QKeySequence, QPainter
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
@@ -36,6 +27,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QSplitter,
     QTabBar,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -73,6 +65,7 @@ from logarc.gui.quarantine_notice import notice_for
 from logarc.gui.recent import RecentCase
 from logarc.gui.theme import GAP, MONO_FAMILIES, PAD, TIGHT, apply_theme, heading_font
 from logarc.gui.time_filter import TimeFilterBar
+from logarc.gui.triage import TriagePanel
 from logarc.gui.workers import run_job
 from logarc.ingest.pipeline import IngestCancelled
 from logarc.ingest.quarantine import DIRECTORY_NAME as QUARANTINE_DIR
@@ -85,6 +78,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from logarc.analysis import AnalysisResult
+    from logarc.core.evidence import EvidenceRef
     from logarc.core.graph import GraphNode
     from logarc.storage.base import TimeSlot
 
@@ -160,6 +154,8 @@ class MainWindow(QMainWindow):
         # reconstruction that arrives describing anything else is stale and is
         # thrown away — see the guard in `_reconstruct`.
         self._awaiting: tuple[str, TimeWindow] | None = None
+        self._reconstruction_request = object()
+        self._evidence_request = object()
         # What CRS contributed to the open case. Empty until one is opened, so
         # a reconstruction before then applies nothing rather than failing.
         self._crs = CrsEvidence(index=None, fingerprint=None)
@@ -179,6 +175,9 @@ class MainWindow(QMainWindow):
         # to dismiss it without losing the second.
         self._format_notice = NoticeBanner()
         self._clients = ClientTable()
+        self._triage = TriagePanel()
+        self._triage.investigate.connect(lambda ip, refs: self._reconstruct(ip, evidence=refs))
+        self._load_generation = 0
         self._canvas = ActivityCanvas()
         self._legend = LegendBar()
         self._evidence = EvidencePanel()
@@ -249,7 +248,11 @@ class MainWindow(QMainWindow):
         column.addWidget(self._arrangement_bar)
         column.addWidget(self._legend)
 
-        splitter = self._build_splitter(centre)
+        self._workspace = QTabWidget()
+        self._workspace.addTab(self._triage, "Where to start")
+        self._workspace.addTab(centre, "Reconstruction")
+        self._workspace.setCurrentIndex(1)
+        splitter = self._build_splitter(self._workspace)
         # Kept as an attribute for the tests that size it directly, now that
         # the strip sits between it and the window.
         self._splitter = splitter
@@ -425,9 +428,7 @@ class MainWindow(QMainWindow):
         view_menu.addSeparator()
         self._fit_action = self._add(view_menu, "&Fit to window", self._canvas.fit)
         view_menu.addSeparator()
-        self._fullscreen_action = self._add(
-            view_menu, "F&ull screen", self._full_screen.from_the_menu
-        )
+        self._fullscreen_action = self._add(view_menu, "F&ull screen", self._fullscreen_from_menu)
         self._fullscreen_action.setCheckable(True)
         self._fullscreen_action.setShortcut(QKeySequence("F11"))
         self._fullscreen_action.setStatusTip("Give the whole screen to the activity graph.")
@@ -686,6 +687,13 @@ class MainWindow(QMainWindow):
             self._show_recent()
 
     def _load_case(self, path: Path) -> None:
+        self._load_generation += 1
+        generation = self._load_generation
+        self._triage.shutdown()
+        self._awaiting = None
+        self._evidence_request = object()
+        self._case_path = None
+        self._evidence.clear(prompt=False)
         # Read here, on the interface thread. The worker must not reach into a
         # widget to ask how wide it is while the window is free to resize it.
         buckets = self._buckets()
@@ -717,6 +725,8 @@ class MainWindow(QMainWindow):
         self._busy(f"Opening {path}…")
 
         def done(loaded: Any) -> None:
+            if generation != self._load_generation:
+                return
             view, snapshot, notice, drifted = loaded
             summaries = view.listed
             self._remember_case(snapshot)
@@ -757,6 +767,8 @@ class MainWindow(QMainWindow):
             self._heading.setText("")
             self._tabs.setVisible(False)
             self._clients.show_clients(summaries, total=view.whole.clients)
+            self._workspace.setCurrentIndex(0)
+            self._triage.start(path)
             self._say_what_is_left()
             self._idle(
                 # Not "listed": the table holds the busiest few hundred of
@@ -770,7 +782,16 @@ class MainWindow(QMainWindow):
             if notice is not None and notice.is_blocking:
                 warn_about_dead_files(self, notice)
 
-        run_job(work, on_done=done, on_error=self.report_error, on_progress=self._status.setText)
+        run_job(
+            work,
+            on_done=done,
+            on_error=lambda message, detail: (
+                self.report_error(message, detail) if generation == self._load_generation else None
+            ),
+            on_progress=lambda message: (
+                self._status.setText(message) if generation == self._load_generation else None
+            ),
+        )
 
     # -- the stretch of time being read ------------------------------------
 
@@ -784,7 +805,12 @@ class MainWindow(QMainWindow):
         """
         if self._case_path is None or window == self._window:
             return
+        self._load_generation += 1
+        generation = self._load_generation
+        self._evidence_request = object()
+        self._evidence.clear(prompt=False)
         self._window = window
+        self._triage.start(self._case_path, window)
         # Nothing in flight describes this range: each was asked over the range
         # before it. `_reselect` asks again below if the reader is still on
         # somebody, which is what puts a fresh answer back on the way.
@@ -803,6 +829,8 @@ class MainWindow(QMainWindow):
         self._busy("Reading the selected time range…")
 
         def done(loaded: Any) -> None:
+            if generation != self._load_generation:
+                return
             summaries = loaded.listed
             # What the range holds, not what fitted in the table.
             self._listed = loaded.in_range
@@ -828,7 +856,16 @@ class MainWindow(QMainWindow):
             if self._result is not None:
                 self._reselect(self._result.client_ip)
 
-        run_job(work, on_done=done, on_error=self.report_error, on_progress=self._status.setText)
+        run_job(
+            work,
+            on_done=done,
+            on_error=lambda message, detail: (
+                self.report_error(message, detail) if generation == self._load_generation else None
+            ),
+            on_progress=lambda message: (
+                self._status.setText(message) if generation == self._load_generation else None
+            ),
+        )
 
     def _say_what_is_left(self, result: AnalysisResult | None = None) -> None:
         """The line beside the control: what the range left of the case.
@@ -926,7 +963,7 @@ class MainWindow(QMainWindow):
 
     # -- reconstruction ----------------------------------------------------
 
-    def _reconstruct(self, client_ip: str) -> None:
+    def _reconstruct(self, client_ip: str, *, evidence: tuple[EvidenceRef, ...] = ()) -> None:
         if self._case_path is None:
             return
         # Only a different client is leaving this one. `_reselect` calls this
@@ -948,6 +985,14 @@ class MainWindow(QMainWindow):
         window = self._window
         buckets = self._buckets()
         self._awaiting = (client_ip, window)
+        self._reconstruction_request = request = object()
+
+        def current() -> bool:
+            return (
+                request is self._reconstruction_request
+                and path == self._case_path
+                and (client_ip, window) == self._awaiting
+            )
 
         def work(report: Callable[[str], None]) -> tuple[AnalysisResult, list[TimeSlot]]:
             report(f"Reconstructing {client_ip}…")
@@ -979,7 +1024,7 @@ class MainWindow(QMainWindow):
             #
             # A guard on arrival rather than only on departure: it holds however
             # the stale job was started, which is what makes it worth having.
-            if (result.client_ip, result.window) != self._awaiting:
+            if not current() or (result.client_ip, result.window) != (client_ip, window):
                 return
             self._result = result
             # The band becomes this client's own history: when it worked, when
@@ -1011,10 +1056,25 @@ class MainWindow(QMainWindow):
                 f" · {plural(len(result.episodes), 'activity', 'activities')}</span>"
             )
             self._redraw()
+            self._workspace.setCurrentIndex(1)
+            if evidence:
+                refs = set(evidence)
+                episodes = frozenset(a.episode_id for a in result.assignments if a.evidence in refs)
+                graph = result.trace if self._kind is GraphKind.TRACE else result.behaviour
+                node = node_for_episodes(graph, episodes)
+                if node is not None:
+                    self._show_evidence(node.node_id, evidence=evidence)
             self._say_what_is_left(result)
             self._idle(f"{client_ip}: {plural(len(result.episodes), 'activity', 'activities')}")
 
-        run_job(work, on_done=done, on_error=self.report_error, on_progress=self._status.setText)
+        run_job(
+            work,
+            on_done=done,
+            on_error=lambda message, detail: (
+                self.report_error(message, detail) if current() else None
+            ),
+            on_progress=lambda message: self._status.setText(message) if current() else None,
+        )
 
     def _redraw(self) -> None:
         """Draw the current view, and keep the reader's place across it.
@@ -1082,6 +1142,10 @@ class MainWindow(QMainWindow):
 
     # -- where the reader put the activities --------------------------------
 
+    def _fullscreen_from_menu(self) -> None:
+        self._workspace.setCurrentIndex(1)
+        self._full_screen.from_the_menu()
+
     def _what_to_cover(self) -> list[QWidget | None]:
         """Everything the graph takes the screen from.
 
@@ -1091,6 +1155,7 @@ class MainWindow(QMainWindow):
         answer with something else.
         """
         return [
+            self._workspace.tabBar(),
             self._clients,
             self._evidence,
             self._time_filter,
@@ -1238,8 +1303,10 @@ class MainWindow(QMainWindow):
 
     # -- evidence ----------------------------------------------------------
 
-    def _show_evidence(self, node_id: str) -> None:
+    def _show_evidence(self, node_id: str, *, evidence: tuple[EvidenceRef, ...] = ()) -> None:
         if self._result is None or self._case_path is None:
+            return
+        if self._result.window != self._window:
             return
         # Ringed before the lookup, so the canvas answers the click even when
         # the episode behind it cannot be found and nothing fills the panel.
@@ -1249,6 +1316,8 @@ class MainWindow(QMainWindow):
         if node is None:
             return
         self._selected = node
+        self._evidence_request = request = object()
+        result = self._result
 
         path = self._case_path
         # Which lines are behind an activity is `AnalysisResult`'s to answer, not
@@ -1256,16 +1325,47 @@ class MainWindow(QMainWindow):
         # a display, and getting it wrong shows the reader the wrong evidence.
         # What stays here is the ceiling, which is a question about how long
         # somebody will sit watching a panel fill.
-        refs = self._result.evidence_for(node, limit=EVIDENCE_LIMIT)
+        wanted = set(evidence)
+        supporting = (
+            {
+                assignment.evidence
+                for assignment in result.assignments
+                if assignment.evidence in wanted and assignment.episode_id in node.episode_ids
+            }
+            if wanted
+            else set()
+        )
+        refs = tuple(
+            dict.fromkeys(
+                (
+                    *[ref for ref in evidence if ref in supporting],
+                    *result.evidence_for(node, limit=EVIDENCE_LIMIT),
+                )
+            )
+        )[:EVIDENCE_LIMIT]
 
         def work(_: Callable[[str], None]) -> Any:
             with Case.open(path) as case:
                 return case.read_evidence(refs)
 
+        def current() -> bool:
+            return (
+                request is self._evidence_request
+                and path == self._case_path
+                and result is self._result
+                and node is self._selected
+            )
+
+        def done(lines: Any) -> None:
+            if current():
+                self._evidence.show_evidence(node, lines)
+
         run_job(
             work,
-            on_done=lambda lines: self._evidence.show_evidence(node, lines),
-            on_error=self.report_error,
+            on_done=done,
+            on_error=lambda message, detail: (
+                self.report_error(message, detail) if current() else None
+            ),
         )
 
     # -- export ------------------------------------------------------------
@@ -1347,6 +1447,12 @@ class MainWindow(QMainWindow):
         else:
             self.report_error(f"Could not write {target}", "")
 
+    def closeEvent(self, event: QCloseEvent | None) -> None:  # noqa: N802
+        self._load_generation += 1
+        self._triage.shutdown()
+        self._awaiting = None
+        super().closeEvent(event)
+
     # -- status ------------------------------------------------------------
 
     def _busy(self, message: str, *, stop: threading.Event | None = None) -> None:
@@ -1392,6 +1498,7 @@ class MainWindow(QMainWindow):
 
 def main() -> int:
     """Entry point for the `logarc-gui` command."""
+    multiprocessing.freeze_support()
     # Reused if one is already up. There never is in production; it is what
     # lets this function be called from a test at all, and an entry point that
     # cannot be called is an entry point nothing checks.
