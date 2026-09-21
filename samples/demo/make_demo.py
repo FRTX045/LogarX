@@ -512,19 +512,25 @@ def bulk_registration(ip: str, day: int, hour: int) -> None:
 
 
 def forced_browsing(ip: str, day: int, hour: int) -> None:
-    """Twelve refusals across ten paths in under two minutes.
+    """Sixteen requests to admin paths that answer in three different ways.
 
-    Refused, not missing — 403 rather than 404. The distinction is the whole
-    rule: a miss means the thing is not there, a refusal means it is there and
-    guarded, and somebody working through a list of guarded things is doing
+    Twelve refusals first — 403 rather than 404, and that distinction is the
+    whole rule: a miss means the thing is not there, a refusal means it is there
+    and guarded, and somebody working through a list of guarded things is doing
     something different from somebody mapping what exists.
 
-    The two redirects at the end are a third answer again: bounced to a login
-    page rather than refused outright, which `admin_area_redirect` reads on its
-    own. They live on this client rather than on the signed-in admin at
-    198.51.100.20 because that rule is graded hostile — putting it there flagged
-    the one client in the log whose job is to be a clean counter-example, and a
-    demonstration of a false alarm is not what that client is for.
+    Then two redirects, bounced to a login page rather than refused outright,
+    which `admin_area_redirect` reads on its own. They live on this client
+    rather than on the signed-in admin at 198.51.100.20 for a reason that has
+    since expired — the rule was `access_control` when this was written and
+    flagged the one client whose job is to be a clean counter-example. It is
+    `authentication` at `info` now and would no longer do that. The requests
+    stay here because they are also true of this client.
+
+    And two successes last, which is what the other two answers are for. A
+    client that collects both a refusal and a success on admin paths got through
+    somewhere, and `forced_browsing_succeeded` is the only rule in the tree that
+    can say so.
     """
     t = at(day, hour)
     for path in (
@@ -545,6 +551,13 @@ def forced_browsing(ip: str, day: int, hour: int) -> None:
         t += timedelta(seconds=9)
     for path in ("/admin", "/phpmyadmin"):
         write(t, ip, f"GET {path} HTTP/1.1", 302, 0, agent=CURL)
+        t += timedelta(seconds=9)
+
+    # Two routes that never learned to check a role, so they answer 200 to the
+    # same client the twelve above refused. Without these the demo log has no
+    # request where somebody who should not be there got through.
+    for path in ("/admin/ping", "/admin/template"):
+        write(t, ip, f"GET {path} HTTP/1.1", 200, 940, agent=CURL)
         t += timedelta(seconds=9)
 
 
