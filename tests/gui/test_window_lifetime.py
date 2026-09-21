@@ -5,23 +5,24 @@ worst moment 41 were alive at once, the oldest built 35 tests earlier. The Linux
 runners then segfault inside `MainWindow.__init__` building a `QAction` — three
 times so far, most recently on a commit that changed nothing but Markdown.
 
-**Measured 2026-09-21, and it corrects what this project previously believed.**
-The earlier note concluded the survivors were "held by something a full
-`gc.collect()` cannot break, which points at a C++-side reference". The first
-half is true and the second is wrong: every holder is an ordinary Python object.
-Tracing a leaked window names them — an `ArrangementKeeper`, a `FullScreen`, the
-`done()` closure from `_load_case`, and three bound methods held by the first
-two. `Job` and `JobSignals` are fully collected and are not involved.
+**Found and fixed 2026-09-21.** The cause was ownership of the background job,
+not anything about windows. `run_job` handed its `Job` to `QThreadPool` with
+auto-delete on, so the pool destroyed the C++ runnable — and the `JobSignals`
+object it owned — as soon as `run()` returned, before the queued signals had
+been delivered. PyQt's bookkeeping for those connections was orphaned rather
+than released, and went on holding the Python slots for good.
 
-What triggers it is narrow and reproducible: **a window that has loaded a case
-leaks; one that has not is collected immediately.** The leak is permanent within
-the process, surviving repeated `gc.collect()`, an event-loop turn, and further
-allocation.
+The evidence that settled it: the `done()` closure from `_load_case` was still
+alive afterwards with **no Python referrer at all**. A live function nothing in
+Python holds is held from C. It closed over the window, so the window could
+never be collected.
 
-The last test here reproduces that and is `xfail(strict=True)` rather than
-deleted or commented out. Strict, so the day somebody fixes it the suite fails
-and says so — an xfail that quietly starts passing is how a fix goes unnoticed
-and a regression later goes unexplained.
+Two earlier readings were wrong and are worth recording. The project had
+concluded this was "a C++-side reference rather than a Python cycle" — the
+holders are ordinary Python objects, which is a different fix. And the first
+attempt at that fix, disconnecting from inside the slot, is worse than the leak:
+by then the C++ `JobSignals` is gone and `disconnect()` on it is an access
+violation.
 """
 
 from __future__ import annotations
@@ -87,23 +88,20 @@ def test_ten_built_windows_do_not_pile_up(qt_app: QApplication) -> None:
     assert not alive, f"{len(alive)} of 10 windows survived being dropped"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Known leak: a window that has loaded a case is never collected. Traced "
-        "2026-09-21 to Python holders — ArrangementKeeper, FullScreen, the "
-        "done() closure in _load_case — not to a C++ reference as previously "
-        "thought. Root not yet found. See TODO.md."
-    ),
-)
 def test_a_window_that_loaded_a_case_is_collectable(qt_app: QApplication, tmp_path: Path) -> None:
-    """The leak itself, pinned so it cannot be lost or misremembered.
+    """The regression itself: running a background job must not root the window.
 
-    One window, one case, and the question the suite's 41 survivors are made of.
-    Everything else about the reproduction — that it is permanent, that
-    `gc.collect()` does not touch it, that `Job` and `JobSignals` are innocent —
-    is in the module docstring and in TODO.md, because a test should state the
-    property rather than the investigation.
+    This was the leak. `run_job` handed its `Job` to `QThreadPool` with
+    auto-delete on, so the pool destroyed the C++ runnable — and the
+    `JobSignals` it owned — the moment `run()` returned, before the queued
+    signals had been delivered. PyQt's bookkeeping for those connections was
+    orphaned rather than cleaned up, and went on holding the Python slots. The
+    `done()` closure from `_load_case` survived with no Python referrer at all,
+    held only from C, and held the window through its closure.
+
+    The fix is ownership: Python keeps the job until it reports back. If that
+    regresses, this test fails here rather than as a segfault on a Linux runner
+    forty tests later.
     """
     from tests.gui.conftest import settled
 
