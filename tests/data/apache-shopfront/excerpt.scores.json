@@ -1,28 +1,28 @@
 {
   "binary": {
-    "accuracy": 0.978562091503268,
-    "f1": 0.9648972602739726,
-    "false_negatives": 82,
+    "accuracy": 0.977516339869281,
+    "f1": 0.9631217838765008,
+    "false_negatives": 86,
     "false_positive_rate": 0.0,
     "false_positives": 0,
     "has_attacks": true,
     "precision": 1.0,
-    "recall": 0.9321753515301903,
+    "recall": 0.9288668320926385,
     "total": 3825,
     "true_negatives": 2616,
-    "true_positives": 1127
+    "true_positives": 1123
   },
   "classification": {
     "accuracy": 0.9343790849673203,
-    "macro_f1": 0.7670170095614266,
+    "macro_f1": 0.7860367816982445,
     "per_category": [
       {
         "category": "crawling",
-        "f1": 0.9650721336370539,
+        "f1": 0.9639742131209709,
         "false_negatives": 67,
-        "false_positives": 25,
-        "precision": 0.9807098765432098,
-        "predicted": 1296,
+        "false_positives": 28,
+        "precision": 0.9784449576597383,
+        "predicted": 1299,
         "recall": 0.9499252615844545,
         "recall_any": 0.9499252615844545,
         "support": 1338,
@@ -66,11 +66,11 @@
       },
       {
         "category": "browsing",
-        "f1": 0.6843373493975904,
+        "f1": 0.6826923076923076,
         "false_negatives": 16,
-        "false_positives": 115,
-        "precision": 0.5525291828793775,
-        "predicted": 257,
+        "false_positives": 116,
+        "precision": 0.5503875968992248,
+        "predicted": 258,
         "recall": 0.8987341772151899,
         "recall_any": 0.8987341772151899,
         "support": 158,
@@ -162,11 +162,11 @@
       },
       {
         "category": "ssrf",
-        "f1": 0.5,
+        "f1": 0.7499999999999999,
         "false_negatives": 2,
-        "false_positives": 4,
-        "precision": 0.42857142857142855,
-        "predicted": 7,
+        "false_positives": 0,
+        "precision": 1.0,
+        "predicted": 3,
         "recall": 0.6,
         "recall_any": 0.8,
         "support": 5,
@@ -202,15 +202,15 @@
       {
         "count": 7,
         "expected": "reconnaissance",
+        "predicted": "crawling"
+      },
+      {
+        "count": 7,
+        "expected": "reconnaissance",
         "predicted": "enumeration"
       },
       {
         "count": 6,
-        "expected": "reconnaissance",
-        "predicted": "crawling"
-      },
-      {
-        "count": 5,
         "expected": "access_control",
         "predicted": "browsing"
       },
@@ -221,11 +221,11 @@
       },
       {
         "count": 4,
-        "expected": "crawling",
-        "predicted": "static_asset"
+        "expected": "access_control",
+        "predicted": "crawling"
       }
     ],
-    "weighted_f1": 0.9351621844978435
+    "weighted_f1": 0.9350369729318424
   },
   "granularity": "category",
   "policy": {
@@ -238,17 +238,17 @@
     "max_duration_seconds": 28800,
     "split_on_user_agent_change": true
   },
-  "ruleset_fingerprint": "98311bbfe6fd9862f7e720bdf7d2733667ea88b1855cdf8b4393860c6529548c",
+  "ruleset_fingerprint": "0c1be5f84dc87d35807e6c6f427f71cb4504f9c7f19faebe6e7a1bbf91005541",
   "scenario": "apache-shopfront-medium-excerpt",
   "segmentation": {
     "boundaries_agreed": 244,
     "boundaries_expected": 245,
-    "boundaries_found": 535,
-    "boundary_f1": 0.6256410256410256,
-    "boundary_precision": 0.45607476635514016,
+    "boundaries_found": 532,
+    "boundary_f1": 0.628056628056628,
+    "boundary_precision": 0.45864661654135336,
     "boundary_recall": 0.9959183673469387,
-    "fragmentation": 1.9764309764309764,
-    "predicted_episodes": 587,
+    "fragmentation": 1.9663299663299663,
+    "predicted_episodes": 584,
     "truth_activities": 297
   },
   "source_file_id": "excerpt.log",
