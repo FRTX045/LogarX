@@ -14,6 +14,7 @@ succeeded, and then used what they opened.
 from __future__ import annotations
 
 import hashlib
+import re
 from collections import Counter
 from dataclasses import dataclass, field
 from fractions import Fraction
@@ -79,6 +80,31 @@ def _referer_host(referer: str) -> str:
     return _bare_host(value)
 
 
+#: A URL sitting in a query parameter's *value*, with the parameter name left
+#: out of the match so no allow-list of names is implied — an attacker uses
+#: whatever the application happens to call its parameter.
+#:
+#: Bounded throughout. `[^\s&]{1,200}` rather than `.*` is what keeps a long
+#: query linear, and the schemes are the ones that fetch something.
+_URL_IN_PARAM: Final = re.compile(
+    r"[?&][^=&]{1,64}=\s*((?:https?|ftps?|ldaps?|gophers?|dict)://[^\s&]{1,200})",
+    re.IGNORECASE,
+)
+
+
+def _url_host(target: str) -> str:
+    """The host a URL found in a parameter points at.
+
+    Parsed by hand rather than with `urlsplit`, which raises on some of the
+    shapes this has to survive — a bracket that never closes, a port that is
+    not a number — and which would turn a malformed payload into an exception
+    in the middle of labelling a case.
+    """
+    _, _, rest = target.partition("://")
+    authority = rest.split("/")[0].split("?")[0].split("#")[0]
+    return _bare_host(authority.rpartition("@")[2])
+
+
 def _benign(category: ActivityCategory, name: str) -> ActivityLabel:
     return ActivityLabel(
         rule_id=f"benign:{category.value}",
@@ -111,10 +137,16 @@ class RequestView:
     against every rule, so it is cached per request rather than per rule.
     """
 
-    __slots__ = ("__dict__", "event")
+    __slots__ = ("__dict__", "event", "site_hosts")
 
-    def __init__(self, event: NormalizedEvent) -> None:
+    def __init__(self, event: NormalizedEvent, *, site_hosts: frozenset[str] = frozenset()) -> None:
         self.event = event
+        self.site_hosts = site_hosts
+        """The hosts the reader said are their own, already reduced.
+
+        Empty means unanswered, and unanswered is not a guess in either
+        direction — see `query_url_offsite`.
+        """
 
     @cached_property
     def _path(self) -> NormalizedText:
@@ -186,6 +218,50 @@ class RequestView:
         origin = _referer_host(self.event.referer)
         return bool(origin) and origin != host
 
+    @cached_property
+    def query_url_offsite(self) -> bool:
+        """Whether a query parameter carries a URL to a host this site does not own.
+
+        Remote file inclusion is this and nothing else. The server is asked to
+        fetch a file and go on trusting it, and the request that does it is
+        `GET /page?url=…` — character for character what a share link, an OAuth
+        callback and a login redirect look like. Passing a URL in a query string
+        is one of the most ordinary things on the web, so the destination is the
+        only thing that separates them.
+
+        **Unanswered, this says nothing, and that was the decision.** It does
+        *not* fall back to the request's own Host header. Measured against the
+        OWASP CRS corpus, both routes find the same eleven attacks that nothing
+        else in this tree catches; guessing from the Host header also accuses
+        two of the 134 requests the corpus certifies as harmless, and being told
+        accuses none. The two it gets wrong are an ad server's `loc=` and a
+        plain `?url=https://example.com` behind `Host: localhost` — which is
+        what a reverse proxy writes, not what the site is called.
+
+        So the cost of leaving the question unanswered is findings, never false
+        ones, which is the safe direction for a tool whose credibility is the
+        product.
+
+        Whole hosts, never suffixes: `example.com.evil.com` is a domain bought
+        to be misread as `example.com`. That is also why a reader with a `www.`
+        has to name both — `_bare_host` reduces scheme, port, userinfo and a
+        trailing dot, and stops there.
+        """
+        if not self.site_hosts:
+            return False
+        query = self.event.query
+        if not query:
+            return False
+        # Matched against the decoded form, so one rule covers every encoding —
+        # but with a leading separator restored, because `_URL_IN_PARAM` looks
+        # for `?` or `&` before the parameter name and `query_decoded` has
+        # neither at the front.
+        haystack = "?" + self._query.text
+        return any(
+            host and host not in self.site_hosts
+            for host in (_url_host(found.group(1)) for found in _URL_IN_PARAM.finditer(haystack))
+        )
+
     def value(self, field_name: str) -> str:
         """The text of one matchable field, as a string."""
         event = self.event
@@ -228,6 +304,8 @@ class RequestView:
                 # Numeric like `had_null` and `decode_depth`, so a rule writes
                 # `min: 1` rather than the schema growing a boolean form.
                 return "1" if self.referer_offsite else "0"
+            case "query_url_offsite":
+                return "1" if self.query_url_offsite else "0"
             case "had_null":
                 # Numeric so a rule can write `min: 1`, matching how
                 # `decode_depth` is tested rather than inventing a boolean form.
@@ -256,10 +334,25 @@ class LabelledEvent:
 class RuleEngine:
     """Applies a ruleset to requests."""
 
-    def __init__(self, rules: Sequence[Rule]) -> None:
+    def __init__(self, rules: Sequence[Rule], *, site_hosts: Iterable[str] = ()) -> None:
         self.rules = list(rules)
         self._signatures = [rule for rule in self.rules if isinstance(rule, SignatureRule)]
         self._windows = [rule for rule in self.rules if isinstance(rule, WindowRule)]
+        self.site_hosts = frozenset(
+            reduced for reduced in (_bare_host(name) for name in site_hosts) if reduced
+        )
+        """The hosts the reader said are their own, for `query_url_offsite`.
+
+        Reduced on the way in rather than at every comparison, so a reader who
+        types a whole URL into a box that asked for a domain is understood, and
+        so the set can be compared against a URL's host directly.
+
+        **Deliberately not part of `fingerprint`.** That digest answers "which
+        ruleset produced this", and folding a per-case answer into it would make
+        the same rules fingerprint differently for every case. `AnalysisResult`
+        carries the hosts separately, beside `crs_fingerprint`, for the same
+        reason CRS is carried there: it is provenance, not rules.
+        """
 
     @cached_property
     def fingerprint(self) -> str:
@@ -288,7 +381,7 @@ class RuleEngine:
         return labelled
 
     def _label_one(self, event: NormalizedEvent, crs: DetectionIndex | None) -> LabelledEvent:
-        view = RequestView(event)
+        view = RequestView(event, site_hosts=self.site_hosts)
         matches = [rule for rule in self._signatures if _matches(rule, view)]
         detections = _detections_for(crs, event)
 
@@ -327,7 +420,7 @@ class RuleEngine:
         # One view per request for the whole pass. Every window rule tests the
         # same requests, and a view built per rule would normalise each one
         # again for every rule that looks at it.
-        views = [RequestView(item.event) for item in labelled]
+        views = [RequestView(item.event, site_hosts=self.site_hosts) for item in labelled]
         for rule in self._windows:
             members = [index for index, view in enumerate(views) if _is_member(rule, view)]
             label = _to_label(rule)

