@@ -1269,3 +1269,133 @@ def test_the_files_every_crawler_fetches_are_not_probes(engine: RuleEngine, targ
     assert not any(item.category.is_hostile for item in labelled.all_labels), (
         f"{target!r} was claimed by {[item.rule_id for item in labelled.all_labels]}"
     )
+
+
+#: SSRF targets written so a host check will not recognise them. Every one is a
+#: CRS family 934 case that nothing in this tree caught when the family scored
+#: 17%, and they are the largest single shape in that family's misses.
+#:
+#: The three groups below are three different evasions of the same check, and
+#: they need three different patterns because they have nothing in common after
+#: the scheme.
+SSRF_OBFUSCATED: list[str] = [
+    # An internal target named plainly, but in a parameter the old allow-list
+    # of names did not cover. `ssrf=` is not `url=`, and an attacker uses
+    # whatever the application calls its parameter.
+    "/get/test?ssrf=http://169.254.169.254/computeMetadata/v1/",
+    "/get/test?ssrf=http://169.254.169.254/metadata/v1.json",
+    "/get/test?ssrf=http://169.254.169.254/openstack",
+    "/get/test?ssrf=https://metadata.packet.net/userdata",
+    "/get/test?ssrf=http://192.0.0.192/latest/user-data/",
+    # A scheme with no slashes after it, which browsers and libraries both
+    # still resolve.
+    "/get/test?ssrf=http:127.0.0.1",
+    "/get?ssrf=http://[::]/",
+    # The address as one integer. 2852039166 is 169.254.169.254.
+    "/get?ssrf=http://2852039166/",
+    "/get?ssrf=http://7147006462/",
+    "/get?ssrf=http:2852039166",
+    "/get?ssrf=http:/2852039166",
+    "/get?ssrf=http:123456789",
+    # Partly collapsed — two octets joined into one number.
+    "/get?ssrf=http://169.254.43518/",
+    "/get?ssrf=http://169.16689662/",
+    # Hexadecimal, whole or per octet.
+    "/get?ssrf=http://0xA9FEA9FE/",
+    "/get?ssrf=http://0xA9.0xFE.0xA9.0xFE/",
+    "/get?ssrf=http://0x41414141A9FEA9FE/",
+    "/get?ssrf=http:0xA9FEA9FE",
+    # Octal, which a leading zero is enough to trigger.
+    "/get?ssrf=http://0251.0376.0251.0376/",
+    "/get?ssrf=http://0251.00376.000251.0000376/",
+    "/get?ssrf=ssh://0177.00.00.01",
+    "/get?ssrf=rtmp://017700000001",
+    "/get?ssrf=http:0251.0376.0251.0376",
+    # IPv6, including the mapped forms that carry a v4 address inside.
+    "/get?ssrf=http://[::ffff:a9fe:a9fe]",
+    "/get?ssrf=http://[0:0:0:0:0:ffff:a9fe:a9fe]",
+    "/get?ssrf=http://[0:0:0:0:0:ffff:169.254.169.254]",
+    "/get?ssrf=http://[0:0:0:0:0:0:169.254.169.254]",
+    "/get?ssrf=xri://[0:0:0:0:0:ffff:169.254.169.254]",
+    "/get?ssrf=rsync://[0:0:0:0:0:ffff:169.254.169.254]",
+    "/get?ssrf=http:[::ffff:a9fe:a9fe]",
+    "/get?ssrf=http://[a::]",
+    "/get?ssrf=http://[a::b]",
+    "/get?ssrf=http://[dead:beef:dead::beef:dead:beef:dead]",
+    "/get?ssrf=http://[fe80::%zone1]",
+    "/get?ssrf=http://[fe80::dead:beef:dead:beef:dead:beef%zone1]",
+    # A separator that is not a full stop. NFKC folds circled and full-width
+    # digits back to ASCII, so those arrive here already plain — but U+3002,
+    # the ideographic full stop, is not a compatibility form of `.` and
+    # survives normalisation intact.
+    "/get?ssrf=http://169\u3002254\u3002169\u3002254/",
+    # Backslashes between the letters of a host name, which a permissive
+    # resolver strips and a regex for `localhost` does not.
+    r"/get?ssrf=http://\l\o\c\a\l\h\o\s\t/",
+    r"/get?ssrf=http://\g\o\o\g\l\e.\c\o\m/",
+]
+
+#: Requests the corpus certifies as harmless that the rules above had to be
+#: shaped around. The first is the one that decided the whole design.
+SSRF_BENIGN: list[str] = [
+    # **This is why every pattern above requires a scheme.** A bare
+    # `127.0.0.1` is certified harmless here, and a rule matching the address
+    # alone would take it.
+    "/get?x=ping 127.0.0.1",
+    # A host in a parameter with no scheme at all, which is how an ordinary
+    # application passes a domain around.
+    "/get/test?url=example.com/",
+    # Passing a public URL in a query string is one of the most ordinary
+    # things on the web — a redirect, an OAuth callback, a share link.
+    "/page?url=https://example.com",
+    "/get/www/delivery/lg.php?bannerid=18&campaignid=1&zoneid=4"
+    "&loc=https://www.example.com/foo/bar/x-x/x?s=2014-11-01&e=2020-10-31&ex=",
+    # Numbers in parameters, which are everywhere, and none of them a host.
+    "/get?page=12345678",
+    "/get?order=0251",
+    # Ordinary words containing scheme-like and host-like fragments.
+    "/search?w=hello world",
+    "/get?word=evaluation",
+    # **From the labelled real log, and the reason the parameter-name
+    # allow-list had to go rather than merely grow.** `/admin/ping` is a
+    # diagnostic tool and `127.0.0.1` is what you point one at. The old rule
+    # matched `host=` plus a loopback address and called four of these SSRF —
+    # including one from the legitimate administrator at 192.0.2.22, arriving
+    # from a browser with a referer from `/admin/orders`. The truth calls them
+    # `access_control` and `reconnaissance`; none of them is SSRF, and `ssrf`
+    # precision on that log was 0.429 because of them.
+    "/admin/ping?host=127.0.0.1",
+]
+
+
+@pytest.mark.parametrize("target", SSRF_OBFUSCATED)
+def test_an_ssrf_target_written_to_evade_a_host_check_is_still_ssrf(
+    engine: RuleEngine, target: str
+) -> None:
+    """CRS family 934 scored 17% and this shape was its largest single miss.
+
+    The evasions are the evidence, not an obstacle to it: nobody writes
+    `http://0xA9FEA9FE/` by accident, and an address that has been rewritten to
+    get past a check is a stronger signal than the plain one it replaced.
+    """
+    (labelled,) = engine.label_events([request(target)])
+
+    assert labelled.all_labels, f"nothing matched {target!r}"
+    assert any(label.category.is_hostile for label in labelled.all_labels), (
+        f"{target!r} matched only {[one.rule_id for one in labelled.all_labels]}"
+    )
+
+
+@pytest.mark.parametrize("target", SSRF_BENIGN)
+def test_ssrf_rules_leave_ordinary_urls_and_numbers_alone(engine: RuleEngine, target: str) -> None:
+    """The half that decides whether the recall above is worth anything.
+
+    `/get?x=ping 127.0.0.1` is the important one. It carries a loopback address
+    and the corpus certifies it harmless, so the address alone cannot be the
+    signal — which is why every pattern in the pack requires a URL scheme in
+    front of it.
+    """
+    (labelled,) = engine.label_events([request(target)])
+
+    hostile = [one.rule_id for one in labelled.all_labels if one.category.is_hostile]
+    assert not hostile, f"{target!r} was called hostile by {hostile}"

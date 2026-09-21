@@ -761,13 +761,25 @@ def headless_client(ip: str, day: int, hour: int) -> None:
 
 
 def ssrf_attempts(ip: str, day: int, hour: int) -> None:
-    """Cloud metadata, loopback, and a file:// scheme no browser would send."""
+    """Cloud metadata, loopback, and a file:// scheme no browser would send.
+
+    The last four are the same targets written so a check for them will not
+    recognise them: 2852039166 and 0xa9fea9fe are both 169.254.169.254 in one
+    integer, `[::ffff:7f00:1]` is loopback as a mapped IPv6 address, and the
+    ideographic full stops in the last are not the `.` any pattern looks for.
+    They are here because a demonstration that only shows the plain forms shows
+    the easy half of the problem.
+    """
     t = at(day, hour)
     for probe in (
         "/fetch?url=http%3A//169.254.169.254/latest/meta-data/",
         "/fetch?url=http%3A//127.0.0.1%3A6379/",
         "/fetch?url=file%3A///etc/passwd",
         "/fetch?url=gopher%3A//127.0.0.1%3A11211/_stats",
+        "/fetch?target=http%3A//2852039166/latest/meta-data/",
+        "/fetch?target=http%3A//0xa9fea9fe/",
+        "/fetch?target=http%3A//%5B%3A%3Affff%3A7f00%3A1%5D/",
+        "/fetch?target=http%3A//169%E3%80%82254%E3%80%82169%E3%80%82254/",
     ):
         write(t, ip, f"GET {probe} HTTP/1.1", 502, 0, agent=NUCLEI)
         t += timedelta(seconds=9)
