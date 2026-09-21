@@ -99,8 +99,13 @@ rules:
         # A backslash before every letter of a host name. `\l\o\c\a\l\h\o\s\t`
         # is not a path and is not an escape sequence anything defines; it is
         # `localhost` written to miss a search for `localhost`.
+        #
+        # **One or two backslashes, and the two is what the corpus actually
+        # sends.** This was written `(?:\\[a-z]){3,}` first, against a payload
+        # invented rather than read, and the two real cases went on getting
+        # through while a green test said otherwise. Both counts are pinned now.
         - field: query_decoded
-          regex: '\b[a-z][a-z0-9+.\-]{0,15}:/{0,2}(?:\\[a-z]){3,}'
+          regex: '\b[a-z][a-z0-9+.\-]{0,15}:/{0,2}(?:\\{1,2}[a-z]){3,}'
 
   - id: ssrf_alternate_scheme
     name: SSRF (non-HTTP scheme in parameter)

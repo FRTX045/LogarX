@@ -1331,8 +1331,17 @@ SSRF_OBFUSCATED: list[str] = [
     "/get?ssrf=http://169\u3002254\u3002169\u3002254/",
     # Backslashes between the letters of a host name, which a permissive
     # resolver strips and a regex for `localhost` does not.
+    #
+    # **Both counts, and the doubled one is the corpus's.** The first version of
+    # this list carried only the single-backslash form, which is what you write
+    # if you invent the payload instead of reading it; the pattern was built to
+    # match that, the test went green, and the two real cases went on getting
+    # through. `query_decoded` for them is
+    # `ssrf=http://\\l\\o\\c\\a\\l\\h\\o\\s\\t/` — two backslashes per letter.
     r"/get?ssrf=http://\l\o\c\a\l\h\o\s\t/",
     r"/get?ssrf=http://\g\o\o\g\l\e.\c\o\m/",
+    r"/get?ssrf=http://\\l\\o\\c\\a\\l\\h\\o\\s\\t/",
+    r"/get?ssrf=http://\\g\\o\\o\\g\\l\\e.\\c\\o\\m/",
 ]
 
 #: Requests the corpus certifies as harmless that the rules above had to be
