@@ -29,12 +29,15 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from logarc.case import Case
+from logarc.detect.crs import SidecarConfig
+from logarc.enrich import enrich_case
 from logarc.evaluation.scoring import evaluate as score_case
 from logarc.evaluation.truth import read_truth
 
@@ -118,3 +121,125 @@ def test_the_ruleset_fingerprint_is_recorded_with_the_scores(measured: dict) -> 
     which is how two different rulesets come to share one published figure."""
     assert measured["ruleset_fingerprint"]
     assert measured["totals"]["lines_missing"] == 0, "every line of the excerpt was scored"
+
+
+# -- the same excerpt, scored with CRS on ------------------------------------
+#
+# Added 2026-09-22. Until then every committed figure in this project was the
+# native rules alone, and CRS appeared only as a second column in prose that
+# nothing checked. A layer nobody measures is a layer that drifts.
+#
+# It is a *second* fixture rather than a replacement, because the two answer
+# different questions and both are worth failing a build over: the native one
+# is what every case scores by default, and this one is what a case scores when
+# somebody turned CRS on.
+
+CRS_PUBLISHED = DATA / "excerpt.scores.crs.json"
+
+CRS_REGENERATE = (
+    "logarc ingest tests/data/apache-shopfront/excerpt.log --case <tmp> && "
+    "logarc enrich --case <tmp> && "
+    "logarc evaluate -c <tmp> -t tests/data/apache-shopfront/excerpt.truth.jsonl "
+    "-o tests/data/apache-shopfront/excerpt.scores.crs.json"
+)
+
+
+def test_the_crs_run_records_which_crs_produced_it() -> None:
+    """**Provenance, and the reason this fixture could not just be committed.**
+
+    `ruleset_fingerprint` has always answered "which rules produced this". With
+    CRS in the picture a second thing produced it, and the first version of this
+    fixture carried no trace of which. A CRS version bump would have moved every
+    number here with nothing in the file saying why — the same failure the
+    native fixture exists to prevent, one layer over.
+    """
+    published = json.loads(CRS_PUBLISHED.read_text(encoding="utf-8"))
+
+    assert published.get("crs_fingerprint"), (
+        f"the CRS-enriched scores name no CRS version.\n\nRegenerate with:\n  {CRS_REGENERATE}"
+    )
+    assert published["ruleset_fingerprint"], "and the native rules are still half of it"
+
+
+def test_the_native_run_names_no_crs_at_all() -> None:
+    """The other half of the same claim. A case nobody enriched has to say so,
+    rather than leave a reader guessing whether CRS was on."""
+    published = json.loads(PUBLISHED.read_text(encoding="utf-8"))
+
+    assert published.get("crs_fingerprint") is None
+
+
+#: Skipped where the Go sidecar is not built, which is most checkouts, and
+#: required in CI — the same condition `tests/detect/crs/test_contract.py`
+#: reads, written the same way so the two cannot drift apart.
+_crs_unbuilt = not SidecarConfig().binary.exists() or not (SidecarConfig().rules / "rules").is_dir()
+crs_needed = pytest.mark.skipif(
+    _crs_unbuilt and os.environ.get("LOGARC_REQUIRE_CRS") != "1",
+    reason="CRS sidecar or ruleset not built; see crs/README.md",
+)
+
+
+@pytest.fixture(scope="module")
+def measured_with_crs(tmp_path_factory: pytest.TempPathFactory) -> dict:
+    """Score the committed excerpt with CRS on, exactly as the command line would."""
+    root = tmp_path_factory.mktemp("published-scores-crs")
+    with Case.create(root / "case") as case:
+        case.ingest([LOG])
+        case.finalize()
+    enrich_case(root / "case")
+    with Case.open(root / "case") as case:
+        evidence = case.crs_evidence()
+        report = score_case(
+            case.store,
+            read_truth(TRUTH),
+            engine=case.rule_engine(),
+            crs=evidence.index,
+            crs_fingerprint=evidence.fingerprint,
+        )
+    return json.loads(json.dumps(report.to_dict()))
+
+
+@crs_needed
+def test_the_committed_crs_scores_are_what_the_tool_produces_today(
+    measured_with_crs: dict,
+) -> None:
+    """**The gate this project did not have.**
+
+    Every committed figure here used to be the native rules alone. CRS existed
+    as a second column in prose that nothing checked, so a CRS version bump, a
+    mapping change or a rule that started firing on ordinary traffic could move
+    what a user sees and fail no build.
+
+    On this corpus CRS is a small gain — two more attacks caught, no extra false
+    alarms, macro F1 0.786 to 0.796. That is not the whole story and this test
+    does not pretend it is: the excerpt has too little ordinary traffic to show
+    what CRS costs, and the larger corpus this project scores against measured
+    1 false alarm native against 96 with CRS on. What this fixture guarantees is
+    narrower and still worth having — that the figure cannot move without
+    somebody saying so.
+    """
+    published = json.loads(CRS_PUBLISHED.read_text(encoding="utf-8"))
+
+    assert not _differences(measured_with_crs, published), (
+        "The CRS-enriched evaluation no longer produces the committed scores.\n\n"
+        "A moved `crs_fingerprint` means the dependency changed and the figures "
+        "quoted for CRS are stale. A moved score with the same fingerprint means "
+        "this project changed what it does with CRS's findings.\n\n"
+        f"Regenerate with:\n  {CRS_REGENERATE}\n\nWhat moved:\n  "
+        + "\n  ".join(_differences(measured_with_crs, published))
+    )
+
+
+@crs_needed
+def test_turning_crs_on_does_not_cost_precision_here(measured_with_crs: dict) -> None:
+    """The one claim worth asserting rather than merely recording.
+
+    Recall may rise when a second ruleset joins; precision on traffic the native
+    rules already read correctly must not fall. That is the guard ADR-0008 put
+    on the whole integration, and on this corpus it holds exactly — the native
+    run and the CRS run both report zero false alarms.
+    """
+    native = json.loads(PUBLISHED.read_text(encoding="utf-8"))
+
+    assert measured_with_crs["binary"]["false_positives"] <= native["binary"]["false_positives"]
+    assert measured_with_crs["binary"]["true_positives"] >= native["binary"]["true_positives"]

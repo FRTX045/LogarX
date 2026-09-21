@@ -357,6 +357,58 @@ leaving the prose here quietly wrong. That is the gate that was missing when the
 episode builder changed on 25 August and a boundary recall of 0.98 stayed
 published for weeks against a tool scoring 0.27.
 
+### The same excerpt, scored with CRS on
+
+**Added 2026-09-22, and it closes a gap this document had been carrying.** Every
+committed figure in this project was the native rules alone. CRS appeared only
+in prose — the tables further down — which nothing re-ran, so a CRS version
+bump, a mapping change, or a CRS rule that started firing on ordinary traffic
+could move what a reader sees and fail no build.
+
+`excerpt.scores.crs.json` now sits beside the native fixture and is checked the
+same way, with the enrichment actually run:
+
+```bash
+logarc ingest tests/data/apache-shopfront/excerpt.log --case /tmp/c
+logarc enrich --case /tmp/c
+logarc evaluate -c /tmp/c -t tests/data/apache-shopfront/excerpt.truth.jsonl
+```
+
+| committed excerpt, 3,825 requests | native | with CRS |
+|---|---:|---:|
+| Caught | 1,123 | **1,125** |
+| **False alarms** | **0** | **0** |
+| Classification accuracy | 0.9344 | 0.9346 |
+| Macro F1 | 0.7860 | **0.7961** |
+| `ssrf` recall | 0.600 | **0.800** |
+| `injection` precision | **1.000** | 0.981 |
+
+Both fixtures now carry a `crs_fingerprint`: the CRS one names the ruleset that
+produced its detections, and the native one records `null`, which is a claim
+rather than an omission. A reader comparing two reports has to be able to see
+which of them had a second ruleset behind it.
+
+**On this corpus CRS is a small net gain, and that is not the whole picture.**
+The excerpt has too little ordinary traffic to show what CRS costs — the larger
+builds below measure **1 false alarm native against 96 with CRS on**, for two
+extra catches. A corpus that cannot see a cost cannot be used to argue the cost
+is not there, which is the same lesson the `admin_area_redirect` pass wrote down
+from the other direction.
+
+The one misjudgement CRS does make here is worth reading, because it is the
+shape of the disagreement rather than a bug in either tool:
+
+```
+GET /contact 200    Referer: http://shop.test/search?q="><img src=x onerror=alert(1)>
+```
+
+Three CRS XSS rules fire. They are right that an XSS payload is in the request.
+The truth calls this `browsing` and is also right: the payload is in the
+*Referer*, so this is somebody who followed a poisoned link, not somebody who
+wrote one. **CRS judges the payload; logarc judges the actor.** A firewall
+should block that request. A tool reconstructing what an address did should say
+it browsed to `/contact` and arrived from a poisoned search link.
+
 The tables below are the two pinned dataset builds, which are **not** committed
 — 22 MB and 80 MB — and remain re-derivable only with the download.
 

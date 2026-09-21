@@ -7,7 +7,7 @@ own simplified pipeline would report on code nobody else executes.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from logarc.analysis import AnalysisPolicy, analyse_ip
@@ -45,6 +45,23 @@ class EvaluationReport:
     ruleset_fingerprint: str
     policy: dict[str, Any]
 
+    crs_fingerprint: str | None = field(default=None, kw_only=True)
+    """Which CRS produced the detections this run used, if any.
+
+    `kw_only` so it can sit beside `ruleset_fingerprint`, where it belongs to a
+    reader, rather than being exiled to the end of the class by the rule that a
+    defaulted field cannot precede a required one.
+
+    `None` means the case was never enriched, and that is a claim rather than an
+    omission — a reader comparing two reports has to be able to see which one
+    had a second ruleset behind it.
+
+    Beside `ruleset_fingerprint` rather than folded into it, for the reason
+    `AnalysisResult` keeps them apart: one names the rules this project wrote
+    and the other names a dependency, and a CRS version bump should move a
+    figure that says *CRS* moved.
+    """
+
     classification: ClassificationReport | None
     """Per-activity figures, or None when the truth only knew attack-or-not.
 
@@ -77,6 +94,7 @@ class EvaluationReport:
             "source_file_id": self.source_file_id,
             "granularity": self.granularity,
             "ruleset_fingerprint": self.ruleset_fingerprint,
+            "crs_fingerprint": self.crs_fingerprint,
             "policy": self.policy,
             "totals": {
                 "clients": self.clients,
@@ -136,6 +154,7 @@ def evaluate(
     engine: RuleEngine | None = None,
     policy: AnalysisPolicy | None = None,
     crs: DetectionIndex | None = None,
+    crs_fingerprint: str | None = None,
     on_client: Callable[[str], None] | None = None,
 ) -> EvaluationReport:
     """Reconstruct every client the truth knows about, and score the result.
@@ -144,6 +163,10 @@ def evaluate(
     enrichment. That comparison is the guard on the whole CRS integration:
     recall may rise, but precision on traffic the rules already read correctly
     must not fall.
+
+    `crs_fingerprint` is what makes that comparison checkable a month later. A
+    report holding CRS's findings and not its version is a number nobody can
+    reproduce once the dependency moves.
     """
     # Built once. Left to default, `analyse_ip` compiles the whole ruleset from
     # YAML for every client it is given, which on a corpus with two thousand of
@@ -192,6 +215,7 @@ def evaluate(
         source_file_id=truth.source_file_id,
         granularity=truth.granularity,
         ruleset_fingerprint=engine.fingerprint,
+        crs_fingerprint=crs_fingerprint,
         policy=policy.as_config(),
         # A source that only knows attack-or-not carries stand-in categories,
         # and a per-activity table built from those would look like a result
