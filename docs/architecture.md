@@ -58,6 +58,18 @@ report/ · gui/                          HTML · JSON · on-screen graph
 
 ## Why two passes
 
+The GUI also offers a case-wide prioritization scan before client selection.
+`triage/` shares session labeling with reconstruction, stores compact profiles,
+and ranks suspicious and statistically unusual clients with source references.
+It runs in a cancellable process and caches completed results separately from
+the evidence store. All-client search uses a separate paginated summary query:
+the stored IP index for a whole case and window aggregation for selected ranges.
+It filters in storage, preserves population positions, and runs off the GUI
+thread with immediate stale-response invalidation and 150 ms input debounce.
+Selecting a recommendation still uses the per-IP analysis
+path below. See [IP prioritization](ip-prioritization.md) for policy and cache
+semantics.
+
 Ingest is O(n) over the log and happens **once per case**. Analysis is O(k) over one IP's events
 and happens **many times**, interactively.
 

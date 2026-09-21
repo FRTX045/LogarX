@@ -1,0 +1,19 @@
+{
+  "first_usable_all_clients_seconds_after_open": 0.4731867999653332,
+  "search_latency_seconds_including_150ms_debounce": [
+    0.19255910004721954,
+    0.20519929996225983,
+    0.2122596999979578
+  ],
+  "scan_seconds": 0.15183430002070963,
+  "scan_cached": true,
+  "case_open_to_scan_done_seconds": 2.4227861000108533,
+  "event_loop_gap_p95_seconds": 0.02353400003630668,
+  "event_loop_gap_max_seconds": 0.16472020000219345,
+  "timer_interval_seconds": 0.02,
+  "clients": 2760,
+  "failures": [],
+  "method": "Hidden native Windows MainWindow, venv runtime, warm filesystem, cold derived policy-3 index; worker OS peak after scan; no model/truth loaded in scan process",
+  "worker_peak_bytes": 76402688,
+  "cached_reopen_seconds": 0.15566920000128448
+}

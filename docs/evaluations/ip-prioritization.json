@@ -1,0 +1,468 @@
+{
+  "security_corpus": {
+    "dataset": "apache-shopfront-medium",
+    "source_sha256": "a61205732cfcb9ce0369e95326c7daef3be60156b9be2553fcdf07e200e96e8e",
+    "events": 243908,
+    "clients": 2760,
+    "eligible_clients": 2060,
+    "crs": {
+      "crs_revision": "d694d465951ee06347214f1291ae096e40700001",
+      "crs_fingerprint": "f357d142fbcc4441",
+      "crs_paranoia_level": 2
+    },
+    "scan_seconds": 102.38884850000613,
+    "scan_was_cached": false,
+    "cached_seconds": 0.11842479999177158,
+    "scan_process_peak_rss_bytes": 308412416,
+    "attack_clients": 399,
+    "security": {
+      "requests": [
+        {
+          "budget": 10,
+          "reviewed": 10,
+          "relevant": 2,
+          "precision": 0.2,
+          "recall": 0.005012531328320802
+        },
+        {
+          "budget": 25,
+          "reviewed": 25,
+          "relevant": 2,
+          "precision": 0.08,
+          "recall": 0.005012531328320802
+        },
+        {
+          "budget": 50,
+          "reviewed": 50,
+          "relevant": 5,
+          "precision": 0.1,
+          "recall": 0.012531328320802004
+        }
+      ],
+      "errors": [
+        {
+          "budget": 10,
+          "reviewed": 10,
+          "relevant": 10,
+          "precision": 1.0,
+          "recall": 0.02506265664160401
+        },
+        {
+          "budget": 25,
+          "reviewed": 25,
+          "relevant": 25,
+          "precision": 1.0,
+          "recall": 0.06265664160401002
+        },
+        {
+          "budget": 50,
+          "reviewed": 50,
+          "relevant": 50,
+          "precision": 1.0,
+          "recall": 0.12531328320802004
+        }
+      ],
+      "suspicious": [
+        {
+          "budget": 10,
+          "reviewed": 10,
+          "relevant": 5,
+          "precision": 0.5,
+          "recall": 0.012531328320802004
+        },
+        {
+          "budget": 25,
+          "reviewed": 25,
+          "relevant": 15,
+          "precision": 0.6,
+          "recall": 0.03759398496240601
+        },
+        {
+          "budget": 50,
+          "reviewed": 50,
+          "relevant": 40,
+          "precision": 0.8,
+          "recall": 0.10025062656641603
+        }
+      ],
+      "statistics": [
+        {
+          "budget": 10,
+          "reviewed": 10,
+          "relevant": 4,
+          "precision": 0.4,
+          "recall": 0.010025062656641603
+        },
+        {
+          "budget": 25,
+          "reviewed": 25,
+          "relevant": 6,
+          "precision": 0.24,
+          "recall": 0.015037593984962405
+        },
+        {
+          "budget": 50,
+          "reviewed": 50,
+          "relevant": 8,
+          "precision": 0.16,
+          "recall": 0.020050125313283207
+        }
+      ],
+      "isolation_forest": [
+        {
+          "budget": 10,
+          "reviewed": 10,
+          "relevant": 10,
+          "precision": 1.0,
+          "recall": 0.02506265664160401
+        },
+        {
+          "budget": 25,
+          "reviewed": 25,
+          "relevant": 20,
+          "precision": 0.8,
+          "recall": 0.05012531328320802
+        },
+        {
+          "budget": 50,
+          "reviewed": 50,
+          "relevant": 38,
+          "precision": 0.76,
+          "recall": 0.09523809523809523
+        }
+      ]
+    },
+    "model": {
+      "sklearn_version": "1.9.1",
+      "features": [
+        "requests",
+        "peak_per_minute",
+        "distinct_path_share",
+        "target_concentration",
+        "4xx_share",
+        "5xx_share",
+        "bytes_total",
+        "bytes_total:missing",
+        "bytes_mean",
+        "bytes_mean:missing"
+      ],
+      "log1p_features": [
+        "bytes_mean",
+        "bytes_total",
+        "peak_per_minute",
+        "requests"
+      ],
+      "median_imputation": {
+        "requests": 60.5,
+        "peak_per_minute": 50.0,
+        "distinct_path_share": 0.7368421052631579,
+        "target_concentration": 0.05714285714285714,
+        "4xx_share": 0.0,
+        "5xx_share": 0.0,
+        "bytes_total": 2079368.0,
+        "bytes_mean": 40894.661538461536
+      },
+      "random_state": 42,
+      "n_estimators": 200,
+      "max_samples": 256,
+      "contamination": "auto",
+      "population": 2060,
+      "score_direction": "lower is more unusual",
+      "baseline": "current case; not assumed benign"
+    },
+    "unusual_judgments": "unavailable for this corpus; attack labels were not reused",
+    "largest_client_requests": 16860
+  },
+  "unusualness_fixture": {
+    "kind": "controlled legitimate-traffic unusualness fixture, not real-world accuracy",
+    "source_sha256": "60b5558260d2a0ea50ad92f78acdc0247a06e1e03938a6ef806b63e7156c94b4",
+    "crs": {
+      "crs_revision": "d694d465951ee06347214f1291ae096e40700001",
+      "crs_fingerprint": "d1c9e04591ad1e66",
+      "crs_paranoia_level": 2
+    },
+    "clients": 123,
+    "unusual_clients": 3,
+    "results": {
+      "suspicious": {
+        "requests": [
+          {
+            "budget": 10,
+            "reviewed": 10,
+            "relevant": 0,
+            "precision": 0.0,
+            "recall": null
+          },
+          {
+            "budget": 25,
+            "reviewed": 25,
+            "relevant": 0,
+            "precision": 0.0,
+            "recall": null
+          },
+          {
+            "budget": 50,
+            "reviewed": 50,
+            "relevant": 0,
+            "precision": 0.0,
+            "recall": null
+          }
+        ],
+        "errors": [
+          {
+            "budget": 10,
+            "reviewed": 10,
+            "relevant": 0,
+            "precision": 0.0,
+            "recall": null
+          },
+          {
+            "budget": 25,
+            "reviewed": 25,
+            "relevant": 0,
+            "precision": 0.0,
+            "recall": null
+          },
+          {
+            "budget": 50,
+            "reviewed": 50,
+            "relevant": 0,
+            "precision": 0.0,
+            "recall": null
+          }
+        ],
+        "suspicious": [
+          {
+            "budget": 10,
+            "reviewed": 0,
+            "relevant": 0,
+            "precision": null,
+            "recall": null
+          },
+          {
+            "budget": 25,
+            "reviewed": 0,
+            "relevant": 0,
+            "precision": null,
+            "recall": null
+          },
+          {
+            "budget": 50,
+            "reviewed": 0,
+            "relevant": 0,
+            "precision": null,
+            "recall": null
+          }
+        ],
+        "statistics": [
+          {
+            "budget": 10,
+            "reviewed": 10,
+            "relevant": 0,
+            "precision": 0.0,
+            "recall": null
+          },
+          {
+            "budget": 25,
+            "reviewed": 25,
+            "relevant": 0,
+            "precision": 0.0,
+            "recall": null
+          },
+          {
+            "budget": 50,
+            "reviewed": 50,
+            "relevant": 0,
+            "precision": 0.0,
+            "recall": null
+          }
+        ],
+        "isolation_forest": [
+          {
+            "budget": 10,
+            "reviewed": 10,
+            "relevant": 0,
+            "precision": 0.0,
+            "recall": null
+          },
+          {
+            "budget": 25,
+            "reviewed": 25,
+            "relevant": 0,
+            "precision": 0.0,
+            "recall": null
+          },
+          {
+            "budget": 50,
+            "reviewed": 50,
+            "relevant": 0,
+            "precision": 0.0,
+            "recall": null
+          }
+        ]
+      },
+      "unusual": {
+        "requests": [
+          {
+            "budget": 10,
+            "reviewed": 10,
+            "relevant": 0,
+            "precision": 0.0,
+            "recall": 0.0
+          },
+          {
+            "budget": 25,
+            "reviewed": 25,
+            "relevant": 0,
+            "precision": 0.0,
+            "recall": 0.0
+          },
+          {
+            "budget": 50,
+            "reviewed": 50,
+            "relevant": 0,
+            "precision": 0.0,
+            "recall": 0.0
+          }
+        ],
+        "errors": [
+          {
+            "budget": 10,
+            "reviewed": 10,
+            "relevant": 1,
+            "precision": 0.1,
+            "recall": 0.3333333333333333
+          },
+          {
+            "budget": 25,
+            "reviewed": 25,
+            "relevant": 1,
+            "precision": 0.04,
+            "recall": 0.3333333333333333
+          },
+          {
+            "budget": 50,
+            "reviewed": 50,
+            "relevant": 3,
+            "precision": 0.06,
+            "recall": 1.0
+          }
+        ],
+        "suspicious": [
+          {
+            "budget": 10,
+            "reviewed": 0,
+            "relevant": 0,
+            "precision": null,
+            "recall": 0.0
+          },
+          {
+            "budget": 25,
+            "reviewed": 0,
+            "relevant": 0,
+            "precision": null,
+            "recall": 0.0
+          },
+          {
+            "budget": 50,
+            "reviewed": 0,
+            "relevant": 0,
+            "precision": null,
+            "recall": 0.0
+          }
+        ],
+        "statistics": [
+          {
+            "budget": 10,
+            "reviewed": 10,
+            "relevant": 3,
+            "precision": 0.3,
+            "recall": 1.0
+          },
+          {
+            "budget": 25,
+            "reviewed": 25,
+            "relevant": 3,
+            "precision": 0.12,
+            "recall": 1.0
+          },
+          {
+            "budget": 50,
+            "reviewed": 50,
+            "relevant": 3,
+            "precision": 0.06,
+            "recall": 1.0
+          }
+        ],
+        "isolation_forest": [
+          {
+            "budget": 10,
+            "reviewed": 10,
+            "relevant": 3,
+            "precision": 0.3,
+            "recall": 1.0
+          },
+          {
+            "budget": 25,
+            "reviewed": 25,
+            "relevant": 3,
+            "precision": 0.12,
+            "recall": 1.0
+          },
+          {
+            "budget": 50,
+            "reviewed": 50,
+            "relevant": 3,
+            "precision": 0.06,
+            "recall": 1.0
+          }
+        ]
+      }
+    },
+    "model": {
+      "sklearn_version": "1.9.1",
+      "features": [
+        "requests",
+        "peak_per_minute",
+        "distinct_path_share",
+        "target_concentration",
+        "4xx_share",
+        "bytes_total",
+        "bytes_mean"
+      ],
+      "log1p_features": [
+        "bytes_mean",
+        "bytes_total",
+        "peak_per_minute",
+        "requests"
+      ],
+      "median_imputation": {
+        "requests": 22.0,
+        "peak_per_minute": 1.0,
+        "distinct_path_share": 0.18181818181818182,
+        "target_concentration": 0.2608695652173913,
+        "4xx_share": 0.0,
+        "5xx_share": 0.0,
+        "bytes_total": 13200.0,
+        "bytes_mean": 600.0
+      },
+      "random_state": 42,
+      "n_estimators": 200,
+      "max_samples": 123,
+      "contamination": "auto",
+      "population": 123,
+      "score_direction": "lower is more unusual",
+      "baseline": "current case; not assumed benign"
+    }
+  },
+  "gui_event_loop": {
+    "timer_interval_ms": 20,
+    "samples": 5764,
+    "maximum_gap_ms": 44.865300005767494,
+    "p95_gap_ms": 31.56870001112111,
+    "elapsed_seconds": 115.32220419999794,
+    "scan_was_cached": false,
+    "clients": 2760,
+    "scope": "Hidden native Windows prioritization panel, full enriched corpus; event-loop timer, not end-to-end user interaction latency"
+  }
+}

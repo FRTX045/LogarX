@@ -1,0 +1,31 @@
+{
+  "first_usable_all_clients_seconds_after_open": 0.5253348000114784,
+  "search_latency_seconds_including_150ms_debounce": [
+    0.20148920000065118,
+    0.2057823000359349,
+    0.20436279999557883,
+    0.1912717000232078,
+    0.19878820003941655,
+    0.20687700004782528,
+    0.208074799971655,
+    0.1924470000085421,
+    0.20840030000545084,
+    0.20533460000297055,
+    0.20266310003353283,
+    0.20799130003433675,
+    0.21332859998801723,
+    0.21961480000754818,
+    0.2021940000122413
+  ],
+  "scan_seconds": 117.06337250000797,
+  "scan_cached": false,
+  "case_open_to_scan_done_seconds": 119.30797449999955,
+  "event_loop_gap_p95_seconds": 0.03125930001260713,
+  "event_loop_gap_max_seconds": 0.17022010002983734,
+  "timer_interval_seconds": 0.02,
+  "clients": 2760,
+  "failures": [],
+  "method": "Hidden native Windows MainWindow, venv runtime, warm filesystem, cold derived policy-3 index; worker OS peak after scan; no model/truth loaded in scan process",
+  "worker_peak_bytes": 310890496,
+  "cached_reopen_seconds": 0.17206419998547062
+}
