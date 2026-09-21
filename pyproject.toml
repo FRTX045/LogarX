@@ -31,6 +31,7 @@ dependencies = [
 
 [project.optional-dependencies]
 gui = ["PyQt6>=6.6"]
+evaluation = ["scikit-learn>=1.5,<2"]
 # Kept out of `dev` on purpose: CI runs the tests, it does not build the
 # desktop bundle, and PyInstaller is a slow install to pay for on every job.
 package = ["pyinstaller>=6.6"]
@@ -117,6 +118,7 @@ module = [
     "logarc.detect.*",
     "logarc.episode.*",
     "logarc.evaluation.*",
+    "logarc.triage.*",
     "logarc.sessionize.*",
 ]
 strict = true
@@ -125,7 +127,7 @@ strict = true
 # them fails on syntax we never execute. We only need their signatures at the
 # call site, not a full check of their internals.
 [[tool.mypy.overrides]]
-module = ["duckdb.*", "pyarrow.*"]
+module = ["duckdb.*", "pyarrow.*", "sklearn.*"]
 ignore_missing_imports = true
 follow_imports = "skip"
 
