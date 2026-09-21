@@ -575,11 +575,17 @@ def evaluate(
     try:
         loaded = read_truth(truth)
         with Case.open(case) as opened, console.status("Scoring…") as status:
+            crs = opened.crs_evidence()
             report = score_case(
                 opened.store,
                 loaded,
+                # The case's own engine, so a score reflects what this case is
+                # actually configured to detect. Without it, `evaluate` scored a
+                # ruleset that `analyze` on the same case would not have used.
+                engine=opened.rule_engine(),
                 policy=policy,
-                crs=opened.crs_evidence().index,
+                crs=crs.index,
+                crs_fingerprint=crs.fingerprint,
                 on_client=lambda client: status.update(f"Scoring {client}…"),
             )
     except USER_ERRORS as exc:

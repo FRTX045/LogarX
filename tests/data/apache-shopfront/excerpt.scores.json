@@ -227,6 +227,7 @@
     ],
     "weighted_f1": 0.9350369729318424
   },
+  "crs_fingerprint": null,
   "granularity": "category",
   "policy": {
     "absorb_max_duration_seconds": 60,
