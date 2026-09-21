@@ -1,0 +1,302 @@
+"""Build and query atomically published, disposable investigation indexes."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import sqlite3
+import tempfile
+from contextlib import closing
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from time import monotonic
+from typing import TYPE_CHECKING, Any
+
+from logarc.case import Case
+from logarc.core.evidence import EvidenceRef
+from logarc.core.window import EVERYTHING, TimeWindow
+from logarc.detect.crs.sidecar import CrsDetection
+from logarc.detect.engine import RuleEngine
+from logarc.detect.rulepacks import default_rules
+from logarc.sessionize.segmenter import SessionPolicy
+from logarc.storage.event_store import ParquetEventStore
+from logarc.triage.profile import (
+    DEFAULT_POLICY,
+    ClientProfile,
+    PriorityReason,
+    QueueName,
+    RankedClient,
+    TriagePolicy,
+    profile_client,
+    rank_profiles,
+)
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+
+    from logarc.core.event import NormalizedEvent
+
+
+class ScanCancelled(Exception):  # noqa: N818 - cancellation is a normal worker outcome
+    """The caller stopped a scan before it could publish a completed index."""
+
+
+@dataclass(frozen=True)
+class TriageResult:
+    path: Path
+    clients: int
+    eligible: int
+    crs_present: bool
+    cached: bool = False
+    seconds: float = 0
+
+
+@dataclass(frozen=True)
+class TriageProgress:
+    processed: int
+    total: int
+    findings: tuple[RankedClient, ...]
+
+
+@dataclass(frozen=True)
+class TriagePage:
+    rows: tuple[RankedClient, ...]
+    total: int
+    offset: int
+
+
+def _digest(path: Path) -> str | None:
+    if not path.exists():
+        return None
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def _reason(data: dict[str, Any]) -> PriorityReason:
+    return PriorityReason(
+        **{**data, "evidence": tuple(EvidenceRef(**ref) for ref in data["evidence"])}
+    )
+
+
+def _profile(data: dict[str, Any]) -> ClientProfile:
+    return ClientProfile(
+        **{
+            **data,
+            "categories": tuple(data["categories"]),
+            "reasons": tuple(_reason(reason) for reason in data["reasons"]),
+            "evidence": {
+                key: tuple(EvidenceRef(**ref) for ref in refs)
+                for key, refs in data["evidence"].items()
+            },
+        }
+    )
+
+
+def read_page(
+    path: Path,
+    queue: QueueName,
+    *,
+    query: str = "",
+    offset: int = 0,
+    limit: int = 100,
+) -> TriagePage:
+    """Search the entire ranking and retrieve only the requested page."""
+    if queue not in ("suspicious", "unusual", "all"):
+        raise ValueError(f"unknown investigation queue: {queue}")
+    if offset < 0 or limit < 1:
+        raise ValueError("page offset must be nonnegative and limit positive")
+    with closing(sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)) as connection:
+        where = "queue = ? AND instr(ip, ?) > 0"
+        params = (queue, query.strip())
+        total = connection.execute(
+            f"SELECT count(*) FROM ranking WHERE {where}", params
+        ).fetchone()[0]
+        rows = connection.execute(
+            f"SELECT profile, reasons, position FROM ranking JOIN clients USING(ip) WHERE {where} ORDER BY position LIMIT ? OFFSET ?",
+            (*params, limit, offset),
+        ).fetchall()
+    return TriagePage(
+        tuple(
+            RankedClient(
+                _profile(json.loads(profile)),
+                tuple(_reason(r) for r in json.loads(reasons)),
+                position,
+            )
+            for profile, reasons, position in rows
+        ),
+        total,
+        offset,
+    )
+
+
+def read_profiles(path: Path) -> tuple[ClientProfile, ...]:
+    """Read completed profiles in stable order for evaluation without rescanning logs."""
+    with closing(sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)) as connection:
+        return tuple(
+            _profile(json.loads(row[0]))
+            for row in connection.execute("SELECT profile FROM clients ORDER BY ip")
+        )
+
+
+def _load_crs(connection: sqlite3.Connection, path: Path, check: Callable[[], None]) -> bool:
+    """Index line-keyed CRS records on disk; memory is bounded by one JSON line."""
+    connection.execute("CREATE TABLE crs(source TEXT, line INTEGER, payload TEXT)")
+    if path.exists():
+        with path.open(encoding="utf-8") as stream:
+            for line in stream:
+                check()
+                if line.strip():
+                    data = json.loads(line)
+                    connection.execute(
+                        "INSERT INTO crs VALUES (?, ?, ?)",
+                        (data["source_file_id"], data["line_no"], line),
+                    )
+    connection.execute("CREATE INDEX crs_evidence ON crs(source, line)")
+    connection.commit()
+    return connection.execute("SELECT 1 FROM crs LIMIT 1").fetchone() is not None
+
+
+def _client_crs(
+    connection: sqlite3.Connection,
+    events: Sequence[NormalizedEvent],
+) -> dict[tuple[str, int], list[CrsDetection]]:
+    index: dict[tuple[str, int], list[CrsDetection]] = {}
+    for event in events:
+        key = (event.evidence.source_file_id, event.evidence.line_no)
+        rows = connection.execute("SELECT payload FROM crs WHERE source = ? AND line = ?", key)
+        matches = [
+            CrsDetection.from_json(json.loads(row[0]), source_file_id=key[0]) for row in rows
+        ]
+        if matches:
+            index[key] = matches
+    return index
+
+
+def scan_case(
+    root: Path,
+    *,
+    window: TimeWindow = EVERYTHING,
+    policy: TriagePolicy = DEFAULT_POLICY,
+    report: Callable[[TriageProgress], None] | None = None,
+    cancelled: Callable[[], bool] | None = None,
+    scratch_root: Path | None = None,
+) -> TriageResult:
+    """Profile all clients and publish only complete results under their input hash."""
+    started = monotonic()
+
+    def check() -> None:
+        if cancelled is not None and cancelled():
+            raise ScanCancelled()
+
+    check()
+    engine = RuleEngine(default_rules())
+    session_policy = SessionPolicy()
+    crs_path = root / "crs.jsonl"
+    with Case.open(root) as case:
+        identity = {
+            "sources": [asdict(source) for source in case.manifest.sources],
+            "config": case.manifest.config,
+            "rules": engine.fingerprint,
+            "crs": _digest(crs_path),
+            "window": asdict(window),
+            "session": session_policy.as_config(),
+            "policy": asdict(policy),
+        }
+        key = hashlib.sha256(json.dumps(identity, sort_keys=True, default=str).encode()).hexdigest()
+        directory = root / "triage"
+        directory.mkdir(exist_ok=True)
+        destination = directory / f"{key}.sqlite"
+        if destination.exists():
+            try:
+                with closing(
+                    sqlite3.connect(f"{destination.resolve().as_uri()}?mode=ro", uri=True)
+                ) as cached:
+                    data = json.loads(cached.execute("SELECT payload FROM metadata").fetchone()[0])
+                    count = cached.execute("SELECT count(*) FROM clients").fetchone()[0]
+                    ranked = cached.execute(
+                        "SELECT count(*) FROM ranking WHERE queue = 'all'"
+                    ).fetchone()[0]
+                    if count != data["clients"] or ranked != count:
+                        raise ValueError("incomplete prioritization cache")
+                return TriageResult(
+                    destination,
+                    data["clients"],
+                    data["eligible"],
+                    data["crs_present"],
+                    True,
+                    monotonic() - started,
+                )
+            except (sqlite3.Error, ValueError, KeyError, TypeError):
+                pass
+        with (
+            tempfile.TemporaryDirectory(prefix="scan-", dir=scratch_root or directory) as temporary,
+            closing(ParquetEventStore(root, scratch=Path(temporary) / "duckdb")) as store,
+        ):
+            scratch = Path(temporary)
+            total = store.overview(window=window).clients
+            profiles = []
+            leaders: list[ClientProfile] = []
+            last_report = 0.0
+            with closing(sqlite3.connect(scratch / "crs.sqlite")) as crs:
+                has_detections = _load_crs(crs, crs_path, check)
+                for events in store.iter_clients(window=window):
+                    check()
+                    index = _client_crs(crs, events) if has_detections else None
+                    profile = profile_client(
+                        events, engine, crs=index, session_policy=session_policy
+                    )
+                    profiles.append(profile)
+                    if profile.hostile_requests:
+                        leaders = [
+                            row.profile
+                            for row in rank_profiles([*leaders, profile], "suspicious")[:20]
+                        ]
+                    if report is not None and monotonic() - last_report >= 0.25:
+                        report(
+                            TriageProgress(
+                                len(profiles), total, tuple(rank_profiles(leaders, "suspicious"))
+                            )
+                        )
+                        last_report = monotonic()
+            eligible = sum(p.requests >= policy.minimum_requests for p in profiles)
+            data = {
+                "identity": identity,
+                "clients": len(profiles),
+                "eligible": eligible,
+                "crs_present": crs_path.exists(),
+            }
+            staging = scratch / "result.sqlite"
+            with closing(sqlite3.connect(staging)) as output:
+                output.executescript(
+                    "CREATE TABLE metadata(payload TEXT);"
+                    "CREATE TABLE clients(ip TEXT PRIMARY KEY, profile TEXT);"
+                    "CREATE TABLE ranking(queue TEXT, position INTEGER, ip TEXT, reasons TEXT, PRIMARY KEY(queue, position));"
+                )
+                output.execute("INSERT INTO metadata VALUES (?)", (json.dumps(data, default=str),))
+                output.executemany(
+                    "INSERT INTO clients VALUES (?, ?)",
+                    ((p.client_ip, json.dumps(asdict(p))) for p in profiles),
+                )
+                for queue in ("suspicious", "unusual", "all"):
+                    check()
+                    for position, row in enumerate(rank_profiles(profiles, queue, policy), 1):
+                        check()
+                        output.execute(
+                            "INSERT INTO ranking VALUES (?, ?, ?, ?)",
+                            (
+                                queue,
+                                position,
+                                row.profile.client_ip,
+                                json.dumps([asdict(r) for r in row.reasons]),
+                            ),
+                        )
+                output.commit()
+            check()
+            if _digest(crs_path) != identity["crs"]:
+                raise RuntimeError(
+                    "CRS evidence changed during prioritization; run the scan again."
+                )
+            staging.replace(destination)
+    return TriageResult(
+        destination, len(profiles), eligible, crs_path.exists(), False, monotonic() - started
+    )
