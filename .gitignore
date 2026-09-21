@@ -89,3 +89,7 @@ handoff/
 crs/crs-sidecar
 crs/crs-sidecar.exe
 vendor/
+
+# Knowledge graph built from this tree by `graphify`. Derived output: rebuilt
+# from the source it describes, and stale the moment the source moves.
+graphify-out/
