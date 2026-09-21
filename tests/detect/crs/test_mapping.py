@@ -163,3 +163,78 @@ def test_an_unknown_severity_does_not_fall_to_the_floor() -> None:
     rule severe enough to carry a message is not INFO."""
     assert severity_for("unheard-of") is Severity.MEDIUM
     assert severity_for(None) is Severity.MEDIUM
+
+
+# -- rules withheld one at a time, not by family -----------------------------
+
+
+def test_a_url_parameter_holding_an_ip_address_cannot_name_an_activity() -> None:
+    """**73 of the 96 false alarms CRS produced on the medium corpus were this
+    one rule, on this one request, repeated.**
+
+        GET /admin/import-image?url=http://203.0.113.2/assets/img/logo.png
+
+    A shop's administrator importing the shop's own logo from the shop's own
+    asset server. CRS 931100 says what it means — "URL Parameter using IP
+    Address" — and an IP in a `url=` parameter is a shape, not an act. Internal
+    tooling addresses internal hosts by number all the time.
+
+    Measured on 237,278 real requests: it named **1** genuine attack and
+    accused **73** ordinary ones. The family stays mapped, because remote file
+    inclusion is real and other 931 rules find it; this rule alone is withheld.
+
+    `rfi_offsite_url` now does this job properly, by asking which hosts the site
+    owns rather than guessing from the shape of an address.
+    """
+    assert category_for(931100, "attack-rfi") is None
+    assert category_for_family("attack-rfi") is not None, "the family still speaks"
+
+
+def test_a_bare_unix_command_name_cannot_name_an_activity() -> None:
+    """The other 22, and the third time this project has met this mistake.
+
+    CRS 932236 matches Unix command names with no metacharacter around them.
+    On a hardware shop that is the product catalogue:
+
+        /search?q=pipe cutter        `pipe` is a shell command
+        /search?q=wall plugs         `wall` writes to every logged-in user
+        /api/autocomplete?q=pipe
+
+    Measured on the same corpus it named **0** genuine attacks and accused
+    **22** ordinary searches. `attack/windows.yaml` was built around exactly
+    this — `find x for y`, `time warner`, `cmd=go to store` — and
+    `http_library_user_agent` was the same error in another field.
+    """
+    assert category_for(932236, "attack-rce") is None
+    assert category_for_family("attack-rce") is not None, "the family still speaks"
+
+
+def test_a_withheld_rule_id_cannot_be_revived_by_its_family() -> None:
+    """The bound that makes the table safe to extend. A withheld *rule* is
+    withheld whatever its family says, the mirror of the existing rule that a
+    listed rule id can never give a voice to a withheld family."""
+    for family in ("attack-rfi", "attack-rce", "attack-sqli", None):
+        assert category_for(931100, family) is None
+        assert category_for(932236, family) is None
+
+
+def test_an_off_domain_check_with_no_domains_configured_cannot_name_an_activity() -> None:
+    """**The rule that took over when 931100 was silenced, and the real one.**
+
+    CRS 931130 is "Off-Domain Reference/Link". CRS implements it against
+    `TX:ALLOWED_HOSTS` — a list of the site's own names that an operator is
+    expected to configure. This project never sets it, so out of the box the
+    rule treats *every* outbound URL as off-domain and says so.
+
+    That is not a defect in CRS. It is an unconfigured rule, and an
+    unconfigured rule should not accuse anybody. On 237,278 real requests it
+    named **1** genuine attack and accused **73** ordinary ones — the same
+    administrator importing the same logo, 73 times.
+
+    logarc answers the same question a different way. `site_hosts` asks the
+    reader which domains are theirs and `rfi_offsite_url` compares against it,
+    which is the configuration CRS is missing here. Passing that answer through
+    to the sidecar would make 931130 correct rather than silent; until then it
+    is silent, because those are the only two honest options.
+    """
+    assert category_for(931130, "attack-rfi") is None

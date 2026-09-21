@@ -376,24 +376,81 @@ logarc evaluate -c /tmp/c -t tests/data/apache-shopfront/excerpt.truth.jsonl
 
 | committed excerpt, 3,825 requests | native | with CRS |
 |---|---:|---:|
-| Caught | 1,123 | **1,125** |
+| Caught | 1,123 | **1,124** |
 | **False alarms** | **0** | **0** |
 | Classification accuracy | 0.9344 | 0.9346 |
-| Macro F1 | 0.7860 | **0.7961** |
-| `ssrf` recall | 0.600 | **0.800** |
-| `injection` precision | **1.000** | 0.981 |
+| Macro F1 | **0.7860** | 0.7854 |
 
 Both fixtures now carry a `crs_fingerprint`: the CRS one names the ruleset that
 produced its detections, and the native one records `null`, which is a claim
 rather than an omission. A reader comparing two reports has to be able to see
 which of them had a second ruleset behind it.
 
-**On this corpus CRS is a small net gain, and that is not the whole picture.**
-The excerpt has too little ordinary traffic to show what CRS costs — the larger
-builds below measure **1 false alarm native against 96 with CRS on**, for two
-extra catches. A corpus that cannot see a cost cannot be used to argue the cost
-is not there, which is the same lesson the `admin_area_redirect` pass wrote down
-from the other direction.
+**The excerpt has too little ordinary traffic to show what CRS costs**, and
+until 2026-09-22 that was the end of the story — the larger build measured
+**1 false alarm native against 96 with CRS on**. A corpus that cannot see a cost
+cannot be used to argue the cost is not there, which is the same lesson the
+`admin_area_redirect` pass wrote down from the other direction.
+
+### What the 96 turned out to be
+
+Classified 2026-09-22 against `2026-09-20-medium`, 237,278 requests. Three CRS
+rules accounted for **95 of the 96**, and the ninety-sixth is native and
+pre-existing.
+
+| rule | CRS calls it | named a real attack | accused ordinary traffic |
+|---|---|---:|---:|
+| 931130 | RFI: Off-Domain Reference/Link | 1 | **73** |
+| 931100 | RFI: URL Parameter using IP Address | 1 | **73** |
+| 932236 | RCE: Unix Command Injection | 0 | **22** |
+
+The first two fire on the same requests, which is why silencing one alone
+changed nothing — 931130 simply took over, and a second measurement was needed
+to see it. **Measure the whole set before withholding anything.**
+
+All 73 are one request, repeated:
+
+```
+GET /admin/import-image?url=http://203.0.113.2/assets/img/logo.png
+```
+
+A shop's administrator importing the shop's own logo from the shop's own asset
+server. 931100 objects to the address being a number; 931130 objects to it being
+off-domain, which it can only judge from `TX:ALLOWED_HOSTS` — a list of the
+site's own names that an operator supplies and this project never did. Neither
+is a defect in CRS. One reports a shape and the other is unconfigured.
+
+The 22 are the product catalogue:
+
+```
+/search?q=pipe cutter        `pipe` is a shell command
+/search?q=wall plugs         `wall` writes to every logged-in user
+/api/autocomplete?q=pipe
+```
+
+**A plumbing shop cannot search for a pipe cutter.** This is the third time this
+project has met the same error: `attack/windows.yaml` exists because `find x for
+y` and `time warner` are ordinary English, and `http_library_user_agent` was it
+again in another field. A bare command name is vocabulary, not intent.
+
+All three are now in `_RULE_WITHHELD` — withheld by rule id, not by family, so
+the 931 and 932 families still name the attacks they find. On the same corpus:
+
+| 237,278 real requests | native | CRS before | CRS after |
+|---|---:|---:|---:|
+| Caught | 17,069 | 17,071 | **17,070** |
+| **False alarms** | **1** | 96 | **1** |
+| Attack-or-not precision | 0.9999 | 0.9944 | **0.9999** |
+| Macro F1 | 0.7684 | 0.7089 | 0.7676 |
+
+**CRS now costs nothing in precision and finds one attack the native rules do
+not.** Withholding the three cost one catch, which is the honest price and is
+recorded rather than rounded away.
+
+It is not free on the committed excerpt, where the same change takes macro F1
+from 0.7961 to 0.7854 — 0.0006 *below* the native run — because one withheld
+rule was naming a real attack there. Caught still runs ahead of native, 1,124
+against 1,123. Both figures are in the fixtures; neither is quoted alone.
 
 The one misjudgement CRS does make here is worth reading, because it is the
 shape of the disagreement rather than a bug in either tool:

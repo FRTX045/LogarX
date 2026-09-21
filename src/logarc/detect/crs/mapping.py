@@ -105,6 +105,54 @@ _RULE_CATEGORY: Final[dict[int, ActivityCategory]] = {
     930140: ActivityCategory.RECONNAISSANCE,
 }
 
+#: Individual rules that may never name an activity, though their family may.
+#:
+#: `_UNMAPPED` silences a whole family; this silences one rule inside a family
+#: that is otherwise trusted. Both were measured on the same 237,278-request
+#: corpus, by counting what each rule named that nothing else did against what
+#: it accused:
+#:
+#: | rule | CRS calls it | named a real attack | accused ordinary traffic |
+#: |---|---|---:|---:|
+#: | 931100 | RFI: URL Parameter using IP Address | 1 | 73 |
+#: | 931130 | RFI: Off-Domain Reference/Link | 1 | 73 |
+#: | 932236 | RCE: Unix Command Injection | 0 | 22 |
+#:
+#: Together they were **95 of the 96** false alarms CRS contributed to that
+#: build, against the native rules' 1. Withholding all three costs one catch and
+#: leaves CRS naming 15 attacks and accusing nobody.
+#:
+#: The first two fire on the same 73 requests, which is why they are listed
+#: together and why silencing one alone changed nothing: 931130 simply took
+#: over. Measure the whole set before withholding anything — one at a time is
+#: whack-a-mole.
+#:
+#: **931100 reports a shape, not an act.** Its own message says so: a `url=`
+#: parameter holding an IP address. All 73 are one request repeated —
+#: `/admin/import-image?url=http://203.0.113.2/assets/img/logo.png`, a shop's
+#: administrator importing the shop's own logo from the shop's own asset
+#: server. Internal tooling addresses internal hosts by number.
+#:
+#: **931130 is an off-domain check with no domains configured.** CRS implements
+#: it against `TX:ALLOWED_HOSTS`, a list an operator is expected to supply, and
+#: this project never supplies one — so it reads every outbound URL as
+#: off-domain. An unconfigured rule should not accuse anybody.
+#:
+#: The 931 family stays mapped either way, because remote file inclusion is
+#: real and other rules in it find it. `rfi_offsite_url` does this particular
+#: job properly, by asking which hosts the site owns instead of inferring
+#: hostility from the shape of an address — and passing that same answer
+#: through to the sidecar would make 931130 correct rather than silent.
+#:
+#: **932236 matches Unix command names with no metacharacter around them**, and
+#: on a hardware shop that is the product catalogue: `pipe cutter`, `wall
+#: plugs`, `pipe`. `pipe` and `wall` are both shell commands. This is the third
+#: time this project has met the same error — `attack/windows.yaml` exists
+#: because `find x for y` and `time warner` are ordinary English, and
+#: `http_library_user_agent` was it again in another field. A bare command name
+#: is vocabulary, not intent.
+_RULE_WITHHELD: Final[frozenset[int]] = frozenset({931100, 931130, 932236})
+
 #: Families that are recorded as evidence but may never name an activity.
 #:
 #: Not an oversight and not a to-do list. Each is here because letting it
@@ -194,7 +242,13 @@ def category_for(rule_id: int, family: str | None) -> ActivityCategory | None:
     always had: an override can redirect a detection the family already allowed,
     and can never give a voice to one the family withheld. Otherwise a listed
     rule id would be a back door for `attack-protocol`.
+
+    `_RULE_WITHHELD` is checked first and is the mirror of that bound: a rule
+    silenced by id stays silent whatever its family allows. Two rules are in it
+    and both earned the place by measurement rather than by argument.
     """
+    if rule_id in _RULE_WITHHELD:
+        return None
     category = category_for_family(family)
     if category is None:
         return None
