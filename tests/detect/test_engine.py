@@ -153,6 +153,10 @@ def test_every_matchable_field_reads_its_own_value() -> None:
         # `referer.example` is not `shop.example.com`, so this request did
         # arrive from somewhere else.
         "referer_offsite": "1",
+        # Nobody has said which hosts this site owns, so the off-site question
+        # about a URL in a parameter has no answer and says so. The tests that
+        # exercise it properly are at the foot of this file.
+        "query_url_offsite": "0",
     }
     assert set(expected) == set(MATCH_FIELDS), "a field can be named but not read"
     assert {name: view.value(name) for name in sorted(MATCH_FIELDS)} == expected
@@ -868,5 +872,128 @@ def test_no_referer_at_all_is_not_offsite(tmp_path: Path) -> None:
     engine = _fixation_engine(tmp_path)
 
     (labelled,) = engine.label_events([_request("myapp.com", None)])
+
+    assert not labelled.all_labels
+
+
+#: A rule that asks only whether a URL in a query parameter points somewhere
+#: this site does not own. Remote file inclusion is this shape and nothing else:
+#: the request is `GET /page?url=…` either way, and only the destination differs.
+OFFSITE = """
+version: 1
+rules:
+  - id: rfi_offsite_url
+    name: Remote File Inclusion (off-site URL in a parameter)
+    category: ssrf
+    severity: high
+    confidence: 0.75
+    match:
+      all:
+        - field: query_url_offsite
+          min: 1
+"""
+
+
+def _offsite_engine(tmp_path: Path, *, site_hosts: tuple[str, ...] = ()) -> RuleEngine:
+    path = tmp_path / "offsite.yaml"
+    path.write_text(OFFSITE, encoding="utf-8")
+    return RuleEngine(load_rules([path]), site_hosts=site_hosts)
+
+
+def _fetching(query: str, host: str | None = "shop.example.com") -> NormalizedEvent:
+    return NormalizedEvent(
+        timestamp=START,
+        client_ip="203.0.113.5",
+        evidence=EvidenceRef("access.log", 1),
+        method="GET",
+        path="/page",
+        query=query,
+        status=200,
+        bytes_sent=100,
+        user_agent="Mozilla/5.0",
+        host=host,
+    )
+
+
+def test_a_url_to_a_host_nobody_named_is_off_site(tmp_path: Path) -> None:
+    """The detection this whole setting exists for."""
+    engine = _offsite_engine(tmp_path, site_hosts=("shop.example.com",))
+
+    (labelled,) = engine.label_events([_fetching("url=https://evil.test/shell.txt")])
+
+    assert [item.rule_id for item in labelled.all_labels] == ["rfi_offsite_url"]
+
+
+def test_a_url_to_a_host_the_reader_named_is_ordinary(tmp_path: Path) -> None:
+    """The other half, and the reason the question is asked at all. A share
+    link, an OAuth callback and a redirect all look exactly like the attack
+    above; what separates them is that the destination is the reader's own."""
+    engine = _offsite_engine(tmp_path, site_hosts=("shop.example.com", "www.shop.example.com"))
+
+    events = [
+        _fetching("url=https://shop.example.com/help"),
+        _fetching("next=https://www.shop.example.com/cart"),
+    ]
+
+    assert all(not item.all_labels for item in engine.label_events(events))
+
+
+def test_naming_nothing_means_the_rule_never_fires(tmp_path: Path) -> None:
+    """**The whole design, in one test.** Unanswered, this field says nothing —
+    it does not fall back to the request's own Host header and decide for
+    itself.
+
+    That was the choice on the table and it was made deliberately. A log that
+    records `Host: localhost`, which is what sits behind most reverse proxies,
+    would otherwise make every ordinary outbound link off-site. Measured against
+    the OWASP corpus, guessing from the Host header cost two of the 134 requests
+    it certifies as harmless; being told cost none, for the same eleven catches.
+    """
+    engine = _offsite_engine(tmp_path)
+
+    (labelled,) = engine.label_events([_fetching("url=https://evil.test/shell.txt")])
+
+    assert not labelled.all_labels
+
+
+def test_a_host_that_merely_ends_with_the_site_is_still_off_site(tmp_path: Path) -> None:
+    """`example.com.evil.com` is a domain bought to be misread as yours. The
+    comparison is whole hosts, never a suffix, which is also why
+    `www.shop.example.com` has to be named separately above."""
+    engine = _offsite_engine(tmp_path, site_hosts=("example.com",))
+
+    (labelled,) = engine.label_events(
+        [_fetching("url=https://example.com.evil.com/", host="example.com")]
+    )
+
+    assert [item.rule_id for item in labelled.all_labels] == ["rfi_offsite_url"]
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # No URL at all — the commonest query string there is.
+        "id=42&sort=price",
+        # A bare host with no scheme is a name being passed around, not a fetch.
+        "site=evil.test",
+        # The reader's own site, reached by a different scheme and port.
+        "url=http://shop.example.com:8080/help",
+    ],
+)
+def test_queries_that_ask_for_nothing_off_site(tmp_path: Path, query: str) -> None:
+    engine = _offsite_engine(tmp_path, site_hosts=("shop.example.com",))
+
+    (labelled,) = engine.label_events([_fetching(query)])
+
+    assert not labelled.all_labels, f"{query!r} was called hostile"
+
+
+def test_the_named_hosts_are_compared_the_way_hosts_are(tmp_path: Path) -> None:
+    """Whatever the reader types is put through the same reduction as the URL,
+    so `HTTPS://Shop.Example.COM:443/` and `shop.example.com` are one site.
+    Typing a URL into a box that asks for a domain is the ordinary mistake."""
+    engine = _offsite_engine(tmp_path, site_hosts=("HTTPS://Shop.Example.COM:443/",))
+
+    (labelled,) = engine.label_events([_fetching("url=https://shop.example.com/help")])
 
     assert not labelled.all_labels

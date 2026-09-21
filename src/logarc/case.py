@@ -9,9 +9,12 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import TracebackType
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from logarc.detect.crs.store import CrsEvidence
+from logarc.detect.engine import RuleEngine, _bare_host
+from logarc.detect.rulepacks import default_rules
+from logarc.detect.rules import load_rules
 from logarc.evidence import EvidenceLine, read_evidence
 from logarc.ingest.parallel import (
     DEFAULT_WORKERS,
@@ -31,7 +34,7 @@ from logarc.storage.case import MANIFEST_NAME, CaseManifest, SourceRecord
 from logarc.storage.event_store import ParquetEventStore
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Iterable, Sequence
 
     from logarc.core.evidence import EvidenceRef
 
@@ -89,6 +92,60 @@ class Case:
         rather than merely fixed.
         """
         return CrsEvidence.of(self.root, self.manifest.config)
+
+    # -- the site's own domains --------------------------------------------
+
+    #: Where the answer lives in the manifest's config, beside `crs_fingerprint`.
+    SITE_HOSTS_KEY: ClassVar[str] = "site_hosts"
+
+    @property
+    def site_hosts(self) -> tuple[str, ...]:
+        """The domains the reader said belong to this site.
+
+        Empty means nobody has been asked, or somebody was asked and declined —
+        the two are deliberately the same thing here, because `rfi_offsite_url`
+        treats both as "say nothing" and no rule should behave differently for a
+        question that was skipped than for one never put.
+        """
+        stored = self.manifest.config.get(self.SITE_HOSTS_KEY) or []
+        return tuple(str(name) for name in stored)
+
+    def set_site_hosts(self, names: Iterable[str]) -> None:
+        """Record the answer, reduced, and save it.
+
+        Reduced on the way *in* rather than at every comparison, so what the
+        file holds is what the engine will actually use. A reader who pastes
+        `https://shop.test/` into a box asking for a domain has answered the
+        question correctly and should not be quietly wrong.
+
+        An empty list clears the key rather than storing `[]`, so a case that
+        was never asked and a case whose answer was withdrawn read the same on
+        disk as well as in memory.
+        """
+        reduced = sorted({host for host in (_bare_host(name) for name in names) if host})
+        if reduced:
+            self.manifest.config[self.SITE_HOSTS_KEY] = reduced
+        else:
+            self.manifest.config.pop(self.SITE_HOSTS_KEY, None)
+        self.manifest.save(self.root)
+
+    def rule_engine(self, extra_packs: Sequence[Path] = ()) -> RuleEngine:
+        """The engine this case is analysed with, knowing its own domains.
+
+        Here rather than in the CLI and the GUI separately, for the reason
+        `crs_evidence` is: when each front end built its own, they disagreed
+        about the same case. One rule in the tree now depends on a per-case
+        answer, so an engine built without the case is an engine that quietly
+        detects less.
+
+        Extra packs are added to the bundled rules rather than replacing them,
+        and `load_rules` refuses a duplicate id, so a pack copying a bundled
+        rule to edit it fails loudly instead of shadowing it.
+        """
+        rules = list(default_rules())
+        if extra_packs:
+            rules.extend(load_rules(list(extra_packs)))
+        return RuleEngine(rules, site_hosts=self.site_hosts)
 
     def read_evidence(self, refs: Sequence[EvidenceRef]) -> list[EvidenceLine]:
         """Fetch the raw source lines behind a set of references.

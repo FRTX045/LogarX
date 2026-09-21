@@ -143,3 +143,42 @@ def test_ingesting_into_an_already_finalised_case_is_refused(tmp_path: Path) -> 
 
     with pytest.raises(CaseError, match="finalised"), Case.open(root) as reopened:
         reopened.ingest([log])
+
+
+def test_the_domains_a_reader_names_survive_closing_the_case(tmp_path: Path) -> None:
+    """The answer belongs to the case, not to the session that gave it.
+
+    It is asked once, after the first scan, and every reconstruction afterwards
+    has to use it — including ones run tomorrow, from the command line, by
+    somebody who never saw the dialog.
+    """
+    case = Case.create(tmp_path / "case")
+    case.ingest([write_log(tmp_path / "access.log")])
+    case.set_site_hosts(["HTTPS://Shop.Test/", "www.shop.test"])
+    case.close()
+
+    reopened = Case.open(tmp_path / "case")
+
+    # Stored reduced, so the file holds what the comparison will actually use
+    # rather than what somebody typed into a box.
+    assert reopened.site_hosts == ("shop.test", "www.shop.test")
+
+
+def test_a_case_nobody_answered_names_no_domains(tmp_path: Path) -> None:
+    case = Case.create(tmp_path / "case")
+    case.ingest([write_log(tmp_path / "access.log")])
+
+    assert case.site_hosts == ()
+
+
+def test_naming_no_domains_clears_an_earlier_answer(tmp_path: Path) -> None:
+    """A reader who got it wrong has to be able to take it back, and taking it
+    back has to mean the rule goes quiet again rather than half-applying."""
+    case = Case.create(tmp_path / "case")
+    case.ingest([write_log(tmp_path / "access.log")])
+    case.set_site_hosts(["shop.test"])
+
+    case.set_site_hosts([])
+
+    assert case.site_hosts == ()
+    assert Case.open(tmp_path / "case").site_hosts == ()

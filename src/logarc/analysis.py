@@ -104,6 +104,15 @@ class AnalysisResult:
     """
 
     crs_fingerprint: str | None = None
+    site_hosts: tuple[str, ...] = ()
+    """The domains the reader said are this site's own, as the engine read them.
+
+    Provenance, beside `crs_fingerprint` rather than folded into
+    `ruleset_fingerprint`, because it is an answer a person gave and not part of
+    the ruleset. `rfi_offsite_url` is the only rule that reads it, and it is the
+    only rule in the tree whose finding cannot be checked from the evidence line
+    alone — so the report has to carry what it was compared against.
+    """
     """Which CRS configuration contributed, or None when the case was not enriched.
 
     Recorded beside the ruleset fingerprint for the same reason: a finding is
@@ -157,6 +166,11 @@ class AnalysisResult:
             "request_count": self.request_count,
             "ruleset_fingerprint": self.ruleset_fingerprint,
             "crs_fingerprint": self.crs_fingerprint,
+            # Always present, empty when unanswered. A missing key would read as
+            # a report written before this existed rather than as a question
+            # nobody answered, and those mean different things to a reader
+            # comparing two cases.
+            "site_hosts": list(self.site_hosts),
             "policy": self.policy.as_config(),
             # Empty for the whole case, which is what every report written
             # before this existed already means. A tool reading two of these has
@@ -223,4 +237,5 @@ def analyse_ip(
         policy=policy,
         window=window,
         crs_fingerprint=crs_fingerprint,
+        site_hosts=tuple(sorted(engine.site_hosts)),
     )

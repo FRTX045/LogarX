@@ -121,7 +121,7 @@ def _reconstruct(opened: Case, ip: str, rules: list[Path] | None) -> AnalysisRes
     return analyse_ip(
         opened.store,
         ip,
-        engine=_rule_engine(rules),
+        engine=opened.rule_engine(rules or ()),
         crs=crs.index,
         crs_fingerprint=crs.fingerprint,
     )
@@ -203,6 +203,16 @@ def ingest(
             "times its length in memory.",
         ),
     ] = DEFAULT_MAX_LINE_BYTES,
+    site_host: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--site-host",
+            help="A domain this site owns. Repeatable. It lets logarc tell a "
+            "link to your own site from a link somewhere else, which is the "
+            "only thing separating remote file inclusion from an ordinary "
+            "redirect. Set it later with `logarc site-hosts`.",
+        ),
+    ] = None,
 ) -> None:
     """Read logs into a new case.
 
@@ -230,6 +240,8 @@ def ingest(
                 workers=workers,
                 max_line_bytes=max_line_bytes,
             )
+            if site_host:
+                opened.set_site_hosts(site_host)
     except USER_ERRORS as exc:
         raise fail(str(exc)) from exc
 
@@ -708,6 +720,65 @@ def convert_csic_command(
         "\nThe traces carry no responses, so status is written as 200 throughout: "
         "outcome cannot be evaluated on this dataset."
     )
+
+
+@app.command("site-hosts")
+def site_hosts(
+    case: Annotated[Path, typer.Option("--case", "-c", help="Case directory.")],
+    set_: Annotated[
+        list[str] | None,
+        typer.Option("--set", help="A domain this site owns. Repeatable. Replaces what is there."),
+    ] = None,
+    clear: Annotated[
+        bool, typer.Option("--clear", help="Forget the domains this case was told.")
+    ] = False,
+) -> None:
+    """Show or set the domains a case treats as its own site.
+
+    One rule reads this and nothing else does. `rfi_offsite_url` calls a URL in
+    a query parameter hostile when it points at a host that is not on this list
+    — which is the only thing separating remote file inclusion from a share
+    link, an OAuth callback or a login redirect, since the request is
+    `GET /page?url=...` either way.
+
+    **A case with no answer is not guessed at.** The rule stays silent, so the
+    cost of never running this command is findings rather than false ones. The
+    alternative — reading the site's name out of the log's own Host header —
+    was measured against the OWASP CRS corpus and accused two ordinary requests
+    for no extra catches, because behind a reverse proxy that header says
+    `localhost`.
+
+    Whole hosts, never suffixes: a `www.` is a different host and has to be
+    named too. Whatever is given is reduced the way a URL's host is, so
+    `https://shop.test/` and `shop.test` mean the same thing.
+    """
+    if set_ and clear:
+        raise fail("--set and --clear ask for opposite things; pass one.")
+
+    try:
+        with Case.open(case) as opened:
+            if clear:
+                opened.set_site_hosts([])
+            elif set_:
+                opened.set_site_hosts(set_)
+            named = opened.site_hosts
+    except USER_ERRORS as exc:
+        raise fail(str(exc)) from exc
+
+    if not named:
+        console.print(
+            "[yellow]This case names no domains as its own.[/yellow] "
+            "Remote file inclusion cannot be told from an ordinary outbound link "
+            "without them, so that rule stays silent.\n\n"
+            f"  logarc site-hosts --case {case} --set example.com"
+        )
+        return
+
+    table = Table(title="This site's own domains")
+    table.add_column("Domain")
+    for name in named:
+        table.add_row(name)
+    console.print(table)
 
 
 @app.command()

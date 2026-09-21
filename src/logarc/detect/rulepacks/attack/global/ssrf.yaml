@@ -107,6 +107,36 @@ rules:
         - field: query_decoded
           regex: '\b[a-z][a-z0-9+.\-]{0,15}:/{0,2}(?:\\{1,2}[a-z]){3,}'
 
+  # A URL in a parameter pointing at a host the reader did not name as theirs.
+  #
+  # **This rule is silent until somebody answers a question**, which is the only
+  # reason it can exist at all. `query_url_offsite` reads 0 for every case that
+  # has no `site_hosts`, so a tool nobody has configured behaves exactly as it
+  # did before this rule was written.
+  #
+  # The shape is why. Remote file inclusion is `GET /page?url=…` and so is a
+  # share link, an OAuth callback and a login redirect — character for
+  # character. Only the destination separates them, and nothing in an access log
+  # says which destinations are the site's own. Measured on the OWASP CRS
+  # corpus, being *told* finds 11 attacks nothing else here catches and accuses
+  # none of the 134 requests it certifies as harmless; *guessing* from the
+  # request's own Host header finds the same 11 and accuses two of them.
+  #
+  # Confidence is 0.75 rather than the 0.85 its neighbours carry, and the
+  # difference is deliberate: every other rule in this pack rests on evidence
+  # inside the request, and this one rests on an answer a person typed.
+  - id: rfi_offsite_url
+    name: Remote File Inclusion (off-site URL in a parameter)
+    category: ssrf
+    owasp: "A01:2025"
+    severity: high
+    confidence: 0.75
+    references: ["CAPEC-253"]
+    match:
+      all:
+        - field: query_url_offsite
+          min: 1
+
   - id: ssrf_alternate_scheme
     name: SSRF (non-HTTP scheme in parameter)
     category: ssrf
