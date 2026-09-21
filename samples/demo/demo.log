@@ -226,6 +226,7 @@ shop.test:443 192.0.2.107 - - [09/Mar/2026:17:00:33 +0000] "GET /ping?host=127.0
 shop.test:443 192.0.2.107 - - [09/Mar/2026:17:00:44 +0000] "GET /ping?host=for%20%2Ff%20%22tokens%3D%2A%22%20%25%25G%20IN%20%28%27dir%20%2Fb%27%29%20DO%20echo%20%25%25G HTTP/1.1" 500 - "-" "curl/8.6.0"
 shop.test:443 192.0.2.107 - - [09/Mar/2026:17:00:55 +0000] "GET /ping?host=cmd.exe%20%2Fc%20whoami HTTP/1.1" 500 - "-" "curl/8.6.0"
 shop.test:443 192.0.2.107 - - [09/Mar/2026:17:01:06 +0000] "GET /ping?host=powershell%20-enc%20SQBFAFgA HTTP/1.1" 500 - "-" "curl/8.6.0"
+shop.test:443 192.0.2.107 - - [09/Mar/2026:17:01:17 +0000] "GET /ping?host=if%20exist%20c%3A%5Cwindows%5Csystem32%20echo%20yes HTTP/1.1" 500 - "-" "curl/8.6.0"
 shop.test:443 198.51.100.17 - - [09/Mar/2026:19:00:00 +0000] "GET /login HTTP/1.1" 200 8120 "-" "Mozilla/5.0 (iPhone; CPU iPhone OS 18_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Mobile/15E148 Safari/604.1"
 shop.test:443 198.51.100.17 - - [09/Mar/2026:19:00:12 +0000] "POST /account/password-reset HTTP/1.1" 200 1120 "https://shop.test/login" "Mozilla/5.0 (iPhone; CPU iPhone OS 18_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Mobile/15E148 Safari/604.1"
 shop.test:443 198.51.100.17 - - [09/Mar/2026:19:00:47 +0000] "POST /login HTTP/1.1" 302 - "https://shop.test/login" "Mozilla/5.0 (iPhone; CPU iPhone OS 18_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Mobile/15E148 Safari/604.1"
