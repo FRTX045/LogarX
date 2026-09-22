@@ -16,8 +16,6 @@ from logarc.case import Case
 from logarc.core.evidence import EvidenceRef
 from logarc.core.window import EVERYTHING, TimeWindow
 from logarc.detect.crs.sidecar import CrsDetection
-from logarc.detect.engine import RuleEngine
-from logarc.detect.rulepacks import default_rules
 from logarc.sessionize.segmenter import SessionPolicy
 from logarc.storage.event_store import ParquetEventStore
 from logarc.triage.profile import (
@@ -189,10 +187,15 @@ def scan_case(
             raise ScanCancelled()
 
     check()
-    engine = RuleEngine(default_rules())
     session_policy = SessionPolicy()
     crs_path = root / "crs.jsonl"
     with Case.open(root) as case:
+        # The case's engine rather than a default one. `rfi_offsite_url`
+        # reports nothing until a reader has named the site's own domains, so
+        # an engine built here would label a client differently from the
+        # reconstruction of that same client, and the queue is only useful
+        # while the two agree.
+        engine = case.rule_engine()
         identity = {
             "sources": [asdict(source) for source in case.manifest.sources],
             "config": case.manifest.config,

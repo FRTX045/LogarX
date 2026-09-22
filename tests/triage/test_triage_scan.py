@@ -130,3 +130,22 @@ def test_keyboard_interrupt_during_direct_scan_cleans_scratch_and_preserves_comp
     assert completed.path.read_bytes() == original
     assert not list((case.root / "triage").glob("scan-*"))
     assert scan_case(case.root).cached
+
+
+def test_scan_labels_with_the_case_site_hosts(tmp_path):
+    """Triage must label what reconstruction labels.
+
+    `rfi_offsite_url` reports nothing until a reader has named the site's own
+    domains, so a scan building its own engine silently misses every offsite
+    URL the reconstruction reports for the same client.
+    """
+    from logarc.triage.scan import read_page, scan_case
+
+    with Case.create(tmp_path / "case") as case:
+        case.store.write(events("203.0.113.9", 1, query="url=http://evil.test/x"))
+        case.store.finalize()
+        case.set_site_hosts(["shop.test"])
+        root = case.root
+
+    rows = read_page(scan_case(root).path, "suspicious").rows
+    assert [row.profile.client_ip for row in rows] == ["203.0.113.9"]
