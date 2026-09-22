@@ -25,7 +25,7 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 from PyQt6.QtCore import QSettings, QThreadPool
 from PyQt6.QtWidgets import QApplication
 
-from logarc.gui import app
+from logarc.gui import app, workers
 
 
 @pytest.fixture(scope="module")
@@ -73,7 +73,12 @@ def settled(qt_app: QApplication, timeout: float = 30.0) -> None:
         assert left > 0, "background work did not finish"
         assert pool.waitForDone(int(left * 1000)), "background work did not finish"
         qt_app.processEvents()
-        if pool.waitForDone(0):
+        # An idle pool is not the whole condition. `run_job` retires a job when
+        # its `finished` signal is *delivered*, not when the work returns, so a
+        # job started from inside another job's slot can run to completion
+        # during this pump and still be holding its callbacks (and through them
+        # the window) with its own signal queued behind us.
+        if pool.waitForDone(0) and not workers._in_flight:
             return
 
 
