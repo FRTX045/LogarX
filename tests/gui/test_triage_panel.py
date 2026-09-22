@@ -417,3 +417,56 @@ def test_departure_rejects_old_evidence_and_old_load_errors_or_progress(
     assert not failures
     assert "old progress" not in window._status.text()
     window.close()
+
+
+def test_prioritization_waits_until_the_crs_question_is_answered(qt_app, tmp_path, monkeypatch):
+    """Accepting CRS reloads the case and restarts the scan from nothing.
+
+    So a scan begun while the offer is still on screen is work the reader will
+    never see. It waits for an answer, and the reader keeps All clients in the
+    meantime.
+    """
+    from PyQt6.QtWidgets import QDialog
+
+    from logarc.gui import app as app_module
+
+    monkeypatch.setattr(app_module.SidecarConfig, "check", lambda self: None)
+    app_module._settings().setValue(app_module._CRS_KEY, "")
+    case_dir = make_case(tmp_path)
+
+    window = MainWindow()
+    started: list[tuple[object, ...]] = []
+    monkeypatch.setattr(window._triage, "start", lambda *args, **_: started.append(args))
+
+    window._open_and_offer_crs(case_dir)
+    settled(qt_app)
+    assert started == [], "the scan began while the CRS offer was still unanswered"
+
+    window._crs_answered(case_dir, QDialog.DialogCode.Rejected)
+    settled(qt_app)
+    assert started, "declining CRS left the case with no prioritization scan"
+
+
+def test_the_scan_starts_only_once_the_window_knows_the_case(qt_app, tmp_path):
+    """Two readers on one case silently cost an earlier test its `_case_path`.
+
+    The scan is a third reader, in its own process against the same store, so
+    it starts from `_load_case`'s result rather than beside it. Recording
+    `_case_path` at the moment the scan is asked for pins that ordering without
+    waiting for the scan itself.
+    """
+    case_dir = make_case(tmp_path, 3)
+    window = MainWindow()
+    seen: list[object] = []
+    original = window._triage.start
+
+    def record(path, *args, **kwargs):
+        seen.append(window._case_path)
+        return original(path, *args, **kwargs)
+
+    window._triage.start = record
+    window._load_case(case_dir)
+    settled(qt_app)
+
+    assert seen == [case_dir], "the scan was asked for before the window knew the case"
+    assert window._case_path == case_dir

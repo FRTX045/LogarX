@@ -194,6 +194,10 @@ class MainWindow(QMainWindow):
         self._triage = TriagePanel()
         self._triage.investigate.connect(lambda ip, refs: self._reconstruct(ip, evidence=refs))
         self._load_generation = 0
+        # Set while a CRS decision is outstanding. Enriching reloads the
+        # case and restarts the scan from nothing, so a scan begun under
+        # an open offer is work the reader would never see.
+        self._scan_held = False
         self._canvas = ActivityCanvas()
         self._legend = LegendBar()
         self._evidence = EvidencePanel()
@@ -696,12 +700,24 @@ class MainWindow(QMainWindow):
         forgetting either is silent: a case that never opens, or a reader never
         asked about CRS.
         """
-        self._load_case(case_dir)
-        self._offer_crs(case_dir)
+        self._load_case(case_dir, hold_scan=True)
+        if not self._offer_crs(case_dir):
+            self._release_scan()
 
     # -- CRS, offered once a scan has something to enrich --------------------
 
-    def _offer_crs(self, case_dir: Path) -> None:
+    def _release_scan(self) -> None:
+        """Start the scan the CRS question was holding back.
+
+        Called once no decision can invalidate a scan any more. Safe before the
+        case has finished loading: clearing the flag is enough, because
+        `_load_case` starts the scan itself when its own read comes back.
+        """
+        self._scan_held = False
+        if self._case_path is not None:
+            self._triage.start(self._case_path, self._window)
+
+    def _offer_crs(self, case_dir: Path) -> bool:
         """Ask whether to run CRS, unless the reader has already answered.
 
         Availability is checked before the offer rather than after it, so that
@@ -710,18 +726,20 @@ class MainWindow(QMainWindow):
         """
         answered = str(_settings().value(_CRS_KEY, "") or "")
         if answered == "never":
-            return
+            return False
 
         try:
             SidecarConfig().check()
         except CrsUnavailableError as exc:
             if answered != "quiet":
                 self._crs_missing(str(exc))
-            return
+            # No enrichment can follow, so nothing will invalidate a scan
+            # and the caller need not hold one back behind this notice.
+            return False
 
         if answered == "always":
             self._run_crs(case_dir)
-            return
+            return True
 
         offer = CrsOffer(self)
         # Held on the window, not only in the closure: a dialog whose last
@@ -731,6 +749,7 @@ class MainWindow(QMainWindow):
         self._crs_offer = offer
         offer.finished.connect(lambda result: self._crs_answered(case_dir, result))
         offer.show()
+        return True
 
     def _crs_answered(self, case_dir: Path, result: int) -> None:
         offer, self._crs_offer = self._crs_offer, None
@@ -741,6 +760,8 @@ class MainWindow(QMainWindow):
             _settings().setValue(_CRS_KEY, "always" if wanted else "never")
         if wanted:
             self._run_crs(case_dir)
+        else:
+            self._release_scan()
 
     def _crs_missing(self, reason: str) -> None:
         told = CrsUnavailable(reason, self)
@@ -889,9 +910,10 @@ class MainWindow(QMainWindow):
         elif action is recent.Startup.CHOOSE:
             self._show_recent()
 
-    def _load_case(self, path: Path) -> None:
+    def _load_case(self, path: Path, *, hold_scan: bool = False) -> None:
         self._load_generation += 1
         generation = self._load_generation
+        self._scan_held = hold_scan
         self._triage.shutdown()
         self._awaiting = None
         self._evidence_request = object()
@@ -971,7 +993,8 @@ class MainWindow(QMainWindow):
             self._tabs.setVisible(False)
             self._clients.show_clients(summaries, total=view.whole.clients)
             self._workspace.setCurrentIndex(0)
-            self._triage.start(path)
+            if not self._scan_held:
+                self._triage.start(path)
             self._say_what_is_left()
             self._idle(
                 # Not "listed": the table holds the busiest few hundred of
