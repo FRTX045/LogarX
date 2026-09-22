@@ -24,6 +24,7 @@ from logarc.detect.crs import (
     CrsUnavailableError,
     SidecarConfig,
 )
+from logarc.detect.crs.store import CrsEvidence
 from logarc.detect.engine import RuleEngine
 from logarc.detect.rulepacks import default_rules
 from logarc.detect.rules import RulePackError, load_rules
@@ -551,6 +552,15 @@ def evaluate(
     out: Annotated[
         Path | None, typer.Option("--out", "-o", help="Write the full numbers as JSON.")
     ] = None,
+    no_crs: Annotated[
+        bool,
+        typer.Option(
+            "--no-crs",
+            help="Score as though the case had never been enriched. Both numbers "
+            "out of one case, so a native figure cannot be taken from a CRS run "
+            "by accident.",
+        ),
+    ] = False,
     absorb: Annotated[
         bool,
         typer.Option(
@@ -575,7 +585,7 @@ def evaluate(
     try:
         loaded = read_truth(truth)
         with Case.open(case) as opened, console.status("Scoring…") as status:
-            crs = opened.crs_evidence()
+            crs = CrsEvidence(index=None, fingerprint=None) if no_crs else opened.crs_evidence()
             report = score_case(
                 opened.store,
                 loaded,
