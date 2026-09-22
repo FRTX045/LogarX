@@ -54,7 +54,7 @@ logarc = "logarc.cli.main:app"
 logarc-gui = "logarc.gui.app:main"
 
 [project.urls]
-Repository = "https://github.com/FRTX045/BlackHat"
+Repository = "https://github.com/FRTX045/logarc"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/logarc"]
