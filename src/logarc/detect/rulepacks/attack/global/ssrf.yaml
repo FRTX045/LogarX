@@ -13,8 +13,129 @@ rules:
     references: ["CAPEC-664"]
     match:
       any:
+        # A URL scheme, then an address that only points back inside.
+        #
+        # **The scheme is what makes this safe, and the corpus says so.**
+        # `/get?x=ping 127.0.0.1` is certified harmless — somebody's diagnostic
+        # command echoed into a parameter — so a loopback address on its own
+        # cannot be the signal. `http://127.0.0.1` is a fetch instruction and
+        # nothing else.
+        #
+        # It replaces an allow-list of parameter names (`url|uri|target|…`)
+        # that reached none of the corpus cases, because every one of them uses
+        # `ssrf=` and a real attacker uses whatever the application happens to
+        # call its parameter. The name was never the evidence.
+        #
+        # `:/{0,2}` because `http:127.0.0.1` and `http:/127.0.0.1` still
+        # resolve — the slashes are convention, not syntax.
         - field: query_decoded
-          regex: '(url|uri|target|dest|destination|redirect|next|path|src|feed|host)=[^&]*(127\.0\.0\.1|localhost|169\.254\.169\.254|0\.0\.0\.0|\[::1\]|metadata\.google)'
+          regex: '\b[a-z][a-z0-9+.\-]{0,15}:/{0,2}(?:127\.0\.0\.1|0\.0\.0\.0|localhost|169\.254\.169\.254|192\.0\.0\.192|metadata\.(?:google|packet)|\[::1?\])'
+
+  # The same target, written so a check for it will not recognise it.
+  #
+  # Every pattern here sits immediately after a URL scheme, for the reason the
+  # rule above gives: the scheme is what separates a fetch instruction from a
+  # number somebody typed. `/get?page=12345678` and `/get?order=0251` are
+  # ordinary parameters and must stay ordinary.
+  #
+  # Confidence is higher than the plain rule's, not lower. An address that has
+  # been rewritten to get past a check is *stronger* evidence than the address
+  # it replaced — nobody reaches `http://0xa9fea9fe/` by accident.
+  #
+  # Two of these shapes arrive already decoded. The normaliser folds Unicode
+  # compatibility forms, so `acap://①②⑦.⓪.⓪.①` reaches the engine as
+  # `acap://127.0.0.1` and `irc://ⓛⓞⓒⓐⓛⓗⓞⓢⓣ` as `irc://localhost`; both are
+  # caught by the rule above and need nothing here.
+  - id: ssrf_obfuscated_address
+    name: SSRF (address written to evade a host check)
+    category: ssrf
+    owasp: "A01:2025"
+    severity: high
+    confidence: 0.9
+    references: ["CAPEC-664"]
+    match:
+      any:
+        # The whole address as one integer. 2852039166 is 169.254.169.254, and
+        # every library that parses a host will resolve it that way.
+        - field: query_decoded
+          regex: '\b[a-z][a-z0-9+.\-]{0,15}:/{0,2}\d{7,12}(?!\d)'
+        # Partly collapsed — the last two octets joined, as in 169.254.43518.
+        # A real IPv4 octet is never more than three digits.
+        - field: query_decoded
+          regex: '\b[a-z][a-z0-9+.\-]{0,15}:/{0,2}\d{1,3}(?:\.\d{1,3}){0,2}\.\d{4,10}(?!\d)'
+        # Hexadecimal, whole or per octet.
+        - field: query_decoded
+          regex: '\b[a-z][a-z0-9+.\-]{0,15}:/{0,2}0x[0-9a-f]{2,16}'
+        # Octal, which a single leading zero is enough to trigger.
+        - field: query_decoded
+          regex: '\b[a-z][a-z0-9+.\-]{0,15}:/{0,2}0\d{1,3}(?:\.0*\d{1,4}){3}'
+        # An IPv6 literal in a URL in a query parameter. Ordinary applications
+        # pass host names around, not bracketed v6 addresses, and the mapped
+        # forms — `[::ffff:a9fe:a9fe]` — are a v4 address in disguise.
+        - field: query_decoded
+          regex: '\b[a-z][a-z0-9+.\-]{0,15}:/{0,2}\[[0-9a-f]{0,4}:[^\]\s]{0,45}\]'
+
+  # Characters inside the host that exist only to break a pattern match, and
+  # that a permissive resolver throws away before it looks anything up.
+  #
+  # Separate from the rule above because these are not a different *notation*
+  # for an address — the address is written plainly and then damaged. There is
+  # nothing to decode, only a separator to recognise.
+  - id: ssrf_host_evasion
+    name: SSRF (host mangled to break a pattern match)
+    category: ssrf
+    owasp: "A01:2025"
+    severity: high
+    confidence: 0.9
+    references: ["CAPEC-664"]
+    match:
+      any:
+        # U+3002, the ideographic full stop, between the octets of an address.
+        # It survives normalisation because it is not a compatibility form of
+        # `.` — NFKC has nothing to fold it to. Its halfwidth sibling U+FF61
+        # *does* fold, and folds to this, so one pattern covers both.
+        - field: query_decoded
+          regex: '\d{1,3}(?:。\d{1,3}){3}'
+        # A backslash before every letter of a host name. `\l\o\c\a\l\h\o\s\t`
+        # is not a path and is not an escape sequence anything defines; it is
+        # `localhost` written to miss a search for `localhost`.
+        #
+        # **One or two backslashes, and the two is what the corpus actually
+        # sends.** This was written `(?:\\[a-z]){3,}` first, against a payload
+        # invented rather than read, and the two real cases went on getting
+        # through while a green test said otherwise. Both counts are pinned now.
+        - field: query_decoded
+          regex: '\b[a-z][a-z0-9+.\-]{0,15}:/{0,2}(?:\\{1,2}[a-z]){3,}'
+
+  # A URL in a parameter pointing at a host the reader did not name as theirs.
+  #
+  # **This rule is silent until somebody answers a question**, which is the only
+  # reason it can exist at all. `query_url_offsite` reads 0 for every case that
+  # has no `site_hosts`, so a tool nobody has configured behaves exactly as it
+  # did before this rule was written.
+  #
+  # The shape is why. Remote file inclusion is `GET /page?url=…` and so is a
+  # share link, an OAuth callback and a login redirect — character for
+  # character. Only the destination separates them, and nothing in an access log
+  # says which destinations are the site's own. Measured on the OWASP CRS
+  # corpus, being *told* finds 11 attacks nothing else here catches and accuses
+  # none of the 134 requests it certifies as harmless; *guessing* from the
+  # request's own Host header finds the same 11 and accuses two of them.
+  #
+  # Confidence is 0.75 rather than the 0.85 its neighbours carry, and the
+  # difference is deliberate: every other rule in this pack rests on evidence
+  # inside the request, and this one rests on an answer a person typed.
+  - id: rfi_offsite_url
+    name: Remote File Inclusion (off-site URL in a parameter)
+    category: ssrf
+    owasp: "A01:2025"
+    severity: high
+    confidence: 0.75
+    references: ["CAPEC-253"]
+    match:
+      all:
+        - field: query_url_offsite
+          min: 1
 
   - id: ssrf_alternate_scheme
     name: SSRF (non-HTTP scheme in parameter)

@@ -98,9 +98,119 @@ the truth to match the tool is what the previous generated corpus ended up doing
 here. Hostile activities are never merged into anything, so a missed boundary around an attack,
 the part a forensic reader cares about, counts in full.
 
+## The current baseline — 2026-09-21
+
+**These are the live figures.** Everything below this section was measured on builds whose bytes can
+no longer be obtained; that measurement is kept because the analysis built on it is still the
+analysis, but its headline numbers are superseded by this table.
+
+Measured on two builds taken at one commit with the working tree clean, from a dataset that had
+just had a defect fixed in it — its forced-browsing attacker never signed in, so the application's
+role check was never exercised and no log line it shipped had ever carried a 403. That matters
+below.
+
+| | `2026-09-20-medium` | `2026-09-20-small` |
+|---|---|---|
+| Role | **the headline** | fast check |
+| Lines / clients | 237,278 / 2,785 | 64,738 / 920 |
+| Scenario seed | 19 | 7 |
+| Dataset commit | `e0bbd52` | `e0bbd52` |
+| Tree clean when built | **yes** | **yes** |
+| Quarantined on ingest | 0 | 0 |
+| Truth lines unmatched | 0 | 0 |
+
+`e0bbd52` is the tip of that repository's default branch, so the recipe in its README can be
+followed. Both builds ship a `SHA256SUMS` and both were verified here before scoring — every file,
+not only the two that matter:
+
+```
+# 2026-09-20-medium
+f5748a414fc3b774321f8f0661ba3e173d69899bf9920b5b99862a90bb49a8e2  access.log
+021f5441edb090c3d037f42faec9cc3fd962430b1fbb35705257b750defc09b5  truth.jsonl
+87a1d094cbc317aaa0234ceff36519c26153c97f1009a958e3563eb243c2e119  MANIFEST.json
+
+# 2026-09-20-small
+ed59b172aba47f0bafc858b37d8963a2a3d69e5c040d8ce4a3d8edbe933a6504  access.log
+44a6146010806dd28500da19394de24dca61b35afb470081d8127005ba830a1e  truth.jsonl
+e7f1f8a0d336d3a0447be1f5532ddfe3575927368d347e341692014a0b145b01  MANIFEST.json
+```
+
+All four runs are the same ruleset, fingerprint `98c5169f90600aef`, recorded in each output.
+
+| | medium native | medium + CRS | small native | small + CRS |
+|---|---:|---:|---:|---:|
+| Classification accuracy | **0.975** | 0.975 | **0.977** | 0.977 |
+| Weighted F1 | 0.978 | 0.977 | 0.979 | 0.978 |
+| Macro F1 | 0.742 | 0.701 | 0.740 | 0.717 |
+| Attack-or-not precision | **1.000** | 0.994 | **1.000** | 0.993 |
+| Attack-or-not recall | 0.993 | 0.993 | 0.981 | 0.982 |
+| Caught / missed | 17,070 / 114 | 17,072 / 112 | 4,029 / 76 | 4,033 / 72 |
+| **False alarms** | **1** | 96 | **1** | 29 |
+| Boundary F1 | 0.847 | 0.835 | 0.841 | 0.830 |
+
+Against the superseded medium — accuracy 0.968, macro F1 0.634, 21 false alarms native — every
+column moved the right way.
+
+**One false alarm in 237,278 requests is not a claim that the rules are nearly perfect.** It is one
+axis. Macro F1 of 0.742 is the other, and it says what the per-category tables below say: several
+categories are read as neighbouring ones, `enumeration` as `reconnaissance` thousands of times,
+which costs nothing on the attack-or-not axis and a great deal on the classification one. A tool
+that calls an attack an attack and then names it slightly wrong is a different failure from one that
+misses it, and both numbers are printed so neither can hide the other.
+
+### What one rule did to the false-alarm figure
+
+The superseded corpus scored **167** false alarms native, and 166 of them came from a single rule —
+`admin_area_redirect`, which claimed `access_control` on any redirect away from an admin path.
+
+Those builds were the first to contain a legitimate administrator doing ordinary work. An
+application that protects `/admin` with a login form answers an unauthenticated request with a 302
+to that form, so the administrator's first request of every visit looked exactly like the probe the
+rule was written for: 179 fires, 13 hostile, 166 not, precision 0.073.
+
+The rule is now `authentication` at `info` severity, which is what the request is and what the
+ground truth calls all 165 of the administrator's. **The 13 detections are genuinely lost** — none
+was independently claimed by another hostile rule — and losing them is written down rather than
+argued away, because at 13 against 166 it is a trade this project will take and say so.
+
+### `access_control`, and why it needed the corpus fixed rather than the rule changed
+
+When the rule above was recategorised, this document recorded that nothing detected `access_control`
+at all, and gave the reason as real applications rarely answering with 401 or 403. **That
+explanation was wrong.** `admin_area_probe` requires one of those and is correct; the corpus simply
+never produced one on an admin path, because its forced-browsing attacker issued bare GETs and the
+login check redirected it before the role check could run.
+
+Fixed upstream on 2026-09-20, and the rule works on the first build that exercises it:
+
+| `access_control`, medium | |
+|---|---:|
+| In the truth | 37 |
+| Claimed by `admin_area_probe` | 6 |
+| Correct | **6** |
+| Precision / recall | **1.000** / 0.162 |
+
+Perfect precision on a small denominator, and recall of 0.162 because the other 31 are the 302
+bounces and the successful 200s, neither of which a single request distinguishes from an
+administrator's. **Six for six is a count, not a rate** — it is reported that way because
+`forced_browsing` runs once per campaign instance, so these do not scale with the log the way 404s
+do, and a precision figure over six records would read far more solid than it is.
+
+**The remaining gap is sharper than the one it replaced.** The corpus now contains 21 requests that
+are a 200 on an admin path from an address also refused 403 there — forced browsing that *succeeded*
+— and the truth calls all 21 hostile. Our rules flag 13 of them, mostly because the attacker was
+also injecting something the payload packs reach. **Eight are read as ordinary browsing, six of them
+the pure case: a client that simply walked in.** The separating signal is correlation rather than
+shape — a legitimate administrator is never refused 403 on a sibling path — and `WindowRule` cannot
+currently express it. Eight requests in 237,278 is a small number; that they are the requests where
+an attacker *succeeded* is why it is written down.
+
+---
+
 ## The builds
 
-Two builds of the same project, both scored below.
+Two builds of the same project, both scored below. **Superseded by the section above**; the
+analysis that follows is theirs and is kept for that reason.
 
 | | `2026-09-07-medium` | `2026-08-23-small` |
 |---|---|---|
@@ -246,6 +356,115 @@ the whole file, so a rule change that moves a number fails the build instead of
 leaving the prose here quietly wrong. That is the gate that was missing when the
 episode builder changed on 25 August and a boundary recall of 0.98 stayed
 published for weeks against a tool scoring 0.27.
+
+### The same excerpt, scored with CRS on
+
+**Added 2026-09-22, and it closes a gap this document had been carrying.** Every
+committed figure in this project was the native rules alone. CRS appeared only
+in prose — the tables further down — which nothing re-ran, so a CRS version
+bump, a mapping change, or a CRS rule that started firing on ordinary traffic
+could move what a reader sees and fail no build.
+
+`excerpt.scores.crs.json` now sits beside the native fixture and is checked the
+same way, with the enrichment actually run:
+
+```bash
+logarc ingest tests/data/apache-shopfront/excerpt.log --case /tmp/c
+logarc enrich --case /tmp/c
+logarc evaluate -c /tmp/c -t tests/data/apache-shopfront/excerpt.truth.jsonl
+```
+
+| committed excerpt, 3,825 requests | native | with CRS |
+|---|---:|---:|
+| Caught | 1,123 | **1,124** |
+| **False alarms** | **0** | **0** |
+| Classification accuracy | 0.9344 | 0.9346 |
+| Macro F1 | **0.7860** | 0.7854 |
+
+Both fixtures now carry a `crs_fingerprint`: the CRS one names the ruleset that
+produced its detections, and the native one records `null`, which is a claim
+rather than an omission. A reader comparing two reports has to be able to see
+which of them had a second ruleset behind it.
+
+**The excerpt has too little ordinary traffic to show what CRS costs**, and
+until 2026-09-22 that was the end of the story — the larger build measured
+**1 false alarm native against 96 with CRS on**. A corpus that cannot see a cost
+cannot be used to argue the cost is not there, which is the same lesson the
+`admin_area_redirect` pass wrote down from the other direction.
+
+### What the 96 turned out to be
+
+Classified 2026-09-22 against `2026-09-20-medium`, 237,278 requests. Three CRS
+rules accounted for **95 of the 96**, and the ninety-sixth is native and
+pre-existing.
+
+| rule | CRS calls it | named a real attack | accused ordinary traffic |
+|---|---|---:|---:|
+| 931130 | RFI: Off-Domain Reference/Link | 1 | **73** |
+| 931100 | RFI: URL Parameter using IP Address | 1 | **73** |
+| 932236 | RCE: Unix Command Injection | 0 | **22** |
+
+The first two fire on the same requests, which is why silencing one alone
+changed nothing — 931130 simply took over, and a second measurement was needed
+to see it. **Measure the whole set before withholding anything.**
+
+All 73 are one request, repeated:
+
+```
+GET /admin/import-image?url=http://203.0.113.2/assets/img/logo.png
+```
+
+A shop's administrator importing the shop's own logo from the shop's own asset
+server. 931100 objects to the address being a number; 931130 objects to it being
+off-domain, which it can only judge from `TX:ALLOWED_HOSTS` — a list of the
+site's own names that an operator supplies and this project never did. Neither
+is a defect in CRS. One reports a shape and the other is unconfigured.
+
+The 22 are the product catalogue:
+
+```
+/search?q=pipe cutter        `pipe` is a shell command
+/search?q=wall plugs         `wall` writes to every logged-in user
+/api/autocomplete?q=pipe
+```
+
+**A plumbing shop cannot search for a pipe cutter.** This is the third time this
+project has met the same error: `attack/windows.yaml` exists because `find x for
+y` and `time warner` are ordinary English, and `http_library_user_agent` was it
+again in another field. A bare command name is vocabulary, not intent.
+
+All three are now in `_RULE_WITHHELD` — withheld by rule id, not by family, so
+the 931 and 932 families still name the attacks they find. On the same corpus:
+
+| 237,278 real requests | native | CRS before | CRS after |
+|---|---:|---:|---:|
+| Caught | 17,069 | 17,071 | **17,070** |
+| **False alarms** | **1** | 96 | **1** |
+| Attack-or-not precision | 0.9999 | 0.9944 | **0.9999** |
+| Macro F1 | 0.7684 | 0.7089 | 0.7676 |
+
+**CRS now costs nothing in precision and finds one attack the native rules do
+not.** Withholding the three cost one catch, which is the honest price and is
+recorded rather than rounded away.
+
+It is not free on the committed excerpt, where the same change takes macro F1
+from 0.7961 to 0.7854 — 0.0006 *below* the native run — because one withheld
+rule was naming a real attack there. Caught still runs ahead of native, 1,124
+against 1,123. Both figures are in the fixtures; neither is quoted alone.
+
+The one misjudgement CRS does make here is worth reading, because it is the
+shape of the disagreement rather than a bug in either tool:
+
+```
+GET /contact 200    Referer: http://shop.test/search?q="><img src=x onerror=alert(1)>
+```
+
+Three CRS XSS rules fire. They are right that an XSS payload is in the request.
+The truth calls this `browsing` and is also right: the payload is in the
+*Referer*, so this is somebody who followed a poisoned link, not somebody who
+wrote one. **CRS judges the payload; logarc judges the actor.** A firewall
+should block that request. A tool reconstructing what an address did should say
+it browsed to `/contact` and arrived from a poisoned search link.
 
 The tables below are the two pinned dataset builds, which are **not** committed
 — 22 MB and 80 MB — and remain re-derivable only with the download.
@@ -456,7 +675,7 @@ Ruleset `9edf8587…` (33 rules) against coreruleset `d694d465951e`, 200 case fi
 **This is history, not the ruleset shipping today.** It was true when written and
 is kept because the analysis under *Reading it* is what motivated ADR-0008 — but
 the rules have since changed substantially and the figures below are stale. The
-tree now holds 71 rules across eight attack packs and two action packs; family
+tree now holds 78 rules across nine attack packs and two action packs; family
 933 alone went from 0.012 to 0.68 on 2026-09-15.
 
 For current figures run `logarc score-crs`, which reports both directions —

@@ -8,9 +8,7 @@ import shutil
 import tempfile
 from dataclasses import replace
 from datetime import timedelta
-from itertools import chain
 from pathlib import Path
-from time import perf_counter
 from typing import TYPE_CHECKING, Annotated, Final
 
 import typer
@@ -25,12 +23,11 @@ from logarc.core.activity import Severity
 from logarc.detect.crs import (
     CrsUnavailableError,
     SidecarConfig,
-    run_sidecar,
-    write_detections,
 )
 from logarc.detect.engine import RuleEngine
 from logarc.detect.rulepacks import default_rules
 from logarc.detect.rules import RulePackError, load_rules
+from logarc.enrich import enrich_case
 from logarc.episode.builder import EpisodePolicy
 from logarc.evaluation.benchmark import BenchmarkError, BenchmarkResult, run_benchmark
 from logarc.evaluation.crs_corpus import CorpusError, score_corpus
@@ -53,10 +50,7 @@ from logarc.storage.event_store import SORT_KEYS, StoreStateError
 from logarc.style import plural
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator
-
     from logarc.analysis import AnalysisResult
-    from logarc.core.event import NormalizedEvent
 
 _SEVERITY_STYLE: Final[dict[Severity, str]] = {
     Severity.INFO: "dim",
@@ -127,7 +121,7 @@ def _reconstruct(opened: Case, ip: str, rules: list[Path] | None) -> AnalysisRes
     return analyse_ip(
         opened.store,
         ip,
-        engine=_rule_engine(rules),
+        engine=opened.rule_engine(rules or ()),
         crs=crs.index,
         crs_fingerprint=crs.fingerprint,
     )
@@ -209,6 +203,16 @@ def ingest(
             "times its length in memory.",
         ),
     ] = DEFAULT_MAX_LINE_BYTES,
+    site_host: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--site-host",
+            help="A domain this site owns. Repeatable. It lets logarc tell a "
+            "link to your own site from a link somewhere else, which is the "
+            "only thing separating remote file inclusion from an ordinary "
+            "redirect. Set it later with `logarc site-hosts`.",
+        ),
+    ] = None,
 ) -> None:
     """Read logs into a new case.
 
@@ -236,6 +240,8 @@ def ingest(
                 workers=workers,
                 max_line_bytes=max_line_bytes,
             )
+            if site_host:
+                opened.set_site_hosts(site_host)
     except USER_ERRORS as exc:
         raise fail(str(exc)) from exc
 
@@ -569,11 +575,17 @@ def evaluate(
     try:
         loaded = read_truth(truth)
         with Case.open(case) as opened, console.status("Scoring…") as status:
+            crs = opened.crs_evidence()
             report = score_case(
                 opened.store,
                 loaded,
+                # The case's own engine, so a score reflects what this case is
+                # actually configured to detect. Without it, `evaluate` scored a
+                # ruleset that `analyze` on the same case would not have used.
+                engine=opened.rule_engine(),
                 policy=policy,
-                crs=opened.crs_evidence().index,
+                crs=crs.index,
+                crs_fingerprint=crs.fingerprint,
                 on_client=lambda client: status.update(f"Scoring {client}…"),
             )
     except USER_ERRORS as exc:
@@ -716,6 +728,65 @@ def convert_csic_command(
     )
 
 
+@app.command("site-hosts")
+def site_hosts(
+    case: Annotated[Path, typer.Option("--case", "-c", help="Case directory.")],
+    set_: Annotated[
+        list[str] | None,
+        typer.Option("--set", help="A domain this site owns. Repeatable. Replaces what is there."),
+    ] = None,
+    clear: Annotated[
+        bool, typer.Option("--clear", help="Forget the domains this case was told.")
+    ] = False,
+) -> None:
+    """Show or set the domains a case treats as its own site.
+
+    One rule reads this and nothing else does. `rfi_offsite_url` calls a URL in
+    a query parameter hostile when it points at a host that is not on this list
+    — which is the only thing separating remote file inclusion from a share
+    link, an OAuth callback or a login redirect, since the request is
+    `GET /page?url=...` either way.
+
+    **A case with no answer is not guessed at.** The rule stays silent, so the
+    cost of never running this command is findings rather than false ones. The
+    alternative — reading the site's name out of the log's own Host header —
+    was measured against the OWASP CRS corpus and accused two ordinary requests
+    for no extra catches, because behind a reverse proxy that header says
+    `localhost`.
+
+    Whole hosts, never suffixes: a `www.` is a different host and has to be
+    named too. Whatever is given is reduced the way a URL's host is, so
+    `https://shop.test/` and `shop.test` mean the same thing.
+    """
+    if set_ and clear:
+        raise fail("--set and --clear ask for opposite things; pass one.")
+
+    try:
+        with Case.open(case) as opened:
+            if clear:
+                opened.set_site_hosts([])
+            elif set_:
+                opened.set_site_hosts(set_)
+            named = opened.site_hosts
+    except USER_ERRORS as exc:
+        raise fail(str(exc)) from exc
+
+    if not named:
+        console.print(
+            "[yellow]This case names no domains as its own.[/yellow] "
+            "Remote file inclusion cannot be told from an ordinary outbound link "
+            "without them, so that rule stays silent.\n\n"
+            f"  logarc site-hosts --case {case} --set example.com"
+        )
+        return
+
+    table = Table(title="This site's own domains")
+    table.add_column("Domain")
+    for name in named:
+        table.add_row(name)
+    console.print(table)
+
+
 @app.command()
 def enrich(
     case: Annotated[Path, typer.Option("--case", "-c", help="Case directory to enrich.")],
@@ -747,41 +818,17 @@ def enrich(
         paranoia=paranoia,
     )
 
-    # Counted while streaming rather than by taking a length first. `enrich` is
-    # the one command that reads a whole case, so it is the one command where
-    # materialising the events would put the corpus in memory — which is exactly
-    # what `EventStore.all_events()` streams to avoid.
-    replayed = 0
-
-    def counting(source: Iterable[NormalizedEvent]) -> Iterator[NormalizedEvent]:
-        nonlocal replayed
-        for stored in source:
-            replayed += 1
-            yield stored
-
+    # The work itself lives in `logarc.enrich`, shared with the window. It used
+    # to be written out here, and the window growing a CRS button would have
+    # meant a second copy of it — which is how two callers come to disagree
+    # about what enrichment does.
     try:
-        with Case.open(case) as opened:
-            stream = opened.store.all_events()
-            # One event is pulled to tell an empty case from a full one, then put
-            # back. Checking after the run instead would report a missing sidecar
-            # to someone whose real problem is that they have not ingested yet.
-            first = next(stream, None)
-            if first is None:
-                raise fail(f"no events in {case}; ingest a log first")
-
-            with console.status("Replaying requests through CRS…"):
-                started = perf_counter()
-                detections = run_sidecar(counting(chain([first], stream)), config=config)
-                elapsed = perf_counter() - started
-
-            path = write_detections(opened.root, detections)
-            opened.manifest.config.update(config.as_config())
-            opened.manifest.save(opened.root)
+        with console.status("Replaying requests through CRS…"):
+            outcome = enrich_case(case, config=config)
+    except ValueError as exc:
+        raise fail(str(exc)) from exc
     except (CrsUnavailableError, *USER_ERRORS) as exc:
         raise fail(str(exc)) from exc
-
-    covered = len({(item.source_file_id, item.line_no) for item in detections})
-    rate = replayed / elapsed if elapsed else 0.0
 
     table = Table(title="CRS enrichment")
     table.add_column("Requests", justify="right")
@@ -790,14 +837,14 @@ def enrich(
     table.add_column("Paranoia", justify="right")
     table.add_column("Rules/s", justify="right")
     table.add_row(
-        f"{replayed:,}",
-        f"{covered:,}",
-        f"{len(detections):,}",
+        f"{outcome.replayed:,}",
+        f"{outcome.covered:,}",
+        f"{len(outcome.detections):,}",
         str(config.paranoia),
-        f"{rate:,.0f}",
+        f"{outcome.rate:,.0f}",
     )
     console.print(table)
-    path_line(f"\nWritten to {path}")
+    path_line(f"\nWritten to {outcome.path}")
     console.print(
         f"CRS {config.revision() or 'unknown'}, configuration {config.fingerprint()} — "
         "recorded in the case manifest so a finding can name what produced it."

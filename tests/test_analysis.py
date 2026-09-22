@@ -17,6 +17,8 @@ from logarc.analysis import AnalysisPolicy, analyse_ip
 from logarc.case import Case
 from logarc.core.activity import ActivityCategory, Outcome
 from logarc.core.window import EVERYTHING, TimeWindow
+from logarc.detect.engine import RuleEngine
+from logarc.detect.rulepacks import default_rules
 from logarc.episode.builder import EpisodePolicy
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
@@ -410,3 +412,35 @@ def test_the_lines_come_back_as_performed_not_sorted_by_file(two_logs: Case) -> 
     assert len(set(sources)) == 2, "premise: this activity spans both logs"
     assert sources != sorted(sources), "premise: file order is not the order performed"
     assert sources == ["a.log", "b.log"] * (len(sources) // 2), "the sweep is interleaved"
+
+
+def test_a_report_says_which_domains_it_was_told_were_yours(campaign: Case) -> None:
+    """**Provenance for a finding that rests on a person's answer, not on the log.**
+
+    `rfi_offsite_url` calls a URL hostile because it points at a host nobody
+    named as this site's. Every other rule in the tree is checkable from the
+    evidence line alone; this one is only checkable if the report also says what
+    it was comparing against.
+
+    It matters most when the answer is wrong. A reader who mistypes their own
+    domain turns every ordinary outbound link into a finding, and without this
+    field the report gives them no way to see why.
+    """
+    engine = RuleEngine(default_rules(), site_hosts=("Shop.Example.COM:443",))
+
+    result = analyse_ip(campaign.store, ATTACKER, engine=engine)
+
+    # Reduced the same way the comparison reduces them, so the report shows
+    # what was actually used rather than what was typed.
+    assert result.site_hosts == ("shop.example.com",)
+    assert result.to_dict()["site_hosts"] == ["shop.example.com"]
+
+
+def test_a_report_with_no_answer_says_so_rather_than_omitting_it(campaign: Case) -> None:
+    """An empty list, present. A reader comparing two reports should be able to
+    see that one was answered and the other was not, and a missing key reads as
+    an older report rather than as an unanswered question."""
+    result = analyse_ip(campaign.store, ATTACKER)
+
+    assert result.site_hosts == ()
+    assert result.to_dict()["site_hosts"] == []

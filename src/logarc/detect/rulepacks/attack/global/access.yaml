@@ -32,58 +32,120 @@ rules:
         - field: status
           any_of: ["401", "403"]
 
-  # The same behaviour, refused a different way — and the far more common way.
+  # The sibling of the rule above, and it is deliberately not an attack claim.
   #
-  # The rule above assumes an application answers an unauthenticated admin
-  # request with 401 or 403. Most do not: they redirect to the login form, and
-  # that is a 302. Measured on the committed excerpt, whose truth marks 24
-  # requests as `access_control`, the rule above reached *none* of them. This one
-  # reaches 13, and claims nothing the pack did not already claim.
+  # An application that protects `/admin` with a login form answers an
+  # unauthenticated request to it with a 302 to that form. The rule above expects
+  # a 401 or 403 and so reaches none of those. This one reaches all of them —
+  # including every one sent to an administrator who simply had not signed in
+  # yet, which is the first request of every legitimate admin visit.
   #
-  # A separate rule rather than a wider status test on that one, because a match
-  # block takes exactly one combinator: "path matches AND (refused OR
-  # redirected)" cannot be written as a single block. Two named rules also read
-  # better in a report than one whose name no longer says what it matched.
+  # **It used to be `access_control` at medium severity, and that was wrong.**
+  # It scored 13 for 13 on the committed excerpt, which looked flawless and was
+  # the arithmetic of an absent case: no persona in that corpus ever requested an
+  # admin path, and the crawler avoids `/admin/` per robots.txt, so the only
+  # clients ever sent to a login form were attackers.
   #
-  # Deliberately not "any status". That reaches 19 of the 24 and also claims
-  # five `injection` and two `exploitation` requests as access control — a
-  # confident wrong answer in place of a miss, which is the worse trade.
+  # Measured on `2026-09-18-medium`, the first corpus containing an administrator
+  # doing ordinary work:
   #
-  # KNOWN FALSE POSITIVE, measured 2026-09-18 and not yet acted on. Every figure
-  # above comes from a corpus that contained no legitimate administrator: no
-  # persona in it ever requested an admin path, and the crawler avoids `/admin/`
-  # per robots.txt. So the only clients ever bounced to a login form there were
-  # attackers, and 13 for 13 was the arithmetic of an absent case rather than a
-  # working distinction.
+  #     fires on            179 requests
+  #       truly hostile      13
+  #       benign            166   (165 of them `authentication` in the truth)
+  #       precision       0.073
   #
-  # On `2026-09-17-small`, the first build to carry one, the same match block
-  # scores 12 hostile against 57 benign — precision 0.174. Every benign match is
-  # an administrator's first request of a visit, because the application answers
-  # an unauthenticated admin request with a 302 to its login form, which is
-  # exactly what this rule was written to catch and exactly what a real
-  # administrator receives.
+  # Those 166 were **166 of the 167 false alarms the whole ruleset produced over
+  # 236,505 requests.** Every other rule in every pack contributed one.
   #
-  # The rule is not measuring access control. It is measuring "somebody was sent
-  # to a login form", and until that build existed, only attackers ever were.
+  # So the trade taken here is 13 detections for 166 false alarms, and it is not
+  # even that good a deal for the attacker: of the 13, none was independently
+  # claimed by another *hostile* rule — the other matches were `http_library_
+  # user_agent` and `action_form_submission`, both INFO. The 13 are genuinely
+  # lost. They are worth losing at this ratio, and losing them is recorded rather
+  # than argued away.
   #
-  # Left as it stands deliberately, pending a decision measured on this project's
-  # own corpus rather than a relayed figure. The candidates are a category that
-  # does not imply hostility, a confidence low enough to lose to any real signal,
-  # or requiring a second admin request in the same session — an attacker keeps
-  # going after the bounce, an administrator signs in. Whichever is chosen has to
-  # be scored on both axes before it lands; see the rulepack ledger.
+  # `authentication` because that is what the request is, and it is what the
+  # ground truth calls all 165 of the administrator's. `info` so it can never
+  # outrank a real claim: an attacker who probes `/admin` with a payload is still
+  # caught by whatever reads the payload, and this rule no longer competes.
+  #
+  # It stays in this file rather than moving to `action/` because it and
+  # `admin_area_probe` are one explanation — the 401/403 half and the 302/303
+  # half of the same behaviour — and splitting them would leave half a comment
+  # beside each.
+  #
+  # The 13 are not recovered here and are not meant to be. `forced_browsing_
+  # succeeded` below reads the same behaviour from the other end — a client that
+  # collects both a refusal and a success on admin paths — and catches the case
+  # this rule was reaching for without accusing anybody who merely signed in.
+  #
+  # A separate rule rather than a wider status test on `admin_area_probe`,
+  # because a match block takes exactly one combinator: "path matches AND
+  # (refused OR redirected)" cannot be written as a single block. The two also
+  # now mean different things, which is the stronger reason.
+  #
+  # Deliberately not "any status". That reaches 19 of the excerpt's 24 and also
+  # claims five `injection` and two `exploitation` requests — a confident wrong
+  # answer in place of a miss, which is the worse trade.
   - id: admin_area_redirect
-    name: Administrative Area, Redirected Away
-    category: access_control
-    owasp: "A01:2025"
-    severity: medium
-    confidence: 0.55
+    name: Admin Path, Sent to a Login Form
+    category: authentication
+    severity: info
+    confidence: 0.9
     match:
       all:
         - field: path_decoded
           regex: '/(admin|administrator|wp-admin|phpmyadmin|manager/html|console)\b'
         - field: status
           any_of: ["302", "303"]
+
+  # Forced browsing that *succeeded*, which is the one request in the sequence
+  # nothing else here reaches.
+  #
+  # Measured on `2026-09-20-medium`: 21 requests are a 200 on an admin path from
+  # an address that was also refused 403 on one, and the ground truth calls all
+  # 21 hostile. The payload packs already flag 13, because the attacker was
+  # usually injecting something as well. **Eight read as ordinary browsing, six
+  # of them the pure case: a client that simply walked in.** They are few, and
+  # they are the requests where an attacker got through.
+  #
+  # A single request cannot say this. `GET /admin/ 200` is the same line from an
+  # administrator and from somebody who should not be there. What separates them
+  # is what else the client did, so this is a window rule and not a signature.
+  #
+  # **`client_error_ratio` is the whole discrimination, and a 302 is not a 4xx.**
+  # A legitimate administrator's admin traffic is a bounce to the login form and
+  # then successes — 302, 200, 200 — so the ratio is zero and this never fires on
+  # them. Forced browsing is 302, 403, 403, 200: refused on the routes that check
+  # a role, through on the ones that do not.
+  #
+  # An earlier note in this file said `WindowRule` could not express this. That
+  # was wrong, and it was written without reading `WINDOW_METRICS`.
+  - id: forced_browsing_succeeded
+    name: Forced Browsing, Partly Successful
+    category: access_control
+    owasp: "A01:2025"
+    severity: high
+    confidence: 0.85
+    references: ["CAPEC-87"]
+    member:
+      all:
+        - field: path_decoded
+          regex: '/(admin|administrator|wp-admin|phpmyadmin|manager/html|console)\b'
+    window:
+      # Wide enough for a sign-in to happen mid-sequence, which is how the
+      # credentialed half of the attack begins.
+      span_seconds: 300
+      min_requests: 3
+      conditions:
+        # At least one refusal, which an administrator never collects.
+        - metric: client_error_ratio
+          op: ">"
+          value: 0.0
+        # And at least one that worked, which is what makes it worth reporting.
+        - metric: success_ratio
+          op: ">"
+          value: 0.0
 
   - id: debug_endpoint_probe
     name: Debug or Status Endpoint Probe

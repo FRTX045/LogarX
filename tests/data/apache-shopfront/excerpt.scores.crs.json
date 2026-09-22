@@ -1,0 +1,262 @@
+{
+  "binary": {
+    "accuracy": 0.9777777777777777,
+    "f1": 0.9635662237462496,
+    "false_negatives": 85,
+    "false_positive_rate": 0.0,
+    "false_positives": 0,
+    "has_attacks": true,
+    "precision": 1.0,
+    "recall": 0.9296939619520265,
+    "total": 3825,
+    "true_negatives": 2616,
+    "true_positives": 1124
+  },
+  "classification": {
+    "accuracy": 0.9343790849673203,
+    "macro_f1": 0.7853984023060374,
+    "per_category": [
+      {
+        "category": "crawling",
+        "f1": 0.964339908952959,
+        "false_negatives": 67,
+        "false_positives": 27,
+        "precision": 0.9791987673343605,
+        "predicted": 1298,
+        "recall": 0.9499252615844545,
+        "recall_any": 0.9499252615844545,
+        "support": 1338,
+        "true_positives": 1271
+      },
+      {
+        "category": "static_asset",
+        "f1": 0.9966068831798351,
+        "false_negatives": 0,
+        "false_positives": 7,
+        "precision": 0.9932367149758454,
+        "predicted": 1035,
+        "recall": 1.0,
+        "recall_any": 1.0,
+        "support": 1028,
+        "true_positives": 1028
+      },
+      {
+        "category": "reconnaissance",
+        "f1": 0.8947368421052632,
+        "false_negatives": 64,
+        "false_positives": 72,
+        "precision": 0.8892307692307693,
+        "predicted": 650,
+        "recall": 0.9003115264797508,
+        "recall_any": 0.9112149532710281,
+        "support": 642,
+        "true_positives": 578
+      },
+      {
+        "category": "enumeration",
+        "f1": 0.907035175879397,
+        "false_negatives": 67,
+        "false_positives": 7,
+        "precision": 0.9809782608695652,
+        "predicted": 368,
+        "recall": 0.8434579439252337,
+        "recall_any": 0.883177570093458,
+        "support": 428,
+        "true_positives": 361
+      },
+      {
+        "category": "browsing",
+        "f1": 0.6826923076923076,
+        "false_negatives": 16,
+        "false_positives": 116,
+        "precision": 0.5503875968992248,
+        "predicted": 258,
+        "recall": 0.8987341772151899,
+        "recall_any": 0.8987341772151899,
+        "support": 158,
+        "true_positives": 142
+      },
+      {
+        "category": "api_call",
+        "f1": 0.9753086419753086,
+        "false_negatives": 0,
+        "false_positives": 4,
+        "precision": 0.9518072289156626,
+        "predicted": 83,
+        "recall": 1.0,
+        "recall_any": 1.0,
+        "support": 79,
+        "true_positives": 79
+      },
+      {
+        "category": "injection",
+        "f1": 0.9357798165137614,
+        "false_negatives": 6,
+        "false_positives": 1,
+        "precision": 0.9807692307692307,
+        "predicted": 52,
+        "recall": 0.8947368421052632,
+        "recall_any": 0.8947368421052632,
+        "support": 57,
+        "true_positives": 51
+      },
+      {
+        "category": "credential_attack",
+        "f1": 0.9870129870129869,
+        "false_negatives": 1,
+        "false_positives": 0,
+        "precision": 1.0,
+        "predicted": 38,
+        "recall": 0.9743589743589743,
+        "recall_any": 0.9743589743589743,
+        "support": 39,
+        "true_positives": 38
+      },
+      {
+        "category": "access_control",
+        "f1": 0.0,
+        "false_negatives": 24,
+        "false_positives": 0,
+        "precision": 0.0,
+        "predicted": 0,
+        "recall": 0.0,
+        "recall_any": 0.0,
+        "support": 24,
+        "true_positives": 0
+      },
+      {
+        "category": "authentication",
+        "f1": 0.65,
+        "false_negatives": 0,
+        "false_positives": 14,
+        "precision": 0.48148148148148145,
+        "predicted": 27,
+        "recall": 1.0,
+        "recall_any": 1.0,
+        "support": 13,
+        "true_positives": 13
+      },
+      {
+        "category": "exploitation",
+        "f1": 0.6666666666666666,
+        "false_negatives": 4,
+        "false_positives": 0,
+        "precision": 1.0,
+        "predicted": 4,
+        "recall": 0.5,
+        "recall_any": 0.5,
+        "support": 8,
+        "true_positives": 4
+      },
+      {
+        "category": "path_traversal",
+        "f1": 0.8,
+        "false_negatives": 0,
+        "false_positives": 3,
+        "precision": 0.6666666666666666,
+        "predicted": 9,
+        "recall": 1.0,
+        "recall_any": 1.0,
+        "support": 6,
+        "true_positives": 6
+      },
+      {
+        "category": "ssrf",
+        "f1": 0.7499999999999999,
+        "false_negatives": 2,
+        "false_positives": 0,
+        "precision": 1.0,
+        "predicted": 3,
+        "recall": 0.6,
+        "recall_any": 0.8,
+        "support": 5,
+        "true_positives": 3
+      }
+    ],
+    "top_confusions": [
+      {
+        "count": 67,
+        "expected": "enumeration",
+        "predicted": "reconnaissance"
+      },
+      {
+        "count": 63,
+        "expected": "crawling",
+        "predicted": "browsing"
+      },
+      {
+        "count": 47,
+        "expected": "reconnaissance",
+        "predicted": "browsing"
+      },
+      {
+        "count": 16,
+        "expected": "browsing",
+        "predicted": "crawling"
+      },
+      {
+        "count": 13,
+        "expected": "access_control",
+        "predicted": "authentication"
+      },
+      {
+        "count": 7,
+        "expected": "reconnaissance",
+        "predicted": "enumeration"
+      },
+      {
+        "count": 6,
+        "expected": "access_control",
+        "predicted": "browsing"
+      },
+      {
+        "count": 6,
+        "expected": "reconnaissance",
+        "predicted": "crawling"
+      },
+      {
+        "count": 5,
+        "expected": "injection",
+        "predicted": "reconnaissance"
+      },
+      {
+        "count": 4,
+        "expected": "access_control",
+        "predicted": "crawling"
+      }
+    ],
+    "weighted_f1": 0.9350357748223396
+  },
+  "crs_fingerprint": "d1c9e04591ad1e66",
+  "granularity": "category",
+  "policy": {
+    "absorb_max_duration_seconds": 60,
+    "absorb_max_requests": 3,
+    "absorb_noise": true,
+    "episode_max_gap_seconds": 300,
+    "evidence_sample": 20,
+    "idle_timeout_seconds": 1800,
+    "max_duration_seconds": 28800,
+    "split_on_user_agent_change": true
+  },
+  "ruleset_fingerprint": "47a6958a379b14351faa159708c4103ec314108893d61536ae637907841af529",
+  "scenario": "apache-shopfront-medium-excerpt",
+  "segmentation": {
+    "boundaries_agreed": 244,
+    "boundaries_expected": 245,
+    "boundaries_found": 531,
+    "boundary_f1": 0.6288659793814433,
+    "boundary_precision": 0.4595103578154426,
+    "boundary_recall": 0.9959183673469387,
+    "fragmentation": 1.962962962962963,
+    "predicted_episodes": 583,
+    "truth_activities": 297
+  },
+  "source_file_id": "excerpt.log",
+  "totals": {
+    "clients": 52,
+    "lines_expected": 3825,
+    "lines_missing": 0,
+    "lines_scored": 3825
+  }
+}
