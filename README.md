@@ -153,14 +153,19 @@ logarc-gui
 Pick a client, read the graph, click a node to see the lines behind it, narrow
 the case to a stretch of time, export the same report the CLI produces.
 
+Opening a case also starts **Where to start**, with **Suspicious activity**
+and **Unusual activity** queues. Each recommendation explains its measurements
+and links to source evidence. **All clients** searches every IP while scanning,
+including clients outside the busiest-500 sidebar, and remains available after
+cancellation or scan failure. See [IP prioritization](docs/ip-prioritization.md)
+for ranking policy, limitations and measured evaluation results.
+
 **Full guide, with every screen: [docs/desktop-app.md](docs/desktop-app.md).**
 
-Two results the window can produce that the command line cannot, both
-deliberately: the canvas as a **PNG** (a picture of the graph, not a
-serialisation of the reconstruction) and a reconstruction narrowed to a
-**stretch of time**. Every analysis either can run is the same analysis — both
-front ends call the same `logarc.case` and `logarc.analysis` functions, so they
-cannot disagree about what a case contains.
+The window also exports the canvas as a **PNG** and reconstructs a selected
+**stretch of time**. Reconstruction shares the same `logarc.case` and
+`logarc.analysis` functions with the command line. Prioritization is available
+in the GUI and reuses the reconstruction engine's session and labeling rules.
 
 ---
 
@@ -328,6 +333,10 @@ Use `rebuild.py` rather than `pyinstaller` directly, because **PyInstaller exits
 that nothing imports, and a build without them reports every request as benign.
 The script runs the tests, builds into a staging directory, checks for the things
 an exit code cannot, and only then swaps the result into place.
+
+The staging checks also load the packaged Qt extensions in an isolated process.
+Windows system DLLs take precedence during collection, so unrelated tools on
+`PATH` cannot substitute an incompatible ICU library and break GUI startup.
 
 ### OWASP CRS (optional)
 

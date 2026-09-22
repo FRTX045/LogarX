@@ -276,7 +276,8 @@ class Case:
         try:
             with Quarantine(self.root) as quarantine:
                 for path in paths:
-                    source = Path(path)
+                    # Evidence must reopen the source independently of the launch folder.
+                    source = Path(path).absolute()
                     file_id = self._allocate_file_id(source)
                     if should_cancel is None and worth_splitting(source, workers=workers):
                         result = self._ingest_in_parallel(

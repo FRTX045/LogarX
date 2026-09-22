@@ -36,6 +36,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 import traceback
 from importlib import metadata
@@ -153,6 +154,13 @@ def build() -> tuple[bool, str]:
     shutil.rmtree(STAGING, ignore_errors=True)
     say("building into staging")
     started = time.perf_counter()
+    environment = dict(os.environ)
+    if os.name == "nt" and (system_root := os.environ.get("SYSTEMROOT")):
+        # Qt uses Windows' ICU API. An unrelated tool's same-named DLL on PATH
+        # must not replace the system dependency during collection.
+        environment["PATH"] = (
+            str(Path(system_root) / "System32") + os.pathsep + environment.get("PATH", "")
+        )
     result = subprocess.run(
         [
             str(pyinstaller),
@@ -167,6 +175,7 @@ def build() -> tuple[bool, str]:
         text=True,
         encoding="utf-8",
         errors="replace",
+        env=environment,
     )
     if result.returncode != 0:
         return False, ((result.stdout or "") + (result.stderr or ""))[-2000:]
@@ -174,7 +183,7 @@ def build() -> tuple[bool, str]:
     return True, ""
 
 
-# -- the four checks PyInstaller's exit code cannot make ---------------------
+# -- bundle checks PyInstaller's exit code cannot make ----------------------
 
 
 def check_executable(bundle: Path) -> str | None:
@@ -233,8 +242,45 @@ def check_no_browser_engine(bundle: Path) -> str | None:
     return None
 
 
+def check_qt_runtime(bundle: Path) -> str | None:
+    """Load the staged Qt extensions in isolation before replacing the bundle."""
+    if os.name != "nt":
+        return None
+    probe = """
+import ctypes
+import os
+import sys
+from pathlib import Path
+root = Path(sys.argv[1]) / "_internal"
+ctypes.windll.kernel32.SetDllDirectoryW(str(root))
+directories = [os.add_dll_directory(str(root / "PyQt6" / "Qt6" / "bin"))]
+for name in ("QtCore", "QtGui", "QtWidgets"):
+    ctypes.WinDLL(str(root / "PyQt6" / (name + ".pyd")))
+"""
+    try:
+        result = subprocess.run(
+            [sys.executable, "-I", "-c", probe, str(bundle)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return f"Qt runtime could not be checked: {exc}"
+    if result.returncode:
+        return f"Qt runtime cannot load: {result.stderr.strip()}"
+    return None
+
+
 def verify(bundle: Path) -> list[str]:
-    checks = (check_executable, check_rule_packs, check_metadata, check_no_browser_engine)
+    checks = (
+        check_executable,
+        check_rule_packs,
+        check_metadata,
+        check_no_browser_engine,
+        check_qt_runtime,
+    )
     return [problem for check in checks if (problem := check(bundle)) is not None]
 
 
@@ -380,7 +426,7 @@ def _rebuild() -> int:
     say(f"verified and swapped in ({size_mb(LIVE):.0f} MB)")
     STATUS.write_text(
         f"{stamp}  {head()}  ok  {size_mb(LIVE):.0f} MB\n"
-        "tests green; rule packs bundled; version metadata bundled; no QtWebEngine\n",
+        "tests green; rule packs bundled; version metadata bundled; no QtWebEngine; Qt runtime loads\n",
         encoding="utf-8",
     )
     MARKER.unlink(missing_ok=True)

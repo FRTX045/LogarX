@@ -1,0 +1,139 @@
+{
+  "challenger": "share",
+  "held_out": {
+    "41": {
+      "suspicious": {
+        "yield10": 0.4,
+        "yield25": 0.76,
+        "yield50": 0.88,
+        "hits10": 4,
+        "quiet50": 0.2631578947368421
+      },
+      "support": {
+        "yield10": 1.0,
+        "yield25": 1.0,
+        "yield50": 1.0,
+        "hits10": 10,
+        "quiet50": 0.2807017543859649
+      },
+      "weighted": {
+        "yield10": 1.0,
+        "yield25": 1.0,
+        "yield50": 1.0,
+        "hits10": 10,
+        "quiet50": 0.2807017543859649
+      },
+      "share": {
+        "yield10": 1.0,
+        "yield25": 1.0,
+        "yield50": 1.0,
+        "hits10": 10,
+        "quiet50": 0.2894736842105263
+      }
+    },
+    "53": {
+      "suspicious": {
+        "yield10": 0.5,
+        "yield25": 0.8,
+        "yield50": 0.9,
+        "hits10": 5,
+        "quiet50": 0.2616822429906542
+      },
+      "support": {
+        "yield10": 1.0,
+        "yield25": 1.0,
+        "yield50": 1.0,
+        "hits10": 10,
+        "quiet50": 0.2803738317757009
+      },
+      "weighted": {
+        "yield10": 1.0,
+        "yield25": 1.0,
+        "yield50": 1.0,
+        "hits10": 10,
+        "quiet50": 0.27102803738317754
+      },
+      "share": {
+        "yield10": 1.0,
+        "yield25": 1.0,
+        "yield50": 1.0,
+        "hits10": 10,
+        "quiet50": 0.2803738317757009
+      }
+    },
+    "67": {
+      "suspicious": {
+        "yield10": 0.7,
+        "yield25": 0.88,
+        "yield50": 0.94,
+        "hits10": 7,
+        "quiet50": 0.29523809523809524
+      },
+      "support": {
+        "yield10": 1.0,
+        "yield25": 1.0,
+        "yield50": 1.0,
+        "hits10": 10,
+        "quiet50": 0.29523809523809524
+      },
+      "weighted": {
+        "yield10": 1.0,
+        "yield25": 1.0,
+        "yield50": 1.0,
+        "hits10": 10,
+        "quiet50": 0.29523809523809524
+      },
+      "share": {
+        "yield10": 1.0,
+        "yield25": 1.0,
+        "yield50": 1.0,
+        "hits10": 10,
+        "quiet50": 0.29523809523809524
+      }
+    },
+    "71": {
+      "suspicious": {
+        "yield10": 0.9,
+        "yield25": 0.96,
+        "yield50": 0.98,
+        "hits10": 9,
+        "quiet50": 0.3217391304347826
+      },
+      "support": {
+        "yield10": 1.0,
+        "yield25": 1.0,
+        "yield50": 1.0,
+        "hits10": 10,
+        "quiet50": 0.2956521739130435
+      },
+      "weighted": {
+        "yield10": 1.0,
+        "yield25": 1.0,
+        "yield50": 1.0,
+        "hits10": 10,
+        "quiet50": 0.2956521739130435
+      },
+      "share": {
+        "yield10": 1.0,
+        "yield25": 1.0,
+        "yield50": 1.0,
+        "hits10": 10,
+        "quiet50": 0.30434782608695654
+      }
+    }
+  },
+  "promote": true,
+  "checks": {
+    "head_gain_10": true,
+    "yield_25": true,
+    "yield_50": true,
+    "quiet_recall_50": true,
+    "per_case_head_loss": true
+  },
+  "mean_deltas": {
+    "yield10": 0.375,
+    "yield25": 0.15,
+    "yield50": 0.07500000000000001,
+    "quiet50": 0.0069040184777262315
+  }
+}

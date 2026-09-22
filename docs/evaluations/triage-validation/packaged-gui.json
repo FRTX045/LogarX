@@ -1,0 +1,20 @@
+{
+  "frozen": true,
+  "executable": "D:\\Kei Project\\BINUS\\Blackhat\\proto2\\dist\\logarc\\logarc.exe",
+  "searched_population_position": 501,
+  "searched_ip": "100.79.157.11",
+  "search_during_blocked_scan": true,
+  "ordinary_reconstruction_during_blocked_scan": true,
+  "scan_clients": 2760,
+  "reconstructed_suspicious_ip": "198.51.100.31",
+  "evidence_rows": 4,
+  "supporting_source_refs": [
+    "access.log:206102",
+    "access.log:206103",
+    "access.log:206106",
+    "access.log:206107",
+    "access.log:206108"
+  ],
+  "supporting_evidence_found": true,
+  "failures": []
+}
