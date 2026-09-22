@@ -108,50 +108,58 @@ _RULE_CATEGORY: Final[dict[int, ActivityCategory]] = {
 #: Individual rules that may never name an activity, though their family may.
 #:
 #: `_UNMAPPED` silences a whole family; this silences one rule inside a family
-#: that is otherwise trusted. Both were measured on the same 237,278-request
-#: corpus, by counting what each rule named that nothing else did against what
-#: it accused:
+#: that is otherwise trusted. Both entries were measured on `2026-09-20-medium`,
+#: 237,278 requests, by counting what each rule named that nothing else did
+#: against what it accused.
 #:
 #: | rule | CRS calls it | named a real attack | accused ordinary traffic |
 #: |---|---|---:|---:|
-#: | 931100 | RFI: URL Parameter using IP Address | 1 | 73 |
 #: | 931130 | RFI: Off-Domain Reference/Link | 1 | 73 |
 #: | 932236 | RCE: Unix Command Injection | 0 | 22 |
 #:
-#: Together they were **95 of the 96** false alarms CRS contributed to that
-#: build, against the native rules' 1. Withholding all three costs one catch and
-#: leaves CRS naming 15 attacks and accusing nobody.
-#:
-#: The first two fire on the same 73 requests, which is why they are listed
-#: together and why silencing one alone changed nothing: 931130 simply took
-#: over. Measure the whole set before withholding anything — one at a time is
-#: whack-a-mole.
-#:
-#: **931100 reports a shape, not an act.** Its own message says so: a `url=`
-#: parameter holding an IP address. All 73 are one request repeated —
-#: `/admin/import-image?url=http://203.0.113.2/assets/img/logo.png`, a shop's
-#: administrator importing the shop's own logo from the shop's own asset
-#: server. Internal tooling addresses internal hosts by number.
-#:
 #: **931130 is an off-domain check with no domains configured.** CRS implements
-#: it against `TX:ALLOWED_HOSTS`, a list an operator is expected to supply, and
-#: this project never supplies one — so it reads every outbound URL as
-#: off-domain. An unconfigured rule should not accuse anybody.
-#:
-#: The 931 family stays mapped either way, because remote file inclusion is
-#: real and other rules in it find it. `rfi_offsite_url` does this particular
-#: job properly, by asking which hosts the site owns instead of inferring
-#: hostility from the shape of an address — and passing that same answer
-#: through to the sidecar would make 931130 correct rather than silent.
+#: it against `TX:ALLOWED_HOSTS`, a list of the site's own names an operator is
+#: expected to supply, and this project never supplies one — so it reads every
+#: outbound URL as off-domain. An unconfigured rule should not accuse anybody.
+#: This is the entry to retire first: `site_hosts` already asks the reader that
+#: exact question, and handing the answer to the sidecar would make the rule
+#: correct rather than silent. The family stays mapped throughout, because
+#: remote file inclusion is real and other 931 rules find it.
 #:
 #: **932236 matches Unix command names with no metacharacter around them**, and
 #: on a hardware shop that is the product catalogue: `pipe cutter`, `wall
-#: plugs`, `pipe`. `pipe` and `wall` are both shell commands. This is the third
-#: time this project has met the same error — `attack/windows.yaml` exists
-#: because `find x for y` and `time warner` are ordinary English, and
-#: `http_library_user_agent` was it again in another field. A bare command name
-#: is vocabulary, not intent.
-_RULE_WITHHELD: Final[frozenset[int]] = frozenset({931100, 931130, 932236})
+#: plugs`, `pipe`. `pipe` and `wall` are both shell commands. Third time this
+#: project has met the same error — `attack/windows.yaml` exists because `find
+#: x for y` and `time warner` are ordinary English, and `http_library_user_agent`
+#: was it again in another field. A bare command name is vocabulary, not intent.
+#:
+#: ## 931100 was in this set for a day, and should not have been
+#:
+#: It was withheld on 2026-09-22 for accusing 73 ordinary requests against one
+#: real catch. Every one of the 73 was the same line:
+#:
+#:     GET /admin/import-image?url=http://203.0.113.2/assets/img/logo.png
+#:
+#: **That request was a defect in the corpus, not a mistake by the rule.** The
+#: dataset's benign admin step named its own web container by a bridge IP, while
+#: every Referer on the same line calls that server `shop.test`. The step exists
+#: to be the harmless counterpart of the attackers' metadata-hunting version,
+#: and a literal IP in the parameter is the one feature separating those two
+#: cases — so the benign example was carrying the hostile marker. CRS 931100
+#: fired on it correctly, 73 times. Fixed upstream at `20a4564`; the parameter
+#: now holds `http://shop.test/assets/img/logo.png`.
+#:
+#: Set those 73 aside and the rule scores **1 for 1** on the same corpus, and on
+#: the committed excerpt restoring it is strictly better: 1,125 caught against
+#: 1,124, with zero false alarms either way. So it is restored.
+#:
+#: The lesson is worth more than the rule. **A measurement is evidence about the
+#: corpus as much as about the tool**, and "this rule has terrible precision" and
+#: "this corpus has a mislabelled request" produce the same table. What
+#: distinguished them here was reading the 73 and finding they were one line.
+#: Withholding by rule id is cheap to do and cheap to undo, which is exactly why
+#: it needs the same standard of evidence as writing a rule.
+_RULE_WITHHELD: Final[frozenset[int]] = frozenset({931130, 932236})
 
 #: Families that are recorded as evidence but may never name an activity.
 #:

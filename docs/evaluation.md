@@ -376,10 +376,10 @@ logarc evaluate -c /tmp/c -t tests/data/apache-shopfront/excerpt.truth.jsonl
 
 | committed excerpt, 3,825 requests | native | with CRS |
 |---|---:|---:|
-| Caught | 1,123 | **1,124** |
+| Caught | 1,123 | **1,125** |
 | **False alarms** | **0** | **0** |
 | Classification accuracy | 0.9344 | 0.9346 |
-| Macro F1 | **0.7860** | 0.7854 |
+| Macro F1 | 0.7860 | **0.7961** |
 
 Both fixtures now carry a `crs_fingerprint`: the CRS one names the ruleset that
 produced its detections, and the native one records `null`, which is a claim
@@ -395,32 +395,55 @@ cannot be used to argue the cost is not there, which is the same lesson the
 ### What the 96 turned out to be
 
 Classified 2026-09-22 against `2026-09-20-medium`, 237,278 requests. Three CRS
-rules accounted for **95 of the 96**, and the ninety-sixth is native and
-pre-existing.
+rules accounted for 95 of the 96, and the ninety-sixth is native and
+pre-existing. **Two of the three were withheld and one was not, and the one that
+was not is the more useful story.**
 
-| rule | CRS calls it | named a real attack | accused ordinary traffic |
-|---|---|---:|---:|
-| 931130 | RFI: Off-Domain Reference/Link | 1 | **73** |
-| 931100 | RFI: URL Parameter using IP Address | 1 | **73** |
-| 932236 | RCE: Unix Command Injection | 0 | **22** |
+| rule | CRS calls it | named a real attack | accused ordinary traffic | verdict |
+|---|---|---:|---:|---|
+| 931130 | RFI: Off-Domain Reference/Link | 1 | 73 | withheld |
+| 931100 | RFI: URL Parameter using IP Address | 1 | 73 | **restored** |
+| 932236 | RCE: Unix Command Injection | 0 | 22 | withheld |
 
 The first two fire on the same requests, which is why silencing one alone
 changed nothing — 931130 simply took over, and a second measurement was needed
 to see it. **Measure the whole set before withholding anything.**
 
-All 73 are one request, repeated:
+#### The 73 were a defect in the corpus, not a mistake by the rules
+
+All 73 are one line, repeated:
 
 ```
 GET /admin/import-image?url=http://203.0.113.2/assets/img/logo.png
 ```
 
-A shop's administrator importing the shop's own logo from the shop's own asset
-server. 931100 objects to the address being a number; 931130 objects to it being
-off-domain, which it can only judge from `TX:ALLOWED_HOSTS` — a list of the
-site's own names that an operator supplies and this project never did. Neither
-is a defect in CRS. One reports a shape and the other is unconfigured.
+It reads as a shop's administrator importing the shop's own logo, and the truth
+labels it benign. But the dataset's benign admin step named its own web
+container by a *bridge IP*, while every Referer on the same line calls that
+server `shop.test`. That step exists to be the harmless counterpart of the
+attackers' metadata-hunting version of the same endpoint, and **a literal IP in
+the parameter is the one feature separating those two cases** — so the harmless
+example was carrying the hostile marker. Found and fixed upstream at `20a4564`;
+the parameter now holds `http://shop.test/assets/img/logo.png`.
 
-The 22 are the product catalogue:
+That changes the verdict on 931100 and not on 931130:
+
+- **931100 is restored.** Set the 73 aside and it scores 1 for 1 on the same
+  corpus, and on the committed excerpt it is strictly better — 1,125 caught
+  against 1,124, zero false alarms either way. After a rebuild it cannot fire on
+  that request at all, because there is no IP in the parameter any more.
+- **931130 stays withheld**, for a reason the fix does not touch. It compares
+  against `TX:ALLOWED_HOSTS`, a list of the site's own names an operator
+  supplies, and this project never supplies one — so it reads `shop.test` as
+  off-domain just as readily as it read the IP. It is an unconfigured rule
+  rather than a wrong one, and `site_hosts` is the answer it is missing.
+
+**A measurement is evidence about the corpus as much as about the tool.** "This
+rule has terrible precision" and "this corpus has a mislabelled request" produce
+the same table, and what separated them here was reading the 73 and finding they
+were one line.
+
+#### The 22 are the product catalogue
 
 ```
 /search?q=pipe cutter        `pipe` is a shell command
@@ -428,29 +451,30 @@ The 22 are the product catalogue:
 /api/autocomplete?q=pipe
 ```
 
-**A plumbing shop cannot search for a pipe cutter.** This is the third time this
-project has met the same error: `attack/windows.yaml` exists because `find x for
-y` and `time warner` are ordinary English, and `http_library_user_agent` was it
-again in another field. A bare command name is vocabulary, not intent.
+**A plumbing shop cannot search for a pipe cutter.** This one is the rule's
+problem in any real deployment, and the corpus is doing its job by exposing it.
+Third time this project has met the same error: `attack/windows.yaml` exists
+because `find x for y` and `time warner` are ordinary English, and
+`http_library_user_agent` was it again in another field. A bare command name is
+vocabulary, not intent.
 
-All three are now in `_RULE_WITHHELD` — withheld by rule id, not by family, so
-the 931 and 932 families still name the attacks they find. On the same corpus:
+#### Where that leaves CRS
 
 | 237,278 real requests | native | CRS before | CRS after |
 |---|---:|---:|---:|
-| Caught | 17,069 | 17,071 | **17,070** |
-| **False alarms** | **1** | 96 | **1** |
-| Attack-or-not precision | 0.9999 | 0.9944 | **0.9999** |
-| Macro F1 | 0.7684 | 0.7089 | 0.7676 |
+| Caught | 17,069 | 17,071 | **17,071** |
+| False alarms | **1** | 96 | 74 |
+| — of which the corpus defect above | — | 73 | 73 |
+| **Comparable false alarms** | **1** | 23 | **1** |
 
-**CRS now costs nothing in precision and finds one attack the native rules do
-not.** Withholding the three cost one catch, which is the honest price and is
-recorded rather than rounded away.
+The 74 is reported rather than quietly netted off, because it is what the tool
+scores against the corpus as it stands today and a rebuild has not happened yet.
+The comparable row is the one that answers "is CRS worth turning on", and on it
+**CRS costs nothing in precision and finds two attacks the native rules do not.**
 
-It is not free on the committed excerpt, where the same change takes macro F1
-from 0.7961 to 0.7854 — 0.0006 *below* the native run — because one withheld
-rule was naming a real attack there. Caught still runs ahead of native, 1,124
-against 1,123. Both figures are in the fixtures; neither is quoted alone.
+On the committed excerpt, which has no such defect, the improvement needs no
+footnote: 1,125 caught against 1,123, zero false alarms either way, macro F1
+0.7860 to 0.7961.
 
 The one misjudgement CRS does make here is worth reading, because it is the
 shape of the disagreement rather than a bug in either tool:

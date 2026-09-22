@@ -151,3 +151,47 @@ def test_evaluate_refuses_a_file_that_is_not_ground_truth(tmp_path: Path) -> Non
 
     assert result.exit_code == 1
     assert "ground-truth" in result.output
+
+
+def test_an_enriched_case_can_be_scored_as_if_it_were_not(
+    excerpt: tuple[Path, Path], tmp_path: Path
+) -> None:
+    """**Both numbers from one case, which is what makes measuring both the
+    default rather than a chore.**
+
+    Before this the only way to get the native figure out of an enriched case
+    was to move `crs.jsonl` aside, score, and move it back — three steps with a
+    window in the middle where the case on disk is not the case that was
+    measured. Doing it by hand is how a native column comes to be quoted for a
+    CRS run.
+    """
+    log, truth = excerpt
+    case = tmp_path / "case"
+    runner.invoke(app, ["ingest", str(log), "--case", str(case)])
+
+    with_crs = tmp_path / "with.json"
+    without = tmp_path / "without.json"
+    runner.invoke(app, ["evaluate", "-c", str(case), "-t", str(truth), "-o", str(with_crs)])
+    result = runner.invoke(
+        app, ["evaluate", "-c", str(case), "-t", str(truth), "-o", str(without), "--no-crs"]
+    )
+
+    assert result.exit_code == 0, result.output
+    scored = json.loads(without.read_text(encoding="utf-8"))
+    assert scored["crs_fingerprint"] is None, "a --no-crs run must not name a CRS"
+
+
+def test_scoring_without_crs_says_so_in_the_report(
+    excerpt: tuple[Path, Path], tmp_path: Path
+) -> None:
+    """The flag is only honest if the file it writes cannot be mistaken for the
+    other one. `crs_fingerprint` is how a reader tells them apart, so it has to
+    be absent here even when the case beside it is enriched."""
+    log, truth = excerpt
+    case = tmp_path / "case"
+    runner.invoke(app, ["ingest", str(log), "--case", str(case)])
+    out = tmp_path / "native.json"
+
+    runner.invoke(app, ["evaluate", "-c", str(case), "-t", str(truth), "-o", str(out), "--no-crs"])
+
+    assert json.loads(out.read_text(encoding="utf-8"))["crs_fingerprint"] is None

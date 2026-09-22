@@ -168,26 +168,28 @@ def test_an_unknown_severity_does_not_fall_to_the_floor() -> None:
 # -- rules withheld one at a time, not by family -----------------------------
 
 
-def test_a_url_parameter_holding_an_ip_address_cannot_name_an_activity() -> None:
-    """**73 of the 96 false alarms CRS produced on the medium corpus were this
-    one rule, on this one request, repeated.**
+def test_an_ip_in_a_url_parameter_can_still_name_an_activity() -> None:
+    """**931100 was withheld for a day and should not have been.**
+
+    It was silenced for accusing 73 ordinary requests against one real catch,
+    and all 73 were one line repeated:
 
         GET /admin/import-image?url=http://203.0.113.2/assets/img/logo.png
 
-    A shop's administrator importing the shop's own logo from the shop's own
-    asset server. CRS 931100 says what it means — "URL Parameter using IP
-    Address" — and an IP in a `url=` parameter is a shape, not an act. Internal
-    tooling addresses internal hosts by number all the time.
+    That was a defect in the corpus. The dataset's benign admin step named its
+    own web container by a bridge IP while every Referer on the same line calls
+    that server `shop.test`, so the harmless example was carrying the very
+    feature that distinguishes it from the attackers' metadata-hunting version.
+    CRS fired correctly, 73 times. Fixed upstream at `20a4564`.
 
-    Measured on 237,278 real requests: it named **1** genuine attack and
-    accused **73** ordinary ones. The family stays mapped, because remote file
-    inclusion is real and other 931 rules find it; this rule alone is withheld.
+    Set those aside and the rule scores 1 for 1 on the same corpus, and on the
+    committed excerpt restoring it is strictly better — 1,125 caught against
+    1,124, zero false alarms either way.
 
-    `rfi_offsite_url` now does this job properly, by asking which hosts the site
-    owns rather than guessing from the shape of an address.
+    Kept as a test rather than deleted, because a withheld rule and a restored
+    one look identical from the outside and this one has been both.
     """
-    assert category_for(931100, "attack-rfi") is None
-    assert category_for_family("attack-rfi") is not None, "the family still speaks"
+    assert category_for(931100, "attack-rfi") is not None
 
 
 def test_a_bare_unix_command_name_cannot_name_an_activity() -> None:
@@ -214,7 +216,7 @@ def test_a_withheld_rule_id_cannot_be_revived_by_its_family() -> None:
     withheld whatever its family says, the mirror of the existing rule that a
     listed rule id can never give a voice to a withheld family."""
     for family in ("attack-rfi", "attack-rce", "attack-sqli", None):
-        assert category_for(931100, family) is None
+        assert category_for(931130, family) is None
         assert category_for(932236, family) is None
 
 
