@@ -1,10 +1,11 @@
 """Asking a case which domains belong to the site it came from.
 
-One rule reads the answer and nothing else does. `rfi_offsite_url` calls a URL
-in a query parameter hostile when it points somewhere the site does not own —
-and that comparison is the only thing separating remote file inclusion from a
-share link, an OAuth callback or a login redirect, because the request is
-`GET /page?url=…` either way.
+The answer decides whether a URL in a query parameter points somewhere the site
+does not own — the only thing separating remote file inclusion from a share
+link, an OAuth callback or a login redirect, because the request is
+`GET /page?url=…` either way. `rfi_offsite_url` reads it directly, and
+enrichment hands it to CRS, whose off-domain rule 931130 names nothing until
+it has been told.
 
 Two decisions shape this dialog, and both come from what it is asking for.
 
@@ -13,11 +14,13 @@ holds it and the reader confirms. That is the whole reason the question is put
 *after* the scan: asked before one, logarc has read nothing and can only offer
 an empty box.
 
-**It says which way a wrong answer fails.** Getting this wrong is quiet — a
-mistyped domain turns every ordinary outbound link into a finding, with nothing
-on screen to explain it. The reassurance is that the failure runs the other way
-too: an answer that is missing or too narrow costs findings rather than
-inventing them, so somebody unsure can skip it without breaking the case.
+**It says which way each answer fails, and they are opposite ways.** Skipping
+is safe: both rules stay silent and the cost is findings. A domain of the
+site's left out, or mistyped, is not — its own links become findings, quietly,
+with nothing on screen to explain them. The first version of this dialog
+promised that a wrong answer only cost findings; measured on 2026-09-23, a
+mistyped domain reported the site's own logo import as remote file inclusion.
+So it now says both, and says the safe one is Skip.
 """
 
 from __future__ import annotations
@@ -34,7 +37,7 @@ from PyQt6.QtWidgets import (
 )
 
 from logarc.gui._qt import required
-from logarc.gui.crs import _COST, _GAIN, _side, _Spoken, _titled, _wrapped
+from logarc.gui.crs import _COST, _GAIN, _quiet, _side, _Spoken, _titled, _wrapped
 from logarc.gui.theme import GAP, ROOM, TIGHT, mono_font
 from logarc.style import THEME
 
@@ -93,7 +96,11 @@ class SiteHostsOffer(_Spoken):
             _side("+", _GAIN, "Catches a request that fetches a file from a link somewhere else")
         )
         trade.addWidget(
-            _side("\N{MINUS SIGN}", _COST, "Left out or wrong, those are missed — never invented")
+            _side(
+                "\N{MINUS SIGN}",
+                _COST,
+                "Leave out a domain of yours, and links to it are reported as attacks",
+            )
         )
 
         stack = QVBoxLayout(self)
@@ -103,6 +110,11 @@ class SiteHostsOffer(_Spoken):
         stack.addWidget(self._lede(suggestion))
         stack.addWidget(self._field)
         stack.addLayout(trade)
+        # The one direction that cannot go wrong, said where somebody unsure
+        # of the answer is deciding whether to give one.
+        stack.addWidget(
+            _quiet("Not sure? Skip — nothing is invented, and the case stays as it is.")
+        )
         stack.addWidget(self._quiet_it)
         stack.addWidget(buttons)
 
