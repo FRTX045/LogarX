@@ -11,6 +11,7 @@ so a module that set it after would be setting it for nobody.
 
 from __future__ import annotations
 
+import gc
 import os
 import time
 from collections.abc import Iterator
@@ -142,3 +143,34 @@ def nothing_left_running(request: pytest.FixtureRequest) -> Iterator[None]:
         f"{request.node.name} ended with {left} job(s) still running. "
         "Call settled(qt_app) before the test returns."
     )
+
+
+@pytest.fixture(autouse=True)
+def windows_destroyed_when_the_test_ends() -> Iterator[None]:
+    """Free every window the test dropped, here, rather than whenever.
+
+    A closed window is not a freed one. Menu lambdas and helpers such as
+    `FullScreen` hold references back to it, so it sits in a reference cycle
+    until the garbage collector next runs — and that can be in the middle of
+    Qt delivering an event to some other widget, several tests later. On the
+    Linux runners under coverage that crashed the process about once in every
+    thirteen jobs, always in a test that had done nothing wrong: in
+    `MainWindow.__init__` adding a menu action, or halfway through a mouse
+    drag on a canvas.
+
+    So the collector runs here, at the end of every test, where nothing else
+    is on the stack, and each window goes through PyQt's own ownership path at
+    a quiet moment.
+
+    **Collecting, not `deleteLater`.** Deleting every top-level widget was
+    tried first and killed the Windows suite outright. It destroys objects Qt
+    created itself — the menus `addMenu` returns — behind PyQt's back, and
+    PyQt only learns of a deletion for objects Python made, so their wrappers
+    went on pointing at freed memory for the next collection to walk. Nor
+    `close`: that runs the application's handlers, and a test that walked away
+    from an open `CrsOffer` had it answered during teardown.
+    """
+    yield
+    if QApplication.instance() is None:
+        return
+    gc.collect()
