@@ -1172,6 +1172,48 @@ def test_the_evidence_table_has_a_row_for_every_piece_of_evidence(
     assert panel._table.rowCount() == len(lines)
 
 
+def test_refilling_the_evidence_table_measures_each_row_a_bounded_number_of_times(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    """Opening a second large activity froze the window for minutes.
+
+    With its columns sized to their contents, every cell put into the table
+    asked where its column starts, and the header answered by measuring every
+    row of that column again — rows squared, per column. Only a refill of the
+    same length paid it, because a first fill leaves a layout pending that skips
+    the question, and every large activity is capped at the same 2,000 lines:
+    moving from one to another is exactly a same-length refill.
+
+    Counted rather than timed, so a slow machine cannot fail it and a fast one
+    cannot hide it.
+    """
+    from PyQt6.QtWidgets import QStyledItemDelegate
+
+    class Counting(QStyledItemDelegate):
+        calls = 0
+
+        def sizeHint(self, option, index):  # type: ignore[no-untyped-def]  # noqa: N802
+            Counting.calls += 1
+            return super().sizeHint(option, index)
+
+    with Case.open(campaign) as case:
+        result = analyse_ip(case.store, CLIENT)
+        node = result.trace.nodes[0]
+        lines = case.read_evidence(node.evidence[:5])
+    many = (list(lines) * 40)[:150]
+    panel = EvidencePanel()
+    panel.show()
+    panel.show_evidence(node, many)
+    panel._table.setItemDelegate(Counting(panel._table))
+    qt_app.processEvents()
+    Counting.calls = 0
+
+    panel.show_evidence(node, many)
+
+    assert Counting.calls < 20 * len(many), f"{Counting.calls:,} measurements for {len(many)} rows"
+    panel.close()
+
+
 def test_choosing_a_row_shows_that_request_in_full(qt_app: QApplication, campaign: Path) -> None:
     """The table truncates a payload however wide it is. This is where the
     reader goes for all of it — and for the original line."""

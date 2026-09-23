@@ -197,12 +197,24 @@ class EvidencePanel(QWidget):
         # Sorting off while filling. With it on, each row is re-sorted against
         # the rows already placed and the remaining values land in other rows.
         self._table.setSortingEnabled(False)
-        self._table.setRowCount(len(lines))
+        # Sizing off while filling as well. Sized to their contents, every cell
+        # put in asks where its column starts, and the header answers by
+        # measuring every row of that column again: a refill of 2,000 lines was
+        # minutes of frozen window. Put back once the rows are in, each column
+        # is measured once.
+        header = required(self._table.horizontalHeader(), "column header")
+        modes = [header.sectionResizeMode(section) for section in range(header.count())]
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         sizes = False
-        for row, line in enumerate(lines):
-            for column, cell in enumerate(cells_for(line, decode=self._decode)):
-                self._table.setItem(row, column, _item(cell, index=row, column=column))
-                sizes = sizes or (column == _SIZE and bool(cell.text))
+        try:
+            self._table.setRowCount(len(lines))
+            for row, line in enumerate(lines):
+                for column, cell in enumerate(cells_for(line, decode=self._decode)):
+                    self._table.setItem(row, column, _item(cell, index=row, column=column))
+                    sizes = sizes or (column == _SIZE and bool(cell.text))
+        finally:
+            for section, mode in enumerate(modes):
+                header.setSectionResizeMode(section, mode)
         self._table.setSortingEnabled(True)
         # A column costs its heading's width whatever it holds, and several log
         # formats carry no response size at all. Empty on every row it was taking
