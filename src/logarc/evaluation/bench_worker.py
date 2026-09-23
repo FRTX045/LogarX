@@ -62,7 +62,11 @@ def measure(*, log: Path, lines: int, workdir: Path) -> dict[str, Any]:
         clients = len(case.store.ip_summaries(limit=1_000_000, order_by="requests"))
 
         began = time.perf_counter()
-        analysis = analyse_ip(case.store, busiest) if busiest else None
+        # The case's own engine, built inside the clock exactly as the default
+        # one used to be — so what is timed has not changed, only which rules
+        # are timed. Left to its default this measured an engine missing the
+        # case's `site_hosts`, which is not the engine the tool runs.
+        analysis = analyse_ip(case.store, busiest, engine=case.rule_engine()) if busiest else None
         analyse_seconds = time.perf_counter() - began
 
     return {
