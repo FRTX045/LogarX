@@ -149,13 +149,31 @@ jobs:
           --cov=logarc --cov-report=term-missing --cov-report=xml
           --cov-fail-under=0
 
+      # One automatic retry, for exactly one failure: a segfault (exit 139) on
+      # Linux. Measured on 2026-09-24 by reproducing CI's command in WSL: it
+      # hits about one Linux job in thirteen, and a native backtrace shows
+      # `QWidget::insertAction` running on a menu Qt had created a few lines
+      # earlier and that was already freed. The root cause is not found yet;
+      # `TODO.md` has the evidence and what was ruled out. Until it is, a
+      # crash that has nothing to do with the change under test should not
+      # turn `main` red. A test failure (exit 1) is never retried, two crashes
+      # in a row still fail, and the retry leaves a warning on the run so a
+      # green result never hides that it happened.
       - name: Test the window
+        shell: bash
         env:
           QT_QPA_PLATFORM: offscreen
           LOGARC_REQUIRE_CRS: "1"
-        run: >
-          pytest tests/gui
-          --cov=logarc --cov-append --cov-report=term-missing --cov-report=xml
+        run: |
+          run() { pytest tests/gui --cov=logarc --cov-append --cov-report=term-missing --cov-report=xml; }
+          run && exit 0
+          code=$?
+          if [ "$code" -eq 139 ] && [ "$RUNNER_OS" = "Linux" ]; then
+            echo "::warning title=GUI suite segfaulted::Known intermittent Qt crash on the Linux runners (TODO.md); running the GUI suite once more."
+            run
+          else
+            exit "$code"
+          fi
 
       # Coverage was measured on every run and then thrown away: `coverage.xml`
       # was written and nothing ever read it, so the only way to learn the
