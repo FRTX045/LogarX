@@ -36,6 +36,7 @@ NAMES_THE_PIN = (
     "crs/README.md",
     "docs/evaluation.md",
     "docs/evaluations/ip-prioritization-validation.md",
+    "docs/evaluations/suspicious-recommendations-validation.md",
     "docs/ip-prioritization.md",
 )
 
