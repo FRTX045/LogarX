@@ -125,3 +125,88 @@ def graded_scores(order: Sequence[str], truth: Mapping[str, ClientTruth]) -> Gra
         ndcg_at={k: ndcg(k) for k in TIERS},
         unranked_targeted=tuple(sorted(ip for ip in targeted if ranks[ip] is None)),
     )
+
+
+_EPSILON: Final = 1e-12
+
+
+def _mean(values: Iterable[float | None]) -> float:
+    known = list(values)
+    if any(value is None for value in known):
+        raise ValueError("a measure the selection needs is undefined")
+    return mean(value for value in known if value is not None)
+
+
+def choose_graded(development: Mapping[str, Mapping[str, GradedScores]]) -> str:
+    """C1 or C2, by the frozen order: higher mean targeted yield at 10 wins, then higher
+    at 25, then lower mean of mean targeted rank, then C1."""
+    if not development:
+        raise ValueError("selection needs development builds")
+
+    def measure(method: str) -> tuple[float, float, float]:
+        builds = [scores[method] for scores in development.values()]
+        return (
+            round(_mean(s.yield_at[10] for s in builds), 12),
+            round(_mean(s.yield_at[25] for s in builds), 12),
+            -round(_mean(s.mean_targeted_rank for s in builds), 12),
+        )
+
+    c1, c2 = measure("c1"), measure("c2")
+    return "c2" if c2 > c1 else "c1"
+
+
+def graded_gate(
+    baseline: Mapping[str, GradedScores],
+    challenger: Mapping[str, GradedScores],
+    low_support: Mapping[str, frozenset[str]],
+) -> dict[str, object]:
+    """The frozen held-out gate. All three must hold for the challenger to be promoted:
+    mean targeted yield at 10 and 25 each no lower and one higher; no low-support targeted
+    client in a worse tier in any build; benign clients at 10, 25 and 50 not more in any build.
+    Every per-client rank change is returned whatever the result."""
+    if (
+        not baseline
+        or baseline.keys() != challenger.keys()
+        or baseline.keys() != low_support.keys()
+    ):
+        raise ValueError("the gate needs the same nonempty set of held-out builds")
+
+    def yield_mean(side: Mapping[str, GradedScores], k: int) -> float:
+        return _mean(scores.yield_at[k] for scores in side.values())
+
+    deltas = {k: yield_mean(challenger, k) - yield_mean(baseline, k) for k in (10, 25)}
+    head_yield = all(d >= -_EPSILON for d in deltas.values()) and any(
+        d > _EPSILON for d in deltas.values()
+    )
+    tier_drops = {
+        build: sorted(
+            ip
+            for ip in low_support[build]
+            if tier(challenger[build].ranks[ip]) > tier(baseline[build].ranks[ip])
+        )
+        for build in baseline
+    }
+    benign_rises = {
+        build: [k for k in TIERS if challenger[build].benign_at[k] > baseline[build].benign_at[k]]
+        for build in baseline
+    }
+    checks = {
+        "head_yield": head_yield,
+        "low_support_tiers": not any(tier_drops.values()),
+        "benign_head": not any(benign_rises.values()),
+    }
+    return {
+        "promote": all(checks.values()),
+        "checks": checks,
+        "yield_deltas": deltas,
+        "tier_drops": tier_drops,
+        "benign_rises": benign_rises,
+        "rank_changes": {
+            build: {
+                ip: (rank, challenger[build].ranks[ip])
+                for ip, rank in baseline[build].ranks.items()
+                if rank != challenger[build].ranks[ip]
+            }
+            for build in baseline
+        },
+    }
