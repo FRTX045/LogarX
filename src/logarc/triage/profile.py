@@ -70,6 +70,15 @@ class ClientProfile:
     evidence: dict[str, tuple[EvidenceRef, ...]]
     reasons: tuple[PriorityReason, ...] = ()
     statuses: dict[str, int] = field(default_factory=dict)
+    rules_matched: dict[str, int] = field(default_factory=dict)
+    """Requests each rule matched, whether or not its label was the one kept.
+
+    A scanner's enumeration is labelled `scanner_user_agent`, which outranks
+    `directory_enumeration` on confidence. Asked who else enumerated, counting
+    only the labels kept would leave that scanner out of the answer.
+    """
+    rules_won: dict[str, int] = field(default_factory=dict)
+    """Requests each rule named: the label a reconstruction shows for them."""
 
 
 @dataclass(frozen=True)
@@ -96,9 +105,18 @@ def profile_client(
     category_counts: Counter[str] = Counter()
     category_severity: dict[str, int] = {}
     hostile_targets: set[str] = set()
+    rules_matched: Counter[str] = Counter()
+    rules_won: Counter[str] = Counter()
     severity = hostile_requests = 0
     for _, labelled in label_sessions(ordered, engine, policy=session_policy, crs=crs):
         for item in labelled:
+            rules_won[item.label.rule_id] += 1
+            # The label is added because it is not always in `all_labels`: a
+            # request nothing matched is named by the fallback alone. A set,
+            # because a rule listed twice is still one match on one request.
+            rules_matched.update(
+                {label.rule_id for label in item.all_labels} | {item.label.rule_id}
+            )
             hostile = [label for label in item.all_labels if label.category.is_hostile]
             if not hostile:
                 continue
@@ -186,6 +204,8 @@ def profile_client(
             )
         ),
         dict(sorted(Counter(str(e.status) for e in statuses).items())),
+        dict(sorted(rules_matched.items())),
+        dict(sorted(rules_won.items())),
     )
 
 

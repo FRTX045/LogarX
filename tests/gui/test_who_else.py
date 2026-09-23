@@ -1,0 +1,151 @@
+from datetime import UTC, datetime, timedelta
+
+from conftest import settled
+from logarc.case import Case
+from logarc.core.event import NormalizedEvent
+from logarc.core.evidence import EvidenceRef
+from logarc.gui.app import MainWindow
+from logarc.gui.who_else import WhoElseDialog, describe, unavailable
+from logarc.triage.scan import RuleMatch, TriageProgress
+
+
+def enumeration(ip, count, user_agent, first_line):
+    """Distinct missing paths, one a second: what a directory wordlist looks like."""
+    return [
+        NormalizedEvent(
+            datetime(2026, 1, 1, tzinfo=UTC) + timedelta(seconds=i),
+            ip,
+            EvidenceRef("source", first_line + i),
+            path=f"/w{i}",
+            method="GET",
+            status=404,
+            user_agent=user_agent,
+            protocol="HTTP/1.1",
+        )
+        for i in range(count)
+    ]
+
+
+def make_case(tmp_path):
+    """dirb and gobuster over one wordlist, and somebody browsing."""
+    with Case.create(tmp_path / "case") as case:
+        case.store.write(enumeration("192.0.2.30", 20, "Mozilla/5.0", 1))
+        case.store.write(enumeration("192.0.2.31", 30, "gobuster/3.5", 100))
+        case.store.write(
+            [
+                NormalizedEvent(
+                    datetime(2026, 1, 1, tzinfo=UTC) + timedelta(seconds=i),
+                    "192.0.2.1",
+                    EvidenceRef("source", 200 + i),
+                    path="/",
+                    method="GET",
+                    status=200,
+                    user_agent="Mozilla/5.0",
+                )
+                for i in range(5)
+            ]
+        )
+        case.store.finalize()
+    return case.root
+
+
+DIRB = RuleMatch("192.0.2.30", matched=20, won=20, requests=20)
+GOBUSTER = RuleMatch("192.0.2.31", matched=30, won=0, requests=30)
+
+
+def test_the_count_is_of_other_clients_only():
+    """Looking at dirb, dirb is not somebody else."""
+    assert describe("directory_enumeration", [GOBUSTER, DIRB], client_ip="192.0.2.30") == (
+        "1 other IP matched directory_enumeration in this time range."
+    )
+    assert describe("directory_enumeration", [DIRB], client_ip="192.0.2.30") == (
+        "No other IP matched directory_enumeration in this time range."
+    )
+
+
+def test_no_answer_before_the_scan_finishes_is_never_worded_as_one():
+    running = unavailable(TriageProgress(1204, 2761, ()), scanning=True)
+    assert "1,204 of 2,761" in running
+    stopped = unavailable(None, scanning=False)
+    for text in (running, stopped):
+        assert "no other" not in text.lower()
+        assert "Where to start" in text
+
+
+def test_dialog_lists_others_and_opens_the_one_double_clicked(qt_app):
+    dialog = WhoElseDialog()
+    opened = []
+    dialog.open_client.connect(opened.append)
+    dialog.show_matches("directory_enumeration", [GOBUSTER, DIRB], client_ip="192.0.2.30")
+    assert dialog.table.rowCount() == 1
+    assert [dialog.table.item(0, column).text() for column in range(4)] == [
+        "192.0.2.31",
+        "30",
+        "0",
+        "30",
+    ]
+    dialog.table.cellDoubleClicked.emit(0, 1)
+    assert opened == ["192.0.2.31"]
+    dialog.show_unavailable("directory_enumeration", unavailable(None, scanning=False))
+    assert dialog.table.rowCount() == 0
+    assert dialog.table.isHidden()
+    dialog.close()
+
+
+def test_right_click_on_dirb_finds_gobuster_and_opens_it(qt_app, tmp_path):
+    window = MainWindow()
+    window.report_error = lambda message, detail: (_ for _ in ()).throw(AssertionError(message))
+    window._load_case(make_case(tmp_path))
+    settled(qt_app)
+    assert window._triage.result is not None
+    window._reconstruct("192.0.2.30")
+    settled(qt_app)
+    node = next(n for n in window._result.trace.nodes if "directory_enumeration" in n.rule_ids)
+    window._show_evidence(node.node_id)
+    settled(qt_app)
+
+    window._who_else_menu.aboutToShow.emit()
+    entries = {action.text(): action for action in window._who_else_menu.actions()}
+    assert "directory_enumeration" in entries
+    entries["directory_enumeration"].trigger()
+    settled(qt_app)
+    dialog = window._who_else_dialog
+    assert dialog is not None
+    assert dialog.table.rowCount() == 1
+    assert dialog.table.item(0, 0).text() == "192.0.2.31"
+
+    dialog.table.cellDoubleClicked.emit(0, 0)
+    settled(qt_app)
+    assert window._result.client_ip == "192.0.2.31"
+    window.close()
+    settled(qt_app)
+
+
+def test_without_a_finished_scan_the_window_says_so(qt_app, tmp_path):
+    window = MainWindow()
+    window._load_case(make_case(tmp_path))
+    settled(qt_app)
+    window._reconstruct("192.0.2.30")
+    settled(qt_app)
+    node = next(n for n in window._result.trace.nodes if "directory_enumeration" in n.rule_ids)
+    window._show_evidence(node.node_id)
+    settled(qt_app)
+    window._triage.shutdown()
+
+    window._who_else("directory_enumeration")
+    settled(qt_app)
+    dialog = window._who_else_dialog
+    assert dialog is not None
+    assert dialog.table.isHidden()
+    assert dialog.caption.text() == unavailable(None, scanning=False)
+    window.close()
+    settled(qt_app)
+
+
+def test_menu_has_nothing_to_offer_without_a_selected_activity(qt_app):
+    window = MainWindow()
+    window._who_else_menu.aboutToShow.emit()
+    actions = window._who_else_menu.actions()
+    assert [action.text() for action in actions] == ["Select an activity first"]
+    assert not actions[0].isEnabled()
+    window.close()

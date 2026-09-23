@@ -69,6 +69,7 @@ from logarc.gui.site_hosts import SiteHostsOffer
 from logarc.gui.theme import GAP, MONO_FAMILIES, PAD, TIGHT, apply_theme, heading_font
 from logarc.gui.time_filter import TimeFilterBar
 from logarc.gui.triage import TriagePanel
+from logarc.gui.who_else import WhoElseDialog, unavailable
 from logarc.gui.workers import run_job
 from logarc.ingest.pipeline import IngestCancelled
 from logarc.ingest.quarantine import DIRECTORY_NAME as QUARANTINE_DIR
@@ -76,6 +77,7 @@ from logarc.report import export
 from logarc.storage.case import CaseManifest
 from logarc.style import THEME, format_requests, plural
 from logarc.timerange import nobody_here, summary
+from logarc.triage.scan import read_rule_matches
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -470,8 +472,19 @@ class MainWindow(QMainWindow):
         # there, and added before it exists this would be adding `None`.
         on_the_canvas = QAction(self._canvas)
         on_the_canvas.setSeparator(True)
+        # One entry per rule, filled when the menu opens: a right-click selects
+        # the activity under it first, so the rules are that activity's. They
+        # are the names its evidence panel lists under "Matched by", because a
+        # node can carry several and only the reader knows which one they mean.
+        self._who_else_menu = QMenu("Who else did this?", self)
+        self._who_else_menu.aboutToShow.connect(self._fill_who_else)
+        self._who_else_dialog: WhoElseDialog | None = None
+        about_this = QAction(self._canvas)
+        about_this.setSeparator(True)
         self._canvas.addActions(
             [
+                required(self._who_else_menu.menuAction(), "action"),
+                about_this,
                 self._save_layout_action,
                 self._undo_action,
                 self._reset_layout_action,
@@ -1528,6 +1541,55 @@ class MainWindow(QMainWindow):
         self._evidence.set_decode(decode)
 
     # -- evidence ----------------------------------------------------------
+
+    def _fill_who_else(self) -> None:
+        self._who_else_menu.clear()
+        node = self._selected
+        if node is None or not node.rule_ids:
+            required(
+                self._who_else_menu.addAction("Select an activity first"), "action"
+            ).setEnabled(False)
+            return
+        for rule_id in node.rule_ids:
+            action = required(self._who_else_menu.addAction(rule_id), "action")
+            action.triggered.connect(lambda _checked=False, rule=rule_id: self._who_else(rule))
+
+    def _who_else(self, rule_id: str) -> None:
+        """List the other clients `rule_id` matched, from the finished scan's index."""
+        if self._result is None:
+            return
+        client_ip = self._result.client_ip
+        if self._who_else_dialog is None:
+            self._who_else_dialog = WhoElseDialog(self)
+            self._who_else_dialog.open_client.connect(self._reconstruct)
+        dialog = self._who_else_dialog
+        index = self._triage.result
+        if index is None:
+            dialog.show_unavailable(
+                rule_id, unavailable(self._triage.progress, scanning=self._triage.scanning)
+            )
+        else:
+            path = index.path
+            dialog.show_unavailable(rule_id, "Looking up the other IPs…")
+
+            def work(_: Callable[[object], None]) -> Any:
+                return read_rule_matches(path, rule_id)
+
+            def done(matches: Any) -> None:
+                # The range can move while this runs, and a new scan replaces
+                # the index; an answer from the old one is about other traffic.
+                if self._triage.result is index:
+                    dialog.show_matches(rule_id, matches, client_ip=client_ip)
+
+            def failed(message: str, _detail: str) -> None:
+                if self._triage.result is index:
+                    dialog.show_unavailable(
+                        rule_id, f"Could not read the scan's results: {message}."
+                    )
+
+            run_job(work, on_done=done, on_error=failed)
+        dialog.show()
+        dialog.raise_()
 
     def _show_evidence(self, node_id: str, *, evidence: tuple[EvidenceRef, ...] = ()) -> None:
         if self._result is None or self._case_path is None:

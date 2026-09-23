@@ -1,4 +1,4 @@
-from test_profiles import events
+from test_profiles import events, scanned
 
 from logarc.case import Case
 from logarc.core.window import TimeWindow
@@ -149,3 +149,47 @@ def test_scan_labels_with_the_case_site_hosts(tmp_path):
 
     rows = read_page(scan_case(root).path, "suspicious").rows
     assert [row.profile.client_ip for row in rows] == ["203.0.113.9"]
+
+
+def test_who_else_matched_a_rule_includes_clients_it_did_not_name(tmp_path):
+    """dirb and gobuster ran one wordlist; only dirb was labelled for it.
+
+    Both come back for `directory_enumeration`, and the counts say which one the
+    rule actually named, so the reader can see why gobuster's reconstruction
+    calls the same activity something else.
+    """
+    from dataclasses import replace
+
+    from logarc.triage.scan import RuleMatch, read_rule_matches, scan_case
+
+    with Case.create(tmp_path / "case") as case:
+        case.store.write(scanned("192.0.2.31"))
+        case.store.write(
+            [replace(event, user_agent="Mozilla/5.0") for event in scanned("192.0.2.30", 20)]
+        )
+        case.store.write(events("192.0.2.1", 5))
+        case.store.finalize()
+    result = scan_case(case.root)
+
+    assert read_rule_matches(result.path, "directory_enumeration") == (
+        RuleMatch("192.0.2.31", matched=30, won=0, requests=30),
+        RuleMatch("192.0.2.30", matched=20, won=20, requests=20),
+    )
+    assert read_rule_matches(result.path, "no_such_rule") == ()
+
+
+def test_an_index_without_rule_counts_is_rebuilt(tmp_path):
+    """Read as empty, a missing table would answer that nobody else did it."""
+    import sqlite3
+    from contextlib import closing
+
+    from logarc.triage.scan import scan_case
+
+    with Case.create(tmp_path / "case") as case:
+        case.store.write(events())
+        case.store.finalize()
+    result = scan_case(case.root)
+    with closing(sqlite3.connect(result.path)) as connection:
+        connection.execute("DROP TABLE rules")
+        connection.commit()
+    assert not scan_case(case.root).cached

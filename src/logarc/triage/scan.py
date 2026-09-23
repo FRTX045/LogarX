@@ -56,6 +56,26 @@ class TriageProgress:
     findings: tuple[RankedClient, ...]
 
 
+#: The shape of a published index. Part of its identity, so an index written
+#: before a table was added is rebuilt rather than read as having nothing in it.
+#: Separate from `TriagePolicy.version`, which names the ranking that was
+#: validated and promoted; the layout changing is not the ranking changing.
+_LAYOUT = 2
+
+
+@dataclass(frozen=True)
+class RuleMatch:
+    """One client a rule matched, and how much of that client it explains."""
+
+    client_ip: str
+    matched: int
+    """Requests the rule matched."""
+    won: int
+    """Of those, the requests it named — what a reconstruction calls them."""
+    requests: int
+    """Every request the client made in the scanned range."""
+
+
 @dataclass(frozen=True)
 class TriagePage:
     rows: tuple[RankedClient, ...]
@@ -125,6 +145,19 @@ def read_page(
         total,
         offset,
     )
+
+
+def read_rule_matches(path: Path, rule_id: str) -> tuple[RuleMatch, ...]:
+    """Every client whose requests this rule matched, most matches first.
+
+    Includes clients the rule matched without naming: see `RuleMatch.won`.
+    """
+    with closing(sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)) as connection:
+        rows = connection.execute(
+            "SELECT ip, matched, won, requests FROM rules WHERE rule = ? ORDER BY matched DESC, ip",
+            (rule_id,),
+        ).fetchall()
+    return tuple(RuleMatch(ip, matched, won, requests) for ip, matched, won, requests in rows)
 
 
 def read_profiles(path: Path) -> tuple[ClientProfile, ...]:
@@ -204,6 +237,7 @@ def scan_case(
             "window": asdict(window),
             "session": session_policy.as_config(),
             "policy": asdict(policy),
+            "layout": _LAYOUT,
         }
         key = hashlib.sha256(json.dumps(identity, sort_keys=True, default=str).encode()).hexdigest()
         directory = root / "triage"
@@ -219,6 +253,9 @@ def scan_case(
                     ranked = cached.execute(
                         "SELECT count(*) FROM ranking WHERE queue = 'all'"
                     ).fetchone()[0]
+                    # Asked only so a missing table raises: every client
+                    # matches some rule, even if only the benign fallback.
+                    cached.execute("SELECT count(*) FROM rules").fetchone()
                     if count != data["clients"] or ranked != count:
                         raise ValueError("incomplete prioritization cache")
                 return TriageResult(
@@ -274,11 +311,23 @@ def scan_case(
                     "CREATE TABLE metadata(payload TEXT);"
                     "CREATE TABLE clients(ip TEXT PRIMARY KEY, profile TEXT);"
                     "CREATE TABLE ranking(queue TEXT, position INTEGER, ip TEXT, reasons TEXT, PRIMARY KEY(queue, position));"
+                    # Its own table rather than read out of `clients`: asking
+                    # who else a rule matched would otherwise parse every
+                    # profile in the case to answer for a handful of them.
+                    "CREATE TABLE rules(rule TEXT, ip TEXT, matched INTEGER, won INTEGER, requests INTEGER, PRIMARY KEY(rule, ip));"
                 )
                 output.execute("INSERT INTO metadata VALUES (?)", (json.dumps(data, default=str),))
                 output.executemany(
                     "INSERT INTO clients VALUES (?, ?)",
                     ((p.client_ip, json.dumps(asdict(p))) for p in profiles),
+                )
+                output.executemany(
+                    "INSERT INTO rules VALUES (?, ?, ?, ?, ?)",
+                    (
+                        (rule, p.client_ip, matched, p.rules_won.get(rule, 0), p.requests)
+                        for p in profiles
+                        for rule, matched in p.rules_matched.items()
+                    ),
                 )
                 for queue in ("suspicious", "unusual", "all"):
                     check()

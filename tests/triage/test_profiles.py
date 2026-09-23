@@ -222,3 +222,83 @@ def test_tied_security_ranks_use_ip_order():
         "192.0.2.1",
         "192.0.2.9",
     ]
+
+
+def scanned(ip="192.0.2.33", count=30):
+    """Enumeration from a scanner: distinct missing paths, one per second."""
+    return [
+        replace(event, path=f"/w{i}")
+        for i, event in enumerate(events(ip, count, status=404, user_agent="gobuster/3.5"))
+    ]
+
+
+def test_a_rule_that_matches_but_loses_the_label_is_still_counted():
+    """Two tools ran one wordlist, and only one of them was named for it.
+
+    With a scanner's user-agent the same enumeration is labelled
+    `scanner_user_agent`, which outranks `directory_enumeration` on confidence.
+    Counting only the label that won would say nobody else enumerated.
+    """
+    from logarc.triage.profile import profile_client
+
+    profile = profile_client(scanned(), RuleEngine(default_rules()))
+    assert profile.rules_matched["directory_enumeration"] == 30
+    assert "directory_enumeration" not in profile.rules_won
+    assert profile.rules_won["scanner_user_agent"] == 30
+
+
+def test_ordinary_traffic_is_counted_under_the_label_it_was_given():
+    """Nothing matched, so the label is the fallback and `all_labels` is empty.
+
+    Asking who else browsed has to find these requests all the same.
+    """
+    from logarc.triage.profile import profile_client
+
+    profile = profile_client(events(count=3), RuleEngine(default_rules()))
+    assert profile.rules_matched == {"benign:browsing": 3}
+    assert profile.rules_won == {"benign:browsing": 3}
+
+
+def test_rule_counts_agree_with_reconstruction(tmp_path):
+    """Every rule a reconstruction shows under "Matched by" can be looked up.
+
+    A node's `rule_ids` are the labels its requests won, so the set of those
+    across a reconstruction is exactly the set of rules this client won.
+    """
+    from collections import Counter
+
+    from logarc.triage.profile import profile_client
+
+    engine = RuleEngine(default_rules())
+    sample = [
+        *scanned(),
+        *(
+            replace(
+                event,
+                timestamp=event.timestamp + timedelta(hours=2),
+                evidence=EvidenceRef("source", 100 + i),
+            )
+            for i, event in enumerate(events("192.0.2.33", 3))
+        ),
+    ]
+    profile = profile_client(sample, engine)
+    store = ParquetEventStore(tmp_path / "store")
+    try:
+        store.write(sample)
+        store.finalize()
+        reconstruction = analyse_ip(store, "192.0.2.33", engine=engine)
+    finally:
+        store.close()
+
+    matched: Counter[str] = Counter()
+    won: Counter[str] = Counter()
+    for item in reconstruction.assignments:
+        labelled = item.labelled
+        won[labelled.label.rule_id] += 1
+        for rule_id in {label.rule_id for label in labelled.all_labels} | {labelled.label.rule_id}:
+            matched[rule_id] += 1
+    assert profile.rules_matched == dict(matched)
+    assert profile.rules_won == dict(won)
+    assert {rule for node in reconstruction.trace.nodes for rule in node.rule_ids} == set(
+        profile.rules_won
+    )

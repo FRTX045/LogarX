@@ -51,6 +51,7 @@ class TriagePanel(QWidget):
         self._stop: threading.Event | None = None
         self._request: tuple[Path, TimeWindow] | None = None
         self._result: TriageResult | None = None
+        self._progress: TriageProgress | None = None
         self._rows: Sequence[RankedClient | IpSummary] = ()
         self._offset = 0
         self.queues = QTabBar()
@@ -150,6 +151,7 @@ class TriagePanel(QWidget):
         def advanced(progress: TriageProgress) -> None:
             if generation != self._generation:
                 return
+            self._progress = progress
             self.notice.setText(
                 f"Provisional: examined {progress.processed:,} of {progress.total:,} IPs. "
                 "Use All clients for full-population search."
@@ -193,8 +195,28 @@ class TriagePanel(QWidget):
         self._stop = None
         self._request = None
         self._result = None
+        self._progress = None
         self._display(())
         self.setEnabled(False)
+
+    @property
+    def result(self) -> TriageResult | None:
+        """The completed index for the case and range last started, if there is one.
+
+        `start` clears it before anything else, so it never answers for a range
+        the window has since moved away from.
+        """
+        return self._result
+
+    @property
+    def progress(self) -> TriageProgress | None:
+        """How far the running scan has got, as last reported."""
+        return self._progress
+
+    @property
+    def scanning(self) -> bool:
+        """Whether a scan is running, including one that is being stopped."""
+        return self._stop is not None
 
     def _cancel(self) -> None:
         if self._stop is not None:
