@@ -49,6 +49,15 @@ def test_the_offer_says_both_halves_of_the_trade(qt_app: QApplication) -> None:
     assert "suspicious" in words or "ordinary" in words, "the cost is missing"
 
 
+def test_what_a_dialog_says_keeps_each_widget_on_its_own_line(qt_app: QApplication) -> None:
+    """The last label and the first checkbox used to be joined with nothing
+    between them, so a sentence ran straight into "Remember this choice" and a
+    phrase spanning the seam could match text no reader ever sees."""
+    lines = CrsOffer().spoken().splitlines()
+
+    assert "Remember this choice" in lines
+
+
 def test_a_ticked_box_is_what_makes_the_answer_stick(qt_app: QApplication) -> None:
     offer = CrsOffer()
 

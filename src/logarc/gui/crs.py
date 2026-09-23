@@ -101,8 +101,11 @@ class _Spoken(QDialog):
 
     def spoken(self) -> str:
         return "\n".join(
-            label.text() for label in self.findChildren(QLabel) if label.text()
-        ) + "\n".join(box.text() for box in self.findChildren(QCheckBox))
+            [
+                *(label.text() for label in self.findChildren(QLabel) if label.text()),
+                *(box.text() for box in self.findChildren(QCheckBox)),
+            ]
+        )
 
 
 class CrsOffer(_Spoken):
