@@ -427,19 +427,10 @@ def rank_profiles(
                 p.client_ip,
             ),
         )
-        ranked = []
-        for profile in selected:
-            evidence = tuple(
-                dict.fromkeys(ref for reason in profile.reasons for ref in reason.evidence)
-            )[:SAMPLE_SIZE]
-            support = PriorityReason(
-                f"{profile.hostile_requests:,} of {profile.requests:,} requests have hostile detections "
-                f"({profile.hostile_requests / profile.requests:.0%}); strongest severity "
-                f"{Severity(profile.severity).name.lower()}. Priority balances support, severity and share.",
-                evidence,
-            )
-            ranked.append(RankedClient(profile, (support, *profile.reasons)))
-        return ranked
+        # Imported here because the reasons module reads this one's types.
+        from logarc.triage.reasons import suspicious_reasons
+
+        return [RankedClient(profile, suspicious_reasons(profile)) for profile in selected]
     if queue != "unusual":
         raise ValueError(f"unknown investigation queue: {queue}")
     populations = {

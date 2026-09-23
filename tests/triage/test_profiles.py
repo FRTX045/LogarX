@@ -69,9 +69,10 @@ def test_promoted_order_bounds_severity_and_explains_support_without_losing_evid
     noisy = replace(sustained, client_ip="noisy", requests=100000)
     rows = rank_profiles([quiet, noisy, sustained], "suspicious")
     assert [row.profile.client_ip for row in rows] == ["sustained", "noisy", "quiet"]
-    assert "1,000 of 1,000" in rows[0].reasons[0].text
-    assert rows[0].reasons[0].evidence == base.reasons[0].evidence
-    assert rows[0].reasons[1:] == base.reasons
+    support = next(reason for reason in rows[0].reasons if reason.kind == "support")
+    assert "1,000 of 1,000" in support.text
+    assert support.evidence == base.reasons[0].evidence
+    assert rows[0].reasons[-len(base.reasons) :] == base.reasons
     assert DEFAULT_POLICY.version == 3
 
 
