@@ -22,7 +22,7 @@ from functools import cached_property
 from typing import TYPE_CHECKING, Final
 
 from logarc.core.activity import ActivityCategory, ActivityLabel, Severity
-from logarc.detect.crs import RESCUE_CONFIDENCE, category_for, severity_for
+from logarc.detect.crs import RESCUE_CONFIDENCE, category_for, host_speaks_for, severity_for
 from logarc.detect.rules import Condition, SignatureRule, WindowRule
 from logarc.normalize.decode import NormalizedText, canonical_path, normalize
 
@@ -334,7 +334,13 @@ class LabelledEvent:
 class RuleEngine:
     """Applies a ruleset to requests."""
 
-    def __init__(self, rules: Sequence[Rule], *, site_hosts: Iterable[str] = ()) -> None:
+    def __init__(
+        self,
+        rules: Sequence[Rule],
+        *,
+        site_hosts: Iterable[str] = (),
+        crs_host: str | None = None,
+    ) -> None:
         self.rules = list(rules)
         self._signatures = [rule for rule in self.rules if isinstance(rule, SignatureRule)]
         self._windows = [rule for rule in self.rules if isinstance(rule, WindowRule)]
@@ -352,6 +358,22 @@ class RuleEngine:
         the same rules fingerprint differently for every case. `AnalysisResult`
         carries the hosts separately, beside `crs_fingerprint`, for the same
         reason CRS is carried there: it is provenance, not rules.
+        """
+        self._crs_host_trusted = host_speaks_for(_bare_host(crs_host), self.site_hosts)
+        """Whether the one host CRS was told speaks for every host the reader named.
+
+        931130 decides "off-domain" against the Host header the sidecar was
+        given, which was a placeholder until the case could supply its own.
+        Two things have to hold before its verdicts are trusted:
+
+        * **That host is one the reader still names.** Membership rather than
+          "some host was given", so a case enriched against `shop.test` and then
+          re-answered with `other.test` treats the stored verdicts as
+          unconfigured until enrichment is repeated.
+        * **It covers the rest.** CRS compares by suffix, so `shop.test` speaks
+          for `www.shop.test` — but a Host header holds one name, and a site
+          that also answers to `shopcdn.net` would have links to its own second
+          domain reported as remote file inclusion.
         """
 
     @cached_property
@@ -398,7 +420,12 @@ class RuleEngine:
         # critical CRS detection on the same request, because a rule had
         # technically fired. Anything LOW or above is a real claim about the
         # request and still wins outright.
-        if label.severity is Severity.INFO and (rescued := _rescue(detections)) is not None:
+        rescued = (
+            _rescue(detections, site_host_known=self._crs_host_trusted)
+            if label.severity is Severity.INFO
+            else None
+        )
+        if rescued is not None:
             return LabelledEvent(
                 event=event,
                 label=rescued,
@@ -780,7 +807,9 @@ def _names_activity(detection: CrsDetection) -> bool:
     return not detection.matched_var.strip().lower().startswith(_HEARSAY_VARS)
 
 
-def _rescue(detections: Sequence[CrsDetection]) -> ActivityLabel | None:
+def _rescue(
+    detections: Sequence[CrsDetection], *, site_host_known: bool = False
+) -> ActivityLabel | None:
     """Name an activity from CRS, for a request no rule packed here recognised.
 
     Only detections whose family this project has an opinion about can do this,
@@ -800,7 +829,12 @@ def _rescue(detections: Sequence[CrsDetection]) -> ActivityLabel | None:
         (detection, category)
         for detection in detections
         if _names_activity(detection)
-        and (category := category_for(detection.rule_id, detection.attack_family)) is not None
+        and (
+            category := category_for(
+                detection.rule_id, detection.attack_family, site_host_known=site_host_known
+            )
+        )
+        is not None
     ]
     if not candidates:
         return None

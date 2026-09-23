@@ -114,17 +114,7 @@ _RULE_CATEGORY: Final[dict[int, ActivityCategory]] = {
 #:
 #: | rule | CRS calls it | named a real attack | accused ordinary traffic |
 #: |---|---|---:|---:|
-#: | 931130 | RFI: Off-Domain Reference/Link | 1 | 73 |
 #: | 932236 | RCE: Unix Command Injection | 0 | 22 |
-#:
-#: **931130 is an off-domain check with no domains configured.** CRS implements
-#: it against `TX:ALLOWED_HOSTS`, a list of the site's own names an operator is
-#: expected to supply, and this project never supplies one — so it reads every
-#: outbound URL as off-domain. An unconfigured rule should not accuse anybody.
-#: This is the entry to retire first: `site_hosts` already asks the reader that
-#: exact question, and handing the answer to the sidecar would make the rule
-#: correct rather than silent. The family stays mapped throughout, because
-#: remote file inclusion is real and other 931 rules find it.
 #:
 #: **932236 matches Unix command names with no metacharacter around them**, and
 #: on a hardware shop that is the product catalogue: `pipe cutter`, `wall
@@ -146,20 +136,41 @@ _RULE_CATEGORY: Final[dict[int, ActivityCategory]] = {
 #: to be the harmless counterpart of the attackers' metadata-hunting version,
 #: and a literal IP in the parameter is the one feature separating those two
 #: cases — so the benign example was carrying the hostile marker. CRS 931100
-#: fired on it correctly, 73 times. Fixed upstream at `20a4564`; the parameter
-#: now holds `http://shop.test/assets/img/logo.png`.
+#: fired on it correctly, 73 times. Fixed upstream at `20a4564`.
 #:
-#: Set those 73 aside and the rule scores **1 for 1** on the same corpus, and on
-#: the committed excerpt restoring it is strictly better: 1,125 caught against
-#: 1,124, with zero false alarms either way. So it is restored.
+#: Set those 73 aside and the rule scores 1 for 1 on the same corpus, and on
+#: the committed excerpt restoring it is strictly better. So it is restored.
 #:
-#: The lesson is worth more than the rule. **A measurement is evidence about the
-#: corpus as much as about the tool**, and "this rule has terrible precision" and
-#: "this corpus has a mislabelled request" produce the same table. What
-#: distinguished them here was reading the 73 and finding they were one line.
-#: Withholding by rule id is cheap to do and cheap to undo, which is exactly why
-#: it needs the same standard of evidence as writing a rule.
-_RULE_WITHHELD: Final[frozenset[int]] = frozenset({931130, 932236})
+#: **A measurement is evidence about the corpus as much as about the tool.**
+#: "This rule has terrible precision" and "this corpus has a mislabelled
+#: request" produce the same table. What distinguished them here was reading
+#: the 73 and finding they were one line.
+_RULE_WITHHELD: Final[frozenset[int]] = frozenset({932236})
+
+#: Rules that are right, and can only be right once CRS knows the site's host.
+#:
+#: CRS 931130 is "Off-Domain Reference/Link". It decides whether a URL in a
+#: parameter is foreign with `!@endsWith .%{request_headers.host}` — against
+#: the request's own Host header. Apache does not log that header, so the
+#: sidecar synthesises one, and until 2026-09-23 it was always `localhost`:
+#: every outbound URL, the site's own asset host included, read as foreign. On
+#: 237,278 real requests the rule named 1 genuine attack and accused 73
+#: ordinary ones.
+#:
+#: **An earlier version of this comment said 931130 compares against
+#: `TX:ALLOWED_HOSTS`, a list an operator configures.** That was wrong — it was
+#: written without reading the rule, repeated in `TODO.md`, the ledger and
+#: `docs/evaluation.md`, and passed to the dataset project, which repeated it
+#: back. The conclusion survived, since the rule was told nothing true about
+#: the site either way. The mechanism did not, and the real one is what made
+#: the fix small: the sidecar already took a `--host` flag.
+#:
+#: So `enrich_case` now fills it from the case's `site_hosts`, and this set
+#: holds 931130 back only until that has happened. Measured with the sidecar
+#: directly — told `shop.test`, the rule is quiet on `shop.test` and
+#: `cdn.shop.test` and fires on `evil.test` and on `shop.test.evil.test`, which
+#: is the same discrimination `rfi_offsite_url` makes natively.
+_NEEDS_SITE_HOST: Final[frozenset[int]] = frozenset({931130})
 
 #: Families that are recorded as evidence but may never name an activity.
 #:
@@ -242,7 +253,9 @@ def category_for_family(family: str | None) -> ActivityCategory | None:
     return _FAMILY_CATEGORY.get(family)
 
 
-def category_for(rule_id: int, family: str | None) -> ActivityCategory | None:
+def category_for(
+    rule_id: int, family: str | None, *, site_host_known: bool = False
+) -> ActivityCategory | None:
     """The category one detection may name, or None.
 
     `family` decides *whether* a detection may speak; `rule_id` may then correct
@@ -252,10 +265,16 @@ def category_for(rule_id: int, family: str | None) -> ActivityCategory | None:
     rule id would be a back door for `attack-protocol`.
 
     `_RULE_WITHHELD` is checked first and is the mirror of that bound: a rule
-    silenced by id stays silent whatever its family allows. Two rules are in it
-    and both earned the place by measurement rather than by argument.
+    silenced by id stays silent whatever its family allows, and it earned the
+    place by measurement rather than by argument.
+
+    `site_host_known` is whether CRS was run against a host the reader named.
+    It defaults to false, so every caller that does not know reads 931130 as
+    withheld — exactly what every caller got before the host could be known.
     """
     if rule_id in _RULE_WITHHELD:
+        return None
+    if rule_id in _NEEDS_SITE_HOST and not site_host_known:
         return None
     category = category_for_family(family)
     if category is None:

@@ -320,3 +320,66 @@ def test_the_window_s_reconstruction_honours_the_case_s_domains(tmp_path: Path) 
     fired = {a.labelled.label.rule_id for a in result.assignments}
     assert "rfi_offsite_url" in fired, f"the window saw only {sorted(fired)}"
     assert result.site_hosts == ("shop.test",), "and the report must say what it compared against"
+
+
+def _crs_931130_on_line_one():
+    from logarc.detect.crs.sidecar import CrsDetection
+
+    detection = CrsDetection(
+        source_file_id="rfi.log",
+        line_no=1,
+        rule_id=931130,
+        severity="critical",
+        msg="Possible Remote File Inclusion (RFI) Attack: Off-Domain Reference/Link",
+        matched_var="ARGS:x",
+        transformed_value="git://evil.test/repo",
+        attack_family="attack-rfi",
+    )
+    return {("rfi.log", 1): [detection]}
+
+
+def _case_with_one_quiet_request(tmp_path: Path) -> Path:
+    """One request no native rule has an opinion about, so any label beyond the
+    benign fallback can only have come from CRS."""
+    case_dir = tmp_path / "case"
+    lines = [
+        "203.0.113.7 - - [10/Oct/2020:14:00:00 +0000] "
+        '"GET /page?x=1 HTTP/1.1" 200 120 "-" "Mozilla/5.0"',
+    ]
+    with Case.create(case_dir) as case:
+        case.ingest([write_log(tmp_path / "rfi.log", lines)])
+    return case_dir
+
+
+def test_the_case_engine_trusts_931130_when_crs_ran_against_the_named_host(
+    tmp_path: Path,
+) -> None:
+    """`Case.rule_engine()` is the one place an engine is built for a case, so it
+    is where the manifest's record of the host CRS was given has to reach it."""
+    case_dir = _case_with_one_quiet_request(tmp_path)
+    with Case.open(case_dir) as case:
+        case.set_site_hosts(["shop.test"])
+        case.manifest.config["crs_host"] = "shop.test"
+        case.manifest.save(case.root)
+
+    with Case.open(case_dir) as case:
+        (event,) = list(case.store.all_events())
+        (labelled,) = case.rule_engine().label_events([event], crs=_crs_931130_on_line_one())
+
+    assert labelled.label.rule_id == "crs:931130"
+
+
+def test_the_case_engine_distrusts_931130_from_a_placeholder_run(tmp_path: Path) -> None:
+    """Enriched before the question was answered: the manifest says CRS was
+    told `localhost`, so its off-domain verdicts are still unconfigured."""
+    case_dir = _case_with_one_quiet_request(tmp_path)
+    with Case.open(case_dir) as case:
+        case.set_site_hosts(["shop.test"])
+        case.manifest.config["crs_host"] = "localhost"
+        case.manifest.save(case.root)
+
+    with Case.open(case_dir) as case:
+        (event,) = list(case.store.all_events())
+        (labelled,) = case.rule_engine().label_events([event], crs=_crs_931130_on_line_one())
+
+    assert labelled.label.rule_id != "crs:931130"

@@ -35,6 +35,8 @@ __all__ = [
     "CrsUnavailableError",
     "SidecarConfig",
     "default_binary",
+    "host_speaks_for",
+    "primary_site_host",
     "run_sidecar",
 ]
 
@@ -73,6 +75,53 @@ def default_binary() -> Path:
     return Path(override) if override else _CRS_DIR / name
 
 
+def primary_site_host(hosts: Iterable[str]) -> str | None:
+    """The one host to give CRS as the site's own, from however many a case names.
+
+    CRS 931130 decides whether a URL in a parameter is off-domain with
+    `!@endsWith .%{request_headers.host}`, and Apache does not log the Host
+    header, so the sidecar synthesises one. It takes a single value, and
+    `endsWith` means `shop.test` already covers `www.shop.test` and
+    `cdn.shop.test` — so the right choice is whichever host covers the most of
+    the others.
+
+    Hosts that do not cover each other cannot all be the Host header, and the
+    ones left out are still read as off-domain by 931130 — which is why
+    `host_speaks_for` decides whether its verdicts count, and this only decides
+    what to send. The tie is broken by length and then alphabetically so the
+    choice is stable: the same case must fingerprint the same way on every run.
+    """
+    names = sorted({name for name in hosts if name})
+    if not names:
+        return None
+
+    def covered(candidate: str) -> int:
+        return sum(1 for other in names if _covers(candidate, other))
+
+    return min(names, key=lambda name: (-covered(name), len(name), name))
+
+
+def host_speaks_for(host: str | None, names: Iterable[str]) -> bool:
+    """Whether CRS, told `host`, judged a URL to every one of `names` as the site's own.
+
+    The condition for trusting 931130. `host` has to be one the reader named —
+    `localhost`, the placeholder every unanswered case was enriched with, is
+    not, and nor is a host they have since withdrawn — and it has to cover the
+    rest. A Host header holds one name, so a site that also answers to an
+    unrelated domain had links to that domain judged foreign by CRS, and the
+    reader has already said they are not.
+    """
+    if not host:
+        return False
+    named = {name for name in names if name}
+    return host in named and all(_covers(host, name) for name in named)
+
+
+def _covers(host: str, name: str) -> bool:
+    """931130's own test, `@endsWith .<host>`: a host covers itself and its subdomains."""
+    return name == host or name.endswith("." + host)
+
+
 @dataclass(frozen=True, slots=True)
 class SidecarConfig:
     """Everything that changes what the sidecar would report.
@@ -100,7 +149,7 @@ class SidecarConfig:
         return ref or None
 
     def fingerprint(self) -> str:
-        """A digest of the ruleset revision, the conf files and the paranoia level.
+        """A digest of the ruleset revision, the conf files, the paranoia level and the host.
 
         Recorded beside the native ruleset fingerprint so a report can name
         everything that produced it, and compared on re-runs so that retuning
@@ -113,6 +162,10 @@ class SidecarConfig:
             if path.exists():
                 digest.update(path.read_bytes())
         digest.update(str(self.paranoia).encode())
+        # The host changes what CRS reports — 931130 compares every URL in a
+        # parameter against it — so two cases enriched with different hosts must
+        # not claim one configuration.
+        digest.update(self.host.encode())
         return digest.hexdigest()[:16]
 
     def as_config(self) -> dict[str, Any]:
@@ -121,6 +174,9 @@ class SidecarConfig:
             "crs_revision": self.revision(),
             "crs_fingerprint": self.fingerprint(),
             "crs_paranoia_level": self.paranoia,
+            # Recorded so the engine can tell whether 931130's verdicts were
+            # reached against the site's real name or against a placeholder.
+            "crs_host": self.host,
         }
 
     def check(self) -> None:

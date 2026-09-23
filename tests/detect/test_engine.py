@@ -997,3 +997,96 @@ def test_the_named_hosts_are_compared_the_way_hosts_are(tmp_path: Path) -> None:
     (labelled,) = engine.label_events([_fetching("url=https://shop.example.com/help")])
 
     assert not labelled.all_labels
+
+
+# -- 931130 speaks only when CRS was told the site's real host -----------------
+
+
+def _off_domain(line_no: int = 1) -> CrsDetection:
+    return crs_detection(
+        line_no=line_no,
+        rule_id=931130,
+        family="attack-rfi",
+        msg="Possible Remote File Inclusion (RFI) Attack: Off-Domain Reference/Link",
+        matched_var="ARGS:url",
+    )
+
+
+def _fetching_elsewhere() -> list[NormalizedEvent]:
+    return [event(path="/admin/import-image", query="url=http://evil.test/shell.txt")]
+
+
+def test_an_off_domain_verdict_names_the_request_when_crs_knew_the_host() -> None:
+    """**What the host fix buys.** The case named `shop.test`, enrichment told CRS
+    so, and a URL to somewhere else is now a finding CRS earned rather than one
+    it would have reached about any URL at all."""
+    engine = RuleEngine([], site_hosts=("shop.test",), crs_host="shop.test")
+
+    (labelled,) = engine.label_events(_fetching_elsewhere(), crs=crs_index(_off_domain()))
+
+    assert labelled.label.rule_id == "crs:931130"
+    assert labelled.label.category is ActivityCategory.SSRF
+
+
+def test_an_off_domain_verdict_reached_against_localhost_names_nothing() -> None:
+    """Enriched before the domain question was answered, so CRS compared every
+    URL against a placeholder. The detection stays attached as evidence; it does
+    not get to accuse."""
+    engine = RuleEngine([], site_hosts=("shop.test",), crs_host="localhost")
+
+    (labelled,) = engine.label_events(_fetching_elsewhere(), crs=crs_index(_off_domain()))
+
+    assert labelled.label.rule_id != "crs:931130"
+    assert [item.rule_id for item in labelled.crs] == [931130], "still carried as evidence"
+
+
+def test_an_off_domain_verdict_with_no_answer_at_all_names_nothing() -> None:
+    """The state of every case before 2026-09-23, and of every case nobody asks.
+    Nothing may change for it."""
+    engine = RuleEngine([])
+
+    (labelled,) = engine.label_events(_fetching_elsewhere(), crs=crs_index(_off_domain()))
+
+    assert labelled.label.rule_id != "crs:931130"
+
+
+def test_a_host_the_reader_has_since_withdrawn_is_not_trusted() -> None:
+    """Enriched against `shop.test`, then the answer was changed. The stored
+    verdicts were reached against a host that is no longer the site's, so they
+    are treated like any other unconfigured run until enrichment is repeated —
+    the check is membership, not merely "some host was given"."""
+    engine = RuleEngine([], site_hosts=("other.test",), crs_host="shop.test")
+
+    (labelled,) = engine.label_events(_fetching_elsewhere(), crs=crs_index(_off_domain()))
+
+    assert labelled.label.rule_id != "crs:931130"
+
+
+def test_a_site_with_two_unrelated_domains_keeps_931130_quiet() -> None:
+    """**CRS can be told one host, and this site has two.**
+
+    931130 reads a URL as its own site's when it ends with `.<the host>`, so
+    told `shop.test` it covers `www.shop.test` and `cdn.shop.test` — and not
+    `shopcdn.net`, which the reader also named. A link to the site's own second
+    domain would be reported as remote file inclusion, and the reader has
+    already said it is not. Withheld, the cost is findings, never false ones.
+    """
+    engine = RuleEngine([], site_hosts=("shop.test", "shopcdn.net"), crs_host="shop.test")
+    own_second_domain = [
+        event(path="/admin/import-image", query="url=https://shopcdn.net/logo.png")
+    ]
+
+    (labelled,) = engine.label_events(own_second_domain, crs=crs_index(_off_domain()))
+
+    assert labelled.label.rule_id != "crs:931130"
+
+
+def test_subdomains_of_the_host_crs_was_told_are_covered_by_it() -> None:
+    """The ordinary shape of a site that answers to more than one name. CRS
+    compares by suffix, so `shop.test` speaks for `www.shop.test` too, and the
+    rule is as trustworthy as it is for a site with one name."""
+    engine = RuleEngine([], site_hosts=("shop.test", "www.shop.test"), crs_host="shop.test")
+
+    (labelled,) = engine.label_events(_fetching_elsewhere(), crs=crs_index(_off_domain()))
+
+    assert labelled.label.rule_id == "crs:931130"

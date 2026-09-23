@@ -232,3 +232,79 @@ def test_clearing_the_domains_makes_the_rule_quiet_again(rfi_log: Path, tmp_path
             app, ["analyze", "--case", str(case), "--ip", "203.0.113.7"], env={"COLUMNS": "200"}
         ).output
     )
+
+
+def test_answering_after_enrichment_says_to_enrich_again(rfi_log: Path, tmp_path: Path) -> None:
+    """The CRS verdicts on disk were reached against whatever host enrichment
+    had, and CRS 931130 is only trusted when that host is one the case now
+    names. Setting the domains afterwards is an ordinary thing to do, so the
+    command says what it leaves stale rather than leaving the reader to wonder
+    why a finding did not appear."""
+    case = tmp_path / "case"
+    runner.invoke(app, ["ingest", str(rfi_log), "--case", str(case)])
+    with Case.open(case) as opened:
+        opened.manifest.config.update({"crs_fingerprint": "abc", "crs_host": "localhost"})
+        opened.manifest.save(opened.root)
+    (case / "crs.jsonl").write_text("", encoding="utf-8")
+
+    result = runner.invoke(app, ["site-hosts", "--case", str(case), "--set", "shop.test"])
+
+    assert result.exit_code == 0, result.output
+    assert "logarc enrich" in result.output
+
+
+def test_two_unrelated_domains_are_not_sent_to_enrich_again(rfi_log: Path, tmp_path: Path) -> None:
+    """CRS is told one host, and no one host speaks for both of these, so its
+    off-domain rule stays silent however often enrichment runs. Saying "enrich
+    again" would promise a finding the run cannot produce."""
+    case = tmp_path / "case"
+    runner.invoke(app, ["ingest", str(rfi_log), "--case", str(case)])
+    with Case.open(case) as opened:
+        opened.manifest.config.update({"crs_fingerprint": "abc", "crs_host": "localhost"})
+        opened.manifest.save(opened.root)
+    (case / "crs.jsonl").write_text("", encoding="utf-8")
+
+    result = runner.invoke(
+        app, ["site-hosts", "--case", str(case), "--set", "shop.test", "--set", "shopcdn.net"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "logarc enrich" not in result.output
+
+
+def test_answering_before_enrichment_says_nothing_extra(rfi_log: Path, tmp_path: Path) -> None:
+    """No CRS on disk, nothing stale — so no hint to act on."""
+    case = tmp_path / "case"
+    runner.invoke(app, ["ingest", str(rfi_log), "--case", str(case)])
+
+    result = runner.invoke(app, ["site-hosts", "--case", str(case), "--set", "shop.test"])
+
+    assert result.exit_code == 0, result.output
+    assert "enrich" not in result.output
+
+
+def test_enrich_prints_the_fingerprint_the_case_recorded(
+    rfi_log: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The line is there so a report can be matched to the run behind it.
+
+    A case that names its site is enriched against that host, not the one the
+    command's own config carries, so printing the command's config named a
+    configuration the case does not have.
+    """
+
+    def quiet_sidecar(events, **_kwargs):
+        for _ in events:
+            pass
+        return []
+
+    monkeypatch.setattr("logarc.enrich.run_sidecar", quiet_sidecar)
+    case = tmp_path / "case"
+    runner.invoke(app, ["ingest", str(rfi_log), "--case", str(case), "--site-host", "shop.test"])
+
+    result = runner.invoke(app, ["enrich", "--case", str(case)], env={"COLUMNS": "200"})
+
+    assert result.exit_code == 0, result.output
+    with Case.open(case) as opened:
+        recorded = opened.manifest.config["crs_fingerprint"]
+    assert f"configuration {recorded}" in result.output

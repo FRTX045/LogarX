@@ -401,7 +401,7 @@ was not is the more useful story.**
 
 | rule | CRS calls it | named a real attack | accused ordinary traffic | verdict |
 |---|---|---:|---:|---|
-| 931130 | RFI: Off-Domain Reference/Link | 1 | 73 | withheld |
+| 931130 | RFI: Off-Domain Reference/Link | 1 | 73 | withheld until the site is named |
 | 931100 | RFI: URL Parameter using IP Address | 1 | 73 | **restored** |
 | 932236 | RCE: Unix Command Injection | 0 | 22 | withheld |
 
@@ -432,16 +432,48 @@ That changes the verdict on 931100 and not on 931130:
   corpus, and on the committed excerpt it is strictly better — 1,125 caught
   against 1,124, zero false alarms either way. After a rebuild it cannot fire on
   that request at all, because there is no IP in the parameter any more.
-- **931130 stays withheld**, for a reason the fix does not touch. It compares
-  against `TX:ALLOWED_HOSTS`, a list of the site's own names an operator
-  supplies, and this project never supplies one — so it reads `shop.test` as
-  off-domain just as readily as it read the IP. It is an unconfigured rule
-  rather than a wrong one, and `site_hosts` is the answer it is missing.
+- **931130 stays withheld until the site is named**, for a reason the fix does
+  not touch. It compares a URL's host against the request's own `Host`
+  header, which Apache does not log — so the sidecar sent `localhost`, and
+  every URL, `shop.test` included, read as off-domain. It was an unconfigured
+  rule rather than a wrong one, and `site_hosts` is the answer it was missing;
+  the next section is what happened when it got it.
+
+  *An earlier version of this paragraph said 931130 compares against
+  `TX:ALLOWED_HOSTS`, a list an operator configures. That was written without
+  reading the rule and was wrong; the rule is
+  `!@endsWith .%{request_headers.host}`.*
 
 **A measurement is evidence about the corpus as much as about the tool.** "This
 rule has terrible precision" and "this corpus has a mislabelled request" produce
 the same table, and what separated them here was reading the 73 and finding they
 were one line.
+
+#### 931130, told the site's name
+
+**Added 2026-09-23.** `logarc enrich` now sends CRS the case's own domain as the
+Host header, and 931130's verdicts count only when that one domain covers every
+domain the reader named. CRS compares by suffix, so `shop.test` covers
+`www.shop.test`; a site that also answers to an unrelated domain keeps the rule
+withheld, because a Host header holds one name and links to the second domain
+would be reported as attacks. Checked against the sidecar directly: told
+`shop.test`, the rule is quiet on `shop.test` and `cdn.shop.test` and fires on
+`evil.test` and `shop.test.evil.test`.
+
+On the 237,278-request build, named and unnamed:
+
+| | native, unnamed | native, `shop.test` | CRS, unnamed | CRS, `shop.test` |
+|---|---:|---:|---:|---:|
+| Caught | 17,069 | 17,070 | 17,071 | 17,071 |
+| False alarms | **1** | 74 | 74 | 74 |
+
+**Naming the site adds nothing on this build, and that is the honest result.**
+931130 fired on 78 requests and was trusted on all 78, and named none of them:
+the native rules had already named every one, and CRS only speaks where they
+said "ordinary". The 73 false alarms the native rules gain are the same bridge-IP
+line described above — `rfi_offsite_url` reads `203.0.113.2` as somewhere other
+than `shop.test`, correctly, on a request the corpus mislabels. After the
+upstream rebuild that line names `shop.test` and should go quiet under both.
 
 #### The 22 are the product catalogue
 

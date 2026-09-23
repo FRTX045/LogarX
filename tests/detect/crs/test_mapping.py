@@ -216,27 +216,33 @@ def test_a_withheld_rule_id_cannot_be_revived_by_its_family() -> None:
     withheld whatever its family says, the mirror of the existing rule that a
     listed rule id can never give a voice to a withheld family."""
     for family in ("attack-rfi", "attack-rce", "attack-sqli", None):
-        assert category_for(931130, family) is None
         assert category_for(932236, family) is None
+        assert category_for(932236, family, site_host_known=True) is None, (
+            "and knowing the site's host is no reason to trust a command-name match"
+        )
 
 
-def test_an_off_domain_check_with_no_domains_configured_cannot_name_an_activity() -> None:
-    """**The rule that took over when 931100 was silenced, and the real one.**
+def test_an_off_domain_check_speaks_only_when_crs_was_told_the_real_host() -> None:
+    """**CRS 931130 is correct, and was being asked the wrong question.**
 
-    CRS 931130 is "Off-Domain Reference/Link". CRS implements it against
-    `TX:ALLOWED_HOSTS` — a list of the site's own names that an operator is
-    expected to configure. This project never sets it, so out of the box the
-    rule treats *every* outbound URL as off-domain and says so.
+    It decides whether a URL in a parameter is off-domain with
+    `!@endsWith .%{request_headers.host}` — against the request's own Host
+    header. Apache does not log that header, so the sidecar synthesises one, and
+    until 2026-09-23 it was always `localhost`. Every outbound URL, the site's
+    own asset host included, therefore read as foreign: on 237,278 real
+    requests the rule named 1 genuine attack and accused 73 ordinary ones.
 
-    That is not a defect in CRS. It is an unconfigured rule, and an
-    unconfigured rule should not accuse anybody. On 237,278 real requests it
-    named **1** genuine attack and accused **73** ordinary ones — the same
-    administrator importing the same logo, 73 times.
+    An earlier note here, and in three other places, said the rule compares
+    against `TX:ALLOWED_HOSTS`, a list an operator configures. That was wrong,
+    and was written without reading the rule. The conclusion survived — the
+    rule was told nothing about the site — but the mechanism did not, and the
+    real mechanism is what made the fix small: the sidecar already had a
+    `--host` flag, and a case that has named its domains now fills it.
 
-    logarc answers the same question a different way. `site_hosts` asks the
-    reader which domains are theirs and `rfi_offsite_url` compares against it,
-    which is the configuration CRS is missing here. Passing that answer through
-    to the sidecar would make 931130 correct rather than silent; until then it
-    is silent, because those are the only two honest options.
+    So the rule is withheld unless the engine knows CRS was given a host the
+    reader named. Measured with the sidecar directly: told `shop.test`, it is
+    quiet on `shop.test` and `cdn.shop.test` and fires on `evil.test` and on
+    `shop.test.evil.test` — the same discrimination `rfi_offsite_url` makes.
     """
     assert category_for(931130, "attack-rfi") is None
+    assert category_for(931130, "attack-rfi", site_host_known=True) is ActivityCategory.SSRF

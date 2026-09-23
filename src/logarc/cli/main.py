@@ -23,6 +23,8 @@ from logarc.core.activity import Severity
 from logarc.detect.crs import (
     CrsUnavailableError,
     SidecarConfig,
+    host_speaks_for,
+    primary_site_host,
 )
 from logarc.detect.crs.store import CrsEvidence
 from logarc.detect.engine import RuleEngine
@@ -751,18 +753,22 @@ def site_hosts(
 ) -> None:
     """Show or set the domains a case treats as its own site.
 
-    One rule reads this and nothing else does. `rfi_offsite_url` calls a URL in
-    a query parameter hostile when it points at a host that is not on this list
-    — which is the only thing separating remote file inclusion from a share
+    It decides whether a URL in a query parameter points somewhere this site
+    does not own — the only thing separating remote file inclusion from a share
     link, an OAuth callback or a login redirect, since the request is
-    `GET /page?url=...` either way.
+    `GET /page?url=...` either way. `rfi_offsite_url` reads it directly, and
+    `logarc enrich` hands it to CRS, whose off-domain rule 931130 names nothing
+    until it has been told.
 
-    **A case with no answer is not guessed at.** The rule stays silent, so the
-    cost of never running this command is findings rather than false ones. The
+    **A case with no answer is not guessed at.** Both stay silent, so the cost
+    of never running this command is findings rather than false ones. The
     alternative — reading the site's name out of the log's own Host header —
     was measured against the OWASP CRS corpus and accused two ordinary requests
     for no extra catches, because behind a reverse proxy that header says
     `localhost`.
+
+    **A wrong answer fails the other way.** A domain of the site's left off
+    this list, or mistyped, turns its own links into findings.
 
     Whole hosts, never suffixes: a `www.` is a different host and has to be
     named too. Whatever is given is reduced the way a URL's host is, so
@@ -778,6 +784,19 @@ def site_hosts(
             elif set_:
                 opened.set_site_hosts(set_)
             named = opened.site_hosts
+            # Whether enriching again would tell CRS a different host, and one
+            # its off-domain rule could then be trusted with. An answer given
+            # after enrichment usually does both; two unrelated domains do
+            # neither, since no one Host header speaks for them.
+            enriched = opened.crs_evidence().fingerprint is not None
+            crs_host = opened.manifest.config.get("crs_host")
+            told_next = primary_site_host(named)
+            stale = (
+                enriched
+                and bool(set_)
+                and crs_host != told_next
+                and host_speaks_for(told_next, named)
+            )
     except USER_ERRORS as exc:
         raise fail(str(exc)) from exc
 
@@ -795,6 +814,14 @@ def site_hosts(
     for name in named:
         table.add_row(name)
     console.print(table)
+
+    if stale:
+        console.print(
+            f"\n[yellow]This case was enriched against {crs_host or 'an unrecorded host'}, "
+            "so CRS's off-domain verdicts on disk were not reached against these "
+            "domains and are not used until it runs again.[/yellow]\n\n"
+            f"  logarc enrich --case {case}"
+        )
 
 
 @app.command()
@@ -855,8 +882,9 @@ def enrich(
     )
     console.print(table)
     path_line(f"\nWritten to {outcome.path}")
+    ran = outcome.config
     console.print(
-        f"CRS {config.revision() or 'unknown'}, configuration {config.fingerprint()} — "
+        f"CRS {ran.revision() or 'unknown'}, configuration {ran.fingerprint()} — "
         "recorded in the case manifest so a finding can name what produced it."
     )
 
