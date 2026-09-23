@@ -1,0 +1,124 @@
+# Payloads aimed at a Node.js runtime, reached through a string the application
+# interpolates or evaluates.
+#
+# The same axis as `attack/php.yaml` and `attack/windows.yaml`: an ordinary HTTP
+# request carrying something that only means anything on one stack. CRS family
+# 934 is where these live, and it was the lowest-scoring family in the tree when
+# this pack was written.
+#
+# ## The harmless half is unusually sharp here, and it wrote every rule below
+#
+# Eight requests in family 934 are certified harmless, and four of them are one
+# character away from an attack:
+#
+#     foo=process.                 an attack is `process.env` — a global with
+#     foo=console.                 nothing reached off it is not a payload
+#     eval=while(!true);           `!true` is false, so the loop never runs
+#     text=while (foo) is bar.     English containing a keyword
+#
+# And three are template syntax with an ordinary name inside — `#{name}`,
+# `{{username}}`, `<%=title%>`. **The braces are never the evidence.** What is
+# reached through them is, which is why no rule here matches a template
+# delimiter: `#{process.binding(...)}` is caught by what is inside it, and
+# `#{name}` is left alone by the same pattern.
+
+version: 1
+rules:
+
+  # Poisoning `Object.prototype`, which every later object in the process then
+  # inherits from.
+  #
+  # **The payload is left of the `=`.** `__proto__[test]=test` carries it in the
+  # parameter *name*, and so do eight of the nine corpus cases. Every other rule
+  # in this tree matches a value, so a pattern written out of habit anchors on
+  # one and misses all of them. Matching `query_decoded` whole is what makes it
+  # work, and is the reason this comment exists.
+  #
+  # `__proto__` is matched bare because it has no innocent use as a parameter
+  # name. `constructor` on its own is an ordinary English word and a real
+  # property, so it is required to reach `prototype` before it counts.
+  - id: nodejs_prototype_pollution
+    name: Prototype Pollution
+    category: injection
+    owasp: "A08:2025"
+    severity: critical
+    confidence: 0.9
+    references: ["CAPEC-77"]
+    match:
+      any:
+        - field: query_decoded
+          regex: '__proto__'
+        # `constructor.prototype`, `constructor[prototype]`, and the bracketed
+        # form a query parser produces from `a[constructor][prototype]`.
+        - field: query_decoded
+          regex: 'constructor\s*[\[.]\s*["'']?\s*prototype'
+        - field: query_decoded
+          regex: '\[\s*constructor\s*\]\s*\[\s*prototype\s*\]'
+
+  # Reaching one of Node's globals, which is how a payload gets out of the
+  # string it was interpolated into and into the runtime.
+  #
+  # **A named member is required, and that is the whole rule.** `process.` and
+  # `console.` are both certified harmless by the corpus; `process.env` and
+  # `console.info(1)` are attacks. One character of identifier after the dot or
+  # the bracket separates them, which is the same distinction `attack/php.yaml`
+  # draws between a function named and a function called.
+  #
+  # **Matched against the query only, never the target.** `target_decoded`
+  # carries the path, and `/assets/js/console.min.js` is in the bundle of every
+  # second site on the web — the exact trap that cost an earlier pass 38
+  # relabelled static assets. A payload reaching Node arrives in a parameter.
+  - id: nodejs_global_access
+    name: Node.js Global Access
+    category: injection
+    owasp: "A03:2025"
+    severity: critical
+    confidence: 0.9
+    references: ["CAPEC-242"]
+    match:
+      any:
+        # process / require / console, each reaching something named.
+        - field: query_decoded
+          regex: '\b(?:process|require|console)\s*[\[.]\s*["'']?[a-z_$]'
+        - field: query_decoded
+          regex: '\bmodule\s*\.\s*exports'
+        # Building a function out of a string, in the two ways JavaScript has.
+        - field: query_decoded
+          regex: '\bnew\s+function\s*\('
+        - field: query_decoded
+          regex: '\bfromcharcode\b|__js_function'
+        # `constructor.constructor` is the sandbox escape: the constructor of a
+        # constructor is `Function`, and `Function` takes source.
+        - field: query_decoded
+          regex: 'constructor\s*\.\s*constructor'
+
+  # A loop whose condition can never become false, sent to something that
+  # evaluates it. The process spins until it is killed.
+  #
+  # **`while(!true)` is certified harmless and `while(!false)` is an attack**,
+  # and that single character is why this is an enumeration rather than a
+  # pattern. `!true` is false, so the loop body never runs; every condition
+  # listed below is always truthy, so it never stops.
+  #
+  # Enumerating is honest here because the set is finite and small: JavaScript
+  # has six falsy literals, and negating any of them — or double-negating any
+  # object — is always true. A rule that tried to be general would have to
+  # evaluate JavaScript, and a rule that matched `while(` alone would take
+  # `while (foo) is bar.`, which the corpus also certifies harmless.
+  #
+  # `injection` rather than a denial-of-service category, because there is no
+  # such category and inventing one would score every request carrying it as
+  # wrong against a fixed taxonomy. It is the right name anyway: the attack is
+  # code reaching an evaluator, and hanging the process is only what that code
+  # then does.
+  - id: nodejs_endless_loop
+    name: Endless Loop (denial of service through eval)
+    category: injection
+    owasp: "A03:2025"
+    severity: high
+    confidence: 0.85
+    references: ["CAPEC-482"]
+    match:
+      any:
+        - field: query_decoded
+          regex: 'while\s*\(+\s*(?:true|-?infinity|-1|this|string|new\s+date|!\s*(?:false|-?0|""|''''|``|null|undefined|nan)|!!\s*(?:\{\}|\[\]|""|''''|``))\s*\)'

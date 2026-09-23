@@ -1,7 +1,7 @@
 # The demo log
 
 `demo.log` is the file to open when you want to show somebody what logarc does.
-It is 796 lines of three days' traffic against a fictional shop, and every
+It is 805 lines of three days' traffic against a fictional shop, and every
 feature the application has is reachable from it.
 
 ```bash
@@ -24,11 +24,11 @@ These are figures from a run, not intentions:
 
 | | |
 |---|---|
-| Lines / events / quarantined | 796 / 790 / 5 |
-| Clients | 33 |
-| Detection rules exercised | **78 of 78** |
-| Attackers flagged | 21 of 21 |
-| False alarms on the 12 ordinary clients | **0** without CRS, 1 with it |
+| Lines / events / quarantined | 805 / 799 / 5 |
+| Clients | 34 |
+| Detection rules exercised | **83 of 83** |
+| Attackers flagged | 22 of 22 |
+| False alarms on the 12 ordinary clients | **0** without CRS, **0** with it |
 
 Re-measure at any time:
 
@@ -38,7 +38,7 @@ python samples/demo/make_demo.py          # rebuilds; prints line count and sha2
 
 The build is deterministic — no randomness anywhere — so the same script always
 produces the same bytes. The current file is
-`8c71a24bd64289c55d8cce16d2e7df97c02de2bb5fe833773e8ee32e8f2a0efb`.
+`428dfca092b87e52f44cea97dcad7e3fff87178bbecb820b2547c3607f67e8aa`.
 
 That digest is recorded beside the log in `SHA256SUMS`, and
 `tests/samples/test_demo_log.py` checks it on every run of the suite — including
@@ -114,14 +114,21 @@ before meeting it on one that does.
 injection.** Rule 932236, critical severity, three times — because `wall` is a
 real Unix command and CRS is matching a command name followed by an argument.
 Nothing is wrong with CRS; it is doing what a generic ruleset must do without
-knowing this site sells brackets. But it means a hardware shop's customers get
-filed as attackers by the most widely deployed WAF ruleset in the world, and
-that is worth seeing once with your own eyes. It is the demonstration behind
-ADR-0008: CRS is enrichment somebody switches on, not a verdict the tool
-reaches by itself.
+knowing this site sells brackets.
 
-So the table above carries two false-alarm figures and both are true. Without
-CRS, zero. With CRS, this one. **Do not change those search terms.**
+**Until 2026-09-22 logarc repeated that accusation, and now it does not.** On
+the 237,278-request medium corpus the same rule accused 22 ordinary product
+searches — `pipe cutter`, `wall plugs` — and named no real attack at all, so it
+is withheld from naming an activity (`_RULE_WITHHELD` in
+`detect/crs/mapping.py`). CRS's detection still travels with the request as
+evidence; open this client with CRS on and the search is labelled a search,
+with rule 932236 attached underneath it.
+
+That is the demonstration now, and it is a better one than the first: what the
+most widely deployed WAF ruleset says about a hardware shop's customer, beside
+what this tool concluded from it. Both false-alarm figures in the table are
+zero, and the second one used to be this client. **Do not change those search
+terms** — if 932236 is ever restored, this is the client that will say so.
 
 **The XSS client uses a browser User-Agent, not a scanner's.** The first draft
 used Nikto's, and the episode came back named `Security Scanner User-Agent` —
@@ -151,7 +158,7 @@ feature lands that the demo log cannot show, add a client to
 script and commit the script, the log and `SHA256SUMS`.
 
 The check that matters is rule coverage, and nobody has to remember to run it:
-the suite runs it. It is 78 of 78 today, and a rule added to a pack that nothing
+the suite runs it. It is 83 of 83 today, and a rule added to a pack that nothing
 in this log triggers fails the build and names the rule. To run it on its own:
 
 ```bash

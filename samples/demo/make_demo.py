@@ -271,8 +271,7 @@ def returning_customer(ip: str, day: int, hour: int) -> None:
 def window_shopper(ip: str, day: int, hour: int) -> None:
     """Searches over and over and buys nothing.
 
-    **This client is the reason CRS is off by default, and "wall bracket" is not
-    a coincidence — do not change these search terms.**
+    **"wall bracket" is not a coincidence — do not change these search terms.**
 
     Ingest alone reads all five searches as ordinary shopping. Turn CRS on with
     `logarc enrich` and rule 932236 calls `wall bracket` a Unix command
@@ -280,14 +279,19 @@ def window_shopper(ip: str, day: int, hour: int) -> None:
     command and CRS is matching the command name followed by an argument.
 
     Nothing is wrong with CRS here; it is doing what a generic ruleset must do
-    without knowing that this site sells brackets. But it means a hardware
-    shop's customers get filed as attackers by the most widely deployed WAF
-    ruleset in the world, and that is a thing to see once with your own eyes
-    rather than be told. It is the demonstration behind ADR-0008: CRS is
-    enrichment a person switches on, not a verdict the tool reaches on its own.
+    without knowing that this site sells brackets. This client was written to
+    show a hardware shop's customer being filed as an attacker by the most
+    widely deployed WAF ruleset in the world, and until 2026-09-22 logarc
+    repeated the accusation.
 
-    So the log carries two false-alarm figures, and both are true. Without CRS,
-    zero on every ordinary client. With CRS, this one.
+    It no longer does. Measured on 237,278 real requests, 932236 accused 22
+    ordinary product searches and named no real attack, so it is withheld from
+    naming an activity. CRS's detection still travels with the request as
+    evidence — open this client with CRS on and each search is labelled a
+    search, with 932236 attached beneath it. The demonstration is now both
+    halves at once: what CRS says, and what this tool concluded from it.
+
+    If 932236 is ever restored, this client is the one that will show it.
     """
     t = at(day, hour)
     for term in ("oak shelf", "wall bracket", "led strip", "socket set", "paint roller"):
@@ -719,6 +723,45 @@ def java_attacks(ip: str, day: int, hour: int) -> None:
     write(t, ip, "GET /search?q=%24%7B7%2A7%7D HTTP/1.1", 200, 12_400, agent=CURL)
 
 
+def perl_and_node(ip: str, day: int, hour: int) -> None:
+    """The two stacks the technology packs were written for last, in one run.
+
+    Perl first. `@{[ ... ]}` is array interpolation: inside a string Perl
+    evaluates whatever is in the brackets, so a template that puts user input
+    into one runs it. That sequence has no other use in the language, which is
+    why a single pattern closed thirty-five corpus cases.
+
+    Then Node, in the three shapes it arrives in. A global reached through a
+    *named* member — `process.env`, never a bare `process.`, because the corpus
+    certifies the bare one harmless. Prototype pollution, which is the only
+    attack in this whole log that lives in the parameter *name* rather than its
+    value. And a loop that cannot end, which is a denial of service rather than
+    a way in: `while(true)` runs until somebody kills the process, while the
+    corpus's harmless `while(!true)` never runs at all.
+
+    One client rather than two because the shapes belong to the same visit —
+    somebody rattling every interpreter a template might be sitting on.
+    """
+    t = at(day, hour)
+    for probe in (
+        # Perl: the plain form, a shell-out, and one that never closes its brace
+        # — a payload that failed to parse was still sent.
+        "/search?q=%40%7B%5Bsystem%20%27id%27%5D%7D",
+        "/search?q=%40%7B%5Bqx%7Bwhoami%7D%5D%7D",
+        "/search?q=%40%7B%5Bsystem%20%27id%27%5D",
+        # Node: a global with something named off it.
+        "/render?tpl=%23%7Bprocess.env%7D",
+        "/render?tpl=%23%7Brequire.main.constructor._load%28%27child_process%27%29%7D",
+        # Prototype pollution, in the parameter name.
+        "/cart/update?__proto__%5BisAdmin%5D=true",
+        "/cart/update?constructor%5Bprototype%5D%5BisAdmin%5D=true",
+        # A loop with no exit.
+        "/render?eval=while%28true%29%3B",
+    ):
+        write(t, ip, f"GET {probe} HTTP/1.1", 500, 0, agent=CURL)
+        t += timedelta(seconds=11)
+
+
 def nosql_and_shellshock(ip: str, day: int, hour: int) -> None:
     """Two old-stack probes that share nothing but this client.
 
@@ -786,6 +829,9 @@ def ssrf_attempts(ip: str, day: int, hour: int) -> None:
         "/fetch?target=http%3A//0xa9fea9fe/",
         "/fetch?target=http%3A//%5B%3A%3Affff%3A7f00%3A1%5D/",
         "/fetch?target=http%3A//169%E3%80%82254%E3%80%82169%E3%80%82254/",
+        # No scheme at all, and the name is the whole evidence. `ssrf_internal_
+        # target` above wants `http://` in front and walks past this one.
+        "/fetch?target=host.docker.internal/",
     ):
         write(t, ip, f"GET {probe} HTTP/1.1", 502, 0, agent=NUCLEI)
         t += timedelta(seconds=9)
@@ -980,6 +1026,7 @@ def build() -> None:
     behaviour_loop("192.0.2.114", 2, 17)
     three_sessions("192.0.2.115", 0)
     java_attacks("192.0.2.118", 0, 20)
+    perl_and_node("192.0.2.121", 1, 15)
     nosql_and_shellshock("192.0.2.119", 2, 4)
     headless_client("192.0.2.120", 1, 11)
 

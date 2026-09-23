@@ -1,0 +1,60 @@
+# Payloads aimed at Perl, reached through a string the application interpolates.
+#
+# One rule, because Perl needs one. `@{[ ... ]}` is array interpolation: inside a
+# double-quoted string Perl evaluates the expression in the brackets and splices
+# the result in. A template that puts user input into such a string runs whatever
+# the user wrote, and nothing else in the language has that shape.
+#
+# It was the **largest single gap** in CRS family 934 when this pack was written
+# — 35 of 122 misses, more than Node.js and prototype pollution together, and
+# more than the family's entire remaining tail. That is worth recording because
+# the gap had been classified twice before as something else: an earlier note in
+# `TODO.md` called 934's remainder "two shapes, Node.js and prototype
+# pollution", and the Perl block is bigger than both.
+#
+# **Classify by shape before writing anything, and expect the first classifier
+# to be wrong.** That is now the third time this project has learned it.
+#
+# ## Why one pattern closes thirty-five cases
+#
+# Because `@{[` has no other use. The corpus throws every variation at it —
+# whitespace anywhere, the expression wrapped in parentheses, prefixed with `&`
+# or `!!`, package-qualified, nested in a `do` block, a trailing `#` comment,
+# doubled `@@{[`, never closed at all — and all of them still open with an `@`,
+# a brace and a bracket in that order.
+#
+# So the pattern matches the *opening*, not the payload, and deliberately does
+# not try to understand what is inside. A payload that fails to parse was still
+# sent, and `@{[system 'id']` with no closing brace is exactly as much evidence
+# of intent as the well-formed one.
+#
+# ## What the harmless half ruled out
+#
+# The CRS corpus certifies nothing resembling this, so the near misses had to be
+# reasoned about rather than read — which means they are held to the narrower
+# standard. An `@` alone is an email address, a CSS at-rule and a social handle
+# long before it is Perl, and `@{here}` without the bracket is some other
+# template language. The brace and the bracket are both required, and that is
+# the whole of the rule's caution.
+
+version: 1
+rules:
+
+  - id: perl_array_interpolation
+    name: Perl Array Interpolation
+    category: injection
+    owasp: "A03:2025"
+    severity: critical
+    confidence: 0.9
+    references: ["CAPEC-242"]
+    match:
+      any:
+        # `@` then `{` then `[`, with whitespace allowed between. Matched
+        # against the whole query rather than a parameter value, because one
+        # corpus case carries the payload in the parameter *name*:
+        # `@{[getpwuid($>)]}=value`.
+        - field: query_decoded
+          regex: '@\s*\{\s*\['
+        # And the path, for an application that routes on it.
+        - field: path_decoded
+          regex: '@\s*\{\s*\['
