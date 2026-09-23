@@ -21,8 +21,11 @@ from logarc.graphbuild.build import build_behaviour_map, build_trace_graph
 from logarc.sessionize.segmenter import SessionPolicy, sessionize
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator, Sequence
+
     from logarc.core.activity import ActivityCategory
     from logarc.core.episode import Episode
+    from logarc.core.event import NormalizedEvent
     from logarc.core.evidence import EvidenceRef
     from logarc.core.graph import ActivityGraph, GraphNode
     from logarc.core.session import Session
@@ -182,6 +185,19 @@ class AnalysisResult:
         }
 
 
+def label_sessions(
+    events: Sequence[NormalizedEvent],
+    engine: RuleEngine,
+    *,
+    policy: SessionPolicy | None = None,
+    crs: DetectionIndex | None = None,
+    window: TimeWindow | None = None,
+) -> Iterator[tuple[Session, list[LabelledEvent]]]:
+    """Share session boundaries and labels between reconstruction and triage."""
+    for session in sorted(sessionize(events, policy, window=window), key=lambda s: s.start):
+        yield session, engine.label_events(session.events, crs=crs)
+
+
 def analyse_ip(
     store: EventStore,
     client_ip: str,
@@ -212,13 +228,14 @@ def analyse_ip(
 
     window = window or EVERYTHING
     events = store.events_for_ip(client_ip, window=window)
-    sessions = sessionize(events, policy.session, window=window)
-    sessions.sort(key=lambda session: session.start)
+    sessions = []
 
     episodes: list[Episode] = []
     assignments: list[RequestAssignment] = []
-    for session in sessions:
-        labelled = engine.label_events(session.events, crs=crs)
+    for session, labelled in label_sessions(
+        events, engine, policy=policy.session, crs=crs, window=window
+    ):
+        sessions.append(session)
         for part in segment(labelled, session_id=session.session_id, policy=policy.episode):
             episodes.append(part.episode)
             assignments.extend(

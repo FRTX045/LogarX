@@ -102,3 +102,46 @@ def test_the_swap_replaces_a_bundle_that_is_already_there(
 
     assert (rebuild.LIVE / "logarc.exe").read_bytes() == b"the real one"
     assert not rebuild.PREVIOUS.exists(), "the displaced bundle is not kept once the swap holds"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows native dependency selection")
+def test_build_prefers_windows_system_dlls_to_unrelated_path_entries(
+    rebuild: ModuleType, bundles: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from subprocess import CompletedProcess
+
+    monkeypatch.setenv("SystemRoot", "C:\\Windows")
+    monkeypatch.setenv("PATH", "C:\\unrelated-tools;C:\\Windows\\System32")
+    monkeypatch.setattr(rebuild.shutil, "which", lambda name: "C:\\tools\\pyinstaller.exe")
+    calls = []
+
+    def run(args, **kwargs):
+        calls.append(kwargs)
+        return CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(rebuild.subprocess, "run", run)
+    assert rebuild.build()[0]
+    assert calls[0]["env"]["PATH"].split(";")[0] == "C:\\Windows\\System32"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows native runtime validation")
+def test_verification_rejects_a_qt_runtime_that_cannot_load(
+    rebuild: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from subprocess import CompletedProcess
+
+    for name in (
+        "check_executable",
+        "check_rule_packs",
+        "check_metadata",
+        "check_no_browser_engine",
+    ):
+        monkeypatch.setattr(rebuild, name, lambda bundle: None)
+    monkeypatch.setattr(
+        rebuild.subprocess,
+        "run",
+        lambda args, **kwargs: CompletedProcess(args, 1, "", "QtCore: missing procedure"),
+    )
+    errors = rebuild.verify(tmp_path)
+    assert errors and "Qt runtime" in errors[0]
+    assert "missing procedure" in errors[0]

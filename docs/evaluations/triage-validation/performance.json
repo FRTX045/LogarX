@@ -1,0 +1,31 @@
+{
+  "first_usable_all_clients_seconds_after_open": 0.7064929000334814,
+  "search_latency_seconds_including_150ms_debounce": [
+    0.20809359999839216,
+    0.18512949999421835,
+    0.20059219998074695,
+    0.20093390002148226,
+    0.20163379999576136,
+    0.20474239997565746,
+    0.2107759999926202,
+    0.2055829999735579,
+    0.21111169998766854,
+    0.20528999995440245,
+    0.20743860001675785,
+    0.20722229999955744,
+    0.20605480001540855,
+    0.20595739997224882,
+    0.19971229997463524
+  ],
+  "scan_seconds": 117.78098830004456,
+  "scan_cached": false,
+  "case_open_to_scan_done_seconds": 119.24238990002777,
+  "event_loop_gap_p95_seconds": 0.020621799980290234,
+  "event_loop_gap_max_seconds": 0.40958049998153,
+  "timer_interval_seconds": 0.02,
+  "clients": 2760,
+  "failures": [],
+  "method": "Hidden native Windows MainWindow, venv runtime, warm filesystem; worker OS peak after scan; no model/truth loaded in scan process. Fresh scan uses a copy of the same medium case without derived caches; repository tests overlap measurement.",
+  "worker_peak_bytes": 307417088,
+  "cached_reopen_seconds": 0.18283020000671968
+}

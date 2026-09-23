@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from logarc.case import Case, CaseError
+from logarc.core.evidence import EvidenceRef
 from logarc.ingest.pipeline import IngestCancelled
 
 LINES = [
@@ -44,6 +45,29 @@ def test_the_manifest_records_every_ingested_source(tmp_path: Path) -> None:
     assert source.original_path == str(log)
     assert source.events_parsed == 2
     assert len(source.sha256) == 64
+
+
+@pytest.mark.parametrize("workers", [1, 2])
+def test_relative_source_evidence_survives_a_different_launch_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workers: int
+) -> None:
+    monkeypatch.setattr("logarc.ingest.parallel.MIN_PARALLEL_BYTES", 0)
+    log = write_log(tmp_path / "logs" / "access.log")
+    monkeypatch.chdir(tmp_path)
+    case_root = tmp_path / "case"
+    with Case.create(case_root) as case:
+        case.ingest([Path("logs/access.log")], workers=workers)
+
+    elsewhere = tmp_path / "another-launch-folder"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    with Case.open(case_root) as case:
+        refs = [EvidenceRef("access.log", 1), EvidenceRef("access.log", 2)]
+        evidence = case.read_evidence(refs)
+        assert [line.text for line in evidence] == LINES
+        assert all(line.verified for line in evidence)
+        assert [line.ref for line in evidence] == refs
+        assert case.manifest.sources[0].original_path == str(log)
 
 
 def test_several_logs_ingest_into_one_case(tmp_path: Path) -> None:

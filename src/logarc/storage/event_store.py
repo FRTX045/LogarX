@@ -25,7 +25,7 @@ import pyarrow.parquet as pq
 from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
 from logarc.core.window import TimeWindow
-from logarc.storage.base import CaseOverview, IpSummary, TimeSlot
+from logarc.storage.base import CaseOverview, IpSummary, IpSummaryPage, TimeSlot
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -119,6 +119,7 @@ class ParquetEventStore:
         *,
         memory_limit: str = DEFAULT_MEMORY_LIMIT,
         shard: str | None = None,
+        scratch: Path | None = None,
     ) -> None:
         """`shard` names this writer apart from any other writing the same case.
 
@@ -136,7 +137,7 @@ class ParquetEventStore:
         self._staging = self.root / "staging"
         self._events = self.root / "events"
         self._ip_index = self.root / "ip_index.parquet"
-        self._scratch = self.root / "tmp"
+        self._scratch = scratch if scratch is not None else self.root / "tmp"
         self._memory_limit = memory_limit
         self._writer: pq.ParquetWriter | None = None
         self._batch = 0
@@ -340,6 +341,38 @@ class ParquetEventStore:
         )
         return [_to_event(row) for row in rows]
 
+    def iter_clients(self, *, window: TimeWindow | None = None) -> Iterator[list[NormalizedEvent]]:
+        """Scan in partition/client order for case-wide analysis without graphs.
+
+        DuckDB can spill the ordering under the store's memory ceiling. Python
+        retains one client's events, so its peak depends on the largest client.
+        """
+        self._require_finalized()
+        if not self._has_events():
+            return
+        clause, bounds = _window_sql(window)
+        cursor = self._connect().execute(
+            f"""
+            SELECT timestamp, client_ip, method, path, query, protocol, status,
+                   bytes_sent, referer, user_agent, host, source_file_id,
+                   source_line_no, extra
+            FROM read_parquet({self._sql_path(self._events_glob)}, hive_partitioning = true)
+            WHERE true{clause}
+            ORDER BY bucket, client_ip, timestamp, source_line_no
+            """,
+            bounds,
+        )
+        current: list[NormalizedEvent] = []
+        while rows := cursor.fetchmany(_STREAM_CHUNK):
+            for row in rows:
+                event = _to_event(row)
+                if current and current[0].client_ip != event.client_ip:
+                    yield current
+                    current = []
+                current.append(event)
+        if current:
+            yield current
+
     def all_events(self) -> Iterator[NormalizedEvent]:
         """Every event in the case, in source order, streamed in chunks.
 
@@ -396,18 +429,49 @@ class ParquetEventStore:
             )
             .fetchall()
         )
-        return [
-            IpSummary(
-                client_ip=row[0],
-                request_count=int(row[1]),
-                first_seen=row[2].replace(tzinfo=UTC),
-                last_seen=row[3].replace(tzinfo=UTC),
-                distinct_paths=int(row[4]),
-                client_error_ratio=float(row[5]),
-                bytes_total=int(row[6]),
+        return [_to_summary(row) for row in rows]
+
+    def ip_summary_page(
+        self,
+        *,
+        query: str = "",
+        offset: int = 0,
+        limit: int = 100,
+        window: TimeWindow | None = None,
+    ) -> IpSummaryPage:
+        """Page the complete index, or a window aggregate, before returning rows.
+
+        Number before filtering so search results keep their population positions.
+        The count row survives an empty page, including offsets beyond the end.
+        """
+        self._require_finalized()
+        if offset < 0 or limit < 1:
+            raise ValueError("offset must be nonnegative and limit must be positive")
+        source, bounds = self._summary_source(window)
+        rows = (
+            self._connect()
+            .execute(
+                f"""
+            WITH ranked AS (
+                SELECT client_ip, request_count, first_seen, last_seen, distinct_paths,
+                       client_error_ratio, bytes_total,
+                       row_number() OVER (ORDER BY request_count DESC, client_ip) AS position
+                FROM ({source})
+            ), matching AS (SELECT * FROM ranked WHERE contains(client_ip, ?))
+            SELECT page.*, totals.total
+            FROM (SELECT count(*) AS total FROM matching) totals
+            LEFT JOIN (SELECT * FROM matching ORDER BY position LIMIT ? OFFSET ?) page ON true
+            ORDER BY page.position
+            """,
+                [*bounds, query, limit, offset],
             )
-            for row in rows
-        ]
+            .fetchall()
+        )
+        return IpSummaryPage(
+            tuple(_to_summary(row, position=int(row[7])) for row in rows if row[0] is not None),
+            int(rows[0][8]),
+            offset,
+        )
 
     # -- plumbing ----------------------------------------------------------
 
@@ -611,6 +675,19 @@ def _naive(when: datetime) -> datetime:
     that was there.
     """
     return when.astimezone(UTC).replace(tzinfo=None)
+
+
+def _to_summary(row: tuple[Any, ...], *, position: int = 0) -> IpSummary:
+    return IpSummary(
+        row[0],
+        int(row[1]),
+        row[2].replace(tzinfo=UTC),
+        row[3].replace(tzinfo=UTC),
+        int(row[4]),
+        float(row[5]),
+        int(row[6]),
+        position,
+    )
 
 
 def _to_event(row: tuple[Any, ...]) -> NormalizedEvent:

@@ -30,6 +30,15 @@ class IpSummary:
     """Share of responses in the 4xx range. High values suggest probing for
     resources that are not there."""
     bytes_total: int
+    position: int = 0
+    """One-based population position when returned by a paginated query."""
+
+
+@dataclass(frozen=True, slots=True)
+class IpSummaryPage:
+    rows: tuple[IpSummary, ...]
+    total: int
+    offset: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +112,10 @@ class EventStore(Protocol):
         """
         ...
 
+    def iter_clients(self, *, window: TimeWindow | None = None) -> Iterator[list[NormalizedEvent]]:
+        """Visit all clients once, yielding one chronological event list at a time."""
+        ...
+
     def ip_summaries(
         self,
         *,
@@ -117,6 +130,17 @@ class EventStore(Protocol):
         summaries: a client half inside the window would then be listed with
         numbers describing the half that is not shown.
         """
+        ...
+
+    def ip_summary_page(
+        self,
+        *,
+        query: str = "",
+        offset: int = 0,
+        limit: int = 100,
+        window: TimeWindow | None = None,
+    ) -> IpSummaryPage:
+        """Filter and page all clients, retaining their unfiltered volume positions."""
         ...
 
     def overview(self, *, window: TimeWindow | None = None) -> CaseOverview:
