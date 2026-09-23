@@ -107,6 +107,41 @@ rules:
         - field: query_decoded
           regex: '\b[a-z][a-z0-9+.\-]{0,15}:/{0,2}(?:\\{1,2}[a-z]){3,}'
 
+  # An internal host *named* rather than addressed, with no scheme in front.
+  #
+  # `ssrf_internal_target` above requires a scheme, for a reason the corpus
+  # gave it: `/get?x=ping 127.0.0.1` is certified harmless, so a loopback
+  # address on its own cannot be the signal. **These fourteen carry no scheme
+  # either**, and walked straight past it — `url=localhost/`,
+  # `url=host.docker.internal/`, `url=kubernetes.default.svc.cluster.local/`.
+  #
+  # What makes them safe to match without one is that the *name* is the
+  # evidence rather than the shape. Nobody's asset host is called
+  # `ip6-loopback`, and `localtest.me` and `lvh.me` are public names whose DNS
+  # deliberately resolves to 127.0.0.1 — they look external and are not.
+  #
+  # **The value has to *be* the host, not start with it and not contain it.**
+  # Anchored to `(^|&)<name>=` at the front and required to end at the host, a
+  # port or a path at the back. The front anchor alone was not enough and a
+  # test written for this rule caught it: `q=localhost tutorial` starts with the
+  # name, and a developer-tools shop receives that search all day. Same caution
+  # `attack/windows.yaml` needed for `for` and `time`.
+  #
+  # `(^|&)` rather than `[?&]`, because `query_decoded` has no leading `?` — a
+  # character class silently skips the first parameter, which is where payloads
+  # usually are.
+  - id: ssrf_internal_name
+    name: SSRF (internal host named in parameter)
+    category: ssrf
+    owasp: "A01:2025"
+    severity: high
+    confidence: 0.85
+    references: ["CAPEC-664"]
+    match:
+      any:
+        - field: query_decoded
+          regex: '(?:^|&)[^=&]{1,64}=\s*(?:localhost[46]?(?:\.localdomain[46]?)?|ipv6-localhost|ip6-loopback|(?:host|gateway|kubernetes)\.docker\.internal|host\.containers\.internal|kubernetes\.default\.svc\.cluster\.local|localtest\.me|lvh\.me)(?::\d{1,5})?(?:/[^&\s]{0,200})?(?:&|$)'
+
   # A URL in a parameter pointing at a host the reader did not name as theirs.
   #
   # **This rule is silent until somebody answers a question**, which is the only
