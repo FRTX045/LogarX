@@ -24,6 +24,7 @@ from logarc.triage.profile import (
     PriorityReason,
     QueueName,
     RankedClient,
+    RequestExample,
     TriagePolicy,
     profile_client,
     rank_profiles,
@@ -60,7 +61,7 @@ class TriageProgress:
 #: before a table was added is rebuilt rather than read as having nothing in it.
 #: Separate from `TriagePolicy.version`, which names the ranking that was
 #: validated and promoted; the layout changing is not the ranking changing.
-_LAYOUT = 2
+_LAYOUT = 3
 
 
 @dataclass(frozen=True)
@@ -90,9 +91,21 @@ def _digest(path: Path) -> str | None:
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
+def _example(data: dict[str, Any]) -> RequestExample:
+    return RequestExample(**{**data, "evidence": EvidenceRef(**data["evidence"])})
+
+
+def _examples(items: list[dict[str, Any]]) -> tuple[RequestExample, ...]:
+    return tuple(_example(item) for item in items)
+
+
 def _reason(data: dict[str, Any]) -> PriorityReason:
     return PriorityReason(
-        **{**data, "evidence": tuple(EvidenceRef(**ref) for ref in data["evidence"])}
+        **{
+            **data,
+            "evidence": tuple(EvidenceRef(**ref) for ref in data["evidence"]),
+            "examples": _examples(data.get("examples", [])),
+        }
     )
 
 
@@ -102,6 +115,10 @@ def _profile(data: dict[str, Any]) -> ClientProfile:
             **data,
             "categories": tuple(data["categories"]),
             "reasons": tuple(_reason(reason) for reason in data["reasons"]),
+            **{
+                name: _examples(data.get(name, []))
+                for name in ("distinct_examples", "sequence_examples", "recurrence_examples")
+            },
             "evidence": {
                 key: tuple(EvidenceRef(**ref) for ref in refs)
                 for key, refs in data["evidence"].items()

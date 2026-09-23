@@ -193,3 +193,35 @@ def test_an_index_without_rule_counts_is_rebuilt(tmp_path):
         connection.execute("DROP TABLE rules")
         connection.commit()
     assert not scan_case(case.root).cached
+
+
+def test_stored_profiles_keep_their_request_examples(tmp_path):
+    import json
+    from dataclasses import asdict, replace
+
+    from test_profiles import probe_attack_engine
+
+    from logarc.triage.profile import profile_client
+    from logarc.triage.scan import _profile
+
+    sample = events(count=4)
+    sample[1] = replace(sample[1], query="probe")
+    sample[2] = replace(sample[2], query="attack")
+    profile = profile_client(sample, probe_attack_engine(tmp_path))
+    assert profile.sequence_examples
+    assert _profile(json.loads(json.dumps(asdict(profile)))) == profile
+
+
+def test_an_index_written_in_the_previous_layout_is_rebuilt(tmp_path, monkeypatch):
+    """Read as current, it would hand back profiles without the facts reasons need."""
+    from logarc.triage import scan
+
+    with Case.create(tmp_path / "case") as case:
+        case.store.write(events())
+        case.store.finalize()
+    monkeypatch.setattr(scan, "_LAYOUT", 2)
+    old = scan.scan_case(case.root)
+    monkeypatch.undo()
+    current = scan.scan_case(case.root)
+    assert not current.cached
+    assert current.path != old.path
