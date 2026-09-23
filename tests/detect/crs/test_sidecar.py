@@ -11,6 +11,7 @@ import json
 import subprocess
 import sys
 from collections.abc import Iterator
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -26,6 +27,8 @@ from logarc.detect.crs.sidecar import (
     SidecarConfig,
     as_record,
     default_binary,
+    host_speaks_for,
+    primary_site_host,
     run_sidecar,
 )
 from logarc.detect.crs.store import (
@@ -391,3 +394,68 @@ def test_every_record_reaches_the_sidecar_under_its_own_source(
     found = run_sidecar([first, second], config=working_config(tmp_path))
 
     assert {item.source_file_id for item in found} == {"access.log", "other.log"}
+
+
+# -- telling CRS which host is the site's own --------------------------------
+#
+# CRS 931130 decides whether a URL in a parameter is off-domain with
+# `!@endsWith .%{request_headers.host}`. Apache does not log the Host header,
+# so the sidecar synthesises one, and until 2026-09-23 it was always
+# `localhost` — which made every outbound URL look foreign. These pin how the
+# case's own answer now reaches it.
+
+
+def test_one_host_covering_the_rest_is_the_one_crs_is_given() -> None:
+    """CRS compares with `endsWith`, so `shop.test` already covers
+    `www.shop.test` and `cdn.shop.test`. The host that covers the most of the
+    others is the right one to hand it."""
+    assert primary_site_host(["www.shop.test", "shop.test", "cdn.shop.test"]) == "shop.test"
+    assert primary_site_host(["shop.test"]) == "shop.test"
+
+
+def test_no_answer_hands_crs_nothing() -> None:
+    assert primary_site_host([]) is None
+
+
+def test_unrelated_hosts_resolve_the_same_way_every_run() -> None:
+    """Two hosts that do not cover each other cannot both be the Host header.
+    The choice is arbitrary but it must be stable — shortest, then alphabetical
+    — or the same case would fingerprint differently on two runs."""
+    assert primary_site_host(["other.example", "shop.test"]) == "shop.test"
+    assert primary_site_host(["b.test", "a.test"]) == "a.test"
+
+
+def test_a_host_speaks_for_itself_and_its_subdomains_and_nothing_else() -> None:
+    """931130's own comparison, `@endsWith .<host>`, restated as the condition
+    for trusting what it said. Told `shop.test`, it judged `cdn.shop.test` as
+    the site's own and `shopcdn.net` as foreign — so a site that named both
+    cannot have been judged correctly, whichever one CRS was given."""
+    assert host_speaks_for("shop.test", ["shop.test", "www.shop.test", "cdn.shop.test"])
+    assert not host_speaks_for("shop.test", ["shop.test", "shopcdn.net"])
+    # The domain bought to be misread, and a suffix without its dot.
+    assert not host_speaks_for("shop.test", ["shop.test", "shop.test.evil.test"])
+    assert not host_speaks_for("shop.test", ["shop.test", "myshop.test"])
+
+
+def test_a_host_the_reader_did_not_name_speaks_for_nobody() -> None:
+    """Covering is not enough. `localhost` is the placeholder every unanswered
+    case was enriched with, and a host the reader has since withdrawn is no
+    better — and with nothing named there is nobody to speak for."""
+    assert not host_speaks_for("localhost", ["shop.test"])
+    assert not host_speaks_for("test", ["shop.test"]), "a parent that was never named"
+    assert not host_speaks_for("shop.test", [])
+    assert not host_speaks_for(None, ["shop.test"])
+
+
+def test_the_host_is_part_of_what_produced_a_detection() -> None:
+    """**It changes what CRS reports, so it belongs in the fingerprint.**
+
+    Two cases enriched with different hosts produce different 931130 results
+    from the same rules and the same paranoia level. Leaving the host out would
+    let them claim the same configuration.
+    """
+    base = SidecarConfig()
+
+    assert replace(base, host="shop.test").fingerprint() != base.fingerprint()
+    assert replace(base, host="shop.test").as_config()["crs_host"] == "shop.test"
+    assert base.as_config()["crs_host"] == "localhost"

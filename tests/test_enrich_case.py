@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from logarc.case import Case
-from logarc.detect.crs.sidecar import CrsDetection
+from logarc.detect.crs.sidecar import CrsDetection, SidecarConfig
 from logarc.enrich import EnrichProgress, enrich_case
 
 if TYPE_CHECKING:
@@ -133,3 +133,94 @@ def test_an_empty_case_is_refused_rather_than_enriched(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="ingest"):
         enrich_case(tmp_path / "case")
+
+
+# -- the case's own host reaches CRS ------------------------------------------
+
+
+def _recording(seen: list[SidecarConfig]):
+    def fake(events, *, config, **_kwargs):
+        seen.append(config)
+        for _ in events:
+            pass
+        return []
+
+    return fake
+
+
+def test_crs_is_told_the_host_the_reader_named(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**The fix for CRS 931130, and the reason it could be withheld at all.**
+
+    931130 reads a URL in a parameter as off-domain unless it ends with
+    `.<Host header>`. Apache does not log that header, so the sidecar invents
+    one, and it used to be `localhost` for every case — so every outbound URL,
+    the site's own asset host included, looked foreign. A case that has been
+    told its domains now hands the real one over.
+    """
+    seen: list[SidecarConfig] = []
+    monkeypatch.setattr("logarc.enrich.run_sidecar", _recording(seen))
+    case_dir = a_case(tmp_path)
+    with Case.open(case_dir) as case:
+        case.set_site_hosts(["www.shop.test", "shop.test"])
+
+    enrich_case(case_dir)
+
+    assert [config.host for config in seen] == ["shop.test"]
+    with Case.open(case_dir) as case:
+        assert case.manifest.config["crs_host"] == "shop.test"
+
+
+def test_the_host_comes_from_the_case_even_when_a_caller_builds_the_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The command line builds its own `SidecarConfig` for the paranoia level
+    and the paths, and offers no way to set a host. If the case's answer only
+    applied when no config was passed, `logarc enrich` would quietly go on
+    telling CRS the site is `localhost`."""
+    seen: list[SidecarConfig] = []
+    monkeypatch.setattr("logarc.enrich.run_sidecar", _recording(seen))
+    case_dir = a_case(tmp_path)
+    with Case.open(case_dir) as case:
+        case.set_site_hosts(["shop.test"])
+
+    enrich_case(case_dir, config=SidecarConfig(paranoia=3))
+
+    assert seen[0].host == "shop.test"
+    assert seen[0].paranoia == 3, "and nothing else the caller chose is overridden"
+
+
+def test_a_case_that_named_nothing_keeps_the_placeholder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Unanswered stays exactly as it was, which is also what keeps 931130
+    withheld for it — the engine only trusts the rule when the host CRS was
+    given is one the reader named."""
+    seen: list[SidecarConfig] = []
+    monkeypatch.setattr("logarc.enrich.run_sidecar", _recording(seen))
+
+    enrich_case(a_case(tmp_path))
+
+    assert seen[0].host == "localhost"
+
+
+def test_the_outcome_names_the_configuration_that_actually_ran(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Not the one the caller passed in, which on a named case is a different one.
+
+    The host is swapped in here, so a caller reporting its own config reports a
+    run that did not happen: `logarc enrich` printed a fingerprint the case it
+    had just written did not carry.
+    """
+    monkeypatch.setattr("logarc.enrich.run_sidecar", _recording([]))
+    case_dir = a_case(tmp_path)
+    with Case.open(case_dir) as case:
+        case.set_site_hosts(["shop.test"])
+
+    outcome = enrich_case(case_dir, config=SidecarConfig(paranoia=3))
+
+    assert outcome.config.host == "shop.test"
+    with Case.open(case_dir) as case:
+        assert outcome.config.fingerprint() == case.manifest.config["crs_fingerprint"]

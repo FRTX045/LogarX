@@ -227,7 +227,7 @@
     ],
     "weighted_f1": 0.9353453478559659
   },
-  "crs_fingerprint": "d1c9e04591ad1e66",
+  "crs_fingerprint": "1c4b66d67838c5e8",
   "granularity": "category",
   "policy": {
     "absorb_max_duration_seconds": 60,

@@ -87,16 +87,26 @@ def test_the_offer_says_what_the_answer_is_for(qt_app: QApplication) -> None:
     assert "link" in words, "what it distinguishes is missing"
 
 
-def test_the_offer_says_which_way_a_wrong_answer_fails(qt_app: QApplication) -> None:
-    """The honest half, and the reason this dialog can be answered casually.
+def test_the_offer_says_which_way_each_answer_fails(qt_app: QApplication) -> None:
+    """Both directions, because they are not the same direction.
 
-    A wrong answer here costs findings rather than inventing them, which is the
-    safe direction — and saying so is what lets somebody who is unsure skip it
-    without worrying they have broken the case.
+    Skipping is the safe one: nothing is named, both rules that read the answer
+    stay silent, and the cost is findings. A domain of the site's left out — or
+    mistyped, which leaves the real one out — is the other: its links are
+    reported.
+
+    The first version said "left out or wrong, those are missed — never
+    invented", which is true of skipping and of nothing else. Measured
+    2026-09-23: told `shop.tst` for `shop.test`, the site's own logo import is
+    reported as remote file inclusion. A reader promised that a wrong answer is
+    harmless answers casually, and a casual answer is the likeliest to be wrong.
     """
-    words = SiteHostsOffer(_suggested("shop.example.com")).spoken().lower()
+    lines = SiteHostsOffer(_suggested("shop.example.com")).spoken().lower().splitlines()
 
-    assert "missed" in words or "miss" in words
+    assert any("leave out" in line and "reported" in line for line in lines)
+    promises = [line for line in lines if "invented" in line]
+    assert promises, "skipping is still safe, and a reader unsure of the answer needs to know"
+    assert all("skip" in line for line in promises), "the promise holds for skipping alone"
 
 
 def test_typing_over_the_suggestion_is_what_is_answered(qt_app: QApplication) -> None:

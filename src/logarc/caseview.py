@@ -168,6 +168,11 @@ def reconstruct_client(
         return analyse_ip(
             case.store,
             client_ip,
+            # The case's own engine, so the window detects what the command line
+            # and triage detect. Left to its default, `analyse_ip` builds an engine
+            # with no `site_hosts`, and for two days the domain question was asked,
+            # answered, saved — and then ignored by every reconstruction on screen.
+            engine=case.rule_engine(),
             policy=AnalysisPolicy(episode=EpisodePolicy(evidence_sample=evidence_sample)),
             crs=crs.index,
             crs_fingerprint=crs.fingerprint,

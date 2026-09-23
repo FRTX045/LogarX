@@ -23,6 +23,8 @@ from logarc.detect.crs.sidecar import (
     CrsUnavailableError,
     SidecarConfig,
     default_binary,
+    host_speaks_for,
+    primary_site_host,
     run_sidecar,
 )
 from logarc.detect.crs.store import (
@@ -46,8 +48,10 @@ __all__ = [
     "category_for",
     "category_for_family",
     "default_binary",
+    "host_speaks_for",
     "is_enriched",
     "load_detections",
+    "primary_site_host",
     "run_sidecar",
     "severity_for",
     "write_detections",

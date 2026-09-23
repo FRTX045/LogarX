@@ -211,7 +211,14 @@ class Case:
         rules = list(default_rules())
         if extra_packs:
             rules.extend(load_rules(list(extra_packs)))
-        return RuleEngine(rules, site_hosts=self.site_hosts)
+        return RuleEngine(
+            rules,
+            site_hosts=self.site_hosts,
+            # Which host CRS was told was the site's, as enrichment recorded it.
+            # The engine trusts 931130's off-domain verdicts only when this is
+            # one the reader still names.
+            crs_host=self.manifest.config.get("crs_host"),
+        )
 
     def read_evidence(self, refs: Sequence[EvidenceRef]) -> list[EvidenceLine]:
         """Fetch the raw source lines behind a set of references.

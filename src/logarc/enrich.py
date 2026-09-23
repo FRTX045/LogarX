@@ -17,12 +17,12 @@ throw them away, and the dialog promises otherwise.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from time import perf_counter
 from typing import TYPE_CHECKING
 
 from logarc.case import Case
-from logarc.detect.crs.sidecar import SidecarConfig, run_sidecar
+from logarc.detect.crs.sidecar import SidecarConfig, primary_site_host, run_sidecar
 from logarc.detect.crs.store import write_detections
 
 if TYPE_CHECKING:
@@ -67,6 +67,9 @@ class EnrichOutcome:
     path: Path
     stopped: bool
     seconds: float
+    config: SidecarConfig
+    """The configuration that ran, which is not always the one passed in: the
+    case's own host replaces the caller's. Report this one."""
 
     @property
     def rate(self) -> float:
@@ -92,6 +95,16 @@ def enrich_case(
     stopped = False
 
     with Case.open(root) as opened:
+        # The host CRS compares every URL in a parameter against comes from the
+        # case, whatever config the caller built. It is a fact about the site,
+        # not a preference: the command line builds its own config for the
+        # paranoia level and has no way to set a host, and if the answer only
+        # applied when no config was passed, `logarc enrich` would go on telling
+        # CRS that every site is `localhost`.
+        site_host = primary_site_host(opened.site_hosts)
+        if site_host is not None:
+            config = replace(config, host=site_host)
+
         total = opened.manifest.total_events_parsed
         stream = opened.store.all_events()
 
@@ -133,6 +146,7 @@ def enrich_case(
         path=path,
         stopped=stopped,
         seconds=seconds,
+        config=config,
     )
 
 
