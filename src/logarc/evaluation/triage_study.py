@@ -3,18 +3,26 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from time import perf_counter
 from typing import Any
 
 from logarc.case import Case
 from logarc.core.activity import ActivityCategory
-from logarc.evaluation.priorities import audit_unusual
+from logarc.evaluation.graded import client_truth, graded_scores, low_support
+from logarc.evaluation.priorities import (
+    assert_same_ranked,
+    audit_unusual,
+    bonus_parts,
+    graded_orderings,
+)
 from logarc.evaluation.triage import compare_rankings
-from logarc.evaluation.truth import read_truth
-from logarc.storage.case import CaseManifest
-from logarc.triage.scan import read_profiles, scan_case
+from logarc.evaluation.truth import GroundTruth, read_truth
+from logarc.storage.case import CaseManifest, SourceRecord
+from logarc.triage.profile import ClientProfile, high_confidence_match, priority_score
+from logarc.triage.reasons import suspicious_reasons
+from logarc.triage.scan import iter_labelled, read_profiles, scan_case
 
 
 def file_hash(path: Path) -> str:
@@ -22,14 +30,23 @@ def file_hash(path: Path) -> str:
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-def evaluate_case(
-    root: Path,
-    source: Path,
-    truth_path: Path,
-    *,
-    include_model: bool = True,
-) -> dict[str, Any]:
-    """Verify source and per-line truth, then score cached profiles with CRS PL2."""
+@dataclass(frozen=True)
+class _Verified:
+    manifest: CaseManifest
+    record: SourceRecord
+    truth: GroundTruth
+    source_hash: str
+    judgments: dict[str, bool]
+    exclusions: dict[str, str]
+    seconds: float
+
+
+def _verified(root: Path, source: Path, truth_path: Path) -> _Verified:
+    """Check the case, its one source and its per-line truth agree, and judge each client.
+
+    A client whose truth is unknown for some request and hostile for none is excluded,
+    not assumed benign.
+    """
     started = perf_counter()
     manifest = CaseManifest.load(root)
     if len(manifest.sources) != 1:
@@ -67,7 +84,24 @@ def evaluate_case(
     if count != len(records):
         raise ValueError("truth line coverage differs from the parsed case")
     exclusions = {ip: reason for ip, reason in exclusions.items() if not judgments[ip]}
-    verified_seconds = perf_counter() - started
+    return _Verified(
+        manifest, record, truth, source_hash, judgments, exclusions, perf_counter() - started
+    )
+
+
+def evaluate_case(
+    root: Path,
+    source: Path,
+    truth_path: Path,
+    *,
+    include_model: bool = True,
+) -> dict[str, Any]:
+    """Verify source and per-line truth, then score cached profiles with CRS PL2."""
+    verified = _verified(root, source, truth_path)
+    manifest, record, truth = verified.manifest, verified.record, verified.truth
+    source_hash, exclusions = verified.source_hash, verified.exclusions
+    judgments = verified.judgments
+    verified_seconds = verified.seconds
     result = scan_case(root)
     profiles = read_profiles(result.path)
     observed_clients = len(profiles)
@@ -116,4 +150,121 @@ def evaluate_case(
             if p.client_ip in head
         },
         "unusual_judgments": "unavailable; security comparisons are secondary retrieval diagnostics",
+    }
+
+
+def evaluate_graded_case(root: Path, source: Path, truth_path: Path) -> dict[str, Any]:
+    """Verify the case, then score today's ordering and both challengers against grades
+    taken from the truth file alone, with the high-confidence rule audit beside them.
+
+    Every targeted client is listed by address with its rank under each method; clients
+    in any method's first 50 carry their base score and bonus parts; benign ones among
+    them carry the reasons the queue would show.
+    """
+    verified = _verified(root, source, truth_path)
+    exclusions = verified.exclusions
+    truth = client_truth(verified.truth.records, exclusions)
+    result = scan_case(root)
+    profiles = {p.client_ip: p for p in read_profiles(result.path) if p.client_ip not in exclusions}
+    orders = graded_orderings(tuple(profiles.values()))
+    assert_same_ranked(orders)
+    scores = {name: graded_scores(order, truth) for name, order in orders.items()}
+    quiet = low_support(truth)
+
+    def above(name: str, ip: str) -> dict[str, int]:
+        """Probe-only and benign clients ranked ahead of `ip`, or anywhere if it is unranked."""
+        rank = scores[name].ranks[ip]
+        ahead = orders[name][: rank - 1] if rank else orders[name]
+        return {
+            "probe_only": sum(truth[other].grade == 1 for other in ahead),
+            "benign": sum(truth[other].grade == 0 for other in ahead),
+        }
+
+    targeted = [
+        {
+            "ip": ip,
+            "grade": item.grade,
+            "hostile": item.hostile,
+            "requests": item.requests,
+            "low_support": ip in quiet,
+            "ranks": {name: scores[name].ranks[ip] for name in orders},
+            "above": {name: above(name, ip) for name in orders},
+        }
+        for ip, item in sorted(truth.items())
+        if item.grade == 2
+    ]
+    head_ips = sorted({ip for order in orders.values() for ip in order[:50]})
+    head = {}
+    for ip in head_ips:
+        profile = profiles[ip]
+        distinct, sequence, recurrence = bonus_parts(profile)
+        head[ip] = {
+            "grade": truth[ip].grade,
+            "base": priority_score(profile),
+            "D": distinct,
+            "Q": sequence,
+            "R": recurrence,
+            "ranks": {name: scores[name].ranks[ip] for name in orders},
+        }
+    benign_head = [
+        {
+            "ip": ip,
+            "ranks": head[ip]["ranks"],
+            "reasons": [reason.text for reason in suspicious_reasons(profiles[ip])],
+        }
+        for ip in head_ips
+        if truth[ip].grade == 0
+    ]
+    return {
+        "identity": {
+            "case": verified.manifest.case_id,
+            "scenario": verified.truth.scenario,
+            "seed": verified.truth.seed,
+            "source_sha256": verified.source_hash,
+            "truth_sha256": file_hash(truth_path),
+            "crs_sha256": file_hash(root / "crs.jsonl"),
+            **verified.manifest.config,
+        },
+        "judged": len(truth),
+        "judgment_exclusions": exclusions,
+        "low_support": sorted(quiet),
+        "methods": {name: asdict(value) for name, value in scores.items()},
+        "targeted": targeted,
+        "head": head,
+        "benign_head": benign_head,
+        "audit": _audit(root, verified.truth, quiet, profiles),
+    }
+
+
+def _audit(
+    root: Path,
+    truth: GroundTruth,
+    quiet: frozenset[str],
+    profiles: dict[str, ClientProfile],
+) -> dict[str, Any]:
+    """Per qualifying rule, how many benign-truth and hostile-truth lines it matched."""
+    categories = {record.line_no: record.category for record in truth.records}
+    rules: dict[str, dict[str, Any]] = {}
+    for item in iter_labelled(root):
+        hostile = categories[item.event.evidence.line_no].is_hostile
+        for label in {label.rule_id: label for label in item.all_labels}.values():
+            if not high_confidence_match(label):
+                continue
+            row = rules.setdefault(
+                label.rule_id,
+                {
+                    "name": label.name,
+                    "confidence": label.confidence,
+                    "benign_lines": 0,
+                    "hostile_lines": 0,
+                },
+            )
+            row["hostile_lines" if hostile else "benign_lines"] += 1
+    for row in rules.values():
+        row["flagged"] = row["benign_lines"] > 0
+    matched = {ip for ip in quiet if ip in profiles and profiles[ip].distinct_rule_pairs}
+    return {
+        "rules": dict(sorted(rules.items())),
+        "low_support_with_match": sorted(matched),
+        "low_support_without_match": sorted(quiet - matched),
     }

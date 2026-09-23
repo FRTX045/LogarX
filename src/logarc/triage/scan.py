@@ -12,6 +12,7 @@ from pathlib import Path
 from time import monotonic
 from typing import TYPE_CHECKING, Any
 
+from logarc.analysis import label_sessions
 from logarc.case import Case
 from logarc.core.evidence import EvidenceRef
 from logarc.core.window import EVERYTHING, TimeWindow
@@ -31,9 +32,10 @@ from logarc.triage.profile import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Iterator, Sequence
 
     from logarc.core.event import NormalizedEvent
+    from logarc.detect.engine import LabelledEvent
 
 
 class ScanCancelled(Exception):  # noqa: N818 - cancellation is a normal worker outcome
@@ -369,3 +371,28 @@ def scan_case(
     return TriageResult(
         destination, len(profiles), eligible, crs_path.exists(), False, monotonic() - started
     )
+
+
+def iter_labelled(root: Path, *, window: TimeWindow = EVERYTHING) -> Iterator[LabelledEvent]:
+    """Every request in the case as the scan labels it: the case's engine, its CRS
+    records and the same session boundaries, one client at a time.
+
+    For evaluation passes that need each request's labels, such as auditing which
+    rules count as high-confidence matches; the queue itself reads profiles.
+    """
+    session_policy = SessionPolicy()
+    with Case.open(root) as case:
+        engine = case.rule_engine()
+    directory = root / "triage"
+    directory.mkdir(exist_ok=True)
+    with (
+        tempfile.TemporaryDirectory(prefix="labels-", dir=directory) as temporary,
+        closing(ParquetEventStore(root, scratch=Path(temporary) / "duckdb")) as store,
+        closing(sqlite3.connect(Path(temporary) / "crs.sqlite")) as crs,
+    ):
+        has_detections = _load_crs(crs, root / "crs.jsonl", lambda: None)
+        for events in store.iter_clients(window=window):
+            index = _client_crs(crs, events) if has_detections else None
+            ordered = sorted(events, key=lambda e: (e.timestamp, e.evidence.line_no))
+            for _, labelled in label_sessions(ordered, engine, policy=session_policy, crs=index):
+                yield from labelled

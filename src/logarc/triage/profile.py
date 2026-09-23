@@ -196,7 +196,7 @@ def profile_client(
             hostile_requests += 1
             hostile_times.append(item.event.timestamp)
             severity = max(severity, *(int(label.severity) for label in hostile))
-            for rule_id in {label.rule_id for label in hostile if _specific(label)}:
+            for rule_id in {label.rule_id for label in hostile if high_confidence_match(label)}:
                 specific.setdefault(rule_id, []).append(item)
             if item.event.path is not None:
                 hostile_targets.add(item.event.path)
@@ -307,7 +307,7 @@ def _example(item: LabelledEvent, note: str = "") -> RequestExample:
     )
 
 
-def _specific(label: ActivityLabel) -> bool:
+def high_confidence_match(label: ActivityLabel) -> bool:
     """A high-confidence rule match: native, hostile, at or above `HIGH_CONFIDENCE`.
 
     CRS labels never qualify: neither their severity nor their fixed confidence

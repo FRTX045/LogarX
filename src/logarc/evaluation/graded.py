@@ -15,7 +15,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from math import log2
 from statistics import mean
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from logarc.triage.profile import TARGETED
 
@@ -210,3 +210,22 @@ def graded_gate(
             for build in baseline
         },
     }
+
+
+def load_scores(data: Mapping[str, Any]) -> GradedScores:
+    """A `GradedScores` back from its JSON record, whose budget keys came back as text."""
+
+    def budgets(values: Mapping[str, Any]) -> dict[int, Any]:
+        return {int(k): v for k, v in values.items()}
+
+    return GradedScores(
+        judged=data["judged"],
+        targeted=data["targeted"],
+        ranks=dict(data["ranks"]),
+        yield_at=budgets(data["yield_at"]),
+        recall_at=budgets(data["recall_at"]),
+        benign_at=budgets(data["benign_at"]),
+        mean_targeted_rank=data["mean_targeted_rank"],
+        ndcg_at=budgets(data["ndcg_at"]),
+        unranked_targeted=tuple(data["unranked_targeted"]),
+    )
