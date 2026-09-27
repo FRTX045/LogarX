@@ -225,3 +225,25 @@ def test_an_index_written_in_the_previous_layout_is_rebuilt(tmp_path, monkeypatc
     current = scan.scan_case(case.root)
     assert not current.cached
     assert current.path != old.path
+
+
+def test_suspicious_reasons_follow_the_code_not_the_cached_text(tmp_path):
+    """A reworded reason must reach a case scanned before the rewording."""
+    import sqlite3
+    from contextlib import closing
+
+    from logarc.triage.scan import read_page, scan_case
+
+    with Case.create(tmp_path / "case") as case:
+        case.store.write(events("203.0.113.9", 3, path="/etc/passwd"))
+        case.store.finalize()
+    result = scan_case(case.root)
+    with closing(sqlite3.connect(result.path)) as connection:
+        connection.execute(
+            "UPDATE ranking SET reasons = ? WHERE queue = 'suspicious'",
+            ('[{"text": "stale wording", "evidence": []}]',),
+        )
+        connection.commit()
+    (row,) = read_page(result.path, "suspicious").rows
+    assert row.reasons[0].kind == "support"
+    assert "stale wording" not in {reason.text for reason in row.reasons}

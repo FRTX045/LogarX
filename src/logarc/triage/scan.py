@@ -30,6 +30,7 @@ from logarc.triage.profile import (
     profile_client,
     rank_profiles,
 )
+from logarc.triage.reasons import suspicious_reasons
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Sequence
@@ -153,17 +154,25 @@ def read_page(
             (*params, limit, offset),
         ).fetchall()
     return TriagePage(
-        tuple(
-            RankedClient(
-                _profile(json.loads(profile)),
-                tuple(_reason(r) for r in json.loads(reasons)),
-                position,
-            )
-            for profile, reasons, position in rows
-        ),
+        tuple(_ranked(queue, profile, reasons, position) for profile, reasons, position in rows),
         total,
         offset,
     )
+
+
+def _ranked(queue: QueueName, profile: str, reasons: str, position: int) -> RankedClient:
+    """A stored row, with Suspicious activity reasons rebuilt from its profile.
+
+    Those reasons are wording over facts the profile keeps, so they are written
+    from the code that reads the index, not the code that wrote it: otherwise a
+    case scanned before a rewording would go on showing the old text. Unusual
+    activity reasons compare the client with the whole scanned population, which
+    only the stored copy knows.
+    """
+    stored = _profile(json.loads(profile))
+    if queue == "suspicious":
+        return RankedClient(stored, suspicious_reasons(stored), position)
+    return RankedClient(stored, tuple(_reason(r) for r in json.loads(reasons)), position)
 
 
 def read_rule_matches(path: Path, rule_id: str) -> tuple[RuleMatch, ...]:
