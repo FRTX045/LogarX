@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import threading
-from html import escape
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal
+from PyQt6.QtGui import QFontMetrics
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QSplitter,
     QTabBar,
     QTableWidget,
     QTableWidgetItem,
@@ -25,15 +26,23 @@ from PyQt6.QtWidgets import (
 
 from logarc.case import Case
 from logarc.core.window import EVERYTHING, TimeWindow
+from logarc.gui.recommendation import (
+    SourceStatus,
+    parse_anchor,
+    render_recommendation,
+    summary_for,
+)
 from logarc.gui.theme import PAD, TIGHT
 from logarc.gui.workers import run_job
 from logarc.storage.base import IpSummary, IpSummaryPage
 from logarc.triage.process import run_scan
-from logarc.triage.profile import DEFAULT_POLICY, FEATURES, QueueName, RankedClient
+from logarc.triage.profile import DEFAULT_POLICY, QueueName, RankedClient
 from logarc.triage.scan import ScanCancelled, TriagePage, TriageProgress, TriageResult, read_page
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+
+    from logarc.core.evidence import EvidenceRef
 
 QUEUES: tuple[QueueName, ...] = ("suspicious", "unusual", "all")
 PAGE_SIZE = 100
@@ -54,6 +63,10 @@ class TriagePanel(QWidget):
         self._progress: TriageProgress | None = None
         self._rows: Sequence[RankedClient | IpSummary] = ()
         self._offset = 0
+        self._shown: RankedClient | None = None
+        self._expanded: frozenset[tuple[int, int]] = frozenset()
+        self._sources: dict[EvidenceRef, SourceStatus] = {}
+        self._source_generation = 0
         self.queues = QTabBar()
         for name in ("Suspicious activity", "Unusual activity", "All clients"):
             self.queues.addTab(name)
@@ -74,7 +87,7 @@ class TriagePanel(QWidget):
         self.caption.setWordWrap(True)
         self.caption.setTextFormat(Qt.TextFormat.PlainText)
         self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(("Rank", "IP address", "Why look here", "Requests"))
+        self.table.setHorizontalHeaderLabels(("Rank", "IP address", "Key observation", "Requests"))
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -87,12 +100,20 @@ class TriagePanel(QWidget):
         self.table.cellClicked.connect(self._reason_clicked)
         self.details = QTextBrowser()
         self.details.setOpenLinks(False)
-        self.details.anchorClicked.connect(self._reason_link)
+        self.details.anchorClicked.connect(self._anchor)
         self.details.setPlaceholderText(
             "Select a recommendation to inspect its measurements and source references."
         )
-        self.details.setMaximumHeight(200)
-        self.open_client = QPushButton("Open supporting evidence")
+        # The reader decides how much of the panel the recommendation gets: at a
+        # fixed height either the queue or the reasons were cut off.
+        self.split = QSplitter(Qt.Orientation.Vertical)
+        self.split.addWidget(self.table)
+        self.split.addWidget(self.details)
+        self.split.setChildrenCollapsible(False)
+        self.split.setStretchFactor(0, 1)
+        self.split.setStretchFactor(1, 1)
+        self.split.setSizes([1000, 1000])
+        self.open_client = QPushButton("Inspect supporting requests")
         self.open_client.setEnabled(False)
         self.open_client.clicked.connect(self._investigate)
         self.previous_page = QPushButton("Previous")
@@ -120,8 +141,7 @@ class TriagePanel(QWidget):
         layout.addWidget(self.queues)
         layout.addWidget(self.search)
         layout.addWidget(self.caption)
-        layout.addWidget(self.table, 1)
-        layout.addWidget(self.details)
+        layout.addWidget(self.split, 1)
         layout.addLayout(controls)
         self._display(())
 
@@ -335,6 +355,7 @@ class TriagePanel(QWidget):
         self.table.setRowCount(0)
         self.table.setRowCount(len(rows))
         self.details.clear()
+        self._shown = None
         self.open_client.setEnabled(False)
         self.previous_page.setEnabled(False)
         self.next_page.setEnabled(False)
@@ -352,7 +373,7 @@ class TriagePanel(QWidget):
                 else (
                     str(row.rank or self._offset + index + 1),
                     row.profile.client_ip,
-                    row.reasons[0].text if row.reasons else "No hostile detection",
+                    summary_for(row),
                     f"{row.profile.requests:,}",
                 )
             )
@@ -375,48 +396,79 @@ class TriagePanel(QWidget):
             )
             self.open_client.setEnabled(True)
             return
-        profile = row.profile
-        reasons = [f"<b>{escape(profile.client_ip)}</b>"]
-        for number, reason in enumerate(row.reasons):
-            reasons.append(
-                f'<p><a href="reason:{number}">{escape(reason.text)}</a><br>'
-                + "Sample source lines: "
-                + escape(", ".join(map(str, reason.evidence)))
-                + "</p>"
-            )
-        lines = ["Recorded measurements:"]
-        lines.extend(f"{FEATURES[name]}: {value:,.3g}" for name, value in profile.features.items())
-        lines.extend(("", "Field coverage:"))
-        lines.extend(
-            f"{name}: {count:,}/{profile.requests:,} requests"
-            for name, count in profile.coverage.items()
-        )
-        lines.append(
-            "Status responses: "
-            + (
-                ", ".join(f"{status}: {count}" for status, count in profile.statuses.items())
-                or "not recorded"
-            )
-        )
-        lines.append(
-            "Response codes and sizes do not prove attack success. Source references are samples, not the complete supporting set."
-        )
-        self.details.setHtml("".join(reasons) + "<br>".join(escape(line) for line in lines))
+        if row is not self._shown:
+            self._shown, self._expanded, self._sources = row, frozenset(), {}
+            self._check_sources(row)
+        self._render()
         self.open_client.setEnabled(True)
+
+    def _render(self) -> None:
+        """Draw the shown recommendation, cutting request paths to two lines of the area."""
+        if self._shown is None:
+            return
+        metrics = QFontMetrics(self.details.font())
+        width = (self.details.viewport() or self.details).width()
+        path_chars = max(20, 2 * max(width - 24, 0) // max(metrics.averageCharWidth(), 1))
+        self.details.setHtml(
+            render_recommendation(
+                self._shown, self._sources, path_chars=path_chars, expanded=self._expanded
+            )
+        )
+
+    def _check_sources(self, row: RankedClient) -> None:
+        """Read the lines behind a recommendation off the interface thread, to say which
+        cannot be opened and which come from a source changed since ingest."""
+        self._source_generation += 1
+        generation = self._source_generation
+        if self._request is None:
+            return
+        path = self._request[0]
+        refs = tuple(
+            dict.fromkeys(
+                [ref for reason in row.reasons for ref in reason.evidence]
+                + [item.evidence for reason in row.reasons for item in reason.examples]
+            )
+        )
+
+        def work(_: Callable[[object], None]) -> dict[EvidenceRef, SourceStatus]:
+            with Case.open(path) as case:
+                lines = case.read_evidence(refs)
+            return {
+                line.ref: SourceStatus(line.note, can_open=line.text is not None)
+                for line in lines
+                if line.note
+            }
+
+        def done(sources: dict[EvidenceRef, SourceStatus]) -> None:
+            if generation == self._source_generation and row is self._shown:
+                self._sources = sources
+                self._render()
+
+        run_job(work, on_done=done, on_error=lambda message, detail: None)
 
     def _reason_clicked(self, row: int, column: int) -> None:
         if column == 2:
             self._investigate()
 
-    def _reason_link(self, url: QUrl) -> None:
-        index = self.table.currentRow()
-        if url.scheme() != "reason" or not url.path().isdigit():
+    def _anchor(self, url: QUrl) -> None:
+        """Open a reason's evidence or one example request, or show an example's full path."""
+        parsed = parse_anchor(url)
+        row = self._shown
+        if parsed is None or row is None:
             return
-        reason = int(url.path())
-        if 0 <= index < len(self._rows):
-            row = self._rows[index]
-            if isinstance(row, RankedClient) and reason < len(row.reasons):
-                self.investigate.emit(row.profile.client_ip, row.reasons[reason].evidence)
+        kind, number, index = parsed
+        if number >= len(row.reasons):
+            return
+        reason = row.reasons[number]
+        if kind == "reason":
+            self.investigate.emit(row.profile.client_ip, reason.evidence)
+        elif index < len(reason.examples):
+            example = reason.examples[index]
+            if kind == "expand":
+                self._expanded = self._expanded | {(number, index)}
+                self._render()
+            elif self._sources.get(example.evidence, SourceStatus("", True)).can_open:
+                self.investigate.emit(row.profile.client_ip, (example.evidence,))
 
     def _investigate(self) -> None:
         index = self.table.currentRow()
