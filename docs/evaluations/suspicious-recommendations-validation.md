@@ -4,8 +4,16 @@ The frozen challenger, C2, passed the held-out gate, narrowly. It raised mean
 targeted yield on the held-out builds by 2.5 percentage points at 10 and 2.0 at 25,
 added no benign client at 10, 25 or 50 in any build, and moved no low-support
 targeted client out of its tier. It also pushed one targeted client, the credential
-attacker `192.0.2.23`, down in every held-out build and in the medium check. The
-product ordering has not been changed; that decision is open.
+attacker `192.0.2.23`, down in every held-out build and in the medium check.
+
+**Decision (2026-09-27): C2 passed the frozen gate and is not adopted.** Policy 3
+stays the product ordering. The gate result stands as measured; not adopting C2
+is a product decision taken after reviewing the tradeoffs below, not a
+retrospective gate failure. The top-10 gain is one extra targeted client in one
+held-out build; the credential attacker falls in every held-out build and from 29
+to 235 in the medium check; and the low-support safeguard passed without testing
+protection of any detected low-support attacker, because none is detected.
+Keeping policy 3 does not mean its ordering is satisfactory.
 
 The design, grades, formulas and gate are those frozen in
 [the design document](../design/2026-09-23-suspicious-recommendations.md) before any

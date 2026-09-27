@@ -28,13 +28,16 @@ A does not depend on B or C. C is only adopted if it passes B's gate.
 
 The details area shows one block per reason. Each block carries its own
 observation, its own why, and example requests for that reason. The table's
-"Why look here" column shows a compact observation specific to the client from
-its first reason, such as "3 high-confidence rule matches" or "Enumeration then
-SQL injection, 1 session". The why sentences stay in the details area, where
-they are not repeated row after row.
+"Key observation" column shows the first block's compact observation, which is
+always the flagged requests, such as "40 of 50 requests flagged; strongest
+high", because that is what the order rests on. The why sentences stay in the
+details area, where they are not repeated row after row. The queue and the
+details share a draggable divider, starting at half each.
 
-Example requests are clickable and named by method, path and time, with the
-file-and-line reference underneath for traceability. Clicking one opens
+Example requests are clickable and show the request, its time in UTC as
+"2026-03-11 04:00:33 UTC" on the next line, and the file-and-line reference
+below for traceability. A path longer than two lines of the details area is cut
+with "Show full request", which shows it whole and copyable. Clicking one opens
 reconstruction on that request. The main action is **Inspect supporting
 requests**, which works as the existing action does today: it opens
 reconstruction on the activity containing the sampled references. It does not
@@ -44,16 +47,17 @@ Examples are labelled as examples. Counts in the observation cover every
 supporting request; the examples are a bounded sample and must not read as the
 whole basis for the recommendation.
 
-If a source file or line is unavailable, its reference stays visible with the
-reason it cannot open. A recommendation never substitutes another file or
-request.
+If a source file or line cannot be read, its reference stays visible with the
+reason and cannot be opened. A line read from a source that changed since ingest
+opens and shows its integrity warning. A recommendation never substitutes
+another file or request.
 
 A context line gives response codes with the note that a 200 does not establish
 success.
 
 ### Reasons
 
-**Distinct high-confidence rule matches.**
+**Distinct rule matches.**
 
 - Qualifying detection: a hostile label from a bundled rule pack whose
   author-assigned confidence is at least 0.85, at any severity. CRS labels never
@@ -64,11 +68,16 @@ success.
   which no rule and no request appears twice. Several rules on one request count
   as one request.
 - Observed, for example: "3 rules matched on 3 requests."
-- Why: "Distinct high-confidence rule matches provide support beyond repetition
-  of one rule."
+- Why: "Distinct rule matches provide support beyond repetition of one rule."
+  For a single pair: "One rule matched here. Its rating describes the rule, not
+  this request, so inspect the request before relying on it."
+- Supporting detail: "Counted: bundled rules rated at confidence 0.85 or above.
+  The rating describes the rule, not the request."
 - Examples: one representative request per counted pair.
-- Wording: "high-confidence rule match". Never a confirmed attack, and never an
-  attack probability.
+- Wording: "distinct rule matches". Author-assigned confidence rates the rule,
+  not attack specificity: a scanner's user-agent rule qualifies as readily as an
+  exploit pattern. Never a confirmed attack, and never an attack probability.
+  Changing which rules qualify is a separate, newly evaluated experiment.
 
 **Enumeration, then an attack pattern.**
 
@@ -97,18 +106,32 @@ success.
 - Examples: requests from different sessions.
 - Called "recurrence across sessions", never persistence: session splits and
   shared IPs do not establish one actor.
+- Why: under an hour between the first and last matching requests, "The sessions
+  are close together, so they may be one burst split by a session boundary.";
+  otherwise "Review the matching requests across these sessions to see whether
+  their behaviour is related."
 - Where timestamps were remapped, as in the dataset builds, the span describes
   that timeline, not verified elapsed time.
 - A single long session still matters through its supporting requests; it
   contributes one session here.
 
-**Support, share and severity** remain as today: hostile request count, hostile
-share, and strongest severity, reported separately from each other.
+**Flagged requests** (support, share and severity): flagged request count, share
+and strongest severity, reported separately from each other, for example "40 of
+50 requests flagged (80%); strongest severity high." Its why describes this
+client: the dominant kind of flagged request, named when it holds at least half
+of them, and whether flagged requests are most (half or more), a substantial
+part, or a small part (under a tenth) of the client's activity. When one rule
+matches every flagged request it is named, with a note of how many other rules
+also matched; a single flagged request asks to be inspected.
 
-Reasons appear in the order listed above, and a reason that does not apply to a
-client is left out. Support, share and severity apply to every client in the
-queue, so a client with none of the three new reasons leads with it. Its why is
-drafted in the preview and settled at the preview review.
+Flagged requests come first, then distinct rule matches, the probe followed by an
+attack pattern, and recurrence; a reason that does not apply to a client is left
+out. The context reasons do not affect the rank under the retained ordering.
+Suspicious activity reasons are written from the stored profile when a page is
+read, so a rewording reaches cases scanned before it.
+
+The layout, order and wording above were settled at the preview review of
+2026-09-27.
 
 ### Preview before integration
 

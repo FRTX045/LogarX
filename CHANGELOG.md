@@ -31,6 +31,30 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Suspicious activity recommendations say what was seen, why it matters for this
+  client, and which requests to inspect.** Each reason is its own block with an
+  observation, a why and clickable example requests shown with their time in UTC and
+  source reference. Flagged requests come first, because the queue's order rests on
+  them, and the table's **Key observation** column shows them. Distinct rule
+  matches, a probe followed by an attack pattern in one session, and detections in
+  several sessions follow as context; they do not change the order. The queue and
+  the details share a draggable divider, a long request path is cut to two lines
+  with **Show full request**, and a reference whose source cannot be read stays
+  visible with the reason instead of opening. Reasons are written when a page is
+  read, so a case scanned before a rewording shows the new text. See
+  [Reading the recommendations](docs/ip-prioritization.md#reading-the-recommendations).
+
+  A graded evaluation that scores orderings against truth alone tested two
+  challengers that would have added these facts to the score. The chosen one, C2,
+  passed the frozen held-out gate (targeted yield +2.5 points at 10 and +2.0 at 25,
+  no benign client in any first 50) and was not adopted: the gain was one targeted
+  client in one build, the credential attacker in these builds fell in every
+  held-out build, and the low-support attackers it was meant to help are not
+  detected at all. See [the report](docs/evaluations/suspicious-recommendations-validation.md).
+
+  Verification: 2,355 tests passed with none skipped, CRS contract tests included. Ruff,
+  formatting, and Windows and Linux mypy checks passed.
+
 - **PHP detection goes from 15% to 68% against the OWASP CRS corpus, with no new false alarms.**
   Thirteen rules covering the shapes that were getting through: the open tag in all its forms
   (`<?php`, `<?=`, `<?`, `[php]`, `{php}`), superglobals and `${}` interpolation, function calls
