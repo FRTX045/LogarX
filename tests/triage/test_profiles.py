@@ -483,3 +483,17 @@ def test_hostile_sessions_and_the_span_of_matching_requests(tmp_path):
         sample[0].evidence,
         sample[2].evidence,
     ]
+
+
+def test_flagged_requests_are_counted_per_category_and_per_rule(tmp_path):
+    from logarc.triage.profile import profile_client
+
+    engine = probe_attack_engine(tmp_path)
+    sample = events(count=5)
+    sample[0] = replace(sample[0], query="probe")
+    sample[1] = replace(sample[1], query="probe")
+    sample[2] = replace(sample[2], query="probe attack")
+    profile = profile_client(sample, engine)
+    assert profile.category_counts == {"enumeration": 3, "injection": 1}
+    assert profile.hostile_rules == {"attack": 1, "probe": 3}
+    assert profile.hostile_rule_names == {"attack": "Attack", "probe": "Probe"}

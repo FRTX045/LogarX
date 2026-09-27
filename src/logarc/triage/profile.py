@@ -131,6 +131,11 @@ class ClientProfile:
     """Sessions where a probe is followed, at a strictly later time, by a targeted attempt."""
     sequence_examples: tuple[RequestExample, ...] = ()
     recurrence_examples: tuple[RequestExample, ...] = ()
+    category_counts: dict[str, int] = field(default_factory=dict)
+    """Flagged requests per hostile category; a request in two categories counts in both."""
+    hostile_rules: dict[str, int] = field(default_factory=dict)
+    """Flagged requests per rule with a hostile label, so one noisy rule can be named."""
+    hostile_rule_names: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -164,6 +169,8 @@ def profile_client(
     sequence_examples: tuple[RequestExample, ...] = ()
     recurrence_examples: list[RequestExample] = []
     hostile_times = []
+    hostile_rules: Counter[str] = Counter()
+    hostile_rule_names: dict[str, str] = {}
     for _, labelled in label_sessions(ordered, engine, policy=session_policy, crs=crs):
         sessions += 1
         pair = _probe_then_attack(labelled)
@@ -198,6 +205,9 @@ def profile_client(
             severity = max(severity, *(int(label.severity) for label in hostile))
             for rule_id in {label.rule_id for label in hostile if high_confidence_match(label)}:
                 specific.setdefault(rule_id, []).append(item)
+            for label in {label.rule_id: label for label in hostile}.values():
+                hostile_rules[label.rule_id] += 1
+                hostile_rule_names[label.rule_id] = label.name
             if item.event.path is not None:
                 hostile_targets.add(item.event.path)
             for category in {label.category.value for label in hostile}:
@@ -297,6 +307,9 @@ def profile_client(
         sequence_sessions,
         sequence_examples,
         tuple(recurrence_examples),
+        dict(sorted(category_counts.items())),
+        dict(sorted(hostile_rules.items())),
+        dict(sorted(hostile_rule_names.items())),
     )
 
 
