@@ -78,12 +78,18 @@ def _support_why(profile: ClientProfile) -> str:
     flagged = profile.hostile_requests
     if flagged == 1:
         return "A single flagged request: inspect it before relying on it."
-    whole = [rule for rule, count in profile.hostile_rules.items() if count == flagged]
+    whole = sorted(rule for rule, count in profile.hostile_rules.items() if count == flagged)
     if whole:
         name = profile.hostile_rule_names.get(whole[0], whole[0])
+        others = len(profile.hostile_rules) - 1
+        if not others:
+            return (
+                f"Every flagged request matches one rule ({name}), so check that rule's "
+                "matches before relying on the count."
+            )
         return (
-            f"Every flagged request matches one rule ({name}), so check that rule's "
-            "matches before relying on the count."
+            f"Every flagged request matches one rule ({name}), so the count mostly "
+            f"reflects that rule; {_plural(others, 'other rule')} also matched some of them."
         )
     counts = profile.category_counts
     top = max(counts, key=lambda category: (counts[category], category)) if counts else None

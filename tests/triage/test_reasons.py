@@ -138,15 +138,30 @@ def test_one_rule_behind_every_flagged_request_is_named(plain):
         hostile_requests=30,
         requests=31,
         category_counts={"reconnaissance": 30},
-        hostile_rules={"scanner_user_agent": 30, "config_file_exposure": 2},
-        hostile_rule_names={
-            "scanner_user_agent": "Security Scanner User-Agent",
-            "config_file_exposure": "Configuration File Probe",
-        },
+        hostile_rules={"scanner_user_agent": 30},
+        hostile_rule_names={"scanner_user_agent": "Security Scanner User-Agent"},
     )
     assert reason(profile, "support").why == (
         "Every flagged request matches one rule (Security Scanner User-Agent), so check "
         "that rule's matches before relying on the count."
+    )
+
+
+def test_a_rule_on_every_request_does_not_hide_the_other_rules(plain):
+    profile = replace(
+        plain,
+        hostile_requests=48,
+        requests=48,
+        category_counts={"reconnaissance": 48, "injection": 3},
+        hostile_rules={"scanner_user_agent": 48, "sqli_union_select": 3},
+        hostile_rule_names={
+            "scanner_user_agent": "Security Scanner User-Agent",
+            "sqli_union_select": "SQL Injection (UNION SELECT)",
+        },
+    )
+    assert reason(profile, "support").why == (
+        "Every flagged request matches one rule (Security Scanner User-Agent), so the count "
+        "mostly reflects that rule; 1 other rule also matched some of them."
     )
 
 
