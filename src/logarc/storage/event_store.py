@@ -438,16 +438,19 @@ class ParquetEventStore:
         offset: int = 0,
         limit: int = 100,
         window: TimeWindow | None = None,
+        exact: bool = False,
     ) -> IpSummaryPage:
         """Page the complete index, or a window aggregate, before returning rows.
 
         Number before filtering so search results keep their population positions.
         The count row survives an empty page, including offsets beyond the end.
+        `exact` matches the whole address rather than any address containing it.
         """
         self._require_finalized()
         if offset < 0 or limit < 1:
             raise ValueError("offset must be nonnegative and limit must be positive")
         source, bounds = self._summary_source(window)
+        match = "client_ip = ?" if exact else "contains(client_ip, ?)"
         rows = (
             self._connect()
             .execute(
@@ -457,7 +460,7 @@ class ParquetEventStore:
                        client_error_ratio, bytes_total,
                        row_number() OVER (ORDER BY request_count DESC, client_ip) AS position
                 FROM ({source})
-            ), matching AS (SELECT * FROM ranked WHERE contains(client_ip, ?))
+            ), matching AS (SELECT * FROM ranked WHERE {match})
             SELECT page.*, totals.total
             FROM (SELECT count(*) AS total FROM matching) totals
             LEFT JOIN (SELECT * FROM matching ORDER BY position LIMIT ? OFFSET ?) page ON true

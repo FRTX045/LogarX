@@ -34,3 +34,15 @@ def test_summary_page_aggregates_inclusive_time_bounds_and_empty_cases(tmp_path)
     with closing(ParquetEventStore(tmp_path / "empty")) as store:
         store.finalize()
         assert store.ip_summary_page().total == 0
+
+
+def test_an_exact_search_returns_only_that_address(tmp_path):
+    with closing(ParquetEventStore(tmp_path / "case")) as store:
+        store.write([event(f"203.0.3.{i}", line_no=i + 1) for i in range(100)])
+        store.finalize()
+        substring = store.ip_summary_page(query="203.0.3.9")
+        assert substring.total == 11
+        exact = store.ip_summary_page(query="203.0.3.9", exact=True)
+        assert exact.total == 1
+        assert [row.client_ip for row in exact.rows] == ["203.0.3.9"]
+        assert store.ip_summary_page(query="203.0.3.200", exact=True).total == 0

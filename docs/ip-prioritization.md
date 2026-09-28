@@ -1,13 +1,21 @@
 # Where to start
 
 Opening a case starts a background scan of every IP in the selected time range.
-The **Where to start** tab offers three views:
+The **Where to start** tab offers two views:
 
 | View | What determines its order |
 | --- | --- |
 | Suspicious activity | Supporting requests weighted by bounded severity and supporting-request share; category breadth and hostile paths break score ties |
 | Unusual activity | Strongest upper-tail statistical deviations from comparable clients in this case |
-| All clients | Request count, including clients outside the original busiest-500 sidebar |
+
+Finding any one client, busy or quiet, is the client list's job. It shows the
+case 500 clients at a time by request count, busiest first, with **Previous**
+and **Next** when there is more than one page. Its filter narrows the page at
+once and, when the page is not the whole case, then searches every client in
+the case and shows up to 500 matches, paged the same way. A complete address
+matches only itself. The caption says which slice is on screen, when a page is
+sorted by something other than request count, and when the client being read is
+not among the rows shown.
 
 The queues order the entire eligible population before showing pages of 100.
 Address search covers that population. The queue and the details below it share
@@ -21,11 +29,10 @@ sample.
 
 The scan can be cancelled while ordinary reconstruction remains available.
 Suspicious findings shown during scanning are provisional and state how many
-IPs were examined. **All clients** searches the complete stored population while
-scanning, after cancellation or failure, and after completion. It uses paginated
-summary queries independent of detection, with 150 ms input debounce. A summary
-does not assert that there are no hostile detections: opening it performs ordinary
-reconstruction. Only unusualness comparisons need the completed scan.
+IPs were examined. The client list searches the complete stored population while
+scanning, after cancellation or failure, and after completion, because its
+searches are paged summary queries independent of detection, started 150 ms after
+typing stops. Only unusualness comparisons need the completed scan.
 A changed time range starts a corresponding scan;
 results from previous requests cannot replace the current queue.
 

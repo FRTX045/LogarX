@@ -130,13 +130,14 @@ def test_time_range_rebuilds_queue_and_discards_old_case_callbacks(qt_app, tmp_p
     window.close()
 
 
-def test_all_clients_search_and_reconstruction_survive_blocked_scan_and_cancellation(
+def test_the_client_list_finds_any_client_while_the_scan_is_blocked_and_after_cancelling(
     qt_app, tmp_path, monkeypatch
 ):
     import threading
     import time
 
     from logarc.gui import triage
+    from logarc.gui.panels import ClientTable
     from logarc.triage.scan import ScanCancelled
 
     started = threading.Event()
@@ -153,24 +154,31 @@ def test_all_clients_search_and_reconstruction_survive_blocked_scan_and_cancella
     while not started.is_set():
         assert time.monotonic() < deadline
         QTest.qWait(20)
-    panel = window._triage
-    assert panel.queues.currentIndex() == 0
-    panel.queues.setCurrentIndex(2)
-    panel.search.setText("192.0.2.604")
-    while panel.table.rowCount() != 1:
+    clients = window._clients
+    clients._filter.setText("192.0.2.604")
+    QTest.qWait(ClientTable.SEARCH_DELAY_MS + 50)
+    while clients._table.rowCount() != 1:
         assert time.monotonic() < deadline
         QTest.qWait(20)
-    assert "not yet analyzed" in panel.table.item(0, 2).text().lower()
-    assert panel._result is None
-    panel.cancel.click()
+    assert window._triage._result is None
+    window._triage.cancel.click()
     settled(qt_app)
-    assert panel.table.rowCount() == 1
-    panel.table.selectRow(0)
-    panel.open_client.click()
+    clients._table.selectRow(0)
     settled(qt_app)
     assert window._result.client_ip == "192.0.2.604"
     window.close()
     settled(qt_app)
+
+
+def test_where_to_start_offers_only_the_queues_that_analyse_clients(qt_app):
+    from logarc.gui.triage import TriagePanel
+
+    panel = TriagePanel()
+    assert [panel.queues.tabText(i) for i in range(panel.queues.count())] == [
+        "Suspicious activity",
+        "Unusual activity",
+    ]
+    panel.close()
 
 
 def test_fullscreen_menu_shows_reconstruction_from_priorities(qt_app):
@@ -295,69 +303,30 @@ def test_same_client_reason_requests_cannot_finish_out_of_order(qt_app, tmp_path
     window.close()
 
 
-def test_summary_responses_are_invalidated_before_debounce_and_on_range_or_case_change(
-    qt_app, tmp_path, monkeypatch
-):
-    from logarc.gui import triage
+def test_a_client_search_answer_for_a_previous_case_is_dropped(qt_app, tmp_path, monkeypatch):
+    import logarc.caseview
+    from logarc.gui import app
+    from logarc.gui.panels import ClientTable
 
-    root = make_case(tmp_path, 2)
-    other = make_case(tmp_path / "other", 1)
-    callbacks = []
-    monkeypatch.setattr(triage, "run_job", lambda work, **kw: callbacks.append((work, kw)))
-    panel = triage.TriagePanel()
-    panel.start(root)
-    panel.queues.setCurrentIndex(2)
-    old = callbacks[-1]
-    stale = old[0](lambda _: None)
-    panel.search.setText("192.0.2.1")
-    old[1]["on_done"](stale)
-    assert panel.table.rowCount() == 0
-    QTest.qWait(200)
-    latest = callbacks[-1]
-    latest[1]["on_done"](latest[0](lambda _: None))
-    assert panel.table.rowCount() == 1
-    assert panel.table.item(0, 1).text() == "192.0.2.1"
-    panel.start(root, TimeWindow(end=datetime(2026, 1, 1, tzinfo=UTC)))
-    latest[1]["on_done"](latest[0](lambda _: None))
-    assert panel.table.rowCount() == 0
-    current = callbacks[-1]
-    current[1]["on_done"](current[0](lambda _: None))
-    assert panel.table.rowCount() == 0
-    panel.start(other)
-    old[1]["on_done"](stale)
-    old[1]["on_error"]("stale failure", "")
-    assert panel.table.rowCount() == 0
-    assert "stale failure" not in panel.caption.text()
-    panel.shutdown()
-    panel.close()
-
-
-def test_all_clients_uses_summary_query_after_completion_and_scan_failure(
-    qt_app, tmp_path, monkeypatch
-):
-    from logarc.gui import triage
-
-    root = make_case(tmp_path, 2)
-    result = scan_case(root)
-    callbacks = []
-    monkeypatch.setattr(triage, "run_job", lambda work, **kw: callbacks.append((work, kw)))
-    panel = triage.TriagePanel()
-    panel.start(root)
-    scan = callbacks[-1]
-    panel.queues.setCurrentIndex(2)
-    summary = callbacks[-1]
-    summary[1]["on_done"](summary[0](lambda _: None))
-    assert panel.table.rowCount() == 2
-    scan[1]["on_error"]("scan failed", "detail")
-    assert panel.table.rowCount() == 2
-    panel.show_result(result)
-    summary = callbacks[-1]
-    page = summary[0](lambda _: None)
-    assert page.rows[0].position == 1
-    summary[1]["on_done"](page)
-    assert "Open reconstruction" in panel.table.item(0, 2).text()
-    panel.shutdown()
-    panel.close()
+    monkeypatch.setattr(ClientTable, "PAGE_SIZE", 1)
+    monkeypatch.setattr(logarc.caseview, "CLIENT_LIMIT", 1)
+    window = MainWindow()
+    window._load_case(make_case(tmp_path / "first", 3))
+    settled(qt_app)
+    jobs = []
+    monkeypatch.setattr(app, "run_job", lambda work, **kw: jobs.append((work, kw)))
+    window._clients._filter.setText("192.0.2.2")
+    QTest.qWait(ClientTable.SEARCH_DELAY_MS + 50)
+    work, callbacks = jobs[-1]
+    answer = work(lambda _: None)
+    window._load_case(make_case(tmp_path / "second", 3))
+    callbacks["on_done"](answer)
+    table = window._clients._table
+    assert "192.0.2.2" not in [table.item(row, 0).text() for row in range(table.rowCount())]
+    callbacks["on_error"]("stale failure", "")
+    assert "stale failure" not in window._clients._caption.text()
+    window.close()
+    settled(qt_app)
 
 
 def test_departing_case_clears_triage_before_new_load_finishes(qt_app, tmp_path, monkeypatch):
@@ -375,7 +344,6 @@ def test_departing_case_clears_triage_before_new_load_finishes(qt_app, tmp_path,
     panel = window._triage
     assert not panel.isEnabled()
     assert panel.table.rowCount() == 0
-    panel.queues.setCurrentIndex(2)
     panel.search.setText("old-client")
     QTest.qWait(200)
     panel._retry()
@@ -423,7 +391,7 @@ def test_prioritization_waits_until_the_crs_question_is_answered(qt_app, tmp_pat
     """Accepting CRS reloads the case and restarts the scan from nothing.
 
     So a scan begun while the offer is still on screen is work the reader will
-    never see. It waits for an answer, and the reader keeps All clients in the
+    never see. It waits for an answer, and the reader keeps the client list in the
     meantime.
     """
     from PyQt6.QtWidgets import QDialog
@@ -724,22 +692,4 @@ def test_a_failed_source_check_says_the_sources_were_not_checked(qt_app, tmp_pat
     panel.table.selectRow(0)
     checked(qt_app, panel)
     assert "Sources could not be checked" in panel.details.toPlainText()
-    panel.close()
-
-
-def test_a_summary_shown_after_a_link_click_is_not_drawn_as_a_link(qt_app, tmp_path):
-    """Clicking a link leaves the cursor in it, and plain text set afterwards took its format."""
-    panel = selected_panel(qt_app, make_case(tmp_path))
-    text = panel.details.toPlainText()
-    cursor = panel.details.textCursor()
-    cursor.setPosition(text.index("requests flagged") + 2)
-    panel.details.setTextCursor(cursor)
-    assert panel.details.currentCharFormat().isAnchor()
-    panel.queues.setCurrentIndex(2)
-    settled(qt_app)
-    panel.table.selectRow(0)
-    first = panel.details.document().firstBlock().begin().fragment().charFormat()
-    assert "does not assert that there are no hostile detections" in panel.details.toPlainText()
-    assert not first.isAnchor()
-    assert not first.fontUnderline()
     panel.close()
