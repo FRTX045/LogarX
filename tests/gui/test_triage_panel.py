@@ -493,8 +493,14 @@ def selected_panel(qt_app, root):
     panel._request = (root, TimeWindow())
     panel._display(read_page(scan_case(root).path, "suspicious").rows)
     panel.table.selectRow(0)
-    settled(qt_app)
+    checked(qt_app, panel)
     return panel
+
+
+def checked(qt_app, panel):
+    """Let the debounced source check start, then wait for it to report back."""
+    QTest.qWait(panel.SOURCE_CHECK_DELAY_MS + 50)
+    settled(qt_app)
 
 
 def first_example(row):
@@ -592,6 +598,7 @@ def test_a_late_source_check_for_another_row_is_ignored(qt_app, tmp_path, monkey
     panel._request = (root, TimeWindow())
     panel._display(rows)
     panel.table.selectRow(0)
+    QTest.qWait(panel.SOURCE_CHECK_DELAY_MS + 50)
     first = jobs[-1]
     panel.table.selectRow(1)
     # Named by a line the second row shows, so only the guard can keep it out.
@@ -615,9 +622,106 @@ def test_show_full_request_expands_only_that_example(qt_app, tmp_path):
     reasons[number] = replace(reasons[number], examples=(replace(example, path=long_path),))
     panel._display([replace(row, reasons=tuple(reasons))])
     panel.table.selectRow(0)
-    settled(qt_app)
+    checked(qt_app, panel)
     assert long_path not in panel.details.toPlainText()
     assert "Show full request" in panel.details.toPlainText()
     panel.details.anchorClicked.emit(QUrl(f"expand:{number}:0"))
     assert long_path in panel.details.toPlainText().replace("\n", "")
+    panel.close()
+
+
+def test_a_click_on_the_key_observation_reads_the_row_without_leaving(qt_app, tmp_path):
+    panel = selected_panel(qt_app, make_case(tmp_path))
+    opened = []
+    panel.investigate.connect(lambda ip, refs: opened.append((ip, refs)))
+    panel.table.cellClicked.emit(0, 2)
+    assert opened == []
+    panel.table.cellDoubleClicked.emit(0, 2)
+    assert [ip for ip, _ in opened] == [panel._rows[0].profile.client_ip]
+    panel.close()
+
+
+def test_moving_quickly_through_rows_checks_sources_once(qt_app, tmp_path, monkeypatch):
+    from logarc.gui import triage
+    from logarc.triage.scan import read_page
+
+    root = make_case(tmp_path, count=3)
+    rows = read_page(scan_case(root).path, "suspicious").rows
+    jobs = []
+    monkeypatch.setattr(triage, "run_job", lambda work, **kw: jobs.append(work))
+    panel = triage.TriagePanel()
+    panel._request = (root, TimeWindow())
+    panel._display(rows)
+    for index in (0, 1, 2, 1):
+        panel.table.selectRow(index)
+    assert jobs == []
+    QTest.qWait(panel.SOURCE_CHECK_DELAY_MS + 50)
+    assert len(jobs) == 1
+    panel.close()
+
+
+def test_a_stale_check_does_no_reading(qt_app, tmp_path, monkeypatch):
+    from logarc.case import Case as RealCase
+    from logarc.gui import triage
+    from logarc.triage.scan import read_page
+
+    root = make_case(tmp_path, count=2)
+    rows = read_page(scan_case(root).path, "suspicious").rows
+    works = []
+    monkeypatch.setattr(triage, "run_job", lambda work, **kw: works.append(work))
+    panel = triage.TriagePanel()
+    panel._request = (root, TimeWindow())
+    panel._display(rows)
+    panel.table.selectRow(0)
+    QTest.qWait(panel.SOURCE_CHECK_DELAY_MS + 50)
+    panel.table.selectRow(1)
+    opened = []
+    monkeypatch.setattr(
+        triage.Case, "open", lambda path: opened.append(path) or RealCase.open(path)
+    )
+    assert works[0](lambda value: None) == {}
+    assert opened == []
+    panel.close()
+
+
+def test_rewriting_the_details_keeps_the_readers_place(qt_app, tmp_path):
+    from dataclasses import replace
+
+    from PyQt6.QtCore import QUrl
+
+    root, _ = ingested_case(tmp_path)
+    panel = selected_panel(qt_app, root)
+    row = panel._rows[0]
+    number, example = first_example(row)
+    reasons = list(row.reasons)
+    reasons[number] = replace(
+        reasons[number], examples=(replace(example, path="/catalog/" + "x" * 400),) * 5
+    )
+    panel.resize(500, 500)
+    panel.show()
+    panel._display([replace(row, reasons=tuple(reasons))])
+    panel.table.selectRow(0)
+    checked(qt_app, panel)
+    bar = panel.details.verticalScrollBar()
+    assert bar.maximum() > 0
+    bar.setValue(bar.maximum() // 2)
+    kept = bar.value()
+    panel.details.anchorClicked.emit(QUrl(f"expand:{number}:0"))
+    assert bar.value() == kept
+    panel.close()
+
+
+def test_a_failed_source_check_says_the_sources_were_not_checked(qt_app, tmp_path, monkeypatch):
+    from logarc.gui import triage
+
+    root = make_case(tmp_path)
+    panel = selected_panel(qt_app, root)
+    monkeypatch.setattr(
+        triage.Case, "open", lambda path: (_ for _ in ()).throw(OSError("disk gone"))
+    )
+    panel.table.clearSelection()
+    panel._shown = None
+    panel.table.selectRow(0)
+    checked(qt_app, panel)
+    assert "Sources could not be checked" in panel.details.toPlainText()
     panel.close()

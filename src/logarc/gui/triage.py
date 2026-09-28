@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from html import escape
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -53,6 +54,10 @@ class TriagePanel(QWidget):
 
     investigate = pyqtSignal(str, object)
 
+    #: How long a selection must stay put before its sources are read. Moving through
+    #: the queue with the arrow keys would otherwise start a scan of the logs per row.
+    SOURCE_CHECK_DELAY_MS = 250
+
     def __init__(self) -> None:
         super().__init__()
         self._generation = 0
@@ -67,6 +72,11 @@ class TriagePanel(QWidget):
         self._expanded: frozenset[tuple[int, int]] = frozenset()
         self._sources: dict[EvidenceRef, SourceStatus] = {}
         self._source_generation = 0
+        self._source_error = ""
+        self._source_timer = QTimer(self)
+        self._source_timer.setSingleShot(True)
+        self._source_timer.setInterval(self.SOURCE_CHECK_DELAY_MS)
+        self._source_timer.timeout.connect(self._check_sources)
         self.queues = QTabBar()
         for name in ("Suspicious activity", "Unusual activity", "All clients"):
             self.queues.addTab(name)
@@ -97,7 +107,9 @@ class TriagePanel(QWidget):
             header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.table.itemSelectionChanged.connect(self._show_details)
-        self.table.cellClicked.connect(self._reason_clicked)
+        # A single click selects a row so its reasons can be read; opening the client
+        # is a deliberate act: double-click, or Inspect supporting requests.
+        self.table.cellDoubleClicked.connect(lambda row, column: self._investigate())
         self.details = QTextBrowser()
         self.details.setOpenLinks(False)
         self.details.anchorClicked.connect(self._anchor)
@@ -398,7 +410,9 @@ class TriagePanel(QWidget):
             return
         if row is not self._shown:
             self._shown, self._expanded, self._sources = row, frozenset(), {}
-            self._check_sources(row)
+            self._source_error = ""
+            self._source_generation += 1
+            self._source_timer.start()
         self._render()
         self.open_client.setEnabled(True)
 
@@ -409,18 +423,28 @@ class TriagePanel(QWidget):
         metrics = QFontMetrics(self.details.font())
         width = (self.details.viewport() or self.details).width()
         path_chars = max(20, 2 * max(width - 24, 0) // max(metrics.averageCharWidth(), 1))
-        self.details.setHtml(
-            render_recommendation(
-                self._shown, self._sources, path_chars=path_chars, expanded=self._expanded
-            )
+        html = render_recommendation(
+            self._shown, self._sources, path_chars=path_chars, expanded=self._expanded
         )
+        if self._source_error:
+            html = (
+                f"<p>Sources could not be checked: {escape(self._source_error)}. Examples "
+                "still open; reconstruction reports any line it cannot read.</p>" + html
+            )
+        # Redrawing replaces the document, which would otherwise return the reader
+        # to the top whenever a source check lands or a path is expanded.
+        bar = self.details.verticalScrollBar()
+        place = bar.value() if bar is not None else 0
+        self.details.setHtml(html)
+        if bar is not None:
+            bar.setValue(place)
 
-    def _check_sources(self, row: RankedClient) -> None:
-        """Read the lines behind a recommendation off the interface thread, to say which
-        cannot be opened and which come from a source changed since ingest."""
-        self._source_generation += 1
+    def _check_sources(self) -> None:
+        """Read the lines behind the shown recommendation off the interface thread, to say
+        which cannot be opened and which come from a source changed since ingest."""
+        row = self._shown
         generation = self._source_generation
-        if self._request is None:
+        if row is None or self._request is None:
             return
         path = self._request[0]
         refs = tuple(
@@ -431,6 +455,8 @@ class TriagePanel(QWidget):
         )
 
         def work(_: Callable[[object], None]) -> dict[EvidenceRef, SourceStatus]:
+            if generation != self._source_generation:
+                return {}
             with Case.open(path) as case:
                 lines = case.read_evidence(refs)
             return {
@@ -444,11 +470,12 @@ class TriagePanel(QWidget):
                 self._sources = sources
                 self._render()
 
-        run_job(work, on_done=done, on_error=lambda message, detail: None)
+        def failed(message: str, detail: str) -> None:
+            if generation == self._source_generation and row is self._shown:
+                self._source_error = message
+                self._render()
 
-    def _reason_clicked(self, row: int, column: int) -> None:
-        if column == 2:
-            self._investigate()
+        run_job(work, on_done=done, on_error=failed)
 
     def _anchor(self, url: QUrl) -> None:
         """Open a reason's evidence or one example request, or show an example's full path."""
