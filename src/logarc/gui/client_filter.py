@@ -55,33 +55,77 @@ def matches(client_ip: str, query: str) -> bool:
     return wanted in client_ip
 
 
-def caption(*, shown: int, total: int, query: str) -> str:
+def caption(
+    *,
+    shown: int,
+    total: int,
+    query: str,
+    first: int = 1,
+    matching: int | None = None,
+    searching: bool = False,
+    reordered: bool = False,
+    missing_open: str | None = None,
+) -> str:
     """What to write above the table for this result.
 
     Every filtered form names the total as well as the count shown. The panel is
     the only place a reader learns how large the case is, and a filter that
     silently rewrites that number would make a case of fifty thousand clients
     look like a case of nine.
+
+    The list is one page of the case, or of the matches for `query`, starting at
+    position `first` by request count. `matching` is how many clients in the
+    whole case match `query`, when a search has answered; `searching` is the
+    moment before it has. `reordered` says the page is sorted by something other
+    than request count, so the order holds only within it. `missing_open` names
+    the client being read when it is not among the rows shown.
     """
-    if not query.strip():
+    text = _counts(
+        shown=shown,
+        total=total,
+        query=query,
+        first=first,
+        matching=matching,
+        searching=searching,
+        reordered=reordered,
+    )
+    if missing_open:
+        text += f" {missing_open}, open now, is not in this list; filter by its address to show it."
+    return text
+
+
+def _counts(
+    *,
+    shown: int,
+    total: int,
+    query: str,
+    first: int,
+    matching: int | None,
+    searching: bool,
+    reordered: bool,
+) -> str:
+    opening = "Select one to reconstruct what it did."
+    wanted = query.strip()
+    last = first + shown - 1
+    if not wanted:
         if not total:
             return "No clients."
-        # The unfiltered wording is unchanged: this is the sentence the panel
-        # has always opened with, and it tells a new reader what to do next.
-        opening = "Select one to reconstruct what it did."
         if shown >= total:
             return f"{plural(total, 'client')}. {opening}"
-        # Capped. The table holds the busiest few hundred so a case of a
-        # hundred thousand clients is not a hundred thousand rows — and named
-        # by the case's total alone, the caption invites the reader to select
-        # any of them when almost none are there to select.
-        return f"Busiest {shown:,} of {total:,} clients. {opening}"
-
-    wanted = query.strip()
-    if shown == 0:
+        # Paged. Named by the case's total alone, the caption would invite the
+        # reader to select any client when only this page is there to select.
+        order = " by request count, sorted within this page" if reordered else ", busiest first"
+        return f"Clients {first:,}\u2013{last:,} of {total:,}{order}. {opening}"
+    if searching:
+        return f"Searching the whole case for {wanted}\u2026"
+    found = shown if matching is None else matching
+    if found == 0:
         # Named as a filter result, not as an absence. An empty table with no
         # explanation reads as a broken tool or an empty case, and it is
         # neither.
         return f"No client matches {wanted}. {total:,} in the case."
-    verb = "matches" if shown == 1 else "match"
-    return f"{shown:,} of {total:,} clients {verb} {wanted}"
+    if shown < found:
+        order = ", sorted within this page" if reordered else ""
+        return f"Matches {first:,}\u2013{last:,} of {found:,} for {wanted}{order}"
+    verb = "matches" if found == 1 else "match"
+    return f"{found:,} of {total:,} clients {verb} {wanted}"
