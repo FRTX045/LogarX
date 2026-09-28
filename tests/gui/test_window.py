@@ -24,6 +24,7 @@ from dragging import drag
 from on_canvas import node_item, node_items
 from PyQt6.QtCore import QPoint
 from PyQt6.QtGui import QFontMetrics, QPalette
+from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QSplitter, QStyle
 from tables import cell, column_of
 
@@ -3275,3 +3276,99 @@ def test_a_settings_value_nobody_can_read_still_opens_the_case(
 
     assert window._canvas.positions, "the graph is on the canvas"
     window.close()
+
+
+def _ranked_case(root: Path, count: int = 6) -> Path:
+    """`10.0.0.0` is the busiest, `10.0.0.{count - 1}` the quietest, one request apart."""
+    from logarc.core.event import NormalizedEvent
+
+    events = [
+        NormalizedEvent(
+            START + timedelta(seconds=client * 100 + request),
+            f"10.0.0.{client}",
+            EvidenceRef("source", client * 100 + request + 1),
+            path="/",
+            method="GET",
+            status=200,
+            user_agent="Mozilla/5.0",
+        )
+        for client in range(count)
+        for request in range(count - client)
+    ]
+    with Case.create(root) as case:
+        case.store.write(events)
+        case.store.finalize()
+    return root
+
+
+@pytest.fixture
+def three_per_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    import logarc.caseview
+
+    monkeypatch.setattr(logarc.caseview, "CLIENT_LIMIT", 3)
+    monkeypatch.setattr(ClientTable, "PAGE_SIZE", 3)
+
+
+def test_the_client_filter_finds_a_client_beyond_the_listed_page(
+    qt_app: QApplication, tmp_path: Path, three_per_page: None
+) -> None:
+    window = MainWindow()
+    window._load_case(_ranked_case(tmp_path / "case"))
+    settled(qt_app)
+    assert _on_screen(window._clients) == ["10.0.0.0", "10.0.0.1", "10.0.0.2"]
+
+    window._clients._filter.setText("10.0.0.5")
+    QTest.qWait(ClientTable.SEARCH_DELAY_MS + 50)
+    settled(qt_app)
+
+    assert _on_screen(window._clients) == ["10.0.0.5"]
+    assert window._clients._caption.text() == "1 of 6 clients matches 10.0.0.5"
+    window.close()
+    settled(qt_app)
+
+
+def test_the_next_page_of_the_case_comes_from_the_window(
+    qt_app: QApplication, tmp_path: Path, three_per_page: None
+) -> None:
+    window = MainWindow()
+    window._load_case(_ranked_case(tmp_path / "case"))
+    settled(qt_app)
+    window._clients._next.click()
+    settled(qt_app)
+    assert _on_screen(window._clients) == ["10.0.0.3", "10.0.0.4", "10.0.0.5"]
+    window.close()
+    settled(qt_app)
+
+
+def test_a_search_answer_for_an_earlier_range_is_dropped(
+    qt_app: QApplication, tmp_path: Path, three_per_page: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    window = MainWindow()
+    window._load_case(_ranked_case(tmp_path / "case"))
+    settled(qt_app)
+    jobs: list[dict[str, object]] = []
+    monkeypatch.setattr(app, "run_job", lambda work, **kw: jobs.append({"work": work, **kw}))
+    window._clients._filter.setText("10.0.0.5")
+    QTest.qWait(ClientTable.SEARCH_DELAY_MS + 50)
+    search = jobs[-1]
+    window._apply_window(TimeWindow(start=START + timedelta(seconds=250)))
+    answer = search["work"](lambda value: None)
+    search["on_done"](answer)
+    assert "10.0.0.5" not in _on_screen(window._clients)
+    window.close()
+    settled(qt_app)
+
+
+def test_a_client_opened_from_elsewhere_is_named_when_it_is_not_listed(
+    qt_app: QApplication, tmp_path: Path, three_per_page: None
+) -> None:
+    window = MainWindow()
+    window._load_case(_ranked_case(tmp_path / "case"))
+    settled(qt_app)
+    window._reconstruct("10.0.0.5")
+    settled(qt_app)
+    assert window._clients._caption.text().endswith(
+        "10.0.0.5, open now, is not in this list; filter by its address to show it."
+    )
+    window.close()
+    settled(qt_app)

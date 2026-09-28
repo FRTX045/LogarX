@@ -159,7 +159,7 @@ def test_the_caption_names_the_case_rather_than_the_table(qt_app: QApplication, 
     own wording already says so — and it was being handed the row count."""
     window = _opened(qt_app, case)
 
-    assert "5 clients" in window._clients._caption.text()
+    assert "of 5, busiest first" in window._clients._caption.text()
     window.close()
 
 

@@ -17,10 +17,10 @@ from __future__ import annotations
 
 from logarc.style import plural
 
-__all__ = ["caption", "matches"]
+__all__ = ["caption", "is_whole_address", "matches"]
 
 
-def _is_whole_address(text: str) -> bool:
+def is_whole_address(text: str) -> bool:
     """Whether `text` is a complete IPv4 address rather than part of one."""
     parts = text.split(".")
     return len(parts) == 4 and all(
@@ -50,7 +50,7 @@ def matches(client_ip: str, query: str) -> bool:
     wanted = query.strip()
     if not wanted:
         return True
-    if _is_whole_address(wanted):
+    if is_whole_address(wanted):
         return client_ip == wanted
     return wanted in client_ip
 

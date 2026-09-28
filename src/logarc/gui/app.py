@@ -52,6 +52,7 @@ from logarc.gui.arrangement_bar import ArrangementBar
 from logarc.gui.arrangement_keeper import ArrangementKeeper, Showing
 from logarc.gui.canvas import ActivityCanvas
 from logarc.gui.case_chooser import CaseChooser
+from logarc.gui.client_filter import is_whole_address
 from logarc.gui.crs import CrsCard, CrsOffer, CrsUnavailable
 from logarc.gui.density import Density, buckets_for
 from logarc.gui.evidence_panel import EvidencePanel
@@ -85,7 +86,7 @@ if TYPE_CHECKING:
     from logarc.analysis import AnalysisResult
     from logarc.core.evidence import EvidenceRef
     from logarc.core.graph import GraphNode
-    from logarc.storage.base import TimeSlot
+    from logarc.storage.base import IpSummaryPage, TimeSlot
 
 __all__ = ["MainWindow", "main"]
 
@@ -205,6 +206,11 @@ class MainWindow(QMainWindow):
         self._evidence = EvidencePanel()
         self._clients.client_chosen.connect(self._reconstruct)
         self._clients.client_released.connect(self._release_requested)
+        # Counts client-list searches, so an answer for an earlier text, case or
+        # range is recognised as stale when it lands.
+        self._client_search = 0
+        self._clients.filter_edited.connect(self._forget_client_search)
+        self._clients.page_requested.connect(self._search_clients)
         self._canvas.node_selected.connect(self._show_evidence)
 
         self._build_layout()
@@ -924,6 +930,7 @@ class MainWindow(QMainWindow):
             self._show_recent()
 
     def _load_case(self, path: Path, *, hold_scan: bool = False) -> None:
+        self._forget_client_search()
         self._load_generation += 1
         generation = self._load_generation
         self._scan_held = hold_scan
@@ -1005,6 +1012,7 @@ class MainWindow(QMainWindow):
             self._heading.setText("")
             self._tabs.setVisible(False)
             self._clients.show_clients(summaries, total=view.whole.clients)
+            self._clients.set_open_client(None)
             self._workspace.setCurrentIndex(0)
             if not self._scan_held:
                 self._triage.start(path)
@@ -1044,6 +1052,7 @@ class MainWindow(QMainWindow):
         """
         if self._case_path is None or window == self._window:
             return
+        self._forget_client_search()
         self._load_generation += 1
         generation = self._load_generation
         self._evidence_request = object()
@@ -1183,6 +1192,7 @@ class MainWindow(QMainWindow):
         so they say it once here rather than agreeing with each other by hand.
         """
         self._result = None
+        self._clients.set_open_client(None)
         # Nobody is wanted, so nothing may arrive. Without this the answer to a
         # question asked a moment ago comes back and puts the client, the band
         # and the heading straight back on screen — the gesture appearing to do
@@ -1200,6 +1210,43 @@ class MainWindow(QMainWindow):
         # thing on screen claiming one is open, and it names one that is not.
         self._idle(plural(self._listed, "client"))
 
+    def _forget_client_search(self) -> None:
+        """Make any client-list search still running answer to nobody."""
+        self._client_search += 1
+
+    def _search_clients(self, query: str, offset: int) -> None:
+        """Answer the client list's request for one page of the case or of a search.
+
+        Over the range in force, so a page or a search describes the same clients
+        the unfiltered list does. A complete address is looked up exactly.
+        """
+        if self._case_path is None:
+            return
+        self._client_search += 1
+        generation = self._client_search
+        path, window = self._case_path, self._window
+        narrowed = window is not None and not window.is_open
+
+        def work(_: Callable[[str], None]) -> IpSummaryPage:
+            with Case.open(path) as case:
+                return case.store.ip_summary_page(
+                    query=query,
+                    offset=offset,
+                    limit=ClientTable.PAGE_SIZE,
+                    window=window if narrowed else None,
+                    exact=is_whole_address(query),
+                )
+
+        def done(page: IpSummaryPage) -> None:
+            if generation == self._client_search:
+                self._clients.show_page(page, query)
+
+        def failed(message: str, detail: str) -> None:
+            if generation == self._client_search:
+                self._clients.show_failure(query, message)
+
+        run_job(work, on_done=done, on_error=failed)
+
     # -- reconstruction ----------------------------------------------------
 
     def _reconstruct(self, client_ip: str, *, evidence: tuple[EvidenceRef, ...] = ()) -> None:
@@ -1216,6 +1263,7 @@ class MainWindow(QMainWindow):
             if self._result is not None:
                 self._clients.select_quietly(self._result.client_ip)
             return
+        self._clients.set_open_client(client_ip)
         path = self._case_path
         # Read once here, on the interface thread, rather than from inside the
         # worker: the job must not reach back into window state while the window
