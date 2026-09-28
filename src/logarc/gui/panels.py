@@ -174,7 +174,9 @@ class ClientTable(QWidget):
         self._matching: int | None = None
         self._page_total = 0
         self._searching = False
-        self._home: tuple[list[IpSummary], int] = ([], 0)
+        # The busiest page, as the case or range opened with it: where a cleared
+        # search goes back to, whichever page was on screen before it.
+        self._busiest: list[IpSummary] = []
         self._open: str | None = None
         self._table = _Rows(0, len(_COLUMNS))
         self._table.setHorizontalHeaderLabels(_COLUMNS)
@@ -269,7 +271,7 @@ class ClientTable(QWidget):
         self._filter.clear()
         self._filter.blockSignals(was)
         self._total = len(summaries) if total is None else total
-        self._home = (list(summaries), 0)
+        self._busiest = list(summaries)
         self._searching = False
         self._show_rows(summaries, first=1, query="", matching=None, page_total=self._total)
 
@@ -326,8 +328,6 @@ class ClientTable(QWidget):
             return False
         self._search_timer.stop()
         self._searching = False
-        if not wanted:
-            self._home = (list(page.rows), page.offset)
         self._show_rows(
             page.rows,
             first=page.offset + 1,
@@ -407,19 +407,22 @@ class ClientTable(QWidget):
         wanted = self._filter.text().strip()
         if not wanted:
             self._searching = False
-            rows, offset = self._home
-            if self._query or self._first != offset + 1:
+            if self._query or self._first != 1:
                 self._show_rows(
-                    rows, first=offset + 1, query="", matching=None, page_total=self._total
+                    self._busiest, first=1, query="", matching=None, page_total=self._total
                 )
             else:
                 self._hide_unmatched()
                 self._refresh_caption()
             return
         self._hide_unmatched()
-        complete = self._home[1] == 0 and len(self._home[0]) >= self._total
+        complete = len(self._busiest) >= self._total
         self._searching = not complete
         if not complete:
+            # The page on screen belongs to the previous text, so stepping from it
+            # would skip the new search's own first page.
+            self._previous.setEnabled(False)
+            self._next.setEnabled(False)
             self._search_timer.start()
         self._refresh_caption()
 
@@ -430,8 +433,11 @@ class ClientTable(QWidget):
             self._table.setRowHidden(row, not (cell is not None and matches(cell.text(), query)))
 
     def _step(self, direction: int) -> None:
+        """Ask for the page before or after this one, of what this page was asked for."""
+        if self._filter.text().strip() != self._query:
+            return
         offset = max(0, self._first - 1 + direction * self.PAGE_SIZE)
-        self.page_requested.emit(self._filter.text().strip(), offset)
+        self.page_requested.emit(self._query, offset)
 
     def _update_paging(self) -> None:
         shown = self._table.rowCount()

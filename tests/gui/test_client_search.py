@@ -171,3 +171,38 @@ def test_a_failed_search_says_so(partial: ClientTable) -> None:
     assert partial._caption.text() == (
         "Could not search the whole case for 10.0.9: the case could not be read"
     )
+
+
+def page_two(table: ClientTable) -> None:
+    """Step the unfiltered list on to its second page."""
+    table.show_page(
+        IpSummaryPage(
+            (summary("192.0.2.4", 3, position=ClientTable.PAGE_SIZE + 1),),
+            900,
+            ClientTable.PAGE_SIZE,
+        ),
+        "",
+    )
+
+
+def test_paging_is_off_until_a_new_searchs_first_page_arrives(partial: ClientTable) -> None:
+    page_two(partial)
+    assert partial._next.isEnabled() or partial._previous.isEnabled()
+    asked = []
+    partial.page_requested.connect(lambda query, offset: asked.append((query, offset)))
+    partial._filter.setText("10.0.9.9")
+    assert not partial._next.isEnabled()
+    assert not partial._previous.isEnabled()
+    partial._step(1)
+    assert asked == [], "a step taken before the search answers used the old page's offset"
+    partial.show_page(IpSummaryPage((summary("10.0.9.9", 2, position=701),), 1, 0), "10.0.9.9")
+    assert partial._caption.text() == "1 of 900 clients matches 10.0.9.9"
+
+
+def test_clearing_a_search_returns_to_the_busiest_page(partial: ClientTable) -> None:
+    page_two(partial)
+    partial._filter.setText("10.0.9.9")
+    partial.show_page(IpSummaryPage((summary("10.0.9.9", 2, position=701),), 1, 0), "10.0.9.9")
+    partial._filter.clear()
+    assert on_screen(partial) == ["10.0.0.1", "10.0.0.2", "172.16.0.9"]
+    assert partial._caption.text().startswith(f"Clients 1{DASH}3 of 900, busiest first")
