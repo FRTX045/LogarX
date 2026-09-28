@@ -10,7 +10,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import QPoint, QRect, QRectF, QSize, Qt, pyqtSignal
+from PyQt6.QtCore import QPoint, QRect, QRectF, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -20,11 +20,13 @@ from PyQt6.QtWidgets import (
     QLayout,
     QLayoutItem,
     QLineEdit,
+    QPushButton,
     QTableWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from logarc.caseview import CLIENT_LIMIT
 from logarc.gui._qt import SORT_KEY, SortableItem, required
 from logarc.gui.client_filter import caption as filter_caption
 from logarc.gui.client_filter import matches
@@ -42,7 +44,7 @@ if TYPE_CHECKING:
 
     from PyQt6.QtGui import QMouseEvent
 
-    from logarc.storage.base import IpSummary
+    from logarc.storage.base import IpSummary, IpSummaryPage
 
 __all__ = ["ClientTable", "LegendBar"]
 
@@ -127,9 +129,29 @@ class _Rows(QTableWidget):
 
 
 class ClientTable(QWidget):
-    """Every client in the case, sortable, one click to reconstruct."""
+    """Every client in the case, a page at a time, sortable, one click to reconstruct.
+
+    The list holds one page of the case by request count. Filtering narrows that
+    page at once; when the page is not the whole case, the table then asks, through
+    `page_requested`, for the matching clients from all of it, and whoever answers
+    hands the page back to `show_page`.
+    """
+
+    #: Rows per page, the same cap the window reads the busiest clients with.
+    PAGE_SIZE = CLIENT_LIMIT
+
+    #: How long the filter must rest before the whole case is searched.
+    SEARCH_DELAY_MS = 150
 
     client_chosen = pyqtSignal(str)
+
+    filter_edited = pyqtSignal()
+    """The filter text changed. Any search answer on its way is now stale, and the
+    answerer should drop it: sent before the pause, not after it."""
+
+    page_requested = pyqtSignal(str, int)
+    """A page is wanted: the filter text (empty for the whole case) and its offset
+    by request count. Answer with `show_page` or `show_failure`."""
 
     client_released = pyqtSignal()
     """The reader pressed the row they were already on.
@@ -145,6 +167,15 @@ class ClientTable(QWidget):
         # it. Zero until a case is opened, which is what the caption already
         # words as "No clients."
         self._total = 0
+        # The page on screen: where it starts, what it was asked for, and, for a
+        # search, how many clients in the whole case match.
+        self._first = 1
+        self._query = ""
+        self._matching: int | None = None
+        self._page_total = 0
+        self._searching = False
+        self._home: tuple[list[IpSummary], int] = ([], 0)
+        self._open: str | None = None
         self._table = _Rows(0, len(_COLUMNS))
         self._table.setHorizontalHeaderLabels(_COLUMNS)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -179,6 +210,7 @@ class ClientTable(QWidget):
         # in half — leaving the one thing this header says beyond its six words,
         # which column the table is ordered by, half drawn.
         header.setMinimumHeight(header.fontMetrics().height() + 14)
+        header.sortIndicatorChanged.connect(lambda *_: self._refresh_caption())
         self._table.itemSelectionChanged.connect(self._emit_choice)
 
         self._filter = QLineEdit()
@@ -189,7 +221,17 @@ class ClientTable(QWidget):
         # what it is being compared against.
         self._filter.setFont(mono_font(self._filter.font().pointSizeF()))
         self._filter.setAccessibleName("Filter clients by address")
-        self._filter.textChanged.connect(self._apply_filter)
+        self._filter.textChanged.connect(self._filter_changed)
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(self.SEARCH_DELAY_MS)
+        self._search_timer.timeout.connect(
+            lambda: self.page_requested.emit(self._filter.text().strip(), 0)
+        )
+        self._previous = QPushButton("Previous")
+        self._next = QPushButton("Next")
+        self._previous.clicked.connect(lambda: self._step(-1))
+        self._next.clicked.connect(lambda: self._step(1))
 
         self._caption = QLabel("No case open.")
         self._caption.setFont(caption_font(self._caption.font()))
@@ -203,6 +245,11 @@ class ClientTable(QWidget):
         layout.addWidget(self._filter)
         layout.addWidget(self._caption)
         layout.addWidget(self._table)
+        paging = QHBoxLayout()
+        paging.addWidget(self._previous)
+        paging.addWidget(self._next)
+        layout.addLayout(paging)
+        self._update_paging()
 
     def show_clients(self, summaries: Sequence[IpSummary], *, total: int | None = None) -> None:
         """Draw these rows, and say how large the case they came from is.
@@ -217,8 +264,27 @@ class ClientTable(QWidget):
         # reader has no reason to suspect a box they filled in for something
         # else — the table would simply look like a case with almost nothing in
         # it. Cleared here rather than carried across.
+        self._search_timer.stop()
+        was = self._filter.blockSignals(True)
         self._filter.clear()
+        self._filter.blockSignals(was)
+        self._total = len(summaries) if total is None else total
+        self._home = (list(summaries), 0)
+        self._searching = False
+        self._show_rows(summaries, first=1, query="", matching=None, page_total=self._total)
 
+    def _show_rows(
+        self,
+        summaries: Sequence[IpSummary],
+        *,
+        first: int,
+        query: str,
+        matching: int | None,
+        page_total: int,
+    ) -> None:
+        """Replace the rows with one page, busiest first, and describe it."""
+        self._first, self._query, self._matching = first, query, matching
+        self._page_total = page_total
         # Silent for the whole rebuild. A refill is the window replacing its own
         # furniture, not the reader choosing or dropping anything — and left to
         # speak it does both, one of them wrongly: shrinking the list moves the
@@ -238,11 +304,52 @@ class ClientTable(QWidget):
                 self._set(row, 4, format_seen(summary.first_seen))
                 self._set(row, 5, format_seen(summary.last_seen))
         self._table.setSortingEnabled(True)
+        # Busiest first, the order pages are cut in, so a later page visibly
+        # continues the one before it.
+        self._table.sortItems(_COLUMNS.index("Reqs"), Qt.SortOrder.DescendingOrder)
         for row in range(self._table.rowCount()):
             self._table.setRowHidden(row, False)
+        self._mark_open()
         self._table.blockSignals(blocked)
-        self._total = len(summaries) if total is None else total
-        self._write_caption(shown=len(summaries))
+        self._hide_unmatched()
+        self._update_paging()
+        self._refresh_caption()
+
+    def show_page(self, page: IpSummaryPage, query: str) -> bool:
+        """Show a page a search or a page request returned; False if it is stale.
+
+        Stale means the filter no longer says `query`. The window drops answers
+        for an earlier case or range itself; this catches the ones for earlier text.
+        """
+        wanted = query.strip()
+        if wanted != self._filter.text().strip():
+            return False
+        self._search_timer.stop()
+        self._searching = False
+        if not wanted:
+            self._home = (list(page.rows), page.offset)
+        self._show_rows(
+            page.rows,
+            first=page.offset + 1,
+            query=wanted,
+            matching=page.total if wanted else None,
+            page_total=page.total,
+        )
+        return True
+
+    def show_failure(self, query: str, message: str) -> None:
+        """Say that a search could not be answered, if it is still the one on screen."""
+        wanted = query.strip()
+        if wanted != self._filter.text().strip():
+            return
+        self._searching = False
+        self._caption.setText(f"Could not search the whole case for {wanted}: {message}")
+
+    def set_open_client(self, client_ip: str | None) -> None:
+        """Say which client is being read, so the list can mark it or say it is absent."""
+        self._open = client_ip
+        self._mark_open()
+        self._refresh_caption()
 
     @contextmanager
     def _sized_once(self) -> Iterator[None]:
@@ -287,35 +394,80 @@ class ClientTable(QWidget):
                 return True
         return False
 
-    def _apply_filter(self) -> None:
-        """Hide the rows that do not match what has been typed.
+    def _filter_changed(self) -> None:
+        """Narrow the page at once, then search the whole case if the page is not all of it.
 
-        Hiding rows deliberately leaves the selection where it is, even when
-        the selected client is the one hidden. Filtering is a change to what is
-        listed, not to what is being read: the canvas goes on showing the
-        reconstruction the investigator opened, and clearing the box brings its
-        row back still selected.
-
-        That holds without help here — measured rather than assumed. Qt neither
-        moves the selection off a hidden row nor emits `itemSelectionChanged`
-        for one, so the guards first written around this loop (blocking the
-        table's signals, restoring the selected row afterwards) were defending
-        against nothing and were removed. `test_filtering_does_not_reconstruct_a
-        _different_client` still holds the property, because it is Qt's promise
-        and not ours.
+        Hiding rows deliberately leaves the selection where it is, even when the
+        selected client is the one hidden. Filtering is a change to what is listed,
+        not to what is being read, and Qt neither moves the selection off a hidden
+        row nor emits `itemSelectionChanged` for one.
         """
+        self.filter_edited.emit()
+        self._search_timer.stop()
+        wanted = self._filter.text().strip()
+        if not wanted:
+            self._searching = False
+            rows, offset = self._home
+            if self._query or self._first != offset + 1:
+                self._show_rows(
+                    rows, first=offset + 1, query="", matching=None, page_total=self._total
+                )
+            else:
+                self._hide_unmatched()
+                self._refresh_caption()
+            return
+        self._hide_unmatched()
+        complete = self._home[1] == 0 and len(self._home[0]) >= self._total
+        self._searching = not complete
+        if not complete:
+            self._search_timer.start()
+        self._refresh_caption()
+
+    def _hide_unmatched(self) -> None:
         query = self._filter.text()
-        shown = 0
         for row in range(self._table.rowCount()):
             cell = self._table.item(row, _ADDRESS)
-            keep = cell is not None and matches(cell.text(), query)
-            self._table.setRowHidden(row, not keep)
-            shown += keep
-        self._write_caption(shown=shown)
+            self._table.setRowHidden(row, not (cell is not None and matches(cell.text(), query)))
 
-    def _write_caption(self, *, shown: int) -> None:
+    def _step(self, direction: int) -> None:
+        offset = max(0, self._first - 1 + direction * self.PAGE_SIZE)
+        self.page_requested.emit(self._filter.text().strip(), offset)
+
+    def _update_paging(self) -> None:
+        shown = self._table.rowCount()
+        more = self._first - 1 + shown < self._page_total
+        self._previous.setEnabled(self._first > 1)
+        self._next.setEnabled(more)
+        paged = self._first > 1 or more
+        self._previous.setVisible(paged)
+        self._next.setVisible(paged)
+
+    def _mark_open(self) -> bool:
+        """Select the open client's row, quietly, if it is listed; whether it is."""
+        return self._open is None or self.select_quietly(self._open)
+
+    def _refresh_caption(self) -> None:
+        shown = sum(not self._table.isRowHidden(row) for row in range(self._table.rowCount()))
+        header = required(self._table.horizontalHeader(), "column header")
+        reordered = (
+            header.sortIndicatorSection() != _COLUMNS.index("Reqs")
+            or header.sortIndicatorOrder() != Qt.SortOrder.DescendingOrder
+        )
+        listed = self._open is None or any(
+            (cell := self._table.item(row, _ADDRESS)) is not None and cell.text() == self._open
+            for row in range(self._table.rowCount())
+        )
         self._caption.setText(
-            filter_caption(shown=shown, total=self._total, query=self._filter.text())
+            filter_caption(
+                shown=shown,
+                total=self._total,
+                query=self._filter.text(),
+                first=self._first,
+                matching=self._matching if self._query else None,
+                searching=self._searching,
+                reordered=reordered,
+                missing_open=None if listed else self._open,
+            )
         )
 
     def _set(self, row: int, column: int, text: str, *, sort_key: float | None = None) -> None:

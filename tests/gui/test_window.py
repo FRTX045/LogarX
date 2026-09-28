@@ -493,7 +493,8 @@ def test_typing_an_address_narrows_the_client_list(qt_app: QApplication) -> None
 
     table._filter.setText("203.0.3.")
 
-    assert _on_screen(table) == ["203.0.3.9", "203.0.3.8"]
+    # Busiest first: `203.0.3.8` has more requests than `203.0.3.9`.
+    assert _on_screen(table) == ["203.0.3.8", "203.0.3.9"]
 
 
 def test_a_neighbouring_block_is_not_swept_in(qt_app: QApplication) -> None:
@@ -514,7 +515,7 @@ def test_clearing_the_filter_puts_the_whole_case_back(qt_app: QApplication) -> N
 
     table._filter.clear()
 
-    assert _on_screen(table) == ["203.0.3.9", "198.51.100.4"]
+    assert _on_screen(table) == ["198.51.100.4", "203.0.3.9"]
 
 
 def test_the_caption_keeps_the_size_of_the_case_on_screen(qt_app: QApplication) -> None:
