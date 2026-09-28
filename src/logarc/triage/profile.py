@@ -340,7 +340,8 @@ def _strongest(labels: Sequence[ActivityLabel]) -> ActivityLabel:
 
 
 def _probe_then_attack(labelled: Sequence[LabelledEvent]) -> tuple[RequestExample, ...]:
-    """The first probe and targeted attempt in one session, the probe strictly earlier.
+    """The first targeted attempt in one session that has a probe strictly earlier,
+    paired with the latest such probe.
 
     Position in the sorted session is not enough: requests logged at the same
     time, possibly in different files, have no order the log can vouch for, so

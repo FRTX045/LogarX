@@ -58,7 +58,7 @@ def _support(profile: ClientProfile) -> PriorityReason:
     flagged, requests = profile.hostile_requests, profile.requests
     severity = Severity(profile.severity).name.lower()
     return PriorityReason(
-        f"{flagged:,} of {requests:,} requests flagged ({flagged / requests:.0%}); "
+        f"{flagged:,} of {requests:,} requests flagged ({_share(flagged, requests)}); "
         f"strongest severity {severity}.",
         tuple(dict.fromkeys(ref for reason in profile.reasons for ref in reason.evidence))[
             :SAMPLE_SIZE
@@ -67,6 +67,12 @@ def _support(profile: ClientProfile) -> PriorityReason:
         why=_support_why(profile),
         summary=f"{flagged:,} of {requests:,} requests flagged; strongest {severity}",
     )
+
+
+def _share(part: int, whole: int) -> str:
+    """A percentage that never reads 0% for a share that is not zero."""
+    share = part / whole
+    return "<1%" if 0 < share < 0.005 else f"{share:.0%}"
 
 
 def _support_why(profile: ClientProfile) -> str:

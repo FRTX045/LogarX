@@ -305,3 +305,8 @@ def test_the_order_of_the_queue_is_unchanged():
     ranked = rank_profiles([quiet, loud], "suspicious")
     assert [row.profile.client_ip for row in ranked] == ["192.0.2.1", "192.0.2.9"]
     assert all(row.reasons[0].kind == "support" for row in ranked)
+
+
+def test_a_share_that_rounds_to_zero_is_not_shown_as_zero(plain):
+    found = reason(replace(plain, hostile_requests=1, requests=5000), "support")
+    assert found.text == "1 of 5,000 requests flagged (<1%); strongest severity high."
