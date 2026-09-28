@@ -149,11 +149,11 @@ def _example(
     state: SourceStatus | None,
     path_chars: int | None,
 ) -> str:
-    path = item.path or ""
-    cut = path_chars is not None and len(path) > path_chars
+    target = (item.path or "") + (f"?{item.query}" if item.query else "")
+    cut = path_chars is not None and len(target) > path_chars
     if cut and path_chars is not None:
-        path = path[: max(path_chars - 1, 1)] + "\u2026"
-    request = " ".join(part for part in (item.method, path) if part)
+        target = target[: max(path_chars - 1, 1)] + "\u2026"
+    request = " ".join(part for part in (item.method, target) if part)
     label = escape(request + (f" ({item.note})" if item.note else ""))
     reference = escape(str(item.evidence))
     more = f' <a href="expand:{number}:{index}">Show full request</a>' if cut else ""

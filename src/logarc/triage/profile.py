@@ -77,6 +77,8 @@ class RequestExample:
     """As recorded, in ISO 8601."""
     note: str = ""
     """What the request stands for in its reason: a rule name, or the probe's category."""
+    query: str | None = None
+    """The query string as recorded, which is where most payloads are."""
 
 
 @dataclass(frozen=True)
@@ -316,7 +318,7 @@ def profile_client(
 def _example(item: LabelledEvent, note: str = "") -> RequestExample:
     event = item.event
     return RequestExample(
-        event.evidence, event.method, event.path, event.timestamp.isoformat(), note
+        event.evidence, event.method, event.path, event.timestamp.isoformat(), note, event.query
     )
 
 

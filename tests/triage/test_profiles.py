@@ -497,3 +497,13 @@ def test_flagged_requests_are_counted_per_category_and_per_rule(tmp_path):
     assert profile.category_counts == {"enumeration": 3, "injection": 1}
     assert profile.hostile_rules == {"attack": 1, "probe": 3}
     assert profile.hostile_rule_names == {"attack": "Attack", "probe": "Probe"}
+
+
+def test_example_requests_keep_their_query(tmp_path):
+    from logarc.triage.profile import profile_client
+
+    sample = events(count=4)
+    sample[1] = replace(sample[1], query="probe=1", path="/admin/")
+    sample[2] = replace(sample[2], query="id=1&attack=union", path="/login")
+    probe, attack = profile_client(sample, probe_attack_engine(tmp_path)).sequence_examples
+    assert (probe.query, attack.query) == ("probe=1", "id=1&attack=union")

@@ -225,3 +225,23 @@ def test_expand_anchors_parse():
 
     assert parse_anchor(QUrl("expand:2:1")) == ("expand", 2, 1)
     assert parse_anchor(QUrl("expand:2")) is None
+
+
+def test_the_full_request_includes_its_query():
+    from logarc.gui.recommendation import render_recommendation
+
+    payload = RequestExample(
+        EvidenceRef("access.log", 1),
+        "GET",
+        "/search",
+        "2026-03-11T04:00:33+00:00",
+        "SQL Injection",
+        query="q=1 UNION SELECT " + "password," * 40 + " FROM users",
+    )
+    cut = render_recommendation(row(matches(payload)), path_chars=60)
+    assert "GET /search?q=1 UNION SELECT" in cut
+    assert "FROM users" not in cut
+    whole = render_recommendation(
+        row(matches(payload)), path_chars=60, expanded=frozenset({(0, 0)})
+    )
+    assert f"GET /search?{payload.query}" in whole
