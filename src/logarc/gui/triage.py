@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal
-from PyQt6.QtGui import QFontMetrics, QTextCharFormat
+from PyQt6.QtGui import QFontMetrics
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
@@ -35,7 +35,6 @@ from logarc.gui.recommendation import (
 )
 from logarc.gui.theme import PAD, TIGHT
 from logarc.gui.workers import run_job
-from logarc.storage.base import IpSummary, IpSummaryPage
 from logarc.triage.process import run_scan
 from logarc.triage.profile import DEFAULT_POLICY, QueueName, RankedClient
 from logarc.triage.scan import ScanCancelled, TriagePage, TriageProgress, TriageResult, read_page
@@ -45,7 +44,9 @@ if TYPE_CHECKING:
 
     from logarc.core.evidence import EvidenceRef
 
-QUEUES: tuple[QueueName, ...] = ("suspicious", "unusual", "all")
+#: The two queues that analyse clients. Finding any one client, busy or quiet, is
+#: the client list's job: it pages through and searches the whole case.
+QUEUES: tuple[QueueName, ...] = ("suspicious", "unusual")
 PAGE_SIZE = 100
 
 
@@ -66,7 +67,7 @@ class TriagePanel(QWidget):
         self._request: tuple[Path, TimeWindow] | None = None
         self._result: TriageResult | None = None
         self._progress: TriageProgress | None = None
-        self._rows: Sequence[RankedClient | IpSummary] = ()
+        self._rows: Sequence[RankedClient] = ()
         self._offset = 0
         self._shown: RankedClient | None = None
         self._expanded: frozenset[tuple[int, int]] = frozenset()
@@ -78,7 +79,7 @@ class TriagePanel(QWidget):
         self._source_timer.setInterval(self.SOURCE_CHECK_DELAY_MS)
         self._source_timer.timeout.connect(self._check_sources)
         self.queues = QTabBar()
-        for name in ("Suspicious activity", "Unusual activity", "All clients"):
+        for name in ("Suspicious activity", "Unusual activity"):
             self.queues.addTab(name)
         self.queues.setExpanding(False)
         self.queues.currentChanged.connect(self._reset_page)
@@ -165,7 +166,7 @@ class TriagePanel(QWidget):
         self._offset = 0
         self.notice.setText(
             "Examining every IP in this time range. Findings are provisional. "
-            "Use All clients to search the full population now."
+            "Use the client list to find any IP now."
         )
         self.caption.setText("Preparing the scan…")
         self.cancel.show()
@@ -186,7 +187,7 @@ class TriagePanel(QWidget):
             self._progress = progress
             self.notice.setText(
                 f"Provisional: examined {progress.processed:,} of {progress.total:,} IPs. "
-                "Use All clients for full-population search."
+                "Use the client list to find any IP."
             )
             if self.queues.currentIndex() == 0 and not self.search.text():
                 self._display(progress.findings)
@@ -214,8 +215,6 @@ class TriagePanel(QWidget):
                 )
 
         run_job(work, on_done=done, on_error=failed, on_advance=advanced)
-        if self.queues.currentIndex() == 2:
-            self._load_page()
 
     def shutdown(self) -> None:
         """Invalidate queued signals before stopping the worker that produced them."""
@@ -291,12 +290,9 @@ class TriagePanel(QWidget):
         generation = self._page_generation
         self._display(())
         queue = QUEUES[self.queues.currentIndex()]
-        if queue == "all" and self._request is not None:
-            self._load_summaries(generation)
-            return
         if self._result is None:
             self.caption.setText(
-                "Use All clients to search every IP while recommendations are being prepared. "
+                "Use the client list to find any IP while recommendations are being prepared. "
                 "Unusualness comparisons need a completed scan."
             )
             return
@@ -332,37 +328,7 @@ class TriagePanel(QWidget):
             on_error=failed,
         )
 
-    def _load_summaries(self, generation: int) -> None:
-        assert self._request is not None
-        path, window = self._request
-        query, offset = self.search.text(), self._offset
-        self.caption.setText("Searching all clients…")
-
-        def work(report: Callable[[object], None]) -> IpSummaryPage:
-            with Case.open(path) as case:
-                return case.store.ip_summary_page(
-                    query=query, offset=offset, limit=PAGE_SIZE, window=window
-                )
-
-        def done(page: IpSummaryPage) -> None:
-            if generation != self._page_generation:
-                return
-            self._display(page.rows)
-            self.previous_page.setEnabled(page.offset > 0)
-            self.next_page.setEnabled(page.offset + len(page.rows) < page.total)
-            self.caption.setText(
-                f"{page.offset + 1 if page.rows else 0:,}-{page.offset + len(page.rows):,} "
-                f"of {page.total:,} matching IPs. Positions follow request count across this range. "
-                "Open a client for reconstruction and detection details."
-            )
-
-        def failed(message: str, detail: str) -> None:
-            if generation == self._page_generation:
-                self.caption.setText(f"Could not search clients: {message}")
-
-        run_job(work, on_done=done, on_error=failed)
-
-    def _display(self, rows: Sequence[RankedClient | IpSummary]) -> None:
+    def _display(self, rows: Sequence[RankedClient]) -> None:
         self._rows = rows
         self.table.setRowCount(0)
         self.table.setRowCount(len(rows))
@@ -373,21 +339,10 @@ class TriagePanel(QWidget):
         self.next_page.setEnabled(False)
         for index, row in enumerate(rows):
             values = (
-                (
-                    str(row.position),
-                    row.client_ip,
-                    "Not yet analyzed here; open reconstruction"
-                    if self._result is None
-                    else "Open reconstruction for detection details",
-                    f"{row.request_count:,}",
-                )
-                if isinstance(row, IpSummary)
-                else (
-                    str(row.rank or self._offset + index + 1),
-                    row.profile.client_ip,
-                    summary_for(row),
-                    f"{row.profile.requests:,}",
-                )
+                str(row.rank or self._offset + index + 1),
+                row.profile.client_ip,
+                summary_for(row),
+                f"{row.profile.requests:,}",
             )
             for column, value in enumerate(values):
                 item = QTableWidgetItem(value)
@@ -399,18 +354,6 @@ class TriagePanel(QWidget):
         if index < 0 or index >= len(self._rows):
             return
         row = self._rows[index]
-        if isinstance(row, IpSummary):
-            # Plain text takes the editor's current format, which is a link's after the
-            # reader clicks one in a recommendation; start from a plain one.
-            self.details.setCurrentCharFormat(QTextCharFormat())
-            self.details.setPlainText(
-                f"{row.client_ip}\n{row.request_count:,} requests; {row.distinct_paths:,} distinct paths.\n"
-                f"First seen: {row.first_seen}; last seen: {row.last_seen}.\n"
-                "This summary does not assert that there are no hostile detections. "
-                "Open reconstruction to analyze this client and inspect source evidence."
-            )
-            self.open_client.setEnabled(True)
-            return
         if row is not self._shown:
             self._shown, self._expanded, self._sources = row, frozenset(), {}
             self._source_error = ""
@@ -504,8 +447,5 @@ class TriagePanel(QWidget):
         index = self.table.currentRow()
         if 0 <= index < len(self._rows):
             row = self._rows[index]
-            if isinstance(row, IpSummary):
-                self.investigate.emit(row.client_ip, ())
-                return
             refs = row.reasons[0].evidence if row.reasons else ()
             self.investigate.emit(row.profile.client_ip, refs)
