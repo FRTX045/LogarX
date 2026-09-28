@@ -21,6 +21,8 @@ build was scored. Records are in [suspicious-graded](suspicious-graded/): one pe
 build, `frozen-selection.json` with hashes of the triage and evaluation code, the
 study script, and each case's manifest, CRS records, log and truth file, and
 `promotion.json` with the gate and every rank change.
+The study script's entry in `frozen-selection.json` was renamed to `run_graded.py`
+after the run, because the script is not published; its hash is unchanged.
 
 ## Method
 
