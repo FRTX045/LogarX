@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal
-from PyQt6.QtGui import QFontMetrics
+from PyQt6.QtGui import QFontMetrics, QTextCharFormat
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
@@ -400,6 +400,9 @@ class TriagePanel(QWidget):
             return
         row = self._rows[index]
         if isinstance(row, IpSummary):
+            # Plain text takes the editor's current format, which is a link's after the
+            # reader clicks one in a recommendation; start from a plain one.
+            self.details.setCurrentCharFormat(QTextCharFormat())
             self.details.setPlainText(
                 f"{row.client_ip}\n{row.request_count:,} requests; {row.distinct_paths:,} distinct paths.\n"
                 f"First seen: {row.first_seen}; last seen: {row.last_seen}.\n"

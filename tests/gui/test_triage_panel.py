@@ -725,3 +725,21 @@ def test_a_failed_source_check_says_the_sources_were_not_checked(qt_app, tmp_pat
     checked(qt_app, panel)
     assert "Sources could not be checked" in panel.details.toPlainText()
     panel.close()
+
+
+def test_a_summary_shown_after_a_link_click_is_not_drawn_as_a_link(qt_app, tmp_path):
+    """Clicking a link leaves the cursor in it, and plain text set afterwards took its format."""
+    panel = selected_panel(qt_app, make_case(tmp_path))
+    text = panel.details.toPlainText()
+    cursor = panel.details.textCursor()
+    cursor.setPosition(text.index("requests flagged") + 2)
+    panel.details.setTextCursor(cursor)
+    assert panel.details.currentCharFormat().isAnchor()
+    panel.queues.setCurrentIndex(2)
+    settled(qt_app)
+    panel.table.selectRow(0)
+    first = panel.details.document().firstBlock().begin().fragment().charFormat()
+    assert "does not assert that there are no hostile detections" in panel.details.toPlainText()
+    assert not first.isAnchor()
+    assert not first.fontUnderline()
+    panel.close()
