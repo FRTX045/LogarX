@@ -155,9 +155,10 @@ the case to a stretch of time, export the same report the CLI produces.
 
 Opening a case also starts **Where to start**, with **Suspicious activity**
 and **Unusual activity** queues. Each recommendation explains its measurements
-and links to source evidence. **All clients** searches every IP while scanning,
-including clients outside the busiest-500 sidebar, and remains available after
-cancellation or scan failure. See [IP prioritization](docs/ip-prioritization.md)
+and links to source evidence. The client list pages through every client in the
+case, busiest first, and its filter searches the whole case, including clients
+outside the busiest 500, while scanning, after cancellation or after a scan
+failure. See [IP prioritization](docs/ip-prioritization.md)
 for ranking policy, limitations and measured evaluation results.
 
 **Full guide, with every screen: [docs/desktop-app.md](docs/desktop-app.md).**

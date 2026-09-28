@@ -7,6 +7,15 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The client list reaches every client in the case, and Where to start drops
+  All clients.** The list shows the case 500 clients at a time by request count,
+  busiest first, with Previous and Next, and its filter searches the whole case
+  when the page is not all of it, so a quiet client outside the busiest 500 can
+  be found from it. A complete address matches only itself. The caption says
+  which slice is shown, when a page is sorted another way, and when the client
+  being read is not among the rows. The All clients tab, which duplicated this
+  list, is gone; Where to start keeps Suspicious activity and Unusual activity.
+
 - **Bundled OWASP mappings now use Top 10:2025.** Updated 49 annotations across
   eight rule files. Injection maps to A05, misconfiguration to A02, component
   indicators to A03, and SSRF to A01 while retaining its `ssrf` activity category.
