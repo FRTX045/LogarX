@@ -139,8 +139,12 @@ class EventStore(Protocol):
         offset: int = 0,
         limit: int = 100,
         window: TimeWindow | None = None,
+        exact: bool = False,
     ) -> IpSummaryPage:
-        """Filter and page all clients, retaining their unfiltered volume positions."""
+        """Filter and page all clients, retaining their unfiltered volume positions.
+
+        `exact` matches the whole address; otherwise any address containing `query`.
+        """
         ...
 
     def overview(self, *, window: TimeWindow | None = None) -> CaseOverview:
