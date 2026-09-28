@@ -1,0 +1,98 @@
+[
+  {
+    "ip": "100.69.91.191",
+    "ranks": {
+      "policy3": null,
+      "c1": null,
+      "c2": null
+    },
+    "hostile_requests": 0,
+    "requests": 75,
+    "qualifies": false,
+    "bonus": [
+      0,
+      0,
+      0.0
+    ]
+  },
+  {
+    "ip": "100.70.35.0",
+    "ranks": {
+      "policy3": null,
+      "c1": null,
+      "c2": null
+    },
+    "hostile_requests": 0,
+    "requests": 86,
+    "qualifies": false,
+    "bonus": [
+      0,
+      0,
+      0.0
+    ]
+  },
+  {
+    "ip": "100.72.188.24",
+    "ranks": {
+      "policy3": null,
+      "c1": null,
+      "c2": null
+    },
+    "hostile_requests": 0,
+    "requests": 80,
+    "qualifies": false,
+    "bonus": [
+      0,
+      0,
+      0.0
+    ]
+  },
+  {
+    "ip": "100.74.20.198",
+    "ranks": {
+      "policy3": null,
+      "c1": null,
+      "c2": null
+    },
+    "hostile_requests": 0,
+    "requests": 168,
+    "qualifies": false,
+    "bonus": [
+      0,
+      0,
+      0.0
+    ]
+  },
+  {
+    "ip": "100.86.138.15",
+    "ranks": {
+      "policy3": null,
+      "c1": null,
+      "c2": null
+    },
+    "hostile_requests": 0,
+    "requests": 49,
+    "qualifies": false,
+    "bonus": [
+      0,
+      0,
+      0.0
+    ]
+  },
+  {
+    "ip": "192.0.2.25",
+    "ranks": {
+      "policy3": 133,
+      "c1": 133,
+      "c2": 133
+    },
+    "hostile_requests": 2,
+    "requests": 18,
+    "qualifies": true,
+    "bonus": [
+      1,
+      0,
+      0.0
+    ]
+  }
+]

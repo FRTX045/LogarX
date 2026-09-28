@@ -69,9 +69,10 @@ def test_promoted_order_bounds_severity_and_explains_support_without_losing_evid
     noisy = replace(sustained, client_ip="noisy", requests=100000)
     rows = rank_profiles([quiet, noisy, sustained], "suspicious")
     assert [row.profile.client_ip for row in rows] == ["sustained", "noisy", "quiet"]
-    assert "1,000 of 1,000" in rows[0].reasons[0].text
-    assert rows[0].reasons[0].evidence == base.reasons[0].evidence
-    assert rows[0].reasons[1:] == base.reasons
+    support = next(reason for reason in rows[0].reasons if reason.kind == "support")
+    assert "1,000 of 1,000" in support.text
+    assert support.evidence == base.reasons[0].evidence
+    assert rows[0].reasons[-len(base.reasons) :] == base.reasons
     assert DEFAULT_POLICY.version == 3
 
 
@@ -302,3 +303,207 @@ def test_rule_counts_agree_with_reconstruction(tmp_path):
     assert {rule for node in reconstruction.trace.nodes for rule in node.rule_ids} == set(
         profile.rules_won
     )
+
+
+def fixture_rules(tmp_path, *rules):
+    """Signature rules matching a word in the query: (id, category, severity, confidence, word)."""
+    from logarc.detect.rules import load_rules
+
+    body = "version: 1\nrules:\n" + "".join(
+        f"  - id: {rule_id}\n"
+        f"    name: {rule_id.replace('_', ' ').title()}\n"
+        f"    category: {category}\n"
+        f"    severity: {severity}\n"
+        f"    confidence: {confidence}\n"
+        "    match:\n"
+        "      any:\n"
+        "        - field: query\n"
+        f"          contains: {word}\n"
+        for rule_id, category, severity, confidence, word in rules
+    )
+    path = tmp_path / "fixture.yaml"
+    path.write_text(body, encoding="utf-8")
+    return RuleEngine(load_rules([path]))
+
+
+def at(event, seconds, line=None):
+    """The event moved to `seconds` after the fixture's epoch, optionally renumbered."""
+    return replace(
+        event,
+        timestamp=datetime(2026, 1, 1, tzinfo=UTC) + timedelta(seconds=seconds),
+        evidence=EvidenceRef(event.evidence.source_file_id, line or event.evidence.line_no),
+    )
+
+
+def test_distinct_rule_pairs_are_a_maximum_matching_not_a_minimum_of_counts(tmp_path):
+    from logarc.triage.profile import profile_client
+
+    engine = fixture_rules(
+        tmp_path,
+        ("rule_a", "injection", "high", 0.9, "alpha"),
+        ("rule_b", "injection", "high", 0.9, "beta"),
+        ("rule_c", "injection", "high", 0.9, "gamma"),
+    )
+    sample = events(count=3, query="alpha")
+    sample[0] = replace(sample[0], query="alpha beta gamma")
+    profile = profile_client(sample, engine)
+    assert profile.distinct_rule_pairs == 2
+    assert len(profile.distinct_examples) == 2
+    assert len({example.evidence for example in profile.distinct_examples}) == 2
+
+
+def test_only_native_rules_at_high_confidence_count_as_specific(tmp_path):
+    from logarc.detect.crs import CrsDetection
+    from logarc.triage.profile import profile_client
+
+    engine = fixture_rules(
+        tmp_path,
+        ("unsure", "injection", "critical", 0.8, "maybe"),
+        ("sure_but_low", "reconnaissance", "low", 0.85, "sure"),
+    )
+    sample = events(count=3)
+    sample[0] = replace(sample[0], query="maybe")
+    sample[1] = replace(sample[1], query="sure")
+    detection = CrsDetection(
+        source_file_id="source",
+        line_no=3,
+        rule_id=942100,
+        severity="critical",
+        msg="Fixture detection",
+        matched_var="ARGS:q",
+        transformed_value="fixture",
+        attack_family="attack-sqli",
+    )
+    profile = profile_client(sample, engine, crs={("source", 3): [detection]})
+    assert profile.hostile_requests == 3
+    assert profile.distinct_rule_pairs == 1
+    assert profile.distinct_examples[0].evidence == sample[1].evidence
+    assert profile.distinct_examples[0].note == "Sure But Low"
+
+
+def test_many_distinct_matches_keep_the_full_count_and_a_bounded_sample(tmp_path):
+    from logarc.triage.profile import SAMPLE_SIZE, profile_client
+
+    words = [f"word{i}" for i in range(12)]
+    engine = fixture_rules(
+        tmp_path, *((f"rule_{i}", "injection", "high", 0.9, word) for i, word in enumerate(words))
+    )
+    sample = [
+        replace(event, query=word) for event, word in zip(events(count=12), words, strict=True)
+    ]
+    profile = profile_client(sample, engine)
+    assert profile.distinct_rule_pairs == 12
+    assert len(profile.distinct_examples) == SAMPLE_SIZE
+
+
+def probe_attack_engine(tmp_path):
+    return fixture_rules(
+        tmp_path,
+        ("probe", "enumeration", "medium", 0.9, "probe"),
+        ("attack", "injection", "critical", 0.9, "attack"),
+    )
+
+
+def test_a_probe_followed_by_an_attack_marks_its_session(tmp_path):
+    from logarc.triage.profile import profile_client
+
+    sample = events(count=4)
+    sample[1] = replace(sample[1], query="probe", path="/admin/")
+    sample[2] = replace(sample[2], query="attack", path="/login")
+    profile = profile_client(sample, probe_attack_engine(tmp_path))
+    assert profile.sequence_sessions == 1
+    probe, attack = profile.sequence_examples
+    assert (probe.evidence, attack.evidence) == (sample[1].evidence, sample[2].evidence)
+    assert (probe.note, attack.note, attack.path) == ("Enumeration", "Attack", "/login")
+
+
+def test_an_attack_before_the_probe_is_not_a_sequence(tmp_path):
+    from logarc.triage.profile import profile_client
+
+    sample = events(count=4)
+    sample[1] = replace(sample[1], query="attack")
+    sample[2] = replace(sample[2], query="probe")
+    assert profile_client(sample, probe_attack_engine(tmp_path)).sequence_sessions == 0
+
+
+def test_one_request_with_both_labels_is_not_a_sequence(tmp_path):
+    from logarc.triage.profile import profile_client
+
+    sample = events(count=4)
+    sample[1] = replace(sample[1], query="probe attack")
+    assert profile_client(sample, probe_attack_engine(tmp_path)).sequence_sessions == 0
+
+
+def test_the_ordering_is_counted_once_per_session(tmp_path):
+    from logarc.triage.profile import profile_client
+
+    first = events(count=4)
+    first[0] = replace(first[0], query="probe")
+    first[1] = replace(first[1], query="attack")
+    first[2] = replace(first[2], query="probe")
+    first[3] = replace(first[3], query="attack")
+    second = [at(event, 86_400 + i, line=10 + i) for i, event in enumerate(first)]
+    profile = profile_client(first + second, probe_attack_engine(tmp_path))
+    assert profile.sequence_sessions == 2
+
+
+def test_equal_timestamps_never_establish_an_order(tmp_path):
+    from logarc.triage.profile import profile_client
+
+    engine = probe_attack_engine(tmp_path)
+    base = events(count=2)
+    same_file = [
+        at(replace(base[0], query="probe"), 5, line=1),
+        at(replace(base[1], query="attack"), 5, line=2),
+    ]
+    assert profile_client(same_file, engine).sequence_sessions == 0
+    two_files = [
+        replace(same_file[0], evidence=EvidenceRef("a.log", 1)),
+        replace(same_file[1], evidence=EvidenceRef("b.log", 2)),
+    ]
+    assert profile_client(two_files, engine).sequence_sessions == 0
+
+
+def test_hostile_sessions_and_the_span_of_matching_requests(tmp_path):
+    from logarc.triage.profile import profile_client
+
+    engine = probe_attack_engine(tmp_path)
+    day = 86_400
+    sample = events(count=3)
+    sample = [
+        at(replace(sample[0], query="attack"), 0, line=1),
+        at(sample[1], day, line=2),
+        at(replace(sample[2], query="attack"), 3 * day, line=3),
+    ]
+    profile = profile_client(sample, engine)
+    assert (profile.sessions, profile.hostile_sessions) == (3, 2)
+    assert profile.first_hostile == sample[0].timestamp.isoformat()
+    assert profile.last_hostile == sample[2].timestamp.isoformat()
+    assert [example.evidence for example in profile.recurrence_examples] == [
+        sample[0].evidence,
+        sample[2].evidence,
+    ]
+
+
+def test_flagged_requests_are_counted_per_category_and_per_rule(tmp_path):
+    from logarc.triage.profile import profile_client
+
+    engine = probe_attack_engine(tmp_path)
+    sample = events(count=5)
+    sample[0] = replace(sample[0], query="probe")
+    sample[1] = replace(sample[1], query="probe")
+    sample[2] = replace(sample[2], query="probe attack")
+    profile = profile_client(sample, engine)
+    assert profile.category_counts == {"enumeration": 3, "injection": 1}
+    assert profile.hostile_rules == {"attack": 1, "probe": 3}
+    assert profile.hostile_rule_names == {"attack": "Attack", "probe": "Probe"}
+
+
+def test_example_requests_keep_their_query(tmp_path):
+    from logarc.triage.profile import profile_client
+
+    sample = events(count=4)
+    sample[1] = replace(sample[1], query="probe=1", path="/admin/")
+    sample[2] = replace(sample[2], query="id=1&attack=union", path="/login")
+    probe, attack = profile_client(sample, probe_attack_engine(tmp_path)).sequence_examples
+    assert (probe.query, attack.query) == ("probe=1", "id=1&attack=union")

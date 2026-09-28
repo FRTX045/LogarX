@@ -10,14 +10,14 @@ The **Where to start** tab offers three views:
 | All clients | Request count, including clients outside the original busiest-500 sidebar |
 
 The queues order the entire eligible population before showing pages of 100.
-Address search covers that population. Click the leading reason or select a row
-and choose **Open supporting evidence** to reconstruct the client and select an
-activity containing its supporting source lines. Additional reasons in the detail
-area are individually clickable. Requested source lines appear before the ordinary
-activity sample, within the same display limit. The detail area
-shows additional reasons, recorded measurements, field coverage and sampled
-references. Counts describe all supporting requests; the references are a
-bounded sample.
+Address search covers that population. The queue and the details below it share
+a divider the reader can drag; the details start with half the space. Select a
+row and choose **Inspect supporting requests** to reconstruct the client and
+select an activity containing its supporting source lines, or click an example
+request in the details to open reconstruction on that request. Requested source
+lines appear before the ordinary activity sample, within the same display limit.
+Counts describe all supporting requests; examples and references are a bounded
+sample.
 
 The scan can be cancelled while ordinary reconstruction remains available.
 Suspicious findings shown during scanning are provisional and state how many
@@ -31,10 +31,45 @@ results from previous requests cannot replace the current queue.
 
 ## Reading the recommendations
 
+Each Suspicious activity recommendation answers three questions, one block per
+reason: what was observed, why that deserves attention for this client, and which
+requests to inspect. The table's **Key observation** column shows the first
+block's observation, for example "40 of 50 requests flagged; strongest high".
+
+1. **Flagged requests** comes first, because it is what the order rests on: how
+   many requests carry a hostile detection, their share, and the strongest
+   severity. Its why says what kind of flagged request dominates and whether it
+   is most (half or more), a substantial part, or a small part (under a tenth) of
+   the client's activity. When one rule matches every flagged request, it names
+   that rule, because one noisy rule can explain a large count.
+2. **Distinct rule matches** counts bundled rules rated at confidence 0.85 or
+   above that matched different requests, each rule and each request counted
+   once. The rating is the rule author's and describes the rule, not the
+   request: a scanner's user-agent string qualifies as readily as an exploit
+   pattern.
+3. **Probe, then an attack pattern** appears when, within one session, a
+   reconnaissance or enumeration request is followed at a strictly later time by
+   an injection, traversal, access-control, credential, SSRF or exploitation
+   match. Requests logged at the same time are never paired, so with
+   second-resolution logs a probe and an attack in the same second do not count. It says nothing
+   about whether the probe led to the attempt; a shared IP or a scanner can
+   produce the same ordering.
+4. **Recurrence across sessions** appears when detections fall in two or more
+   sessions. Sessions under an hour apart may be one burst split by a session
+   boundary, and the block says so. Session splits and shared IPs do not
+   establish one actor.
+
+Examples show the request, its time in UTC and its source reference. A long path
+is cut to two lines with **Show full request**. A reference whose source cannot
+be read stays visible with the reason and cannot be opened; one read from a
+source changed since ingest opens and shows its warning. These reasons are
+written when a page is read, so rewording them does not require a rescan.
+
+Blocks 2 to 4 are context for reading a client. They do not affect its rank.
+
 Suspicious activity uses the existing engine's native and CRS label precedence.
 Several rule matches on one request still count as one supporting request.
-The leading reason shows supporting-request count, share and strongest severity;
-the following reasons name the category evidence. Policy 3 uses
+Policy 3 uses
 `log2(1 + h) * (1 + s/4) * (0.5 + 0.5*h/n)`, where `h` is deduplicated hostile
 requests, `s` is existing severity and `n` is all requests. Ties use category
 breadth, distinct hostile paths, hostile requests and IP. The score determines
@@ -116,6 +151,19 @@ The controlled fixture in `tests/evaluation/triage_scenario.py` defines three
 legitimate but unusual clients independently of attack labels: a concentrated
 burst, large responses, and repeated missing pages. This is a verification
 fixture, not evidence of accuracy on real investigations.
+
+## Graded validation (2026-09-24)
+
+The [graded validation](evaluations/suspicious-recommendations-validation.md)
+grades clients from truth alone (targeted attack, probe only, benign) and tested
+two frozen challengers that add capped bonuses for distinct rule matches, a
+probe-then-attack session and recurrence. The chosen challenger, C2, passed the
+frozen held-out gate and was not adopted: its gain at the head was one targeted
+client in one build, the credential attacker in these builds fell in every
+held-out build, its bonuses reached scanners as readily as targeted clients, and
+the low-support attackers it was meant to help are not detected at all. Policy 3
+remains the ordering; that is a decision about these tradeoffs, not a finding
+that policy 3 orders the queue well.
 
 ## Current validation (2026-09-21)
 

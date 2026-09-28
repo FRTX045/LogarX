@@ -1,0 +1,247 @@
+import re
+
+import pytest
+from PyQt6.QtCore import QUrl
+
+from logarc.core.evidence import EvidenceRef
+from logarc.triage.profile import (
+    ClientProfile,
+    PriorityReason,
+    RankedClient,
+    RequestExample,
+)
+
+
+def example(line, path="/login", note="Rule A", file="access.log"):
+    return RequestExample(EvidenceRef(file, line), "POST", path, "2026-01-01T00:00:02+00:00", note)
+
+
+def profile(**fields):
+    return ClientProfile(
+        client_ip="203.0.113.7",
+        requests=48,
+        severity=3,
+        categories=("injection",),
+        hostile_targets=2,
+        hostile_requests=3,
+        features={"requests": 48.0},
+        coverage={"path": 48, "status": 48, "bytes_sent": 48},
+        evidence={},
+        statuses={"200": 2, "403": 1},
+        **fields,
+    )
+
+
+def row(*reasons):
+    return RankedClient(profile(), tuple(reasons), rank=3)
+
+
+def matches(*examples):
+    return PriorityReason(
+        f"{len(examples)} rules matched on {len(examples)} requests.",
+        tuple(item.evidence for item in examples),
+        kind="distinct_rules",
+        why="Distinct rule matches provide support beyond repetition of one rule.",
+        summary=f"{len(examples)} distinct rule matches",
+        examples=examples,
+    )
+
+
+def test_log_fields_are_escaped_and_long_paths_kept_whole():
+    from logarc.gui.recommendation import render_recommendation
+
+    long_path = "/" + "a" * 400
+    html = render_recommendation(
+        row(matches(example(1, "/<b>x</b>", "<script>"), example(2, long_path)))
+    )
+    assert "<b>x</b>" not in html
+    assert "&lt;b&gt;x&lt;/b&gt;" in html
+    assert "<script>" not in html
+    assert long_path in html
+
+
+def test_every_block_answers_the_three_questions():
+    from logarc.gui.recommendation import render_recommendation
+
+    html = render_recommendation(row(matches(example(1), example(2))))
+    assert "Observed:" in html
+    assert "Why:" in html
+    assert "Examples: 2 shown" in html
+    assert 'href="example:0:0"' in html
+    assert 'href="example:0:1"' in html
+    assert "access.log:1" in html
+
+
+def test_no_supporting_request_denominator_is_invented():
+    from logarc.gui.recommendation import render_recommendation
+
+    html = render_recommendation(row(matches(example(1), example(2), example(3))))
+    assert not re.search(r"\bof \d+ (supporting )?requests\b", html)
+    assert not re.search(r"showing \d+ of", html, re.IGNORECASE)
+
+
+def test_an_unreadable_source_stays_visible_and_cannot_open():
+    from logarc.gui.recommendation import SourceStatus, render_recommendation
+
+    lost = example(7, file="missing.log")
+    html = render_recommendation(
+        row(matches(lost)),
+        {lost.evidence: SourceStatus("missing.log is not part of this case", can_open=False)},
+    )
+    assert 'href="example:0:0"' not in html
+    assert "missing.log:7" in html
+    assert "Cannot open: missing.log is not part of this case" in html
+
+
+def test_a_changed_source_opens_and_shows_its_warning():
+    from logarc.gui.recommendation import SourceStatus, render_recommendation
+
+    edited = example(8)
+    html = render_recommendation(
+        row(matches(edited)),
+        {edited.evidence: SourceStatus("access.log changed since it was ingested", can_open=True)},
+    )
+    assert 'href="example:0:0"' in html
+    assert "access.log changed since it was ingested" in html
+
+
+def test_reasons_without_examples_list_their_source_lines():
+    from logarc.gui.recommendation import SourceStatus, render_recommendation
+
+    refs = (EvidenceRef("access.log", 4), EvidenceRef("gone.log", 5))
+    support = PriorityReason(
+        "3 of 48 requests flagged (6%); strongest severity high.",
+        refs,
+        kind="support",
+    )
+    html = render_recommendation(
+        row(support), {refs[1]: SourceStatus("gone.log is not part of this case", False)}
+    )
+    assert 'href="reason:0"' in html
+    assert "access.log:4" in html
+    assert "gone.log:5 (cannot open: gone.log is not part of this case)" in html
+
+
+def test_responses_are_context_not_proof():
+    from logarc.gui.recommendation import render_recommendation
+
+    html = render_recommendation(row(matches(example(1))))
+    assert "Responses: 200: 2, 403: 1." in html
+    assert "A 200 response alone does not establish that an attack succeeded." in html
+
+
+def test_the_table_shows_the_first_reasons_summary():
+    from logarc.gui.recommendation import summary_for
+
+    assert summary_for(row(matches(example(1), example(2)))) == "2 distinct rule matches"
+    plain = PriorityReason("Injection indicators on 1 request; strongest high", ())
+    assert summary_for(row(plain)) == plain.text
+    assert summary_for(row()) == "No hostile detection"
+
+
+@pytest.mark.parametrize(
+    ("anchor", "parsed"),
+    [
+        ("example:1:2", ("example", 1, 2)),
+        ("reason:3", ("reason", 3, -1)),
+        ("reason:x", None),
+        ("example:1", None),
+        ("example:1:y", None),
+        ("https://example.com", None),
+    ],
+)
+def test_anchors_parse_back_to_what_they_name(anchor, parsed):
+    from logarc.gui.recommendation import parse_anchor
+
+    assert parse_anchor(QUrl(anchor)) == parsed
+
+
+def test_unusual_reasons_render_without_a_why():
+    from logarc.gui.recommendation import render_recommendation
+
+    unusual = PriorityReason(
+        "Requests: 480; above 97% of 700 comparable clients",
+        (EvidenceRef("access.log", 1),),
+        metric="requests",
+    )
+    html = render_recommendation(row(unusual))
+    assert "Why:" not in html
+    assert unusual.text in html
+
+
+def test_blocks_are_titled_for_what_they_count_and_explain_the_threshold():
+    from logarc.gui.recommendation import render_recommendation
+
+    support = PriorityReason(
+        "3 of 48 requests flagged (6%); strongest severity high.", (), kind="support"
+    )
+    html = render_recommendation(row(support, matches(example(1), example(2))))
+    assert "1. Flagged requests" in html
+    assert "2. Distinct rule matches" in html
+    assert "high-confidence" not in html.lower()
+    assert (
+        "Counted: bundled rules rated at confidence 0.85 or above. "
+        "The rating describes the rule, not the request."
+    ) in html
+
+
+def test_example_time_is_shown_in_utc_on_its_own_line():
+    from logarc.gui.recommendation import render_recommendation
+
+    late = RequestExample(
+        EvidenceRef("access.log", 3), "GET", "/login", "2026-03-11T11:00:33+07:00", "Rule A"
+    )
+    html = render_recommendation(row(matches(late)))
+    assert "2026-03-11 04:00:33 UTC" in html
+    assert "2026-03-11T11:00:33+07:00" not in html
+    assert re.search(r"GET /login \(Rule A\)</a><br>2026-03-11 04:00:33 UTC<br>", html)
+
+
+def test_a_long_path_is_cut_to_fit_and_can_be_expanded():
+    from logarc.gui.recommendation import render_recommendation
+
+    long_path = "/catalog/" + "x" * 300
+    html = render_recommendation(row(matches(example(1, long_path))), path_chars=60)
+    assert long_path not in html
+    assert long_path[:59] + "\u2026" in html
+    assert 'href="expand:0:0"' in html
+    assert "Show full request" in html
+    opened = render_recommendation(
+        row(matches(example(1, long_path))), path_chars=60, expanded=frozenset({(0, 0)})
+    )
+    assert long_path in opened
+    assert 'href="expand:0:0"' not in opened
+
+
+def test_a_short_path_is_never_cut():
+    from logarc.gui.recommendation import render_recommendation
+
+    html = render_recommendation(row(matches(example(1, "/login"))), path_chars=60)
+    assert "Show full request" not in html
+
+
+def test_expand_anchors_parse():
+    from logarc.gui.recommendation import parse_anchor
+
+    assert parse_anchor(QUrl("expand:2:1")) == ("expand", 2, 1)
+    assert parse_anchor(QUrl("expand:2")) is None
+
+
+def test_the_full_request_includes_its_query():
+    from logarc.gui.recommendation import render_recommendation
+
+    payload = RequestExample(
+        EvidenceRef("access.log", 1),
+        "GET",
+        "/search",
+        "2026-03-11T04:00:33+00:00",
+        "SQL Injection",
+        query="q=1 UNION SELECT " + "password," * 40 + " FROM users",
+    )
+    cut = render_recommendation(row(matches(payload)), path_chars=60)
+    assert "GET /search?q=1 UNION SELECT" in cut
+    assert "FROM users" not in cut
+    whole = render_recommendation(
+        row(matches(payload)), path_chars=60, expanded=frozenset({(0, 0)})
+    )
+    assert f"GET /search?{payload.query}" in whole

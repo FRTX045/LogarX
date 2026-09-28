@@ -12,6 +12,7 @@ from pathlib import Path
 from time import monotonic
 from typing import TYPE_CHECKING, Any
 
+from logarc.analysis import label_sessions
 from logarc.case import Case
 from logarc.core.evidence import EvidenceRef
 from logarc.core.window import EVERYTHING, TimeWindow
@@ -24,15 +25,18 @@ from logarc.triage.profile import (
     PriorityReason,
     QueueName,
     RankedClient,
+    RequestExample,
     TriagePolicy,
     profile_client,
     rank_profiles,
 )
+from logarc.triage.reasons import suspicious_reasons
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Iterator, Sequence
 
     from logarc.core.event import NormalizedEvent
+    from logarc.detect.engine import LabelledEvent
 
 
 class ScanCancelled(Exception):  # noqa: N818 - cancellation is a normal worker outcome
@@ -60,7 +64,7 @@ class TriageProgress:
 #: before a table was added is rebuilt rather than read as having nothing in it.
 #: Separate from `TriagePolicy.version`, which names the ranking that was
 #: validated and promoted; the layout changing is not the ranking changing.
-_LAYOUT = 2
+_LAYOUT = 5
 
 
 @dataclass(frozen=True)
@@ -90,9 +94,21 @@ def _digest(path: Path) -> str | None:
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
+def _example(data: dict[str, Any]) -> RequestExample:
+    return RequestExample(**{**data, "evidence": EvidenceRef(**data["evidence"])})
+
+
+def _examples(items: list[dict[str, Any]]) -> tuple[RequestExample, ...]:
+    return tuple(_example(item) for item in items)
+
+
 def _reason(data: dict[str, Any]) -> PriorityReason:
     return PriorityReason(
-        **{**data, "evidence": tuple(EvidenceRef(**ref) for ref in data["evidence"])}
+        **{
+            **data,
+            "evidence": tuple(EvidenceRef(**ref) for ref in data["evidence"]),
+            "examples": _examples(data.get("examples", [])),
+        }
     )
 
 
@@ -102,6 +118,10 @@ def _profile(data: dict[str, Any]) -> ClientProfile:
             **data,
             "categories": tuple(data["categories"]),
             "reasons": tuple(_reason(reason) for reason in data["reasons"]),
+            **{
+                name: _examples(data.get(name, []))
+                for name in ("distinct_examples", "sequence_examples", "recurrence_examples")
+            },
             "evidence": {
                 key: tuple(EvidenceRef(**ref) for ref in refs)
                 for key, refs in data["evidence"].items()
@@ -134,17 +154,25 @@ def read_page(
             (*params, limit, offset),
         ).fetchall()
     return TriagePage(
-        tuple(
-            RankedClient(
-                _profile(json.loads(profile)),
-                tuple(_reason(r) for r in json.loads(reasons)),
-                position,
-            )
-            for profile, reasons, position in rows
-        ),
+        tuple(_ranked(queue, profile, reasons, position) for profile, reasons, position in rows),
         total,
         offset,
     )
+
+
+def _ranked(queue: QueueName, profile: str, reasons: str, position: int) -> RankedClient:
+    """A stored row, with Suspicious activity reasons rebuilt from its profile.
+
+    Those reasons are wording over facts the profile keeps, so they are written
+    from the code that reads the index, not the code that wrote it: otherwise a
+    case scanned before a rewording would go on showing the old text. Unusual
+    activity reasons compare the client with the whole scanned population, which
+    only the stored copy knows.
+    """
+    stored = _profile(json.loads(profile))
+    if queue == "suspicious":
+        return RankedClient(stored, suspicious_reasons(stored), position)
+    return RankedClient(stored, tuple(_reason(r) for r in json.loads(reasons)), position)
 
 
 def read_rule_matches(path: Path, rule_id: str) -> tuple[RuleMatch, ...]:
@@ -352,3 +380,28 @@ def scan_case(
     return TriageResult(
         destination, len(profiles), eligible, crs_path.exists(), False, monotonic() - started
     )
+
+
+def iter_labelled(root: Path, *, window: TimeWindow = EVERYTHING) -> Iterator[LabelledEvent]:
+    """Every request in the case as the scan labels it: the case's engine, its CRS
+    records and the same session boundaries, one client at a time.
+
+    For evaluation passes that need each request's labels, such as auditing which
+    rules count as high-confidence matches; the queue itself reads profiles.
+    """
+    session_policy = SessionPolicy()
+    with Case.open(root) as case:
+        engine = case.rule_engine()
+    directory = root / "triage"
+    directory.mkdir(exist_ok=True)
+    with (
+        tempfile.TemporaryDirectory(prefix="labels-", dir=directory) as temporary,
+        closing(ParquetEventStore(root, scratch=Path(temporary) / "duckdb")) as store,
+        closing(sqlite3.connect(Path(temporary) / "crs.sqlite")) as crs,
+    ):
+        has_detections = _load_crs(crs, root / "crs.jsonl", lambda: None)
+        for events in store.iter_clients(window=window):
+            index = _client_crs(crs, events) if has_detections else None
+            ordered = sorted(events, key=lambda e: (e.timestamp, e.evidence.line_no))
+            for _, labelled in label_sessions(ordered, engine, policy=session_policy, crs=index):
+                yield from labelled

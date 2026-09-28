@@ -84,3 +84,84 @@ def test_explicit_hostile_truth_keeps_mixed_unknown_client_in_attack_recall(tmp_
     assert (
         result["report"]["comparisons"]["operational"]["suspicious"]["requests"]["positives"] == 1
     )
+
+
+def graded_fixture(tmp_path):
+    """Three clients: a targeted one, a scanner that only probes, and a benign one whose
+    search box matched an injection rule. Truth says which is which, line by line."""
+    line = '{ip} - - [01/Jan/2026:00:00:{s:02d} +0000] "GET {path} HTTP/1.1" 200 10 "-" "{ua}"\n'
+    rows = [
+        ("192.0.2.10", "/", "Mozilla/5.0", ActivityCategory.BROWSING),
+        (
+            "192.0.2.10",
+            "/?id=1%20UNION%20SELECT%20password%20FROM%20users",
+            "Mozilla/5.0",
+            ActivityCategory.INJECTION,
+        ),
+        ("192.0.2.20", "/", "sqlmap/1.7", ActivityCategory.RECONNAISSANCE),
+        ("192.0.2.30", "/", "Mozilla/5.0", ActivityCategory.BROWSING),
+        (
+            "192.0.2.30",
+            "/?q=1%20UNION%20SELECT%20name%20FROM%20products",
+            "Mozilla/5.0",
+            ActivityCategory.BROWSING,
+        ),
+    ]
+    source = tmp_path / "access.log"
+    source.write_text(
+        "".join(
+            line.format(ip=ip, s=i, path=path, ua=ua) for i, (ip, path, ua, _) in enumerate(rows)
+        )
+    )
+    truth = tmp_path / "truth.jsonl"
+    with TruthWriter(truth, scenario="fixture", seed=1, source_file_id="access.log") as writer:
+        for number, (ip, _, _, category) in enumerate(rows, 1):
+            writer.write(TruthRecord(number, ip, category, f"{ip}#1"))
+    with Case.create(tmp_path / "case") as case:
+        case.ingest([source])
+        case.finalize()
+        case.manifest.config.update(
+            crs_paranoia_level=2, crs_revision="fixture", crs_fingerprint="fixture"
+        )
+        case.manifest.save(case.root)
+        (case.root / "crs.jsonl").write_text("")
+    return case.root, source, truth
+
+
+def test_graded_study_grades_clients_from_truth_and_scores_every_method(tmp_path):
+    from logarc.evaluation.graded import load_scores
+    from logarc.evaluation.triage_study import evaluate_graded_case
+
+    result = evaluate_graded_case(*graded_fixture(tmp_path))
+    assert result["identity"]["crs_paranoia_level"] == 2
+    assert result["low_support"] == ["192.0.2.10"]
+    (targeted,) = result["targeted"]
+    assert (targeted["ip"], targeted["grade"], targeted["hostile"], targeted["requests"]) == (
+        "192.0.2.10",
+        2,
+        1,
+        2,
+    )
+    assert set(targeted["ranks"]) == {"policy3", "c1", "c2"}
+    scores = {name: load_scores(data) for name, data in result["methods"].items()}
+    assert scores["policy3"].judged == 3
+    assert scores["policy3"].targeted == 1
+    assert scores["policy3"].yield_at[10] == pytest.approx(1 / 3)
+    head = result["head"]["192.0.2.10"]
+    assert {"base", "D", "Q", "R", "grade", "ranks"} <= set(head)
+    assert [row["ip"] for row in result["benign_head"]] == ["192.0.2.30"]
+    assert result["benign_head"][0]["reasons"]
+
+
+def test_the_audit_flags_high_confidence_rules_that_matched_benign_truth(tmp_path):
+    from logarc.evaluation.triage_study import evaluate_graded_case
+
+    audit = evaluate_graded_case(*graded_fixture(tmp_path))["audit"]
+    flagged = {rule for rule, row in audit["rules"].items() if row["flagged"]}
+    assert flagged
+    for rule in flagged:
+        assert audit["rules"][rule]["benign_lines"] >= 1
+    injection = [row for row in audit["rules"].values() if row["hostile_lines"] >= 1]
+    assert injection
+    assert audit["low_support_with_match"] == ["192.0.2.10"]
+    assert audit["low_support_without_match"] == []

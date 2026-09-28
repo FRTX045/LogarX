@@ -8,18 +8,19 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from itertools import islice
 from math import log2
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Final, Literal
 
 from logarc.analysis import label_sessions
-from logarc.core.activity import Severity
+from logarc.core.activity import ActivityCategory, Severity
 from logarc.core.evidence import EvidenceRef
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from logarc.core.activity import ActivityLabel
     from logarc.core.event import NormalizedEvent
     from logarc.detect.crs import DetectionIndex
-    from logarc.detect.engine import RuleEngine
+    from logarc.detect.engine import LabelledEvent, RuleEngine
     from logarc.sessionize.segmenter import SessionPolicy
 
 QueueName = Literal["suspicious", "unusual", "all"]
@@ -35,6 +36,24 @@ FEATURES = {
 }
 SAMPLE_SIZE = 5
 
+#: Author-assigned rule confidence at which a native detection counts as a
+#: high-confidence rule match. An engineering threshold until the evaluation's
+#: audit of the qualifying rules supports it; it is not an attack probability.
+HIGH_CONFIDENCE: Final = 0.85
+
+#: Categories that open a probe-then-attack ordering, and those that close it.
+PROBE: Final = frozenset({ActivityCategory.RECONNAISSANCE, ActivityCategory.ENUMERATION})
+TARGETED: Final = frozenset(
+    {
+        ActivityCategory.INJECTION,
+        ActivityCategory.PATH_TRAVERSAL,
+        ActivityCategory.ACCESS_CONTROL,
+        ActivityCategory.CREDENTIAL_ATTACK,
+        ActivityCategory.SSRF,
+        ActivityCategory.EXPLOITATION,
+    }
+)
+
 
 @dataclass(frozen=True)
 class TriagePolicy:
@@ -48,13 +67,35 @@ DEFAULT_POLICY = TriagePolicy()
 
 
 @dataclass(frozen=True)
+class RequestExample:
+    """One request shown as an example behind a reason, named the way a reader finds it."""
+
+    evidence: EvidenceRef
+    method: str | None
+    path: str | None
+    timestamp: str
+    """As recorded, in ISO 8601."""
+    note: str = ""
+    """What the request stands for in its reason: a rule name, or the probe's category."""
+    query: str | None = None
+    """The query string as recorded, which is where most payloads are."""
+
+
+@dataclass(frozen=True)
 class PriorityReason:
     text: str
+    """What was observed."""
     evidence: tuple[EvidenceRef, ...]
     metric: str = ""
     value: float | None = None
     percentile: float | None = None
     population: int = 0
+    kind: str = ""
+    why: str = ""
+    """Why the observation deserves attention, or empty where the text says it all."""
+    summary: str = ""
+    """The compact, client-specific observation the queue's table shows."""
+    examples: tuple[RequestExample, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -79,6 +120,24 @@ class ClientProfile:
     """
     rules_won: dict[str, int] = field(default_factory=dict)
     """Requests each rule named: the label a reconstruction shows for them."""
+    sessions: int = 0
+    hostile_sessions: int = 0
+    """Sessions with at least one hostile request, each counted once."""
+    first_hostile: str | None = None
+    last_hostile: str | None = None
+    distinct_rule_pairs: int = 0
+    """The largest set of (high-confidence rule, request) pairs using each rule and each
+    request once. Several rules on one request support it once; one rule repeated is one."""
+    distinct_examples: tuple[RequestExample, ...] = ()
+    sequence_sessions: int = 0
+    """Sessions where a probe is followed, at a strictly later time, by a targeted attempt."""
+    sequence_examples: tuple[RequestExample, ...] = ()
+    recurrence_examples: tuple[RequestExample, ...] = ()
+    category_counts: dict[str, int] = field(default_factory=dict)
+    """Flagged requests per hostile category; a request in two categories counts in both."""
+    hostile_rules: dict[str, int] = field(default_factory=dict)
+    """Flagged requests per rule with a hostile label, so one noisy rule can be named."""
+    hostile_rule_names: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -107,8 +166,31 @@ def profile_client(
     hostile_targets: set[str] = set()
     rules_matched: Counter[str] = Counter()
     rules_won: Counter[str] = Counter()
-    severity = hostile_requests = 0
+    severity = hostile_requests = sessions = hostile_sessions = sequence_sessions = 0
+    specific: dict[str, list[LabelledEvent]] = {}
+    sequence_examples: tuple[RequestExample, ...] = ()
+    recurrence_examples: list[RequestExample] = []
+    hostile_times = []
+    hostile_rules: Counter[str] = Counter()
+    hostile_rule_names: dict[str, str] = {}
     for _, labelled in label_sessions(ordered, engine, policy=session_policy, crs=crs):
+        sessions += 1
+        pair = _probe_then_attack(labelled)
+        if pair:
+            sequence_sessions += 1
+            sequence_examples = sequence_examples or pair
+        first_hostile = next(
+            (
+                item
+                for item in labelled
+                if any(label.category.is_hostile for label in item.all_labels)
+            ),
+            None,
+        )
+        if first_hostile is not None:
+            hostile_sessions += 1
+            if len(recurrence_examples) < SAMPLE_SIZE:
+                recurrence_examples.append(_example(first_hostile))
         for item in labelled:
             rules_won[item.label.rule_id] += 1
             # The label is added because it is not always in `all_labels`: a
@@ -121,7 +203,13 @@ def profile_client(
             if not hostile:
                 continue
             hostile_requests += 1
+            hostile_times.append(item.event.timestamp)
             severity = max(severity, *(int(label.severity) for label in hostile))
+            for rule_id in {label.rule_id for label in hostile if high_confidence_match(label)}:
+                specific.setdefault(rule_id, []).append(item)
+            for label in {label.rule_id: label for label in hostile}.values():
+                hostile_rules[label.rule_id] += 1
+                hostile_rule_names[label.rule_id] = label.name
             if item.event.path is not None:
                 hostile_targets.add(item.event.path)
             for category in {label.category.value for label in hostile}:
@@ -136,6 +224,7 @@ def profile_client(
                 if strongest == category_severity[category] and len(refs) < SAMPLE_SIZE:
                     refs.append(item.event.evidence)
 
+    pairs = _matching(specific)
     paths = [e for e in ordered if e.path is not None]
     statuses = [e for e in ordered if e.status is not None]
     sizes = [e for e in ordered if e.bytes_sent is not None]
@@ -206,6 +295,103 @@ def profile_client(
         dict(sorted(Counter(str(e.status) for e in statuses).items())),
         dict(sorted(rules_matched.items())),
         dict(sorted(rules_won.items())),
+        sessions,
+        hostile_sessions,
+        min(hostile_times).isoformat() if hostile_times else None,
+        max(hostile_times).isoformat() if hostile_times else None,
+        len(pairs),
+        tuple(
+            _example(
+                item, next(label.name for label in item.all_labels if label.rule_id == rule_id)
+            )
+            for rule_id, item in pairs[:SAMPLE_SIZE]
+        ),
+        sequence_sessions,
+        sequence_examples,
+        tuple(recurrence_examples),
+        dict(sorted(category_counts.items())),
+        dict(sorted(hostile_rules.items())),
+        dict(sorted(hostile_rule_names.items())),
+    )
+
+
+def _example(item: LabelledEvent, note: str = "") -> RequestExample:
+    event = item.event
+    return RequestExample(
+        event.evidence, event.method, event.path, event.timestamp.isoformat(), note, event.query
+    )
+
+
+def high_confidence_match(label: ActivityLabel) -> bool:
+    """A high-confidence rule match: native, hostile, at or above `HIGH_CONFIDENCE`.
+
+    CRS labels never qualify: neither their severity nor their fixed confidence
+    says how narrowly a detection is defined.
+    """
+    return (
+        label.category.is_hostile
+        and not label.rule_id.startswith("crs:")
+        and label.confidence >= HIGH_CONFIDENCE
+    )
+
+
+def _strongest(labels: Sequence[ActivityLabel]) -> ActivityLabel:
+    return max(labels, key=lambda label: (int(label.severity), label.confidence, label.rule_id))
+
+
+def _probe_then_attack(labelled: Sequence[LabelledEvent]) -> tuple[RequestExample, ...]:
+    """The first targeted attempt in one session that has a probe strictly earlier,
+    paired with the latest such probe.
+
+    Position in the sorted session is not enough: requests logged at the same
+    time, possibly in different files, have no order the log can vouch for, so
+    a probe only becomes usable once the clock has moved past it.
+    """
+    usable = latest = None
+    current = None
+    for item in labelled:
+        if item.event.timestamp != current:
+            usable = latest or usable
+            latest, current = None, item.event.timestamp
+        targeted = [label for label in item.all_labels if label.category in TARGETED]
+        if targeted and usable is not None:
+            probe = _strongest([label for label in usable.all_labels if label.category in PROBE])
+            return (
+                _example(usable, probe.category.value.replace("_", " ").capitalize()),
+                _example(item, _strongest(targeted).name),
+            )
+        if any(label.category in PROBE for label in item.all_labels):
+            latest = item
+    return ()
+
+
+def _matching(edges: dict[str, list[LabelledEvent]]) -> list[tuple[str, LabelledEvent]]:
+    """The largest set of (rule, request) pairs using each rule and each request once.
+
+    Augmenting paths over rules in id order, so the same client always yields
+    the same pairs. Each rule keeps at most as many requests as there are
+    rules, which is enough for an exact maximum.
+    """
+    owner: dict[EvidenceRef, str] = {}
+    chosen: dict[str, LabelledEvent] = {}
+    limit = len(edges)
+
+    def augment(rule: str, seen: set[EvidenceRef]) -> bool:
+        for item in edges[rule][:limit]:
+            ref = item.event.evidence
+            if ref in seen:
+                continue
+            seen.add(ref)
+            if ref not in owner or augment(owner[ref], seen):
+                owner[ref], chosen[rule] = rule, item
+                return True
+        return False
+
+    for rule in sorted(edges):
+        augment(rule, set())
+    return sorted(
+        chosen.items(),
+        key=lambda pair: (pair[1].event.timestamp, pair[1].event.evidence.line_no, pair[0]),
     )
 
 
@@ -257,19 +443,10 @@ def rank_profiles(
                 p.client_ip,
             ),
         )
-        ranked = []
-        for profile in selected:
-            evidence = tuple(
-                dict.fromkeys(ref for reason in profile.reasons for ref in reason.evidence)
-            )[:SAMPLE_SIZE]
-            support = PriorityReason(
-                f"{profile.hostile_requests:,} of {profile.requests:,} requests have hostile detections "
-                f"({profile.hostile_requests / profile.requests:.0%}); strongest severity "
-                f"{Severity(profile.severity).name.lower()}. Priority balances support, severity and share.",
-                evidence,
-            )
-            ranked.append(RankedClient(profile, (support, *profile.reasons)))
-        return ranked
+        # Imported here because the reasons module reads this one's types.
+        from logarc.triage.reasons import suspicious_reasons
+
+        return [RankedClient(profile, suspicious_reasons(profile)) for profile in selected]
     if queue != "unusual":
         raise ValueError(f"unknown investigation queue: {queue}")
     populations = {

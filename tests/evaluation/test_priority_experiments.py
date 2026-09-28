@@ -69,3 +69,159 @@ def test_gate_rejects_head_gain_that_loses_quiet_attacks():
     assert not result["checks"]["quiet_recall_50"]
     winner = {seed: {**values, "quiet50": 0.2} for seed, values in winner.items()}
     assert promotion_gate(baseline, winner)["promote"]
+
+
+def test_bonus_parts_are_capped_as_frozen():
+    from logarc.evaluation.priorities import bonus_parts
+
+    base = population()[0]
+    assert bonus_parts(replace(base, distinct_rule_pairs=5, sequence_sessions=3))[:2] == (3, 1)
+    assert bonus_parts(replace(base, distinct_rule_pairs=0, sequence_sessions=0))[:2] == (0, 0)
+    for sessions, expected in ((0, 0.0), (1, 0.0), (2, 0.5), (5, 2.0), (9, 2.0)):
+        assert bonus_parts(replace(base, hostile_sessions=sessions))[2] == expected
+
+
+def test_c2_caps_only_the_logarithmic_support_term():
+    import pytest
+
+    from logarc.evaluation.priorities import c1_score, c2_score
+
+    base = replace(
+        population()[0],
+        hostile_requests=40,
+        requests=80,
+        severity=4,
+        distinct_rule_pairs=0,
+        sequence_sessions=0,
+        hostile_sessions=1,
+    )
+    assert c2_score(base) == pytest.approx(5 * 2 * 0.75)
+    from math import log2
+
+    assert c1_score(base) == pytest.approx(log2(41) * 2 * 0.75)
+    diluted = replace(base, requests=160)
+    assert c2_score(diluted) == pytest.approx(5 * 2 * (0.5 + 0.5 * 40 / 160))
+
+
+def test_bonuses_let_a_low_support_client_pass_a_bare_one():
+    from logarc.evaluation.priorities import graded_orderings
+    from logarc.triage.profile import rank_profiles
+
+    base = population()[0]
+    quiet = replace(
+        base,
+        client_ip="quiet",
+        hostile_requests=3,
+        requests=50,
+        severity=4,
+        distinct_rule_pairs=3,
+        sequence_sessions=1,
+        hostile_sessions=1,
+    )
+    bare = replace(
+        base,
+        client_ip="bare",
+        hostile_requests=20,
+        requests=20,
+        severity=1,
+        distinct_rule_pairs=0,
+        sequence_sessions=0,
+        hostile_sessions=1,
+    )
+    orders = graded_orderings([quiet, bare])
+    assert orders["policy3"] == [
+        r.profile.client_ip for r in rank_profiles([quiet, bare], "suspicious")
+    ]
+    assert orders["policy3"] == ["bare", "quiet"]
+    assert orders["c1"] == orders["c2"] == ["quiet", "bare"]
+
+
+def test_orderings_that_rank_different_clients_are_refused():
+    import pytest
+
+    from logarc.evaluation.priorities import assert_same_ranked
+
+    assert_same_ranked({"policy3": ["a", "b"], "c1": ["b", "a"]})
+    with pytest.raises(ValueError, match="same clients"):
+        assert_same_ranked({"policy3": ["a", "b"], "c1": ["a"]})
+
+
+def graded(order, grades):
+    from test_graded import truth_of
+
+    from logarc.evaluation.graded import graded_scores
+
+    return graded_scores(order, truth_of(grades))
+
+
+POPULATION = {f"t{i}": 2 for i in range(4)} | {f"b{i}": 0 for i in range(60)}
+
+
+def head(*targeted, benign_first=0):
+    """An order with `benign_first` benign clients, then the named targeted ones, then the rest."""
+    benign = [f"b{i}" for i in range(60)]
+    rest = [f"t{i}" for i in range(4) if f"t{i}" not in targeted]
+    return benign[:benign_first] + list(targeted) + benign[benign_first:] + rest
+
+
+def test_development_selection_follows_the_frozen_order():
+    from logarc.evaluation.graded import choose_graded
+
+    def dev(c1, c2):
+        return {"d": {"c1": graded(c1, POPULATION), "c2": graded(c2, POPULATION)}}
+
+    assert choose_graded(dev(head("t0", benign_first=10), head("t0"))) == "c2"
+    assert choose_graded(dev(head("t0", benign_first=30), head("t0", benign_first=12))) == "c2"
+    assert choose_graded(dev(head("t0", benign_first=55), head("t0", benign_first=52))) == "c2"
+    assert choose_graded(dev(head("t0"), head("t0"))) == "c1"
+
+
+def test_the_gate_promotes_a_challenger_that_passes_all_three_checks():
+    from logarc.evaluation.graded import graded_gate
+
+    baseline = {"h": graded(head("t0", "t1", benign_first=8), POPULATION)}
+    challenger = {"h": graded(head("t0", "t1", "t2", benign_first=5), POPULATION)}
+    result = graded_gate(baseline, challenger, {"h": frozenset({"t0"})})
+    assert result["promote"] is True
+    assert result["rank_changes"]["h"]["t0"] == (9, 6)
+
+
+def test_the_gate_refuses_a_challenger_whose_head_does_not_improve():
+    from logarc.evaluation.graded import graded_gate
+
+    same = graded(head("t0", "t1"), POPULATION)
+    result = graded_gate({"h": same}, {"h": same}, {"h": frozenset()})
+    assert result["promote"] is False
+    assert result["checks"]["head_yield"] is False
+
+
+def test_the_gate_refuses_a_low_support_client_leaving_its_tier():
+    from logarc.evaluation.graded import graded_gate
+
+    benign = [f"b{i}" for i in range(60)]
+    baseline = {"h": graded(head("t0", "t1", benign_first=7), POPULATION)}
+    challenger = {"h": graded(["t1", "t2", *benign[:9], "t0", *benign[9:], "t3"], POPULATION)}
+    assert (baseline["h"].ranks["t0"], challenger["h"].ranks["t0"]) == (8, 12)
+    result = graded_gate(baseline, challenger, {"h": frozenset({"t0"})})
+    assert result["checks"]["head_yield"] is True
+    assert result["checks"]["benign_head"] is True
+    assert result["checks"]["low_support_tiers"] is False
+    assert result["promote"] is False
+
+
+def test_the_gate_refuses_more_benign_clients_at_the_head_of_any_build():
+    from logarc.evaluation.graded import graded_gate
+
+    baseline = {
+        "h1": graded(head("t0", "t1", benign_first=8), POPULATION),
+        "h2": graded(head("t0"), POPULATION),
+    }
+    challenger = {
+        "h1": graded(head("t0", "t1", "t2", "t3"), POPULATION),
+        "h2": graded(head("t0", benign_first=10), POPULATION),
+    }
+    assert baseline["h2"].benign_at[10] == 9 and challenger["h2"].benign_at[10] == 10
+    result = graded_gate(baseline, challenger, {"h1": frozenset(), "h2": frozenset()})
+    assert result["checks"]["head_yield"] is True
+    assert result["checks"]["benign_head"] is False
+    assert result["promote"] is False

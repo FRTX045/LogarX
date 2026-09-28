@@ -16,7 +16,7 @@ from logarc.triage.profile import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
     from logarc.triage.profile import ClientProfile, RankedClient
 
@@ -177,3 +177,60 @@ def choose_challenger(cases: Mapping[str, Mapping[str, Mapping[str, float | None
             -CANDIDATES.index(name),
         ),
     )
+
+
+GRADED_METHODS = ("policy3", "c1", "c2")
+"""Today's shipped ordering and the two frozen challengers of the graded evaluation."""
+
+
+def bonus_parts(profile: ClientProfile) -> tuple[int, int, float]:
+    """The frozen bonuses: distinct high-confidence pairs (at most 3), a probe-then-attack
+    session (at most 1), and recurrence (0.5 per hostile session after the first, at most 2).
+    """
+    return (
+        min(3, profile.distinct_rule_pairs),
+        1 if profile.sequence_sessions else 0,
+        min(2.0, 0.5 * max(0, profile.hostile_sessions - 1)),
+    )
+
+
+def c1_score(profile: ClientProfile) -> float:
+    return priority_score(profile) + sum(bonus_parts(profile))
+
+
+def c2_score(profile: ClientProfile) -> float:
+    """C1 with only the logarithmic support term capped at 31 hostile requests."""
+    h, n = profile.hostile_requests, profile.requests
+    return log2(1 + min(h, 31)) * (1 + profile.severity / 4) * (0.5 + 0.5 * h / n) + sum(
+        bonus_parts(profile)
+    )
+
+
+def graded_orderings(profiles: Sequence[ClientProfile]) -> dict[str, list[str]]:
+    """Today's order and both challengers over the same clients, with today's tie keys."""
+    selected = [p for p in profiles if p.hostile_requests]
+    scores = {"policy3": priority_score, "c1": c1_score, "c2": c2_score}
+
+    def order(score: Callable[[ClientProfile], float]) -> list[str]:
+        return [
+            p.client_ip
+            for p in sorted(
+                selected,
+                key=lambda p: (
+                    -score(p),
+                    -len(p.categories),
+                    -p.hostile_targets,
+                    -p.hostile_requests,
+                    p.client_ip,
+                ),
+            )
+        ]
+
+    return {name: order(scores[name]) for name in GRADED_METHODS}
+
+
+def assert_same_ranked(orders: Mapping[str, Sequence[str]]) -> None:
+    """Orderings compared by the gate must differ in order only, never in who is ranked."""
+    sets = {name: frozenset(order) for name, order in orders.items()}
+    if len(set(sets.values())) > 1:
+        raise ValueError(f"orderings do not rank the same clients: {sorted(sets)}")
