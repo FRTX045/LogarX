@@ -86,8 +86,8 @@ success.
   different, later request with an injection, path traversal, access control,
   credential attack, SSRF or exploitation label. Later means a strictly later
   timestamp: requests logged at the same time, including ones from different
-  source files, are never paired, so a probe and an attack in the same second do
-  not count.
+  source files, are never paired; with second-resolution logs that means a probe
+  and an attack in the same second do not count.
 - Counted once per session, not once per probe and attack pair.
 - Observed, for example: "Enumeration was followed by an SQL-injection match
   against /login in the same session."

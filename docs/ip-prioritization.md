@@ -50,7 +50,8 @@ block's observation, for example "40 of 50 requests flagged; strongest high".
 3. **Probe, then an attack pattern** appears when, within one session, a
    reconnaissance or enumeration request is followed at a strictly later time by
    an injection, traversal, access-control, credential, SSRF or exploitation
-   match. Requests logged in the same second are never paired. It says nothing
+   match. Requests logged at the same time are never paired, so with
+   second-resolution logs a probe and an attack in the same second do not count. It says nothing
    about whether the probe led to the attempt; a shared IP or a scanner can
    produce the same ordering.
 4. **Recurrence across sessions** appears when detections fall in two or more

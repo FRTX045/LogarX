@@ -18,7 +18,8 @@ Keeping policy 3 does not mean its ordering is satisfactory.
 The design, grades, formulas and gate are those frozen in
 [the design document](../design/2026-09-23-suspicious-recommendations.md) before any
 build was scored. Records are in [suspicious-graded](suspicious-graded/): one per
-build, `frozen-selection.json` with the fingerprint of the code and inputs, and
+build, `frozen-selection.json` with hashes of the triage and evaluation code, the
+study script, and each case's manifest, CRS records, log and truth file, and
 `promotion.json` with the gate and every rank change.
 
 ## Method
@@ -122,6 +123,9 @@ of 1. These six were known failure cases before this study.
 
 ## Limits
 
+- The frozen fingerprint covers the triage and evaluation code, the study script
+  and the case inputs, not the rule packs, sessionizer or event store; the study
+  ran in one pass, and the recorded hashes match the committed code.
 - Scripted scenarios from one shop. 7 to 10 targeted clients per build, 12
   distinct targeted addresses across related builds, which are not necessarily 12
   independent campaigns.
@@ -130,7 +134,9 @@ of 1. These six were known failure cases before this study.
 - Timestamps in the dataset builds are remapped onto a diurnal model; spans and
   sessions describe that timeline.
 - Broken-links has no targeted client; its yields are 0 and its recall, rank and
-  nDCG are undefined, as expected. No method ranks a benign client in its first 50.
+  nDCG are undefined, as expected. Its benign-head result is vacuous: no client was
+  flagged at all, so all three queues were empty (0 of 1,510 clients ranked), and
+  CRS returned no detections for its 20,000 requests.
 
 ## Every build
 
