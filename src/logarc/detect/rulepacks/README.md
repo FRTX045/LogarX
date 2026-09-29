@@ -107,3 +107,7 @@ pytest tests/evaluation              # the committed scores, guarded against dri
 ```
 
 A rule that raises recall and also raises false alarms has not earned its place.
+
+Read [`docs/rule-pack-ledger.md`](../../../../docs/rule-pack-ledger.md) first. It
+records every measured pass so far — the scores before and after, what is still
+getting through, and the ideas that were tried and did not work.
