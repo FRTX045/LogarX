@@ -1625,6 +1625,60 @@ def test_the_node_rules_leave_the_certified_harmless_alone(engine: RuleEngine, t
     assert not hostile, f"{target!r} was called hostile by {hostile}"
 
 
+#: Django ORM lookups aimed at what a filter must never reach. The first two are
+#: the CRS corpus's (family 934); the rest are the classic leak, a secret read
+#: one character at a time through a prefix match.
+PYTHON_ORM_PROBES: list[str] = [
+    "/get?data__has_key=is_admin",
+    "/get?user__metadata__has_keys=is_staff",
+    "/get?user__password__startswith=pbkdf2_sha256",
+    "/get?owner__api_key__istartswith=sk-",
+    "/get?author__user__password__regex=^a",
+    "/get?reset_token__gte=a",
+    "/get?q=shoes&profile__settings__has_any_keys=is_superuser",
+]
+
+#: What a Django site sends on purpose. django-filter and the admin build these
+#: URLs for ordinary users, so none of them is evidence of anything.
+PYTHON_ORM_BENIGN: list[str] = [
+    # Single-level lookups: CRS itself only flags these at paranoia level 3.
+    "/get?username__startswith=p",
+    "/get?balance__gte=1000",
+    "/get?email__iendswith=example.com",
+    "/get?price__lte=100&category__slug=shoes",
+    # The admin's own list filters, privilege flags included.
+    "/admin/auth/user/?is_staff__exact=1",
+    "/admin/auth/user/?is_superuser__exact=0&is_active__exact=1",
+    # A secret named without a lookup is a parameter, not a probe.
+    "/reset?token=4f9a2c",
+    "/get?password=hunter2",
+    # A JSON-key lookup for an ordinary key.
+    "/get?data__has_key=colour",
+]
+
+
+@pytest.mark.parametrize("target", PYTHON_ORM_PROBES)
+def test_an_orm_lookup_on_a_secret_or_privilege_flag_is_caught(
+    engine: RuleEngine, target: str
+) -> None:
+    """The filter is the attacker's: a prefix match walks a password hash out
+    one character at a time, and a key lookup asks which rows are admins."""
+    (labelled,) = engine.label_events([request(target)])
+
+    hostile = [one.rule_id for one in labelled.all_labels if one.category.is_hostile]
+    assert hostile, f"nothing called {target!r} hostile"
+
+
+@pytest.mark.parametrize("target", PYTHON_ORM_BENIGN)
+def test_ordinary_django_filters_are_left_alone(engine: RuleEngine, target: str) -> None:
+    """A lookup is how Django filters, so the lookup is never the evidence —
+    what it is aimed at is."""
+    (labelled,) = engine.label_events([request(target)])
+
+    hostile = [one.rule_id for one in labelled.all_labels if one.category.is_hostile]
+    assert not hostile, f"{target!r} was called hostile by {hostile}"
+
+
 #: An internal host named rather than addressed. `ssrf_internal_target` wants a
 #: scheme in front — `http://localhost` — and these carry none, which is how
 #: fourteen corpus cases walked past it.

@@ -1,7 +1,7 @@
 # The demo log
 
 `demo.log` is the file to open when you want to show somebody what logarc does.
-It is 805 lines of three days' traffic against a fictional shop, and every
+It is 811 lines of three days' traffic against a fictional shop, and every
 feature the application has is reachable from it.
 
 ```bash
@@ -24,10 +24,10 @@ These are figures from a run, not intentions:
 
 | | |
 |---|---|
-| Lines / events / quarantined | 805 / 799 / 5 |
-| Clients | 34 |
-| Detection rules exercised | **83 of 83** |
-| Attackers flagged | 22 of 22 |
+| Lines / events / quarantined | 811 / 805 / 5 |
+| Clients | 35 |
+| Detection rules exercised | **85 of 85** |
+| Attackers flagged | 23 of 23 |
 | False alarms on the 12 ordinary clients | **0** without CRS, **0** with it |
 
 Re-measure at any time:
@@ -38,7 +38,7 @@ python samples/demo/make_demo.py          # rebuilds; prints line count and sha2
 
 The build is deterministic — no randomness anywhere — so the same script always
 produces the same bytes. The current file is
-`428dfca092b87e52f44cea97dcad7e3fff87178bbecb820b2547c3607f67e8aa`.
+`74a6dbf2994202a1a3cdc6ac7f802e3bf949b9223a29530b8ced0ab54c9acba5`.
 
 That digest is recorded beside the log in `SHA256SUMS`, and
 `tests/samples/test_demo_log.py` checks it on every run of the suite — including
@@ -158,7 +158,7 @@ feature lands that the demo log cannot show, add a client to
 script and commit the script, the log and `SHA256SUMS`.
 
 The check that matters is rule coverage, and nobody has to remember to run it:
-the suite runs it. It is 83 of 83 today, and a rule added to a pack that nothing
+the suite runs it. It is 85 of 85 today, and a rule added to a pack that nothing
 in this log triggers fails the build and names the rule. To run it on its own:
 
 ```bash
