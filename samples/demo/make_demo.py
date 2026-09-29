@@ -762,6 +762,32 @@ def perl_and_node(ip: str, day: int, hour: int) -> None:
         t += timedelta(seconds=11)
 
 
+def django_orm_probe(ip: str, day: int, hour: int) -> None:
+    """Somebody who found that the shop's API passes its query string into the ORM.
+
+    First a password hash read out one character at a time. `__startswith` answers
+    yes or no, and the size of the response is the answer: a longer body means
+    the prefix still matches. Then a question no filter asks, which accounts
+    carry an admin flag in their JSON profile.
+
+    A lookup alone would prove nothing, since `?price__lte=100` is how Django
+    filters. It is what each lookup is aimed at, a password and a privilege
+    flag, that makes these the log's only ORM attacks.
+    """
+    t = at(day, hour)
+    for prefix, size in (("p", 1840), ("pb", 1840), ("pbk", 1840), ("pbx", 96), ("pbkd", 1840)):
+        write(
+            t,
+            ip,
+            f"GET /api/users?user__password__startswith={prefix} HTTP/1.1",
+            200,
+            size,
+            agent=CURL,
+        )
+        t += timedelta(seconds=4)
+    write(t, ip, "GET /api/users?profile__data__has_key=is_admin HTTP/1.1", 200, 612, agent=CURL)
+
+
 def nosql_and_shellshock(ip: str, day: int, hour: int) -> None:
     """Two old-stack probes that share nothing but this client.
 
@@ -1027,6 +1053,7 @@ def build() -> None:
     three_sessions("192.0.2.115", 0)
     java_attacks("192.0.2.118", 0, 20)
     perl_and_node("192.0.2.121", 1, 15)
+    django_orm_probe("192.0.2.122", 2, 14)
     nosql_and_shellshock("192.0.2.119", 2, 4)
     headless_client("192.0.2.120", 1, 11)
 

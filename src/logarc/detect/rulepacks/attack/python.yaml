@@ -1,0 +1,57 @@
+# Payloads aimed at a Python web stack. Today that is Django's ORM; the file is
+# named for the technology, like `attack/php.yaml`, so the next Python-specific
+# shape has somewhere to go.
+#
+# ## A lookup is how Django filters, so a lookup is never the evidence
+#
+# `?price__lte=100` is django-filter doing its job, and the admin writes
+# `?is_staff__exact=1` into its own user list. An application that passes
+# request parameters straight into `.filter(**request.GET)` lets an attacker
+# choose the lookup too — and what separates the attack from the filter is
+# what the lookup is aimed at, never that there is one.
+#
+# CRS draws the same line from the other side: a single-level lookup
+# (`username__startswith=p`, rule 934210) fires only at paranoia level 3, its
+# noisiest tier. The five corpus cases of that shape are left uncaught here on
+# purpose, and `PYTHON_ORM_BENIGN` in the tests pins that choice.
+
+version: 1
+rules:
+
+  # A secret read out one character at a time.
+  #
+  # `user__password__startswith=pbkdf2` answers yes or no about the start of a
+  # stored hash, and repeated with one more character each time it answers the
+  # whole hash. No page filters a list by a password or a token, so the field
+  # name is the evidence — as long as a *comparison* is aimed at it. `?token=`
+  # and `?password=` on their own are ordinary parameters, which is why a lookup
+  # operator is required after the name.
+  - id: django_orm_secret_probe
+    name: ORM Lookup on a Secret Field
+    category: injection
+    owasp: "A05:2025"
+    severity: high
+    confidence: 0.85
+    references: ["CAPEC-66"]
+    match:
+      any:
+        - field: query_decoded
+          regex: '(?:^|&)[a-z0-9_]{0,80}(?:password|passwd|pass_?hash|secret|token|api_?key|private_?key|session_?key|otp_?seed|salt)[a-z0-9_]{0,40}__(?:i?(?:startswith|endswith|contains|regex)|[gl]te?|range)='
+
+  # Asking which rows carry a privilege flag, through a JSON field.
+  #
+  # `has_key`, `has_keys` and `has_any_keys` test whether a JSON object holds a
+  # key. Pointed at `is_admin` or `is_superuser` they enumerate who is
+  # privileged; pointed at `colour` they are a filter, so the key named is the
+  # evidence. The admin's own `?is_staff__exact=1` never goes through these.
+  - id: django_orm_privilege_key_probe
+    name: ORM Lookup for Privilege Flags
+    category: injection
+    owasp: "A05:2025"
+    severity: medium
+    confidence: 0.8
+    references: ["CAPEC-66"]
+    match:
+      any:
+        - field: query_decoded
+          regex: '(?:^|&)[a-z0-9_]{1,80}__has_(?:any_)?keys?=[^&]{0,200}\b(?:is_admin|is_staff|is_superuser|superuser|admin|role|roles|permissions?)\b'
