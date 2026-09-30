@@ -1130,12 +1130,6 @@ def test_an_action_rule_never_claims_a_crawler(engine: RuleEngine) -> None:
 @pytest.mark.parametrize(
     ("target", "method", "expected_name", "expected_category"),
     [
-        ("/cart", "GET", "View Cart", ActivityCategory.BROWSING),
-        ("/api/cart/add", "POST", "Modify Cart", ActivityCategory.API_CALL),
-        ("/checkout", "POST", "Checkout", ActivityCategory.BROWSING),
-        ("/payment/stripe", "GET", "Payment", ActivityCategory.API_CALL),
-        ("/account/orders", "GET", "Order History", ActivityCategory.BROWSING),
-        ("/track/12345", "GET", "Order Tracking", ActivityCategory.BROWSING),
         ("/search?q=oak", "GET", "Search", ActivityCategory.BROWSING),
         # A search reached as a call, not a page. Two rules match this and the
         # category is the whole difference between them, so asserting the name
@@ -1145,7 +1139,6 @@ def test_an_action_rule_never_claims_a_crawler(engine: RuleEngine) -> None:
         ("/login", "POST", "Sign In", ActivityCategory.AUTHENTICATION),
         ("/account/password/reset", "POST", "Password Reset", ActivityCategory.AUTHENTICATION),
         ("/upload", "POST", "File Upload", ActivityCategory.API_CALL),
-        ("/api/stock?id=3", "GET", "Stock Check", ActivityCategory.API_CALL),
         ("/contact", "POST", "Form Submission", ActivityCategory.API_CALL),
     ],
 )
@@ -1158,9 +1151,8 @@ def test_an_action_is_named_by_what_it_was(
 ) -> None:
     """The point of the whole `action/` tree.
 
-    `POST /checkout` used to be described as "Non-idempotent Request", which
-    names the HTTP verb and tells a reader nothing. These names are what makes
-    "which of these addresses was a customer?" a question the report answers.
+    Without it the fallback describes `POST /contact` as "Non-idempotent
+    Request", which names the HTTP verb and tells a reader nothing.
     """
     event = request(target)
     (labelled,) = engine.label_events([replace(event, method=method)])
@@ -1170,6 +1162,74 @@ def test_an_action_is_named_by_what_it_was(
     )
     assert labelled.label.category is expected_category
     assert not labelled.label.category.is_hostile
+
+
+#: A shop's paths, one for each kind of shopping step, and the description any
+#: other site's request of the same shape would get.
+SHOP_PATHS: list[tuple[str, str, str, ActivityCategory]] = [
+    ("/cart", "GET", "Page View", ActivityCategory.BROWSING),
+    ("/api/cart/add", "POST", "API Call", ActivityCategory.API_CALL),
+    ("/checkout", "POST", "Form Submission", ActivityCategory.API_CALL),
+    ("/payment/stripe", "GET", "Page View", ActivityCategory.BROWSING),
+    ("/account/orders", "GET", "Account Area", ActivityCategory.BROWSING),
+    ("/wishlist", "GET", "Page View", ActivityCategory.BROWSING),
+    ("/api/stock?id=3", "GET", "API Call", ActivityCategory.API_CALL),
+    ("/track/12345", "GET", "Page View", ActivityCategory.BROWSING),
+]
+
+
+@pytest.mark.parametrize(("target", "method", "expected_name", "expected_category"), SHOP_PATHS)
+def test_a_shop_request_is_described_as_any_site_would_be(
+    engine: RuleEngine,
+    target: str,
+    method: str,
+    expected_name: str,
+    expected_category: ActivityCategory,
+) -> None:
+    """The bundled labels presume nothing about what the site is for.
+
+    "Checkout" or "Payment" asserts what a person did, and on a site that sells
+    nothing the assertion is false: `/transactions` on a bank or `/billing` on
+    a SaaS product is not a purchase. A shop's requests get the same neutral
+    descriptions as everyone else's; an investigator who wants a site's own
+    vocabulary passes a pack with `--rules`.
+    """
+    event = request(target)
+    (labelled,) = engine.label_events([replace(event, method=method)])
+
+    assert labelled.label.name == expected_name, (
+        f"{method} {target} was called {labelled.label.name!r}"
+    )
+    assert labelled.label.category is expected_category
+
+
+def test_no_bundled_rule_presumes_the_site_is_a_shop() -> None:
+    """Checked by id and by name, because the name is what a reader sees and
+    the id is what a report's rule table and the triage cache carry."""
+    shop_ids = {
+        "action_view_cart",
+        "action_modify_cart",
+        "action_checkout",
+        "action_payment",
+        "action_order_history",
+        "action_wishlist",
+        "action_stock_check",
+        "action_order_tracking",
+    }
+    shop_names = {
+        "View Cart",
+        "Modify Cart",
+        "Checkout",
+        "Payment",
+        "Order History",
+        "Wishlist",
+        "Stock Check",
+        "Order Tracking",
+    }
+    rules = default_rules()
+
+    assert not {rule.id for rule in rules} & shop_ids
+    assert not {rule.name for rule in rules} & shop_names
 
 
 #: Real lines from the shopfront excerpt: a `python-requests` client shopping.

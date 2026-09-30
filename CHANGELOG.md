@@ -7,6 +7,26 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Activity descriptions no longer assume the site is a shop.** The bundled
+  `action/commerce.yaml` is gone, and with it View Cart, Modify Cart, Checkout,
+  Payment, Order History, Wishlist, Stock Check and Order Tracking. Those labels
+  assert what a person did, and on a site that sells nothing the assertion is
+  false: the pack would report `/transactions` as "Payment" and `/invoices` as
+  "Order History" on any site. The same requests are now described as any site's would be, as
+  Page View, API Call, Form Submission or Account Area. A site-specific
+  vocabulary can still be supplied with `--rules`.
+
+  Measured on the committed excerpt with CRS at paranoia level 2, detection is
+  unchanged: 1,125 caught, precision 1.000, recall 0.9305, no false alarms
+  (native: 1,123, 1.000, 0.9289, none). Category agreement falls by two
+  requests, accuracy 0.9346 to 0.9341 (native 0.9344 to 0.9339) and macro F1
+  0.7961 to 0.7956 (native 0.7860 to 0.7855). Both are `GET /cart` from
+  `python-requests`, which the truth calls browsing and which now land in
+  `crawling`, because Scripted Client is the only rule that matches them. That
+  is a standing limitation, left for its own change: scripted traffic is not
+  necessarily crawling. Episodes go from 582 to 581 (native 584 to 583). The
+  rule-pack ledger has the provenance.
+
 - **The client list reaches every client in the case, and Where to start drops
   All clients.** The list shows the case 500 clients at a time by request count,
   busiest first, with Previous and Next, and its filter searches the whole case

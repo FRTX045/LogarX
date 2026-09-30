@@ -285,11 +285,10 @@ def _representative(run: Sequence[LabelledEvent]) -> ActivityLabel:
             activity.severity,
             # Above confidence, not below it, so a benign label can never name
             # an episode over a hostile one that ties with it on severity.
-            # `Scripted Client` is INFO at 0.4 because a user-agent is a claim
-            # rather than a fact; an action rule that recognised `/checkout` is
-            # INFO at 0.9 because the path says so. Ordering by confidence first
-            # names that episode "Checkout" and loses the only surprising thing
-            # in it — that the checkout came from a script.
+            # Confidence is how sure a rule is, not how much its label
+            # matters, and a description of ordinary use is often the surer
+            # of the two. The category alone decides which side a label is
+            # on, so `Scripted Client` (`crawling`) does not count as hostile.
             activity.category.is_hostile,
             activity.confidence,
             _naming_rank(activity.category),

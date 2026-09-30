@@ -378,8 +378,12 @@ logarc evaluate -c /tmp/c -t tests/data/apache-shopfront/excerpt.truth.jsonl
 |---|---:|---:|
 | Caught | 1,123 | **1,125** |
 | **False alarms** | **0** | **0** |
-| Classification accuracy | 0.9344 | 0.9346 |
-| Macro F1 | 0.7860 | **0.7961** |
+| Classification accuracy | 0.9339 | 0.9341 |
+| Macro F1 | 0.7855 | **0.7956** |
+
+Figures as of 2026-09-30, when the commerce action pack was removed; before
+that they were accuracy 0.9344 and 0.9346, macro F1 0.7860 and 0.7961. The
+[rule-pack ledger](rule-pack-ledger.md) has both sides and how to reproduce them.
 
 Both fixtures now carry a `crs_fingerprint`: the CRS one names the ruleset that
 produced its detections, and the native one records `null`, which is a claim
@@ -731,7 +735,7 @@ Ruleset `9edf8587…` (33 rules) against coreruleset `d694d465951e`, 200 case fi
 **This is history, not the ruleset shipping today.** It was true when written and
 is kept because the analysis under *Reading it* is what motivated ADR-0008 — but
 the rules have since changed substantially and the figures below are stale. The
-tree now holds 85 rules across twelve attack packs and two action packs; family
+tree now holds 77 rules across twelve attack packs and one action pack; family
 933 alone went from 0.012 to 0.68 on 2026-09-15.
 
 For current figures run `logarc score-crs`, which reports both directions —

@@ -30,6 +30,7 @@ implying the CRS column was ever checked.
 | 2026-09-22 | 7078f19 | **crs** — the 96 false alarms | unchanged, 17,071 caught | **96 → 74 with CRS**, of which 73 an upstream corpus defect; comparable 23 → **1** | 0, two withheld |
 | 2026-09-23 | *this pass* | **934** — perl, nodejs, internal names | 934 **37% → 90%**; overall 45.6% → **55.1%** | 0/134 → 0/134; real log unchanged on both engines | 5, two new packs |
 | 2026-09-30 | *this pass* | **python** — new pack, Django ORM | 934 **90% → 91%** (174 → 176); overall 55.1% → **55.2%** (607/1,099) | 0/8 → 0/8 in 934, 0 in every family; excerpt and medium unchanged on both engines (medium: 1 → 1 native, 74 → 74 CRS) | 2, one new pack |
+| 2026-09-30 | *this pass* | **action**: `commerce.yaml` removed, labels site-neutral | detection unchanged on the excerpt, both engines; accuracy 0.9346 → 0.9341 CRS, 0.9344 → 0.9339 native | 0 → 0 on both engines | 0, eight removed |
 
 The 2026-09-20 pass is the first measured against a corpus containing a
 legitimate administrator, and it went the same way round as the recon pass: it
@@ -609,3 +610,59 @@ linear on four worst-case shapes up to 8,000 units.
 (deliberate, above); base64-wrapped payloads (5, a normaliser question); URL
 credential confusion (3, needs the authority parsed two ways); one Jinja
 `{% if %}` probe; two one-offs.
+
+### 2026-09-30: `action/commerce.yaml` removed, and the labels presume no kind of site
+
+Eight rules gone: View Cart, Modify Cart, Checkout, Payment, Order History,
+Wishlist, Stock Check and Order Tracking. "Checkout" or "Payment" asserts what a
+person did, and on a site that sells nothing it is false: the pack named
+`/transactions` "Payment" at 0.95 and `/invoices` "Order History" at 0.85
+for any client not calling itself a bot. The requests now get what any site's would: "Page
+View", "API Call", "Form Submission" or "Account Area".
+
+    source         tests/data/apache-shopfront/excerpt.log, 3,825 lines
+                   sha256 b4912a92181e0d6a3144ae31c79091dbd15886885d64787dd4d99bc690eaa6ce
+    truth          tests/data/apache-shopfront/excerpt.truth.jsonl
+                   sha256 2da65d2a847d5ae9780067350db98284f14038148a9abc1fc7fb6d957df3f7b9
+    base           4e930fe
+    ruleset        85 rules, 23ab54d9e0693a816ba77a178a23aed0c46895db36ed7d2e6b97449770643aed
+                →  77 rules, 699bdd54762b02c2d8e76a2d87eee0147c54833d0ab26310f285a2dad5e85040
+    CRS            d694d465951e, configuration 1c4b66d67838c5e8, paranoia level 2
+    policy         evaluate defaults: episode gap 300 s, idle timeout 1,800 s,
+                   noise absorption on (3 requests, 60 s), evidence sample 20
+
+| committed excerpt, 3,825 requests | native before | native after | CRS before | CRS after |
+|---|---:|---:|---:|---:|
+| Caught | 1,123 | 1,123 | 1,125 | 1,125 |
+| False alarms | 0 | 0 | 0 | 0 |
+| Attack-or-not precision | 1.000 | 1.000 | 1.000 | 1.000 |
+| Attack-or-not recall | 0.9289 | 0.9289 | 0.9305 | 0.9305 |
+| Classification accuracy | 0.9344 | 0.9339 | 0.9346 | 0.9341 |
+| Macro F1 | 0.7860 | 0.7855 | 0.7961 | 0.7956 |
+| Weighted F1 | 0.9350 | 0.9345 | 0.9353 | 0.9348 |
+| `browsing` recall | 0.899 | 0.886 | 0.899 | 0.886 |
+| Episodes | 584 | 583 | 582 | 581 |
+| Boundary F1 | 0.6281 | 0.6289 | 0.6297 | 0.6305 |
+
+Before and after are the same enriched case evaluated twice, native with
+`--no-crs`, so the source lines and `crs.jsonl` are identical and only the
+ruleset differs. Both "before" outputs are identical to the fixtures committed
+at 4e930fe, and both "after" outputs are identical to
+`excerpt.scores.json` and `excerpt.scores.crs.json` regenerated from fresh
+cases. To reproduce the before side, check out 4e930fe; for the after side, the
+commit that removes the pack. Then run the two recipes in
+`tests/evaluation/test_published_scores.py`.
+
+**Detection did not move; category agreement lost two requests.** Both are
+`GET /cart` from `python-requests/2.32.3`, which the truth calls `browsing`.
+"View Cart" (0.85) used to name them. Now the only rule that matches is
+`http_library_user_agent` ("Scripted Client", `crawling`, 0.4), and a rule
+match keeps the fallback's "Page View" from being consulted, so they land in
+`crawling`. Each engine also found one episode fewer, with boundary precision
+up slightly; which boundary moved was not traced.
+
+**Still getting through: scripted traffic is not necessarily crawling.** A
+script on a page no action rule describes is filed as `crawling`, whatever it
+asked for. Two requests on the excerpt; left alone here because it is a
+question about `http_library_user_agent` and the fallback, not about what the
+action pack presumes.

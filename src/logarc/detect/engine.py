@@ -889,13 +889,15 @@ def _most_severe(labels: Sequence[ActivityLabel]) -> ActivityLabel:
     own; it exists so that two equally severe, equally confident rules always
     resolve the same way rather than by load order.
 
-    Hostility sits above confidence because the packs now describe ordinary use
-    as well as attacks, and the two meet at INFO. `Scripted Client` is INFO at
-    0.4 — deliberately unsure, because a user-agent is a claim — while
-    `View Cart` on `/cart` is INFO at 0.85 and nearly certain. Ranking by
-    confidence alone leads a report on a `curl` request to `/cart` with
-    "View Cart", which is true and useless: it buries the only part worth
-    reading under the part nobody needed telling.
+    Hostility sits above confidence because confidence says how sure a rule is
+    of its claim, not how much the claim matters. A description of ordinary use
+    is often the surer label, since a path like `/login` says plainly what it
+    is, so ranking by confidence alone would let it lead over an attack that
+    tied with it on severity.
+
+    Only the category decides which side a label is on. `Scripted Client` is
+    `crawling`, not hostile, so `curl` posting to `/login` is led by "Sign In"
+    (0.9) over it (0.4): being a script is not an accusation.
     """
     return max(
         labels,

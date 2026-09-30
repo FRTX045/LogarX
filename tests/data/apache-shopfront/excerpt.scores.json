@@ -13,16 +13,16 @@
     "true_positives": 1123
   },
   "classification": {
-    "accuracy": 0.9343790849673203,
-    "macro_f1": 0.7860367816982445,
+    "accuracy": 0.9338562091503267,
+    "macro_f1": 0.785491061275245,
     "per_category": [
       {
         "category": "crawling",
-        "f1": 0.9639742131209709,
+        "f1": 0.9632436528988253,
         "false_negatives": 67,
-        "false_positives": 28,
-        "precision": 0.9784449576597383,
-        "predicted": 1299,
+        "false_positives": 30,
+        "precision": 0.9769408147578785,
+        "predicted": 1301,
         "recall": 0.9499252615844545,
         "recall_any": 0.9499252615844545,
         "support": 1338,
@@ -66,15 +66,15 @@
       },
       {
         "category": "browsing",
-        "f1": 0.6826923076923076,
-        "false_negatives": 16,
+        "f1": 0.6763285024154589,
+        "false_negatives": 18,
         "false_positives": 116,
-        "precision": 0.5503875968992248,
-        "predicted": 258,
-        "recall": 0.8987341772151899,
-        "recall_any": 0.8987341772151899,
+        "precision": 0.546875,
+        "predicted": 256,
+        "recall": 0.8860759493670886,
+        "recall_any": 0.8860759493670886,
         "support": 158,
-        "true_positives": 142
+        "true_positives": 140
       },
       {
         "category": "api_call",
@@ -190,7 +190,7 @@
         "predicted": "browsing"
       },
       {
-        "count": 16,
+        "count": 18,
         "expected": "browsing",
         "predicted": "crawling"
       },
@@ -225,7 +225,7 @@
         "predicted": "crawling"
       }
     ],
-    "weighted_f1": 0.9350369729318424
+    "weighted_f1": 0.9345185491904117
   },
   "crs_fingerprint": null,
   "granularity": "category",
@@ -239,17 +239,17 @@
     "max_duration_seconds": 28800,
     "split_on_user_agent_change": true
   },
-  "ruleset_fingerprint": "23ab54d9e0693a816ba77a178a23aed0c46895db36ed7d2e6b97449770643aed",
+  "ruleset_fingerprint": "699bdd54762b02c2d8e76a2d87eee0147c54833d0ab26310f285a2dad5e85040",
   "scenario": "apache-shopfront-medium-excerpt",
   "segmentation": {
     "boundaries_agreed": 244,
     "boundaries_expected": 245,
-    "boundaries_found": 532,
-    "boundary_f1": 0.628056628056628,
-    "boundary_precision": 0.45864661654135336,
+    "boundaries_found": 531,
+    "boundary_f1": 0.6288659793814433,
+    "boundary_precision": 0.4595103578154426,
     "boundary_recall": 0.9959183673469387,
-    "fragmentation": 1.9663299663299663,
-    "predicted_episodes": 584,
+    "fragmentation": 1.962962962962963,
+    "predicted_episodes": 583,
     "truth_activities": 297
   },
   "source_file_id": "excerpt.log",
