@@ -278,7 +278,7 @@ def _expand(sources: list[Path]) -> list[Path]:
     """Every pack file under the given files and directories.
 
     Directories are searched all the way down, because the bundled packs are
-    grouped into folders — `attack/php.yaml`, `action/commerce.yaml` — and so
+    grouped into folders (`attack/php.yaml`, `action/global.yaml`), and so
     is any collection large enough to want organising. A one-level search read
     a grouped directory as empty and returned no rules, without an error: the
     tool then analysed the case with its detection layer quietly absent, which

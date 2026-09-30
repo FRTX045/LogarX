@@ -7,10 +7,10 @@
 # outcomes: unreadable, crawler, static asset, authentication, API call,
 # non-idempotent request, page view. That ladder still runs — it is the last
 # resort, and it is what guarantees every request gets *some* description — but
-# it cannot say "this client checked out", and nobody can teach it to without
+# it cannot say "this client searched", and nobody can teach it to without
 # editing Python.
 #
-# These can. `POST /checkout` stops being "Non-idempotent Request".
+# These can. `POST /contact` stops being "Non-idempotent Request".
 #
 # ## How they sit beside the attack packs
 #
@@ -28,8 +28,8 @@
 # An episode is named after its most significant label, and among labels that
 # tie on severity that means the most confident one. So confidence is a claim
 # about how sure the *description* is, and it orders what a reader sees: a run
-# of requests that includes a checkout is named "Checkout" rather than
-# "Page View", because `/checkout` says what it is and an unrecognised path
+# of requests that includes a search is named "Search" rather than
+# "Page View", because `/search` says what it is and an unrecognised path
 # does not. The fallback ladder sits at 0.5; everything here is above it.
 #
 # ## Why there is no rule for product or category pages
