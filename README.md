@@ -324,7 +324,10 @@ pip install -e ".[gui,package]"
 python packaging/rebuild.py
 ```
 
-Produces `dist/logarc/` (~250 MB), which runs without Python installed. One
+Produces `dist/logarc/` (~270 MB), which runs without Python installed, and
+with CRS enrichment working: the script builds the CRS sidecar and bundles it
+with the ruleset and the licences of everything compiled into it, so the build
+needs Go and the ruleset clone described under *OWASP CRS* below. One
 folder rather than one file: a one-file build unpacks the whole bundle to
 `%TEMP%` on every launch, which with Qt and Arrow in it costs seconds each time
 and leaves copies of the tool behind.
@@ -333,7 +336,9 @@ Use `rebuild.py` rather than `pyinstaller` directly, because **PyInstaller exits
 0 on a bundle that is missing what it could not see** — the rule packs are data
 that nothing imports, and a build without them reports every request as benign.
 The script runs the tests, builds into a staging directory, checks for the things
-an exit code cannot, and only then swaps the result into place.
+an exit code cannot, and only then swaps the result into place. One of those
+checks sends the bundled sidecar a SQL injection and requires CRS rule 942100
+to answer, so a bundle whose CRS starts but cannot find its rules is refused.
 
 The staging checks also load the packaged Qt extensions in an isolated process.
 Windows system DLLs take precedence during collection, so unrelated tools on
@@ -354,6 +359,8 @@ logarc enrich --case ./case-shop           # replay the case past CRS
 ```
 
 Without it a case analyses on the bundled rules alone, and says so on every run.
+The packaged Windows build needs none of the above: it carries the sidecar and
+the ruleset.
 
 ---
 

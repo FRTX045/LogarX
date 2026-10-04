@@ -113,6 +113,12 @@ explicitly withheld, so a CRS version bump fails a test instead of quietly narro
 cross-compile when the interpreter and toolchain differ in platform. A `NOTICE` file is now carried.
 Distribution of prebuilt binaries is deliberately deferred until the benefit is seen on a real log.
 
+*Since 2026-10-05 the packaged Windows application carries the sidecar.* The condition was met by
+the measurements in `docs/evaluation.md`, so `packaging/rebuild.py` now builds it fresh on every
+packaging run and bundles it with the request rules, their revision and the licences of everything
+linked into it (`packaging/crs_bundle.py`); the bundle grows by about 22 MB. Source installs are
+unchanged: they still build it as `crs/README.md` describes.
+
 **This retires `score-crs` for good.** Removed in `2868e78` before this work began, on the reasoning
 that rules scored against the corpus their own project maintains grade themselves. ADR-0007 and its
 figures are kept as the evidence for this decision.
