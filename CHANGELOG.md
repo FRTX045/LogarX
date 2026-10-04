@@ -7,6 +7,18 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **SQL injection detection without CRS: 23% to 79% of what an access log can
+  see.** Against the OWASP CRS regression corpus (family 942), 31 to 106 of 135
+  cases; across all families, 607 to 682 of 1,099 (55.2% to 62.1%), with no
+  rule firing on any case the corpus certifies as harmless. New rules for
+  PostgreSQL casts and server functions, the first half of a boolean test
+  (`' or xyz-`), statement fragments (`in ( select`, `having count(`,
+  `xp_cmdshell`), SQLite's `GLOB` and whole-value comparisons (`?id=1=1`);
+  stacked statements and NoSQL operators in brackets are caught in more forms.
+  The SQL rules now read the User-Agent as well as the URL, since the access
+  log records it in full. On the committed excerpt and a 237,000-line
+  synthetic log, nothing moved in either direction, native or with CRS.
+
 - **CRS enrichment works in the packaged Windows application.** The bundle now
   carries the CRS sidecar, the CRS request rules and their data files, the
   ruleset's revision and the licence of every Go module compiled into the
@@ -404,6 +416,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   261 lines of unchanged values and buried the line that had actually moved.
 
 ### Fixed
+
+- **`sqli_tautology` no longer calls `a xor b = c`, `minor version = 2` or
+  `brand new = yes` an attack.** Its `or`/`and` had no left boundary, so any
+  word ending in one did. A digit may still precede it, so `1and 1=1` is still
+  caught.
 
 - **Rule packs inside a folder were silently not loaded.** `load_rules` globbed one level deep,
   so a pack in a subdirectory contributed no rules and raised nothing: the engine started, the

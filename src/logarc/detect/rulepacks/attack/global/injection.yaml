@@ -10,6 +10,13 @@
 # SQL comments. Rules are therefore written once, in canonical form, rather
 # than once per evasion.
 
+#
+# The SQL rules read the User-Agent as well as the request target. An access
+# log records it in full, and an injection placed there reaches any application
+# that stores or queries it — analytics, audit trails, "recently seen" tables.
+# Each pattern is written once, as a YAML anchor on the target condition, and
+# repeated by alias for the header, so the two cannot drift apart.
+
 version: 1
 rules:
 
@@ -23,7 +30,9 @@ rules:
     match:
       any:
         - field: target_decoded
-          regex: 'union[\s/(]+(all[\s/(]+)?select'
+          regex: &sqli_union 'union[\s/(]+(all[\s/(]+)?select'
+        - field: user_agent_decoded
+          regex: *sqli_union
 
   # The terminator — a comment or the end of the string — is what keeps this
   # rule honest: it is what says the comparison was appended to close off a
@@ -37,6 +46,11 @@ rules:
   # All three reached the rules as nothing at all while the UNION payloads from
   # the same run were caught, so a scan showed its conclusion and not its
   # working.
+  #
+  # No letter may come straight before `or`/`and`. Without that the rule read
+  # `a xor b = c`, `minor version = 2` and `brand new = yes` as tautologies —
+  # found 2026-10-05 by pinning ordinary searches against it. A digit still
+  # may, so the glued evasion `1and 1=1` stays caught.
   - id: sqli_tautology
     name: SQL Injection (always-true condition)
     category: injection
@@ -47,7 +61,9 @@ rules:
     match:
       any:
         - field: target_decoded
-          regex: "(or|and)[\\s(]+['\"]?[0-9a-z%_]+['\"]?\\s*(=|like)\\s*['\"]?[0-9a-z%_]+['\"]?\\s*(--|#|/\\*|$)"
+          regex: &sqli_tautology "(?<![a-z])(or|and)[\\s(]+['\"]?[0-9a-z%_]+['\"]?\\s*(=|like)\\s*['\"]?[0-9a-z%_]+['\"]?\\s*(--|#|/\\*|$)"
+        - field: user_agent_decoded
+          regex: *sqli_tautology
 
   # Counting columns, the step between finding an injection point and building
   # a UNION that fits it. Nothing covered it, so the tool saw the UNION and not
@@ -62,7 +78,9 @@ rules:
     match:
       any:
         - field: target_decoded
-          regex: '\border\s+by\s+\d+\s*(--|#|/\*|$)'
+          regex: &sqli_order_by '\border\s+by\s+\d+\s*(--|#|/\*|$)'
+        - field: user_agent_decoded
+          regex: *sqli_order_by
 
   - id: sqli_time_based
     name: SQL Injection (time-based blind)
@@ -79,7 +97,9 @@ rules:
     match:
       any:
         - field: target_decoded
-          regex: '\b(sleep|pg_sleep|benchmark|randomblob)\s*\(|waitfor\s+delay'
+          regex: &sqli_delay '\b(sleep|pg_sleep|benchmark|randomblob)\s*\(|waitfor\s+delay'
+        - field: user_agent_decoded
+          regex: *sqli_delay
 
   - id: sqli_schema_probe
     name: SQL Injection (schema enumeration)
@@ -90,7 +110,9 @@ rules:
     match:
       any:
         - field: target_decoded
-          regex: 'information_schema|sysobjects|pg_catalog\.|\bsqlite_master\b'
+          regex: &sqli_schema 'information_schema|sysobjects|pg_catalog\.|\bsqlite_master\b'
+        - field: user_agent_decoded
+          regex: *sqli_schema
 
   - id: sqli_error_based
     name: SQL Injection (error-based)
@@ -105,11 +127,17 @@ rules:
     match:
       any:
         - field: target_decoded
-          regex: '@@(version|servername|datadir|hostname|basedir)|\bversion\s*\(\s*\)'
+          regex: &sqli_error_globals '@@(version|servername|datadir|hostname|basedir)|\bversion\s*\(\s*\)'
         - field: target_decoded
-          regex: '\b(extractvalue|updatexml)\s*\(|\bdbms_pipe\.receive_message\b'
+          regex: &sqli_error_functions '\b(extractvalue|updatexml)\s*\(|\bdbms_pipe\.receive_message\b'
         - field: target_decoded
-          regex: '\b(convert|cast)\s*\(.*\b(int|integer|char|varchar|nvarchar|signed)\b'
+          regex: &sqli_error_cast '\b(convert|cast)\s*\(.*\b(int|integer|char|varchar|nvarchar|signed)\b'
+        - field: user_agent_decoded
+          regex: *sqli_error_globals
+        - field: user_agent_decoded
+          regex: *sqli_error_functions
+        - field: user_agent_decoded
+          regex: *sqli_error_cast
 
   - id: sqli_stacked_query
     name: SQL Injection (stacked statement)
@@ -120,7 +148,141 @@ rules:
     match:
       any:
         - field: target_decoded
-          regex: ';\s*(drop|insert|update|delete|truncate|alter)\s+'
+          regex: &sqli_stacked ';\s*(drop|insert|update|delete|truncate|alter)\s+'
+        - field: user_agent_decoded
+          regex: *sqli_stacked
+        # The same statements where the space after the verb is gone — comment
+        # stripping turns `drop/**/table` into `droptable` — each with its own
+        # guard rather than a loosened `\s+`, which would let `;update=1` and
+        # `;insertion_424242` through.
+        - field: target_decoded
+          regex: &sqli_stacked_tight ';\s*(?:truncate\b|drop(?:table|database)\b|print\s*[''"])'
+        - field: user_agent_decoded
+          regex: *sqli_stacked_tight
+        # A whole statement as the value, closed and commented off:
+        # `drop sampletable;--`, or a User-Agent of `DELETE FROM users;--`.
+        - field: query_decoded
+          regex: &sqli_bare_statement '(?:^|=)\s*(?:drop|truncate|delete\s+from)\s+\w+\s*;\s*(?:--|#|$)'
+        - field: user_agent_decoded
+          regex: *sqli_bare_statement
+
+  # PostgreSQL's cast operator. `password::int` makes the database fail on a
+  # text column and print its value in the error, and `::jsonb` opens the JSON
+  # operators; nothing but SQL writes a type name after `::`. The list is type
+  # names rather than "any identifier", which is what keeps C++ and Rust paths
+  # (`std::vector`, `u32::max`) and IPv6 addresses (`fe80::1`) out. Below 0.85:
+  # a Ruby constant such as `Foo::Text` would still read as one.
+  - id: sqli_postgres_cast
+    name: SQL Injection (PostgreSQL cast)
+    category: injection
+    owasp: "A05:2025"
+    severity: high
+    confidence: 0.8
+    references: ["CAPEC-66"]
+    match:
+      any:
+        - field: target_decoded
+          regex: &sqli_pg_cast '[\w)''"]::(?:int[248]?|integer|bigint|smallint|numeric|real|double precision|text|varchar|char|bool|boolean|bytea|jsonb?|oid|regclass|date)\b'
+        - field: user_agent_decoded
+          regex: *sqli_pg_cast
+
+  # PostgreSQL functions that reach past the table: the large-object calls read
+  # and write files on the database host (`lo_import('/etc/passwd')`), the
+  # `pg_read_file` family lists and reads them directly, and `overlay(... placing
+  # ...)` rewrites a column a byte at a time to test its value blind. An exact
+  # exploit shape each, with a required opening paren — the call, not the name.
+  - id: sqli_postgres_functions
+    name: SQL Injection (PostgreSQL server functions)
+    category: injection
+    owasp: "A05:2025"
+    severity: high
+    confidence: 0.9
+    references: ["CAPEC-66"]
+    match:
+      any:
+        - field: target_decoded
+          regex: &sqli_pg_functions '\blo_(?:get|import|export|open|creat|create|unlink|put|from_bytea)\s*\(|\bpg_(?:read_file|read_binary_file|ls_dir|stat_file)\s*\(|\boverlay\s*\([^)]{0,200}\bplacing\b'
+        - field: user_agent_decoded
+          regex: *sqli_pg_functions
+
+  # The first half of a boolean test, before the attacker knows what closes the
+  # query: `test' or 1=`, `' xor abc!`, `xor 99>`. `or` is an English word, so
+  # it has to be pinned to where an injection puts it — straight after a quote
+  # that broke out of a string, or as the first word of a parameter — and be
+  # followed by one operand and then a comparison. A trailing `-` counts only at
+  # the end of the value. That is what keeps `tea or coffee > milk`,
+  # `l'or bleu - prix` and `a xor b = c` quiet.
+  - id: sqli_boolean_fragment
+    name: SQL Injection (boolean test fragment)
+    category: injection
+    owasp: "A05:2025"
+    severity: high
+    confidence: 0.75
+    references: ["CAPEC-7"]
+    match:
+      any:
+        - field: target_decoded
+          regex: '[''"`]\s*x?or\s*[''"]?\w+[''"]?\s*(?:[<>=!]|-(?:&|$))'
+        - field: query_decoded
+          regex: '(?:^|&)[^=&]*=\s*x?or\s+[''"]?\w+[''"]?\s*(?:[<>=!]|-(?:&|$))'
+
+  # Pieces of a statement that have no reading outside SQL: a subquery opened
+  # inside `in (`, `having count(`, `group by ... having`, `select * from`, a
+  # `select ... from t where`, `except select`, Oracle's `execute immediate`,
+  # MSSQL's `xp_` procedures, a `create function name(`, MySQL's `if(1=` blind
+  # test and `) like (`. Each was checked against the searches a person
+  # actually types — `create table in excel`, `select a size from the list`,
+  # `if(1==1) javascript`, `everything except values` stay quiet. `case when`
+  # counts only where SQL puts it, after `=`, `(`, `,` or `select`, because
+  # "in case when it rains then" is English. Below 0.85: a search for SQL
+  # syntax itself (`select * from`) is still a search.
+  - id: sqli_statement_fragment
+    name: SQL Injection (statement fragment)
+    category: injection
+    owasp: "A05:2025"
+    severity: high
+    confidence: 0.75
+    references: ["CAPEC-66"]
+    match:
+      any:
+        - field: target_decoded
+          regex: &sqli_statement '\bin\s*\(\s*select\b|\bhaving\s+count\s*\(|\bgroup\s+by\b[^&]{0,120}\bhaving\b|\bselect\s+\*\s+from\b|\bselect\s+[\w.,`*\s]{1,80}?\s+from\s+[\w`.]+\s+(?:where|group\s+by|order\s+by|limit)\b|(?:[=(,]|\bselect)\s*case\s+when\b[^&]{0,120}\bthen\b|\bexcept\s+select\b|\bexcept\s+values\s*\(|\bexecute\s+immediate\b|\bxp_(?:cmdshell|regread|dirtree|fileexist|servicecontrol)\b|\bcreate\s+(?:or\s+replace\s+)?(?:function|procedure|trigger)\s+\w+\s*\(|\bif\s*\(\s*\d+\s*=(?!=)|\)\s*like\s*\('
+        - field: user_agent_decoded
+          regex: *sqli_statement
+
+  # SQLite's GLOB, used where LIKE is filtered: `'or(id glob 1)--`,
+  # `' and password glob password;`. Followed by a number or by `password`,
+  # which is what a blind test compares against; a file pattern (`glob *.txt`)
+  # is neither.
+  - id: sqli_sqlite_glob
+    name: SQL Injection (SQLite GLOB)
+    category: injection
+    owasp: "A05:2025"
+    severity: high
+    confidence: 0.8
+    references: ["CAPEC-7"]
+    match:
+      any:
+        - field: target_decoded
+          regex: &sqli_glob '\bglob\s+(?:\d+|password)\b'
+        - field: user_agent_decoded
+          regex: *sqli_glob
+
+  # The first probe of all: a parameter whose whole value is a comparison of two
+  # numbers — `?id=1=1`, `?a=b,1=1`, `?a=42<=>42`, `?a=1 is not 2`. Whole
+  # value, and the number must start it or follow `,` or `(`, which is what
+  # leaves arithmetic alone: `2 2=4`, `1+1=2` and `3*3=9` stay quiet.
+  - id: sqli_numeric_tautology
+    name: SQL Injection (numeric comparison probe)
+    category: injection
+    owasp: "A05:2025"
+    severity: medium
+    confidence: 0.65
+    references: ["CAPEC-7"]
+    match:
+      any:
+        - field: query_decoded
+          regex: '(?:^|&)[^=&]*=(?:[^&]*[,(])?\s*\d+\s*(?:=|!=|<>|<=>)\s*\d+\s*(?:&|$)|(?:^|&)[^=&]*=\s*\d+\s+is\s+not\s+\d+\s*(?:&|$)'
 
   - id: xss_script_tag
     name: Cross-Site Scripting (script tag)
@@ -186,6 +348,11 @@ rules:
       any:
         - field: target_decoded
           regex: '\$(where|ne|gt|lt|regex|exists)\b'
+        # The bracketed form a query string uses to smuggle an operator into a
+        # parameter (`user[$ne]=`, `q=[$lte]x`), with the operators the line
+        # above lacks. `[$` has no ordinary use, so the full set is safe here.
+        - field: target_decoded
+          regex: '\[\s*\$(?:ne|eq|gt|gte|lt|lte|in|nin|regex|exists|where|expr|or|and|not|nor|elemmatch|size|all)\s*\]'
 
   - id: xxe_entity
     name: XML External Entity

@@ -31,6 +31,7 @@ implying the CRS column was ever checked.
 | 2026-09-23 | *this pass* | **934** — perl, nodejs, internal names | 934 **37% → 90%**; overall 45.6% → **55.1%** | 0/134 → 0/134; real log unchanged on both engines | 5, two new packs |
 | 2026-09-30 | *this pass* | **python** — new pack, Django ORM | 934 **90% → 91%** (174 → 176); overall 55.1% → **55.2%** (607/1,099) | 0/8 → 0/8 in 934, 0 in every family; excerpt and medium unchanged on both engines (medium: 1 → 1 native, 74 → 74 CRS) | 2, one new pack |
 | 2026-09-30 | *this pass* | **action**: `commerce.yaml` removed, labels site-neutral | detection unchanged on the excerpt, both engines; accuracy 0.9346 → 0.9341 CRS, 0.9344 → 0.9339 native | 0 → 0 on both engines | 0, eight removed |
+| 2026-10-05 | *this pass* | **942 SQLi** — dialects, fragments, and the User-Agent | 942 **23% → 79%** (31 → 106); overall 55.2% → **62.1%** (607 → 682 of 1,099) | 0/12 → 0/12 in 942, 0 in every family; excerpt and medium unchanged on both engines (medium: 1 → 1 native, 74 → 74 CRS); **one old false positive removed** (`sqli_tautology`) | 6, two extended |
 
 The 2026-09-20 pass is the first measured against a corpus containing a
 legitimate administrator, and it went the same way round as the recon pass: it
@@ -478,8 +479,13 @@ the first classifier to be wrong.** The first grouping here put 211 misses in
 its `for` pattern only allowed a single-character variable — 58 batch
 comparisons and 16 `%variable` loops were sitting in that pile unseen.
 
-**942 SQLi — 104 of 135.** Postgres and MySQL dialect operators
-(`'{"b":2}'::jsonb <@ '{"a":1}'::jsonb`), and JSON functions.
+**942 SQLi — 29 of 135** (104 before 2026-10-05). Left on purpose: a quoted word on
+its own (`?'bla'`), bare numbers (`4294967296`, `2.2250738585072011e-308`), `like null`,
+`something like '`, and function names that are not calls (`select pg_sleep`,
+`sql_table=pg_catalog`) — each is ordinary text more often than an attack. Also left:
+MySQL JSON-path comparisons (`'{...}' < '$.c[2].f' = 7`, 2), `9999 or {if length((` (3),
+`div(23,-2)` (2), squashed `xunionselectfrom`, and three User-Agent payloads with no
+cast (`json_search(json_array(password),...)`, `starts_with(password) and 'true`).
 
 **930 LFI — 23 of 30.** Windows path separators (`..\`), and `..;` semicolon
 traversal. Small family; low value.
@@ -610,6 +616,59 @@ linear on four worst-case shapes up to 8,000 units.
 (deliberate, above); base64-wrapped payloads (5, a normaliser question); URL
 credential confusion (3, needs the authority parsed two ways); one Jinja
 `{% if %}` probe; two one-offs.
+
+
+### 2026-10-05 — family 942, and a field no attack rule was reading
+
+    942 SQLi       31 → 106 of 135      23% → 79%
+    overall        607 → 682 of 1,099   55.2% → 62.1%
+    wrongly        0/12 in 942, 0 in every family, after every rule
+    excerpt        only ruleset_fingerprint moved, native and CRS
+    medium         17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS
+
+**The User-Agent first.** 14 of the 15 bare-`/get` misses carried their payload
+in the User-Agent, which the combined format records in full and no attack rule
+read. Across all families the count was **127 misses: 94 in the User-Agent, 33
+in the Referer**, unreachable by any target-only rule. The SQL rules now read
+`user_agent_decoded` too, each pattern written once as a YAML anchor on the
+target condition and repeated by alias, so the two cannot drift. Not the
+Referer: it can innocently carry another site's URL, search query included,
+and nothing in this pass measured that cost.
+
+Then one rule per shape, measured after each:
+
+| rule | 942 caught after | what it reads |
+|---|---:|---|
+| User-Agent on the seven existing SQL rules | 33 | the field, not a pattern |
+| `sqli_postgres_cast` | 54 | `::int`, `::jsonb`, `::double precision` — type names only, so `std::vector`, `u32::max` and `fe80::1` stay out |
+| `sqli_postgres_functions` | 56 | `lo_get(`/`lo_import(`, `pg_read_file(`, `overlay(... placing` |
+| `sqli_boolean_fragment` | 75 | `' or xyz-`, `xor 99>` — `or` pinned after a quote or at the start of a value, then one operand and a comparison |
+| `sqli_stacked_query`, extended | 80 | `;droptable`, `;truncate[`, `';print'`, a whole value of `drop t;--` |
+| `sqli_statement_fragment` | 95 | `in ( select`, `having count(`, `case when` after `=`/`(`/`,`, `xp_cmdshell`, `execute immediate`, `if(1=` |
+| `sqli_sqlite_glob` | 99 | `glob 1`, `glob password` |
+| `nosql_injection`, extended | 100 | `[$lte]` and the operators it lacked, bracketed |
+| `sqli_numeric_tautology` | 106 | a whole value of `1=1`, `b,1=1`, `42<=>42` |
+
+**Every pattern was tried on ordinary text before it was written** — searches
+a person types about SQL and spreadsheets (`how to create table in excel`,
+`select a size from the list`, `everything except values`), English with `or`
+in it (`tea or coffee > milk`, `l'or bleu - prix`), arithmetic (`2 2=4`,
+`1+1=2`). One was caught that way: `case when` read `in case when it rains
+then` until it was pinned to where SQL puts it. All of them are in
+`SQLI_BENIGN`, beside the corpus's twelve.
+
+**And an old false positive came out.** Pinning those searches against the
+whole pack showed `sqli_tautology` calling `a xor b = c` an attack: its
+`(or|and)` had no left boundary, so `xor`, `minor version = 2`, `brand new =
+yes` and `for i = 1` all ended in one. No letter may now precede it; a digit
+still may, so the glued evasion `1and 1=1` stays caught. Recall did not move.
+
+Confidence is set against triage's 0.85: the casts and fragments that a search
+for SQL itself could produce sit below it (0.65–0.8); the PostgreSQL server
+functions, an exact exploit shape, at 0.9. Cost checked: linear on eleven
+worst-case shapes up to 16,000 units. The demo log gained `192.0.2.123`, a tool
+fingerprinting the database dialect by dialect, so it still reaches every rule
+(83 of 83).
 
 ### 2026-09-30: `action/commerce.yaml` removed, and the labels presume no kind of site
 

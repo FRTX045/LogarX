@@ -1,7 +1,7 @@
 # The demo log
 
 `demo.log` is the file to open when you want to show somebody what logarc does.
-It is 811 lines of three days' traffic against a fictional shop, and every
+It is 817 lines of three days' traffic against a fictional shop, and every
 feature the application has is reachable from it.
 
 ```bash
@@ -24,10 +24,10 @@ These are figures from a run, not intentions:
 
 | | |
 |---|---|
-| Lines / events / quarantined | 811 / 805 / 5 |
-| Clients | 35 |
-| Detection rules exercised | **77 of 77** |
-| Attackers flagged | 23 of 23 |
+| Lines / events / quarantined | 817 / 811 / 5 |
+| Clients | 36 |
+| Detection rules exercised | **83 of 83** |
+| Attackers flagged | 24 of 24 |
 | False alarms on the 12 ordinary clients | **0** without CRS, **0** with it |
 
 Re-measure at any time:
@@ -38,7 +38,7 @@ python samples/demo/make_demo.py          # rebuilds; prints line count and sha2
 
 The build is deterministic — no randomness anywhere — so the same script always
 produces the same bytes. The current file is
-`74a6dbf2994202a1a3cdc6ac7f802e3bf949b9223a29530b8ced0ab54c9acba5`.
+`e90bd759c5059cc0cd1157ee20d6c425b73b9af3111f8bbca1d02024e6b52a71`.
 
 That digest is recorded beside the log in `SHA256SUMS`, and
 `tests/samples/test_demo_log.py` checks it on every run of the suite — including
@@ -102,6 +102,9 @@ reading its story is a complete demonstration on its own.
 | `192.0.2.118` | Java stack: Log4Shell in the URL, the User-Agent and the Referer; an XML external entity; template injection |
 | `192.0.2.119` | NoSQL operators smuggled into a parameter, then Shellshock — which is not in the URL at all, it is in the User-Agent |
 | `192.0.2.120` | Sends no User-Agent. Graded as information, not as an attack |
+| `192.0.2.121` | Perl array interpolation, then Node.js in the shapes it arrives in |
+| `192.0.2.122` | A Django ORM lookup reading a password hash a character at a time, then asking which accounts carry an admin flag. A lookup alone is how Django filters; what it is aimed at is the evidence |
+| `192.0.2.123` | A tool working out which database is behind the stock API: a `1=1` probe, a subquery, SQLite's `GLOB`, then PostgreSQL's `::int` cast and `lo_import` reading `/etc/passwd`. The last request carries its payload **in the User-Agent**, which the SQL rules read too |
 
 **Six damaged lines** sit at the end. Five reach quarantine and one blank line
 is skipped outright, so the ingest summary reads 5. They are there so a reader
@@ -158,7 +161,7 @@ feature lands that the demo log cannot show, add a client to
 script and commit the script, the log and `SHA256SUMS`.
 
 The check that matters is rule coverage, and nobody has to remember to run it:
-the suite runs it. It is 77 of 77 today, and a rule added to a pack that nothing
+the suite runs it. It is 83 of 83 today, and a rule added to a pack that nothing
 in this log triggers fails the build and names the rule. To run it on its own:
 
 ```bash

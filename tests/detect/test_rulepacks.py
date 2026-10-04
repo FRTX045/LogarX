@@ -1792,3 +1792,134 @@ def test_the_word_localhost_in_prose_is_not_an_address(engine: RuleEngine, targe
 
     hostile = [one.rule_id for one in labelled.all_labels if one.category.is_hostile]
     assert not hostile, f"{target!r} was called hostile by {hostile}"
+
+
+#: SQL injection shapes the 2026-10-05 pass added, each with the rule that is
+#: meant to catch it — so a regression says which rule stopped, not merely that
+#: a percentage fell. From the CRS regression corpus (family 942) unless noted.
+SQLI_ATTACKS: list[tuple[str, str]] = [
+    ("/get/index.php?id=password::int", "sqli_postgres_cast"),
+    ("/get/index.php?id=function(foo)::double precision", "sqli_postgres_cast"),
+    ('/get?q=\'{"b":2}\'::jsonb @ \'{"a":1, "b":2}\'::jsonb', "sqli_postgres_cast"),
+    ("/get/index.php?id=lo_get(16400)", "sqli_postgres_functions"),
+    ("/get/index.php?id=lo_import('/etc' || '/pass' || 'wd')", "sqli_postgres_functions"),
+    ("/get/index.php?id=overlay(password placing '' from 1 for 0)", "sqli_postgres_functions"),
+    ("/endpoint?val=test'or 0>", "sqli_boolean_fragment"),
+    ("/filter?val=' or xyz-", "sqli_boolean_fragment"),
+    ("/api?id=xor 99>", "sqli_boolean_fragment"),
+    ('/search?term="xor 456>', "sqli_boolean_fragment"),
+    ("/get?test=;droptable test;", "sqli_stacked_query"),
+    ("/get?test=;truncate[xx", "sqli_stacked_query"),
+    ("/get?var=';print'", "sqli_stacked_query"),
+    ("/get?var=drop sampletable;--", "sqli_stacked_query"),
+    ("/get?var=in ( select * from", "sqli_statement_fragment"),
+    ("/get?var= having count(customerid) > 5", "sqli_statement_fragment"),
+    ("/get?var= case when condition1 then result1", "sqli_statement_fragment"),
+    ("/get?var= exec xp_cmdshell", "sqli_statement_fragment"),
+    ('/get?var=execute immediate "', "sqli_statement_fragment"),
+    ("/get?var=except values(1,2)", "sqli_statement_fragment"),
+    ("/get?var=if(1234=", "sqli_statement_fragment"),
+    ("/get?var=)like(", "sqli_statement_fragment"),
+    ("/get?var='or(id glob 1)--", "sqli_sqlite_glob"),
+    ("/get?user=admin@juice-sh.op' and password glob password;", "sqli_sqlite_glob"),
+    ("/get?mongoq=[$lte]asdfsd", "nosql_injection"),
+    ("/get?a=1=1", "sqli_numeric_tautology"),
+    ("/get?a=b,1=1", "sqli_numeric_tautology"),
+    ("/get?a=42<=>42", "sqli_numeric_tautology"),
+    ("/get?a=1 is not 2", "sqli_numeric_tautology"),
+    # The tautology rule's left boundary keeps digits allowed, so the glued
+    # evasion stays caught (not from the corpus).
+    ("/p?id=1and 1=1", "sqli_tautology"),
+]
+
+#: The other half: what the corpus certifies as harmless for 942, and the
+#: searches each new pattern was tried against before it was written.
+SQLI_BENIGN: list[str] = [
+    "/get?varname=address=999, rue d'arlon",
+    "/get?var=just in case (abc)",
+    "/get?var=;insertion_424242",
+    "/code?snippet=for loop in javascript",
+    "/get?url_slug=my--slugified-url",
+    "/get?q=how was your day today?",
+    "/get?gift_message= i love you <3",
+    "/get?message=find your solution here -> link",
+    # The boolean fragment: `or` is English.
+    "/s?q=l'or bleu - prix",
+    "/s?q=tea or coffee > milk",
+    "/s?q=rock 'n' roll or jazz",
+    "/s?q=xor gate",
+    # These three were called tautologies by `sqli_tautology` until 2026-10-05:
+    # its `or`/`and` had no left boundary, so `xor`, `minor` and `brand` ended
+    # in one.
+    "/s?q=a xor b = c",
+    "/s?q=minor version = 2",
+    "/s?q=brand new = yes",
+    "/s?q=for i = 1",
+    "/s?q=sale or clearance-",
+    # Statement fragments: what people type about SQL and spreadsheets.
+    "/s?q=how to create table in excel",
+    "/s?q=select a size from the list",
+    "/s?q=in case when it rains then stay",
+    "/s?q=everything except values",
+    "/s?q=if(1==1) javascript",
+    "/s?q=create function in excel",
+    # Casts: `::` outside SQL.
+    "/docs?symbol=std::vector",
+    "/s?q=u32::max",
+    "/net?addr=fe80::1",
+    # Numbers: arithmetic, not a probe.
+    "/s?q=2 2=4",
+    "/calc?expr=1+1=2",
+    "/s?filter=year=2020",
+    "/s?pos=(10,20)=30",
+]
+
+
+@pytest.mark.parametrize(("target", "rule_id"), SQLI_ATTACKS)
+def test_sql_injection_shapes_are_caught_by_their_rule(
+    engine: RuleEngine, target: str, rule_id: str
+) -> None:
+    (labelled,) = engine.label_events([request(target)])
+
+    fired = {label.rule_id for label in labelled.all_labels}
+    assert rule_id in fired, f"{rule_id} did not fire on {target!r}; fired: {sorted(fired)}"
+
+
+@pytest.mark.parametrize("target", SQLI_BENIGN)
+def test_sql_injection_rules_stay_off_ordinary_text(engine: RuleEngine, target: str) -> None:
+    (labelled,) = engine.label_events([request(target)])
+
+    hostile = [label.rule_id for label in labelled.all_labels if label.category.is_hostile]
+    assert not hostile, f"{target!r} was called hostile by {hostile}"
+
+
+@pytest.mark.parametrize(
+    ("user_agent", "rule_id"),
+    [
+        # From the corpus: injected into the User-Agent, which the access log
+        # records in full and an analytics table may store and query.
+        ("encode(lo_get(16400),'base64')::int", "sqli_postgres_cast"),
+        (
+            "1' and lo_import('/etc' || '/pass' || 'wd')::int::bool and 'true",
+            "sqli_postgres_functions",
+        ),
+        ("DELETE FROM users;--", "sqli_stacked_query"),
+        ("1 union select password from users", "sqli_union_select"),
+    ],
+)
+def test_sql_injection_in_the_user_agent_is_caught(
+    engine: RuleEngine, user_agent: str, rule_id: str
+) -> None:
+    (labelled,) = engine.label_events([request("/", user_agent=user_agent)])
+
+    assert rule_id in {label.rule_id for label in labelled.all_labels}
+
+
+def test_an_ordinary_browser_user_agent_is_not_sql(engine: RuleEngine) -> None:
+    agent = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0"
+    )
+    (labelled,) = engine.label_events([request("/", user_agent=agent)])
+
+    assert not [label for label in labelled.all_labels if label.category.is_hostile]
