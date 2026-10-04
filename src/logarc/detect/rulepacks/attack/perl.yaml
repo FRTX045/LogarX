@@ -43,7 +43,7 @@ rules:
   - id: perl_array_interpolation
     name: Perl Array Interpolation
     category: injection
-    owasp: "A03:2025"
+    owasp: "A05:2025"
     severity: critical
     confidence: 0.9
     references: ["CAPEC-242"]

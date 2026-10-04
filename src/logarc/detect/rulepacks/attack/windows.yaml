@@ -42,7 +42,7 @@ rules:
   - id: windows_batch_for
     name: Windows Batch FOR Loop
     category: injection
-    owasp: "A03:2025"
+    owasp: "A05:2025"
     severity: critical
     confidence: 0.9
     references: ["CAPEC-88"]
@@ -72,7 +72,7 @@ rules:
   - id: windows_batch_if
     name: Windows Batch IF Test
     category: injection
-    owasp: "A03:2025"
+    owasp: "A05:2025"
     severity: critical
     confidence: 0.9
     references: ["CAPEC-88"]
@@ -103,7 +103,7 @@ rules:
   - id: windows_shell_invocation
     name: Windows Shell Invocation
     category: injection
-    owasp: "A03:2025"
+    owasp: "A05:2025"
     severity: critical
     confidence: 0.9
     references: ["CAPEC-88"]

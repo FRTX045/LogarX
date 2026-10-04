@@ -71,7 +71,7 @@ rules:
   - id: nodejs_global_access
     name: Node.js Global Access
     category: injection
-    owasp: "A03:2025"
+    owasp: "A05:2025"
     severity: critical
     confidence: 0.9
     references: ["CAPEC-242"]
@@ -114,7 +114,7 @@ rules:
   - id: nodejs_endless_loop
     name: Endless Loop (denial of service through eval)
     category: injection
-    owasp: "A03:2025"
+    owasp: "A05:2025"
     severity: high
     confidence: 0.85
     references: ["CAPEC-482"]

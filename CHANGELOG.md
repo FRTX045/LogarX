@@ -442,6 +442,13 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Six injection rules reported the wrong OWASP category.** The Windows
+  batch, Node.js and Perl injection rules carried `A03:2025`, which in the 2025
+  list is Software Supply Chain Failures; injection is `A05:2025`. It was the
+  2021 numbering, where A03 was Injection. A report on one of those attacks now
+  names the right category, and a test pins `A03:2025` to the four component
+  rules the README's mapping table lists.
+
 - **A CRS match read from the Referer no longer names the request when the
   rule that made it is chained.** CRS detections from the Referer describe the
   page the visitor came from, so they were already kept as evidence without
