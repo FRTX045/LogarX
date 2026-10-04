@@ -33,6 +33,7 @@ implying the CRS column was ever checked.
 | 2026-09-30 | *this pass* | **action**: `commerce.yaml` removed, labels site-neutral | detection unchanged on the excerpt, both engines; accuracy 0.9346 → 0.9341 CRS, 0.9344 → 0.9339 native | 0 → 0 on both engines | 0, eight removed |
 | 2026-10-05 | *this pass* | **942 SQLi** — dialects, fragments, and the User-Agent | 942 **23% → 79%** (31 → 106); overall 55.2% → **62.1%** (607 → 682 of 1,099) | 0/12 → 0/12 in 942, 0 in every family; excerpt and medium unchanged on both engines (medium: 1 → 1 native, 74 → 74 CRS); **one old false positive removed** (`sqli_tautology`) | 6, two extended |
 | 2026-10-05 | *this pass* | **941 XSS** — called sinks, disguised tags, the User-Agent; not the Referer | 941 **36% → 81%** (26 → 58); overall 62.1% → **65.0%** (682 → 714 of 1,099) | 0/4 → 0/4 in 941, 0 in every family; excerpt and medium unchanged on both engines | 3, one extended |
+| 2026-10-05 | *this pass* | **932 RCE** — globs, braces, disguised names, Windows' own tools, mail commands | 932 **45% → 70%** (183 → 285); overall 65.0% → **74.5%** (714 → 819 of 1,099) | 0/64 → 0/64 in 932, 0 in every family; excerpt and medium unchanged on both engines (medium: 1 → 1 native, 74 → 74 CRS) | 7, two extended |
 
 The 2026-09-20 pass is the first measured against a corpus containing a
 legitimate administrator, and it went the same way round as the recon pass: it
@@ -619,6 +620,51 @@ credential confusion (3, needs the authority parsed two ways); one Jinja
 `{% if %}` probe; two one-offs.
 
 
+
+
+### 2026-10-05 — family 932, the forms written to get past a word filter
+
+    932 RCE        183 → 285 of 406      45% → 70%
+    overall        714 → 819 of 1,099   65.0% → 74.5%
+    wrongly        0/64 in 932, 0 in every family, after every rule
+    excerpt        only ruleset_fingerprint moved, native and CRS
+    medium         17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS
+
+What the earlier passes left in 932 was mostly not new commands but old ones
+dressed to slip past a filter that knows their names. Each shape was tried
+against the 64 requests the corpus certifies as harmless, and against searches
+written to break it, before it went into a pack; five of those searches did
+break a first draft and are now pinned in `RCE_BENIGN`.
+
+| rule | 932 caught after | shape, and what kept it honest |
+|---|---:|---|
+| `shell_glob_path` | 204 | `/etc/pa[s]swd`, `/[e//]tc`, `/???/??t`, `/usr/[a-z]in/bash` — only inside an absolute path, so the corpus's `?page=page[1]` and `field_metatags[0][advanced]` stay out |
+| `shell_brace_expansion` | 214 | `{,ifconfig}`, `c{a,oun}t`, `{l,-lh}s` — JSON never opens with `{,`; set notation `a{b,c}` broke the first draft |
+| `shell_disguised_command` | 229 | `'wh'oami`, `""p""y""t""h""o""n`, `ti''me sh -c whoami` — three empty quote pairs, because one is how SQL escapes `o''brien`; `time` only where a command starts, because the corpus certifies `time warner` and "what time who wins" broke the first draft |
+| `shell_syntax_in_value` | 241 | `pi$()ng`, `ping```, `>(tee log)`, the fork bomb, `$d/tcp/` |
+| `shell_invocation` | 261 | `bash -c "..."`, `$shell -c`, `;ps`, `;who`, `ll /var/www/`, SQLite `.shell`/`.system` — `-c` must be followed by a quote, `$` or a command, because "bash -c example" broke the first draft |
+| `mail_command_injection` | 268 | `mail from:<`, `rcpt to:<`, `ehlo host.tld`, IMAP `a001 examine`; and, written for the demo log, the real arrival after an encoded line break (`%0d%0arcpt to:<`), which normalisation turns into a space — that form caught one more corpus case |
+| `windows_batch_for` / `_if`, extended; `windows_living_off_the_land` | 285 | `for %- in (`, `if/i`, `if "a a" == "a a"`; `certutil -urlcache`, `mshta http:`, `regedit /e`, `bcdboot`, `; at 2:00` |
+
+The new shell rules read the User-Agent by alias. Every distinct User-Agent on
+the benign lines of both medium tiers, plus a handful chosen to be awkward (a
+Sharp phone's `SH-04F`, `Wget/1.21` inside a compatible string, a quoted word),
+was run through the whole rule set: none fired — 70 agents, which is a
+small sample, so `command_injection` itself is left reading the target only.
+
+**Still getting through — 121 of 406.** 85 carry the payload outside the URL
+(38 bare `/get`, 45 `/post`, 2 `/`): headers this pass did not open to the
+older rules, and bodies no log records. Of the 36 in the query: bare mail verbs
+(`quit`, `list 3`, `help postmaster` — words, left on purpose), bash history
+(`!!`, `!-1`), `~-`, `$[]`, `alias a=b`, `pip install`, `python3.10 cmd`,
+`bin/ansible`-style paths, `'i'p a`; and five the corpus files as attacks that
+read as English (`o'keefe's`, `that's two "o"s in goose`, `size: 8"x11"`,
+`''that's the joke''.jpeg`, `go to store. at the store, shop.`), which no
+pattern here should ever take.
+
+Found on the way, for its own change: six injection rules carry `A03:2025`,
+which in the 2025 list is *Software Supply Chain Failures*; injection is
+`A05:2025`. They read like the 2021 numbering, where A03 was injection.
 
 ### 2026-10-05 — family 941, and why the Referer stays unread
 

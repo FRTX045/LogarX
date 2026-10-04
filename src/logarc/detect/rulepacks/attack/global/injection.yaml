@@ -418,6 +418,28 @@ rules:
         - field: target_decoded
           regex: '\{(cat|ls|id|whoami|uname|curl|wget|nc|bash|sh|ping),'
 
+  # Mail-protocol commands in a parameter a mail feature passes to an SMTP, IMAP
+  # or POP server: `mail from:<...>`, `rcpt to:<postmaster>`, `ehlo host.tld`,
+  # `apop user <md5>`, `a001 examine inbox`, `auth user <base64>`. Only the
+  # forms with their protocol arguments — `quit`, `list 3` or `help postmaster`
+  # alone are words, and stay unmatched on purpose.
+  - id: mail_command_injection
+    name: Mail Protocol Command Injection
+    category: injection
+    owasp: "A05:2025"
+    severity: high
+    confidence: 0.8
+    references: ["CAPEC-134"]
+    match:
+      any:
+        - field: query_decoded
+          regex: '(?:^|=)\s*(?:mail\s+from|rcpt\s+to)\s*:\s*<|(?:^|=)\s*(?:ehlo|helo)\s+[\w.-]+\.[a-z]{2,}\b|(?:^|=)\s*apop\s+\w+\s+[0-9a-f]{32}\b|(?:^|=)\s*a\d{3}\s+(?:examine|select|login|fetch|list)\s|(?:^|=)\s*auth\s+\w+\s+[a-z0-9+/]{16,}={0,2}'
+        # How it arrives for real: after an encoded line break in the middle of
+        # a field (`subject=hi%0d%0arcpt to:<...>`). Normalisation turns the
+        # break into a space, so the evidence is the raw encoding.
+        - field: target
+          regex: '%0[ad](?:%0[ad])?(?:%20|\+|\s)*(?:mail(?:%20|\+|\s)+from|rcpt(?:%20|\+|\s)+to|ehlo|helo|data(?:%0[ad]|&|$))\b'
+
   - id: nosql_injection
     name: NoSQL Injection
     category: injection

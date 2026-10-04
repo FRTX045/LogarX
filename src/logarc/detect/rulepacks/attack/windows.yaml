@@ -54,6 +54,10 @@ rules:
         # for %i in (…) do — one or two percent signs, any variable name.
         - field: target_decoded
           regex: '\bfor\s+%{1,2}[a-z0-9_]+\s+in\s*\('
+        # The same loop with a punctuation variable, which cmd.exe accepts:
+        # `for %- in (a,b,c) do cmd`, `for %~ in (...)`.
+        - field: target_decoded
+          regex: '\bfor\s+%{1,2}[^\s\w%]\s+in\s*\('
 
   # `if` in its batch forms, which is three different syntaxes wearing one word.
   #
@@ -83,6 +87,11 @@ rules:
         # if 2 geq 15 — the word operators, which have no English meaning.
         - field: target_decoded
           regex: '\bif\s+(?:(?:/i|not)\s+)*\(?[^\s]{1,40}\s+(?:equ|neq|lss|leq|gtr|geq)\b'
+        # The switch glued to the keyword (`if/i a==b`), and a quoted string
+        # compared with `==` (`if "a a" == "a a" echo same`), which the
+        # space-free operand above cannot reach.
+        - field: target_decoded
+          regex: '\bif/i\b|\bif\s+"[^"]{0,40}"\s*==\s*"'
 
   # Naming the interpreter itself, rather than writing syntax for it.
   #
@@ -113,3 +122,20 @@ rules:
         # are not words in any language a shop's customers search in.
         - field: target_decoded
           regex: '\b(?:invoke-(?:webrequest|expression|command|item|wmimethod)|iwr|iex|iwmi|new-object|start-process|downloadstring)\b'
+
+  # Windows' own tools, used to fetch and run a payload without bringing one:
+  # `certutil -urlcache -f http://...` downloads, `mshta http://...` runs a
+  # remote HTA, `regedit /e` exports the registry, `bcdboot` rewrites boot
+  # files, `at 2:00` schedules a command. Each with the switch or argument that
+  # makes it the attack — the bare names are not.
+  - id: windows_living_off_the_land
+    name: Windows Built-in Tool Abuse
+    category: injection
+    owasp: "A05:2025"
+    severity: critical
+    confidence: 0.85
+    references: ["CAPEC-88"]
+    match:
+      any:
+        - field: target_decoded
+          regex: '\bcertutil(?:\.exe)?\s+-urlcache\b|\bmshta(?:\.exe)?\s+(?:https?:|javascript:|vbscript:)|\bregedit(?:\.exe)?\s+/[es]\b|\bbcdboot\b\s*(?:/|<)|&\s*bcdboot\b|;\s*at\s+\d{1,2}:\d{2}\b'

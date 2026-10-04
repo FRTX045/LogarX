@@ -1,7 +1,7 @@
 # The demo log
 
 `demo.log` is the file to open when you want to show somebody what logarc does.
-It is 820 lines of three days' traffic against a fictional shop, and every
+It is 827 lines of three days' traffic against a fictional shop, and every
 feature the application has is reachable from it.
 
 ```bash
@@ -24,9 +24,9 @@ These are figures from a run, not intentions:
 
 | | |
 |---|---|
-| Lines / events / quarantined | 820 / 814 / 5 |
+| Lines / events / quarantined | 827 / 821 / 5 |
 | Clients | 36 |
-| Detection rules exercised | **86 of 86** |
+| Detection rules exercised | **93 of 93** |
 | Attackers flagged | 24 of 24 |
 | False alarms on the 12 ordinary clients | **0** without CRS, **0** with it |
 
@@ -38,7 +38,7 @@ python samples/demo/make_demo.py          # rebuilds; prints line count and sha2
 
 The build is deterministic — no randomness anywhere — so the same script always
 produces the same bytes. The current file is
-`8d81c28e168a63fadce1455c89289e069a0d2fdf64cf1856e436c20d3aad3b84`.
+`de681a3589ea438d9b6fee95176f254ef2bba6a4965369ac5b5ee5e8053d9da4`.
 
 That digest is recorded beside the log in `SHA256SUMS`, and
 `tests/samples/test_demo_log.py` checks it on every run of the suite — including
@@ -88,7 +88,7 @@ reading its story is a complete demonstration on its own.
 | `192.0.2.104` | Path traversal, the same file asked for five ways — plain, encoded, double-encoded, null-byte, backslash. Normalisation collapses all five before any rule sees them |
 | `192.0.2.105` | PHP: open tag, stream wrapper, superglobal, decode chain, comment evasion, config directive, `phpinfo()`, file function, object injection |
 | `192.0.2.106` | XSS — script tag, event handler, `javascript:`, SVG, then three that get past a `<script` filter: a bare `alert()`, a tag spelled `<d i a l o g`, script through `url(javascript:`. Sent with a **browser** User-Agent, deliberately (see below) |
-| `192.0.2.107` | Command injection, Unix then Windows batch |
+| `192.0.2.107` | Command injection, Unix then Windows batch, then the forms written to get past a filter that knows those words — a glob for `/etc/passwd`, brace expansion, a quote-split `whoami`, `pi$()ng`, `bash -c`, `certutil -urlcache` — and an SMTP command smuggled into a contact form after an encoded line break |
 | `192.0.2.108` | SSRF: cloud metadata, loopback, `file://`, `gopher://` |
 | `192.0.2.109` | Project metadata probe — is the repository the document root? |
 | `192.0.2.110` | Session fixation: a session id in the URL arriving from somebody else's site. Last line is the control, same URL from our own page, which must not fire |
@@ -161,7 +161,7 @@ feature lands that the demo log cannot show, add a client to
 script and commit the script, the log and `SHA256SUMS`.
 
 The check that matters is rule coverage, and nobody has to remember to run it:
-the suite runs it. It is 86 of 86 today, and a rule added to a pack that nothing
+the suite runs it. It is 93 of 93 today, and a rule added to a pack that nothing
 in this log triggers fails the build and names the rule. To run it on its own:
 
 ```bash
