@@ -105,6 +105,21 @@ def test_owasp_mappings_use_the_expected_notation() -> None:
     assert {rule.owasp for rule in default_rules() if rule.owasp is not None} == represented
 
 
+def test_only_the_component_rules_claim_software_supply_chain() -> None:
+    """A03:2025 is *Software Supply Chain Failures*; the README's mapping table
+    names the four rules that belong there. In the 2021 list A03 was Injection,
+    and six injection rules carried that number into the 2025 edition until
+    2026-10-05 — so this pins the set rather than the count."""
+    supply_chain = {rule.id for rule in default_rules() if rule.owasp == "A03:2025"}
+
+    assert supply_chain == {
+        "known_vulnerable_component_path",
+        "dependency_manifest_probe",
+        "log4shell_jndi",
+        "shellshock",
+    }
+
+
 @pytest.mark.parametrize(
     ("target", "status", "count", "category", "owasp"),
     [
