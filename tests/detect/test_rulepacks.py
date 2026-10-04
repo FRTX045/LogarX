@@ -2092,6 +2092,74 @@ RCE_BENIGN: list[str] = [
 ]
 
 
+#: File-read shapes the 2026-10-05 pass added. From the CRS corpus (family 930).
+LFI_ATTACKS: list[tuple[str, str]] = [
+    ("/get?arg=..\\pineapple", "path_traversal"),
+    ("/get?a=..;.\\.;\\.", "path_traversal"),
+    ("/get?code=../.history", "path_traversal"),
+    ("/get?code=cat /etc/subuid", "sensitive_file_access"),
+    ("/get?test=/sys/class", "sensitive_file_access"),
+    ("/get?foo=arg&path_comp=.ssh/id_rsa", "sensitive_file_access"),
+    ("/get?code=/path/to/.docker/secrets", "sensitive_file_access"),
+    ("/get?file=node_modules/some-package/package.json", "sensitive_file_access"),
+    ("/@id/__x00__?import", "sensitive_file_access"),
+    ("/get?code=backup.sql.zip", "backup_file_probe"),
+]
+
+LFI_BENIGN: list[str] = [
+    # The corpus's own harmless 930 cases.
+    "/get?code=>/tmp",
+    "/get?code=>/test.environment",
+    "/get?code=firstname.dockery@host.tld",
+    "/get?history.history=test",
+    # And what the patterns were tried on.
+    "/s?q=wait..",
+    "/s?q=1..10",
+    "/s?q=etc/group of people",
+    "/s?file=report.sql",
+]
+
+
+@pytest.mark.parametrize(("target", "rule_id"), LFI_ATTACKS)
+def test_file_read_shapes_are_caught_by_their_rule(
+    engine: RuleEngine, target: str, rule_id: str
+) -> None:
+    (labelled,) = engine.label_events([request(target)])
+
+    fired = {label.rule_id for label in labelled.all_labels}
+    assert rule_id in fired, f"{rule_id} did not fire on {target!r}; fired: {sorted(fired)}"
+
+
+@pytest.mark.parametrize("target", LFI_BENIGN)
+def test_file_read_rules_stay_off_ordinary_text(engine: RuleEngine, target: str) -> None:
+    (labelled,) = engine.label_events([request(target)])
+
+    hostile = [label.rule_id for label in labelled.all_labels if label.category.is_hostile]
+    assert not hostile, f"{target!r} was called hostile by {hostile}"
+
+
+@pytest.mark.parametrize(
+    "user_agent",
+    ["cat /root/.ssh/id_rsa", "/root/.aws/credentials", "/proc/net/tcp", "/etc/passwd"],
+)
+def test_a_file_named_in_the_user_agent_is_a_read_attempt(
+    engine: RuleEngine, user_agent: str
+) -> None:
+    (labelled,) = engine.label_events([request("/", user_agent=user_agent)])
+
+    assert "sensitive_file_access" in {label.rule_id for label in labelled.all_labels}
+
+
+def test_asking_for_a_secret_file_by_path_is_still_reconnaissance(engine: RuleEngine) -> None:
+    """`GET /.aws/credentials` probes for a file left exposed in the web root.
+    The shopfront truth calls it reconnaissance 31 times; the first draft of the
+    2026-10-05 pass matched the name in the path too and called it traversal."""
+    (labelled,) = engine.label_events([request("/.aws/credentials", status=404)])
+
+    assert labelled.label.category is ActivityCategory.RECONNAISSANCE
+    assert "sensitive_file_access" not in {label.rule_id for label in labelled.all_labels}
+
+
 @pytest.mark.parametrize(("target", "rule_id"), RCE_ATTACKS)
 def test_command_execution_shapes_are_caught_by_their_rule(
     engine: RuleEngine, target: str, rule_id: str

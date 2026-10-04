@@ -34,6 +34,7 @@ implying the CRS column was ever checked.
 | 2026-10-05 | *this pass* | **942 SQLi** — dialects, fragments, and the User-Agent | 942 **23% → 79%** (31 → 106); overall 55.2% → **62.1%** (607 → 682 of 1,099) | 0/12 → 0/12 in 942, 0 in every family; excerpt and medium unchanged on both engines (medium: 1 → 1 native, 74 → 74 CRS); **one old false positive removed** (`sqli_tautology`) | 6, two extended |
 | 2026-10-05 | *this pass* | **941 XSS** — called sinks, disguised tags, the User-Agent; not the Referer | 941 **36% → 81%** (26 → 58); overall 62.1% → **65.0%** (682 → 714 of 1,099) | 0/4 → 0/4 in 941, 0 in every family; excerpt and medium unchanged on both engines | 3, one extended |
 | 2026-10-05 | *this pass* | **932 RCE** — globs, braces, disguised names, Windows' own tools, mail commands | 932 **45% → 70%** (183 → 285); overall 65.0% → **74.5%** (714 → 819 of 1,099) | 0/64 → 0/64 in 932, 0 in every family; excerpt and medium unchanged on both engines (medium: 1 → 1 native, 74 → 74 CRS) | 7, two extended |
+| 2026-10-05 | *this pass* | **930 LFI** — traversal at a value's start, more file names, the User-Agent | 930 **23% → 97%** (7 → 29); overall 74.5% → **76.9%** (819 → 845 of 1,099) | 0/5 → 0/5 in 930, 0 in every family; excerpt unchanged on both engines after one fix; medium 17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS | 0, three extended |
 
 The 2026-09-20 pass is the first measured against a corpus containing a
 legitimate administrator, and it went the same way round as the recon pass: it
@@ -621,6 +622,43 @@ credential confusion (3, needs the authority parsed two ways); one Jinja
 
 
 
+
+
+### 2026-10-05 — family 930, and the 31 scanners that were reconnaissance
+
+    930 LFI        7 → 29 of 30          23% → 97%
+    overall        819 → 845 of 1,099   74.5% → 76.9%
+    wrongly        0/5 in 930, 0 in every family
+    excerpt        only ruleset_fingerprint moved, native and CRS — after one fix, below
+    medium         17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS
+
+No new rule ids; three existing rules extended.
+
+- `path_traversal`: a traversal that starts a parameter value
+  (`?arg=..\pineapple`, `?code=../.history`) and Tomcat's `..;`.
+- `sensitive_file_access`: more of what a file read asks for — `/etc/subuid`,
+  `/proc/net/tcp`, `/sys/class`, anything under `/root/.`, `.ssh/id_rsa`,
+  `.aws/credentials`, a Docker secret, a package manifest under
+  `node_modules`, and Vite's `/@id/__x00__` — and it reads the User-Agent,
+  where ten corpus cases put `cat /root/.ssh/id_rsa` and the like. A browser's
+  User-Agent never names a file on the server.
+- `backup_file_probe`: a dump named in a parameter by its double extension
+  (`?code=backup.sql.zip`), so a plain `report.sql` download stays out.
+
+**The excerpt caught the first draft.** With the new file names matched
+anywhere in the target, accuracy fell 0.9339 → 0.9258 and macro F1
+0.7855 → 0.7419 with detection unchanged: 31 requests the truth calls
+reconnaissance had become path traversal. All 31 were `GET /.aws/credentials`
+— scanners asking for a file left in the web root, which is
+`config_file_exposure`'s question, not a read through the application. The
+names now count in a parameter or the User-Agent, and only Vite's
+`/@id/__x00__` matches the path, because there the path is the read. Recall
+did not move. `test_asking_for_a_secret_file_by_path_is_still_reconnaissance`
+pins it, and fails if the path match is put back (checked).
+
+**Still getting through — 1 of 30:** `?code=>/tmp/curl`, a redirection into
+`/tmp`. The corpus certifies `?code=>/tmp` itself as harmless, so the redirect
+alone cannot be the evidence; left.
 
 ### 2026-10-05 — family 932, the forms written to get past a word filter
 
