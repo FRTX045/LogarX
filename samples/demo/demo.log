@@ -475,6 +475,8 @@ shop.test:443 192.0.2.105 - - [10/Mar/2026:18:00:49 +0000] "GET /index.php?x=all
 shop.test:443 192.0.2.105 - - [10/Mar/2026:18:00:56 +0000] "GET /index.php?x=file_get_contents%28%27/etc/passwd%27%29 HTTP/1.1" 200 4120 "-" "curl/8.6.0"
 shop.test:443 192.0.2.105 - - [10/Mar/2026:18:01:03 +0000] "GET /index.php?x=print_r%28%24_SERVER%29%3B HTTP/1.1" 200 4120 "-" "curl/8.6.0"
 shop.test:443 192.0.2.105 - - [10/Mar/2026:18:01:10 +0000] "GET /index.php?u=O%3A8%3A%22stdClass%22%3A1%3A%7Bs%3A4%3A%22name%22%3B%7D HTTP/1.1" 200 4120 "-" "curl/8.6.0"
+shop.test:443 192.0.2.105 - - [10/Mar/2026:18:01:17 +0000] "GET /index.php?x=%28system%29%28%27id%27%29%3B HTTP/1.1" 200 4120 "-" "curl/8.6.0"
+shop.test:443 192.0.2.105 - - [10/Mar/2026:18:01:24 +0000] "GET /index.php?x=%24f%28%27id%27%29 HTTP/1.1" 200 4120 "-" "curl/8.6.0"
 shop.test:443 198.51.100.15 - - [10/Mar/2026:20:00:00 +0000] "GET / HTTP/1.1" 200 24800 "-" "Mozilla/5.0 (iPhone; CPU iPhone OS 18_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Mobile/15E148 Safari/604.1"
 shop.test:443 192.0.2.111 - - [10/Mar/2026:20:00:00 +0000] "POST /upload HTTP/1.1" 200 320 "-" "curl/8.6.0"
 shop.test:443 198.51.100.15 - - [10/Mar/2026:20:00:01 +0000] "GET /assets/css/site.css HTTP/1.1" 200 18402 "https://shop.test/" "Mozilla/5.0 (iPhone; CPU iPhone OS 18_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Mobile/15E148 Safari/604.1"

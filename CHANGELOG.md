@@ -19,6 +19,17 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   log records it in full. On the committed excerpt and a 237,000-line
   synthetic log, nothing moved in either direction, native or with CRS.
 
+- **PHP code-injection detection without CRS: 68% to 97% of what an access
+  log can see** (family 933, 126 to 179 of 184; all families now 898 of 1,099,
+  81.7%). What was left were calls that never write a function's name next to
+  its parenthesis: the name wrapped and then called (`(system)(ls)`,
+  `[system][0](ls)`), assembled from pieces (`'sys'.'tem'`), glued to a prefix
+  (`foogzinflate()`), or held in a variable and called (`$f(101)`). Also a PHP
+  short tag disguised as an XML declaration (`<?xml :echo 1;`) and the SSH2
+  stream wrappers. Prose with brackets (`(foo)bar or foo(bar)`, `[system]
+  (docs)`) and prices (`$10 (sale)`) stay quiet; nothing moved on the committed
+  excerpt.
+
 - **File-read detection without CRS: 23% to 97% of what an access log can
   see** (family 930, 7 to 29 of 30; all families now 845 of 1,099, 76.9%).
   Traversal at the start of a parameter value and Tomcat's `..;`; more of the

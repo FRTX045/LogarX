@@ -2092,6 +2092,61 @@ RCE_BENIGN: list[str] = [
 ]
 
 
+#: PHP shapes the 2026-10-05 pass added. From the CRS corpus (family 933).
+PHP_INDIRECT_ATTACKS: list[tuple[str, str]] = [
+    ("/get?x=(system)(ls);", "php_indirect_call"),
+    ("/get?x=[system][0](ls);", "php_indirect_call"),
+    ("/get?x=(['system'])[0]('uname');", "php_indirect_call"),
+    ("/get?x=(string) {[system][0]} ('uname');", "php_indirect_call"),
+    ("/get?x=$y = 'sys'.'tem';($y)('uname');", "php_indirect_call"),
+    ("/get?x=(sy.(st).em)('uname');", "php_indirect_call"),
+    ("/get?foo=foogzinflate()", "php_indirect_call"),
+    ("/get?x=$a()", "php_variable_function"),
+    ("/get?x=$f(101).$f(120)", "php_variable_function"),
+    ("/get?x=$__[_](24)", "php_variable_function"),
+    ('/get?x=@$b374k("foo")', "php_variable_function"),
+    ("/get?foo=<?xml :echo 1;", "php_short_tag"),
+    ("/get?foo=<?xml ();echo 1;", "php_short_tag"),
+    (
+        "/get/test.php?file=ssh2.exec://user:password@example.com:22/usr/local/bin/kubectl",
+        "php_stream_wrapper",
+    ),
+]
+
+PHP_INDIRECT_BENIGN: list[str] = [
+    '/get?foo=<?xml version="1.0"?>',
+    '/get?data=<?xml-stylesheet type="text/xsl" href="style.xsl"?>',
+    "/get?x=(foo)bar or foo(bar) or [foo]bar or foo[bar]",
+    "/get?foo=the system is down()",
+    "/get?foo=filemtime($foo)",
+    "/get?foo=cheval($foo)",
+    "/s?q=price $10 (sale)",
+    "/s?q=php $var (example)",
+    "/s?q=[system] (docs)",
+    "/s?q=(a) (b) (c)",
+    "/s?q=sys.tem files",
+    "/s?q=gzinflate php function",
+]
+
+
+@pytest.mark.parametrize(("target", "rule_id"), PHP_INDIRECT_ATTACKS)
+def test_indirect_php_shapes_are_caught_by_their_rule(
+    engine: RuleEngine, target: str, rule_id: str
+) -> None:
+    (labelled,) = engine.label_events([request(target)])
+
+    fired = {label.rule_id for label in labelled.all_labels}
+    assert rule_id in fired, f"{rule_id} did not fire on {target!r}; fired: {sorted(fired)}"
+
+
+@pytest.mark.parametrize("target", PHP_INDIRECT_BENIGN)
+def test_indirect_php_rules_stay_off_ordinary_text(engine: RuleEngine, target: str) -> None:
+    (labelled,) = engine.label_events([request(target)])
+
+    hostile = [label.rule_id for label in labelled.all_labels if label.category.is_hostile]
+    assert not hostile, f"{target!r} was called hostile by {hostile}"
+
+
 #: File-read shapes the 2026-10-05 pass added. From the CRS corpus (family 930).
 LFI_ATTACKS: list[tuple[str, str]] = [
     ("/get?arg=..\\pineapple", "path_traversal"),
