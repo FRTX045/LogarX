@@ -19,6 +19,19 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   log records it in full. On the committed excerpt and a 237,000-line
   synthetic log, nothing moved in either direction, native or with CRS.
 
+- **Remote command execution detection without CRS: 45% to 70% of what an
+  access log can see** (family 932, 183 to 285 of 406; all families now 819 of
+  1,099, 74.5%). Most of what was left were familiar commands dressed to get
+  past a filter that knows their names: shell globs standing in for a path
+  (`/etc/pa[s]swd`, `/???/??t`), brace expansion (`{,ifconfig}`), names split
+  by quotes or put behind `time` (`'wh'oami`, `ti''me sh -c whoami`), empty
+  substitutions inside a word (`pi$()ng`), a shell told to run a command
+  (`bash -c "..."`), and Windows' own tools used as downloaders
+  (`certutil -urlcache`, `mshta http:`). Mail-protocol commands smuggled into a
+  form field are caught too, including after an encoded line break. Every
+  pattern was tried on the 64 requests the corpus certifies as harmless and on
+  searches written to break it; nothing moved on the committed excerpt.
+
 - **Cross-site scripting detection without CRS: 36% to 81% of what an access
   log can see** (family 941, 26 to 58 of 72; all families now 714 of 1,099,
   65.0%). New rules for a script function called as the payload (`alert()`,
