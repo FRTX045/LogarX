@@ -19,6 +19,18 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   log records it in full. On the committed excerpt and a 237,000-line
   synthetic log, nothing moved in either direction, native or with CRS.
 
+- **Cross-site scripting detection without CRS: 36% to 81% of what an access
+  log can see** (family 941, 26 to 58 of 72; all families now 714 of 1,099,
+  65.0%). New rules for a script function called as the payload (`alert()`,
+  `settimeout(`), tags disguised to get past a `<script` filter (`<d i a l o
+  g`, `< x: script`, IIS guillemets) and script through CSS or markup
+  (`url(javascript`, `-moz-binding`, `<base href`); any `on…=` handler counts
+  once it sits after a closing quote or inside a tag. The XSS rules read the
+  User-Agent too, but **not the Referer**: on two 237,000-line logs the only
+  benign Referer they matched was a visitor's next click after a reflected-XSS
+  page, still carrying the payload the previous request was caught for.
+  Nothing moved on the committed excerpt or the medium log.
+
 - **CRS enrichment works in the packaged Windows application.** The bundle now
   carries the CRS sidecar, the CRS request rules and their data files, the
   ruleset's revision and the licence of every Go module compiled into the

@@ -1923,3 +1923,88 @@ def test_an_ordinary_browser_user_agent_is_not_sql(engine: RuleEngine) -> None:
     (labelled,) = engine.label_events([request("/", user_agent=agent)])
 
     assert not [label for label in labelled.all_labels if label.category.is_hostile]
+
+
+#: XSS shapes the 2026-10-05 pass added, each with the rule meant to catch it.
+#: From the CRS regression corpus (family 941).
+XSS_ATTACKS: list[tuple[str, str]] = [
+    ("/get?arg=alert()", "xss_sink_call"),
+    ("/get?arg=prompt()", "xss_sink_call"),
+    ("/get?arg=setinterval(code, 1)", "xss_sink_call"),
+    ('/get?arg=x";settimeout(name, 1)//', "xss_sink_call"),
+    ("/get?test=reflect.sort.call``", "xss_sink_call"),
+    ('/get/char_test?mime=text/xml&body="onzoom=', "xss_event_handler"),
+    ("/get/char_test?mime=text/xml&body=<x onend=", "xss_event_handler"),
+    ("/get/char_test?mime=text/xml&body='formaction=", "xss_event_handler"),
+    ("/get/char_test?mime=text/xml&body=$<f o r m", "xss_obfuscated_tag"),
+    ("/get?mime=text/xml&body=$<d i a l o g", "xss_obfuscated_tag"),
+    ("/get/char_test?mime=text/xml&body=< x: script", "xss_obfuscated_tag"),
+    ("/?id=%u00abscript%u00bballert(1)%u00ab/script%u00bb", "xss_obfuscated_tag"),
+    ("/get/bar?test=style=x:url(javascript", "xss_style_and_markup"),
+    ("/get?style=-moz-binding:url(http://example.com/xss.xml#xss)", "xss_style_and_markup"),
+    ("/get?<object data ==sdffdsa", "xss_style_and_markup"),
+    ("/get?var=<base dsfds href / =", "xss_style_and_markup"),
+]
+
+#: What the corpus certifies as harmless for 941, and the searches each new
+#: pattern was tried against before it was written.
+XSS_BENIGN: list[str] = [
+    "/get?sign=vghhbmtzlcbmb3igywxsihlvdxigd29yaybzaw5jzsb5zwfycybvbibdulmuieh1bqo/onafe=",
+    "/post/api/v1/query?q=7xmlns",
+    "/get/bar?test=style=color:red;background:white",
+    # Sinks named in prose, not called.
+    "/s?q=javascript alert() tutorial",
+    "/s?q=how to use prompt() in js",
+    "/s?q=window.confirm() example",
+    "/s?q=setTimeout vs setInterval",
+    # Parameters whose names start with `on`.
+    "/s?online=1&onsale=yes",
+    "/s?ref=onboarding&step=2",
+    "/s?q=check online=yes",
+    # Angle brackets that are not tags.
+    "/s?q=a <b c d e",
+    "/s?q=price <s ale",
+    "/get?gift_message= i love you <3",
+    "/s?q=link href css",
+]
+
+
+@pytest.mark.parametrize(("target", "rule_id"), XSS_ATTACKS)
+def test_xss_shapes_are_caught_by_their_rule(engine: RuleEngine, target: str, rule_id: str) -> None:
+    (labelled,) = engine.label_events([request(target)])
+
+    fired = {label.rule_id for label in labelled.all_labels}
+    assert rule_id in fired, f"{rule_id} did not fire on {target!r}; fired: {sorted(fired)}"
+
+
+@pytest.mark.parametrize("target", XSS_BENIGN)
+def test_xss_rules_stay_off_ordinary_text(engine: RuleEngine, target: str) -> None:
+    (labelled,) = engine.label_events([request(target)])
+
+    hostile = [label.rule_id for label in labelled.all_labels if label.category.is_hostile]
+    assert not hostile, f"{target!r} was called hostile by {hostile}"
+
+
+@pytest.mark.parametrize(
+    ("user_agent", "rule_id"),
+    [
+        ("<script>alert(document.domain)</script>", "xss_script_tag"),
+        ('Mozilla/5.0 "><img src=x onerror=alert(1)>', "xss_event_handler"),
+        ("';alert(1)//", "xss_sink_call"),
+    ],
+)
+def test_xss_in_the_user_agent_is_caught(engine: RuleEngine, user_agent: str, rule_id: str) -> None:
+    (labelled,) = engine.label_events([request("/", user_agent=user_agent)])
+
+    assert rule_id in {label.rule_id for label in labelled.all_labels}
+
+
+def test_a_referer_carrying_the_last_page_s_payload_is_not_an_attack(engine: RuleEngine) -> None:
+    """The click *after* a reflected-XSS page still carries its payload in the
+    Referer. That page was the attack, and its own line says so; this one is
+    the next page. Measured on 2026-09-20-medium and 2026-10-04-medium: the
+    only benign Referer an XSS pattern matched was exactly this."""
+    referer = "http://shop.test/search?q=%22%3E%3Cimg%20src%3Dx%20onerror%3Dalert%281%29%3E"
+    (labelled,) = engine.label_events([request("/contact", referer=referer)])
+
+    assert not [label for label in labelled.all_labels if label.category.is_hostile]

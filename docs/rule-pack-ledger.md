@@ -32,6 +32,7 @@ implying the CRS column was ever checked.
 | 2026-09-30 | *this pass* | **python** — new pack, Django ORM | 934 **90% → 91%** (174 → 176); overall 55.1% → **55.2%** (607/1,099) | 0/8 → 0/8 in 934, 0 in every family; excerpt and medium unchanged on both engines (medium: 1 → 1 native, 74 → 74 CRS) | 2, one new pack |
 | 2026-09-30 | *this pass* | **action**: `commerce.yaml` removed, labels site-neutral | detection unchanged on the excerpt, both engines; accuracy 0.9346 → 0.9341 CRS, 0.9344 → 0.9339 native | 0 → 0 on both engines | 0, eight removed |
 | 2026-10-05 | *this pass* | **942 SQLi** — dialects, fragments, and the User-Agent | 942 **23% → 79%** (31 → 106); overall 55.2% → **62.1%** (607 → 682 of 1,099) | 0/12 → 0/12 in 942, 0 in every family; excerpt and medium unchanged on both engines (medium: 1 → 1 native, 74 → 74 CRS); **one old false positive removed** (`sqli_tautology`) | 6, two extended |
+| 2026-10-05 | *this pass* | **941 XSS** — called sinks, disguised tags, the User-Agent; not the Referer | 941 **36% → 81%** (26 → 58); overall 62.1% → **65.0%** (682 → 714 of 1,099) | 0/4 → 0/4 in 941, 0 in every family; excerpt and medium unchanged on both engines | 3, one extended |
 
 The 2026-09-20 pass is the first measured against a corpus containing a
 legitimate administrator, and it went the same way round as the recon pass: it
@@ -617,6 +618,51 @@ linear on four worst-case shapes up to 8,000 units.
 credential confusion (3, needs the authority parsed two ways); one Jinja
 `{% if %}` probe; two one-offs.
 
+
+
+### 2026-10-05 — family 941, and why the Referer stays unread
+
+    941 XSS        26 → 58 of 72         36% → 81%
+    overall        682 → 714 of 1,099   62.1% → 65.0%
+    wrongly        0/4 in 941, 0 in every family, after every rule
+    excerpt        only ruleset_fingerprint moved, native and CRS
+    medium         17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS
+
+**The headers, measured before they were read.** Both XSS rules' patterns were
+run over the Referer and User-Agent of every line the truth calls benign, on
+`2026-09-20-medium` and the final `2026-10-04-medium` (about 237,000 lines
+each). The User-Agent matched nothing. The Referer matched one benign line on
+each tier, and it was the same shape both times: `GET /contact` arriving from
+`/search?q="><img src=x onerror=alert(1)>` — the visitor's *next* click,
+still carrying the payload the previous line was already caught for. So the
+XSS rules read the User-Agent and not the Referer, and
+`test_a_referer_carrying_the_last_page_s_payload_is_not_an_attack` fails if
+anyone changes that (checked by adding the Referer and watching it fail).
+
+| change | 941 caught after | what it reads |
+|---|---:|---|
+| User-Agent on the two existing XSS rules | 30 | the field |
+| `xss_sink_call` | 38 | `alert()`, `prompt()`, `settimeout(` as the whole value or after a breaking quote, `;` or `(`; `.call``` |
+| `xss_event_handler`, extended | 42 | any `on…=` after a closing quote or inside a tag, `formaction=` — not after `/`, which is the corpus's harmless base64 `…/onafe=` |
+| `xss_obfuscated_tag` | 51 | `<f o r m`, `<d i a l o g` (tag names that run script, spaced), `< x: script`, `%u00abscript%u00bb` |
+| `xss_style_and_markup` | 58 | `url(javascript`, `-moz-binding:`, `<object … data`, `<base`/`<link … href` |
+
+The spaced-tag pattern caught `a <b c d e` in its first draft, and was cut to
+tag names before it was written; the ordinary searches it was tried on are in
+`XSS_BENIGN`.
+
+**Still getting through — 14 of 72.** Eight carry the payload only in the
+Referer (kept out, above); one is a request body; three put the handler in the
+parameter *name* led by a space (`? onabcdefgh= =vardata`), and normalisation
+trims the space that told it apart from `?online=1`; two one-offs
+(`<importimplementation=`, `"in valueof=`).
+
+**Also seen while re-scoring the final tiers, for a later pass:** on
+`2026-10-04-small` one of CRS's two false alarms is the same Referer shape —
+942200 on `GET /c/safety` arriving from a page whose URL held a UNION SELECT.
+CRS reads the Referer and the engine trusts what it finds there. Whether to
+withhold CRS matches whose only matched variable is the Referer is a mapping
+decision, to be measured on all three tiers rather than argued.
 
 ### 2026-10-05 — family 942, and a field no attack rule was reading
 
