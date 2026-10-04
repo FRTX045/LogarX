@@ -294,7 +294,9 @@ rules:
     match:
       any:
         - field: target_decoded
-          regex: '<\s*script|<\s*/\s*script\s*>'
+          regex: &xss_script '<\s*script|<\s*/\s*script\s*>'
+        - field: user_agent_decoded
+          regex: *xss_script
 
   - id: xss_event_handler
     name: Cross-Site Scripting (event handler)
@@ -305,9 +307,87 @@ rules:
     match:
       any:
         - field: target_decoded
-          regex: '\bon(error|load|click|mouseover|focus|toggle)\s*='
+          regex: &xss_handler '\bon(error|load|click|mouseover|focus|toggle)\s*='
         - field: target_decoded
-          regex: 'javascript\s*:'
+          regex: &xss_js_scheme 'javascript\s*:'
+        # The User-Agent, as the SQL rules read it. Not the Referer: on both
+        # medium tiers its one benign match was the click *after* a reflected
+        # XSS page, still carrying the payload the previous line was caught
+        # for. Reading it would accuse every request that follows an attack.
+        - field: user_agent_decoded
+          regex: *xss_handler
+        - field: user_agent_decoded
+          regex: *xss_js_scheme
+        # Any handler, not only the six above — browsers keep adding them
+        # (`onzoom`, `onwebkitplaybacktargetavailabilitychanged`) — but only in
+        # the places an injected one sits: after the quote that closed an
+        # attribute, inside a tag, or as a parameter *name* led by a space.
+        # Not after `/`: the corpus certifies `.../onafe=` in a base64 value as
+        # harmless, and `?online=1` is a parameter, not a handler.
+        - field: target_decoded
+          regex: &xss_handler_context '[''"]\s*(?:on[a-z]{3,}|formaction)\s*=|<[a-z][^>]{0,100}\son[a-z]{3,}\s*='
+        - field: query_decoded
+          regex: '(?:^|&)\s+on[a-z]{3,}\s*='
+        - field: user_agent_decoded
+          regex: *xss_handler_context
+
+  # A JavaScript sink called as the whole value, or straight after the quote,
+  # `;` or `(` that broke out of one: `?arg=alert()`, `x";settimeout(name, 1)//`.
+  # These are what a reflected-XSS probe executes. Pinned to that position,
+  # because a developer's search names them in prose — `javascript alert()
+  # tutorial`, `window.confirm() example` stay quiet. `.call``` is a tagged
+  # template, which calls a function without parentheses.
+  - id: xss_sink_call
+    name: Cross-Site Scripting (script function called)
+    category: injection
+    owasp: "A05:2025"
+    severity: medium
+    confidence: 0.8
+    references: ["CAPEC-63"]
+    match:
+      any:
+        - field: target_decoded
+          regex: &xss_sink '(?:^|[=;"''(`])\s*(?:alert|confirm|prompt|atob|btoa|eval|set(?:timeout|interval))\s*\(|\.call\s*`'
+        - field: user_agent_decoded
+          regex: *xss_sink
+
+  # Tags dressed to slip past a tag match: the letters of a tag name spaced
+  # out (`<f o r m`, `<d i a l o g`), a namespace in front of `script`
+  # (`< x: script`), and the guillemets IIS's best-fit mapping turns into
+  # angle brackets (`%u00abscript%u00bb`). The spaced form is limited to tag
+  # names that run script, so `a <b c d e` stays a sentence.
+  - id: xss_obfuscated_tag
+    name: Cross-Site Scripting (disguised tag)
+    category: injection
+    owasp: "A05:2025"
+    severity: medium
+    confidence: 0.8
+    references: ["CAPEC-63"]
+    match:
+      any:
+        - field: target_decoded
+          regex: &xss_obfuscated '<\s*(?:f ?o ?r ?m|d ?i ?a ?l ?o ?g|s ?c ?r ?i ?p ?t|i ?f ?r ?a ?m ?e|s ?v ?g|o ?b ?j ?e ?c ?t|e ?m ?b ?e ?d|d ?e ?t ?a ?i ?l ?s|m ?a ?r ?q ?u ?e ?e)\b(?<=\w \w)|<\s*[a-z]+\s*:\s*script|(?:%u00ab|%u2039|«|‹)\s*/?\s*script'
+        - field: user_agent_decoded
+          regex: *xss_obfuscated
+
+  # Script reached through CSS, and markup that changes where a page loads
+  # from: `url(javascript:` in a style, Firefox's `-moz-binding` (an XBL file
+  # that runs script), `<object data=`, and `<base href` or `<link href`, which
+  # re-point every relative URL or stylesheet on the page at the attacker.
+  # `style=color:red;background:white` is the corpus's own harmless control.
+  - id: xss_style_and_markup
+    name: Cross-Site Scripting (style or markup)
+    category: injection
+    owasp: "A05:2025"
+    severity: medium
+    confidence: 0.8
+    references: ["CAPEC-63"]
+    match:
+      any:
+        - field: target_decoded
+          regex: &xss_markup 'url\s*\(\s*[''"]?\s*javascript\b|-moz-binding\s*:|<\s*object\b[^>]{0,100}\bdata\b|<\s*(?:base|link)\b[^>]{0,100}\bhref\b'
+        - field: user_agent_decoded
+          regex: *xss_markup
 
   - id: command_injection
     name: OS Command Injection

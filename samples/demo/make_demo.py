@@ -650,6 +650,12 @@ def xss_attempts(ip: str, day: int, hour: int) -> None:
         "/search?q=%3Cimg%20src%3Dx%20onerror%3Dalert%281%29%3E",
         "/login?next=javascript%3Aalert%28document.cookie%29",
         "/search?q=%3Csvg%2Fonload%3Dfetch%28%27//evil.test%27%29%3E",
+        # Then the shapes that get past a filter looking for `<script`: the
+        # bare call a reflected probe executes, a tag spelled with spaces, and
+        # script reached through a style attribute.
+        "/search?q=%22%3Balert%281%29%2F%2F",
+        "/search?q=%3Cd%20i%20a%20l%20o%20g%20open%3E",
+        "/c/lighting?view=x%3Aurl%28javascript%3Aalert%281%29%29",
     ):
         write(t, ip, f"GET {probe} HTTP/1.1", 200, 12_400, agent=BROWSER)
         t += timedelta(seconds=6)
