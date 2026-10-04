@@ -19,6 +19,16 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   log records it in full. On the committed excerpt and a 237,000-line
   synthetic log, nothing moved in either direction, native or with CRS.
 
+- **File-read detection without CRS: 23% to 97% of what an access log can
+  see** (family 930, 7 to 29 of 30; all families now 845 of 1,099, 76.9%).
+  Traversal at the start of a parameter value and Tomcat's `..;`; more of the
+  files a probe asks for (`/etc/subuid`, `/proc/net/tcp`, `.ssh/id_rsa`,
+  `.aws/credentials`, a Docker secret, Vite's `/@id/__x00__`), named in a
+  parameter or in the User-Agent; a database dump named in a parameter. Asking
+  for one of those files *by path* (`GET /.aws/credentials`) is still reported
+  as reconnaissance, as it was: the first draft got that wrong 31 times on the
+  committed excerpt, and a test now holds it.
+
 - **Remote command execution detection without CRS: 45% to 70% of what an
   access log can see** (family 932, 183 to 285 of 406; all families now 819 of
   1,099, 74.5%). Most of what was left were familiar commands dressed to get

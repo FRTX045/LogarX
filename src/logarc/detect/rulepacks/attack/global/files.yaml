@@ -18,6 +18,11 @@ rules:
       any:
         - field: target_decoded
           regex: '(^|[/\\])\.\.[/\\]'
+        # A traversal that starts a parameter value (`?arg=..\pineapple`,
+        # `?code=../.history`), and Tomcat's `..;` path parameter, which some
+        # servers normalise into a parent directory after the filter ran.
+        - field: target_decoded
+          regex: '=\.\.(?:[/\\]|;)|[/\\]\.\.;'
 
   - id: sensitive_file_access
     name: Sensitive System File Access
@@ -28,7 +33,31 @@ rules:
     match:
       any:
         - field: target_decoded
-          regex: '/etc/(passwd|shadow|hosts)|[/\\](win\.ini|boot\.ini)|/proc/self/environ'
+          regex: &sensitive_files '/etc/(passwd|shadow|hosts)|[/\\](win\.ini|boot\.ini)|/proc/self/environ'
+        # More of what a file-read probe asks for: identity maps and service
+        # configs under /etc, kernel and socket state under /proc and /sys,
+        # anything in root's home, private keys and cloud credentials by their
+        # file names, a Docker secret, a package's manifest under node_modules.
+        #
+        # **In a parameter, not as the path.** `GET /.aws/credentials` is a
+        # probe for a file left exposed in the web root, which
+        # `config_file_exposure` reports as reconnaissance; the shopfront truth
+        # agrees, 31 times. The same name handed to a parameter
+        # (`?file=.aws/credentials`) asks the application to read it, which is
+        # this rule. Matching the path as well took those 31 from
+        # reconnaissance to path traversal in the first draft.
+        - field: query_decoded
+          regex: &sensitive_more '/etc/(?:subuid|subgid|sudoers|group|apache2/|nginx/|ssh/)|/proc/(?:net/tcp|sys/kernel/|version\b|self/cmdline)|/root/\.|/sys/class\b|\.ssh/id_(?:rsa|dsa|ecdsa|ed25519)\b|\.aws/credentials\b|\.docker/(?:secrets|config\.json)|(?:^|[=/])node_modules/[^/&]+/package\.json'
+        # Vite's dev-server file read is the exception: the path itself is the
+        # read (`/@id/__x00__...`, CVE-2025-30208's family).
+        - field: path_decoded
+          regex: '^/@id/__x00__'
+        # A browser's User-Agent never names a file on the server; a probe
+        # that put one there is asking the application to read it.
+        - field: user_agent_decoded
+          regex: *sensitive_files
+        - field: user_agent_decoded
+          regex: *sensitive_more
 
   - id: config_file_exposure
     name: Configuration File Probe
@@ -53,6 +82,11 @@ rules:
       any:
         - field: path_decoded
           regex: '\.(bak|old|orig|save|swp|sql|tar\.gz|tgz|zip|rar|7z)$'
+        # A database dump or backup archive named in a parameter
+        # (`?code=backup.sql.zip`): the double extension is the giveaway, so a
+        # plain `report.sql` download stays out.
+        - field: query_decoded
+          regex: '\.(?:sql|bak)\.(?:zip|gz|tgz|7z|rar|tar)\b'
 
   # A file named so the upload check sees an image and the server still runs it
   # as code. `/uploads/shell.php.jpg` is the classic shape, and the tool used to
