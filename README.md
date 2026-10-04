@@ -304,12 +304,26 @@ complete and is not.
 Requires **Python 3.11 or newer**. The engine and the command line are tested on
 Linux and Windows, Python 3.11 and 3.12, on every push.
 
-**The desktop application is only known to work on Windows.** Its tests run on
-Linux too, but headless — `QT_QPA_PLATFORM=offscreen`, which proves the widgets
-behave and says nothing about a real X11 or Wayland session. Nobody has launched
-it on a Linux desktop. It may well work; it is untested rather than unsupported,
-and the honest word for that is untested. macOS has neither a runner nor a
-report.
+**The desktop application is built and packaged for Windows, and runs on Linux.**
+Its tests run on Linux headless (`QT_QPA_PLATFORM=offscreen`), and on
+2026-10-05 it was also run on real display servers: Ubuntu 24.04 under WSLg,
+Qt 6.11, once on Wayland and once on X11 (XWayland). Both opened a case, listed
+its clients, drew a client's graph, showed the evidence behind an activity and
+switched between Where to start, Trace and Behaviour, with no warning from Qt
+and a clean exit. What that run did not cover: a full GNOME or KDE session on
+real hardware, native file dialogs, and HiDPI scaling. macOS has neither a
+runner nor a report.
+
+On X11, Qt needs a few XCB libraries that minimal installs leave out. The
+symptom is *"Could not load the Qt platform plugin "xcb""*; on Debian and
+Ubuntu the fix is:
+
+```bash
+sudo apt install libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 \
+  libxcb-keysyms1 libxcb-render-util0 libxcb-shape0 libxcb-xkb1 libxcb-util1
+```
+
+Wayland needed nothing beyond what the system already had.
 
 ```bash
 pip install -e ".[gui]"      # the tool and the desktop application
