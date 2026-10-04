@@ -121,3 +121,25 @@ rules:
           regex: &shell_invocation '(?:\b(?:bash|sh|ksh|zsh|dash|busybox)|\$shell)\s+-c\s+(?:["''$]|(?:curl|wget|whoami|echo|id|cat|ls|nc|uname)\b)|\bsh,-c,|[;|&`]\s*\.?(?:ps|who|w|ll|zstdcat)\b(?:\s|$)|[;|]\s*\$\w+\s+(?:cat|wget|curl)\b|;\s*\.sh\s|\b(?:zstdcat|bsdtar)\s+/|(?:^|[=;|&])\s*[''"]?ll[''"]?\s+/|(?:\\n|;)\s*\.(?:shell|system|databases)\b'
         - field: user_agent_decoded
           regex: *shell_invocation
+
+  # A User-Agent that is a shell command line rather than a client's name: a
+  # tool, a space and an argument (`ansible all -m ping`, `env --version`,
+  # `set -o history`), an admin tool on its own (`visudo`, `chef-shell`), a
+  # line that opens on a separator (`;chmod`, `;`cat<<<ifconfig``), or
+  # a variable assigned and run (`a=nc&&$a`). Clients name themselves
+  # `name/version` — `curl/8.6.0`, `Wget/1.21`, `python-requests/2.32` —
+  # so a command followed by a slash is a client and stays out. Short words
+  # that could start a product name (`id`, `set`, `cat`) count only before a
+  # flag, a path or a variable: "ID Scanner 2.0" broke the first draft, and
+  # bare `curl` and `Ruby` the second.
+  - id: shell_command_as_user_agent
+    name: Shell Command in the User-Agent
+    category: injection
+    owasp: "A05:2025"
+    severity: high
+    confidence: 0.85
+    references: ["CAPEC-88"]
+    match:
+      any:
+        - field: user_agent_decoded
+          regex: '(?:^|=)\s*[''\"]?(?:ansible(?:-[a-z]+)?|chef(?:-[a-z]+)?|cscli|visudo|strace|nohup|whoami|uname|crontab|chmod|chown|sudo|wget|curl|ncat|bash|zsh|python\d?(?:\.\d+)?|perl|php|ruby)[''\"]?\s+[-\w./''\"$]|(?:^|=)\s*[''\"]?(?:ansible(?:-[a-z]+)?|chef(?:-[a-z]+)?|cscli|visudo|strace|nohup|crontab)[''\"]?\s*$|^\s*[''\"]?(?:env|set|cat|ls|id|sh|nc|rm|cp|mv|su|kill|perf)[''\"]?\s+[-/$]|^\s*;\s*(?:[a-z]+\b|`)|[;|]\s*(?:lwp-download|lwp-request|chmod|chown)\b|\b\w+=\w+\s*&&\s*\$\w+|^\s*\w+\s*\(\)\s*\{'

