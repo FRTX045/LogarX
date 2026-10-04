@@ -629,6 +629,10 @@ def php_attacks(ip: str, day: int, hour: int) -> None:
         "/index.php?x=file_get_contents%28%27/etc/passwd%27%29",
         "/index.php?x=print_r%28%24_SERVER%29%3B",
         "/index.php?u=O%3A8%3A%22stdClass%22%3A1%3A%7Bs%3A4%3A%22name%22%3B%7D",
+        # And once `system(` is filtered, the same call without writing it:
+        # the name wrapped and called, then a variable called as a function.
+        "/index.php?x=%28system%29%28%27id%27%29%3B",
+        "/index.php?x=%24f%28%27id%27%29",
     ):
         write(t, ip, f"GET {probe} HTTP/1.1", 200, 4_120, agent=CURL)
         t += timedelta(seconds=7)

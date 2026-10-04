@@ -86,6 +86,12 @@ rules:
           regex: '<\?(?!xml)'
         - field: user_agent_decoded
           regex: '<\?(?!xml)'
+        # The exclusion above is for real XML, and the corpus uses it as a
+        # disguise: `<?xml :echo 1;`, `<?xml ();echo 1;`. A declaration has
+        # `version=` and a stylesheet instruction is `<?xml-stylesheet`, both
+        # certified harmless, so `<?xml` followed by `:`, `(` or `;` is PHP.
+        - field: target_decoded
+          regex: '<\?xml(?!\s*version|-stylesheet)\s*[:(;]'
 
   # PHP's variables, which arrive when someone is reading the request back at
   # the server rather than sending it data.
@@ -286,6 +292,53 @@ rules:
           regex: 'php://(input|filter|memory|temp|stdin|fd)'
         - field: target_decoded
           regex: '\b(expect|phar|zip|compress\.(zlib|bzip2)|ogg|rar|glob|data):/{0,2}'
+        # The SSH2 extension's wrappers, which run a command or open a shell
+        # on another host: `ssh2.exec://user:pass@host:22/usr/bin/id`.
+        - field: target_decoded
+          regex: '\bssh2\.(?:exec|scp|sftp|shell|tunnel)://'
+
+  # A dangerous function reached without writing `system(`: its name wrapped
+  # and then called (`(system)(ls)`, `[system][0](ls)`, `(['system'])[0]('id')`,
+  # `{[system][0]}`), assembled from pieces (`'sys'.'tem'`, `"sys"."t"."em"`,
+  # `sy.(st).em`), or glued to a prefix so no word boundary sits in front
+  # (`foogzinflate()`, `foofsockopen()`). A bracketed name counts only when it
+  # is indexed, and a parenthesised one only when it is called straight away,
+  # so `[system] (docs)` and the corpus's `(foo)bar or foo(bar)` stay prose. The
+  # glued names are ones no English word contains.
+  - id: php_indirect_call
+    name: PHP Function Called Indirectly
+    category: injection
+    owasp: "A05:2025"
+    severity: critical
+    confidence: 0.85
+    references: ["CAPEC-242"]
+    match:
+      any:
+        - field: target_decoded
+          regex: '\(\s*[''"]?(?:system|exec|passthru|shell_exec|popen|proc_open|pcntl_exec|assert)[''"]?\s*\)\s*\(|\[\s*[''"]?(?:system|exec|passthru|shell_exec|popen|proc_open|pcntl_exec|assert)[''"]?\s*\]\s*(?:\)\s*)?(?:\[\s*\d+\s*\]|\{\s*\d+\s*\})|\{\s*\[\s*[''"]?(?:system|exec|passthru|shell_exec|popen|proc_open|pcntl_exec|assert)[''"]?\s*\]'
+        - field: target_decoded
+          regex: '[''"]sys[''"]\s*\.\s*[''"]|\bsy\s*\.\s*\(\s*st\s*\)\s*\.\s*em\b|[''"]sy[''"]\s*\.\s*[''"]st'
+        - field: target_decoded
+          regex: '(?:call_user_func(?:_array)?|fsockopen|gzdecode|gzinflate|gzuncompress)\s*\(\s*\)'
+
+  # A variable called as a function — the way an obfuscated webshell runs
+  # whatever name it was handed: `$a()`, `$f(101).$f(120)`, `$__[_](24)`,
+  # `@$b374k("foo")`, `foo::$variable()`. The name must start with a letter or
+  # underscore, so `$10 (sale)` stays a price, and the argument list has to
+  # open on a number, a quote or close at once; `cheval($foo)` and
+  # `filemtime($foo)`, both certified harmless, pass a variable rather than
+  # call one.
+  - id: php_variable_function
+    name: PHP Variable Function Call
+    category: injection
+    owasp: "A05:2025"
+    severity: high
+    confidence: 0.8
+    references: ["CAPEC-242"]
+    match:
+      any:
+        - field: target_decoded
+          regex: '\$[a-z_]\w*(?:\s*\[[^\]\s]{0,10}\]|\s*\{[^}\s]{0,10}\})*(?:\s*//[^(]{0,10})?\s*\(\s*(?:\d|[''"]|\))'
 
   # Including a file the request names, where that file is somewhere else.
   #

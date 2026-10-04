@@ -35,6 +35,7 @@ implying the CRS column was ever checked.
 | 2026-10-05 | *this pass* | **941 XSS** — called sinks, disguised tags, the User-Agent; not the Referer | 941 **36% → 81%** (26 → 58); overall 62.1% → **65.0%** (682 → 714 of 1,099) | 0/4 → 0/4 in 941, 0 in every family; excerpt and medium unchanged on both engines | 3, one extended |
 | 2026-10-05 | *this pass* | **932 RCE** — globs, braces, disguised names, Windows' own tools, mail commands | 932 **45% → 70%** (183 → 285); overall 65.0% → **74.5%** (714 → 819 of 1,099) | 0/64 → 0/64 in 932, 0 in every family; excerpt and medium unchanged on both engines (medium: 1 → 1 native, 74 → 74 CRS) | 7, two extended |
 | 2026-10-05 | *this pass* | **930 LFI** — traversal at a value's start, more file names, the User-Agent | 930 **23% → 97%** (7 → 29); overall 74.5% → **76.9%** (819 → 845 of 1,099) | 0/5 → 0/5 in 930, 0 in every family; excerpt unchanged on both engines after one fix; medium 17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS | 0, three extended |
+| 2026-10-05 | *this pass* | **933 PHP** — the call without writing `system(` | 933 **68% → 97%** (126 → 179); overall 76.9% → **81.7%** (845 → 898 of 1,099) | 0/38 → 0/38 in 933, 0 in every family; excerpt unchanged on both engines; medium 17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS | 2, two extended |
 
 The 2026-09-20 pass is the first measured against a corpus containing a
 legitimate administrator, and it went the same way round as the recon pass: it
@@ -623,6 +624,38 @@ credential confusion (3, needs the authority parsed two ways); one Jinja
 
 
 
+
+
+### 2026-10-05 — family 933, the call without writing it
+
+    933 PHP        126 → 179 of 184      68% → 97%
+    overall        845 → 898 of 1,099   76.9% → 81.7%
+    wrongly        0/38 in 933, 0 in every family, after every rule
+    excerpt        only ruleset_fingerprint moved, native and CRS
+    medium         17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS
+
+The first PHP pass required the call to be written and closed — `exec (` is a
+truncated string, `system('id')` an attack — and that is still right. What it
+left were calls that never write the name next to its parenthesis:
+
+| change | 933 caught after | shape |
+|---|---:|---|
+| `php_short_tag` and `php_stream_wrapper`, extended (measured together) | 138 | `<?xml :echo 1;` — the `(?!xml)` exclusion was the disguise; a real declaration has `version=`, a stylesheet is `<?xml-stylesheet`, both certified harmless — and `ssh2.exec://`, `ssh2.shell://`, the other SSH2 wrappers |
+| `php_indirect_call` | 169 | `(system)(ls)`, `[system][0](ls)`, `(['system'])[0]('id')`, `'sys'.'tem'`, `sy.(st).em`, `foogzinflate()` |
+| `php_variable_function` | 179 | `$a()`, `$f(101).$f(120)`, `$__[_](24)`, `@$b374k("foo")` |
+
+The corpus's 38 harmless cases decided the guards, as they did the first time:
+`(foo)bar or foo(bar) or [foo]bar or foo[bar]` is why a bracketed name counts
+only when indexed and a parenthesised one only when called at once — and a
+probe of my own, `[system] (docs)`, broke the first draft of exactly that.
+`cheval($foo)` and `filemtime($foo)` are why a variable call must open on a
+number, a quote or close at once; `$10 (sale)` is why the name must start with
+a letter. All pinned in `PHP_INDIRECT_BENIGN`.
+
+**Still getting through — 5 of 184.** An unclosed `base64_decode(` (twice),
+`crypt(abc)`, `file ()` and `$_s erver[...]`: the first three are the
+truncated-call shape the pack declines on purpose (the corpus certifies
+`exec (` as harmless), and the last is a superglobal broken by a space.
 
 ### 2026-10-05 — family 930, and the 31 scanners that were reconnaissance
 
