@@ -34,7 +34,9 @@ __all__ = [
     "CrsDetection",
     "CrsUnavailableError",
     "SidecarConfig",
+    "binary_name",
     "default_binary",
+    "default_rules",
     "host_speaks_for",
     "primary_site_host",
     "run_sidecar",
@@ -84,16 +86,22 @@ class CrsUnavailableError(RuntimeError):
     """
 
 
-def default_binary() -> Path:
-    """The sidecar path for this interpreter.
+def binary_name() -> str:
+    """The sidecar's file name for this interpreter.
 
     The extension follows the *interpreter's* platform, not the build host's. A
     Windows interpreter cannot spawn an ELF, and this project is developed with
-    a Windows venv over a Linux toolchain, so the two genuinely differ.
+    a Windows venv over a Linux toolchain, so the two genuinely differ. The
+    packaging build names the file it bundles from this too, so the two cannot
+    disagree.
     """
-    name = "crs-sidecar.exe" if sys.platform == "win32" else "crs-sidecar"
+    return "crs-sidecar.exe" if sys.platform == "win32" else "crs-sidecar"
+
+
+def default_binary() -> Path:
+    """The sidecar path for this interpreter, unless `BINARY_ENV` names another."""
     override = os.environ.get(BINARY_ENV)
-    return Path(override) if override else _crs_dir() / name
+    return Path(override) if override else _crs_dir() / binary_name()
 
 
 def primary_site_host(hosts: Iterable[str]) -> str | None:
