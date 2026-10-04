@@ -144,13 +144,8 @@ jobs:
           # Turns the contract tests' skip into a failure. Without it a build
           # step that broke would land us back where we started, silently.
           LOGARC_REQUIRE_CRS: "1"
-        # `-n auto` spreads the engine half over the runner's cores. Measured
-        # 2026-09-30: 541s one at a time against 245-277s on four workers, the
-        # same 1,669 passing and coverage identical to the statement. The window
-        # half stays serial: one QApplication per process, and a crash there
-        # should cost one run, not a worker's share of several.
         run: >
-          pytest --ignore=tests/gui -n auto
+          pytest --ignore=tests/gui
           --cov=logarc --cov-report=term-missing --cov-report=xml
           --cov-fail-under=0
 
