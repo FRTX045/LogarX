@@ -19,6 +19,13 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   log records it in full. On the committed excerpt and a 237,000-line
   synthetic log, nothing moved in either direction, native or with CRS.
 
+- **A shell command sent as the User-Agent is caught** (`ansible all -m ping`,
+  `env --version`, `;chmod 777 /tmp/x`, `a=nc&&$a`): family 932 from 71% to 85%
+  (289 to 344 of 406), all families 953 of 1,099 (86.7%). Clients name
+  themselves `name/version`, so `curl/8.6.0` or `Wget/1.21` never match, and
+  product names that start with a command word ("ID Scanner 2.0") or are one
+  (`curl`, `Ruby`) stay quiet.
+
 - **PHP code-injection detection without CRS: 68% to 97% of what an access
   log can see** (family 933, 126 to 179 of 184; all families now 898 of 1,099,
   81.7%). What was left were calls that never write a function's name next to
