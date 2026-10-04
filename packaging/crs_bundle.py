@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path, PurePosixPath
@@ -115,8 +116,25 @@ def copy_licences(modules: list[tuple[str, Path]], dest: Path) -> list[str]:
         target = dest / PurePosixPath(module)
         target.mkdir(parents=True, exist_ok=True)
         for path in notices:
-            shutil.copy2(path, target / path.name)
+            # Contents only. Go's module cache is read-only, and a copy that kept
+            # the flag could not be deleted by the next build on Windows.
+            shutil.copyfile(path, target / path.name)
     return unlicensed
+
+
+def reset_stage(stage: Path) -> None:
+    """Empty `stage`, including files an earlier build left read-only.
+
+    Errors are not ignored: a stage that cannot be cleared must stop the build
+    here, saying so, rather than surface a step later as a puzzling `mkdir`
+    failure, which is how it first showed up.
+    """
+    if stage.exists():
+        for path in stage.rglob("*"):
+            if path.is_file():
+                path.chmod(stat.S_IREAD | stat.S_IWRITE)
+        shutil.rmtree(stage)
+    stage.mkdir(parents=True)
 
 
 def prepare(*, crs_dir: Path = CRS_DIR, ruleset: Path = RULESET, stage: Path = STAGE) -> list[str]:
@@ -134,8 +152,7 @@ def prepare(*, crs_dir: Path = CRS_DIR, ruleset: Path = RULESET, stage: Path = S
     go = _go()
     _run([go, "build", "-trimpath", "-o", _binary_name(), "."], crs_dir)
 
-    shutil.rmtree(stage, ignore_errors=True)
-    stage.mkdir(parents=True)
+    reset_stage(stage)
     revision = _run(["git", "-C", str(ruleset), "rev-parse", "HEAD"], ROOT).strip()
     (stage / "REVISION").write_text(revision + "\n", encoding="utf-8")
 
@@ -148,7 +165,7 @@ def prepare(*, crs_dir: Path = CRS_DIR, ruleset: Path = RULESET, stage: Path = S
     goroot = Path(_run([go, "env", "GOROOT"], crs_dir).strip())
     if (goroot / "LICENSE").exists():
         (licences / "go").mkdir(parents=True, exist_ok=True)
-        shutil.copy2(goroot / "LICENSE", licences / "go" / "LICENSE")
+        shutil.copyfile(goroot / "LICENSE", licences / "go" / "LICENSE")
     else:
         unlicensed.append("go (standard library)")
     return unlicensed

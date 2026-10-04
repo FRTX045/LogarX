@@ -10,6 +10,8 @@ that code resolves, not against a second copy of them written here.
 from __future__ import annotations
 
 import importlib.util
+import os
+import stat
 import sys
 from pathlib import Path, PurePosixPath
 from types import ModuleType
@@ -195,6 +197,41 @@ def test_licence_files_are_copied_under_their_module_path(
     target = dest / "github.com" / "corazawaf" / "coraza" / "v3"
     assert sorted(path.name for path in target.iterdir()) == ["LICENSE", "NOTICE"]
     assert unlicensed == []
+
+
+def test_licences_copied_from_a_read_only_module_cache_stay_deletable(
+    bundle: ModuleType, tmp_path: Path
+) -> None:
+    """Go keeps its module cache read-only. Copying that flag along made the next
+    build's clean-up fail with "Access is denied" on Windows, which stopped the
+    first real post-merge rebuild."""
+    source = tmp_path / "mod" / "coraza@v3"
+    source.mkdir(parents=True)
+    (source / "LICENSE").write_text("Apache")
+    (source / "LICENSE").chmod(stat.S_IREAD)
+    dest = tmp_path / "licenses"
+
+    try:
+        bundle.copy_licences([("github.com/corazawaf/coraza/v3", source)], dest)
+        copied = dest / "github.com" / "corazawaf" / "coraza" / "v3" / "LICENSE"
+        assert os.access(copied, os.W_OK)
+    finally:
+        (source / "LICENSE").chmod(stat.S_IREAD | stat.S_IWRITE)
+
+
+def test_a_stage_left_with_read_only_files_is_still_cleared(
+    bundle: ModuleType, tmp_path: Path
+) -> None:
+    """Builds made before the fix above left exactly this behind."""
+    stage = tmp_path / "crs-bundle"
+    (stage / "licenses" / "x").mkdir(parents=True)
+    leftover = stage / "licenses" / "x" / "LICENSE"
+    leftover.write_text("old")
+    leftover.chmod(stat.S_IREAD)
+
+    bundle.reset_stage(stage)
+
+    assert stage.is_dir() and not any(stage.iterdir())
 
 
 def test_a_module_with_no_licence_file_is_reported(bundle: ModuleType, tmp_path: Path) -> None:
