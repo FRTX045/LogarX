@@ -417,6 +417,16 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A CRS match read from the Referer no longer names the request when the
+  rule that made it is chained.** CRS detections from the Referer describe the
+  page the visitor came from, so they were already kept as evidence without
+  naming the activity — but a chained rule reports its later link as
+  `MATCHED_VARS:REQUEST_HEADERS:Referer`, and only the plain form was
+  recognised. On the final `2026-10-04-small` log that made `GET /c/safety`,
+  arriving from a page whose URL held a UNION SELECT, an injection: CRS false
+  alarms 2 → 1 with nothing lost (3,973 caught either way). Doubled prefixes,
+  a chain in a chain, are handled too.
+
 - **`sqli_tautology` no longer calls `a xor b = c`, `minor version = 2` or
   `brand new = yes` an attack.** Its `or`/`and` had no left boundary, so any
   word ending in one did. A digit may still precede it, so `1and 1=1` is still

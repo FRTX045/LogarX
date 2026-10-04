@@ -795,6 +795,13 @@ def _detections_for(crs: DetectionIndex | None, event: NormalizedEvent) -> tuple
 #: Coraza reports the header as it was written, so the comparison is folded.
 _HEARSAY_VARS: Final[tuple[str, ...]] = ("request_headers:referer",)
 
+#: What a chained CRS rule puts in front of the variable its later link matched:
+#: 942200 reports the same Referer as `REQUEST_HEADERS:Referer` and as
+#: `MATCHED_VARS:REQUEST_HEADERS:Referer`. Only the first was recognised, so the
+#: second named `GET /c/safety` an injection on `2026-10-04-small`. A chain in a
+#: chain doubles the prefix, which the same tier also carried.
+_CHAIN_PREFIXES: Final[tuple[str, ...]] = ("matched_vars:", "matched_var:")
+
 
 def _names_activity(detection: CrsDetection) -> bool:
     """Whether this detection may be the answer, as opposed to corroboration.
@@ -804,7 +811,12 @@ def _names_activity(detection: CrsDetection) -> bool:
     investigator's attention. This governs only whether it can name the
     activity.
     """
-    return not detection.matched_var.strip().lower().startswith(_HEARSAY_VARS)
+    variable = detection.matched_var.strip().lower()
+    # Repeatedly: a chain inside a chain reports `MATCHED_VARS:MATCHED_VARS:...`.
+    while variable.startswith(_CHAIN_PREFIXES):
+        prefix = next(p for p in _CHAIN_PREFIXES if variable.startswith(p))
+        variable = variable.removeprefix(prefix)
+    return not variable.startswith(_HEARSAY_VARS)
 
 
 def _rescue(

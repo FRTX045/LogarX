@@ -633,6 +633,33 @@ def test_a_referer_match_is_recognised_whatever_its_casing(engine: RuleEngine) -
     assert labelled.label.category is ActivityCategory.BROWSING
 
 
+def test_a_chained_rule_s_referer_match_is_still_hearsay(engine: RuleEngine) -> None:
+    """A chained CRS rule reports its second match as `MATCHED_VARS:` + the
+    variable, so the same Referer arrives as `MATCHED_VARS:REQUEST_HEADERS:Referer`.
+
+    Found on `2026-10-04-small`: `GET /c/safety` from a page whose URL held a
+    UNION SELECT was a false alarm, named by 942200's chained report while its
+    plain `REQUEST_HEADERS:Referer` reports were correctly set aside.
+    """
+    for matched_var in (
+        "MATCHED_VARS:REQUEST_HEADERS:Referer",
+        # A chain inside a chain doubles it; the same tier carried
+        # `MATCHED_VARS:MATCHED_VARS:ARGS`.
+        "MATCHED_VARS:MATCHED_VARS:REQUEST_HEADERS:Referer",
+    ):
+        detection = crs_detection(
+            rule_id=942200,
+            family="attack-sqli",
+            msg="Detects MySQL comment-/space-obfuscated injections and backtick termination",
+            matched_var=matched_var,
+        )
+
+        (labelled,) = engine.label_events([event(path="/c/safety")], crs=crs_index(detection))
+
+        assert labelled.label.category is ActivityCategory.BROWSING, matched_var
+        assert labelled.crs[0].rule_id == 942200
+
+
 def test_a_payload_in_a_parameter_still_names_the_request(engine: RuleEngine) -> None:
     """The other side of it: the filter is per detection, not per request.
 
