@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import pytest
 
-from logarc.cli import support
-
 
 @pytest.fixture(autouse=True)
 def _console_width_follows_each_invocation(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -22,6 +20,16 @@ def _console_width_follows_each_invocation(monkeypatch: pytest.MonkeyPatch) -> N
     So the activity table wrapped a rule name across lines and an assertion
     about that name failed on Linux workers only. Clearing the stored width
     puts each test back on the one it passed, whatever ran the suite.
+
+    **Imported here, not at the top of this file.** Rich also decides colour
+    once, when the console is built, from whether stdout is a terminal then.
+    A module-level import ran while this conftest loaded, before pytest starts
+    capturing output, so on a Windows worker the consoles were built against
+    the real console and wrote ANSI colour codes into every captured result:
+    15 CLI tests failed under `-n 4` on 2026-10-05. Importing inside the fixture
+    leaves the first import where the test modules put it, under capture.
     """
+    from logarc.cli import support
+
     for console in (support.console, support.errors):
         monkeypatch.setattr(console, "_width", None)
