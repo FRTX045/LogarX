@@ -34,7 +34,9 @@ __all__ = [
     "CrsDetection",
     "CrsUnavailableError",
     "SidecarConfig",
+    "binary_name",
     "default_binary",
+    "default_rules",
     "host_speaks_for",
     "primary_site_host",
     "run_sidecar",
@@ -43,8 +45,29 @@ __all__ = [
 #: Where the sidecar lives when nobody says otherwise: `crs/` at the repo root,
 #: four levels up from this file.
 _REPO_ROOT: Final = Path(__file__).resolve().parents[4]
-_CRS_DIR: Final = _REPO_ROOT / "crs"
-DEFAULT_RULES: Final = _REPO_ROOT / "vendor" / "coreruleset"
+
+
+def _install_root() -> Path:
+    """Where `crs/` and `vendor/coreruleset/` are.
+
+    The repository, in a source checkout. In the packaged application they are
+    bundled in the same layout under the folder PyInstaller unpacks to, so
+    everything below this function reads the same either way.
+    """
+    bundle = getattr(sys, "_MEIPASS", None)
+    if getattr(sys, "frozen", False) and bundle:
+        return Path(bundle)
+    return _REPO_ROOT
+
+
+def _crs_dir() -> Path:
+    return _install_root() / "crs"
+
+
+def default_rules() -> Path:
+    """The CRS ruleset: a pinned clone in a checkout, a bundled copy when packaged."""
+    return _install_root() / "vendor" / "coreruleset"
+
 
 #: Env override, so a packaged binary elsewhere on disk can be pointed at.
 BINARY_ENV: Final = "LOGARC_CRS_BINARY"
@@ -63,16 +86,22 @@ class CrsUnavailableError(RuntimeError):
     """
 
 
-def default_binary() -> Path:
-    """The sidecar path for this interpreter.
+def binary_name() -> str:
+    """The sidecar's file name for this interpreter.
 
     The extension follows the *interpreter's* platform, not the build host's. A
     Windows interpreter cannot spawn an ELF, and this project is developed with
-    a Windows venv over a Linux toolchain, so the two genuinely differ.
+    a Windows venv over a Linux toolchain, so the two genuinely differ. The
+    packaging build names the file it bundles from this too, so the two cannot
+    disagree.
     """
-    name = "crs-sidecar.exe" if sys.platform == "win32" else "crs-sidecar"
+    return "crs-sidecar.exe" if sys.platform == "win32" else "crs-sidecar"
+
+
+def default_binary() -> Path:
+    """The sidecar path for this interpreter, unless `BINARY_ENV` names another."""
     override = os.environ.get(BINARY_ENV)
-    return Path(override) if override else _CRS_DIR / name
+    return Path(override) if override else _crs_dir() / binary_name()
 
 
 def primary_site_host(hosts: Iterable[str]) -> str | None:
@@ -132,15 +161,24 @@ class SidecarConfig:
     """
 
     binary: Path = field(default_factory=default_binary)
-    rules: Path = DEFAULT_RULES
-    conf: Path = _CRS_DIR
+    rules: Path = field(default_factory=default_rules)
+    conf: Path = field(default_factory=_crs_dir)
     paranoia: int = 2
     host: str = "localhost"
 
     def revision(self) -> str | None:
-        """The ruleset clone's git revision, or None if it is not a checkout."""
+        """The ruleset's git revision, or None if nothing records one.
+
+        A clone answers from `.git`. The packaged application carries the rules
+        without their history, so the build writes the revision into a
+        `REVISION` file beside them — the fingerprint must still name the
+        ruleset that produced a detection, or a report cannot say what it ran.
+        """
         head = self.rules / ".git" / "HEAD"
         if not head.exists():
+            recorded = self.rules / "REVISION"
+            if recorded.exists():
+                return recorded.read_text(encoding="utf-8").strip() or None
             return None
         ref = head.read_text(encoding="utf-8").strip()
         if ref.startswith("ref: "):
@@ -182,16 +220,16 @@ class SidecarConfig:
     def check(self) -> None:
         """Raise `CrsUnavailableError` unless both the binary and ruleset are present."""
         if not self.binary.exists():
-            # The packaged build carries neither `crs/` nor a Go toolchain, and
-            # its reader has no reason to have either — handed the build command
-            # they would go looking for a directory that is not on their disk.
-            # The error still has to read as "unbuilt" rather than "broken", so
-            # it says what would actually get them there.
+            # The packaged build ships the sidecar, so reaching this means the
+            # copy on disk is damaged or incomplete. Its reader has no Go
+            # toolchain and no `crs/` directory, so the build command would send
+            # them looking for things that are not there; reinstalling is what
+            # actually gets them back.
             if getattr(sys, "frozen", False):
                 raise CrsUnavailableError(
-                    f"CRS enrichment is not available in the packaged application.\n"
-                    f"It needs the sidecar binary, which is not bundled: "
-                    f"use a source install to build it, or set {BINARY_ENV} to a "
+                    f"CRS enrichment is not available: this copy of logarc is "
+                    f"missing its CRS sidecar ({self.binary}).\n"
+                    f"Reinstall the application, or set {BINARY_ENV} to a "
                     f"build you already have.\n"
                     f"Everything else works without it, and every analysis says "
                     f"when CRS was not consulted."
@@ -199,7 +237,7 @@ class SidecarConfig:
             raise CrsUnavailableError(
                 f"CRS sidecar not found at {self.binary}.\n"
                 f"Build it with:\n"
-                f"  cd {_CRS_DIR} && go build -o {self.binary.name} .\n"
+                f"  cd {_crs_dir()} && go build -o {self.binary.name} .\n"
                 f"Cross-compiling for a Windows interpreter:\n"
                 f"  GOOS=windows GOARCH=amd64 go build -o crs-sidecar.exe .\n"
                 f"Or set {BINARY_ENV} to an existing build."

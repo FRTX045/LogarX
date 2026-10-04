@@ -5,6 +5,18 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **CRS enrichment works in the packaged Windows application.** The bundle now
+  carries the CRS sidecar, the CRS request rules and their data files, the
+  ruleset's revision and the licence of every Go module compiled into the
+  sidecar, so an investigator gets the second opinion without a Go toolchain.
+  `packaging/rebuild.py` builds the sidecar fresh on every run, so the shipped
+  binary is never older than `crs/main.go`, and refuses a bundle whose sidecar
+  does not answer a `UNION SELECT` probe with rule 942100. The bundle grows from
+  about 250 MB to about 270 MB. A packaged copy that has lost its sidecar now
+  says to reinstall, instead of pointing at a source install.
+
 ### Changed
 
 - **Activity descriptions no longer assume the site is a shop.** The bundled

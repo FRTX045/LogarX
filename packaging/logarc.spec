@@ -10,6 +10,7 @@
 # seconds each time and leaves copies of the tool in %TEMP%. Neither is
 # something an investigator should have to explain.
 
+import sys
 from pathlib import Path, PurePosixPath
 
 from PyInstaller.utils.hooks import collect_submodules, copy_metadata
@@ -43,6 +44,20 @@ datas = [
 # build would be stamped 0.0.0.dev0 — a report that cannot say which version of
 # the tool made it, which is the one thing the manifest is for.
 datas += copy_metadata("logarc")
+
+# The CRS sidecar, its ruleset and the licences of what is compiled into it,
+# placed where `logarc.detect.crs.sidecar` looks when frozen. Neither is Python,
+# so PyInstaller cannot find them; `crs_bundle.datas()` raises rather than
+# returning a short list, so a build without them stops here instead of shipping
+# an application whose CRS enrichment fails on someone else's machine.
+# `packaging/rebuild.py` builds and stages all of it first.
+sys.path.insert(0, SPECPATH)
+import crs_bundle  # noqa: E402
+
+try:
+    datas += crs_bundle.datas()
+except crs_bundle.CrsBundleError as exc:
+    raise SystemExit(str(exc)) from exc
 
 hiddenimports = [
     # Parsers register themselves on import. Only the ones actually referenced

@@ -135,13 +135,11 @@ def test_the_packaged_application_is_not_told_to_run_go_build(
 ) -> None:
     """`cd crs && go build` is good advice from a source tree and useless from a bundle.
 
-    The packaged Windows build carries neither the `crs/` directory nor a Go
-    toolchain, and its user has no reason to have either. Handed that message
-    they would go looking for a folder that is not on their disk.
-
-    The message that reaches them has to say the true thing instead: enrichment
-    needs a source install. Everything else about the error stays — it is still
-    the first thing a new user meets, and it still must not read as "broken".
+    The packaged Windows build ships the sidecar inside it, and its user has no
+    Go toolchain and no `crs/` directory to build in. If the sidecar is missing
+    from a bundle, that copy of the application is damaged, so the message says
+    so and points at reinstalling. It still must not read as "logarc is broken":
+    everything else works without CRS.
     """
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     config = SidecarConfig(binary=tmp_path / "nope", rules=tmp_path)
@@ -151,7 +149,37 @@ def test_the_packaged_application_is_not_told_to_run_go_build(
 
     message = str(raised.value)
     assert "go build" not in message
-    assert "source install" in message
+    assert "reinstall" in message.lower()
+    assert "everything else works" in message.lower()
+
+
+def test_the_packaged_application_finds_its_own_sidecar(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A bundle carries `crs/` and `vendor/coreruleset/` under the folder
+    PyInstaller unpacks it to, in the same layout as the source tree."""
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)
+    monkeypatch.delenv(BINARY_ENV, raising=False)
+
+    config = SidecarConfig()
+
+    assert config.binary.parent == tmp_path / "crs"
+    assert config.conf == tmp_path / "crs"
+    assert config.rules == tmp_path / "vendor" / "coreruleset"
+
+
+def test_a_source_checkout_still_finds_the_repository_copy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delattr(sys, "frozen", raising=False)
+    monkeypatch.delenv(BINARY_ENV, raising=False)
+
+    config = SidecarConfig()
+
+    assert config.binary.parent.name == "crs"
+    assert (config.binary.parent.parent / "src" / "logarc").is_dir()
+    assert config.rules.parts[-2:] == ("vendor", "coreruleset")
 
 
 def test_an_absent_ruleset_says_where_to_clone_it(tmp_path: Path) -> None:
@@ -331,6 +359,15 @@ def test_a_detached_head_is_read_directly(tmp_path: Path) -> None:
     git = tmp_path / ".git"
     git.mkdir()
     (git / "HEAD").write_text("d694d465951e\n", encoding="utf-8")
+
+    assert SidecarConfig(rules=tmp_path, conf=tmp_path).revision() == "d694d465951e"
+
+
+def test_a_bundled_ruleset_names_its_revision_without_git(tmp_path: Path) -> None:
+    """The packaged application carries the rules without their `.git`, so the
+    build writes the revision beside them. Without it every CRS finding from the
+    packaged app would record `crs_revision: null`."""
+    (tmp_path / "REVISION").write_text("d694d465951e\n", encoding="utf-8")
 
     assert SidecarConfig(rules=tmp_path, conf=tmp_path).revision() == "d694d465951e"
 

@@ -9,7 +9,9 @@ and loads third-party components licensed under the Apache License, Version 2.0.
 Neither is redistributed in this repository: the Go module is fetched at build
 time and the ruleset is cloned separately (see crs/README.md). This notice is
 carried because a built sidecar, or any distribution containing one, does
-include them.
+include them. The packaged Windows application is such a distribution: it
+carries the built sidecar and the CRS request rules, and the licence of every
+Go module compiled into the sidecar is under `_internal/licenses/crs-sidecar/`.
 
   OWASP Coraza Web Application Firewall
   Copyright the Coraza authors

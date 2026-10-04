@@ -43,6 +43,10 @@ from importlib import metadata
 from pathlib import Path
 from typing import Final
 
+# `crs_bundle` sits beside this script, which is run by path, not imported.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import crs_bundle
+
 #: This file is `<root>/packaging/rebuild.py`. Derived from `__file__` rather
 #: than the current directory, because a git hook runs this with whatever
 #: directory the invoking client happened to have.
@@ -273,6 +277,67 @@ for name in ("QtCore", "QtGui", "QtWidgets"):
     return None
 
 
+#: Run by the venv's interpreter against the staged files: the bundled sidecar,
+#: bundled ruleset and bundled confs, driven through logarc's own client so the
+#: check speaks the same protocol the application does.
+_CRS_PROBE: Final = """
+import sys
+from datetime import UTC, datetime
+from pathlib import Path
+from logarc.core.event import NormalizedEvent
+from logarc.core.evidence import EvidenceRef
+from logarc.detect.crs import SidecarConfig, binary_name, run_sidecar
+root = Path(sys.argv[1]) / "_internal"
+config = SidecarConfig(
+    binary=root / "crs" / binary_name(),
+    rules=root / "vendor" / "coreruleset",
+    conf=root / "crs",
+)
+event = NormalizedEvent(
+    timestamp=datetime(2024, 5, 1, tzinfo=UTC), client_ip="203.0.113.5",
+    evidence=EvidenceRef("access.log", 1), method="GET", path="/search",
+    query="q=1%27%20UNION%20SELECT%20pw", protocol="HTTP/1.1", status=200,
+    user_agent="curl/8.0",
+)
+ids = sorted({item.rule_id for item in run_sidecar([event], config=config)})
+print("revision", config.revision())
+print("rules", *ids)
+"""
+
+
+def check_crs(bundle: Path) -> str | None:
+    """The bundled sidecar runs, loads the bundled rules and names their revision.
+
+    Present is not the same as working. The probe sends one request CRS's
+    libinjection rule 942100 is famous for, so a binary that starts but cannot
+    find its rules — or finds some and not the SQLi ones — fails here, at build
+    time, rather than on an investigator's machine.
+    """
+    internal = bundle / "_internal"
+    if not (internal / "crs").is_dir():
+        return "the CRS sidecar is not in the bundle (no _internal/crs)"
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", _CRS_PROBE, str(bundle)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=120,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return f"the bundled CRS sidecar could not be checked: {exc}"
+    if result.returncode:
+        tail = (result.stderr or result.stdout).strip().splitlines()[-3:]
+        return "the bundled CRS sidecar does not run: " + " / ".join(tail)
+    lines = dict(line.split(" ", 1) for line in result.stdout.splitlines() if " " in line)
+    if lines.get("revision", "None") == "None":
+        return "the bundled CRS ruleset names no revision (REVISION missing)"
+    if "942100" not in lines.get("rules", "").split():
+        return "the bundled CRS sidecar missed 942100 on a UNION SELECT probe"
+    return None
+
+
 def verify(bundle: Path) -> list[str]:
     checks = (
         check_executable,
@@ -280,6 +345,7 @@ def verify(bundle: Path) -> list[str]:
         check_metadata,
         check_no_browser_engine,
         check_qt_runtime,
+        check_crs,
     )
     return [problem for check in checks if (problem := check(bundle)) is not None]
 
@@ -388,6 +454,19 @@ def _rebuild() -> int:
     if not passed:
         return fail("the test suite is red, so nothing was packaged", detail)
 
+    # After the tests, so a red suite still stops everything first, and before
+    # PyInstaller, whose spec refuses to build without what this stages.
+    say("building the CRS sidecar and staging its ruleset and licences")
+    try:
+        unlicensed = crs_bundle.prepare()
+    except crs_bundle.CrsBundleError as exc:
+        return fail("the CRS sidecar could not be prepared", str(exc))
+    if unlicensed:
+        return fail(
+            "the CRS sidecar links code with no licence file to ship beside it",
+            "\n".join(f"  - {module}" for module in unlicensed),
+        )
+
     built, detail = build()
     if not built:
         return fail("the build failed", detail)
@@ -426,7 +505,8 @@ def _rebuild() -> int:
     say(f"verified and swapped in ({size_mb(LIVE):.0f} MB)")
     STATUS.write_text(
         f"{stamp}  {head()}  ok  {size_mb(LIVE):.0f} MB\n"
-        "tests green; rule packs bundled; version metadata bundled; no QtWebEngine; Qt runtime loads\n",
+        "tests green; rule packs bundled; version metadata bundled; no QtWebEngine; "
+        "Qt runtime loads; CRS sidecar bundled and catches 942100\n",
         encoding="utf-8",
     )
     MARKER.unlink(missing_ok=True)

@@ -26,7 +26,10 @@ the Python interpreter running `logarc` targets a different OS than the toolchai
 cannot spawn an ELF binary. `logarc` looks for `crs-sidecar.exe` on Windows and `crs-sidecar`
 elsewhere; `LOGARC_CRS_BINARY` overrides both.
 
-Neither binary nor the ruleset clone is committed. Pinned versions — reproducing a measurement
+Neither binary nor the ruleset clone is committed. The packaged Windows build carries both:
+`packaging/rebuild.py` builds the sidecar fresh with `-trimpath`, and `packaging/crs_bundle.py`
+bundles it with the request rules, their data files, the ruleset's revision (as a `REVISION` file,
+since the bundle has no `.git`) and the licence of every Go module linked into it. Pinned versions — reproducing a measurement
 requires all three:
 
 | | |
