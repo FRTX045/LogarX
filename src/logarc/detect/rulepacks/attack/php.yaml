@@ -103,6 +103,21 @@ rules:
   #
   # Log4Shell's `${jndi:` matches this too, and that is fine — it also matches
   # its own rule in `java.yaml`, which is more severe and wins the label.
+  #
+  # **A bare `${name}` is not PHP**, and the rule stopped saying so on
+  # 2026-10-05. It is what every template language writes — a JavaScript
+  # template literal, a shell expansion, a Handlebars variable — and a real
+  # shop's front end sends `/api/stock?id=${id}&watch=1` unfilled from a real
+  # browser: 41 / 129 / 659 requests across the dataset's three tiers, every one
+  # of them injection at high severity until this. What keeps `${` PHP is what a
+  # template never writes: a space after the `$` (`$ {'fdf'}`), anything but a
+  # plain name inside (`${'a'}`, `${$a}`, `${@$b}`, `${jndi:`), a `${...}`
+  # called as a function (`${_.__}(30)`), or a variable run as a command
+  # (`${shell} -c`). Each was a corpus case nothing else catches.
+  #
+  # The cost, stated: `/get?foo=${a}` is a CRS 933 attack case, and it is the
+  # same characters as the placeholder. No rule reading a request line can be
+  # right on both, and the placeholder is real traffic.
   - id: php_superglobal
     name: PHP Superglobal or Variable Interpolation
     category: injection
@@ -116,7 +131,13 @@ rules:
         - field: target_decoded
           regex: '\$globals\b'
         - field: target_decoded
-          regex: '\$\s*\{'
+          regex: '\$\s+\{'
+        - field: target_decoded
+          regex: '\$\{(?![a-z_][a-z0-9_.]*\})'
+        - field: target_decoded
+          regex: '\$\{[^}]{0,80}\}\s*\('
+        - field: target_decoded
+          regex: '\$\{[a-z_][a-z0-9_]*\}\s+-[a-z]'
         - field: target_decoded
           regex: '\$\$[a-z_]'
         - field: user_agent_decoded

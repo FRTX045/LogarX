@@ -100,6 +100,15 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **A `${name}` placeholder is no longer called PHP injection.** A web page's
+  template placeholder sent before it was filled in — `?id=${id}` — was
+  reported as injection at high severity; it is what every template language
+  writes. `${` is still PHP when it carries what a template never does: a
+  space after the `$`, quotes or another variable inside, a call, or a
+  command. Against the OWASP CRS corpus 961 of 1,099 becomes 960: one case,
+  `?foo=${a}`, is the same characters as the placeholder. A spaced
+  `. call``…`` is now caught by the XSS rules, which it had slipped past.
+
 - **Apache connecting to itself is no longer reported as a client.** Apache
   wakes its own worker processes with `OPTIONS *` from `127.0.0.1`, and logs
   it; that was reported as an API call. It is now named Apache Internal
