@@ -41,7 +41,38 @@ rules:
     match:
       any:
         - field: user_agent_decoded
-          regex: '\b(sqlmap|nikto|nmap|masscan|zgrab|acunetix|nessus|openvas|wpscan|arachni|w3af|havij|wapiti|skipfish|whatweb|commix|dirb(?:uster)?|dirsearch|gobuster|ffuf|feroxbuster|wfuzz|nuclei|katana|gospider|hydra|zaproxy|burpsuite)\b'
+          regex: '\b(sqlmap|nikto|nmap|masscan|zgrab|acunetix|nessus|openvas|wpscan|arachni|w3af|havij|wapiti|skipfish|whatweb|commix|nuclei|katana|gospider|hydra|zaproxy|burpsuite)\b'
+
+  # Tools whose job is sweeping a wordlist of paths, named apart from the
+  # scanners above because what they do is a different category. ADR-0005 draws
+  # the line this project measures by: probing for named artefacts is
+  # reconnaissance, sweeping a wordlist is enumeration. These exist to sweep.
+  #
+  # They used to be in the list above, and that rule outranks
+  # `directory_enumeration` on confidence — so a gobuster sweep earned the
+  # enumeration label on nearly every request and was named reconnaissance
+  # anyway: 4,610 requests of one client on `2026-09-20-medium`, 87% of that
+  # build's enumeration-read-as-reconnaissance confusion.
+  #
+  # ffuf's own default User-Agent is `Fuzz Faster U Fool v2.1.0-dev`, which
+  # never contains the word `ffuf`, so the old pattern never matched it. It is
+  # matched by name here. dirb, by contrast, sends a browser's string by
+  # default and is caught by the behaviour rules when it does.
+  #
+  # The same confidence as the scanner rule, for the same reason: a default
+  # User-Agent is a tool announcing itself. It still outranks
+  # `directory_enumeration` (0.9), which now only means the two agree.
+  - id: content_discovery_user_agent
+    name: Content Discovery Tool
+    category: enumeration
+    owasp: "A01:2025"
+    severity: medium
+    confidence: 0.95
+    references: ["CAPEC-87"]
+    match:
+      any:
+        - field: user_agent_decoded
+          regex: '\b(?:gobuster|dirb(?:uster)?|dirsearch|ffuf|feroxbuster|wfuzz)\b|fuzz faster u fool'
 
   # A program, not a person — and that is the whole claim. `crawling`, not
   # `reconnaissance`, and the difference is not cosmetic: `is_hostile` is

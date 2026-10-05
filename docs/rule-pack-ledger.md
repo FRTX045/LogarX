@@ -37,6 +37,7 @@ implying the CRS column was ever checked.
 | 2026-10-05 | *this pass* | **930 LFI** — traversal at a value's start, more file names, the User-Agent | 930 **23% → 97%** (7 → 29); overall 74.5% → **76.9%** (819 → 845 of 1,099) | 0/5 → 0/5 in 930, 0 in every family; excerpt unchanged on both engines after one fix; medium 17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS | 0, three extended |
 | 2026-10-05 | *this pass* | **933 PHP** — the call without writing `system(` | 933 **68% → 97%** (126 → 179); overall 76.9% → **81.7%** (845 → 898 of 1,099) | 0/38 → 0/38 in 933, 0 in every family; excerpt unchanged on both engines; medium 17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS | 2, two extended |
 | 2026-10-05 | *this pass* | **932 RCE**, second pass — the User-Agent that is a command line | 932 **71% → 85%** (289 → 344); overall 81.7% → **86.7%** (898 → 953 of 1,099) | 0/64 → 0/64 in 932, 0 in every family; excerpt unchanged on both engines; medium 17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS | 1 |
+| 2026-10-05 | *this pass* | **recon** — content-discovery tools are enumeration | corpus unchanged, 961 of 1,099; medium caught 17,069 → 17,069 native, 17,071 → 17,071 CRS; **medium accuracy 0.9751 → 0.9945 native, 0.9747 → 0.9941 CRS** | 0 in every family; excerpt unchanged on both engines; medium 1 → 1 native, 74 → 74 CRS | 1, one narrowed |
 | 2026-10-05 | *this pass* | **the finish** — 934 and 943's last catchable shapes; every family closed out | 934 **91% → 95%** (176 → 183), 943 **90% → 92%** (36 → 37); overall 86.7% → **87.4%** (953 → 961 of 1,099) | 0 in every family; excerpt unchanged on both engines; medium 17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS | 2, three extended |
 
 The 2026-09-20 pass is the first measured against a corpus containing a
@@ -629,6 +630,58 @@ credential confusion (3, needs the authority parsed two ways); one Jinja
 
 
 
+
+### 2026-10-05 — recon: the tools that sweep a wordlist are enumeration
+
+The first pass aimed at *naming* rather than catching, and the largest single
+error on `2026-09-20-medium` turned out to be one rule's category, not a missing
+rule. `enumeration` read as `reconnaissance` was 5,325 requests, and **4,610 of
+them were one client, `gobuster/3.5`**: `scanner_user_agent` names it
+reconnaissance at confidence 0.95, and outranked the `directory_enumeration`
+label (0.9) that 4,586 of those requests had also earned.
+
+ADR-0005 states the boundary this project measures by — probing for named
+artefacts is reconnaissance, sweeping a wordlist is enumeration — and
+gobuster, dirb, dirbuster, dirsearch, ffuf, feroxbuster and wfuzz exist to
+sweep. So the scanner list was contradicting the taxonomy, which is a
+different thing from the dataset's convention. They moved to
+`content_discovery_user_agent`, `enumeration`, same severity and confidence.
+The dataset agrees tool by tool, which is a check rather than the reason:
+gobuster 4,615 enumeration; nmap 8 and whatweb 6 reconnaissance; sqlmap 43
+injection.
+
+**ffuf was never matched at all.** Its default User-Agent is
+`Fuzz Faster U Fool v2.1.0-dev`, which does not contain `ffuf`. The demo log's
+`scanner_parade` has sent exactly that string all along as its fourth
+"tool that announces itself", and nothing announced. Matched by name now.
+
+| `2026-09-20-medium` | native before | native after | CRS before | CRS after |
+|---|---:|---:|---:|---:|
+| accuracy | 0.9751 | **0.9945** | 0.9747 | **0.9941** |
+| macro F1 | 0.7683 | **0.8097** | 0.7209 | **0.7622** |
+| `enumeration` F1 | 0.771 | **0.973** | 0.770 | **0.973** |
+| `reconnaissance` F1 | 0.493 | **0.869** | 0.492 | **0.867** |
+| caught / false alarms | 17,069 / 1 | 17,069 / 1 | 17,071 / 74 | 17,071 / 74 |
+| boundary F1 | 0.8472 | 0.8466 | 0.8372 | 0.8367 |
+
+**Boundary F1 fell by 0.0006**, 9,844 episodes to 9,852. The few gobuster
+requests that hit a more severe file-exposure rule are still
+`reconnaissance`, now inside an `enumeration` run rather than a
+`reconnaissance` one, so each splits it. Small, and reported rather than
+chased in the same pass. The excerpt carries no content-discovery agent and did
+not move; the CRS corpus did not move; none of the 70 distinct benign agents
+across the tiers fires a hostile rule; whole-engine cost on 7–56 KB agents
+built from the new pattern's own prefixes is flat per character.
+
+**Still getting through — 715 `enumeration` read as `reconnaissance`.** Almost
+all are the browser-agent campaign probing `/.svn/entries`, `/backup.zip`,
+`/db.sql`, `/cgi-bin/test.cgi`, which `docs/evaluation.md` already decided not
+to chase: the same request line is labelled by *which campaign sent it*, and
+yielding to enumeration whenever a User-Agent is present would encode that
+convention, not a fact. The other handful is the gobuster file-exposure hits
+above. Making a *declared* content-discovery tool's file probes enumeration is
+defensible by the same ADR — they are wordlist entries — and is the next thing
+to measure, separately.
 
 ### 2026-10-05 — the finish: what is left in every family, and why
 

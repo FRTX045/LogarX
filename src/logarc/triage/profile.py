@@ -114,9 +114,9 @@ class ClientProfile:
     rules_matched: dict[str, int] = field(default_factory=dict)
     """Requests each rule matched, whether or not its label was the one kept.
 
-    A scanner's enumeration is labelled `scanner_user_agent`, which outranks
+    A tool's sweep is labelled `content_discovery_user_agent`, which outranks
     `directory_enumeration` on confidence. Asked who else enumerated, counting
-    only the labels kept would leave that scanner out of the answer.
+    only the labels kept would leave that tool out of the answer.
     """
     rules_won: dict[str, int] = field(default_factory=dict)
     """Requests each rule named: the label a reconstruction shows for them."""

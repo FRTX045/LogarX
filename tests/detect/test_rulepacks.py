@@ -310,6 +310,71 @@ def test_a_scanner_announces_itself(engine: RuleEngine) -> None:
     assert labelled.label.rule_id == "scanner_user_agent"
 
 
+# Tools whose job is sweeping a wordlist of paths. ADR-0005 draws the line this
+# project measures by: probing for named artefacts is reconnaissance, sweeping a
+# wordlist is enumeration. These seven exist to sweep, so naming one is evidence
+# of enumeration, and filing them under reconnaissance contradicted the
+# taxonomy — on 2026-09-20-medium, 4,610 of gobuster's requests were named
+# reconnaissance over the enumeration label they had also earned.
+CONTENT_DISCOVERY_AGENTS = [
+    "gobuster/3.6",
+    # ffuf's own default, which never contains the word `ffuf`: the earlier
+    # pattern missed it, and the demo log's parade had been sending it all along.
+    "Fuzz Faster U Fool v2.1.0-dev",
+    "ffuf/2.1.0",
+    "DirBuster-1.0-RC1 (http://www.owasp.org/index.php/Category:OWASP_DirBuster_Project)",
+    "dirb",
+    "dirsearch",
+    "feroxbuster/2.10.4",
+    "Wfuzz/3.1.0",
+]
+
+# Tools that fingerprint, scan for vulnerabilities, or exploit: they stay with
+# the scanner rule, and their own payloads are named by the payload rules.
+RECONNAISSANCE_AGENTS = [
+    "Mozilla/5.00 (Nikto/2.5.0) (Evasions:None) (Test:Port Check)",
+    "Mozilla/5.0 (compatible; Nmap Scripting Engine; https://nmap.org/book/nse.html)",
+    "WhatWeb/0.5.5",
+    "Nuclei - Open-source project (github.com/projectdiscovery/nuclei)",
+    "sqlmap/1.7#stable",
+]
+
+
+@pytest.mark.parametrize("agent", CONTENT_DISCOVERY_AGENTS)
+def test_a_content_discovery_tool_is_enumeration(engine: RuleEngine, agent: str) -> None:
+    (labelled,) = engine.label_events([request("/backup/", status=404, user_agent=agent)])
+
+    assert labelled.label.rule_id == "content_discovery_user_agent"
+    assert labelled.label.category is ActivityCategory.ENUMERATION
+
+
+@pytest.mark.parametrize("agent", RECONNAISSANCE_AGENTS)
+def test_a_scanner_that_fingerprints_stays_reconnaissance(engine: RuleEngine, agent: str) -> None:
+    (labelled,) = engine.label_events([request("/", user_agent=agent)])
+
+    assert labelled.label.rule_id == "scanner_user_agent"
+    assert labelled.label.category is ActivityCategory.RECONNAISSANCE
+
+
+def test_a_gobuster_sweep_is_enumeration_from_end_to_end(engine: RuleEngine) -> None:
+    """The shape behind the 4,610: a wordlist of misses, one tool named in each.
+
+    `directory_enumeration` still matches the burst — it is the rule that
+    catches the same sweep with the User-Agent changed — but the tool's name is
+    the surer claim, and now the two agree on what the client was doing.
+    """
+    events = [
+        request(f"/w{n}", status=404, seconds=n, user_agent="gobuster/3.6") for n in range(25)
+    ]
+
+    labelled = engine.label_events(events)
+
+    assert {item.label.category for item in labelled} == {ActivityCategory.ENUMERATION}
+    assert any(
+        label.rule_id == "directory_enumeration" for item in labelled for label in item.all_labels
+    )
+
+
 def test_directory_enumeration_is_seen_across_requests(engine: RuleEngine) -> None:
     events = [request(f"/admin{n}", status=404, seconds=n) for n in range(25)]
 
@@ -2131,6 +2196,12 @@ def test_a_command_line_sent_as_the_user_agent_is_caught(
         "Microsoft Office/16.0 (Windows NT 10.0; Microsoft Outlook 16.0.5417; Pro)",
         "Expanse, a Palo Alto Networks company, searches across the global IPv4 space",
         "Mozilla/5.0 (Linux; Android 9; SH-04F) AppleWebKit/537.36",
+        # Words a content-discovery tool's name is the start of. The tool names
+        # are matched whole, so none of these is a tool announcing itself.
+        "Gobus/1.0 (timetables)",
+        "dirbrowser/1.2",
+        "wfuzzy-widget/0.3",
+        "FuzzyFinder/2.0",
     ],
 )
 def test_ordinary_user_agents_are_not_command_lines(engine: RuleEngine, user_agent: str) -> None:

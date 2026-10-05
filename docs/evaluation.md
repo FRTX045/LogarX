@@ -663,6 +663,15 @@ Four groups deserve naming individually.
   present. That is this dataset's convention for telling its two campaigns apart, not a fact about
   security — a scanner forging a User-Agent and asking for `/backup.zip` is doing what one without
   a User-Agent is doing. Writing it into a rule would buy a figure by encoding the answer sheet.
+
+  **2026-10-05: on `2026-09-20-medium` most of it was a different thing, and is fixed.** 4,610 of
+  that build's 5,325 were one client, `gobuster/3.5`, named reconnaissance by `scanner_user_agent`
+  over the enumeration label its sweep had also earned. That was the rule contradicting the
+  boundary above, not the corpus's convention — gobuster exists to sweep a wordlist — so the
+  content-discovery tools moved to their own rule, `content_discovery_user_agent`. On the same
+  bytes the confusion falls to 715, almost all the file-probe campaign described here, and
+  accuracy rises from 0.9751 to 0.9945 with detection unchanged. `docs/rule-pack-ledger.md` has
+  the measurement.
 - **`access_control` and `exploitation`, 0.000 over 28 and 8 requests.** Real ground that is
   genuinely uncovered: forced browsing to admin areas and webshell use, in volumes too small for
   the per-class figure to be stable but large enough to say the rules do not reach them.
@@ -735,7 +744,7 @@ Ruleset `9edf8587…` (33 rules) against coreruleset `d694d465951e`, 200 case fi
 **This is history, not the ruleset shipping today.** It was true when written and
 is kept because the analysis under *Reading it* is what motivated ADR-0008 — but
 the rules have since changed substantially and the figures below are stale. The
-tree now holds 98 rules across twelve attack packs and one action pack; family
+tree now holds 99 rules across twelve attack packs and one action pack; family
 933 alone went from 0.012 to 0.68 on 2026-09-15.
 
 For current figures run `logarc score-crs`, which reports both directions —
