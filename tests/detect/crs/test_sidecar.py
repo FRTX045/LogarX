@@ -21,6 +21,7 @@ from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
 from logarc.detect.crs.sidecar import (
     _BATCH,
+    AUTO_ENV,
     BINARY_ENV,
     CrsDetection,
     CrsUnavailableError,
@@ -30,6 +31,7 @@ from logarc.detect.crs.sidecar import (
     host_speaks_for,
     primary_site_host,
     run_sidecar,
+    runs_by_default,
 )
 from logarc.detect.crs.store import (
     CRS_FILE,
@@ -496,3 +498,35 @@ def test_the_host_is_part_of_what_produced_a_detection() -> None:
     assert replace(base, host="shop.test").fingerprint() != base.fingerprint()
     assert replace(base, host="shop.test").as_config()["crs_host"] == "shop.test"
     assert base.as_config()["crs_host"] == "localhost"
+
+
+def test_crs_runs_on_a_new_case_unless_somebody_says_otherwise(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """On by default, in the window and on the command line alike. The switch
+    is only consulted for the run nobody asked for: `logarc enrich` and the
+    window's own menu item still run CRS when they are told to."""
+    monkeypatch.delenv(AUTO_ENV, raising=False)
+
+    assert runs_by_default()
+
+
+@pytest.mark.parametrize("off", ["off", "OFF", "0", "false", "no", " off "])
+def test_one_variable_turns_the_automatic_run_off_everywhere(
+    off: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """For a machine where CRS has no business running by itself — a shared
+    analysis box, a script that times ingest, this project's own test suite."""
+    monkeypatch.setenv(AUTO_ENV, off)
+
+    assert not runs_by_default()
+
+
+@pytest.mark.parametrize("on", ["on", "1", "yes", "", "anything"])
+def test_only_a_clear_no_turns_it_off(on: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A typo leaves CRS running rather than silently skipping it. The cost of
+    the wrong guess is one slower scan, against a case missing detections
+    nobody knows are missing."""
+    monkeypatch.setenv(AUTO_ENV, on)
+
+    assert runs_by_default()

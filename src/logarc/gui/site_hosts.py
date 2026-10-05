@@ -69,7 +69,7 @@ class SiteHostsOffer(_Spoken):
         self.setWindowTitle("Is this your site?")
         self.setFixedWidth(430)
         # Modal to the reader, non-blocking to the caller — `setModal` plus
-        # `show()`, the way `CrsOffer` and `IngestCard` do it. `exec()` would
+        # `show()`, the way `CrsUnavailable` and `IngestCard` do it. `exec()` would
         # block the thread that just finished an ingest.
         self.setModal(True)
 

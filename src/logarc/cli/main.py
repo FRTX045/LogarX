@@ -21,16 +21,18 @@ from logarc.cli.formats import formats_app
 from logarc.cli.support import console, errors, fail, path_line
 from logarc.core.activity import Severity
 from logarc.detect.crs import (
+    AUTO_ENV,
     CrsUnavailableError,
     SidecarConfig,
     host_speaks_for,
     primary_site_host,
+    runs_by_default,
 )
 from logarc.detect.crs.store import CrsEvidence
 from logarc.detect.engine import RuleEngine
 from logarc.detect.rulepacks import default_rules
 from logarc.detect.rules import RulePackError, load_rules
-from logarc.enrich import enrich_case
+from logarc.enrich import EnrichOutcome, enrich_case
 from logarc.episode.builder import EpisodePolicy
 from logarc.evaluation.benchmark import BenchmarkError, BenchmarkResult, run_benchmark
 from logarc.evaluation.crs_corpus import CorpusError, score_corpus
@@ -216,8 +218,18 @@ def ingest(
             "redirect. Set it later with `logarc site-hosts`.",
         ),
     ] = None,
+    crs: Annotated[
+        bool | None,
+        typer.Option(
+            "--crs/--no-crs",
+            help="Replay the new case through OWASP CRS once it is read. On "
+            f"unless {AUTO_ENV}=off says otherwise; `logarc enrich` runs it "
+            "again later, at another paranoia level if wanted.",
+            show_default=False,
+        ),
+    ] = None,
 ) -> None:
-    """Read logs into a new case.
+    """Read logs into a new case, then replay it through OWASP CRS.
 
     `--max-line-bytes` defaults to a megabyte, about 120 times the longest line
     Apache will write. No real log reaches it; a crafted one can, and parsing a
@@ -273,6 +285,42 @@ def ingest(
             f"[yellow]{plural(quarantined, 'line')} could not be parsed[/yellow] — "
             f"see {case / 'quarantine' / 'unparsed.jsonl'}"
         )
+
+    wanted = crs if crs is not None else runs_by_default()
+    if wanted and any(result.events_parsed for result in results):
+        _enrich_after_ingest(case)
+
+
+def _enrich_after_ingest(case: Path) -> None:
+    """CRS on a case that has just been read, which is finished either way.
+
+    Nothing here exits non-zero. The ingest the command was asked for has
+    succeeded, and CRS only adds findings — so a missing sidecar is a notice and
+    a failed run is a warning with the command that tries again. `logarc enrich`
+    is where CRS failing is a failure, because there it is the whole job.
+    """
+    config = SidecarConfig()
+    try:
+        config.check()
+    except CrsUnavailableError as exc:
+        console.print(
+            "\n[yellow]CRS was not run[/yellow] — the case is complete without it. "
+            f"Pass --no-crs, or set {AUTO_ENV}=off, to stop trying."
+        )
+        console.print(str(exc), style="dim", markup=False)
+        return
+
+    try:
+        with console.status("Replaying requests through CRS…"):
+            outcome = enrich_case(case, config=config)
+    except (CrsUnavailableError, OSError, *USER_ERRORS) as exc:
+        console.print("\n[yellow]CRS did not finish:[/yellow]", end=" ")
+        console.print(str(exc), markup=False)
+        path_line(f"The case is complete without it. To try again: logarc enrich --case {case}")
+        return
+
+    console.print()
+    _report_enrichment(outcome)
 
 
 @app.command("score-crs")
@@ -867,6 +915,16 @@ def enrich(
     except (CrsUnavailableError, *USER_ERRORS) as exc:
         raise fail(str(exc)) from exc
 
+    _report_enrichment(outcome)
+
+
+def _report_enrichment(outcome: EnrichOutcome) -> None:
+    """What a CRS run found, for `enrich` and for the run `ingest` makes.
+
+    The configuration printed is the one that ran, which is not always the one
+    asked for: `enrich_case` replaces the host with the case's own.
+    """
+    ran = outcome.config
     table = Table(title="CRS enrichment")
     table.add_column("Requests", justify="right")
     table.add_column("With a detection", justify="right")
@@ -877,12 +935,11 @@ def enrich(
         f"{outcome.replayed:,}",
         f"{outcome.covered:,}",
         f"{len(outcome.detections):,}",
-        str(config.paranoia),
+        str(ran.paranoia),
         f"{outcome.rate:,.0f}",
     )
     console.print(table)
     path_line(f"\nWritten to {outcome.path}")
-    ran = outcome.config
     console.print(
         f"CRS {ran.revision() or 'unknown'}, configuration {ran.fingerprint()} — "
         "recorded in the case manifest so a finding can name what produced it."

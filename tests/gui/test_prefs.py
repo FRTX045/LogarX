@@ -24,6 +24,7 @@ def test_every_setting_the_window_keeps_is_in_the_catalogue() -> None:
         "view/ask_unsaved_arrangement",
         "view/band_density",
         "view/decode_targets",
+        "analysis/run_crs",
         "cases/reopen_last",
     }
 
@@ -37,6 +38,7 @@ def test_the_defaults_are_the_ones_the_menu_already_used() -> None:
         "view/ask_unsaved_arrangement": True,
         "view/band_density": Density.FINE,
         "view/decode_targets": True,
+        "analysis/run_crs": True,
         "cases/reopen_last": False,
     }
 
@@ -62,7 +64,7 @@ def test_the_groups_hold_every_setting_between_them() -> None:
 
 def test_the_groups_come_back_in_a_settled_order() -> None:
     """The dialog is read top to bottom and remembered by position."""
-    assert prefs.GROUPS == ("Graph", "Evidence", "Startup")
+    assert prefs.GROUPS == ("Graph", "Evidence", "Analysis", "Startup")
 
 
 def test_a_group_keeps_its_settings_in_catalogue_order() -> None:
@@ -80,6 +82,25 @@ def test_the_startup_setting_is_not_filed_under_the_graph() -> None:
     startup = [s.key for s in prefs.in_group("Startup")]
 
     assert startup == ["cases/reopen_last"]
+
+
+def test_crs_is_on_until_the_reader_turns_it_off() -> None:
+    """The decision this setting records, made 2026-10-05: CRS runs after every
+    scan, and the reader who does not want it says so once, here."""
+    (setting,) = prefs.in_group("Analysis")
+
+    assert setting.key == prefs.RUN_CRS
+    assert setting.default is True
+
+
+def test_the_crs_setting_names_what_it_costs() -> None:
+    """It runs after every scan, so the note says that it adds time. No figure:
+    a number in a dialog gets no footnote, which is how two wrong ones reached
+    the offer this setting replaces."""
+    (setting,) = prefs.in_group("Analysis")
+
+    assert "longer" in setting.note
+    assert not any(char.isdigit() for char in setting.note)
 
 
 def test_the_catalogue_answers_which_counting_is_in_force() -> None:
@@ -153,3 +174,34 @@ def test_a_switch_is_written_as_something_that_reads_back(key: str) -> None:
     prefs.write(written.__setitem__, {**prefs.defaults(), key: False})
 
     assert prefs.read(written.get)[key] is False
+
+
+# -- the answer the CRS offer remembered, before this was a setting ----------
+
+
+def test_a_reader_who_told_the_old_offer_never_is_still_not_asked_to_wait() -> None:
+    """**The one migration here.** Before CRS ran by itself, a dialog asked after
+    every scan and a ticked box stored the answer under `crs/after-ingest`.
+    Somebody who chose "never" there chose it on purpose, and turning CRS on
+    underneath them because the question went away would be overriding them."""
+    read = prefs.read({"crs/after-ingest": "never"}.get)
+
+    assert read[prefs.RUN_CRS] is False
+
+
+@pytest.mark.parametrize("answered", ["always", "quiet", ""])
+def test_every_other_old_answer_leaves_it_on(answered: str) -> None:
+    """An old "always" is what it now does anyway, and "quiet" was never about
+    running CRS — it silenced the notice that the sidecar is missing."""
+    read = prefs.read({"crs/after-ingest": answered}.get)
+
+    assert read[prefs.RUN_CRS] is True
+
+
+def test_the_setting_itself_outranks_the_old_answer() -> None:
+    """Once the reader has used the dialog, what they set there is the answer.
+    The old key is never deleted, so without this a "never" from last year
+    would win against a box ticked this morning."""
+    stored = {"crs/after-ingest": "never", prefs.RUN_CRS: "true"}
+
+    assert prefs.read(stored.get)[prefs.RUN_CRS] is True

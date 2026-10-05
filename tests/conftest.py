@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from logarc.detect.crs import AUTO_ENV
 from logarc.parsers.registry import register_saved_formats
 
 if TYPE_CHECKING:
@@ -45,3 +46,18 @@ def _private_logarc_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Ite
     # reachable by name here — and `is_built_in` would then call it one.
     register_saved_formats()
     yield
+
+
+@pytest.fixture(autouse=True)
+def _crs_only_when_asked(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep CRS from running by itself after every ingest the suite does.
+
+    It runs after every scan by default, in the window and on the command
+    line. Here that would put a sidecar process behind each of the hundreds of
+    ingests that test something else — slower, and a different case on a
+    machine with the sidecar built from one without it.
+
+    The tests about that run take the switch back off with `delenv`. Set rather
+    than `setdefault`, so a developer's own `LOGARC_CRS=on` cannot leak in.
+    """
+    monkeypatch.setenv(AUTO_ENV, "off")

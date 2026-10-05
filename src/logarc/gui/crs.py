@@ -1,15 +1,14 @@
-"""Offering CRS when a scan finishes, and showing it running.
+"""Showing CRS running after a scan, and saying so when it cannot run.
 
-Three faces, and the reasoning behind each is in its class. What they share is
-what the offer deliberately does *not* do: quote a figure. An earlier draft
-carried two, "SSRF recall 0.600 to 0.800" and "false alarms 1 to 81". The first
-has a denominator of five records, so it is three detections becoming four; the
-second was measured on a corpus that had since been replaced. Both read as
-solid, and a figure in a dialog gets no footnote and no reader who knows what it
-was measured on.
+Two faces, and the reasoning behind each is in its class. There used to be a
+third, a dialog asking whether to run CRS at all; since 2026-10-05 it runs by
+itself and the question is a preference (`prefs.RUN_CRS`), whose note carries
+what the dialog said about the trade.
 
-So the offer describes the *shape* of the trade in words, and the numbers appear
-afterwards on the card, where they are counts from the reader's own log.
+The rule that dialog left behind still holds: no figure on a face. An early
+draft of it quoted "SSRF recall 0.600 to 0.800" — three detections becoming
+four — and a false-alarm count measured on a corpus since replaced. The numbers
+appear on the card instead, where they are counts from the reader's own log.
 """
 
 from __future__ import annotations
@@ -29,7 +28,7 @@ from PyQt6.QtWidgets import (
 )
 
 from logarc.gui._qt import required
-from logarc.gui.theme import GAP, PAD, ROOM, TIGHT, caption_font, heading_font, mono_font
+from logarc.gui.theme import GAP, PAD, ROOM, caption_font, heading_font, mono_font
 from logarc.style import THEME
 
 if TYPE_CHECKING:
@@ -37,7 +36,8 @@ if TYPE_CHECKING:
 
     from logarc.enrich import EnrichProgress
 
-__all__ = ["CrsCard", "CrsOffer", "CrsUnavailable"]
+__all__ = ["CrsCard", "CrsUnavailable"]
+
 
 #: The two sides, in the order a reader weighs them. Green for what is gained,
 #: amber for what it costs — not red, which would read as an error rather than
@@ -106,55 +106,6 @@ class _Spoken(QDialog):
                 *(box.text() for box in self.findChildren(QCheckBox)),
             ]
         )
-
-
-class CrsOffer(_Spoken):
-    """Asked once, when a scan finishes."""
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setWindowTitle("Also run OWASP CRS?")
-        self.setFixedWidth(430)
-        # Modal to the reader, non-blocking to the caller — `setModal` plus
-        # `show()`, the way IngestCard does it. `exec()` would block the
-        # thread that just finished an ingest, and every test that drives one
-        # would stop dead on a dialog it never asked for.
-        self.setModal(True)
-
-        self._remember = QCheckBox("Remember this choice")
-
-        buttons = QDialogButtonBox()
-        run = required(buttons.addButton("Run CRS", QDialogButtonBox.ButtonRole.AcceptRole))
-        run.setDefault(True)
-        buttons.addButton("Skip", QDialogButtonBox.ButtonRole.RejectRole)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-
-        trade = QVBoxLayout()
-        trade.setSpacing(TIGHT)
-        trade.addWidget(_side("+", _GAIN, "Catches attacks logarc's own rules miss"))
-        # A true minus sign rather than a hyphen, and the ambiguity warning is
-        # accepted knowingly: it is set directly under a plus, and a hyphen
-        # there reads as a dash rather than as the other half of the pair.
-        cost = "\N{MINUS SIGN}"
-        trade.addWidget(_side(cost, _COST, "Calls more ordinary traffic suspicious"))
-
-        stack = QVBoxLayout(self)
-        stack.setContentsMargins(ROOM, ROOM, ROOM, ROOM)
-        stack.setSpacing(GAP)
-        stack.addWidget(_titled("Also run OWASP CRS?"))
-        stack.addWidget(_wrapped("A second ruleset, the one most web application firewalls use."))
-        stack.addLayout(trade)
-        stack.addWidget(_quiet("About 5 minutes. You can run it later instead."))
-        stack.addWidget(self._remember)
-        stack.addWidget(buttons)
-
-    def remembered(self) -> bool:
-        """Whether this answer should be used for every case from now on."""
-        return self._remember.isChecked()
-
-    def tick_remember(self) -> None:
-        self._remember.setChecked(True)
 
 
 class CrsUnavailable(_Spoken):

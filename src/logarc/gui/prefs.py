@@ -32,11 +32,20 @@ if TYPE_CHECKING:
 #: key is three chances for one of them to be silently reading nothing.
 ASK_UNSAVED_ARRANGEMENT: Final = "view/ask_unsaved_arrangement"
 
+#: Whether CRS runs by itself once a scan finishes. Named for the same reason:
+#: the window reads it at the end of every ingest.
+RUN_CRS: Final = "analysis/run_crs"
+
+#: Where the dialog this setting replaced kept its answer. Read once, for the
+#: reader who told it "never" — see `read`.
+_ANSWERED_BEFORE: Final = "crs/after-ingest"
+
 __all__ = [
     "ASK_UNSAVED_ARRANGEMENT",
     "DENSITY",
     "EVERY",
     "GROUPS",
+    "RUN_CRS",
     "Setting",
     "defaults",
     "density_in",
@@ -115,6 +124,18 @@ EVERY: tuple[Setting, ...] = (
         group="Evidence",
     ),
     Setting(
+        key=RUN_CRS,
+        label="Run OWASP CRS after a scan",
+        note=(
+            "Replay every new case through CRS, the ruleset most web application "
+            "firewalls use. It catches attacks logarc's own rules miss, and makes "
+            "each scan take longer; the card it shows can stop it and keeps what "
+            "it found."
+        ),
+        default=True,
+        group="Analysis",
+    ),
+    Setting(
         key="cases/reopen_last",
         label="Reopen the last case on start",
         note=(
@@ -132,7 +153,7 @@ DENSITY = "view/band_density"
 
 #: The order the dialog draws them in, read top to bottom. Graph first because
 #: it holds most of them and is what a reader came here to change.
-GROUPS: tuple[str, ...] = ("Graph", "Evidence", "Startup")
+GROUPS: tuple[str, ...] = ("Graph", "Evidence", "Analysis", "Startup")
 
 
 def in_group(group: str) -> tuple[Setting, ...]:
@@ -167,6 +188,11 @@ def read(stored: Callable[[str], object]) -> dict[str, bool | Density]:
     values: dict[str, bool | Density] = {}
     for setting in EVERY:
         raw = stored(setting.key)
+        if raw is None and setting.key == RUN_CRS and stored(_ANSWERED_BEFORE) == "never":
+            # Before CRS ran by itself, a dialog asked after every scan and a
+            # ticked box kept the answer. "never" was chosen on purpose, and the
+            # question going away is not the reader changing their mind.
+            raw = False
         if raw is None:
             values[setting.key] = setting.default
         elif setting.choices is not None:

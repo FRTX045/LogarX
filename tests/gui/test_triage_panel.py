@@ -387,32 +387,43 @@ def test_departure_rejects_old_evidence_and_old_load_errors_or_progress(
     window.close()
 
 
-def test_prioritization_waits_until_the_crs_question_is_answered(qt_app, tmp_path, monkeypatch):
-    """Accepting CRS reloads the case and restarts the scan from nothing.
+def test_prioritization_waits_until_crs_has_finished(qt_app, tmp_path, monkeypatch):
+    """Finishing CRS reloads the case and restarts the scan from nothing.
 
-    So a scan begun while the offer is still on screen is work the reader will
-    never see. It waits for an answer, and the reader keeps the client list in the
-    meantime.
+    So a scan begun while CRS is still running is work the reader will never
+    see. It waits for the run to end, and the reader keeps the client list in
+    the meantime.
     """
-    from PyQt6.QtWidgets import QDialog
-
+    from logarc.detect.crs import AUTO_ENV, SidecarConfig
+    from logarc.enrich import EnrichOutcome
     from logarc.gui import app as app_module
 
+    monkeypatch.delenv(AUTO_ENV, raising=False)
     monkeypatch.setattr(app_module.SidecarConfig, "check", lambda self: None)
-    app_module._settings().setValue(app_module._CRS_KEY, "")
     case_dir = make_case(tmp_path)
 
     window = MainWindow()
     started: list[tuple[object, ...]] = []
     monkeypatch.setattr(window._triage, "start", lambda *args, **_: started.append(args))
+    monkeypatch.setattr(window, "_run_crs", lambda _case: None)
 
-    window._open_and_offer_crs(case_dir)
+    window._open_and_start_crs(case_dir)
     settled(qt_app)
-    assert started == [], "the scan began while the CRS offer was still unanswered"
+    assert started == [], "the scan began while CRS was still running"
 
-    window._crs_answered(case_dir, QDialog.DialogCode.Rejected)
+    finished = EnrichOutcome(
+        replayed=1,
+        covered=0,
+        detections=(),
+        path=case_dir / "crs.parquet",
+        stopped=False,
+        seconds=0.1,
+        config=SidecarConfig(),
+    )
+    window._crs_finished(case_dir, finished)
     settled(qt_app)
-    assert started, "declining CRS left the case with no prioritization scan"
+    assert started, "a finished CRS run left the case with no prioritization scan"
+    window.close()
 
 
 def test_the_scan_starts_only_once_the_window_knows_the_case(qt_app, tmp_path):
