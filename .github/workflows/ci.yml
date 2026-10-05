@@ -1,5 +1,10 @@
 name: CI
 
+# tools/local-ci.sh runs these same jobs on a developer's machine, and reads
+# the Python versions and CRS_COMMIT from this file. A change to what is
+# checked here belongs there too, in the same commit; tests/test_local_ci.py
+# fails if the two stop agreeing on the matrix.
+
 on:
   push:
     branches: [main]
