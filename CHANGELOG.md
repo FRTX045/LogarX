@@ -100,6 +100,14 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **More crawlers are recognised as crawlers.** Facebook's link preview
+  (`facebookexternalhit`) and the other crawlers Meta and Google document
+  without the word `bot` in their names were being read as people browsing.
+  On the committed excerpt accuracy rises from 0.9339 to 0.9514, and on the
+  2026-10-04 medium dataset build from 0.9929 to 0.9950, with detection and
+  activity boundaries unchanged. The action rules' crawler check is now one
+  list shared with the fallback's, held in step by a test.
+
 - **Wordlist tools are named as enumeration, not reconnaissance.** gobuster,
   dirb, dirbuster, dirsearch, ffuf, feroxbuster and wfuzz sweep a list of
   paths, and this project's own boundary (ADR-0005) calls that enumeration;

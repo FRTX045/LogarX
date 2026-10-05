@@ -1194,6 +1194,68 @@ def test_an_action_rule_never_claims_a_static_asset(engine: RuleEngine, target: 
     )
 
 
+#: Crawlers whose names carry none of `bot`, `crawler`, `spider` or `slurp`,
+#: from the vendors' own lists (checked 2026-10-05): Meta's web crawlers and the
+#: Google crawlers and fetchers that lack the word. `facebookexternalhit` alone
+#: was 459 page views on `2026-10-04-medium` that the truth calls crawling and
+#: the fallback called browsing.
+UNNAMED_CRAWLERS = [
+    "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
+    "meta-webindexer/1.1 (+https://developers.facebook.com/docs/sharing/webmasters/crawler)",
+    "meta-externalagent/1.1 (+https://developers.facebook.com/docs/sharing/webmasters/crawler)",
+    "meta-externalads/1.1 (+https://developers.facebook.com/docs/sharing/webmasters/crawler)",
+    "meta-externalfetcher/1.1 (+https://developers.facebook.com/docs/sharing/webmasters/crawler)",
+    "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GoogleOther) Chrome/120.0 Safari/537.36",
+    "Mozilla/5.0 (compatible; Google-InspectionTool/1.0)",
+    "APIs-Google (+https://developers.google.com/webmasters/APIs-Google.html)",
+    "Google-Safety",
+    "Mediapartners-Google",
+]
+
+
+@pytest.mark.parametrize("agent", UNNAMED_CRAWLERS)
+def test_a_documented_crawler_is_crawling_whatever_its_name(engine: RuleEngine, agent: str) -> None:
+    """The fallback's crawler branch, on a page no rule describes."""
+    (labelled,) = engine.label_events([request("/c/garden", user_agent=agent)])
+
+    assert labelled.label.category is ActivityCategory.CRAWLING
+    assert labelled.label.name == "Crawler Traffic"
+
+
+@pytest.mark.parametrize("agent", ["Googlebot/2.1", *UNNAMED_CRAWLERS])
+def test_no_action_rule_claims_any_crawler(engine: RuleEngine, agent: str) -> None:
+    """The action pack's crawler guard has to know every crawler the ladder
+    knows. Were they to disagree, `facebookexternalhit` fetching `/search?q=`
+    would be a visitor searching while the same agent on `/c/garden` was a
+    crawler."""
+    for target in ("/search?q=oak", "/login", "/logout", "/register", "/account"):
+        (labelled,) = engine.label_events([request(target, user_agent=agent)])
+
+        assert labelled.label.category is ActivityCategory.CRAWLING, (
+            f"{agent!r} on {target!r} was claimed by "
+            f"{[item.rule_id for item in labelled.all_labels]}"
+        )
+
+
+def test_the_action_guard_and_the_ladder_name_the_same_crawlers() -> None:
+    """One list in two places — the engine's fallback and a regex in YAML —
+    because a rule pack cannot import a constant. This is what keeps them
+    one list."""
+    import re
+
+    from logarc.detect.engine import _CRAWLER_HINTS
+
+    pack = DEFAULT_RULEPACK_DIR / "action" / "global.yaml"
+    guards: set[frozenset[str]] = set()
+    for rule in yaml.safe_load(pack.read_text(encoding="utf-8"))["rules"]:
+        for condition in rule["match"].get("all", []) + rule["match"].get("any", []):
+            found = re.fullmatch(r"\^\(\?!\.\*\((.+)\)\)", condition.get("regex", ""))
+            if condition.get("field") == "user_agent_decoded" and found:
+                guards.add(frozenset(found.group(1).split("|")))
+
+    assert guards == {frozenset(_CRAWLER_HINTS)}
+
+
 def test_an_action_rule_never_claims_a_crawler(engine: RuleEngine) -> None:
     """A bot fetching `/cart` is a bot. The fallback's crawler branch answers
     *who*, runs before everything else it knows, and must keep doing so once

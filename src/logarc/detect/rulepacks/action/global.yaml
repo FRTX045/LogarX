@@ -40,7 +40,11 @@
 # catalogue, and a "Product View" rule would relabel every one of them.
 #
 # Each rule below carries the same crawler guard for the same reason: a bot
-# fetching `/cart` is a bot, and the ladder's answer stays the right one.
+# fetching `/cart` is a bot, and the ladder's answer stays the right one. It is
+# written once, as the `not_a_crawler` anchor on the first rule, and must name
+# exactly the crawlers `engine._CRAWLER_HINTS` names — a test holds the two to
+# one list. Several documented crawlers say neither `bot` nor `crawler`:
+# `facebookexternalhit` is Meta's link preview, `Mediapartners-Google` Google's.
 
 version: 1
 rules:
@@ -67,7 +71,7 @@ rules:
         - field: path_decoded
           regex: '^/(search|suche|recherche|busca|find|lookup)(/|$)'
         - field: user_agent_decoded
-          regex: '^(?!.*(bot|crawler|spider|slurp))'
+          regex: &not_a_crawler '^(?!.*(bot|crawler|spider|slurp|facebookexternalhit|meta-webindexer|meta-external|googleother|google-inspectiontool|apis-google|google-safety|mediapartners-google))'
 
   # The same act as a call rather than a page — `/api/autocomplete` while
   # somebody types. `api_call`, not `browsing`: nobody navigated here, and the
@@ -105,7 +109,7 @@ rules:
         - field: extension
           regex: '^(?!(css|js|mjs|map|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|eot|mp4|webm|mp3|pdf|txt|xml)$)'
         - field: user_agent_decoded
-          regex: '^(?!.*(bot|crawler|spider|slurp))'
+          regex: *not_a_crawler
 
   # Becoming someone. The moment a trace stops being about an address and starts
   # being about an account, which is why `authentication` is deliberately left
@@ -125,7 +129,7 @@ rules:
         - field: path_decoded
           regex: '^/(login|signin|sign-in|log-in|auth(/(login|signin|token|callback))?|session|users?/(sign_in|login)|account/(login|signin))(/|$)'
         - field: user_agent_decoded
-          regex: '^(?!.*(bot|crawler|spider|slurp))'
+          regex: *not_a_crawler
 
   - id: action_sign_out
     name: Sign Out
@@ -137,7 +141,7 @@ rules:
         - field: path_decoded
           regex: '^/(logout|signout|sign-out|log-out|users?/sign_out|account/logout)(/|$)'
         - field: user_agent_decoded
-          regex: '^(?!.*(bot|crawler|spider|slurp))'
+          regex: *not_a_crawler
 
   - id: action_register
     name: Register
@@ -149,7 +153,7 @@ rules:
         - field: path_decoded
           regex: '^/(register|signup|sign-up|join|users?/new|account/(register|create))(/|$)'
         - field: user_agent_decoded
-          regex: '^(?!.*(bot|crawler|spider|slurp))'
+          regex: *not_a_crawler
 
   # Worth its own name rather than folding into `Sign In`. A password reset is
   # the standard way to take an account over once an email address is known, so
@@ -164,7 +168,7 @@ rules:
         - field: path_decoded
           regex: '(password[-_/]?(reset|forgot|recover|change)|forgot[-_/]?password|reset[-_/]?password)'
         - field: user_agent_decoded
-          regex: '^(?!.*(bot|crawler|spider|slurp))'
+          regex: *not_a_crawler
 
   # Managing the account once inside it. `browsing` rather than
   # `authentication`: signing in is an event, and reading your own settings is
@@ -179,7 +183,7 @@ rules:
         - field: path_decoded
           regex: '^/(account|profile|settings|preferences|dashboard|my[-_]?account)(/|$)'
         - field: user_agent_decoded
-          regex: '^(?!.*(bot|crawler|spider|slurp))'
+          regex: *not_a_crawler
 
   # Putting a file on the server. Higher confidence than the other writes
   # because of what it leads to: a webshell arrives this way, and the rule that

@@ -37,6 +37,7 @@ implying the CRS column was ever checked.
 | 2026-10-05 | *this pass* | **930 LFI** — traversal at a value's start, more file names, the User-Agent | 930 **23% → 97%** (7 → 29); overall 74.5% → **76.9%** (819 → 845 of 1,099) | 0/5 → 0/5 in 930, 0 in every family; excerpt unchanged on both engines after one fix; medium 17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS | 0, three extended |
 | 2026-10-05 | *this pass* | **933 PHP** — the call without writing `system(` | 933 **68% → 97%** (126 → 179); overall 76.9% → **81.7%** (845 → 898 of 1,099) | 0/38 → 0/38 in 933, 0 in every family; excerpt unchanged on both engines; medium 17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS | 2, two extended |
 | 2026-10-05 | *this pass* | **932 RCE**, second pass — the User-Agent that is a command line | 932 **71% → 85%** (289 → 344); overall 81.7% → **86.7%** (898 → 953 of 1,099) | 0/64 → 0/64 in 932, 0 in every family; excerpt unchanged on both engines; medium 17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS | 1 |
+| 2026-10-05 | *this pass* | **action** — crawlers that never say `bot` | detection unchanged everywhere; **excerpt accuracy 0.9339 → 0.9514 native, 0.9341 → 0.9516 CRS**; `2026-10-04-medium` 0.9929 → 0.9950 native | 0 → 0 excerpt; medium 1 → 1 native, 74 → 74 CRS; `2026-10-04-medium` 0 → 0 both | 0, the crawler list extended in two places |
 | 2026-10-05 | *this pass* | **recon** — content-discovery tools are enumeration | corpus unchanged, 961 of 1,099; medium caught 17,069 → 17,069 native, 17,071 → 17,071 CRS; **medium accuracy 0.9751 → 0.9945 native, 0.9747 → 0.9941 CRS** | 0 in every family; excerpt unchanged on both engines; medium 1 → 1 native, 74 → 74 CRS | 1, one narrowed |
 | 2026-10-05 | *this pass* | **the finish** — 934 and 943's last catchable shapes; every family closed out | 934 **91% → 95%** (176 → 183), 943 **90% → 92%** (36 → 37); overall 86.7% → **87.4%** (953 → 961 of 1,099) | 0 in every family; excerpt unchanged on both engines; medium 17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS | 2, three extended |
 
@@ -630,6 +631,41 @@ credential confusion (3, needs the authority parsed two ways); one Jinja
 
 
 
+
+### 2026-10-05 — action: crawlers that never say `bot`
+
+The fallback ladder recognised a crawler by four words — `bot`, `crawler`,
+`spider`, `slurp` — and the action pack's crawler guard repeated the same four,
+seven times. **`facebookexternalhit` says none of them**, and on
+`2026-10-04-medium` it was 459 requests the truth calls `crawling` and the
+fallback called `browsing`; on the committed excerpt, 67.
+
+The new names come from the vendors' own lists, fetched 2026-10-05, not from
+the dataset: Meta's web crawlers (`facebookexternalhit`, `meta-webindexer`,
+`meta-externalads`, `meta-externalagent`, `meta-externalfetcher`) and the
+Google crawlers and fetchers whose names lack `bot` (`GoogleOther`,
+`Google-InspectionTool`, `APIs-Google`, `Google-Safety`,
+`Mediapartners-Google`). The pack's seven copies of the guard became one YAML
+anchor, and a test now fails if the engine's list and the pack's stop naming the
+same crawlers — checked by adding a name to one side only.
+
+| | before | after |
+|---|---:|---:|
+| excerpt accuracy, native / CRS | 0.9339 / 0.9341 | **0.9514 / 0.9516** |
+| excerpt macro F1, native / CRS | 0.7855 / 0.7956 | **0.7970 / 0.8070** |
+| excerpt `crawling` / `browsing` F1 | 0.963 / 0.676 | **0.989 / 0.798** |
+| `2026-10-04-medium` accuracy, native / CRS | 0.9929 / 0.9928 | **0.9950 / 0.9949** |
+| `2026-09-20-medium` accuracy, native / CRS | 0.9945 / 0.9941 | **0.9952 / 0.9949** |
+
+Detection and segmentation are byte-identical on every one of them: the
+excerpt fixtures' `binary` and `segmentation` blocks did not change, and the
+tiers kept 17,058 / 0, 17,069 / 1 and 17,071 / 74. The CRS corpus did not move.
+
+**Still getting through on `2026-10-04-medium`:** 73 `browsing` read as
+`crawling` — scripts (python-requests, curl, okhttp…) fetching category
+pages, named by `http_library_user_agent`, which suppresses the ladder's
+`Page View` whatever the request was; and 131 `unknown` read as `api_call` —
+Apache's own internal dummy connection. Both are the next two passes.
 
 ### 2026-10-05 — recon: the tools that sweep a wordlist are enumeration
 
