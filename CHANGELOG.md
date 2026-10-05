@@ -93,6 +93,19 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **CRS enrichment is two to five times faster on real traffic, with exactly
+  the same detections.** Most requests in a log are repeats — the same page,
+  asset or API call made again — and each was replayed through CRS in full. Each
+  distinct request is now replayed once, and its repeats are given the same
+  answer under their own line. Measured against the old way, every detection
+  compared field by field: the 941,322-request large dataset build 995.7 s to
+  213.6 s, all 12,069 identical; medium (237,278) 245.8 s to 86.3 s, 7,057
+  identical; small (62,916) 66.5 s to 31.3 s, 1,958 identical; the committed
+  excerpt 4.1 s to 2.4 s, 808 identical; CRS's own regression corpus, whose
+  cases are nearly all distinct, 4,068 identical and no faster. The client address is
+  treated as part of the request only where CRS could read it as loopback,
+  which is the one thing it uses the address for.
+
 - **OWASP CRS runs after every scan, without asking.** The window used to ask
   after each scan whether to run it; it now runs, on a card that can be stopped
   and keeps what it found. Edit → Preferences → Analysis → *Run OWASP CRS after
