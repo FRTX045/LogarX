@@ -233,8 +233,8 @@ of which client made the request and why. It includes an administrator doing
 ordinary work, which matters more than it sounds: see the false-alarm figure.
 
 Measured 2026-09-20 on a build made at a named commit from a clean tree, whose
-checksums were verified before scoring. Native rules only; the CRS column is
-below, because on this corpus CRS is a trade rather than a free gain.
+checksums were verified before scoring. Native rules only; CRS, which now runs
+after every scan by default, is the paragraph below the table.
 
 | | |
 |---:|---|
@@ -255,12 +255,16 @@ commonest mistake is calling an attack by a neighbouring name, 5,335 times
 `enumeration` read as `reconnaissance`, which costs nothing on the first axis and
 a great deal on the second. Both are printed so neither can hide the other.
 
-**With OWASP CRS at paranoia level 2** the same corpus scores accuracy 0.974,
-macro F1 0.701, and **96 false alarms**. That is not a defect in CRS — the
-revision is pinned and unchanged. It is what a generic ruleset costs once the
-native packs have very little left to give it, and
-[docs/evaluation.md](docs/evaluation.md#the-current-baseline--2026-09-21) has the
-measurement.
+**With OWASP CRS at paranoia level 2**, re-scored on 2026-10-05 against the same
+bytes (checksums re-verified), the build scores accuracy 0.975, macro F1 0.721
+and **74 false alarms**; the native rules, the same day, score 0.975, 0.768 and 1.
+73 of the 74 are one request repeated: this build labels as harmless an
+administrator importing the shop's logo *by a literal IP address*, which is the
+one feature that separates that request from the attack it mirrors.
+[docs/evaluation.md](docs/evaluation.md#what-the-96-turned-out-to-be) traces it;
+the dataset fixed it in later builds. On the final `2026-10-04` builds, where it
+is fixed, CRS catches 1 to 3 more attacks per tier than the native rules alone
+and raises at most one false alarm per tier that they do not.
 
 **Macro F1 is lower than the figure this project once published, and that is not
 a regression.** Until September 2026 accuracy was measured against a corpus this

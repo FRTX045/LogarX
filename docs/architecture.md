@@ -25,7 +25,7 @@ Dependencies point inward. `core/` is the centre and imports nothing else.
 | `ingest/` | Streaming read → parse → batch → write. Bounded memory. |
 | `storage/` | Event store (Parquet + DuckDB), case manifest, integrity hashes. |
 | `sessionize/` | Splits an IP's event stream into sessions. |
-| `detect/` | Declarative rule engine; labels each request. `detect/crs/` drives the optional OWASP CRS sidecar. |
+| `detect/` | Declarative rule engine; labels each request. `detect/crs/` drives the OWASP CRS sidecar, which runs after every scan unless turned off. |
 | `episode/` | Merges labelled runs into activity episodes. |
 | `graphbuild/` | Builds trace and behaviour graphs; computes layout. |
 | `report/` | Self-contained HTML export. |
@@ -118,10 +118,12 @@ evades every signature. Decoding is bounded to 3 iterations and the depth is rec
 depth greater than 1 is itself an evasion signal. Both raw and decoded forms are exposed as
 separate match fields.
 
-**OWASP CRS is a third, optional source of signature matches**, run through Coraza in a Go sidecar
-by `logarc enrich` and read from the case thereafter. It supplies breadth the packs above do not —
-they catch 12.3% of the payload syntax CRS enumerates — and nothing else: CRS is stateless per
-request, so it expresses no behavioural rule, and it emits rule ids and tags rather than an
+**OWASP CRS is a third source of signature matches**, run through Coraza in a Go sidecar after
+every scan — by the window and by `logarc ingest`, unless the reader turned it off — and by
+`logarc enrich` on demand, then read from the case thereafter. It supplies the signatures the packs
+above miss — they catch 961 of the 1,099 access-log-visible cases in CRS's own regression corpus,
+87.4% on 2026-10-05, and fire on none of its 134 certified-harmless ones — and nothing else: CRS is
+stateless per request, so it expresses no behavioural rule, and it emits rule ids and tags rather than an
 `ActivityCategory`. A CRS detection is attached as evidence wherever it matched, and names the
 activity only where the packs reached INFO, meaning either nothing matched or the only match was
 an observation like `Scripted Client`. Anything LOW or above is a real claim and keeps precedence.
