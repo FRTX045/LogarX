@@ -19,6 +19,15 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   log records it in full. On the committed excerpt and a 237,000-line
   synthetic log, nothing moved in either direction, native or with CRS.
 
+- **The last catchable attack shapes in the CRS corpus** (families 934 and 943;
+  all families now 961 of 1,099, 87.4%): node-serialize's `_$$ND_FUNC$$_`
+  marker and its base64 form, a React Server Components reference reaching a
+  prototype (the React2Shell shape), a Jinja/Twig block that opens and closes
+  in one value, URL-parser confusion pointing at an internal host
+  (`http://google.com:80 &@127.0.0.1/`), and script that plants a session
+  cookie. Every family's remaining misses are now written down with the reason
+  they stay in `docs/rule-pack-ledger.md`.
+
 - **A shell command sent as the User-Agent is caught** (`ansible all -m ping`,
   `env --version`, `;chmod 777 /tmp/x`, `a=nc&&$a`): family 932 from 71% to 85%
   (289 to 344 of 406), all families 953 of 1,099 (86.7%). Clients name

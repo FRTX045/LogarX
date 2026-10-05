@@ -506,6 +506,12 @@ rules:
         # by anchoring them to the braces and a great deal to pay for it.
         - field: target_decoded
           regex: '__class__|__mro__|__subclasses__|__globals__|__builtins__|__import__'
+        # A Jinja or Twig control block that opens and closes in the same
+        # value (`{% if true %}49{% endif %}`) — a probe for whether the
+        # server renders what it was sent. The closing tag is required, so a
+        # search for the syntax itself ("jinja {% if %} syntax") stays quiet.
+        - field: target_decoded
+          regex: '\{%-?\s*(?:if|for)\b[^%]{1,80}%\}.{0,200}?\{%-?\s*end(?:if|for)\s*-?%\}'
         # Jinja2's own globals, and the Java runtime a Freemarker or Spring EL
         # payload reaches for. Matched bare for the same reason as the dunders.
         #
