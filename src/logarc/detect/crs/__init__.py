@@ -19,6 +19,7 @@ from logarc.detect.crs.mapping import (
     severity_for,
 )
 from logarc.detect.crs.sidecar import (
+    AUTO_ENV,
     CrsDetection,
     CrsUnavailableError,
     SidecarConfig,
@@ -27,6 +28,7 @@ from logarc.detect.crs.sidecar import (
     host_speaks_for,
     primary_site_host,
     run_sidecar,
+    runs_by_default,
 )
 from logarc.detect.crs.store import (
     CRS_FILE,
@@ -38,6 +40,7 @@ from logarc.detect.crs.store import (
 )
 
 __all__ = [
+    "AUTO_ENV",
     "CRS_FILE",
     "KNOWN_FAMILIES",
     "RESCUE_CONFIDENCE",
@@ -55,6 +58,7 @@ __all__ = [
     "load_detections",
     "primary_site_host",
     "run_sidecar",
+    "runs_by_default",
     "severity_for",
     "write_detections",
 ]

@@ -208,13 +208,12 @@ def test_skipping_leaves_the_case_unanswered(tmp_path: Path, qt_app: QApplicatio
         window.close()
 
 
-def test_the_crs_question_still_follows(tmp_path: Path, qt_app: QApplication) -> None:
-    """The two questions are chained rather than shown together.
+def test_crs_runs_only_once_the_domains_are_answered(tmp_path: Path, qt_app: QApplication) -> None:
+    """CRS is chained behind the domain question rather than started beside it.
 
-    Both arrive at the end of the same ingest and both are modal, so putting
-    them up at once would stack one over the other. CRS goes second because it
-    can start a five-minute job, and a reader should have finished answering
-    before anything starts running.
+    It reads the site's own domain from the case to tell a link to the site
+    from a link somewhere else (rule 931130), so a run started before the
+    reader answered would be told the wrong host for its whole length.
     """
     from logarc.gui.app import MainWindow
 
@@ -222,7 +221,7 @@ def test_the_crs_question_still_follows(tmp_path: Path, qt_app: QApplication) ->
     window = MainWindow()
     asked: list[Path] = []
     try:
-        window._offer_crs = asked.append  # type: ignore[method-assign]
+        window._start_crs = asked.append  # type: ignore[method-assign]
         window._site_hosts_offer = SiteHostsOffer(_suggested("shop.test"))
 
         window._site_hosts_answered(case_dir, QDialog.DialogCode.Rejected)

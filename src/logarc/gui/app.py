@@ -42,7 +42,7 @@ from logarc.caseview import (
 )
 from logarc.core.graph import GraphKind
 from logarc.core.window import EVERYTHING, TimeWindow
-from logarc.detect.crs import CrsEvidence, CrsUnavailableError, SidecarConfig
+from logarc.detect.crs import CrsEvidence, CrsUnavailableError, SidecarConfig, runs_by_default
 from logarc.enrich import EnrichOutcome, EnrichProgress, enrich_case
 from logarc.episode.builder import DEFAULT_EVIDENCE_SAMPLE
 from logarc.formats import drifted_sources
@@ -53,7 +53,7 @@ from logarc.gui.arrangement_keeper import ArrangementKeeper, Showing
 from logarc.gui.canvas import ActivityCanvas
 from logarc.gui.case_chooser import CaseChooser
 from logarc.gui.client_filter import is_whole_address
-from logarc.gui.crs import CrsCard, CrsOffer, CrsUnavailable
+from logarc.gui.crs import CrsCard, CrsUnavailable
 from logarc.gui.density import Density, buckets_for
 from logarc.gui.evidence_panel import EvidencePanel
 from logarc.gui.format_editor import FormatChoice, FormatEditor
@@ -105,9 +105,10 @@ _SETTINGS = ("logarc", "logarc")
 #: client's address.
 _RECENT_KEY = "cases/recent"
 
-#: What to do about CRS when a scan finishes: unset asks, "always" and "never"
-#: are the answers a ticked "Remember this choice" writes, and "quiet" means the
-#: sidecar is absent and the reader asked to stop being told so.
+#: "quiet" once the sidecar was found absent and the reader asked to stop being
+#: told so. Whether CRS runs at all is a preference now, `prefs.RUN_CRS`; this
+#: key held that answer too while a dialog asked, which is why the preference
+#: still reads a "never" left here.
 _CRS_KEY = "crs/after-ingest"
 
 #: Whether to stop asking which domains a site owns. Global, because the answer
@@ -183,7 +184,7 @@ class MainWindow(QMainWindow):
         # Up only while an ingest is running.
         self._ingest_card: IngestCard | None = None
         self._crs_card: CrsCard | None = None
-        self._crs_offer: CrsOffer | CrsUnavailable | None = None
+        self._crs_notice: CrsUnavailable | None = None
         self._site_hosts_offer: SiteHostsOffer | None = None
 
         self._notice = NoticeBanner()
@@ -664,7 +665,7 @@ class MainWindow(QMainWindow):
         mattered.
         """
         if str(_settings().value(_SITE_HOSTS_KEY, "") or "") == "never":
-            self._open_and_offer_crs(case_dir)
+            self._open_and_start_crs(case_dir)
             return
 
         try:
@@ -673,11 +674,11 @@ class MainWindow(QMainWindow):
         except (CaseError, OSError):
             # Not worth a dialog of its own: opening the case is the very next
             # thing that happens, and it reports its own failures properly.
-            self._open_and_offer_crs(case_dir)
+            self._open_and_start_crs(case_dir)
             return
 
         if not suggestion.worth_asking:
-            self._open_and_offer_crs(case_dir)
+            self._open_and_start_crs(case_dir)
             return
 
         offer = SiteHostsOffer(suggestion, self)
@@ -710,20 +711,20 @@ class MainWindow(QMainWindow):
         if offer.remembered():
             _settings().setValue(_SITE_HOSTS_KEY, "never")
 
-        self._open_and_offer_crs(case_dir)
+        self._open_and_start_crs(case_dir)
 
-    def _open_and_offer_crs(self, case_dir: Path) -> None:
+    def _open_and_start_crs(self, case_dir: Path) -> None:
         """Every way out of the domain question ends here.
 
         One place rather than five returns each remembering to do both, because
-        forgetting either is silent: a case that never opens, or a reader never
-        asked about CRS.
+        forgetting either is silent: a case that never opens, or a case CRS
+        never reads.
         """
         self._load_case(case_dir, hold_scan=True)
-        if not self._offer_crs(case_dir):
+        if not self._start_crs(case_dir):
             self._release_scan()
 
-    # -- CRS, offered once a scan has something to enrich --------------------
+    # -- CRS, run once a scan has something to enrich ------------------------
 
     def _release_scan(self) -> None:
         """Start the scan the CRS question was holding back.
@@ -736,61 +737,42 @@ class MainWindow(QMainWindow):
         if self._case_path is not None:
             self._triage.start(self._case_path, self._window)
 
-    def _offer_crs(self, case_dir: Path) -> bool:
-        """Ask whether to run CRS, unless the reader has already answered.
+    def _start_crs(self, case_dir: Path) -> bool:
+        """Run CRS on a case that has just been read, unless it is turned off.
 
-        Availability is checked before the offer rather than after it, so that
-        somebody without the sidecar is told their case is complete instead of
-        being asked a question and then refused.
+        True when a run started, and the scan it holds back is now its to
+        release. Availability is checked first, so that somebody without the
+        sidecar is told their case is complete rather than shown a card that
+        fails.
         """
-        answered = str(_settings().value(_CRS_KEY, "") or "")
-        if answered == "never":
+        if not self._prefs[prefs.RUN_CRS] or not runs_by_default():
             return False
 
         try:
             SidecarConfig().check()
         except CrsUnavailableError as exc:
-            if answered != "quiet":
+            if str(_settings().value(_CRS_KEY, "") or "") != "quiet":
                 self._crs_missing(str(exc))
             # No enrichment can follow, so nothing will invalidate a scan
             # and the caller need not hold one back behind this notice.
             return False
 
-        if answered == "always":
-            self._run_crs(case_dir)
-            return True
+        self._run_crs(case_dir)
+        return True
 
-        offer = CrsOffer(self)
+    def _crs_missing(self, reason: str) -> None:
+        told = CrsUnavailable(reason, self)
         # Held on the window, not only in the closure: a dialog whose last
         # Python reference is a lambda argument is collectable the moment this
         # method returns, and it is `show()` rather than `exec()` precisely so
         # that this method does return.
-        self._crs_offer = offer
-        offer.finished.connect(lambda result: self._crs_answered(case_dir, result))
-        offer.show()
-        return True
-
-    def _crs_answered(self, case_dir: Path, result: int) -> None:
-        offer, self._crs_offer = self._crs_offer, None
-        if offer is None:
-            return
-        wanted = result == QDialog.DialogCode.Accepted
-        if offer.remembered():
-            _settings().setValue(_CRS_KEY, "always" if wanted else "never")
-        if wanted:
-            self._run_crs(case_dir)
-        else:
-            self._release_scan()
-
-    def _crs_missing(self, reason: str) -> None:
-        told = CrsUnavailable(reason, self)
-        self._crs_offer = told
+        self._crs_notice = told
         told.finished.connect(lambda _result: self._crs_missing_closed())
         told.show()
 
     def _crs_missing_closed(self) -> None:
-        told, self._crs_offer = self._crs_offer, None
-        if isinstance(told, CrsUnavailable) and told.remembered():
+        told, self._crs_notice = self._crs_notice, None
+        if told is not None and told.remembered():
             _settings().setValue(_CRS_KEY, "quiet")
 
     def _run_crs(self, case_dir: Path) -> None:
@@ -823,6 +805,11 @@ class MainWindow(QMainWindow):
     def _crs_failed(self, message: str, detail: str) -> None:
         self._close_crs_card()
         self.report_error(message, detail)
+        # The case is as it was before CRS started, and complete. Without this
+        # the scan CRS was holding back never ran, and Where to start stayed
+        # empty — once rare, then every case's fate the day CRS became the
+        # default and a sidecar broke.
+        self._release_scan()
 
     def _crs_finished(self, case_dir: Path, outcome: object) -> None:
         """Reload, so the findings CRS added are the ones on screen.
@@ -833,6 +820,7 @@ class MainWindow(QMainWindow):
         """
         self._close_crs_card()
         if not isinstance(outcome, EnrichOutcome):
+            self._release_scan()
             return
         self._load_case(case_dir)
         # Requests flagged, not detections found: one request can match several

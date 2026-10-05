@@ -93,6 +93,17 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **OWASP CRS runs after every scan, without asking.** The window used to ask
+  after each scan whether to run it; it now runs, on a card that can be stopped
+  and keeps what it found. Edit → Preferences → Analysis → *Run OWASP CRS after
+  a scan* turns it off, and a reader who told the old question "never" keeps
+  that answer. `logarc ingest` does the same once the log is read, `--no-crs`
+  skips it for one run, and `LOGARC_CRS=off` turns the automatic run off on a
+  machine, in the window and on the command line alike. A missing or failing
+  sidecar is a notice, not a failed ingest: the case is complete without it,
+  and the notice says how to stop it repeating. The packaged Windows
+  application carries the sidecar, so there nothing else is installed.
+
 - **Activity descriptions no longer assume the site is a shop.** The bundled
   `action/commerce.yaml` is gone, and with it View Cart, Modify Cart, Checkout,
   Payment, Order History, Wishlist, Stock Check and Order Tracking. Those labels
@@ -478,6 +489,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   261 lines of unchanged values and buried the line that had actually moved.
 
 ### Fixed
+
+- **A CRS run that failed left Where to start empty.** The prioritization scan
+  waits while CRS runs, because finishing reloads the case; a failed run closed
+  its card and reported the error, and nothing let the scan start. It now
+  starts on every way a run can end.
 
 - **Six injection rules reported the wrong OWASP category.** The Windows
   batch, Node.js and Perl injection rules carried `A03:2025`, which in the 2025

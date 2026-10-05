@@ -82,8 +82,8 @@ Step 4 shows why you can believe it:
 
 logarc makes no outbound connections. Its runtime dependencies are pyarrow,
 duckdb, pyyaml, pydantic, typer and rich — no cloud SDK, no model, no telemetry.
-The optional OWASP CRS step runs a local Go binary against a local copy of the
-ruleset; it is not a service.
+The OWASP CRS step, on by default, runs a local Go binary against a local copy
+of the ruleset; it is not a service.
 
 This matters because the input is a production access log, which is evidence.
 
@@ -233,8 +233,8 @@ of which client made the request and why. It includes an administrator doing
 ordinary work, which matters more than it sounds: see the false-alarm figure.
 
 Measured 2026-09-20 on a build made at a named commit from a clean tree, whose
-checksums were verified before scoring. Native rules only; the CRS column is
-below, because on this corpus CRS is a trade rather than a free gain.
+checksums were verified before scoring. Native rules only; CRS, which now runs
+after every scan by default, is the paragraph below the table.
 
 | | |
 |---:|---|
@@ -255,12 +255,16 @@ commonest mistake is calling an attack by a neighbouring name, 5,335 times
 `enumeration` read as `reconnaissance`, which costs nothing on the first axis and
 a great deal on the second. Both are printed so neither can hide the other.
 
-**With OWASP CRS at paranoia level 2** the same corpus scores accuracy 0.974,
-macro F1 0.701, and **96 false alarms**. That is not a defect in CRS — the
-revision is pinned and unchanged. It is what a generic ruleset costs once the
-native packs have very little left to give it, and
-[docs/evaluation.md](docs/evaluation.md#the-current-baseline--2026-09-21) has the
-measurement.
+**With OWASP CRS at paranoia level 2**, re-scored on 2026-10-05 against the same
+bytes (checksums re-verified), the build scores accuracy 0.975, macro F1 0.721
+and **74 false alarms**; the native rules, the same day, score 0.975, 0.768 and 1.
+73 of the 74 are one request repeated: this build labels as harmless an
+administrator importing the shop's logo *by a literal IP address*, which is the
+one feature that separates that request from the attack it mirrors.
+[docs/evaluation.md](docs/evaluation.md#what-the-96-turned-out-to-be) traces it;
+the dataset fixed it in later builds. On the final `2026-10-04` builds, where it
+is fixed, CRS catches 1 to 3 more attacks per tier than the native rules alone
+and raises at most one false alarm per tier that they do not.
 
 **Macro F1 is lower than the figure this project once published, and that is not
 a regression.** Until September 2026 accuracy was measured against a corpus this
@@ -358,23 +362,35 @@ The staging checks also load the packaged Qt extensions in an isolated process.
 Windows system DLLs take precedence during collection, so unrelated tools on
 `PATH` cannot substitute an incompatible ICU library and break GUI startup.
 
-### OWASP CRS (optional)
+### OWASP CRS
 
 The bundled rules classify *behaviour*; OWASP CRS enumerates payload *syntax*,
 which is a different job and one it does far better. Both run, and CRS never
 overrides a rule that examined the request — it names the ones nothing else
 recognised.
 
+**It runs after every scan, without asking.** The window replays each new case
+through CRS on a card that can be stopped, keeping what it found so far, and
+`logarc ingest` does the same once the log is read. To turn it off:
+
+| Where | How |
+|---|---|
+| The window | Edit → Preferences → Analysis → *Run OWASP CRS after a scan* |
+| One `ingest` | `--no-crs` (and `--crs` asks for it whatever the machine says) |
+| A whole machine, both | `LOGARC_CRS=off` |
+
+The packaged Windows build carries the sidecar and the ruleset, so there is
+nothing to install. From source, build them once:
+
 ```bash
 git clone https://github.com/coreruleset/coreruleset.git vendor/coreruleset
 git -C vendor/coreruleset checkout d694d465951ee06347214f1291ae096e40700001
 cd crs && go build -o crs-sidecar .        # needs Go 1.25+; see crs/README.md
-logarc enrich --case ./case-shop           # replay the case past CRS
+logarc enrich --case ./case-shop --paranoia 3   # run again, at another level
 ```
 
-Without it a case analyses on the bundled rules alone, and says so on every run.
-The packaged Windows build needs none of the above: it carries the sidecar and
-the ruleset.
+Without the sidecar, a scan says once that CRS was not run and carries on: the
+case analyses on the bundled rules alone, and says so on every run.
 
 ---
 
@@ -384,12 +400,12 @@ the ruleset.
 
 | Command | What it does |
 |---|---|
-| `logarc ingest` | Read logs into a case. Streaming; memory is bounded by batch size, not file size. `--workers N` spreads the parse across processes. |
+| `logarc ingest` | Read logs into a case, then replay it through OWASP CRS (`--no-crs` skips that). Streaming; memory is bounded by batch size, not file size. `--workers N` spreads the parse across processes. |
 | `logarc list-ips` | List the clients seen. `--sort errors` ranks by the share of 4xx, which is what probing looks like. Also `requests`, `recent`, `bytes`, `paths`. |
 | `logarc analyze` | Reconstruct one client's activity as a graph. `--out` writes it as JSON. |
 | `logarc evidence` | The raw log lines a finding rests on — the other half of the chain of custody. |
 | `logarc export` | A standalone HTML or JSON report for one client. |
-| `logarc enrich` | Add OWASP CRS detections to a case. |
+| `logarc enrich` | Run OWASP CRS over a case again, or at another paranoia level. |
 | `logarc formats` | See, write and try out log formats. |
 | `logarc evaluate` | Measure the reconstruction against a log whose content is known. |
 | `logarc benchmark` | Throughput, peak memory and reconstruction time, on a log you give it. |

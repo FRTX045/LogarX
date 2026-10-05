@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from logarc.core.event import NormalizedEvent
 
 __all__ = [
+    "AUTO_ENV",
     "CrsDetection",
     "CrsUnavailableError",
     "SidecarConfig",
@@ -40,6 +41,7 @@ __all__ = [
     "host_speaks_for",
     "primary_site_host",
     "run_sidecar",
+    "runs_by_default",
 ]
 
 #: Where the sidecar lives when nobody says otherwise: `crs/` at the repo root,
@@ -71,6 +73,24 @@ def default_rules() -> Path:
 
 #: Env override, so a packaged binary elsewhere on disk can be pointed at.
 BINARY_ENV: Final = "LOGARC_CRS_BINARY"
+
+#: Set to `off` to stop CRS running by itself on a case that has just been
+#: read, in the window and on the command line alike. One switch for both, so a
+#: machine where it has no business running is configured once.
+AUTO_ENV: Final = "LOGARC_CRS"
+
+_OFF: Final = frozenset({"off", "0", "false", "no"})
+
+
+def runs_by_default() -> bool:
+    """Whether a new case is replayed through CRS without anybody asking.
+
+    Only a clear no turns it off. A misspelt value leaving CRS running costs one
+    slower scan; the other way round, it would cost a case its detections with
+    nothing on screen saying they were skipped.
+    """
+    return os.environ.get(AUTO_ENV, "").strip().lower() not in _OFF
+
 
 _BATCH: Final = 20_000
 """Records per sidecar invocation. Bounds the pipe buffer and the memory a

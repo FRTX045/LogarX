@@ -1,11 +1,14 @@
-"""Offering CRS when a scan finishes, and showing it running.
+"""Running CRS when a scan finishes, and showing it running.
 
-The offer is the only place this tool asks a question whose answer is a
-trade-off rather than a preference, so what it does *not* say matters as much as
-what it does. An earlier draft quoted two figures at the reader; both were
-measured on corpora that have since been replaced, and one had a denominator of
-five. The dialog now describes the shape of the trade and leaves the numbers to
-the screen that reports the reader's own log.
+Since 2026-10-05 nothing asks first. CRS runs after every scan unless the reader
+turned it off in Preferences or the machine sets `LOGARC_CRS=off`, and the card
+it shows can stop it. The dialog that used to ask is gone; what it said about
+the trade lives on as the note under that preference.
+
+What the window owes the reader either way is the prioritization scan. CRS
+holds it back, because finishing reloads the case and a scan begun before that
+would be thrown away — so every way CRS can end, including failing, has to let
+it go.
 """
 
 from __future__ import annotations
@@ -16,56 +19,195 @@ import pytest
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
+from PyQt6.QtWidgets import QDialog
+
+from conftest import settled
+from logarc.case import Case
+from logarc.core.event import NormalizedEvent
+from logarc.core.evidence import EvidenceRef
+from logarc.detect.crs import AUTO_ENV, CrsUnavailableError
 from logarc.enrich import EnrichProgress
-from logarc.gui.crs import CrsCard, CrsOffer, CrsUnavailable
+from logarc.gui import app as app_module
+from logarc.gui import prefs
+from logarc.gui.app import MainWindow
+from logarc.gui.crs import CrsCard, CrsUnavailable
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
     from PyQt6.QtWidgets import QApplication
 
 
-def test_the_offer_quotes_no_figures_at_all(qt_app: QApplication) -> None:
-    """The rule that survived two wrong numbers reaching a draft.
+def _case(tmp_path: Path) -> Path:
+    from datetime import UTC, datetime
 
-    A figure in a dialog gets no footnote and no reader who knows what it was
-    measured on. This is a crude check — no run of digits that looks like a
-    statistic — and crude is the point: it fails when somebody adds one back.
+    with Case.create(tmp_path / "case") as case:
+        case.store.write(
+            [
+                NormalizedEvent(
+                    datetime(2026, 1, 1, tzinfo=UTC),
+                    "192.0.2.1",
+                    EvidenceRef("source", 1),
+                    path="/",
+                    method="GET",
+                    status=200,
+                    user_agent="Mozilla/5.0",
+                )
+            ]
+        )
+        case.store.finalize()
+    return case.root
+
+
+class _Watched:
+    """A window with its two exits recorded: CRS started, and the scan started."""
+
+    def __init__(self, window: MainWindow, monkeypatch: pytest.MonkeyPatch) -> None:
+        self.window = window
+        self.crs: list[Path] = []
+        self.scans: list[tuple[object, ...]] = []
+        self.missing: list[str] = []
+        self.errors: list[str] = []
+        monkeypatch.setattr(window, "_run_crs", self.crs.append)
+        monkeypatch.setattr(window._triage, "start", lambda *args, **_: self.scans.append(args))
+        monkeypatch.setattr(window, "_crs_missing", self.missing.append)
+        monkeypatch.setattr(
+            window, "report_error", lambda message, _detail: self.errors.append(message)
+        )
+
+
+@pytest.fixture
+def watched(qt_app: QApplication, monkeypatch: pytest.MonkeyPatch) -> Iterator[_Watched]:
+    """A window on a machine where CRS is installed and nobody has turned it off.
+
+    `tests/conftest.py` sets `LOGARC_CRS=off` for the whole suite, so that a
+    test which ingests through the window does not also run CRS. These tests
+    are about exactly that run, so they take the switch back off.
     """
-    offer = CrsOffer()
-
-    words = offer.spoken()
-
-    assert "0.6" not in words
-    assert "81" not in words
-    assert "%" not in words
-
-
-def test_the_offer_says_both_halves_of_the_trade(qt_app: QApplication) -> None:
-    """Selling it as "more accurate" would be selling something measurement
-    does not support: on this project's own corpus CRS finds more *and* reports
-    far more ordinary traffic as attacks."""
-    words = CrsOffer().spoken().lower()
-
-    assert "catches" in words, "the gain is missing"
-    assert "suspicious" in words or "ordinary" in words, "the cost is missing"
+    monkeypatch.delenv(AUTO_ENV, raising=False)
+    monkeypatch.setattr(app_module.SidecarConfig, "check", lambda self: None)
+    window = MainWindow()
+    try:
+        yield _Watched(window, monkeypatch)
+    finally:
+        settled(qt_app)
+        window.close()
 
 
-def test_what_a_dialog_says_keeps_each_widget_on_its_own_line(qt_app: QApplication) -> None:
-    """The last label and the first checkbox used to be joined with nothing
-    between them, so a sentence ran straight into "Remember this choice" and a
-    phrase spanning the seam could match text no reader ever sees."""
-    lines = CrsOffer().spoken().splitlines()
-
-    assert "Remember this choice" in lines
+def _dialogs(qt_app: QApplication) -> list[QDialog]:
+    return [w for w in qt_app.topLevelWidgets() if isinstance(w, QDialog) and w.isVisible()]
 
 
-def test_a_ticked_box_is_what_makes_the_answer_stick(qt_app: QApplication) -> None:
-    offer = CrsOffer()
+def test_a_finished_scan_runs_crs_without_asking(
+    watched: _Watched, qt_app: QApplication, tmp_path: Path
+) -> None:
+    """The decision, made 2026-10-05: on by default, no question."""
+    case_dir = _case(tmp_path)
 
-    assert offer.remembered() is False
+    watched.window._open_and_start_crs(case_dir)
+    settled(qt_app)
 
-    offer.tick_remember()
+    assert watched.crs == [case_dir]
+    assert _dialogs(qt_app) == [], "something still asked before running CRS"
 
-    assert offer.remembered() is True
+
+def test_the_scan_waits_while_crs_runs(
+    watched: _Watched, qt_app: QApplication, tmp_path: Path
+) -> None:
+    """Finishing CRS reloads the case, and the reload starts the scan. One begun
+    now would be work the reader never sees."""
+    watched.window._open_and_start_crs(_case(tmp_path))
+    settled(qt_app)
+
+    assert watched.scans == []
+
+
+def test_turned_off_in_preferences_it_is_not_run(
+    watched: _Watched, qt_app: QApplication, tmp_path: Path
+) -> None:
+    """Through `_apply_preferences`, which is what OK in the dialog calls, so
+    the switch is the one a reader actually flips. It takes effect on the next
+    scan, with no restart."""
+    window = watched.window
+    window._apply_preferences({**window._prefs, prefs.RUN_CRS: False})
+
+    window._open_and_start_crs(_case(tmp_path))
+    settled(qt_app)
+
+    assert watched.crs == []
+    assert watched.scans, "with CRS off, nothing let the prioritization scan start"
+
+
+def test_the_machine_wide_switch_wins_over_the_preference(
+    watched: _Watched, qt_app: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`LOGARC_CRS=off` is for a machine, the preference for a reader. The
+    machine is the narrower claim — somebody set it for a reason the reader
+    may not know — so it wins, and the preference still reads as on."""
+    monkeypatch.setenv(AUTO_ENV, "off")
+    assert watched.window._prefs[prefs.RUN_CRS] is True
+
+    watched.window._open_and_start_crs(_case(tmp_path))
+    settled(qt_app)
+
+    assert watched.crs == []
+    assert watched.scans
+
+
+def test_a_missing_sidecar_is_said_and_the_scan_starts(
+    watched: _Watched, qt_app: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def absent(self: object) -> None:
+        raise CrsUnavailableError("crs-sidecar not found")
+
+    monkeypatch.setattr(app_module.SidecarConfig, "check", absent)
+
+    watched.window._open_and_start_crs(_case(tmp_path))
+    settled(qt_app)
+
+    assert watched.missing == ["crs-sidecar not found"]
+    assert watched.crs == []
+    assert watched.scans
+
+
+def test_a_reader_who_silenced_the_notice_is_not_told_again(
+    watched: _Watched, qt_app: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The missing-sidecar notice's "Don't mention this again". It survives
+    the offer going away, because it was never an answer about running CRS."""
+
+    def absent(self: object) -> None:
+        raise CrsUnavailableError("crs-sidecar not found")
+
+    monkeypatch.setattr(app_module.SidecarConfig, "check", absent)
+    app_module._settings().setValue(app_module._CRS_KEY, "quiet")
+    try:
+        watched.window._open_and_start_crs(_case(tmp_path))
+        settled(qt_app)
+    finally:
+        app_module._settings().remove(app_module._CRS_KEY)
+
+    assert watched.missing == []
+    assert watched.scans
+
+
+def test_a_crs_run_that_fails_still_lets_the_scan_start(
+    watched: _Watched, qt_app: QApplication, tmp_path: Path
+) -> None:
+    """**Found while making CRS the default.** A failed run closed its card and
+    reported the error, and nothing released the scan it was holding back — so
+    Where to start stayed empty for that case. Rare while CRS needed a yes;
+    with every scan running it, one broken sidecar would empty it every time."""
+    watched.window._open_and_start_crs(_case(tmp_path))
+    settled(qt_app)
+    assert watched.scans == []
+
+    watched.window._crs_failed("CRS stopped unexpectedly.", "")
+    settled(qt_app)
+
+    assert watched.errors == ["CRS stopped unexpectedly."]
+    assert watched.scans, "a failed CRS run left the case with no prioritization scan"
 
 
 def test_the_card_draws_the_proportion_it_is_given(qt_app: QApplication) -> None:
@@ -113,3 +255,18 @@ def test_a_missing_sidecar_reads_as_complete_rather_than_broken(qt_app: QApplica
 
     assert "complete without it" in words
     assert "optional" in words
+
+
+def test_a_run_that_returns_no_outcome_still_lets_the_scan_start(
+    watched: _Watched, qt_app: QApplication, tmp_path: Path
+) -> None:
+    """The same hole on the other exit: `_crs_finished` returned early on a
+    result it did not recognise, holding the scan as surely as a failure did."""
+    case_dir = _case(tmp_path)
+    watched.window._open_and_start_crs(case_dir)
+    settled(qt_app)
+
+    watched.window._crs_finished(case_dir, None)
+    settled(qt_app)
+
+    assert watched.scans

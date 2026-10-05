@@ -47,7 +47,7 @@ TRUTH = DATA / "excerpt.truth.jsonl"
 PUBLISHED = DATA / "excerpt.scores.json"
 
 REGENERATE = (
-    "logarc ingest tests/data/apache-shopfront/excerpt.log --case <tmp> && "
+    "logarc ingest tests/data/apache-shopfront/excerpt.log --case <tmp> --no-crs && "
     "logarc evaluate -c <tmp> -t tests/data/apache-shopfront/excerpt.truth.jsonl "
     "-o tests/data/apache-shopfront/excerpt.scores.json"
 )
@@ -130,14 +130,19 @@ def test_the_ruleset_fingerprint_is_recorded_with_the_scores(measured: dict) -> 
 # nothing checked. A layer nobody measures is a layer that drifts.
 #
 # It is a *second* fixture rather than a replacement, because the two answer
-# different questions and both are worth failing a build over: the native one
-# is what every case scores by default, and this one is what a case scores when
-# somebody turned CRS on.
+# different questions and both are worth failing a build over. Since 2026-10-05
+# this one is what a case scores by default, CRS running after every scan; the
+# native one is what the rules packed here manage alone, which is still what a
+# case scores wherever the sidecar is absent or turned off.
+#
+# Both hints ingest with `--no-crs` for that reason. The native fixture must not
+# be scored from an enriched case, and the CRS one enriches in its own step so
+# that a missing sidecar fails loudly there rather than as a notice.
 
 CRS_PUBLISHED = DATA / "excerpt.scores.crs.json"
 
 CRS_REGENERATE = (
-    "logarc ingest tests/data/apache-shopfront/excerpt.log --case <tmp> && "
+    "logarc ingest tests/data/apache-shopfront/excerpt.log --case <tmp> --no-crs && "
     "logarc enrich --case <tmp> && "
     "logarc evaluate -c <tmp> -t tests/data/apache-shopfront/excerpt.truth.jsonl "
     "-o tests/data/apache-shopfront/excerpt.scores.crs.json"
