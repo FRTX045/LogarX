@@ -13,28 +13,28 @@
     "true_positives": 1125
   },
   "classification": {
-    "accuracy": 0.9341176470588235,
-    "macro_f1": 0.7955645090583491,
+    "accuracy": 0.9516339869281045,
+    "macro_f1": 0.8070259822467218,
     "per_category": [
       {
         "category": "crawling",
-        "f1": 0.9639742131209709,
-        "false_negatives": 67,
+        "f1": 0.9896449704142012,
+        "false_negatives": 0,
         "false_positives": 28,
-        "precision": 0.9784449576597383,
-        "predicted": 1299,
-        "recall": 0.9499252615844545,
-        "recall_any": 0.9499252615844545,
+        "precision": 0.9795021961932651,
+        "predicted": 1366,
+        "recall": 1.0,
+        "recall_any": 1.0,
         "support": 1338,
-        "true_positives": 1271
+        "true_positives": 1338
       },
       {
         "category": "static_asset",
-        "f1": 0.9966068831798351,
+        "f1": 0.9985429820301116,
         "false_negatives": 0,
-        "false_positives": 7,
-        "precision": 0.9932367149758454,
-        "predicted": 1035,
+        "false_positives": 3,
+        "precision": 0.997090203685742,
+        "predicted": 1031,
         "recall": 1.0,
         "recall_any": 1.0,
         "support": 1028,
@@ -66,11 +66,11 @@
       },
       {
         "category": "browsing",
-        "f1": 0.6763285024154589,
+        "f1": 0.7977207977207977,
         "false_negatives": 18,
-        "false_positives": 116,
-        "precision": 0.546875,
-        "predicted": 256,
+        "false_positives": 53,
+        "precision": 0.7253886010362695,
+        "predicted": 193,
         "recall": 0.8860759493670886,
         "recall_any": 0.8860759493670886,
         "support": 158,
@@ -180,11 +180,6 @@
         "predicted": "reconnaissance"
       },
       {
-        "count": 63,
-        "expected": "crawling",
-        "predicted": "browsing"
-      },
-      {
         "count": 47,
         "expected": "reconnaissance",
         "predicted": "browsing"
@@ -223,9 +218,14 @@
         "count": 4,
         "expected": "access_control",
         "predicted": "crawling"
+      },
+      {
+        "count": 3,
+        "expected": "reconnaissance",
+        "predicted": "static_asset"
       }
     ],
-    "weighted_f1": 0.9348265361785493
+    "weighted_f1": 0.9493409846843452
   },
   "crs_fingerprint": "1c4b66d67838c5e8",
   "granularity": "category",
@@ -239,7 +239,7 @@
     "max_duration_seconds": 28800,
     "split_on_user_agent_change": true
   },
-  "ruleset_fingerprint": "e0c196add4a1aaeb0ee07149da115315b4c49db8ccc770dfc855d7466c687ca0",
+  "ruleset_fingerprint": "0b76ed186f16f8f8d2d87fb6048b09866ef7acafe0d37c328eff5e7a39b7641f",
   "scenario": "apache-shopfront-medium-excerpt",
   "segmentation": {
     "boundaries_agreed": 244,

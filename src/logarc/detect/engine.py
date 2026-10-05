@@ -44,7 +44,29 @@ _STATIC_EXTENSIONS: Final[frozenset[str]] = frozenset(
 
 _AUTH_HINTS: Final[tuple[str, ...]] = ("/login", "/signin", "/auth", "/oauth", "/session")
 _API_HINTS: Final[tuple[str, ...]] = ("/api/", "/graphql", "/v1/", "/v2/", "/rest/")
-_CRAWLER_HINTS: Final[tuple[str, ...]] = ("bot", "crawler", "spider", "slurp")
+#: How a crawler names itself. The four words first; then crawlers whose names
+#: carry none of them, from the vendors' own lists as checked 2026-10-05 — Meta's
+#: web crawlers, and the Google crawlers and fetchers without `bot` in theirs.
+#: `facebookexternalhit` alone was 459 page views on `2026-10-04-medium` that the
+#: truth calls crawling and this fallback called browsing.
+#:
+#: The action pack repeats this list in its crawler guard, because a rule pack
+#: cannot import a constant; `test_the_action_guard_and_the_ladder_name_the_same_
+#: crawlers` is what keeps the two one list.
+_CRAWLER_HINTS: Final[tuple[str, ...]] = (
+    "bot",
+    "crawler",
+    "spider",
+    "slurp",
+    "facebookexternalhit",
+    "meta-webindexer",
+    "meta-external",
+    "googleother",
+    "google-inspectiontool",
+    "apis-google",
+    "google-safety",
+    "mediapartners-google",
+)
 
 _BENIGN_CONFIDENCE: Final = 0.5
 
