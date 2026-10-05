@@ -470,6 +470,27 @@ on Linux, and the reverse.
 The four CRS contract tests skip without the Go binary. `LOGARC_REQUIRE_CRS=1`
 turns that skip into a failure; CI sets it.
 
+### The whole CI, locally
+
+```bash
+tools/local-ci.sh              # the commit at HEAD
+tools/local-ci.sh my-branch    # or any ref
+```
+
+Runs the jobs of `.github/workflows/ci.yml` on your machine: lint and both
+type checks in a Linux container, the test suite on Linux in Docker for each
+Python version the workflow lists, and on Windows natively when run from Git
+Bash. Every test job builds the CRS sidecar, requires it, and holds the 94%
+coverage floor. It tests the commit, not your working tree, and gives each run
+fresh environments, so it passes or fails as a clean runner would.
+
+It reads the Python versions and the CRS pin from the workflow rather than
+repeating them, so the two cannot drift, and `tests/test_local_ci.py` checks
+that. Needs Docker, [uv](https://docs.astral.sh/uv/), the ruleset clone above,
+and on Windows Git Bash and Go 1.25+. A summary is printed and kept under
+`~/.cache/logarc-ci/runs/` (`LOGARC_CI_DIR` moves it). Exit 0 means every job
+passed; 3 means nothing failed but some jobs could not run on this machine.
+
 ---
 
 ## Documentation
