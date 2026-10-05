@@ -40,6 +40,7 @@ implying the CRS column was ever checked.
 | 2026-10-05 | *this pass* | **engine** — Apache talking to itself is not a client | detection unchanged everywhere; **`2026-09-20-medium` macro F1 0.8103 → 0.8656 native, 0.7628 → 0.8180 CRS**; `2026-10-04-medium` 0.8146 → 0.8716 native | 1 → 1 native, 74 → 74 CRS on medium; 0 → 0 on `2026-10-04-medium`; excerpt unchanged (none in it) | 0, one ladder branch |
 | 2026-10-05 | *this pass* | **engine** — a script is described by what it asked for | detection unchanged everywhere; excerpt accuracy 0.9514 → **0.9561** native, 0.9516 → **0.9563** CRS; `2026-10-04-medium` 0.9950 → 0.9953 | 0 → 0 excerpt; medium 1 → 1 native, 74 → 74 CRS; `2026-10-04-medium` 0 → 0 both | 0, one engine function |
 | 2026-10-05 | *this pass* | **action** — crawlers that never say `bot` | detection unchanged everywhere; **excerpt accuracy 0.9339 → 0.9514 native, 0.9341 → 0.9516 CRS**; `2026-10-04-medium` 0.9929 → 0.9950 native | 0 → 0 excerpt; medium 1 → 1 native, 74 → 74 CRS; `2026-10-04-medium` 0 → 0 both | 0, the crawler list extended in two places |
+| 2026-10-05 | *this pass* | **php** — a `${name}` placeholder is not PHP | 933 **179 → 178**, 941 61 → 61 after one recovered; overall 961 → **960** of 1,099 | 0 in every family; excerpt unchanged on both engines; the dataset's 41 / 129 / 659 placeholder requests no longer injection | 0, one narrowed, one widened |
 | 2026-10-05 | *this pass* | **recon** — content-discovery tools are enumeration | corpus unchanged, 961 of 1,099; medium caught 17,069 → 17,069 native, 17,071 → 17,071 CRS; **medium accuracy 0.9751 → 0.9945 native, 0.9747 → 0.9941 CRS** | 0 in every family; excerpt unchanged on both engines; medium 1 → 1 native, 74 → 74 CRS | 1, one narrowed |
 | 2026-10-05 | *this pass* | **the finish** — 934 and 943's last catchable shapes; every family closed out | 934 **91% → 95%** (176 → 183), 943 **90% → 92%** (36 → 37); overall 86.7% → **87.4%** (953 → 961 of 1,099) | 0 in every family; excerpt unchanged on both engines; medium 17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS | 2, three extended |
 
@@ -741,6 +742,41 @@ tiers kept 17,058 / 0, 17,069 / 1 and 17,071 / 74. The CRS corpus did not move.
 pages, named by `http_library_user_agent`, which suppresses the ladder's
 `Page View` whatever the request was; and 131 `unknown` read as `api_call` —
 Apache's own internal dummy connection. Both are the next two passes.
+
+### 2026-10-05 — php: a `${name}` placeholder is not PHP
+
+The false alarm TODO.md had been holding since 2026-09-22, now with evidence.
+`php_superglobal` matched a bare `\$\s*\{`, and no corpus this project held
+contained a single `${`, so it could not be shown wrong. The dataset's rebuilt
+tiers now carry a real shop front end sending its placeholder unfilled, from a
+real browser — `GET /api/stock?id=${id}&watch=1`, 41 / 129 / 659 requests by
+the dataset side's count — and every one was injection at high severity. On a
+build where the native false-alarm count had been zero, that would have been
+the whole of it.
+
+A bare `${name}` is what every template language writes. What still makes `${`
+PHP is what a template never writes, each kept as its own branch:
+
+| branch | the corpus case it keeps |
+|---|---|
+| `$` then a space, then `{` | `$ {'fdf'}`, `$ { constant }` |
+| `${` not followed by a plain name and `}` | `${'a'}`, `${$a}`, `${@$b}`, `${jndi:` |
+| `${...}` called as a function | `${_.__}(30)` — nothing else catches it |
+| `${name}` then a command flag | `${shell} -c "echo hi"` — nothing else catches it |
+
+Each was dropped in turn and the case it keeps failed.
+
+**The cost, stated rather than chased: `/get?foo=${a}`**, a CRS 933 attack case,
+is the same characters as the placeholder. No rule reading a request line is
+right on both, and the placeholder is real traffic. 933 goes 179 → 178.
+
+**One loss recovered properly.** `[ 1234 ]. map . call`${eval}…`` (941) had
+been caught only by the bare `${`. `xss_sink_call` already catches the
+unspaced form; its `\.call\s*`` became `\.\s*call\s*``, so a space after
+the dot no longer hides it. 941 stays at 61. Overall 961 → **960** of 1,099,
+0 fired wrongly in every family; the excerpt and `2026-09-20-medium` contain no
+`${` and did not move; whole-engine cost on long `${`, `$ {` and `. call`
+inputs is flat per character.
 
 ### 2026-10-05 — recon: the tools that sweep a wordlist are enumeration
 

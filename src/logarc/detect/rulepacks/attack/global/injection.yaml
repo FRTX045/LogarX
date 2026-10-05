@@ -347,7 +347,7 @@ rules:
     match:
       any:
         - field: target_decoded
-          regex: &xss_sink '(?:^|[=;"''(`])\s*(?:alert|confirm|prompt|atob|btoa|eval|set(?:timeout|interval))\s*\(|\.call\s*`'
+          regex: &xss_sink '(?:^|[=;"''(`])\s*(?:alert|confirm|prompt|atob|btoa|eval|set(?:timeout|interval))\s*\(|\.\s*call\s*`'
         - field: user_agent_decoded
           regex: *xss_sink
 

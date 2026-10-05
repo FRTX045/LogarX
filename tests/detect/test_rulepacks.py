@@ -977,6 +977,15 @@ PHP_ATTACKS: list[str] = [
     "/p?x=$_SERVER[DOCUMENT_ROOT]",
     "/p?x=${'_VAR'.'IABLE_NAME'}",
     "/p?x=$ {$a}",
+    # What still makes `${` PHP once a bare `${name}` placeholder is not
+    # (2026-10-05): a space PHP allows and no template writes, anything but a
+    # plain name inside, a `${...}` called as a function, and a variable run as
+    # a command. All four are corpus cases nothing else catches.
+    "/p?x=$ { constant }",
+    "/get?x=${_.__}(30);",
+    "/get?x=${'a'}(11)",
+    "/get?x=${@$b}(12)",
+    '/get?code=${shell} -c "echo hi"',
     "/p?x=$$varvar",
     # Every separator the corpus puts between a function name and its paren.
     "/p?x=exec  (blah)",
@@ -1020,6 +1029,14 @@ PHP_ATTACKS: list[str] = [
 #: are far more valuable than the attack list — a miss costs a rule nobody has
 #: written, a false alarm discredits every finding the tool makes.
 PHP_BENIGN: list[str] = [
+    # A front-end placeholder sent before it was filled in. The dataset's shop
+    # sends exactly this from a real browser, by design, and the dataset side
+    # counts 41 / 129 / 659 such requests across its three tiers (2026-10-05);
+    # `php_superglobal` called every one injection at high severity. A bare
+    # `${name}` is what every template language writes, and nothing in it runs.
+    "/api/stock?id=${id}&watch=1",
+    "/search?q=${query}",
+    "/p?name=${user.name}",
     '/get?foo=<?xml version="1.0" encoding="UTF-8"?>',
     '/api/orders?flux=<?xml version="1.0"?><order><id>12345</id></order>',
     '/get?data=<?xml-stylesheet type="text/xsl" href="style.xsl"?>',
@@ -1701,12 +1718,11 @@ PERL_INTERPOLATION: list[str] = [
 PERL_BENIGN: list[str] = [
     "/get?q=fish @ market",
     "/get?email=owner@example.test",
-    # `${name}` belongs here by every argument and is deliberately absent.
-    # `php_superglobal` calls any `${` PHP variable interpolation at high
-    # severity, and no corpus this project holds contains a single `${` — not
-    # one in 237,278 real requests, none in the CRS harmless half. So the rule
-    # has never been tested against benign template syntax, and asserting it is
-    # wrong would be inventing the evidence. Recorded in TODO.md instead.
+    # `${name}`, held back until there was evidence: no corpus this project
+    # held contained a single `${`. There is now — a real shop's front end
+    # sending its placeholder unfilled — and `php_superglobal` stopped calling
+    # a bare `${name}` PHP on 2026-10-05. See PHP_BENIGN.
+    "/get?x=${name}",
     "/get?style=@media screen",
     "/get?x=@{here}",
     "/get?handle=@someone",
@@ -2114,6 +2130,10 @@ XSS_ATTACKS: list[tuple[str, str]] = [
     ("/get?arg=setinterval(code, 1)", "xss_sink_call"),
     ('/get?arg=x";settimeout(name, 1)//', "xss_sink_call"),
     ("/get?test=reflect.sort.call``", "xss_sink_call"),
+    # Spaced around the dot. Caught only by `php_superglobal`'s bare `${` until
+    # that stopped calling a placeholder PHP (2026-10-05), which is how the gap
+    # showed.
+    ("/get?xss=[ 1234 ]. map . call`${eval}\\u{61}lert(1337)`", "xss_sink_call"),
     ('/get/char_test?mime=text/xml&body="onzoom=', "xss_event_handler"),
     ("/get/char_test?mime=text/xml&body=<x onend=", "xss_event_handler"),
     ("/get/char_test?mime=text/xml&body='formaction=", "xss_event_handler"),
