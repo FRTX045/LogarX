@@ -379,6 +379,9 @@ through CRS on a card that can be stopped, keeping what it found so far, and
 | One `ingest` | `--no-crs` (and `--crs` asks for it whatever the machine says) |
 | A whole machine, both | `LOGARC_CRS=off` |
 
+Turned off or not, *Case → Run OWASP CRS on this case* runs it on the open
+case whenever asked, as `logarc enrich` does on the command line.
+
 The packaged Windows build carries the sidecar and the ruleset, so there is
 nothing to install. From source, build them once:
 
