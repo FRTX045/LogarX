@@ -16,11 +16,12 @@ collide across them.
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import os
 import subprocess
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from itertools import groupby, islice
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
@@ -95,6 +96,15 @@ def runs_by_default() -> bool:
 _BATCH: Final = 20_000
 """Records per sidecar invocation. Bounds the pipe buffer and the memory a
 single run holds, without paying process startup per request."""
+
+_REMEMBERED: Final = 250_000
+"""Distinct requests whose CRS answer is kept, so a repeat is not replayed.
+
+About 120 bytes each — a 16-byte digest and a dict slot, and the answer, which
+for nearly every request is the shared empty tuple — so roughly 30 MB when
+full. `2026-09-20-medium` has 73,427 distinct requests in 237,278. Full, the
+memory is emptied rather than grown: a repeat then costs one more replay, and
+no answer is ever wrong."""
 
 
 class CrsUnavailableError(RuntimeError):
@@ -355,6 +365,46 @@ def _source_of(event: NormalizedEvent) -> str:
     return event.evidence.source_file_id
 
 
+def _client_as_crs_reads_it(address: str) -> str:
+    """The client address as far as CRS can tell one from another.
+
+    CRS reads `REMOTE_ADDR` in two rules, 905100 and 905110, and both only to
+    exempt loopback. So every other address is the same address to it, and
+    collapses to one value here. An address it *could* read as loopback keeps
+    its own identity — the IPv4-mapped form too, which Go's address matching
+    treats as the IPv4 address inside it — and so does anything that does not
+    parse, because what CRS makes of that is not worth guessing.
+
+    The mapped form is checked explicitly because `ipaddress` changed its mind
+    within a minor version: `::ffff:127.0.0.1` is loopback to CPython 3.11.17
+    and 3.12.10, and not to 3.11.4 or 3.12.3, all of which this package admits.
+    """
+    try:
+        parsed = ipaddress.ip_address(address)
+    except ValueError:
+        return address
+    mapped = getattr(parsed, "ipv4_mapped", None)
+    if parsed.is_loopback or (mapped is not None and mapped.is_loopback):
+        return address
+    return ""
+
+
+def _replay_key(event: NormalizedEvent) -> bytes:
+    """Everything CRS's answer depends on, and nothing else.
+
+    `crs/main.go` opens a fresh transaction for each record and closes it after,
+    so nothing carries from one request to the next: equal records get equal
+    answers. Built from `as_record` so a field added there is part of the key
+    without anybody remembering to add it here — only the line number, which
+    CRS never sees, and the client address, reduced as above, are taken out.
+    """
+    record = as_record(event)
+    del record["line_no"]
+    record["client_ip"] = _client_as_crs_reads_it(str(record["client_ip"]))
+    encoded = json.dumps(record, sort_keys=True).encode("utf-8")
+    return hashlib.blake2b(encoded, digest_size=16).digest()
+
+
 def run_sidecar(
     events: Iterable[NormalizedEvent],
     *,
@@ -377,16 +427,62 @@ def run_sidecar(
     Input that is *not* ordered by source is still handled correctly; a source
     that appears in several runs simply costs several invocations, because each
     batch carries the id it was grouped under.
+
+    **Each distinct request is replayed once.** A repeat — the same page, asset
+    or call, made again — gets the answer its first occurrence got, under its
+    own line and source. On `2026-09-20-medium` that is 73,427 replays instead
+    of 237,278. `_replay_key` says what counts as the same.
     """
     config = config or SidecarConfig()
     config.check()
 
+    remembered: dict[bytes, tuple[CrsDetection, ...]] = {}
     found: list[CrsDetection] = []
     for source_file_id, group in groupby(events, key=_source_of):
         # `group` is only valid until the outer iterator advances, so it is
         # drained here rather than stashed.
         while batch := list(islice(group, _BATCH)):
-            found.extend(_invoke(config, batch, source_file_id=source_file_id))
+            found.extend(_replay_once(config, batch, source_file_id, remembered))
+    return found
+
+
+def _replay_once(
+    config: SidecarConfig,
+    batch: Sequence[NormalizedEvent],
+    source_file_id: str,
+    remembered: dict[bytes, tuple[CrsDetection, ...]],
+) -> list[CrsDetection]:
+    """One batch: send what has not been seen, answer the rest from memory.
+
+    Answers come back in line order, fresh and remembered interleaved, which is
+    the order the sidecar itself reports in.
+    """
+    keys = [_replay_key(event) for event in batch]
+    fresh: dict[bytes, NormalizedEvent] = {}
+    for key, event in zip(keys, batch, strict=True):
+        if key not in remembered and key not in fresh:
+            fresh[key] = event
+
+    answers: dict[bytes, tuple[CrsDetection, ...]] = {}
+    if fresh:
+        by_line: dict[int, list[CrsDetection]] = {}
+        for detection in _invoke(config, list(fresh.values()), source_file_id=source_file_id):
+            by_line.setdefault(detection.line_no, []).append(detection)
+        for key, event in fresh.items():
+            answers[key] = tuple(by_line.get(event.evidence.line_no, ()))
+
+    found: list[CrsDetection] = []
+    for key, event in zip(keys, batch, strict=True):
+        line_no = event.evidence.line_no
+        for answer in answers[key] if key in answers else remembered[key]:
+            if answer.line_no == line_no and answer.source_file_id == source_file_id:
+                found.append(answer)
+            else:
+                found.append(replace(answer, line_no=line_no, source_file_id=source_file_id))
+
+    if len(remembered) + len(answers) > _REMEMBERED:
+        remembered.clear()
+    remembered.update(answers)
     return found
 
 

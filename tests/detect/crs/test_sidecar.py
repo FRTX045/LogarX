@@ -397,7 +397,9 @@ def test_a_case_is_streamed_rather_than_gathered_before_the_first_call(
         nonlocal pulled
         for line_no in range(1, _BATCH + 2):  # one more than a single batch holds
             pulled += 1
-            yield event(line_no=line_no)
+            # Each its own page: identical requests are replayed once, and this
+            # is about streaming, not about repeats.
+            yield event(path=f"/page/{line_no}", line_no=line_no)
 
     def run(*_args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
         pulled_at_first_call.append(pulled)
