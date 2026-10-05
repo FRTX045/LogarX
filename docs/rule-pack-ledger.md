@@ -37,6 +37,7 @@ implying the CRS column was ever checked.
 | 2026-10-05 | *this pass* | **930 LFI** — traversal at a value's start, more file names, the User-Agent | 930 **23% → 97%** (7 → 29); overall 74.5% → **76.9%** (819 → 845 of 1,099) | 0/5 → 0/5 in 930, 0 in every family; excerpt unchanged on both engines after one fix; medium 17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS | 0, three extended |
 | 2026-10-05 | *this pass* | **933 PHP** — the call without writing `system(` | 933 **68% → 97%** (126 → 179); overall 76.9% → **81.7%** (845 → 898 of 1,099) | 0/38 → 0/38 in 933, 0 in every family; excerpt unchanged on both engines; medium 17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS | 2, two extended |
 | 2026-10-05 | *this pass* | **932 RCE**, second pass — the User-Agent that is a command line | 932 **71% → 85%** (289 → 344); overall 81.7% → **86.7%** (898 → 953 of 1,099) | 0/64 → 0/64 in 932, 0 in every family; excerpt unchanged on both engines; medium 17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS | 1 |
+| 2026-10-05 | *this pass* | **engine** — a script is described by what it asked for | detection unchanged everywhere; excerpt accuracy 0.9514 → **0.9561** native, 0.9516 → **0.9563** CRS; `2026-10-04-medium` 0.9950 → 0.9953 | 0 → 0 excerpt; medium 1 → 1 native, 74 → 74 CRS; `2026-10-04-medium` 0 → 0 both | 0, one engine function |
 | 2026-10-05 | *this pass* | **action** — crawlers that never say `bot` | detection unchanged everywhere; **excerpt accuracy 0.9339 → 0.9514 native, 0.9341 → 0.9516 CRS**; `2026-10-04-medium` 0.9929 → 0.9950 native | 0 → 0 excerpt; medium 1 → 1 native, 74 → 74 CRS; `2026-10-04-medium` 0 → 0 both | 0, the crawler list extended in two places |
 | 2026-10-05 | *this pass* | **recon** — content-discovery tools are enumeration | corpus unchanged, 961 of 1,099; medium caught 17,069 → 17,069 native, 17,071 → 17,071 CRS; **medium accuracy 0.9751 → 0.9945 native, 0.9747 → 0.9941 CRS** | 0 in every family; excerpt unchanged on both engines; medium 1 → 1 native, 74 → 74 CRS | 1, one narrowed |
 | 2026-10-05 | *this pass* | **the finish** — 934 and 943's last catchable shapes; every family closed out | 934 **91% → 95%** (176 → 183), 943 **90% → 92%** (36 → 37); overall 86.7% → **87.4%** (953 → 961 of 1,099) | 0 in every family; excerpt unchanged on both engines; medium 17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS | 2, three extended |
@@ -631,6 +632,40 @@ credential confusion (3, needs the authority parsed two ways); one Jinja
 
 
 
+
+### 2026-10-05 — engine: a script is described by what it asked for
+
+The other half of the scripted-traffic question the previous entries left
+open. `Scripted Client` (`http_library_user_agent`, confidence 0.4) is an
+observation about *who* sent a request. The fallback ladder (0.5) says *what*
+was asked for. But the ladder only ran when no rule matched, so the observation
+displaced it outright, and every page a script fetched was `crawling`. **The
+labelled tiers call no library-agent request `crawling` at all**: on
+`2026-10-04-medium` they are 615 API calls, 75 page views, and attacks, and 73
+of the page views were read as `crawling`.
+
+Now the primary label is the most significant match unless every match is a
+benign observation below the ladder's rung, and then the ladder describes the
+request. The observation stays in `all_labels`. One function, `_primary`,
+decides it in both places it is decided. A fix in `_label_one` alone was
+undone by window settling, which re-chose from the matches; reverting that one
+line fails every new test. Only `http_library_user_agent` sits below the rung,
+and a CRS rescue (0.6) is above it, so a rescue can never be displaced.
+
+| | before | after |
+|---|---:|---:|
+| excerpt accuracy, native / CRS | 0.9514 / 0.9516 | **0.9561 / 0.9563** |
+| excerpt macro F1, native / CRS | 0.7970 / 0.8070 | **0.8004 / 0.8107** |
+| excerpt boundary F1 | 0.6289 | 0.6297 |
+| `2026-10-04-medium` accuracy, native / CRS | 0.9950 / 0.9949 | **0.9953 / 0.9952** |
+| `2026-09-20-medium` accuracy, native / CRS | 0.9952 / 0.9949 | **0.9953 / 0.9950** |
+
+Detection is unchanged on every input, and boundary F1 is unchanged or up.
+Expected, and checked: a script's requests no longer share one category,
+which could have split episodes. It did not. On the excerpt,
+`reconnaissance` read as `browsing` rose 47 → 53. Those six were wrong before
+as well, as `crawling`; a scripted reconnaissance request with no rule naming
+it is only renamed from one wrong benign label to another.
 
 ### 2026-10-05 — action: crawlers that never say `bot`
 
