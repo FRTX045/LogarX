@@ -405,6 +405,11 @@ class MainWindow(QMainWindow):
         self._add(case_menu, "Log &formats…", self._manage_formats).setStatusTip(
             "See the log formats logarc reads, and write your own."
         )
+        self._crs_action = self._add(case_menu, "Run OWASP &CRS on this case", self._run_crs_now)
+        self._crs_action.setStatusTip(
+            "Replay the open case through OWASP CRS now, whether or not it runs after "
+            "every scan. Stopping keeps what it found."
+        )
         case_menu.addSeparator()
         self._add(case_menu, "E&xit", self.close, QKeySequence.StandardKey.Quit)
 
@@ -732,9 +737,14 @@ class MainWindow(QMainWindow):
         Called once no decision can invalidate a scan any more. Safe before the
         case has finished loading: clearing the flag is enough, because
         `_load_case` starts the scan itself when its own read comes back.
+
+        Only a scan that was held is started. A CRS run asked for from the Case
+        menu held nothing — the case was already open and scanned — and a
+        failure there restarting the scan would clear Where to start and redo
+        work that was already on screen.
         """
-        self._scan_held = False
-        if self._case_path is not None:
+        held, self._scan_held = self._scan_held, False
+        if held and self._case_path is not None:
             self._triage.start(self._case_path, self._window)
 
     def _start_crs(self, case_dir: Path) -> bool:
@@ -759,6 +769,24 @@ class MainWindow(QMainWindow):
 
         self._run_crs(case_dir)
         return True
+
+    def _run_crs_now(self) -> None:
+        """CRS on the open case, because the reader asked for it.
+
+        Neither switch applies: the preference and `LOGARC_CRS` decide the run
+        nobody asked for, and this one was asked for. For the same reason a
+        missing sidecar is said even when its notice was silenced — that
+        silenced the notice after a scan, not the answer to a question.
+        """
+        if self._case_path is None:
+            self._status.setText("Open a case first, then run CRS on it.")
+            return
+        try:
+            SidecarConfig().check()
+        except CrsUnavailableError as exc:
+            self._crs_missing(str(exc))
+            return
+        self._run_crs(self._case_path)
 
     def _crs_missing(self, reason: str) -> None:
         told = CrsUnavailable(reason, self)

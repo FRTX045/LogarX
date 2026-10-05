@@ -270,3 +270,79 @@ def test_a_run_that_returns_no_outcome_still_lets_the_scan_start(
     settled(qt_app)
 
     assert watched.scans
+
+
+# -- running it by hand, from the Case menu --------------------------------
+#
+# With the preference off, or `LOGARC_CRS=off`, the window used to have no way
+# to run CRS on one case at all — only `logarc enrich` could. The old offer's
+# "You can run it later instead" had no route behind it in the window either.
+
+
+def _opened(watched: _Watched, qt_app: QApplication, tmp_path: Path) -> Path:
+    case_dir = _case(tmp_path)
+    watched.window._load_case(case_dir)
+    settled(qt_app)
+    assert watched.window._case_path == case_dir
+    return case_dir
+
+
+def test_the_case_menu_runs_crs_whatever_the_preference_says(
+    watched: _Watched, qt_app: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Both switches are about the run nobody asked for. This one was asked
+    for, by somebody pressing it."""
+    monkeypatch.setenv(AUTO_ENV, "off")
+    window = watched.window
+    window._apply_preferences({**window._prefs, prefs.RUN_CRS: False})
+    case_dir = _opened(watched, qt_app, tmp_path)
+
+    window._crs_action.trigger()
+
+    assert watched.crs == [case_dir]
+
+
+def test_with_no_case_open_it_says_so_rather_than_nothing(
+    watched: _Watched, qt_app: QApplication
+) -> None:
+    watched.window._crs_action.trigger()
+
+    assert watched.crs == []
+    assert "open a case" in watched.window._status.text().lower()
+
+
+def test_asked_for_by_hand_a_missing_sidecar_is_said_even_when_silenced(
+    watched: _Watched, qt_app: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The notice's "Don't mention this again" silences it after a scan, which
+    nobody asked for. Somebody who just asked for CRS is owed the answer."""
+
+    def absent(self: object) -> None:
+        raise CrsUnavailableError("crs-sidecar not found")
+
+    _opened(watched, qt_app, tmp_path)
+    monkeypatch.setattr(app_module.SidecarConfig, "check", absent)
+    app_module._settings().setValue(app_module._CRS_KEY, "quiet")
+    try:
+        watched.window._crs_action.trigger()
+    finally:
+        app_module._settings().remove(app_module._CRS_KEY)
+
+    assert watched.missing == ["crs-sidecar not found"]
+    assert watched.crs == []
+
+
+def test_a_failed_run_asked_for_by_hand_does_not_redo_the_scan(
+    watched: _Watched, qt_app: QApplication, tmp_path: Path
+) -> None:
+    """No scan was held for this run — the case was open and scanned before it
+    started — so a failure has nothing to release. Restarting the scan anyway
+    would clear Where to start and redo work that was already on screen."""
+    _opened(watched, qt_app, tmp_path)
+    scans_before = len(watched.scans)
+
+    watched.window._crs_action.trigger()
+    watched.window._crs_failed("CRS stopped unexpectedly.", "")
+    settled(qt_app)
+
+    assert len(watched.scans) == scans_before

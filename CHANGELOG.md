@@ -7,6 +7,13 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Case → Run OWASP CRS on this case.** With CRS turned off after scans,
+  the window had no way to run it on one case; only `logarc enrich` could.
+  The menu item runs it on the open case whatever the preference says, and
+  says so when the sidecar is missing even if that notice was silenced, since
+  this time somebody asked. A run started this way that fails no longer
+  restarts the prioritization scan that was already on screen.
+
 - **SQL injection detection without CRS: 23% to 79% of what an access log can
   see.** Against the OWASP CRS regression corpus (family 942), 31 to 106 of 135
   cases; across all families, 607 to 682 of 1,099 (55.2% to 62.1%), with no
