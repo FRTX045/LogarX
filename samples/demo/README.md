@@ -1,7 +1,7 @@
 # The demo log
 
 `demo.log` is the file to open when you want to show somebody what logarc does.
-It is 830 lines of three days' traffic against a fictional shop, and every
+It is 832 lines of three days' traffic against a fictional shop, and every
 feature the application has is reachable from it.
 
 ```bash
@@ -24,9 +24,9 @@ These are figures from a run, not intentions:
 
 | | |
 |---|---|
-| Lines / events / quarantined | 830 / 824 / 5 |
+| Lines / events / quarantined | 832 / 826 / 5 |
 | Clients | 36 |
-| Detection rules exercised | **96 of 96** |
+| Detection rules exercised | **98 of 98** |
 | Attackers flagged | 24 of 24 |
 | False alarms on the 12 ordinary clients | **0** without CRS, **0** with it |
 
@@ -38,7 +38,7 @@ python samples/demo/make_demo.py          # rebuilds; prints line count and sha2
 
 The build is deterministic — no randomness anywhere — so the same script always
 produces the same bytes. The current file is
-`491ca073c125f5e5c81ab11c94ed81f09e330ae31f65b83898168bfbc8d24c6c`.
+`5b920fe600ec4919425b3f32dbe9f5e1cbf91b368ce2f4f53c22eb9590a27e1d`.
 
 That digest is recorded beside the log in `SHA256SUMS`, and
 `tests/samples/test_demo_log.py` checks it on every run of the suite — including
@@ -87,7 +87,7 @@ reading its story is a complete demonstration on its own.
 | `192.0.2.103` | 12 refused sign-ins to one path |
 | `192.0.2.104` | Path traversal, the same file asked for five ways — plain, encoded, double-encoded, null-byte, backslash. Normalisation collapses all five before any rule sees them |
 | `192.0.2.105` | PHP: open tag, stream wrapper, superglobal, decode chain, comment evasion, config directive, `phpinfo()`, file function, object injection, then `system` without writing `system(` — `(system)('id')` and a variable called as a function |
-| `192.0.2.106` | XSS — script tag, event handler, `javascript:`, SVG, then three that get past a `<script` filter: a bare `alert()`, a tag spelled `<d i a l o g`, script through `url(javascript:`. Sent with a **browser** User-Agent, deliberately (see below) |
+| `192.0.2.106` | XSS — script tag, event handler, `javascript:`, SVG, then three that get past a `<script` filter: a bare `alert()`, a tag spelled `<d i a l o g`, script through `url(javascript:`, and script that plants a session cookie. Sent with a **browser** User-Agent, deliberately (see below) |
 | `192.0.2.107` | Command injection, Unix then Windows batch, then the forms written to get past a filter that knows those words — a glob for `/etc/passwd`, brace expansion, a quote-split `whoami`, `pi$()ng`, `bash -c`, `certutil -urlcache` — a command line sent as the User-Agent, and an SMTP command smuggled into a contact form after an encoded line break |
 | `192.0.2.108` | SSRF: cloud metadata, loopback, `file://`, `gopher://` |
 | `192.0.2.109` | Project metadata probe — is the repository the document root? |
@@ -102,7 +102,7 @@ reading its story is a complete demonstration on its own.
 | `192.0.2.118` | Java stack: Log4Shell in the URL, the User-Agent and the Referer; an XML external entity; template injection |
 | `192.0.2.119` | NoSQL operators smuggled into a parameter, then Shellshock — which is not in the URL at all, it is in the User-Agent |
 | `192.0.2.120` | Sends no User-Agent. Graded as information, not as an attack |
-| `192.0.2.121` | Perl array interpolation, then Node.js in the shapes it arrives in |
+| `192.0.2.121` | Perl array interpolation, then Node.js in the shapes it arrives in, ending with node-serialize's `_$$ND_FUNC$$_` marker |
 | `192.0.2.122` | A Django ORM lookup reading a password hash a character at a time, then asking which accounts carry an admin flag. A lookup alone is how Django filters; what it is aimed at is the evidence |
 | `192.0.2.123` | A tool working out which database is behind the stock API: a `1=1` probe, a subquery, SQLite's `GLOB`, then PostgreSQL's `::int` cast and `lo_import` reading `/etc/passwd`. The last request carries its payload **in the User-Agent**, which the SQL rules read too |
 
@@ -161,7 +161,7 @@ feature lands that the demo log cannot show, add a client to
 script and commit the script, the log and `SHA256SUMS`.
 
 The check that matters is rule coverage, and nobody has to remember to run it:
-the suite runs it. It is 96 of 96 today, and a rule added to a pack that nothing
+the suite runs it. It is 98 of 98 today, and a rule added to a pack that nothing
 in this log triggers fails the build and names the rule. To run it on its own:
 
 ```bash

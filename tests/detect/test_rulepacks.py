@@ -2140,6 +2140,55 @@ def test_ordinary_user_agents_are_not_command_lines(engine: RuleEngine, user_age
     assert not hostile, f"{user_agent!r} was called hostile by {hostile}"
 
 
+#: The last catchable shapes in families 934 and 943 (2026-10-05, the finish).
+FINISH_ATTACKS: list[tuple[str, str]] = [
+    ("/get?foo=XyQkTkRfRlVOQyQkXwo=", "nodejs_serialized_function"),
+    ('/get?x={"rce":"_$$ND_FUNC$$_function(){require(1)}()"}', "nodejs_serialized_function"),
+    (
+        '/get?test={"reason":{"0":"$7:module:prototype","length":1},"value":"x"}',
+        "nodejs_prototype_pollution",
+    ),
+    ("/get?x={% if true %}49{% endif %}", "template_injection"),
+    (
+        "/get?ssrf=http://google.com:80 &@127.88.23.245:22/# @google.com:80/",
+        "ssrf_host_evasion",
+    ),
+    ("/get/foo.php?test=.cookie;expires=", "session_cookie_injection"),
+    # The form a real payload takes, value and all (not from the corpus).
+    (
+        "/search?q=<script>document.cookie='sid=attacker;expires=Fri, 1 Jan 2027'</script>",
+        "session_cookie_injection",
+    ),
+]
+
+FINISH_BENIGN: list[str] = [
+    "/s?q=jinja {% if %} syntax",
+    "/s?q=contact me @ 10.0.0.1",
+    "/s?email=admin@localhost",
+    "/s?q=document.cookie tutorial",
+    "/s?q=prototype pattern",
+    "/s?q=$5:off:prototype",
+]
+
+
+@pytest.mark.parametrize(("target", "rule_id"), FINISH_ATTACKS)
+def test_the_last_catchable_shapes_are_caught(
+    engine: RuleEngine, target: str, rule_id: str
+) -> None:
+    (labelled,) = engine.label_events([request(target)])
+
+    fired = {label.rule_id for label in labelled.all_labels}
+    assert rule_id in fired, f"{rule_id} did not fire on {target!r}; fired: {sorted(fired)}"
+
+
+@pytest.mark.parametrize("target", FINISH_BENIGN)
+def test_the_last_patterns_stay_off_ordinary_text(engine: RuleEngine, target: str) -> None:
+    (labelled,) = engine.label_events([request(target)])
+
+    hostile = [label.rule_id for label in labelled.all_labels if label.category.is_hostile]
+    assert not hostile, f"{target!r} was called hostile by {hostile}"
+
+
 #: PHP shapes the 2026-10-05 pass added. From the CRS corpus (family 933).
 PHP_INDIRECT_ATTACKS: list[tuple[str, str]] = [
     ("/get?x=(system)(ls);", "php_indirect_call"),

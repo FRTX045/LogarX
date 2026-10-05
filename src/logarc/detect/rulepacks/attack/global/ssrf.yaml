@@ -106,6 +106,13 @@ rules:
         # through while a green test said otherwise. Both counts are pinned now.
         - field: query_decoded
           regex: '\b[a-z][a-z0-9+.\-]{0,15}:/{0,2}(?:\\{1,2}[a-z]){3,}'
+        # URL-parser confusion: a URL whose apparent host is public, with a
+        # second `@` after a space, `&` or `#` naming an internal one
+        # (`http://google.com:80 &@127.88.23.245:22/`). Two parsers disagree on
+        # which host is meant, and the one that fetches picks the inside. The
+        # value has to start as a URL, so "contact me @ 10.0.0.1" stays prose.
+        - field: query_decoded
+          regex: '(?:^|=)\s*[a-z][a-z0-9+.\-]{1,10}://[^@&]{0,80}(?:&[^@]{0,40})?[\s&#]@\s*(?:127\.\d|localhost\b|169\.254\.|10\.\d|192\.168\.|0\.0\.0\.0)|(?:^|=)\s*[a-z][a-z0-9+.\-]{1,10}://[^#]{0,120}#\s*@\s*(?:127\.\d|localhost\b|169\.254\.|10\.\d|192\.168\.|0\.0\.0\.0)'
 
   # An internal host *named* rather than addressed, with no scheme in front.
   #

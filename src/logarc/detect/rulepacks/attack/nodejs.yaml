@@ -54,6 +54,11 @@ rules:
           regex: 'constructor\s*[\[.]\s*["'']?\s*prototype'
         - field: query_decoded
           regex: '\[\s*constructor\s*\]\s*\[\s*prototype\s*\]'
+        # React Server Components' Flight references reaching a prototype
+        # (`"$7:module:prototype"`), the React2Shell payload: the reference
+        # syntax is `"$<id>:<path>"`, so it counts only inside a JSON string.
+        - field: query_decoded
+          regex: '"\$[0-9a-f]{1,4}:[a-z_$]+:prototype\b'
 
   # Reaching one of Node's globals, which is how a payload gets out of the
   # string it was interpolated into and into the runtime.
@@ -122,3 +127,20 @@ rules:
       any:
         - field: query_decoded
           regex: 'while\s*\(+\s*(?:true|-?infinity|-1|this|string|new\s+date|!\s*(?:false|-?0|""|''''|``|null|undefined|nan)|!!\s*(?:\{\}|\[\]|""|''''|``))\s*\)'
+
+  # node-serialize's function marker, `_$$ND_FUNC$$_`: the library calls
+  # `eval` on whatever follows it, which is the whole of CVE-2017-5941. Also
+  # its base64 form when the marker starts the encoded value
+  # (`XyQkTkRfRlVOQyQk...`, case-folded by normalisation), which is how the
+  # corpus sends it. A fixed string that nothing ordinary contains.
+  - id: nodejs_serialized_function
+    name: Node.js Serialized Function (node-serialize)
+    category: injection
+    owasp: "A08:2025"
+    severity: critical
+    confidence: 0.95
+    references: ["CVE-2017-5941"]
+    match:
+      any:
+        - field: query_decoded
+          regex: '_\$\$nd_func\$\$_|(?:^|=)\s*xyqktkrfrlvoqyqk'

@@ -37,6 +37,7 @@ implying the CRS column was ever checked.
 | 2026-10-05 | *this pass* | **930 LFI** — traversal at a value's start, more file names, the User-Agent | 930 **23% → 97%** (7 → 29); overall 74.5% → **76.9%** (819 → 845 of 1,099) | 0/5 → 0/5 in 930, 0 in every family; excerpt unchanged on both engines after one fix; medium 17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS | 0, three extended |
 | 2026-10-05 | *this pass* | **933 PHP** — the call without writing `system(` | 933 **68% → 97%** (126 → 179); overall 76.9% → **81.7%** (845 → 898 of 1,099) | 0/38 → 0/38 in 933, 0 in every family; excerpt unchanged on both engines; medium 17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS | 2, two extended |
 | 2026-10-05 | *this pass* | **932 RCE**, second pass — the User-Agent that is a command line | 932 **71% → 85%** (289 → 344); overall 81.7% → **86.7%** (898 → 953 of 1,099) | 0/64 → 0/64 in 932, 0 in every family; excerpt unchanged on both engines; medium 17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS | 1 |
+| 2026-10-05 | *this pass* | **the finish** — 934 and 943's last catchable shapes; every family closed out | 934 **91% → 95%** (176 → 183), 943 **90% → 92%** (36 → 37); overall 86.7% → **87.4%** (953 → 961 of 1,099) | 0 in every family; excerpt unchanged on both engines; medium 17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS | 2, three extended |
 
 The 2026-09-20 pass is the first measured against a corpus containing a
 legitimate administrator, and it went the same way round as the recon pass: it
@@ -627,6 +628,44 @@ credential confusion (3, needs the authority parsed two ways); one Jinja
 
 
 
+
+
+### 2026-10-05 — the finish: what is left in every family, and why
+
+    overall        953 → 961 of 1,099   86.7% → 87.4%
+    wrongly        0 in every family
+    excerpt        only ruleset_fingerprint moved, native and CRS
+    medium         17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS
+
+**This is the last recall pass against the CRS corpus.** Decided with the user
+the same day: CRS is to become the default, the native rules already catch
+~99.5% of attacks on the final 2026-10-04 dataset tiers with no false alarm,
+and the corpus passes (55.2% → 87.4%) moved none of those tiers. Native work
+continues on *activity* understanding, which CRS cannot do. What follows is
+the record that closes the attack side: every miss is either caught or listed
+here with the reason it stays.
+
+Caught by this pass: node-serialize's `_$$ND_FUNC$$_` marker and its base64
+form (`nodejs_serialized_function`), a React Server Components reference
+reaching a prototype (`"$7:module:prototype"`, the React2Shell shape, in
+`nodejs_prototype_pollution`), a Jinja/Twig block that opens and closes in one
+value (`template_injection`), URL-parser confusion with an internal host after
+`&@` or `# @` (`ssrf_host_evasion`), and a cookie planted by injected script,
+`document.cookie='sid=...;expires=...'` (`session_cookie_injection`). Three of
+my own probes broke first drafts and are pinned in `FINISH_BENIGN`: "jinja
+{% if %} syntax", "contact me @ 10.0.0.1", "$5:off:prototype".
+
+| family | caught | what is left, and why it stays |
+|---|---:|---|
+| 930 LFI | 29 / 30 | `>/tmp/curl` — the corpus certifies `>/tmp` as harmless, so a redirect alone is not evidence |
+| 931 RFI | 16 / 33 | bare off-site URLs and look-alike hosts (`example.com.evil.com`) — indistinguishable from a redirect or share link until the case names the site's own domain, which `rfi_offsite_url` then reads (2026-09-22 entry). The `url/@evil.com` trick is everyday on `medium.com/@user` links |
+| 932 RCE | 344 / 406 | 22 in the Referer (the next click after an attack page — see the 941 entry), 3 in the User-Agent, bodies no log records, bash history (`!!`, `!-1`), bare mail verbs, `alias`, `pip install`, and five the corpus files as attacks that read as English |
+| 933 PHP | 179 / 184 | unclosed calls (`base64_decode(`), `crypt(abc)`, `file ()`, `$_s erver` — the truncated shape the pack declines on purpose |
+| 934 generic | 183 / 193 | six single-level Django lookups (how Django filters), base64 payloads whose case normalisation destroys (`d2hpbguo...`), URL credential confusion, `function() {` |
+| 941 XSS | 61 / 72 | 8 in the Referer (kept out, measured), a request body, handlers in a parameter name led by a space that normalisation trims |
+| 942 SQLi | 106 / 135 | a quoted word alone, bare numbers, `like null`, names that are not calls (`select pg_sleep`), JSON-path comparisons |
+| 943 session | 37 / 40 | session ids that only a cookie or an off-site Referer on a Host-less log format would reveal |
+| 944 Java | 6 / 6 | — |
 
 ### 2026-10-05 — 932 again: the User-Agent that is a command line
 

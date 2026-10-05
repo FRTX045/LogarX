@@ -288,3 +288,20 @@ rules:
           regex: '(^|&)[a-z0-9_.:-]{0,24}(sess(ion)?[_.-]?id|sessionid|jsessionid|phpsessid|phpsession|sid|cfid|cftoken|cfsid|asp\.net_sessionid|aspsessionid|jservsession|jwsession|weblogicsession|_session_id|_rails_session|laravel_session|connect\.sid|koa[.:]sess|play_session|rack\.session|sails\.sid|zend_session_id|cakephp|_flask_session|next-auth\.session-token|meteor_login_token|shiny-token)[a-z0-9_.-]{0,20}=\S'
         - field: referer_offsite
           min: 1
+
+  # Planting a cookie through injected script or markup:
+  # `.cookie;expires=` (JavaScript writing `document.cookie`) and
+  # `http-equiv=set-cookie` (a meta tag that sets one). Either plants a session
+  # the attacker chose, which is what fixation needs; neither is how an
+  # ordinary request reads, and a search for "document.cookie" stays quiet.
+  - id: session_cookie_injection
+    name: Session Fixation (cookie set by an injected payload)
+    category: credential_attack
+    owasp: "A07:2025"
+    severity: high
+    confidence: 0.8
+    references: ["CAPEC-61"]
+    match:
+      any:
+        - field: target_decoded
+          regex: '\.cookie\b(?:\s*=\s*[''"]?[^;''"]{0,80})?\s*;\s*(?:expires|domain|path)\s*=|\bhttp-equiv\W+set-cookie\b'
