@@ -236,16 +236,17 @@ def scanned(ip="192.0.2.33", count=30):
 def test_a_rule_that_matches_but_loses_the_label_is_still_counted():
     """Two tools ran one wordlist, and only one of them was named for it.
 
-    With a scanner's user-agent the same enumeration is labelled
-    `scanner_user_agent`, which outranks `directory_enumeration` on confidence.
-    Counting only the label that won would say nobody else enumerated.
+    With a content-discovery tool's user-agent the same enumeration is labelled
+    `content_discovery_user_agent`, which outranks `directory_enumeration` on
+    confidence. Counting only the label that won would say nobody else
+    enumerated.
     """
     from logarc.triage.profile import profile_client
 
     profile = profile_client(scanned(), RuleEngine(default_rules()))
     assert profile.rules_matched["directory_enumeration"] == 30
     assert "directory_enumeration" not in profile.rules_won
-    assert profile.rules_won["scanner_user_agent"] == 30
+    assert profile.rules_won["content_discovery_user_agent"] == 30
 
 
 def test_ordinary_traffic_is_counted_under_the_label_it_was_given():

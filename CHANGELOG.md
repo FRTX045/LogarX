@@ -100,6 +100,16 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Wordlist tools are named as enumeration, not reconnaissance.** gobuster,
+  dirb, dirbuster, dirsearch, ffuf, feroxbuster and wfuzz sweep a list of
+  paths, and this project's own boundary (ADR-0005) calls that enumeration;
+  they were filed with the scanners that fingerprint a site. On the 237,278-
+  request medium dataset build, accuracy rises from 0.9751 to 0.9945 natively
+  and 0.9747 to 0.9941 with CRS, and `enumeration` read as `reconnaissance`
+  falls from 5,325 requests to 715, with detection unchanged (17,069 caught, 1
+  false alarm natively). ffuf's own default User-Agent, `Fuzz Faster U Fool`,
+  is now recognised; it never contained the word `ffuf`.
+
 - **CRS enrichment is two to five times faster on real traffic, with exactly
   the same detections.** Most requests in a log are repeats — the same page,
   asset or API call made again — and each was replayed through CRS in full. Each

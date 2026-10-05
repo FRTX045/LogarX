@@ -254,6 +254,9 @@ zero — no rule can assign it — and costs about 0.05 on its own. The tool's
 commonest mistake is calling an attack by a neighbouring name, 5,335 times
 `enumeration` read as `reconnaissance`, which costs nothing on the first axis and
 a great deal on the second. Both are printed so neither can hide the other.
+Re-scored 2026-10-05 on the same bytes, most of that mistake is gone: tools
+that sweep a wordlist are now named as enumeration, and it falls from 5,325
+requests to 715, with accuracy 0.9945 and macro F1 0.810 natively.
 
 **With OWASP CRS at paranoia level 2**, re-scored on 2026-10-05 against the same
 bytes (checksums re-verified), the build scores accuracy 0.975, macro F1 0.721
