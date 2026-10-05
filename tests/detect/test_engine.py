@@ -284,6 +284,57 @@ def test_an_unmatched_request_falls_back_to_benign_classification(
     assert labelled.label.severity is Severity.INFO
 
 
+DUMMY = "Apache/2.4.68 (Debian) PHP/8.3.33 (internal dummy connection)"
+
+
+def _internal(client_ip: str, method: str, path: str, user_agent: str = DUMMY) -> NormalizedEvent:
+    from dataclasses import replace
+
+    return replace(event(path=path, user_agent=user_agent), client_ip=client_ip, method=method)
+
+
+@pytest.mark.parametrize(
+    ("client_ip", "method", "path"),
+    [("127.0.0.1", "OPTIONS", "*"), ("127.0.0.1", "GET", "/"), ("::1", "OPTIONS", "*")],
+)
+def test_apaches_internal_connection_is_not_a_client_doing_anything(
+    engine: RuleEngine, client_ip: str, method: str, path: str
+) -> None:
+    """Apache wakes its own worker processes by connecting to itself, and
+    writes the connection to the access log like any other request. It is the
+    server, not a visitor, so none of the activity categories applies.
+
+    It was `API Call`, named `Non-idempotent Request` — 131 lines on
+    `2026-10-04-medium`, which the truth calls `unknown` — and `OPTIONS` is
+    idempotent, so the name was wrong on its face. CRS exempts exactly this
+    traffic in 905110, and these are its three conditions: a loopback client,
+    the agent's own marker, and one of the two request lines Apache sends."""
+    (labelled,) = engine.label_events([_internal(client_ip, method, path)])
+
+    assert labelled.label.category is ActivityCategory.UNKNOWN
+    assert labelled.label.name == "Apache Internal Connection"
+
+
+@pytest.mark.parametrize(
+    ("client_ip", "method", "path", "user_agent"),
+    [
+        # The marker is a User-Agent, which anybody can send. From outside it
+        # is a request like any other.
+        ("203.0.113.5", "OPTIONS", "*", DUMMY),
+        # Loopback, but not Apache saying so.
+        ("127.0.0.1", "OPTIONS", "*", "curl/8.5.0"),
+        # Loopback and the marker, asking for something Apache never asks for.
+        ("127.0.0.1", "GET", "/admin", DUMMY),
+    ],
+)
+def test_it_takes_all_three_conditions(
+    engine: RuleEngine, client_ip: str, method: str, path: str, user_agent: str
+) -> None:
+    (labelled,) = engine.label_events([_internal(client_ip, method, path, user_agent)])
+
+    assert labelled.label.name != "Apache Internal Connection"
+
+
 def test_a_request_whose_line_could_not_be_read_is_not_called_a_page_view(
     engine: RuleEngine,
 ) -> None:

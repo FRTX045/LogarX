@@ -37,6 +37,7 @@ implying the CRS column was ever checked.
 | 2026-10-05 | *this pass* | **930 LFI** — traversal at a value's start, more file names, the User-Agent | 930 **23% → 97%** (7 → 29); overall 74.5% → **76.9%** (819 → 845 of 1,099) | 0/5 → 0/5 in 930, 0 in every family; excerpt unchanged on both engines after one fix; medium 17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS | 0, three extended |
 | 2026-10-05 | *this pass* | **933 PHP** — the call without writing `system(` | 933 **68% → 97%** (126 → 179); overall 76.9% → **81.7%** (845 → 898 of 1,099) | 0/38 → 0/38 in 933, 0 in every family; excerpt unchanged on both engines; medium 17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS | 2, two extended |
 | 2026-10-05 | *this pass* | **932 RCE**, second pass — the User-Agent that is a command line | 932 **71% → 85%** (289 → 344); overall 81.7% → **86.7%** (898 → 953 of 1,099) | 0/64 → 0/64 in 932, 0 in every family; excerpt unchanged on both engines; medium 17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS | 1 |
+| 2026-10-05 | *this pass* | **engine** — Apache talking to itself is not a client | detection unchanged everywhere; **`2026-09-20-medium` macro F1 0.8103 → 0.8656 native, 0.7628 → 0.8180 CRS**; `2026-10-04-medium` 0.8146 → 0.8716 native | 1 → 1 native, 74 → 74 CRS on medium; 0 → 0 on `2026-10-04-medium`; excerpt unchanged (none in it) | 0, one ladder branch |
 | 2026-10-05 | *this pass* | **engine** — a script is described by what it asked for | detection unchanged everywhere; excerpt accuracy 0.9514 → **0.9561** native, 0.9516 → **0.9563** CRS; `2026-10-04-medium` 0.9950 → 0.9953 | 0 → 0 excerpt; medium 1 → 1 native, 74 → 74 CRS; `2026-10-04-medium` 0 → 0 both | 0, one engine function |
 | 2026-10-05 | *this pass* | **action** — crawlers that never say `bot` | detection unchanged everywhere; **excerpt accuracy 0.9339 → 0.9514 native, 0.9341 → 0.9516 CRS**; `2026-10-04-medium` 0.9929 → 0.9950 native | 0 → 0 excerpt; medium 1 → 1 native, 74 → 74 CRS; `2026-10-04-medium` 0 → 0 both | 0, the crawler list extended in two places |
 | 2026-10-05 | *this pass* | **recon** — content-discovery tools are enumeration | corpus unchanged, 961 of 1,099; medium caught 17,069 → 17,069 native, 17,071 → 17,071 CRS; **medium accuracy 0.9751 → 0.9945 native, 0.9747 → 0.9941 CRS** | 0 in every family; excerpt unchanged on both engines; medium 1 → 1 native, 74 → 74 CRS | 1, one narrowed |
@@ -632,6 +633,45 @@ credential confusion (3, needs the authority parsed two ways); one Jinja
 
 
 
+
+### 2026-10-05 — engine: Apache talking to itself is not a client
+
+`unknown` read as `api_call` was 131 lines on `2026-10-04-medium` and 127 on
+`2026-09-20-medium`, every one of them `127.0.0.1 "OPTIONS * HTTP/1.0"` with
+the agent `Apache/2.4.68 (Debian) PHP/8.3.33 (internal dummy connection)`.
+That is Apache waking its own worker processes by connecting to itself — the
+server, not a visitor — and the fallback called it `Non-idempotent Request`,
+which was wrong twice: it is not a client's activity, and `OPTIONS` is
+idempotent.
+
+The ladder now names it `Apache Internal Connection`, category `unknown`, the
+taxonomy's none-of-the-above, which is also what the truth calls it. The
+conditions are CRS 905110's, which exempts exactly this traffic: a loopback
+client (`127.0.0.1`, `::1`), an agent ending in `(internal dummy connection)`,
+and one of the two request lines Apache sends (`GET /`, `OPTIONS *`). All
+three, because the marker is only a header; dropping any one of them fails the
+test that pins its case.
+
+| | before | after |
+|---|---:|---:|
+| `2026-10-04-medium` macro F1, native / CRS | 0.8146 / 0.8138 | **0.8716 / 0.8708** |
+| `2026-10-04-medium` accuracy, native / CRS | 0.9953 / 0.9952 | **0.9958 / 0.9958** |
+| `2026-09-20-medium` macro F1, native / CRS | 0.8103 / 0.7628 | **0.8656 / 0.8180** |
+| `2026-09-20-medium` accuracy, native / CRS | 0.9953 / 0.9950 | **0.9959 / 0.9955** |
+| `unknown` F1 on either tier | 0.000 | **0.792 / 0.767** |
+
+Small in requests, large in macro F1, because `unknown` was a whole category
+at zero. Detection and boundaries are unchanged; the excerpt holds no such
+line and did not move; the ruleset fingerprint is unchanged, since the ladder
+is engine code.
+
+**Left alone deliberately — `unknown` read as `static_asset`, 67 and 74.**
+Every one is the shop application fetching its own logo with the agent
+`FettleImporter/1.0`: its image-import feature, run by the server against
+itself. Only the site knows its importer's name, so a rule here would encode
+this dataset's application rather than a fact about HTTP. If it comes back, the
+honest route is the reader naming the site's own addresses, as `site_hosts`
+does for its domains.
 
 ### 2026-10-05 — engine: a script is described by what it asked for
 

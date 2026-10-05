@@ -70,6 +70,14 @@ _CRAWLER_HINTS: Final[tuple[str, ...]] = (
 
 _BENIGN_CONFIDENCE: Final = 0.5
 
+#: Apache connecting to itself to wake a worker process, as CRS 905110 knows it:
+#: the request lines it sends, the marker its User-Agent ends with, and the
+#: loopback addresses it sends them from. All three, because the marker alone is
+#: a header anybody can send.
+_DUMMY_REQUESTS: Final[frozenset[tuple[str, str]]] = frozenset({("GET", "/"), ("OPTIONS", "*")})
+_DUMMY_MARKER: Final = "(internal dummy connection)"
+_LOOPBACK: Final[frozenset[str]] = frozenset({"127.0.0.1", "::1"})
+
 
 def _bare_host(value: str | None) -> str:
     """A host with its scheme, port, userinfo and trailing dot removed.
@@ -987,6 +995,17 @@ def _classify_benign(view: RequestView) -> ActivityLabel:
     # claimed to send an unreadable line is not knowing what was sent.
     if not event.path:
         return _UNREADABLE
+
+    # The server, not a visitor: Apache waking its own workers, logged like any
+    # request. 131 lines on `2026-10-04-medium` were `Non-idempotent Request`
+    # until this, which was wrong twice — it is not a client's activity, and
+    # `OPTIONS` is idempotent. `unknown` is the taxonomy's none-of-the-above.
+    if (
+        event.client_ip in _LOOPBACK
+        and agent.endswith(_DUMMY_MARKER)
+        and ((event.method or "").upper(), event.path) in _DUMMY_REQUESTS
+    ):
+        return _benign(ActivityCategory.UNKNOWN, "Apache Internal Connection")
 
     if any(hint in agent for hint in _CRAWLER_HINTS):
         return _benign(ActivityCategory.CRAWLING, "Crawler Traffic")
