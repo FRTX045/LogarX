@@ -25,6 +25,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import subprocess
+import threading
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -76,10 +77,12 @@ class FakeCrs:
 
     def __init__(self) -> None:
         self.sent: list[dict[str, Any]] = []
+        self.calls: list[int] = []
 
     def __call__(self, *_args: object, **kwargs: Any) -> subprocess.CompletedProcess[str]:
         records = [json.loads(line) for line in str(kwargs["input"]).splitlines()]
         self.sent.extend(records)
+        self.calls.append(len(records))
         out = [
             json.dumps(
                 {
@@ -247,3 +250,67 @@ def test_mapped_loopback_stays_apart_even_where_python_does_not_call_it_loopback
     run_sidecar([request(1), request(2, client_ip="::ffff:127.0.0.1")], config=config)
 
     assert crs.lines_sent() == [1, 2]
+
+
+# -- several sidecars at once ---------------------------------------------
+#
+# Measured 2026-10-05 on `2026-09-20-medium`'s 73,427 distinct requests: one
+# sidecar 72.3 s, two 39.3 s, four 25.5 s, each holding 55 MB at its peak, with
+# the same detections. A sidecar starts in about 0.11 s and then costs about
+# 0.6 ms a request, so a batch's fresh requests are split across processes
+# rather than whole batches being run side by side — which would leave a case
+# of one batch, most of them, with nothing to share.
+
+
+class _BarrierCrs(FakeCrs):
+    """A fake that waits until `parties` sidecars are running at once.
+
+    Concurrency proven rather than timed: sent one after another, the first
+    call waits alone and the barrier breaks, so the test fails on the fact
+    and not on how fast this machine is."""
+
+    def __init__(self, parties: int) -> None:
+        super().__init__()
+        self.barrier = threading.Barrier(parties, timeout=10)
+        self.lock = threading.Lock()
+
+    def __call__(self, *args: object, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        self.barrier.wait()
+        with self.lock:
+            return super().__call__(*args, **kwargs)
+
+
+def _many(count: int) -> list[NormalizedEvent]:
+    """Distinct requests, one in three an attack the fake reports."""
+    return [
+        request(n, f"/p/{n}?q=1 union select {n}" if n % 3 == 0 else f"/p/{n}")
+        for n in range(1, count + 1)
+    ]
+
+
+def test_a_large_batch_is_shared_between_sidecars(
+    config: SidecarConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = _BarrierCrs(parties=4)
+    monkeypatch.setattr(subprocess, "run", fake)
+
+    found = run_sidecar(_many(2_000), config=config, workers=4)
+
+    assert sorted(fake.lines_sent()) == list(range(1, 2_001)), "every request, once"
+    assert [line for _, line in _where(found)] == list(range(3, 2_001, 3))
+
+
+def test_sharing_changes_nothing_but_the_time(crs: FakeCrs, config: SidecarConfig) -> None:
+    """The same answers, in the same order, from one sidecar or four."""
+    alone = run_sidecar(_many(2_000), config=config, workers=1)
+    shared = run_sidecar(_many(2_000), config=config, workers=4)
+
+    assert shared == alone
+
+
+def test_a_small_batch_is_not_split(crs: FakeCrs, config: SidecarConfig) -> None:
+    """Splitting costs a start-up per sidecar. Under a few hundred requests
+    that is most of the work, so a small batch goes to one."""
+    run_sidecar(_many(300), config=config, workers=4)
+
+    assert len(crs.calls) == 1
