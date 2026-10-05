@@ -100,6 +100,15 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **CRS enrichment shares its work between up to four sidecars.** Each
+  batch's distinct requests are split across as many sidecar processes as
+  there are cores, up to four, and the answers merge back by line. Measured
+  against the original replay of every request, detections identical field by
+  field: the 941,322-request large dataset build 911.0 s to 110.5 s, the
+  237,278-request medium one 226.9 s to 29.5 s, the small one 60.1 s to
+  10.6 s, the committed excerpt 3.3 s to 0.9 s. Each sidecar
+  holds about 55 MB at its peak, so four cost about 220 MB while they run.
+
 - **A `${name}` placeholder is no longer called PHP injection.** A web page's
   template placeholder sent before it was filled in — `?id=${id}` — was
   reported as injection at high severity; it is what every template language

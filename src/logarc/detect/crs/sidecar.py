@@ -21,6 +21,7 @@ import json
 import os
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from itertools import groupby, islice
 from pathlib import Path
@@ -96,6 +97,18 @@ def runs_by_default() -> bool:
 _BATCH: Final = 20_000
 """Records per sidecar invocation. Bounds the pipe buffer and the memory a
 single run holds, without paying process startup per request."""
+
+#: Sidecars run side by side when nobody says otherwise: the cores available,
+#: at most four — the same rule `logarc ingest` uses for its workers, and for
+#: the same reason. Measured 2026-10-05 on `2026-09-20-medium`'s 73,427 distinct
+#: requests: one sidecar 72.3 s, two 39.3 s, four 25.5 s, the same detections,
+#: each sidecar holding about 55 MB at its peak.
+DEFAULT_WORKERS: Final = min(4, os.cpu_count() or 1)
+
+_MIN_SHARE: Final = 500
+"""Fewest requests worth a sidecar of their own. One starts in about 0.11 s and
+then costs about 0.6 ms a request, so below a few hundred the start-up is most
+of the work and splitting would make a small batch slower."""
 
 _REMEMBERED: Final = 250_000
 """Distinct requests whose CRS answer is kept, so a repeat is not replayed.
@@ -409,6 +422,7 @@ def run_sidecar(
     events: Iterable[NormalizedEvent],
     *,
     config: SidecarConfig | None = None,
+    workers: int | None = None,
 ) -> list[CrsDetection]:
     """Replay `events` through CRS and return every reported match.
 
@@ -432,9 +446,13 @@ def run_sidecar(
     or call, made again — gets the answer its first occurrence got, under its
     own line and source. On `2026-09-20-medium` that is 73,427 replays instead
     of 237,278. `_replay_key` says what counts as the same.
+
+    `workers` is how many sidecars share a batch's fresh requests, defaulting to
+    `DEFAULT_WORKERS`. It changes how long a run takes and nothing it reports.
     """
     config = config or SidecarConfig()
     config.check()
+    workers = workers or DEFAULT_WORKERS
 
     remembered: dict[bytes, tuple[CrsDetection, ...]] = {}
     found: list[CrsDetection] = []
@@ -442,7 +460,7 @@ def run_sidecar(
         # `group` is only valid until the outer iterator advances, so it is
         # drained here rather than stashed.
         while batch := list(islice(group, _BATCH)):
-            found.extend(_replay_once(config, batch, source_file_id, remembered))
+            found.extend(_replay_once(config, batch, source_file_id, remembered, workers))
     return found
 
 
@@ -451,6 +469,7 @@ def _replay_once(
     batch: Sequence[NormalizedEvent],
     source_file_id: str,
     remembered: dict[bytes, tuple[CrsDetection, ...]],
+    workers: int,
 ) -> list[CrsDetection]:
     """One batch: send what has not been seen, answer the rest from memory.
 
@@ -466,7 +485,7 @@ def _replay_once(
     answers: dict[bytes, tuple[CrsDetection, ...]] = {}
     if fresh:
         by_line: dict[int, list[CrsDetection]] = {}
-        for detection in _invoke(config, list(fresh.values()), source_file_id=source_file_id):
+        for detection in _invoke_shared(config, list(fresh.values()), source_file_id, workers):
             by_line.setdefault(detection.line_no, []).append(detection)
         for key, event in fresh.items():
             answers[key] = tuple(by_line.get(event.evidence.line_no, ()))
@@ -484,6 +503,29 @@ def _replay_once(
         remembered.clear()
     remembered.update(answers)
     return found
+
+
+def _invoke_shared(
+    config: SidecarConfig,
+    events: Sequence[NormalizedEvent],
+    source_file_id: str,
+    workers: int,
+) -> list[CrsDetection]:
+    """`_invoke`, with the requests shared between up to `workers` sidecars.
+
+    Each request goes to exactly one of them, and a detection names the line
+    it came from, so the answers merge back by line whatever order the
+    sidecars finish in. Threads rather than processes because the work happens
+    in the sidecars; a thread here only waits on its pipe.
+    """
+    shares = max(1, min(workers, len(events) // _MIN_SHARE))
+    if shares == 1:
+        return _invoke(config, events, source_file_id=source_file_id)
+    size = -(-len(events) // shares)
+    parts = [events[start : start + size] for start in range(0, len(events), size)]
+    with ThreadPoolExecutor(max_workers=len(parts)) as pool:
+        answers = pool.map(lambda part: _invoke(config, part, source_file_id=source_file_id), parts)
+        return [detection for answer in answers for detection in answer]
 
 
 def _invoke(
