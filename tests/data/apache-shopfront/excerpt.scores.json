@@ -13,16 +13,16 @@
     "true_positives": 1123
   },
   "classification": {
-    "accuracy": 0.9513725490196079,
-    "macro_f1": 0.7969524664102975,
+    "accuracy": 0.956078431372549,
+    "macro_f1": 0.8003724582984363,
     "per_category": [
       {
         "category": "crawling",
-        "f1": 0.9889135254988913,
+        "f1": 1.0,
         "false_negatives": 0,
-        "false_positives": 30,
-        "precision": 0.9780701754385965,
-        "predicted": 1368,
+        "false_positives": 0,
+        "precision": 1.0,
+        "predicted": 1338,
         "recall": 1.0,
         "recall_any": 1.0,
         "support": 1338,
@@ -30,11 +30,11 @@
       },
       {
         "category": "static_asset",
-        "f1": 0.9985429820301116,
+        "f1": 0.9980582524271845,
         "false_negatives": 0,
-        "false_positives": 3,
-        "precision": 0.997090203685742,
-        "predicted": 1031,
+        "false_positives": 4,
+        "precision": 0.9961240310077519,
+        "predicted": 1032,
         "recall": 1.0,
         "recall_any": 1.0,
         "support": 1028,
@@ -66,15 +66,15 @@
       },
       {
         "category": "browsing",
-        "f1": 0.7977207977207977,
-        "false_negatives": 18,
-        "false_positives": 53,
-        "precision": 0.7253886010362695,
-        "predicted": 193,
-        "recall": 0.8860759493670886,
-        "recall_any": 0.8860759493670886,
+        "f1": 0.8315789473684211,
+        "false_negatives": 0,
+        "false_positives": 64,
+        "precision": 0.7117117117117117,
+        "predicted": 222,
+        "recall": 1.0,
+        "recall_any": 1.0,
         "support": 158,
-        "true_positives": 140
+        "true_positives": 158
       },
       {
         "category": "api_call",
@@ -180,14 +180,9 @@
         "predicted": "reconnaissance"
       },
       {
-        "count": 47,
+        "count": 53,
         "expected": "reconnaissance",
         "predicted": "browsing"
-      },
-      {
-        "count": 18,
-        "expected": "browsing",
-        "predicted": "crawling"
       },
       {
         "count": 13,
@@ -195,19 +190,14 @@
         "predicted": "authentication"
       },
       {
-        "count": 7,
-        "expected": "reconnaissance",
-        "predicted": "crawling"
+        "count": 10,
+        "expected": "access_control",
+        "predicted": "browsing"
       },
       {
         "count": 7,
         "expected": "reconnaissance",
         "predicted": "enumeration"
-      },
-      {
-        "count": 6,
-        "expected": "access_control",
-        "predicted": "browsing"
       },
       {
         "count": 5,
@@ -216,16 +206,26 @@
       },
       {
         "count": 4,
-        "expected": "access_control",
-        "predicted": "crawling"
-      },
-      {
-        "count": 3,
         "expected": "reconnaissance",
         "predicted": "static_asset"
+      },
+      {
+        "count": 2,
+        "expected": "exploitation",
+        "predicted": "api_call"
+      },
+      {
+        "count": 2,
+        "expected": "exploitation",
+        "predicted": "path_traversal"
+      },
+      {
+        "count": 1,
+        "expected": "access_control",
+        "predicted": "api_call"
       }
     ],
-    "weighted_f1": 0.9490326882270695
+    "weighted_f1": 0.9541790904479842
   },
   "crs_fingerprint": null,
   "granularity": "category",
@@ -244,12 +244,12 @@
   "segmentation": {
     "boundaries_agreed": 244,
     "boundaries_expected": 245,
-    "boundaries_found": 531,
-    "boundary_f1": 0.6288659793814433,
-    "boundary_precision": 0.4595103578154426,
+    "boundaries_found": 530,
+    "boundary_f1": 0.6296774193548388,
+    "boundary_precision": 0.46037735849056605,
     "boundary_recall": 0.9959183673469387,
-    "fragmentation": 1.962962962962963,
-    "predicted_episodes": 583,
+    "fragmentation": 1.9595959595959596,
+    "predicted_episodes": 582,
     "truth_activities": 297
   },
   "source_file_id": "excerpt.log",

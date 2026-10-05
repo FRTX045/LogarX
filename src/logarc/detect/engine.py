@@ -430,7 +430,7 @@ class RuleEngine:
         detections = _detections_for(crs, event)
 
         labels = [_to_label(rule) for rule in matches]
-        label = _most_severe(labels) if labels else _classify_benign(view)
+        label = _primary(labels, view)
 
         # INFO is this ruleset saying "I noticed something and I am not calling
         # it an attack" — every benign classification, and `Scripted Client` on
@@ -476,9 +476,9 @@ class RuleEngine:
             for index in _members_of_matching_windows(rule, labelled, members):
                 labelled[index].all_labels.append(label)
 
-        for item in labelled:
+        for item, view in zip(labelled, views, strict=True):
             if item.all_labels:
-                item.label = _most_severe(item.all_labels)
+                item.label = _primary(item.all_labels, view)
 
 
 def _is_member(rule: WindowRule, view: RequestView) -> bool:
@@ -942,6 +942,27 @@ def _most_severe(labels: Sequence[ActivityLabel]) -> ActivityLabel:
             label.rule_id,
         ),
     )
+
+
+def _primary(labels: Sequence[ActivityLabel], view: RequestView) -> ActivityLabel:
+    """The label a request is reported under.
+
+    The most significant match — unless every match is a benign observation
+    less sure than the fallback ladder, in which case the ladder says what the
+    request was and the observation stays among the matches. `Scripted Client`
+    (0.4) is the one such rule: a User-Agent says *who* sent a request, the
+    ladder (0.5) says *what* was asked for, and letting the first displace the
+    second made every page a script fetched `crawling` — which the labelled
+    tiers never call a library agent's request.
+
+    Used where a request is first labelled and again where window rules settle
+    it. A fix in only the first was undone by the second.
+    """
+    if labels:
+        best = _most_severe(labels)
+        if best.category.is_hostile or best.confidence >= _BENIGN_CONFIDENCE:
+            return best
+    return _classify_benign(view)
 
 
 def _classify_benign(view: RequestView) -> ActivityLabel:

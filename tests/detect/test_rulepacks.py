@@ -1411,6 +1411,45 @@ def test_a_script_doing_ordinary_things_is_not_an_attack(engine: RuleEngine, tar
     )
 
 
+@pytest.mark.parametrize(
+    ("target", "category", "name"),
+    [
+        ("/c/garden", ActivityCategory.BROWSING, "Page View"),
+        ("/static/app.css", ActivityCategory.STATIC_ASSET, "Static Asset"),
+        ("/api/stock?id=4", ActivityCategory.API_CALL, "API Call"),
+    ],
+)
+def test_a_script_is_described_by_what_it_asked_for(
+    engine: RuleEngine, target: str, category: ActivityCategory, name: str
+) -> None:
+    """`Scripted Client` is an observation about *who*, at confidence 0.4 —
+    below the fallback ladder's 0.5, which says *what*. It used to displace the
+    ladder entirely, so a script fetching a catalogue page was `crawling`; the
+    labelled tiers call no library-agent request `crawling` at all, and 73
+    scripted page views on `2026-10-04-medium` were read that way.
+
+    The observation is kept, so the report can still say a program sent it."""
+    (labelled,) = engine.label_events([request(target, user_agent="python-requests/2.32.3")])
+
+    assert labelled.label.category is category
+    assert labelled.label.name == name
+    assert any(item.rule_id == "http_library_user_agent" for item in labelled.all_labels)
+
+
+def test_settling_the_labels_after_window_rules_keeps_the_description(
+    engine: RuleEngine,
+) -> None:
+    """Window rules settle every request's primary label again from what it
+    matched. Done from the matches alone, that put `Scripted Client` back over
+    the ladder's answer on every request a client sent — so the choice has to
+    be one function used in both places, not a fix in one."""
+    events = [request(f"/c/aisle-{n}", user_agent="curl/8.5.0", seconds=n * 30) for n in range(4)]
+
+    labelled = engine.label_events(events)
+
+    assert [item.label.name for item in labelled] == ["Page View"] * 4
+
+
 def test_a_script_reaching_for_something_it_should_not_is_still_an_attack(
     engine: RuleEngine,
 ) -> None:

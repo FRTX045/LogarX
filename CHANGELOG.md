@@ -100,6 +100,13 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **A script fetching a page is a page view, not crawling.** A `curl` or
+  `python-requests` User-Agent says a program sent the request; it was also
+  displacing the description of what was asked for, so every page a script
+  fetched was reported as crawling. The program is still noted on the request.
+  On the committed excerpt accuracy rises from 0.9514 to 0.9561, with
+  detection and activity boundaries unchanged or better on every dataset build.
+
 - **More crawlers are recognised as crawlers.** Facebook's link preview
   (`facebookexternalhit`) and the other crawlers Meta and Google document
   without the word `bot` in their names were being read as people browsing.
