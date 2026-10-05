@@ -18,7 +18,7 @@ from logarc import __version__
 from logarc.analysis import AnalysisPolicy, analyse_ip
 from logarc.case import Case, CaseError
 from logarc.cli.formats import formats_app
-from logarc.cli.support import console, errors, fail, path_line
+from logarc.cli.support import console, errors, fail, path_line, safe_output
 from logarc.core.activity import Severity
 from logarc.detect.crs import (
     AUTO_ENV,
@@ -176,6 +176,7 @@ def main(
     ] = False,
 ) -> None:
     """Reconstruct what an IP did on a web server, from its access logs."""
+    safe_output()
     _install_saved_formats()
 
 

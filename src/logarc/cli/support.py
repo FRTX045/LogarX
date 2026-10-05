@@ -6,13 +6,44 @@ importing the other for a print function.
 
 from __future__ import annotations
 
+import os
+import sys
+
 import typer
 from rich.console import Console
 
-__all__ = ["console", "errors", "fail", "path_line"]
+__all__ = ["console", "errors", "fail", "path_line", "safe_output"]
 
 console = Console()
 errors = Console(stderr=True)
+
+
+def safe_output() -> None:
+    """Let output sent to a file, a pipe or `NUL` hold any character a log can.
+
+    On Windows Python encodes redirected output in the locale's code page —
+    cp1252 here — and refuses everything outside it. A log line is whatever the
+    client sent, so `logarc evidence … > evidence.txt` stopped half way on a
+    User-Agent in Chinese; and `NUL` reports itself as a terminal, so Rich drew
+    its braille spinner into cp1252 and every command with progress failed on
+    `> NUL`.
+
+    Redirected output becomes UTF-8, which loses nothing and is what the log
+    itself is. A console is left alone — Python already writes to it through
+    the wide-character API — and so is an encoding somebody chose with
+    `PYTHONIOENCODING`, except that what it cannot hold is written as an escape
+    rather than failing the command.
+    """
+    chosen = bool(os.environ.get("PYTHONIOENCODING"))
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        encoding = (getattr(stream, "encoding", None) or "").lower().replace("-", "")
+        if reconfigure is None or encoding == "utf8":
+            continue
+        if chosen:
+            reconfigure(errors="backslashreplace")
+        else:
+            reconfigure(encoding="utf-8", errors="backslashreplace")
 
 
 def fail(message: str) -> typer.Exit:

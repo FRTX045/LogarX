@@ -542,6 +542,14 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Command-line output redirected on Windows no longer breaks on the
+  characters a log can hold.** `logarc evidence … > evidence.txt` stopped half
+  way with a traceback when a log line held text outside the Windows code page
+  — a User-Agent in Chinese, say — and every command that shows progress failed
+  outright on `> NUL`, which Windows reports as a terminal. Redirected output is
+  now UTF-8, which loses nothing; an encoding chosen with `PYTHONIOENCODING` is
+  kept, and what it cannot hold is written as an escape instead of failing.
+
 - **A CRS run that failed left Where to start empty.** The prioritization scan
   waits while CRS runs, because finishing reloads the case; a failed run closed
   its card and reported the error, and nothing let the scan start. It now
