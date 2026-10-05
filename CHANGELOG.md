@@ -100,6 +100,13 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Apache connecting to itself is no longer reported as a client.** Apache
+  wakes its own worker processes with `OPTIONS *` from `127.0.0.1`, and logs
+  it; that was reported as an API call. It is now named Apache Internal
+  Connection, under `unknown`, by the same three conditions CRS uses to exempt
+  it. On the 237,278-request medium dataset build macro F1 rises from 0.8103
+  to 0.8656 natively, with detection unchanged.
+
 - **A script fetching a page is a page view, not crawling.** A `curl` or
   `python-requests` User-Agent says a program sent the request; it was also
   displacing the description of what was asked for, so every page a script
