@@ -143,8 +143,12 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   attacks, and attacks that provoke server errors, in the second group. Custom
   rules in those categories take part, and adding or changing a rule can change
   the order. Existing triage indexes are rebuilt on first open.
-  The development measurement will be in `docs/evaluations/`; no figures are
-  claimed until it is written. See `docs/ip-prioritization.md`.
+  Measured on the eleven development builds (synthetic, one shop, all examined
+  before): summed over 64 targeted-client appearances, 64 were in the first 10
+  under this design against 11 under policy 3, and the first group held no
+  non-targeted client. Development results, not evidence about real traffic; see
+  `docs/evaluations/exploit-evidence-first-validation.md` and
+  `docs/ip-prioritization.md`.
 
 - **CRS enrichment shares its work between up to four sidecars.** Each
   batch's distinct requests are split across as many sidecar processes as
