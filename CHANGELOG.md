@@ -623,6 +623,17 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A query parameter named like a command is no longer command injection.**
+  `?sort=price&cat=shoes`, `?page=2&id=5` and `&cat[]=` read as `&cat`, `&id`
+  after the query separator and matched the shell-command rule. After `&` a
+  command word now counts only when no parameter `=` follows it; `;`, `|` and
+  a backtick before a command word still match, and `?debug&id` still does.
+
+- **Prose no longer matches the UNION SELECT rule.** `credit union selection`
+  and `reunion select` matched because the words were not whole words. They now
+  must be, while number-adjacent evasions such as `1e0union select` and
+  `union(select 1)` are still caught.
+
 - **Command-line output redirected on Windows no longer breaks on the
   characters a log can hold.** `logarc evidence … > evidence.txt` stopped half
   way with a traceback when a log line held text outside the Windows code page
