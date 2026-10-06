@@ -27,6 +27,17 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   cannot be seen, which is why its confidence stays below the bar triage
   treats as an exact shape.
 
+- **`logarc setup-crs`: CRS in a source checkout with one command.** It
+  fetches the CRS ruleset at the revision this project measures against,
+  builds the sidecar if it is missing or older than its source, and replays a
+  known SQL injection to prove the two work together; anything already in
+  place is left alone, and a missing git or Go is named with what to install.
+  Until now a source install was given two commands to type, and the clone one
+  fetched CRS's newest rules rather than the pinned revision. It is the one
+  time logarc reaches for the network, and only when asked: the packaged
+  Windows application already carries CRS. The "CRS was not run" notice and
+  the missing-sidecar and missing-ruleset messages now name it first.
+
 - **Case → Run OWASP CRS on this case.** With CRS turned off after scans,
   the window had no way to run it on one case; only `logarc enrich` could.
   The menu item runs it on the open case whatever the preference says, and

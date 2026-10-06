@@ -28,6 +28,7 @@ from logarc.detect.crs import (
     primary_site_host,
     runs_by_default,
 )
+from logarc.detect.crs.setup import SetupError, setup_crs
 from logarc.detect.crs.store import CrsEvidence
 from logarc.detect.engine import RuleEngine
 from logarc.detect.rulepacks import default_rules
@@ -917,6 +918,24 @@ def enrich(
         raise fail(str(exc)) from exc
 
     _report_enrichment(outcome)
+
+
+@app.command("setup-crs")
+def setup_crs_command() -> None:
+    """Fetch the pinned OWASP CRS ruleset and build the sidecar, in a source checkout.
+
+    Needs git, Go 1.25 or newer and a network connection, once; anything already
+    in place is left alone. It ends by replaying a known payload, so a setup it
+    reports as done is one that works. The packaged Windows application already
+    carries CRS and has nothing to set up.
+    """
+    try:
+        with console.status("Setting up OWASP CRS…"):
+            said = setup_crs()
+    except (SetupError, CrsUnavailableError, OSError) as exc:
+        raise fail(str(exc)) from exc
+    for line in said:
+        console.print(line, markup=False)
 
 
 def _report_enrichment(outcome: EnrichOutcome) -> None:

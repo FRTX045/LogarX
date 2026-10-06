@@ -117,6 +117,19 @@ def test_a_missing_sidecar_leaves_a_finished_case_and_says_so(
 
 
 @pytest.mark.usefixtures("no_sidecar")
+def test_a_missing_sidecar_names_the_one_command_that_sets_it_up(
+    log: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Stopping the notice is one answer; getting CRS is the other, and from a
+    source checkout that is one command rather than two to type correctly."""
+    monkeypatch.delenv(AUTO_ENV, raising=False)
+
+    result = runner.invoke(app, ["ingest", str(log), "--case", str(tmp_path / "case")])
+
+    assert "logarc setup-crs" in _said(result.output)
+
+
+@pytest.mark.usefixtures("no_sidecar")
 def test_the_machine_wide_switch_means_crs_is_not_even_tried(log: Path, tmp_path: Path) -> None:
     """`LOGARC_CRS=off`, set by the suite's conftest. With no sidecar to find,
     a notice would be the proof it was looked for; there is none."""

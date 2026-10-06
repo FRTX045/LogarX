@@ -11,6 +11,16 @@ exactly the parts that would be lost by copying CRS's regexes into a rule pack i
 
 ## Build
 
+From a source checkout, one command does all of it and then checks that it works:
+
+```bash
+logarc setup-crs
+```
+
+It fetches the ruleset at the pinned revision below, builds the sidecar if it is missing or older
+than its source, and replays a known SQL injection to prove the two work together. It needs git,
+Go and a network connection, once, and leaves alone whatever is already in place. By hand:
+
 Requires Go 1.25 or newer. With `GOTOOLCHAIN=auto` (the default) an older Go will fetch it.
 
 ```bash
