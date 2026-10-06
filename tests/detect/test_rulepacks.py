@@ -2670,3 +2670,35 @@ def test_a_command_after_a_shell_separator_is_still_command_injection(
     engine: RuleEngine, target: str
 ) -> None:
     assert "command_injection" in fired_rules(engine, target)
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "/s?q=credit union selection",
+        "/s?q=union selections",
+        "/s?q=reunion select",
+        "/s?q=the union selected a leader",
+        "/s?q=trade union selectively",
+        "/s?q=a union selecting",
+        "/s?q=unions select",
+    ],
+)
+def test_union_select_must_be_whole_words(engine: RuleEngine, target: str) -> None:
+    assert "sqli_union_select" not in fired_rules(engine, target)
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "/s?id=1 union select 1,2,3",
+        "/s?id=1 UNION ALL SELECT null,null--",
+        "/s?id=1%20union%20select%20username%20from%20users",
+        "/s?id=UnIoN SeLeCt 1",
+        "/s?id=1 union(select 1)",
+        "/s?id=1 union all(select 1)",
+        "/s?id=1+union+select+1",
+    ],
+)
+def test_union_select_whole_words_are_still_caught(engine: RuleEngine, target: str) -> None:
+    assert "sqli_union_select" in fired_rules(engine, target)

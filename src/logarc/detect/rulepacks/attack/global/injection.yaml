@@ -29,8 +29,11 @@ rules:
     references: ["CAPEC-66"]
     match:
       any:
+        # Both words are whole words: `reunion select` and `credit union
+        # selection` are prose. `union(select 1)` still matches, since `(` is a
+        # separator between the two words.
         - field: target_decoded
-          regex: &sqli_union 'union[\s/(]+(all[\s/(]+)?select'
+          regex: &sqli_union '\bunion[\s/(]+(all[\s/(]+)?select\b'
         - field: user_agent_decoded
           regex: *sqli_union
 
