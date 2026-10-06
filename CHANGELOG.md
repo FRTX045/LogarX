@@ -488,6 +488,13 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Documentation
 
+- **The headline figures are re-taken on the dataset's 2026-10-06 builds.** The README and
+  `docs/evaluation.md` move from the 2026-09-20 build to `2026-10-06-medium`, 235,732 requests:
+  accuracy 0.996, macro F1 0.870, attack precision 1.000 and recall 0.994, and no false alarms,
+  natively or with CRS. All three tiers are in `docs/evaluation.md` with their digests, and the
+  2026-09-21 baseline is kept below them. The committed-excerpt table and the limits section, which
+  still quoted older figures, are brought up to date.
+
 - **The enumeration/reconnaissance confusion is partly structural, and the document now says so.**
   It had been recorded as "a rule question". Measured on the committed excerpt, the truth labels a
   request by which campaign sent it rather than by what the request is, and the campaigns' path

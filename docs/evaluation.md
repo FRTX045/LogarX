@@ -98,11 +98,115 @@ the truth to match the tool is what the previous generated corpus ended up doing
 here. Hostile activities are never merged into anything, so a missed boundary around an attack,
 the part a forensic reader cares about, counts in full.
 
-## The current baseline — 2026-09-21
+## The current baseline — 2026-10-06
 
-**These are the live figures.** Everything below this section was measured on builds whose bytes can
-no longer be obtained; that measurement is kept because the analysis built on it is still the
-analysis, but its headline numbers are superseded by this table.
+**These are the live figures.** The 2026-09-21 baseline below is kept because the analysis written
+against it still stands; its numbers are superseded by this table.
+
+All three tiers of one dataset build, taken at one commit with the working tree clean. The dataset
+fixed a defect in its own traffic just before it: its scripted browser had taken each request's
+Referer from the *previous request*, API calls included, so a page view after a stock check carried
+`Referer: http://shop.test/api/stock?id=N`, which no browser does — 8,389 lines of the 2026-09-20
+headline build. One line of the same kind, from a second generator, is left in the medium tier
+(line 162,137, `GET /c/decorating` from `/api/cart?id=1`). The dataset names it in the commit that
+ships these builds. It moves no figure here: neither engine flags the line, and the truth calls it
+`browsing`.
+
+| | `2026-10-06-small` | `2026-10-06-medium` | `2026-10-06-large` |
+|---|---|---|---|
+| Role | fast check | **the headline** | a month |
+| Lines / clients | 63,310 / 917 | 235,732 / 2,760 | 941,031 / 7,450 |
+| Span | 1 day | 7 days | 30 days |
+| Scenario seed | 7 | 19 | 31 |
+| Dataset commit | `d2ef291` | `d2ef291` | `d2ef291` |
+| Tree clean when built | **yes** | **yes** | **yes** |
+| Quarantined on ingest | 0 | 0 | 0 |
+| Truth lines unmatched | 0 | 0 | 0 |
+
+`d2ef291` is on that repository's default branch, and the builds' manifests and samples are committed
+there at `332b06b`; the logs themselves are rebuilt from the recipe in its README. Every file of all
+three was verified against the build's own `SHA256SUMS` before scoring:
+
+```
+# 2026-10-06-small
+3b42d1ed0f14a2a18554176e332f7c96b11a6865c596c863f1dd37d4b8e6486b  access.log
+19cd892701be7b7512bfe2793037d5aa8134a7099986f5323645d02df5e00d11  truth.jsonl
+22d6441492409d22f2646448efe9319bcec0b464c9bae9940b72d4231e32e9b5  MANIFEST.json
+
+# 2026-10-06-medium
+d2463e631da14bc0be12281999ebd60e42a57c044043c5118a65cff8ecf29c66  access.log
+bf677e9e26ea5327d698e46ff1a63c0f08fe40cea50b413905a53f59f4d8d68c  truth.jsonl
+a69632f19c0372c0e0591ccd67196c1b23111c7f38b3ca051a7948200367c621  MANIFEST.json
+
+# 2026-10-06-large
+8d1278b8b00d3e83559e8a2c2387cab0e05b99ecacc002ba5332c2bb1ab57a2e  access.log
+54b66410effe83b1fddd95a1318db57e551ef78f161d33809a5f993e2662a49c  truth.jsonl
+e6ac069ed71ab985a32667a87906173331587a3dfd9cc0be4fedada96801ec9b  MANIFEST.json
+```
+
+All six runs are one ruleset, fingerprint `5bcfdcff474f63ae`, recorded in each output, and one
+source tree: logarc `cbb1235`, whose `src/` is `main`'s at `e87e8d7`. The CRS runs are revision
+`d694d465`, configuration `1c4b66d67838c5e8`, paranoia level 2, and include the `${name}`
+placeholder fix (PR #30); the native runs are identical with and without it, field for field.
+
+The README's ingest rate is the medium log ingested three times at `e87e8d7` with nothing else
+running: 84,623, 85,908 and 87,202 lines/s, median **85,908**, with the default four workers on
+four physical cores (Windows 11, Python 3.12). It is a different measurement from the sequential
+`logarc benchmark` figures under [Throughput and memory](#throughput-and-memory).
+
+| | small native | small + CRS | medium native | medium + CRS | large native | large + CRS |
+|---|---:|---:|---:|---:|---:|---:|
+| Classification accuracy | 0.9955 | 0.9955 | **0.9959** | 0.9958 | 0.9961 | 0.9961 |
+| Weighted F1 | 0.9954 | 0.9954 | 0.9959 | 0.9959 | 0.9962 | 0.9962 |
+| Macro F1 | 0.8598 | 0.8600 | **0.8696** | 0.8687 | 0.8301 | 0.8293 |
+| Attack-or-not precision | 1.0000 | 0.9998 | **1.0000** | 1.0000 | 1.0000 | 1.0000 |
+| Attack-or-not recall | 0.9826 | 0.9833 | 0.9939 | 0.9939 | 0.9951 | 0.9952 |
+| Caught / missed | 4,013 / 71 | 4,016 / 68 | 17,044 / 105 | 17,045 / 104 | 40,612 / 198 | 40,613 / 197 |
+| **False alarms** | **0** | 1 | **0** | **0** | **0** | **0** |
+| Boundary F1 | 0.8508 | 0.8508 | 0.8520 | 0.8512 | 0.8640 | 0.8639 |
+
+**No false alarm natively on any of the three, and that is a count, not a rate.** The one CRS adds
+is on small: rule 942100 (libinjection) reading a Google Ads `gclid` click ID as SQL. CRS catches 3,
+1 and 1 more attacks than the native rules on the three tiers.
+
+Before the placeholder fix, CRS scored 45, 149 and 670 false alarms on these tiers, all of them the
+shop's unfilled `?id=${id}` requests apart from the click ID on small. The
+[rule-pack ledger](rule-pack-ledger.md) has the whole measurement.
+
+**No column is worse than 2026-09-21's, and that comparison is weaker than it looks.** The two baselines are different builds of a dataset that fixed defects in itself in between,
+so the change says the pair improved, not how much of it the rules did. What each rule change bought
+is measured on fixed bytes in the ledger.
+
+**What is still wrong, on medium, natively.** The commonest mistake is still a neighbouring name:
+702 `enumeration` requests read as `reconnaissance`. 701 are probes for named files — `/.svn/entries`,
+`/backup.zip`, `/db.sql`, `/cgi-bin/test.cgi` and a few dotfiles — mostly under a browser's
+User-Agent, the shape the [ledger](rule-pack-ledger.md) left alone on 2026-10-05 because the same
+request line is labelled by which campaign sent it. After it come 75 `unknown` read as
+`static_asset`, all the shop's own `FettleImporter/1.0` fetching its logo, which is site-specific;
+and 67 `authentication` read as `browsing`, two administrators viewing `/admin/`, `/admin/users`
+and `/admin/orders` — by the principle `action_account_area` states, a page behind a login is
+still a page view.
+
+The commands that produced every column, per tier:
+
+```bash
+B=datasets/apache-shopfront/2026-10-06-medium
+(cd $B && sha256sum -c SHA256SUMS)
+logarc ingest $B/access.log --case ./case --no-crs
+logarc enrich --case ./case
+logarc evaluate -c ./case -t $B/truth.jsonl -o native.json --no-crs
+logarc evaluate -c ./case -t $B/truth.jsonl -o crs.json
+```
+
+A rebuild from the recipe will not have these digests: the dataset reproduces its plan of requests
+from a seed, not its bytes (see below). Expect the last decimal to move, and say which build was
+measured.
+
+## The previous baseline — 2026-09-21
+
+**Superseded on 2026-10-06 by the section above.** Kept because the corpus defects found against it,
+and what was done about them, are still the reasons the rules are shaped as they are. Everything
+below *this* section was measured on builds whose bytes can no longer be obtained.
 
 Measured on two builds taken at one commit with the working tree clean, from a dataset that had
 just had a defect fixed in it — its forced-browsing attacker never signed in, so the application's
@@ -378,12 +482,14 @@ logarc evaluate -c /tmp/c -t tests/data/apache-shopfront/excerpt.truth.jsonl
 |---|---:|---:|
 | Caught | 1,123 | **1,125** |
 | **False alarms** | **0** | **0** |
-| Classification accuracy | 0.9339 | 0.9341 |
-| Macro F1 | 0.7855 | **0.7956** |
+| Classification accuracy | 0.9561 | 0.9563 |
+| Macro F1 | 0.8004 | **0.8107** |
 
-Figures as of 2026-09-30, when the commerce action pack was removed; before
-that they were accuracy 0.9344 and 0.9346, macro F1 0.7860 and 0.7961. The
-[rule-pack ledger](rule-pack-ledger.md) has both sides and how to reproduce them.
+Figures as of 2026-10-05, after crawlers that never say `bot` and scripts
+described by what they asked for; on 2026-09-30, when the commerce action pack
+was removed, they were accuracy 0.9339 and 0.9341, macro F1 0.7855 and 0.7956.
+Detection has not moved since. The [rule-pack ledger](rule-pack-ledger.md) has
+each step and how to reproduce it.
 
 Both fixtures now carry a `crs_fingerprint`: the CRS one names the ruleset that
 produced its detections, and the native one records `null`, which is a claim
@@ -1176,7 +1282,7 @@ and the measurement behind it could not have come out any other way.
 
 ## Limits of these numbers
 
-**One build of one application.** Both builds are the same PHP shop, driven by the same roster of
+**One application.** Every build here is the same PHP shop, driven by the same roster of
 personas and tools. Nothing here separates what is true of this tool from what is true of that
 shop. A second project in the dataset is what would answer it.
 
@@ -1189,12 +1295,11 @@ the ordering within a session is as captured. The threshold sweeps are the part 
 most exposed to that, and the episode-gap table should be read as establishing that the parameter
 behaves sensibly rather than as choosing a value for a real deployment.
 
-**Three categories score zero, and one of them structurally.** `unknown` cannot be predicted at
-all, because no rule assigns it, so it enters the macro average as a guaranteed zero over 442
-requests.
-`access_control` and `exploitation` are genuine gaps at supports of 28 and 8. Any per-class figure
+**The smallest categories decide the macro average.** On the headline build `access_control`
+names 9 of 31 and `exploitation` 4 of 8, and they count as much as `static_asset` at 162,801.
+`unknown`, which no rule could assign until 2026-10-05, now names 124 of 201. Any per-class figure
 below about fifty requests of support should be read as an indication, not a measurement; five
-categories are below it on each build.
+categories are below it on the headline build.
 
 **The truth's grain differs from the tool's, and it costs 114 boundaries.** The truth cuts inside
 the episode gap at 152 places between ordinary requests; the tool draws 38 of those for other
@@ -1209,14 +1314,15 @@ the largest hole in this evaluation. The dataset does record what each campaign 
 closing it is possible.
 
 **The false-alarm rate is measured on a corpus that is mostly ordinary**, which is the right
-shape: 225,881 of 243,908 lines come from clients doing nothing hostile. That is a change from
+shape: 218,583 of the headline build's 235,732 requests are labelled harmless. That is a change from
 the generated corpus, where a third of traffic was an attack and the rate was measured on less
 benign traffic than a deployment would present.
 
-**The CRS regression rate has a ceiling of 27%.** Only 1,138 of that corpus's 4,224 cases are
-visible to a tool reading an access log at all; the rest carry their payload in a body or an
-unlogged header, or assert that nothing should match. The 12.3% is also a floor within that
-ceiling: status is synthesised as 200, which disables the one bundled rule that needs a 4xx.
+**The CRS corpus figure has a ceiling.** 2,650 of its cases carry their payload in a body or a
+header no access log writes, and no tool reading a log can reach them; `logarc score-crs` leaves
+them out rather than counting them as misses. Of the 1,099 that remain the native rules catch 960
+(87.4%), and they fire on none of the 134 the corpus certifies as harmless. Status is synthesised
+as 200 for every case, so a rule that needs a 4xx cannot fire there at all.
 
 **Recall on CSIC 2010 has a ceiling below 100%.** A substantial share of its attacks carry their
 payload in a POST body, and a web server access log records the request line and nothing after it.

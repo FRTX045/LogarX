@@ -227,53 +227,51 @@ with a pattern of your own.
 
 Measured on a real Apache log whose contents are known: the
 [BlackHat-Dataset](https://github.com/FRTX045/BlackHat-Dataset) `apache-shopfront`
-`2026-09-20-medium` build — 237,278 requests over seven days, a real PHP shop
+`2026-10-06-medium` build — 235,732 requests over seven days, a real PHP shop
 driven by real security tools, where a tagging proxy joins every line to a record
 of which client made the request and why. It includes an administrator doing
 ordinary work, which matters more than it sounds: see the false-alarm figure.
 
-Measured 2026-09-20 on a build made at a named commit from a clean tree, whose
-checksums were verified before scoring. Native rules only; CRS, which now runs
+Measured 2026-10-06 on a build made at a named commit from a clean tree, whose
+checksums were verified before scoring. Native rules only; CRS, which runs
 after every scan by default, is the paragraph below the table.
 
 | | |
 |---:|---|
-| **0.975** | accuracy over 237,278 requests |
-| **0.978** | weighted F1 |
-| **0.742** | macro F1 — *see below* |
+| **0.996** | accuracy over 235,732 requests |
+| **0.996** | weighted F1 |
+| **0.870** | macro F1 — *see below* |
 | **1.000 / 0.994** | attack precision / recall |
-| **1 request** | false alarms, in 237,278 |
-| **31,102** | lines per second ingesting |
+| **0 requests** | false alarms, in 235,732 |
+| **85,908** | lines per second ingesting, with the default four workers |
 | **0** | lines quarantined, and 0 truth lines unmatched |
 
-**Both numbers, or neither.** One false alarm in 237,278 requests is one axis and
-not a claim that the rules are nearly right. Macro F1 of 0.742 is the other, and
-it is an unweighted mean over fourteen categories, so a category with eight
-requests counts as much as one with tens of thousands. `unknown` is a structural
-zero — no rule can assign it — and costs about 0.05 on its own. The tool's
-commonest mistake is calling an attack by a neighbouring name, 5,335 times
+**Both numbers, or neither.** No false alarm in 235,732 requests is one axis and
+not a claim that the rules are nearly right. Macro F1 of 0.870 is the other, and
+it is an unweighted mean over fourteen categories, so a category with five
+requests counts as much as one with 162,801. The weakest are the smallest:
+`access_control` names 9 of 31, and reads 13 of the rest as a sign-in and 8 as
+a page view, which is what each looks like one request at a time; `unknown`
+names 124 of 201. The
+tool's commonest mistake is calling an attack by a neighbouring name, 702 times
 `enumeration` read as `reconnaissance`, which costs nothing on the first axis and
-a great deal on the second. Both are printed so neither can hide the other.
-Re-scored 2026-10-05 on the same bytes, most of that mistake is gone: tools
-that sweep a wordlist are now named as enumeration, and it falls from 5,325
-requests to 715, with accuracy 0.9945 and macro F1 0.810 natively.
+something on the second. Both are printed so neither can hide the other.
 
-**With OWASP CRS at paranoia level 2**, re-scored on 2026-10-05 against the same
-bytes (checksums re-verified), the build scores accuracy 0.975, macro F1 0.721
-and **74 false alarms**; the native rules, the same day, score 0.975, 0.768 and 1.
-73 of the 74 are one request repeated: this build labels as harmless an
-administrator importing the shop's logo *by a literal IP address*, which is the
-one feature that separates that request from the attack it mirrors.
-[docs/evaluation.md](docs/evaluation.md#what-the-96-turned-out-to-be) traces it;
-the dataset fixed it in later builds. On the final `2026-10-04` builds, where it
-is fixed, CRS catches 1 to 3 more attacks per tier than the native rules alone
-and raises at most one false alarm per tier that they do not.
+**With OWASP CRS at paranoia level 2**, the same build scores accuracy 0.996,
+macro F1 0.869 and **0 false alarms**, and catches one attack the native rules
+miss: 17,045 against 17,044. Across the three `2026-10-06` builds CRS adds 1 to
+3 catches per build and one false alarm in all — a Google Ads click ID read as
+SQL on the small one. Until 2026-10-06 CRS also called the shop's own unfilled
+`?id=${id}` placeholder an injection, 149 times on this build;
+[the rule-pack ledger](docs/rule-pack-ledger.md) has how that was found and
+what changed.
 
 **Macro F1 is lower than the figure this project once published, and that is not
 a regression.** Until September 2026 accuracy was measured against a corpus this
 project generated itself, which scored macro F1 0.958. Moving to a log written by
-a real server dropped it to 0.633, and careful work has since brought it back to
-0.742 — against real traffic, not against a corpus built to be scored. That first
+a real server dropped it to 0.633, and work on the rules — and on defects the
+dataset found in itself — has since brought it to 0.870 on the current build:
+against real traffic, not against a corpus built to be scored. That first
 drop was the first honest measurement, and
 [ADR-0011](docs/adr/0011-a-real-server-log-is-the-headline-corpus.md) records why
 the generator was deleted rather than kept.
