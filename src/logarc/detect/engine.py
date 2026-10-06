@@ -832,6 +832,21 @@ _HEARSAY_VARS: Final[tuple[str, ...]] = ("request_headers:referer",)
 #: chain doubles the prefix, which the same tier also carried.
 _CHAIN_PREFIXES: Final[tuple[str, ...]] = ("matched_vars:", "matched_var:")
 
+#: A matched value that is nothing but a template's unfilled slot: `${id}`.
+#:
+#: `php_superglobal` stopped calling a bare `${name}` PHP on 2026-10-05 — its
+#: comment in `attack/php.yaml` has the evidence — and with CRS on by default
+#: that decision was undone on every enriched case. 933135 (PHP variable access)
+#: and 932130 (Unix shell expression) both match `${id}`, at paranoia level 1 and
+#: critical, so withholding either by id would only hand the label to the other.
+#: On the dataset's `2026-10-06` tiers that was 44 / 149 / 670 ordinary
+#: `/api/stock?id=${id}&watch=1` requests named an injection.
+#:
+#: The same line the native rule draws: a plain name and nothing else. A space,
+#: a quote, a `$`, a call or anything around it is PHP's own syntax or more than
+#: a slot, and still names the request.
+_TEMPLATE_SLOT: Final = re.compile(r"\$\{[a-z_][a-z0-9_.]*\}", re.IGNORECASE)
+
 
 def _names_activity(detection: CrsDetection) -> bool:
     """Whether this detection may be the answer, as opposed to corroboration.
@@ -841,6 +856,8 @@ def _names_activity(detection: CrsDetection) -> bool:
     investigator's attention. This governs only whether it can name the
     activity.
     """
+    if _TEMPLATE_SLOT.fullmatch(detection.transformed_value):
+        return False
     variable = detection.matched_var.strip().lower()
     # Repeatedly: a chain inside a chain reports `MATCHED_VARS:MATCHED_VARS:...`.
     while variable.startswith(_CHAIN_PREFIXES):

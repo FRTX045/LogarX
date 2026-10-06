@@ -561,6 +561,7 @@ def crs_detection(
     severity: str = "critical",
     msg: str = "SQL Injection Attack Detected via libinjection",
     matched_var: str = "ARGS:q",
+    transformed_value: str = "1' UNION SELECT",
 ) -> CrsDetection:
     return CrsDetection(
         source_file_id="access.log",
@@ -569,7 +570,7 @@ def crs_detection(
         severity=severity,
         msg=msg,
         matched_var=matched_var,
-        transformed_value="1' UNION SELECT",
+        transformed_value=transformed_value,
         attack_family=family,
     )
 
@@ -728,6 +729,63 @@ def test_a_payload_in_a_parameter_still_names_the_request(engine: RuleEngine) ->
 
     assert labelled.label.rule_id == "crs:932140"
     assert labelled.label.category is ActivityCategory.INJECTION
+
+
+def test_an_unfilled_template_slot_does_not_name_the_request(engine: RuleEngine) -> None:
+    """A shop's front end sends `/api/stock?id=${id}&watch=1` with the slot
+    unfilled, from ordinary browsers: 44 / 149 / 670 requests on the dataset's
+    `2026-10-06` tiers, all `api_call` in the truth.
+
+    `php_superglobal` stopped calling a bare `${name}` PHP on 2026-10-05. CRS
+    did not: 933135 (PHP variable access) and 932130 (Unix shell expression)
+    both match the parameter, at paranoia level 1 and critical, so with CRS on
+    by default every one of them was named an injection again. Both are kept as
+    evidence; neither may name the activity.
+    """
+    detections = crs_index(
+        crs_detection(
+            rule_id=933135,
+            family="attack-injection-php",
+            msg="PHP Injection Attack: Variable Access Found",
+            matched_var="ARGS:id",
+            transformed_value="${id}",
+        ),
+        crs_detection(
+            rule_id=932130,
+            family="attack-rce",
+            msg="Remote Command Execution: Unix Shell Expression Found",
+            matched_var="ARGS:id",
+            transformed_value="${id}",
+        ),
+    )
+    events = [event(path="/api/stock", query="id=${id}&watch=1", user_agent="Mozilla/5.0")]
+
+    (labelled,) = engine.label_events(events, crs=detections)
+
+    assert not labelled.label.category.is_hostile
+    assert [item.rule_id for item in labelled.crs] == [933135, 932130]
+
+
+def test_php_s_own_variable_syntax_still_names_the_request(engine: RuleEngine) -> None:
+    """The other side: only a plain name in the braces is a template's slot.
+
+    `${'ff'}` is a CRS 933135 attack case, and nothing a template writes has a
+    quote, a `$` or a call inside — the same line `php_superglobal` draws.
+    """
+    for value in ("${'ff'}", "${$a}", "${id}(30)", "$ {id}", "x;${id}"):
+        detection = crs_detection(
+            rule_id=933135,
+            family="attack-injection-php",
+            msg="PHP Injection Attack: Variable Access Found",
+            matched_var="ARGS:foo",
+            transformed_value=value,
+        )
+
+        (labelled,) = engine.label_events(
+            [event(path="/get", query="foo=x")], crs=crs_index(detection)
+        )
+
+        assert labelled.label.rule_id == "crs:933135", value
 
 
 def test_a_real_claim_still_outranks_crs(engine: RuleEngine) -> None:

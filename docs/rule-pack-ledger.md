@@ -43,6 +43,7 @@ implying the CRS column was ever checked.
 | 2026-10-05 | *this pass* | **php** — a `${name}` placeholder is not PHP | 933 **179 → 178**, 941 61 → 61 after one recovered; overall 961 → **960** of 1,099 | 0 in every family; excerpt unchanged on both engines; the dataset's 41 / 129 / 659 placeholder requests no longer injection | 0, one narrowed, one widened |
 | 2026-10-05 | *this pass* | **recon** — content-discovery tools are enumeration | corpus unchanged, 961 of 1,099; medium caught 17,069 → 17,069 native, 17,071 → 17,071 CRS; **medium accuracy 0.9751 → 0.9945 native, 0.9747 → 0.9941 CRS** | 0 in every family; excerpt unchanged on both engines; medium 1 → 1 native, 74 → 74 CRS | 1, one narrowed |
 | 2026-10-05 | *this pass* | **the finish** — 934 and 943's last catchable shapes; every family closed out | 934 **91% → 95%** (176 → 183), 943 **90% → 92%** (36 → 37); overall 86.7% → **87.4%** (953 → 961 of 1,099) | 0 in every family; excerpt unchanged on both engines; medium 17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS | 2, three extended |
+| 2026-10-06 | *this pass* | **crs** — the `${name}` placeholder, from the other engine | corpus unchanged (native only); caught unchanged on all three `2026-10-06` tiers, both engines (small 4,016, medium 17,045, large 40,613); **CRS macro F1 0.8412 → 0.8600 small, 0.8286 → 0.8687 medium, 0.7703 → 0.8293 large** | **CRS 45 → 1 small, 149 → 0 medium, 670 → 0 large**; native 0 → 0 on all three; excerpt and demo contain no `${name}` | 0, one engine condition |
 
 The 2026-09-20 pass is the first measured against a corpus containing a
 legitimate administrator, and it went the same way round as the recon pass: it
@@ -777,6 +778,51 @@ the dot no longer hides it. 941 stays at 61. Overall 961 → **960** of 1,099,
 0 fired wrongly in every family; the excerpt and `2026-09-20-medium` contain no
 `${` and did not move; whole-engine cost on long `${`, `$ {` and `. call`
 inputs is flat per character.
+
+### 2026-10-06 — crs: the same placeholder, from the other engine
+
+**The pass above was only ever measured natively, and with CRS on it had not
+held.** The ledger row says "the dataset's 41 / 129 / 659 placeholder requests
+no longer injection"; that was true of the native rules, and the tiers it
+counted were held unscored, so nothing ran them through CRS. The first clean
+tiers after it (`2026-10-06`, built from `d2ef291`) did, and CRS named every
+placeholder request an injection again:
+
+| `2026-10-06`, CRS on | small | medium | large |
+|---|---:|---:|---:|
+| `${id}` requests, all `api_call` in the truth | 44 | 149 | 670 |
+| false alarms, before | 45 | 149 | 670 |
+| — of which `${id}` | 44 | 149 | 670 |
+
+Two CRS rules match `${id}`, both critical at paranoia level 1: 933135, PHP
+variable access (`\$\s*\{\s*\S[^\{\}]*\}`), and 932130, Unix shell expression.
+On small, 933135 won the label on all 44. **Withholding it by id would have
+changed nothing** — 932130 sits on the same value and would have taken over, the
+whack-a-mole the 931100/931130 pair taught. So the condition is on the shape,
+not the rule: a detection whose matched value is *entirely* `${name}` is kept
+on the request as evidence and may not name it (`_TEMPLATE_SLOT` in
+`detect/engine.py`, beside the Referer rule that works the same way). It is
+the line `php_superglobal` already draws — a plain name and nothing else — and
+a test pins the other side: `${'ff'}`, `${$a}`, `${id}(30)`, `$ {id}` and
+`x;${id}` still name the request, and checking for `${name}` anywhere in the
+value instead of the whole value fails that test on `${id}(30)`.
+
+| CRS on | before | after |
+|---|---:|---:|
+| small: caught / false alarms | 4,016 / 45 | 4,016 / **1** |
+| small: accuracy / macro F1 | 0.9948 / 0.8412 | 0.9955 / **0.8600** |
+| medium: caught / false alarms | 17,045 / 149 | 17,045 / **0** |
+| medium: accuracy / macro F1 | 0.9952 / 0.8286 | 0.9958 / **0.8687** |
+| large: caught / false alarms | 40,613 / 670 | 40,613 / **0** |
+| large: accuracy / macro F1 | 0.9954 / 0.7703 | 0.9961 / **0.8293** |
+
+Native is identical before and after on all three, field for field. The one
+false alarm left on small is CRS 942100 (libinjection) reading a Google Ads
+`gclid` token as SQL — a random token, and nothing to do with the placeholder.
+
+The cost is the same as the native rule's: CRS's own `/get?foo=${a}` case is
+no longer an injection when CRS alone saw it. The CRS corpus figure is native
+only and does not move.
 
 ### 2026-10-05 — recon: the tools that sweep a wordlist are enumeration
 

@@ -118,6 +118,15 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `?foo=${a}`, is the same characters as the placeholder. A spaced
   `. call``…`` is now caught by the XSS rules, which it had slipped past.
 
+- **…and CRS no longer calls it injection either.** With CRS on by default,
+  two CRS rules (933135, PHP variable access, and 932130, Unix shell
+  expression) still matched `${id}` and named the request an injection, so the
+  change above only held with CRS turned off. A CRS match on a value that is
+  nothing but `${name}` is now kept as evidence and no longer names the
+  request. On the dataset's 2026-10-06 builds with CRS on, false alarms go
+  from 45 to 1 (63,310 requests), 149 to 0 (235,732) and 670 to 0
+  (941,031), with the same attacks caught.
+
 - **Apache connecting to itself is no longer reported as a client.** Apache
   wakes its own worker processes with `OPTIONS *` from `127.0.0.1`, and logs
   it; that was reported as an API call. It is now named Apache Internal
