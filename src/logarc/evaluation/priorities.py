@@ -234,3 +234,49 @@ def assert_same_ranked(orders: Mapping[str, Sequence[str]]) -> None:
     sets = {name: frozenset(order) for name, order in orders.items()}
     if len(set(sets.values())) > 1:
         raise ValueError(f"orderings do not rank the same clients: {sorted(sets)}")
+
+
+def exploit_orderings(
+    profiles: Sequence[ClientProfile],
+    *,
+    category_rules: frozenset[str],
+    eligible_rules: frozenset[str],
+) -> dict[str, list[str]]:
+    """Policy 3, the exploit-evidence-first order and the category-only comparator over the
+    same clients, plus the order the application itself produces.
+
+    `exploit_first` and `category_only` read each client's `hostile_rules`, the rule ids of
+    every hostile label on its requests, rather than `exploit_examples`, so the
+    application's ordering is checked against a separate computation. `crs:` ids appear in
+    `hostile_rules` but in neither rule set, so they never place a client first.
+    `category_rules` are the ids of the engine's attack-category rules and `eligible_rules`
+    the same without the five exclusions; both are required so neither can be defaulted.
+    """
+    selected = [p for p in profiles if p.hostile_requests]
+
+    def order(group: Callable[[ClientProfile], int]) -> list[str]:
+        return [
+            p.client_ip
+            for p in sorted(
+                selected,
+                key=lambda p: (
+                    group(p),
+                    -priority_score(p),
+                    -len(p.categories),
+                    -p.hostile_targets,
+                    -p.hostile_requests,
+                    p.client_ip,
+                ),
+            )
+        ]
+
+    return {
+        "policy3": order(lambda p: 0),
+        "exploit_first": order(
+            lambda p: 0 if any(r in eligible_rules for r in p.hostile_rules) else 1
+        ),
+        "category_only": order(
+            lambda p: 0 if any(r in category_rules for r in p.hostile_rules) else 1
+        ),
+        "app": [row.profile.client_ip for row in rank_profiles(selected, "suspicious")],
+    }

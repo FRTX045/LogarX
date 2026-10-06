@@ -15,12 +15,21 @@ from logarc.evaluation.priorities import (
     assert_same_ranked,
     audit_unusual,
     bonus_parts,
+    exploit_orderings,
     graded_orderings,
 )
 from logarc.evaluation.triage import compare_rankings
 from logarc.evaluation.truth import GroundTruth, read_truth
 from logarc.storage.case import CaseManifest, SourceRecord
-from logarc.triage.profile import ClientProfile, high_confidence_match, priority_score
+from logarc.triage.profile import (
+    DEFAULT_POLICY,
+    NOT_EXPLOIT_EVIDENCE,
+    TARGETED,
+    ClientProfile,
+    high_confidence_match,
+    priority_score,
+    rank_profiles,
+)
 from logarc.triage.reasons import suspicious_reasons
 from logarc.triage.scan import iter_labelled, read_profiles, scan_case
 
@@ -233,6 +242,96 @@ def evaluate_graded_case(root: Path, source: Path, truth_path: Path) -> dict[str
         "head": head,
         "benign_head": benign_head,
         "audit": _audit(root, verified.truth, quiet, profiles),
+    }
+
+
+def evaluate_exploit_case(root: Path, source: Path, truth_path: Path) -> dict[str, Any]:
+    """Verify the case, then score the exploit-evidence-first order against policy 3 and the
+    category-only comparator on grades from the truth file alone.
+
+    `queue` is taken from the scanned profiles before any truth exclusion, so it can be
+    compared with another build's queue. `app_equals_exploit_first` compares the application's
+    order with the one computed here from `hostile_rules`. `orderings_share_members` only
+    checks that the orderings rank the same clients, which they do by construction (one
+    profile list). `crs_only_first` lists clients the application puts first that have no
+    eligible native rule among their hostile rules; it must be empty.
+    """
+    verified = _verified(root, source, truth_path)
+    exclusions = verified.exclusions
+    truth = client_truth(verified.truth.records, exclusions)
+    result = scan_case(root)
+    scanned = read_profiles(result.path)
+    queue = [row.profile.client_ip for row in rank_profiles(scanned, "suspicious")]
+    queue_policy3 = graded_orderings(scanned)["policy3"]
+    with Case.open(root) as case:
+        engine = case.rule_engine()
+    category_rules = frozenset(r.id for r in engine.rules if r.category in TARGETED)
+    eligible_rules = category_rules - NOT_EXPLOIT_EVIDENCE
+    profiles = {p.client_ip: p for p in scanned if p.client_ip not in exclusions}
+    orders = exploit_orderings(
+        tuple(profiles.values()), category_rules=category_rules, eligible_rules=eligible_rules
+    )
+    shared = len({frozenset(order) for order in orders.values()}) == 1
+    scores = {
+        name: graded_scores(orders[name], truth)
+        for name in ("policy3", "exploit_first", "category_only")
+    }
+
+    def first(order: list[str], group: frozenset[str]) -> list[str]:
+        return sorted(ip for ip in order if any(r in group for r in profiles[ip].hostile_rules))
+
+    app_first = [
+        row.profile.client_ip
+        for row in rank_profiles(tuple(profiles.values()), "suspicious")
+        if row.profile.exploit_examples
+    ]
+    targeted = [
+        {
+            "ip": ip,
+            "grade": item.grade,
+            "hostile": item.hostile,
+            "requests": item.requests,
+            "exploit_rules": list(profiles[ip].exploit_rules),
+            "ranks": {
+                name: order.index(ip) + 1 if ip in order else 0 for name, order in orders.items()
+            },
+        }
+        for ip, item in sorted(truth.items())
+        if item.grade == 2
+    ]
+    return {
+        "identity": {
+            "case": verified.manifest.case_id,
+            "scenario": verified.truth.scenario,
+            "seed": verified.truth.seed,
+            "source_sha256": verified.source_hash,
+            "truth_sha256": file_hash(truth_path),
+            "crs_sha256": file_hash(root / "crs.jsonl"),
+            "policy_version": DEFAULT_POLICY.version,
+            **verified.manifest.config,
+        },
+        "judged": len(truth),
+        "judgment_exclusions": exclusions,
+        "methods": {name: asdict(value) for name, value in scores.items()},
+        "first_group": {
+            "policy3": [],
+            "exploit_first": first(orders["exploit_first"], eligible_rules),
+            "category_only": first(orders["category_only"], category_rules),
+            "app": sorted(app_first),
+        },
+        "app_equals_exploit_first": orders["app"] == orders["exploit_first"],
+        "orderings_share_members": shared,
+        "queue": {
+            "members": sorted(queue),
+            "policy3": queue_policy3,
+            "app": queue,
+        },
+        "crs_only_first": sorted(
+            ip
+            for ip in app_first
+            if not any(r in eligible_rules for r in profiles[ip].hostile_rules)
+        ),
+        "targeted": targeted,
     }
 
 

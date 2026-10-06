@@ -165,3 +165,31 @@ def test_the_audit_flags_high_confidence_rules_that_matched_benign_truth(tmp_pat
     assert injection
     assert audit["low_support_with_match"] == ["192.0.2.10"]
     assert audit["low_support_without_match"] == []
+
+
+def test_exploit_study_reports_orderings_identity_and_the_pre_exclusion_queue(tmp_path):
+    from logarc.evaluation.triage_study import evaluate_exploit_case
+
+    result = evaluate_exploit_case(*graded_fixture(tmp_path))
+    assert {
+        "identity",
+        "judged",
+        "judgment_exclusions",
+        "methods",
+        "first_group",
+        "app_equals_exploit_first",
+        "orderings_share_members",
+        "queue",
+        "crs_only_first",
+        "targeted",
+    } <= set(result)
+    assert result["identity"]["policy_version"] == 4
+    assert result["app_equals_exploit_first"] is True
+    assert result["crs_only_first"] == []
+    assert set(result["methods"]) == {"policy3", "exploit_first", "category_only"}
+    assert set(result["first_group"]) == {"policy3", "exploit_first", "category_only", "app"}
+    assert {"members", "policy3", "app"} <= set(result["queue"])
+    (targeted,) = result["targeted"]
+    assert targeted["ip"] == "192.0.2.10"
+    assert set(targeted["ranks"]) == {"policy3", "exploit_first", "category_only", "app"}
+    assert targeted["exploit_rules"]
