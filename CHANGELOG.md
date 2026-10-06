@@ -131,6 +131,19 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Suspicious activity puts clients with exploit evidence first.** A client
+  whose own request matched a native injection, path traversal, access-control,
+  credential, SSRF or exploitation rule now comes before every client without
+  such a match, and its recommendation opens with that rule and the request it
+  matched. Each group keeps the earlier ordering by flagged volume. CRS matches
+  never place a client first, and five rules that record where a client went or
+  what the server answered (`admin_area_probe`, `forced_browsing`,
+  `forced_browsing_succeeded`, `admin_reached_without_signing_in`,
+  `server_errors_provoked`) are left out, which can leave genuine access-control
+  attacks in the second group. Existing triage indexes are rebuilt on first open.
+  The development measurement will be in `docs/evaluations/`; no figures are
+  claimed until it is written. See `docs/ip-prioritization.md`.
+
 - **CRS enrichment shares its work between up to four sidecars.** Each
   batch's distinct requests are split across as many sidecar processes as
   there are cores, up to four, and the answers merge back by line. Measured

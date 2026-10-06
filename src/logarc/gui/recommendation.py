@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from logarc.triage.profile import PriorityReason, RankedClient, RequestExample
 
 TITLES = {
+    "exploit_evidence": "Exploit evidence",
     "support": "Flagged requests",
     "distinct_rules": "Distinct rule matches",
     "sequence": "Probe, then an attack pattern",

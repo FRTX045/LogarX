@@ -261,5 +261,5 @@ def test_suspicious_reasons_follow_the_code_not_the_cached_text(tmp_path):
         )
         connection.commit()
     (row,) = read_page(result.path, "suspicious").rows
-    assert row.reasons[0].kind == "support"
+    assert [reason.kind for reason in row.reasons[:2]] == ["exploit_evidence", "support"]
     assert "stale wording" not in {reason.text for reason in row.reasons}

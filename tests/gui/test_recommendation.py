@@ -245,3 +245,21 @@ def test_the_full_request_includes_its_query():
         row(matches(payload)), path_chars=60, expanded=frozenset({(0, 0)})
     )
     assert f"GET /search?{payload.query}" in whole
+
+
+def test_exploit_evidence_is_titled_and_shows_its_request():
+    from logarc.gui.recommendation import TITLES, render_recommendation
+
+    lead = PriorityReason(
+        "Rule A matched a request to /login.",
+        (EvidenceRef("access.log", 1),),
+        kind="exploit_evidence",
+        why="Inspect the request.",
+        summary="Exploit evidence: Rule A",
+        examples=(example(1),),
+    )
+    assert TITLES["exploit_evidence"] == "Exploit evidence"
+    html = render_recommendation(row(lead))
+    assert "1. Exploit evidence" in html
+    assert "Rule A matched a request to /login." in html
+    assert "Examples: 1 shown" in html

@@ -493,7 +493,7 @@ def test_the_queue_shows_each_clients_key_observation(qt_app, tmp_path):
     panel = selected_panel(qt_app, make_case(tmp_path))
     assert panel.table.horizontalHeaderItem(2).text() == "Key observation"
     assert panel.table.item(0, 2).text() == summary_for(panel._rows[0])
-    assert "requests flagged" in panel.table.item(0, 2).text()
+    assert panel.table.item(0, 2).text().startswith("Exploit evidence: ")
     assert panel.open_client.text() == "Inspect supporting requests"
     panel.close()
 

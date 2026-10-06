@@ -268,6 +268,40 @@ def test_one_hostile_session_is_not_recurrence(plain):
     assert "recurrence" not in kinds(suspicious_reasons(replace(plain, sessions=5)))
 
 
+def exploiting(plain):
+    return replace(
+        plain,
+        exploit_examples=(example(7, "/search", "SQL Injection (UNION SELECT)"),),
+        exploit_rules=("sqli_union_select",),
+    )
+
+
+def test_a_client_with_exploit_evidence_leads_with_the_rule_and_the_request(plain):
+    from logarc.triage.reasons import suspicious_reasons
+
+    profile = exploiting(plain)
+    reasons = suspicious_reasons(profile)
+    assert kinds(reasons)[:2] == ["exploit_evidence", "support"]
+    lead = reasons[0]
+    assert lead.evidence == (EvidenceRef("access.log", 7),)
+    assert lead.examples == profile.exploit_examples
+    assert lead.text == "SQL Injection (UNION SELECT) matched a request to /search."
+    assert lead.summary == "Exploit evidence: SQL Injection (UNION SELECT)"
+    assert "does not show what the request achieved" in lead.why
+    assert reasons[1:] == suspicious_reasons(plain)
+
+
+def test_an_exploit_request_without_a_path_says_so(plain):
+    from logarc.triage.reasons import suspicious_reasons
+
+    profile = replace(
+        plain,
+        exploit_examples=(replace(example(7, note="Rule A"), path=None),),
+        exploit_rules=("a",),
+    )
+    assert suspicious_reasons(profile)[0].text == "Rule A matched a request to an unrecorded path."
+
+
 def test_no_reason_claims_more_than_the_evidence_shows(plain):
     from logarc.triage.reasons import suspicious_reasons
 
@@ -279,7 +313,8 @@ def test_no_reason_claims_more_than_the_evidence_shows(plain):
         sequence_examples=(example(1, "/a", "Reconnaissance"), example(2, "/b", "Rule A")),
     )
     words = " ".join(
-        f"{item.text} {item.why} {item.summary}".lower() for item in suspicious_reasons(profile)
+        f"{item.text} {item.why} {item.summary}".lower()
+        for item in suspicious_reasons(exploiting(profile))
     )
     for banned in (
         "confirmed",
@@ -304,7 +339,8 @@ def test_the_order_of_the_queue_is_unchanged():
     loud = profile_client(events("192.0.2.1", 30, path="/etc/passwd"), engine)
     ranked = rank_profiles([quiet, loud], "suspicious")
     assert [row.profile.client_ip for row in ranked] == ["192.0.2.1", "192.0.2.9"]
-    assert all(row.reasons[0].kind == "support" for row in ranked)
+    assert all(row.reasons[0].kind == "exploit_evidence" for row in ranked)
+    assert all(row.reasons[1].kind == "support" for row in ranked)
 
 
 def test_a_share_that_rounds_to_zero_is_not_shown_as_zero(plain):

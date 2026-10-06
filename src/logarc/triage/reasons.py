@@ -2,9 +2,10 @@
 
 Each reason answers three questions: what was observed (`text`), why that
 observation deserves attention for this client (`why`), and which requests to
-inspect (`examples`, or `evidence` where no request can be named). The flagged
-requests come first because they are what the queue's order rests on; the other
-reasons are context for reading the client, not the source of its rank.
+inspect (`examples`, or `evidence` where no request can be named). A client with
+exploit evidence leads with the rule and request that placed it in the first group;
+the flagged requests come next because they are what orders clients within a group.
+The other reasons are context for reading the client, not the source of its rank.
 
 The wording claims no more than the counts show: a rule's author-assigned rating
 describes the rule, not the request; an ordering in one session is not one actor's
@@ -38,20 +39,41 @@ KINDS = {
 def suspicious_reasons(profile: ClientProfile) -> tuple[PriorityReason, ...]:
     """Reasons in a fixed order, leaving out any that do not apply to this client.
 
-    Flagged requests, which apply to every client in the queue, then distinct rule
-    matches, a probe followed by an attack pattern, detections across sessions, then
-    the per-category reasons profiling wrote.
+    Exploit evidence first when the client has it, then flagged requests, which apply
+    to every client in the queue, then distinct rule matches, a probe followed by an
+    attack pattern, detections across sessions, then the per-category reasons profiling
+    wrote.
     """
     context = [
         reason
         for reason in (_distinct(profile), _sequence(profile), _recurrence(profile))
         if reason is not None
     ]
-    return (_support(profile), *context, *profile.reasons)
+    lead = _exploit_evidence(profile)
+    return (*((lead,) if lead else ()), _support(profile), *context, *profile.reasons)
 
 
 def _plural(count: int, word: str, plural: str | None = None) -> str:
     return f"{count:,} {word if count == 1 else plural or word + 's'}"
+
+
+def _exploit_evidence(profile: ClientProfile) -> PriorityReason | None:
+    """The rule and request that put this client in the first group, if any."""
+    if not profile.exploit_examples:
+        return None
+    first = profile.exploit_examples[0]
+    return PriorityReason(
+        f"{first.note} matched a request to {first.path or 'an unrecorded path'}.",
+        tuple(example.evidence for example in profile.exploit_examples),
+        kind="exploit_evidence",
+        why=(
+            "An eligible native rule in an attack category matched this client's own request, "
+            "which places it before clients with no eligible match. It does not show what the "
+            "request achieved, and the same rule can match harmless requests; inspect the request."
+        ),
+        summary=f"Exploit evidence: {first.note}",
+        examples=profile.exploit_examples,
+    )
 
 
 def _support(profile: ClientProfile) -> PriorityReason:
