@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import os
 import subprocess
 import threading
 from dataclasses import replace
@@ -227,12 +228,15 @@ def test_what_is_remembered_is_bounded(
     no answer is ever wrong."""
     monkeypatch.setattr(sidecar, "_BATCH", 1)
     monkeypatch.setattr(sidecar, "_REMEMBERED", 2)
-    events = [request(1), request(2, OTHER_ATTACK), request(3, "/"), request(4)]
+    events = [request(1), request(2, OTHER_ATTACK), request(3, "/"), request(4, "/x"), request(5)]
 
     found = run_sidecar(events, config=config)
 
-    assert crs.lines_sent() == [1, 2, 3, 4], "the first answer should have been forgotten"
-    assert [line for _, line in _where(found)] == [1, 2, 4]
+    # Sorted: batches overlap, so the sidecars are not called in line order.
+    assert sorted(crs.lines_sent()) == [1, 2, 3, 4, 5], (
+        "the first answer should have been forgotten"
+    )
+    assert [line for _, line in _where(found)] == [1, 2, 5]
 
 
 def test_mapped_loopback_stays_apart_even_where_python_does_not_call_it_loopback(
@@ -308,9 +312,83 @@ def test_sharing_changes_nothing_but_the_time(crs: FakeCrs, config: SidecarConfi
     assert shared == alone
 
 
+def test_six_sidecars_run_at_once_where_the_cores_allow(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Measured 2026-10-06 on four cores behind eight threads: the medium
+    build's 74,153 distinct requests in 24.8 s on four sidecars, 21.0 s on six,
+    20.9 s on eight. Six takes the gain the extra threads have to give."""
+    monkeypatch.setattr(os, "cpu_count", lambda: 16)
+
+    assert sidecar.default_workers() == 6
+
+
+def test_never_more_sidecars_than_cores(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(os, "cpu_count", lambda: 4)
+    assert sidecar.default_workers() == 4
+
+    monkeypatch.setattr(os, "cpu_count", lambda: None)
+    assert sidecar.default_workers() == 1, "a machine that cannot say gets one"
+
+
 def test_a_small_batch_is_not_split(crs: FakeCrs, config: SidecarConfig) -> None:
     """Splitting costs a start-up per sidecar. Under a few hundred requests
     that is most of the work, so a small batch goes to one."""
     run_sidecar(_many(300), config=config, workers=4)
 
     assert len(crs.calls) == 1
+
+
+# -- the next batch while the last one runs ---------------------------------
+#
+# Measured 2026-10-06 on `2026-10-06-medium`, 235,732 requests: of 31.8 s
+# replaying them, 27.6 s was waiting on sidecars and 4.2 s was everything else
+# — reading and keying the next 20,000 — during which no sidecar ran. And every
+# batch waited for its slowest share before the next one began.
+
+
+def test_the_next_batch_starts_while_the_last_is_still_running(
+    config: SidecarConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Proven the way sharing is: the first batch's sidecar cannot finish until
+    a second one is running. Replayed one batch after the other, it waits
+    alone and the barrier breaks."""
+    monkeypatch.setattr(sidecar, "_BATCH", 1)
+    fake = _BarrierCrs(parties=2)
+    monkeypatch.setattr(subprocess, "run", fake)
+
+    found = run_sidecar([request(1), request(2, OTHER_ATTACK)], config=config, workers=2)
+
+    assert [line for _, line in _where(found)] == [1, 2]
+
+
+def test_an_answer_remembered_when_a_batch_is_sent_outlives_the_memory_emptying(
+    crs: FakeCrs, config: SidecarConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fourth request repeats the first, whose answer is remembered when
+    its batch is sent. Settling the third batch then empties the memory, before
+    the fourth settles — and the repeat must still be answered, not lost."""
+    monkeypatch.setattr(sidecar, "_BATCH", 1)
+    monkeypatch.setattr(sidecar, "_REMEMBERED", 2)
+    events = [request(1), request(2, OTHER_ATTACK), request(3, "/"), request(4)]
+
+    found = run_sidecar(events, config=config, workers=1)
+
+    assert sorted(crs.lines_sent()) == [1, 2, 3]
+    assert [line for _, line in _where(found)] == [1, 2, 4]
+
+
+def test_batching_changes_nothing_but_the_time(
+    crs: FakeCrs, config: SidecarConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One batch, or many with replays still in flight when the next is read:
+    the same answers in the same order, repeats across batches included."""
+    targets = [
+        f"/p/{n % 20}?q=1 union select 1" if n % 3 == 0 else f"/p/{n % 20}" for n in range(60)
+    ]
+    events = [request(n, target) for n, target in enumerate(targets, 1)]
+
+    whole = run_sidecar(events, config=config, workers=2)
+    monkeypatch.setattr(sidecar, "_BATCH", 7)
+    pieces = run_sidecar(events, config=config, workers=2)
+
+    assert pieces == whole
+    assert len(whole) == 20
