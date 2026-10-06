@@ -99,12 +99,34 @@ _BATCH: Final = 20_000
 """Records per sidecar invocation. Bounds the pipe buffer and the memory a
 single run holds, without paying process startup per request."""
 
-#: Sidecars run side by side when nobody says otherwise: the cores available,
-#: at most four — the same rule `logarc ingest` uses for its workers, and for
-#: the same reason. Measured 2026-10-05 on `2026-09-20-medium`'s 73,427 distinct
-#: requests: one sidecar 72.3 s, two 39.3 s, four 25.5 s, the same detections,
-#: each sidecar holding about 55 MB at its peak.
-DEFAULT_WORKERS: Final = min(4, os.cpu_count() or 1)
+#: Most sidecars run side by side when nobody says otherwise.
+#:
+#: Measured 2026-10-05 on `2026-09-20-medium`'s 73,427 distinct requests: one
+#: sidecar 72.3 s, two 39.3 s, four 25.5 s, the same detections, each sidecar
+#: holding about 55 MB at its peak. Four was the cap then, the rule `logarc
+#: ingest` uses. It is six since 2026-10-06, measured on four cores behind
+#: eight threads with `2026-10-06-medium`'s 74,153: four 24.8 s, six 21.0 s,
+#: eight 20.9 s — CRS is CPU-bound Go in processes of its own, and unlike
+#: ingest it does get something from the second thread on a core. While six
+#: ran, a 20 ms timer in a Qt window fired at worst 41.5 ms late (39.7 ms with
+#: four), never past 100 ms, so the window stays usable.
+#:
+#: Profiled the same day: 92% of a sidecar's time is CRS evaluating its rules,
+#: half of that Go's `regexp`; `crs/main.go`'s own work — JSON, setting up the
+#: transaction — is under 2%, and no setting of the garbage collector moved
+#: the time. Running more of them is the lever this side has.
+MAX_DEFAULT_WORKERS: Final = 6
+
+
+def default_workers() -> int:
+    """How many sidecars to run when nobody said: the cores there are, at most six.
+
+    `os.cpu_count()` returns `None` when it cannot tell, and that is read as one.
+    """
+    return min(MAX_DEFAULT_WORKERS, os.cpu_count() or 1)
+
+
+DEFAULT_WORKERS: Final = default_workers()
 
 _MIN_SHARE: Final = 500
 """Fewest requests worth a sidecar of their own. One starts in about 0.11 s and

@@ -116,6 +116,15 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   enrichment takes 29.5 s instead of 32.8 s, with the same detections. A stop
   now takes effect after up to two batches rather than one.
 
+- **Up to six sidecars where the cores allow, not four.** On four cores
+  behind eight threads, six replay the medium build's distinct requests in
+  21.0 s against 24.8 s for four; eight are no faster. With both changes, CRS
+  enrichment of the 2026-10-06 builds takes 9.9 s instead of 12.4 s (63,310
+  requests), 26.2 s instead of 32.9 s (235,732) and 71.1 s instead of 92.3 s
+  (941,031), with identical detections. While six run, the window stays
+  responsive: a 20 ms timer fired at worst 41.5 ms late, against 39.7 ms
+  with four. Six cost about 330 MB while they run.
+
 - **A `${name}` placeholder is no longer called PHP injection.** A web page's
   template placeholder sent before it was filled in — `?id=${id}` — was
   reported as injection at high severity; it is what every template language
