@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
+    from concurrent.futures import Future
 
     from logarc.core.event import NormalizedEvent
 
@@ -428,7 +429,8 @@ def run_sidecar(
 
     Events are grouped by source file so a detection can be tied back to the
     line it came from, and each group is sent in batches rather than as one
-    write, so a large case never has more than one batch resident at a time.
+    write, so a large case never has more than two batches resident at a time:
+    the one with the sidecars, and the next, being read.
 
     The grouping is `groupby` over the stream rather than a dict of lists, and
     that difference is the whole point: `EventStore.all_events()` already yields
@@ -447,7 +449,15 @@ def run_sidecar(
     own line and source. On `2026-09-20-medium` that is 73,427 replays instead
     of 237,278. `_replay_key` says what counts as the same.
 
-    `workers` is how many sidecars share a batch's fresh requests, defaulting to
+    **The next batch is read while the last one is replayed**, and its share of
+    the work starts as soon as a sidecar comes free, rather than once the
+    slowest share of the batch before has finished. Measured on
+    `2026-10-06-medium`, doing those one after the other left the sidecars idle
+    for 4.2 s of 31.8. So a stop takes effect after up to two batches rather
+    than one, and progress counted by what has been read runs up to two
+    batches ahead of what has been replayed.
+
+    `workers` is how many sidecars run at once, defaulting to
     `DEFAULT_WORKERS`. It changes how long a run takes and nothing it reports.
     """
     config = config or SidecarConfig()
@@ -456,76 +466,129 @@ def run_sidecar(
 
     remembered: dict[bytes, tuple[CrsDetection, ...]] = {}
     found: list[CrsDetection] = []
-    for source_file_id, group in groupby(events, key=_source_of):
-        # `group` is only valid until the outer iterator advances, so it is
-        # drained here rather than stashed.
-        while batch := list(islice(group, _BATCH)):
-            found.extend(_replay_once(config, batch, source_file_id, remembered, workers))
+    # One pool for the whole run, so the sidecars are shared across batches and
+    # never more than `workers` of them run at once. Threads rather than
+    # processes because the work happens in the sidecars; a thread here only
+    # waits on its pipe.
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        running: _Dispatched | None = None
+        for source_file_id, group in groupby(events, key=_source_of):
+            # `group` is only valid until the outer iterator advances, so it is
+            # drained here rather than stashed.
+            while batch := list(islice(group, _BATCH)):
+                ahead = _dispatch(pool, config, batch, source_file_id, remembered, running, workers)
+                if running is not None:
+                    found.extend(_settle(running, remembered))
+                running = ahead
+        if running is not None:
+            found.extend(_settle(running, remembered))
     return found
 
 
-def _replay_once(
+@dataclass(slots=True)
+class _Dispatched:
+    """A batch whose new requests are with the sidecars, not yet answered."""
+
+    batch: Sequence[NormalizedEvent]
+    keys: list[bytes]
+    source_file_id: str
+    fresh: dict[bytes, NormalizedEvent]
+    """The requests sent, each under the first line it was seen on."""
+
+    known: dict[bytes, tuple[CrsDetection, ...]]
+    """Answers already remembered when the batch was sent, copied out because
+    settling the batch before this one may empty the memory first."""
+
+    replies: list[Future[list[CrsDetection]]]
+
+
+def _dispatch(
+    pool: ThreadPoolExecutor,
     config: SidecarConfig,
     batch: Sequence[NormalizedEvent],
     source_file_id: str,
     remembered: dict[bytes, tuple[CrsDetection, ...]],
+    running: _Dispatched | None,
     workers: int,
-) -> list[CrsDetection]:
-    """One batch: send what has not been seen, answer the rest from memory.
+) -> _Dispatched:
+    """Send a batch's new requests to the sidecars, and return without waiting.
 
-    Answers come back in line order, fresh and remembered interleaved, which is
-    the order the sidecar itself reports in.
+    A request is new unless its answer is remembered, or it is already on its
+    way in the batch before this one — still running, and settled first.
     """
     keys = [_replay_key(event) for event in batch]
+    pending = running.fresh if running is not None else {}
     fresh: dict[bytes, NormalizedEvent] = {}
+    known: dict[bytes, tuple[CrsDetection, ...]] = {}
     for key, event in zip(keys, batch, strict=True):
-        if key not in remembered and key not in fresh:
+        if key in remembered:
+            known[key] = remembered[key]
+        elif key not in pending and key not in fresh:
             fresh[key] = event
+    replies = _share(pool, config, list(fresh.values()), source_file_id, workers) if fresh else []
+    return _Dispatched(batch, keys, source_file_id, fresh, known, replies)
 
-    answers: dict[bytes, tuple[CrsDetection, ...]] = {}
-    if fresh:
-        by_line: dict[int, list[CrsDetection]] = {}
-        for detection in _invoke_shared(config, list(fresh.values()), source_file_id, workers):
+
+def _share(
+    pool: ThreadPoolExecutor,
+    config: SidecarConfig,
+    events: Sequence[NormalizedEvent],
+    source_file_id: str,
+    workers: int,
+) -> list[Future[list[CrsDetection]]]:
+    """`_invoke`, with the requests split between up to `workers` sidecars.
+
+    Each request goes to exactly one of them, and a detection names the line
+    it came from, so the answers merge back by line whatever order the
+    sidecars finish in.
+    """
+    shares = max(1, min(workers, len(events) // _MIN_SHARE))
+    size = -(-len(events) // shares)
+    return [
+        pool.submit(_invoke, config, events[start : start + size], source_file_id=source_file_id)
+        for start in range(0, len(events), size)
+    ]
+
+
+def _settle(
+    dispatched: _Dispatched,
+    remembered: dict[bytes, tuple[CrsDetection, ...]],
+) -> list[CrsDetection]:
+    """Wait for a batch's answers and give every line in it its own.
+
+    Answers come back in line order, fresh and remembered interleaved, which is
+    the order the sidecar itself reports in. A request that was on its way in
+    the batch before is answered from memory: that batch was settled first.
+    """
+    by_line: dict[int, list[CrsDetection]] = {}
+    for reply in dispatched.replies:
+        for detection in reply.result():
             by_line.setdefault(detection.line_no, []).append(detection)
-        for key, event in fresh.items():
-            answers[key] = tuple(by_line.get(event.evidence.line_no, ()))
+    answers = {
+        key: tuple(by_line.get(event.evidence.line_no, ()))
+        for key, event in dispatched.fresh.items()
+    }
 
+    source_file_id = dispatched.source_file_id
     found: list[CrsDetection] = []
-    for key, event in zip(keys, batch, strict=True):
+    for key, event in zip(dispatched.keys, dispatched.batch, strict=True):
         line_no = event.evidence.line_no
-        for answer in answers[key] if key in answers else remembered[key]:
-            if answer.line_no == line_no and answer.source_file_id == source_file_id:
-                found.append(answer)
+        if key in answers:
+            answer = answers[key]
+        elif key in dispatched.known:
+            answer = dispatched.known[key]
+        else:
+            answer = remembered[key]
+        for one in answer:
+            if one.line_no == line_no and one.source_file_id == source_file_id:
+                found.append(one)
             else:
-                found.append(replace(answer, line_no=line_no, source_file_id=source_file_id))
+                found.append(replace(one, line_no=line_no, source_file_id=source_file_id))
 
     if len(remembered) + len(answers) > _REMEMBERED:
         remembered.clear()
     remembered.update(answers)
     return found
-
-
-def _invoke_shared(
-    config: SidecarConfig,
-    events: Sequence[NormalizedEvent],
-    source_file_id: str,
-    workers: int,
-) -> list[CrsDetection]:
-    """`_invoke`, with the requests shared between up to `workers` sidecars.
-
-    Each request goes to exactly one of them, and a detection names the line
-    it came from, so the answers merge back by line whatever order the
-    sidecars finish in. Threads rather than processes because the work happens
-    in the sidecars; a thread here only waits on its pipe.
-    """
-    shares = max(1, min(workers, len(events) // _MIN_SHARE))
-    if shares == 1:
-        return _invoke(config, events, source_file_id=source_file_id)
-    size = -(-len(events) // shares)
-    parts = [events[start : start + size] for start in range(0, len(events), size)]
-    with ThreadPoolExecutor(max_workers=len(parts)) as pool:
-        answers = pool.map(lambda part: _invoke(config, part, source_file_id=source_file_id), parts)
-        return [detection for answer in answers for detection in answer]
 
 
 def _invoke(

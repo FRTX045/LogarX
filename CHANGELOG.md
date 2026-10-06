@@ -109,6 +109,13 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   10.6 s, the committed excerpt 3.3 s to 0.9 s. Each sidecar
   holds about 55 MB at its peak, so four cost about 220 MB while they run.
 
+- **…and the sidecars no longer wait for each other between batches.** The
+  next 20,000 requests are read while the last are replayed, and their share
+  of the work starts as soon as a sidecar comes free rather than when the
+  slowest one finishes. On the 235,732-request 2026-10-06 medium build,
+  enrichment takes 29.5 s instead of 32.8 s, with the same detections. A stop
+  now takes effect after up to two batches rather than one.
+
 - **A `${name}` placeholder is no longer called PHP injection.** A web page's
   template placeholder sent before it was filled in — `?id=${id}` — was
   reported as injection at high severity; it is what every template language
