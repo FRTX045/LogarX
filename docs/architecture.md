@@ -108,10 +108,13 @@ See [ADR-0003](adr/0003-deterministic-three-level-segmentation.md) for the reaso
 **Level 1 — Session.** New session when idle gap > 30 min, User-Agent changes (same IP, different
 client — the NAT/proxy case), or duration exceeds 8 h.
 
-**Level 2 — Request label.** Two rule families, both declarative YAML:
+**Level 2 — Request label.** Three rule families, all declarative YAML:
 - *Signature* — regex over normalized path / query / user-agent / referer.
 - *Behavioural* — windowed metrics such as distinct-path count and 404 ratio, which cannot be
   expressed as a single-request match.
+- *Sequence* — one request, then another within a time, unless a third came between: order
+  rather than quantity, such as being bounced from an admin page and then let into one without
+  signing in.
 
 Matching runs against **normalized** text. Without recursive percent-decoding, `%2553ELECT`
 evades every signature. Decoding is bounded to 3 iterations and the depth is recorded, because a

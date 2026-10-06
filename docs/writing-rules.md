@@ -55,7 +55,7 @@ unchanged in findings and exports; the loader does not translate editions.
 Keep the edition in the value because category numbers change between editions.
 The pack's `version: 1` is its schema version, not an OWASP edition.
 
-## Two kinds of rule
+## Three kinds of rule
 
 ### Signature rules — one request is enough
 
@@ -138,6 +138,45 @@ control failure being *refused*. Recall for access control was 0.000 over 2,097
 requests while lenient recall was 1.000 — the rule was firing every time and
 being outranked every time. Narrowing the members to 404–410 moved overall
 accuracy from 0.919 to 0.973. See [evaluation.md](evaluation.md).
+
+### Sequence rules — this, then that, unless something between
+
+Some evidence is order, not quantity. An administrator and an intruder can both
+be bounced from `/admin/` to the login page and both be let in to an admin page
+a minute later. What separates them is whether a sign-in came between, and no
+count over admin pages can see that: the sign-in is not an admin page.
+
+```yaml
+  - id: admin_reached_without_signing_in
+    name: Admin Page Reached Without Signing In
+    category: access_control
+    severity: high
+    sequence:
+      within_seconds: 300
+      first:
+        all:
+          - {field: path_decoded, regex: '/admin\b'}
+          - {field: status, any_of: ["302", "303"]}
+      then:
+        all:
+          - {field: path_decoded, regex: '/admin\b'}
+          - {field: status, min: 200}
+          - {field: status, max: 299}
+      unless_between:
+        all:
+          - {field: path_decoded, regex: '/(login|signin|sso|oauth|callback)\b'}
+          - {field: status, any_of: ["302", "303"]}
+```
+
+`first`, `then` and `unless_between` are ordinary `match` blocks. The rule fires
+when a request matching `then` follows one matching `first` by no more than
+`within_seconds`, with no request matching `unless_between` after that `first`.
+**Both ends are labelled**, and nothing else is: the requests between them were
+not part of what the rule saw. A request matching both `first` and `then` cannot
+complete a sequence with itself.
+
+Sequences are found within one session, like every other label, so
+`within_seconds` longer than the session idle gap buys nothing.
 
 ## Write the test first
 

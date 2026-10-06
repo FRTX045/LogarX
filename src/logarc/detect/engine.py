@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from collections import Counter
+from collections import Counter, deque
 from dataclasses import dataclass, field
 from fractions import Fraction
 from functools import cached_property
@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Final
 
 from logarc.core.activity import ActivityCategory, ActivityLabel, Severity
 from logarc.detect.crs import RESCUE_CONFIDENCE, category_for, host_speaks_for, severity_for
-from logarc.detect.rules import Condition, SignatureRule, WindowRule
+from logarc.detect.rules import Condition, SequenceRule, SignatureRule, WindowRule
 from logarc.normalize.decode import NormalizedText, canonical_path, normalize
 
 if TYPE_CHECKING:
@@ -374,6 +374,7 @@ class RuleEngine:
         self.rules = list(rules)
         self._signatures = [rule for rule in self.rules if isinstance(rule, SignatureRule)]
         self._windows = [rule for rule in self.rules if isinstance(rule, WindowRule)]
+        self._sequences = [rule for rule in self.rules if isinstance(rule, SequenceRule)]
         self.site_hosts = frozenset(
             reduced for reduced in (_bare_host(name) for name in site_hosts) if reduced
         )
@@ -466,7 +467,7 @@ class RuleEngine:
         return LabelledEvent(event=event, label=label, all_labels=labels, crs=detections)
 
     def _apply_windows(self, labelled: list[LabelledEvent]) -> None:
-        """Fire window rules, then settle each request's primary label.
+        """Fire window and sequence rules, then settle each request's primary label.
 
         The primary label is recomputed from the complete set of matches rather
         than replaced as each rule fires. Sequential replacement made the winner
@@ -483,10 +484,46 @@ class RuleEngine:
             label = _to_label(rule)
             for index in _members_of_matching_windows(rule, labelled, members):
                 labelled[index].all_labels.append(label)
+        for sequence in self._sequences:
+            label = _to_label(sequence)
+            for index in _ends_of_sequences(sequence, labelled, views):
+                labelled[index].all_labels.append(label)
 
         for item, view in zip(labelled, views, strict=True):
             if item.all_labels:
                 item.label = _primary(item.all_labels, view)
+
+
+def _ends_of_sequences(
+    rule: SequenceRule, labelled: Sequence[LabelledEvent], views: Sequence[RequestView]
+) -> list[int]:
+    """Request indices that begin or end a matched sequence, each once.
+
+    One pass in time order. A request matching `first` is held; one matching
+    `unless_between` lets go of everything held so far; one matching `then`
+    closes every held request no more than `within_seconds` older, and both ends
+    are kept. `then` is tested before `first`, so a request matching both cannot
+    complete a sequence with itself.
+    """
+    spec = rule.sequence
+    held: deque[int] = deque()
+    ends: set[int] = set()
+    for index, view in enumerate(views):
+        when = labelled[index].event.timestamp.timestamp()
+        if spec.unless_between is not None and _block_holds(spec.unless_between, view):
+            held.clear()
+            continue
+        if _block_holds(spec.then, view):
+            while (
+                held and labelled[held[0]].event.timestamp.timestamp() < when - spec.within_seconds
+            ):
+                held.popleft()
+            if held:
+                ends.update(held)
+                ends.add(index)
+        if _block_holds(spec.first, view):
+            held.append(index)
+    return sorted(ends)
 
 
 def _is_member(rule: WindowRule, view: RequestView) -> bool:

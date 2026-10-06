@@ -7,6 +7,14 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Sequence rules: one request, then another, unless something came between.**
+  A third kind of rule beside signatures and windows, for evidence that is
+  order rather than quantity — an administrator and an intruder are both
+  bounced from `/admin/` to the login page and both let into an admin page a
+  minute later, and only a sign-in between them tells them apart. Both ends of
+  a matched sequence are labelled and nothing else is. `docs/writing-rules.md`
+  has the format.
+
 - **Case → Run OWASP CRS on this case.** With CRS turned off after scans,
   the window had no way to run it on one case; only `logarc enrich` could.
   The menu item runs it on the open case whatever the preference says, and

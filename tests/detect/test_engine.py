@@ -12,8 +12,8 @@ from logarc.core.activity import ActivityCategory, Severity
 from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
 from logarc.detect.crs import CrsDetection
-from logarc.detect.engine import RuleEngine, _metric, _metric_holds
-from logarc.detect.rules import WINDOW_METRICS, WindowCondition, load_rules
+from logarc.detect.engine import LabelledEvent, RuleEngine, _metric, _metric_holds
+from logarc.detect.rules import WINDOW_METRICS, RulePackError, WindowCondition, load_rules
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 
@@ -84,12 +84,13 @@ def event(
     status: int | None = 200,
     user_agent: str | None = "curl/8.0",
     referer: str | None = None,
+    method: str = "GET",
 ) -> NormalizedEvent:
     return NormalizedEvent(
         timestamp=START + timedelta(seconds=seconds),
         client_ip="203.0.113.5",
         evidence=EvidenceRef("access.log", int(seconds) + 1),
-        method="GET",
+        method=method,
         path=path,
         query=query,
         status=status,
@@ -471,6 +472,134 @@ def test_overlapping_windows_add_each_rule_only_once_per_request(engine: RuleEng
 
     for item in labelled:
         assert [label.rule_id for label in item.all_labels].count("dir_enumeration") == 1
+
+
+# -- sequence rules: this, then that, unless something in between ------------
+
+SEQUENCE_PACK = """
+version: 1
+rules:
+  - id: reached_after_bounce
+    name: Admin Page Reached Without Signing In
+    category: access_control
+    severity: high
+    sequence:
+      within_seconds: 300
+      first:
+        all:
+          - {field: path_decoded, contains: '/admin'}
+          - {field: status, any_of: ['302', '303']}
+      then:
+        all:
+          - {field: path_decoded, contains: '/admin'}
+          - {field: status, min: 200}
+          - {field: status, max: 299}
+      unless_between:
+        all:
+          - {field: path_decoded, contains: '/login'}
+          - {field: status, any_of: ['302', '303']}
+"""
+
+
+@pytest.fixture
+def sequence_engine(tmp_path: Path) -> RuleEngine:
+    path = tmp_path / "sequence.yaml"
+    path.write_text(SEQUENCE_PACK, encoding="utf-8")
+    return RuleEngine(load_rules([path]))
+
+
+def _sequenced(labelled: list[LabelledEvent]) -> list[int]:
+    """Line numbers carrying the sequence rule's label."""
+    return [
+        item.event.evidence.line_no
+        for item in labelled
+        if "reached_after_bounce" in [label.rule_id for label in item.all_labels]
+    ]
+
+
+def test_a_sequence_rule_names_both_ends_of_what_it_saw(sequence_engine: RuleEngine) -> None:
+    """Bounced from the admin area, then let into it, with nothing between:
+    neither request says that alone, and both are part of it."""
+    events = [
+        event(0, path="/admin/", status=302),
+        event(30, path="/c/garden"),
+        event(60, path="/admin/ping", status=200),
+    ]
+
+    labelled = sequence_engine.label_events(events)
+
+    assert _sequenced(labelled) == [1, 61]
+    assert labelled[2].label.category is ActivityCategory.ACCESS_CONTROL
+
+
+def test_what_comes_between_silences_it(sequence_engine: RuleEngine) -> None:
+    """An administrator is bounced too, and signs in before being let in."""
+    events = [
+        event(0, path="/admin/", status=302),
+        event(20, path="/login", status=302, method="POST"),
+        event(30, path="/admin/", status=200),
+    ]
+
+    assert _sequenced(sequence_engine.label_events(events)) == []
+
+
+def test_the_order_is_the_point(sequence_engine: RuleEngine) -> None:
+    """Pages first and a bounce after is a session that ran out, not a way in."""
+    events = [event(0, path="/admin/", status=200), event(30, path="/admin/users", status=302)]
+
+    assert _sequenced(sequence_engine.label_events(events)) == []
+
+
+def test_a_sequence_is_bounded_by_its_window(sequence_engine: RuleEngine) -> None:
+    events = [event(0, path="/admin/", status=302), event(301, path="/admin/ping", status=200)]
+
+    assert _sequenced(sequence_engine.label_events(events)) == []
+
+
+def test_only_what_follows_the_silencing_request_can_start_a_sequence(
+    sequence_engine: RuleEngine,
+) -> None:
+    """A sign-in clears the bounces before it; a bounce after it starts afresh."""
+    events = [
+        event(0, path="/admin/", status=302),
+        event(10, path="/login", status=302, method="POST"),
+        event(20, path="/admin/users", status=302),
+        event(30, path="/admin/ping", status=200),
+    ]
+
+    assert _sequenced(sequence_engine.label_events(events)) == [21, 31]
+
+
+def test_one_request_cannot_be_both_ends_of_a_sequence(tmp_path: Path) -> None:
+    """A rule whose `first` and `then` overlap is legal; a single request that
+    matches both is still one request, not a sequence."""
+    path = tmp_path / "overlap.yaml"
+    path.write_text(
+        SEQUENCE_PACK.replace(
+            "any_of: ['302', '303']}\n      then:", "any_of: ['200', '302']}\n      then:"
+        ),
+        encoding="utf-8",
+    )
+    overlapping = RuleEngine(load_rules([path]))
+
+    assert _sequenced(overlapping.label_events([event(0, path="/admin/", status=200)])) == []
+    assert _sequenced(
+        overlapping.label_events([event(0, path="/admin/", status=200), event(9, path="/admin/x")])
+    ) == [1, 10]
+
+
+def test_a_rule_with_two_kinds_of_body_is_refused(tmp_path: Path) -> None:
+    path = tmp_path / "both.yaml"
+    path.write_text(
+        SEQUENCE_PACK.replace(
+            "    sequence:",
+            "    match:\n      any:\n        - {field: path, contains: x}\n    sequence:",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RulePackError, match="exactly one of: match, window, sequence"):
+        load_rules([path])
 
 
 def test_failed_dense_window_scan_does_bounded_query_work(

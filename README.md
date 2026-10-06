@@ -438,7 +438,7 @@ retrieval runs in memory instantly.
 
 1. **Session** — new session on an idle gap over 30 minutes, a User-Agent change
    (same address, different client: the NAT case), or 8 hours elapsed.
-2. **Request label** — signature and window rules, over normalised text.
+2. **Request label** — signature, window and sequence rules, over normalised text.
 3. **Episode** — new episode when the category changes or the gap exceeds 5
    minutes, then one merge pass absorbs short benign interludes between
    same-category episodes. Without that pass a single `favicon.ico` fetch splits
