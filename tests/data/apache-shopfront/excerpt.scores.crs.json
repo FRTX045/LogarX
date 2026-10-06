@@ -13,8 +13,8 @@
     "true_positives": 1140
   },
   "classification": {
-    "accuracy": 0.9607843137254902,
-    "macro_f1": 0.9095725536356993,
+    "accuracy": 0.9620915032679739,
+    "macro_f1": 0.9134304290160649,
     "per_category": [
       {
         "category": "crawling",
@@ -42,11 +42,11 @@
       },
       {
         "category": "reconnaissance",
-        "f1": 0.8947368421052632,
+        "f1": 0.8982128982128983,
         "false_negatives": 64,
-        "false_positives": 72,
-        "precision": 0.8892307692307693,
-        "predicted": 650,
+        "false_positives": 67,
+        "precision": 0.896124031007752,
+        "predicted": 645,
         "recall": 0.9003115264797508,
         "recall_any": 0.9112149532710281,
         "support": 642,
@@ -90,15 +90,15 @@
       },
       {
         "category": "injection",
-        "f1": 0.9357798165137614,
-        "false_negatives": 6,
+        "f1": 0.9824561403508771,
+        "false_negatives": 1,
         "false_positives": 1,
-        "precision": 0.9807692307692307,
-        "predicted": 52,
-        "recall": 0.8947368421052632,
-        "recall_any": 0.8947368421052632,
+        "precision": 0.9824561403508771,
+        "predicted": 57,
+        "recall": 0.9824561403508771,
+        "recall_any": 0.9824561403508771,
         "support": 57,
-        "true_positives": 51
+        "true_positives": 56
       },
       {
         "category": "credential_attack",
@@ -190,11 +190,6 @@
         "predicted": "enumeration"
       },
       {
-        "count": 5,
-        "expected": "injection",
-        "predicted": "reconnaissance"
-      },
-      {
         "count": 4,
         "expected": "access_control",
         "predicted": "authentication"
@@ -223,9 +218,14 @@
         "count": 1,
         "expected": "credential_attack",
         "predicted": "authentication"
+      },
+      {
+        "count": 1,
+        "expected": "injection",
+        "predicted": "api_call"
       }
     ],
-    "weighted_f1": 0.9610295939935756
+    "weighted_f1": 0.9623085949033318
   },
   "crs_fingerprint": "1c4b66d67838c5e8",
   "granularity": "category",
@@ -239,17 +239,17 @@
     "max_duration_seconds": 28800,
     "split_on_user_agent_change": true
   },
-  "ruleset_fingerprint": "d7d94ead3cd178a0f3e593d49b9dabdbafcb16b1ba64f4bd0ab5dc648bb1382c",
+  "ruleset_fingerprint": "6d0a2e2bfe0a1f9ac96fd4a52b8cc959092626be55c4eb2628db2808884d4efb",
   "scenario": "apache-shopfront-medium-excerpt",
   "segmentation": {
     "boundaries_agreed": 244,
     "boundaries_expected": 245,
-    "boundaries_found": 525,
-    "boundary_f1": 0.6337662337662338,
-    "boundary_precision": 0.46476190476190476,
+    "boundaries_found": 521,
+    "boundary_f1": 0.6370757180156658,
+    "boundary_precision": 0.46833013435700577,
     "boundary_recall": 0.9959183673469387,
-    "fragmentation": 1.9427609427609427,
-    "predicted_episodes": 577,
+    "fragmentation": 1.9292929292929293,
+    "predicted_episodes": 573,
     "truth_activities": 297
   },
   "source_file_id": "excerpt.log",

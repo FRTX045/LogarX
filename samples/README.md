@@ -28,7 +28,7 @@ going looking for them.
 wrote every line of it — and it is in the repository rather than pinned by
 checksum, because a demonstration has to work the moment somebody opens it.
 
-It is 832 lines and reaches all 101 detection rules, which the logs above do not:
+It is 832 lines and reaches all 102 detection rules, which the logs above do not:
 they are real traffic, so they contain what real traffic contains and nothing
 else. Use `demo/` to show what the tool can do. Use the builds above to find
 out how well it does it — and never the other way round, because scoring rules

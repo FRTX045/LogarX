@@ -41,7 +41,7 @@ rules:
     match:
       any:
         - field: user_agent_decoded
-          regex: '\b(sqlmap|nikto|nmap|masscan|zgrab|acunetix|nessus|openvas|wpscan|arachni|w3af|havij|wapiti|skipfish|whatweb|commix|nuclei|katana|gospider|hydra|zaproxy|burpsuite)\b'
+          regex: '\b(nikto|nmap|masscan|zgrab|acunetix|nessus|openvas|wpscan|arachni|w3af|wapiti|skipfish|whatweb|nuclei|katana|gospider|hydra|zaproxy|burpsuite)\b'
 
   # Tools whose job is sweeping a wordlist of paths, named apart from the
   # scanners above because what they do is a different category. ADR-0005 draws
@@ -73,6 +73,28 @@ rules:
       any:
         - field: user_agent_decoded
           regex: '\b(?:gobuster|dirb(?:uster)?|dirsearch|ffuf|feroxbuster|wfuzz)\b|fuzz faster u fool'
+
+  # Tools whose job is injection, named apart from the scanners for the reason
+  # the wordlist tools above were: a tool is named for what it does.
+  #
+  # sqlmap stayed with the scanners when those moved, on the reasoning that its
+  # payloads are named by the payload rules. That holds for the payloads and not
+  # for its baseline and heuristic requests, which carry none — `/search?q=oak`,
+  # `oak,,((,').)"` — and so were named reconnaissance: 5 on each `2026-10-06`
+  # tier, where the truth calls every sqlmap request but one injection (43 to 45
+  # a tier; the one is a traversal its payload rule still names). The payload
+  # rules outrank this one, so it only speaks where they had nothing to say.
+  - id: injection_tool_user_agent
+    name: Injection Tool
+    category: injection
+    owasp: "A05:2025"
+    severity: medium
+    confidence: 0.95
+    references: ["CAPEC-66"]
+    match:
+      any:
+        - field: user_agent_decoded
+          regex: '\b(?:sqlmap|havij|commix|ghauri)\b'
 
   # A program, not a person — and that is the whole claim. `crawling`, not
   # `reconnaissance`, and the difference is not cosmetic: `is_hostile` is

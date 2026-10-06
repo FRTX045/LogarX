@@ -306,7 +306,7 @@ def test_shellshock_is_detected_in_the_user_agent(engine: RuleEngine) -> None:
 
 
 def test_a_scanner_announces_itself(engine: RuleEngine) -> None:
-    (labelled,) = engine.label_events([request("/", user_agent="sqlmap/1.7#stable")])
+    (labelled,) = engine.label_events([request("/", user_agent="Nikto/2.5.0")])
 
     assert labelled.label.rule_id == "scanner_user_agent"
 
@@ -330,15 +330,47 @@ CONTENT_DISCOVERY_AGENTS = [
     "Wfuzz/3.1.0",
 ]
 
-# Tools that fingerprint, scan for vulnerabilities, or exploit: they stay with
-# the scanner rule, and their own payloads are named by the payload rules.
+# Tools that fingerprint or scan for vulnerabilities: they stay with the scanner
+# rule, and their own payloads are named by the payload rules.
 RECONNAISSANCE_AGENTS = [
     "Mozilla/5.00 (Nikto/2.5.0) (Evasions:None) (Test:Port Check)",
     "Mozilla/5.0 (compatible; Nmap Scripting Engine; https://nmap.org/book/nse.html)",
     "WhatWeb/0.5.5",
     "Nuclei - Open-source project (github.com/projectdiscovery/nuclei)",
-    "sqlmap/1.7#stable",
 ]
+
+# Tools whose job is injection. sqlmap was in the list above, on the reasoning
+# that its payloads are named by the payload rules — true of the payloads, and
+# not of its baseline and heuristic requests, which carry none: on each
+# `2026-10-06` tier 5 of them were named reconnaissance, and the truth calls
+# every sqlmap request but one injection (43 to 45 a tier).
+INJECTION_TOOL_AGENTS = [
+    "sqlmap/1.7#stable (https://sqlmap.org)",
+    "sqlmap/1.8.11#stable",
+    "commix/v4.0-stable (https://commixproject.com)",
+    "Havij",
+    "ghauri/1.3.8",
+]
+
+
+@pytest.mark.parametrize("agent", INJECTION_TOOL_AGENTS)
+def test_an_injection_tool_is_injection_even_with_nothing_in_the_request(
+    engine: RuleEngine, agent: str
+) -> None:
+    (labelled,) = engine.label_events([request("/search?q=oak", user_agent=agent)])
+
+    assert labelled.label.rule_id == "injection_tool_user_agent"
+    assert labelled.label.category is ActivityCategory.INJECTION
+
+
+def test_an_injection_tool_s_payload_still_names_what_it_did(engine: RuleEngine) -> None:
+    """The tool is the fallback, never the verdict: a traversal sqlmap sends is
+    still path traversal, as the truth has it."""
+    (labelled,) = engine.label_events(
+        [request("/download?file=../../../../etc/passwd", user_agent="sqlmap/1.7#stable")]
+    )
+
+    assert labelled.label.category is ActivityCategory.PATH_TRAVERSAL
 
 
 @pytest.mark.parametrize("agent", CONTENT_DISCOVERY_AGENTS)
