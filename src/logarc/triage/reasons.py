@@ -67,9 +67,11 @@ def _exploit_evidence(profile: ClientProfile) -> PriorityReason | None:
         tuple(example.evidence for example in profile.exploit_examples),
         kind="exploit_evidence",
         why=(
-            "An eligible native rule in an attack category matched this client's own request, "
-            "which places it before clients with no eligible match. It does not show what the "
-            "request achieved, and the same rule can match harmless requests; inspect the request."
+            "A bundled or custom rule (not OWASP CRS) in an attack category, other than the few "
+            "that only record where a client went or what the server answered, matched this "
+            "client's own request, which places it before clients with no such match. It does "
+            "not show what the request achieved, and the same rule can match harmless requests; "
+            "inspect the request."
         ),
         summary=f"Exploit evidence: {first.note}",
         examples=profile.exploit_examples,

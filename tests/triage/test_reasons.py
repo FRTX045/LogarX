@@ -288,6 +288,8 @@ def test_a_client_with_exploit_evidence_leads_with_the_rule_and_the_request(plai
     assert lead.text == "SQL Injection (UNION SELECT) matched a request to /search."
     assert lead.summary == "Exploit evidence: SQL Injection (UNION SELECT)"
     assert "does not show what the request achieved" in lead.why
+    assert "A bundled or custom rule (not OWASP CRS)" in lead.why
+    assert "eligible" not in lead.why
     assert reasons[1:] == suspicious_reasons(plain)
 
 
