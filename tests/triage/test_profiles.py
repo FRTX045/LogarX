@@ -515,7 +515,7 @@ def test_example_requests_keep_their_query(tmp_path):
 EXCLUDED_FROM_EXPLOIT_EVIDENCE = (
     ("admin_area_probe", "access_control"),
     ("forced_browsing", "access_control"),
-    ("forced_browsing_succeeded", "exploitation"),
+    ("forced_browsing_succeeded", "access_control"),
     ("admin_reached_without_signing_in", "access_control"),
     ("server_errors_provoked", "exploitation"),
 )
@@ -568,6 +568,25 @@ def test_an_excluded_rule_alone_does_not_place_a_client_first(tmp_path, rule_id,
     assert with_eligible.exploit_rules == ("sqli_fixture",)
 
 
+def test_the_earliest_eligible_request_is_the_exploit_example_across_sessions(tmp_path):
+    from logarc.triage.profile import profile_client
+
+    engine = fixture_rules(
+        tmp_path,
+        ("zeta_rule", "injection", "high", 0.9, "zeta"),
+        ("alpha_rule", "injection", "high", 0.9, "alpha"),
+    )
+    first, later = events(count=2)
+    sample = [
+        replace(first, query="zeta"),
+        at(replace(later, query="alpha"), 3 * 3600, line=2),
+    ]
+    profile = profile_client(sample, engine)
+    assert profile.sessions == 2
+    assert profile.exploit_rules == ("zeta_rule",)
+    assert [example.evidence for example in profile.exploit_examples] == [EvidenceRef("source", 1)]
+
+
 def test_an_eligible_match_that_loses_the_label_still_counts(tmp_path):
     from logarc.triage.profile import profile_client
 
@@ -600,9 +619,9 @@ def test_is_exploit_evidence_by_rule_and_category(tmp_path):
     assert not is_exploit_evidence(crs_label)
 
 
-def test_a_client_flagged_only_by_crs_stays_in_the_queue_without_exploit_evidence():
+def test_a_client_flagged_only_by_crs_stays_in_the_queue_without_exploit_evidence(tmp_path):
     from logarc.detect.crs import CrsDetection
-    from logarc.triage.profile import profile_client, rank_profiles
+    from logarc.triage.profile import priority_score, profile_client, rank_profiles
 
     sample = events(count=3)
     detection = CrsDetection(
@@ -620,6 +639,14 @@ def test_a_client_flagged_only_by_crs_stays_in_the_queue_without_exploit_evidenc
     assert "injection" in profile.categories
     assert profile.exploit_examples == ()
     assert [row.profile for row in rank_profiles([profile], "suspicious")] == [profile]
+
+    engine = fixture_rules(tmp_path, ("sqli_fixture", "injection", "high", 0.9, "attack"))
+    busy = events("192.0.2.9", 20)
+    busy[5] = replace(busy[5], query="attack")
+    native = profile_client(busy, engine)
+    assert priority_score(native) < priority_score(profile)
+    ranked = rank_profiles([profile, native], "suspicious")
+    assert [row.profile.client_ip for row in ranked] == ["192.0.2.9", "192.0.2.1"]
 
 
 def test_a_window_rule_match_is_exploit_evidence():
