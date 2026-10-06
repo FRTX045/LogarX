@@ -140,8 +140,13 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   what the server answered (`admin_area_probe`, `forced_browsing`,
   `forced_browsing_succeeded`, `admin_reached_without_signing_in`,
   `server_errors_provoked`) are left out, which can leave genuine access-control
-  attacks, and attacks that provoke server errors, in the second group. Custom
-  rules in those categories take part, and adding or changing a rule can change
+  attacks, and attacks that provoke server errors, in the second group. Two credential window
+  rules, `credential_attack` and `bulk_account_creation`, also judge by what the
+  server answered (5 responses of 400 or above within 300 s) but stay eligible,
+  because they are the only native view of password guessing and credential
+  stuffing an access log gives; a user who mistypes a password five times, or a
+  client stuck retrying an expired token, can therefore enter the first group.
+  Custom rules in those categories take part, and adding or changing a rule can change
   the order. Existing triage indexes are rebuilt on first open.
   Measured on the eleven development builds (synthetic, one shop, all examined
   before): summed over 64 targeted-client appearances, 64 were in the first 10

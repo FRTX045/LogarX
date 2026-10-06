@@ -44,6 +44,10 @@ rather than letting the later one win, because which pack was loaded first is
 not something a report should depend on.
 
 `category` controls activity grouping, so it helps shape episodes and the graph.
+A rule in one of the six attack categories (injection, path traversal, access
+control, credential attack, SSRF, exploitation) also places a client first in
+the Suspicious queue when it matches, unless it is one of the five excluded ids;
+see [Exploit evidence first](ip-prioritization.md#exploit-evidence-first).
 Labels rank by severity first, then hostile over benign at equal severity,
 then confidence, and finally rule ID for a deterministic tie-break. Severity
 also determines colour.

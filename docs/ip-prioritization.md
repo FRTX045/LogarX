@@ -135,15 +135,24 @@ answered rather than a payload the client sent, so its evidence also fits
 ordinary activity. Their matches still put a client in the queue, appear in its
 reasons and open in reconstruction; they only cannot place a client first.
 
-| Rule | What it records |
-| --- | --- |
-| `admin_area_probe` | a request to an admin path refused with 401 or 403 |
-| `forced_browsing` | at least 10 refusals (401/403) across at least 8 paths within 120 s |
-| `forced_browsing_succeeded` | at least 3 admin-path requests within 300 s, some refused and some served |
-| `admin_reached_without_signing_in` | an admin path redirected, then an admin page served without a sign-in between them |
-| `server_errors_provoked` | at least 5 responses of 500 or above within 120 s |
+| Rule | What it records | Ordinary activity it also fits |
+| --- | --- | --- |
+| `admin_area_probe` | a request to an admin path refused with 401 or 403 | a staff member whose session expired, a bookmark to an admin page |
+| `forced_browsing` | at least 10 refusals (401/403) across at least 8 paths within 120 s | a single-page app whose token expired refreshing its own API calls |
+| `forced_browsing_succeeded` | at least 3 admin-path requests within 300 s, some refused and some served | a staff member signing in after a refusal |
+| `admin_reached_without_signing_in` | an admin path redirected, then an admin page served without a sign-in between them | a staff member whose sign-in the access log does not show (single sign-on, a session set elsewhere) |
+| `server_errors_provoked` | at least 5 responses of 500 or above within 120 s | any client during an outage or a broken deployment |
 
-Excluding them can leave genuine access-control attacks, and attacks that
+`credential_attack` (5 or more responses of 400 or above to sign-in, auth,
+session or token paths within 300 s, across at most 3 distinct paths) and
+`bulk_account_creation` (5 or more responses of 400 or above to registration
+paths within 300 s, across at most 3 distinct paths) also judge by what the
+server answered, but they stay eligible: they are the only native view of
+password guessing and credential stuffing that an access log gives. So a user
+who mistypes a password five times, or a client stuck retrying an expired
+token, can enter the first group.
+
+Excluding the five can leave genuine access-control attacks, and attacks that
 provoke server errors, in the second group. In particular
 `admin_reached_without_signing_in` can record a real unauthenticated breach of
 an admin area; it is excluded because the access log cannot tell that breach
