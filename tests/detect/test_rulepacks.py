@@ -2614,3 +2614,59 @@ def test_command_execution_rules_stay_off_ordinary_text(engine: RuleEngine, targ
 
     hostile = [label.rule_id for label in labelled.all_labels if label.category.is_hostile]
     assert not hostile, f"{target!r} was called hostile by {hostile}"
+
+
+def fired_rules(engine: RuleEngine, target: str) -> set[str]:
+    (labelled,) = engine.label_events([request(target)])
+    return {label.rule_id for label in labelled.all_labels}
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        # A command word that is a parameter NAME: the `&` is the separator.
+        "/products?sort=price&cat=shoes",
+        "/item?page=2&id=5",
+        "/x?a=1&cmd=list",
+        "/x?a=1&ls=1",
+        "/x?a=1&sh=2",
+        "/x?a=1&nc=2",
+        "/x?q=a&id=5&cat=2",
+        "/x?a=1&cat =shoes",
+        # Only the whole word is a command.
+        "/x?a=1&identity=x",
+        "/x?a=1&category=x",
+        # An encoded ampersand with no command after it is an ordinary value.
+        "/x?q=salt%26pepper",
+        "/x?brand=AT%26T",
+    ],
+)
+def test_a_query_parameter_named_like_a_command_is_not_command_injection(
+    engine: RuleEngine, target: str
+) -> None:
+    assert "command_injection" not in fired_rules(engine, target)
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "/x?q=a;cat /etc/passwd",
+        "/x?q=|id",
+        "/x?q=`whoami`",
+        "/x?q=&&id",
+        "/x?q=& whoami",
+        "/x?q=x%26cat%20/etc/passwd",
+        "/x?q=x%26%26id",
+        "/x?q=x%3Bid",
+        "/x?q=x%7Cid",
+        "/x?host=127.0.0.1%26whoami",
+        "/x?host=1.1.1.1%26cat",
+        # `;` is not a query separator, so a command followed by `=` after it
+        # is still a command position.
+        "/x?q=x;id=1",
+    ],
+)
+def test_a_command_after_a_shell_separator_is_still_command_injection(
+    engine: RuleEngine, target: str
+) -> None:
+    assert "command_injection" in fired_rules(engine, target)

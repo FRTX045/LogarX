@@ -398,8 +398,16 @@ rules:
     references: ["CAPEC-88"]
     match:
       any:
+        # `;`, `|` and a backtick only ever separate shell commands, so a command
+        # word after one is in command position. `&` is also the query-string
+        # separator, and the decoded target cannot tell `&cat=shoes` from an
+        # injected `%26cat%20/etc/passwd`: both read `&cat`. What does tell them
+        # apart is what follows the word. A parameter name is followed by `=`
+        # (after any whitespace), a command by its arguments or nothing, so after
+        # `&` a command word counts only when no `=` comes next. The cost is an
+        # injected `&id=1`, which reads as a parameter and stays unmatched.
         - field: target_decoded
-          regex: '[;|&`]\s*(cat|ls|id|whoami|uname|curl|wget|nc|bash|sh|powershell|cmd)\b'
+          regex: '[;|`]\s*(cat|ls|id|whoami|uname|curl|wget|nc|bash|sh|powershell|cmd)\b|&\s*(cat|ls|id|whoami|uname|curl|wget|nc|bash|sh|powershell|cmd)\b(?!\s*=)'
         - field: target_decoded
           regex: '\$\(\s*\w+|\|\s*(bash|sh)\b'
         # A newline ends the intended command and starts the attacker's. Caught
