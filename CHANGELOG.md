@@ -140,7 +140,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   what the server answered (`admin_area_probe`, `forced_browsing`,
   `forced_browsing_succeeded`, `admin_reached_without_signing_in`,
   `server_errors_provoked`) are left out, which can leave genuine access-control
-  attacks in the second group. Existing triage indexes are rebuilt on first open.
+  attacks, and attacks that provoke server errors, in the second group. Custom
+  rules in those categories take part, and adding or changing a rule can change
+  the order. Existing triage indexes are rebuilt on first open.
   The development measurement will be in `docs/evaluations/`; no figures are
   claimed until it is written. See `docs/ip-prioritization.md`.
 

@@ -51,7 +51,8 @@ strongest high".
    what the request achieved, and the same rule can match harmless requests, so
    the request is the thing to inspect. A client in the second group has no such
    block.
-2. **Flagged requests** is what orders clients within a group: how many requests carry a hostile detection, their share, and the strongest
+2. **Flagged requests** is what orders clients within a group: how many
+   requests carry a hostile detection, their share, and the strongest
    severity. Its why says what kind of flagged request dominates and whether it
    is most (half or more), a substantial part, or a small part (under a tenth) of
    the client's activity. When one rule matches every flagged request, it names
