@@ -26,7 +26,7 @@ These are figures from a run, not intentions:
 |---|---|
 | Lines / events / quarantined | 832 / 826 / 5 |
 | Clients | 36 |
-| Detection rules exercised | **102 of 102** |
+| Detection rules exercised | **103 of 103** |
 | Attackers flagged | 24 of 24 |
 | False alarms on the 12 ordinary clients | **0** without CRS, **0** with it |
 
@@ -161,7 +161,7 @@ feature lands that the demo log cannot show, add a client to
 script and commit the script, the log and `SHA256SUMS`.
 
 The check that matters is rule coverage, and nobody has to remember to run it:
-the suite runs it. It is 102 of 102 today, and a rule added to a pack that nothing
+the suite runs it. It is 103 of 103 today, and a rule added to a pack that nothing
 in this log triggers fails the build and names the rule. To run it on its own:
 
 ```bash

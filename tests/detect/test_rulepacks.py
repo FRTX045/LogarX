@@ -12,7 +12,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 import yaml
 
-from logarc.core.activity import ActivityCategory
+from logarc.core.activity import ActivityCategory, Severity
 from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
 from logarc.detect.engine import LabelledEvent, RuleEngine
@@ -601,6 +601,42 @@ def test_a_probe_or_a_mention_is_not_the_payoff(engine: RuleEngine, target: str)
     (labelled,) = engine.label_events([request(target)])
 
     assert "injection_reaches_for_secrets" not in {item.rule_id for item in labelled.all_labels}
+
+
+#: A URL parameter handed `file://` and a system file. Both SSRF and a file read
+#: match these, and the one that leads is a taxonomy call that
+#: `test_known_payloads_reach_the_right_category` leaves open. The shopfront truth
+#: settles it, once on every tier: the server was asked to *fetch a URL*, so it is
+#: SSRF, and the file it names is what makes it critical.
+FILE_SCHEME_FETCHES = [
+    "/admin/import-image?url=file%3A%2F%2F%2Fetc%2Fpasswd",
+    "/fetch?url=file:///etc/passwd",
+    "/fetch?url=file://localhost/etc/shadow",
+    "/proxy?u=file:///proc/self/environ",
+    "/fetch?url=file:///c:/windows/win.ini",
+]
+
+#: The same files with no URL around them: a file read, not a fetch.
+FILE_READS_WITHOUT_A_SCHEME = [
+    "/download?file=../../../../etc/passwd",
+    "/download?file=/etc/passwd",
+    "/page?doc=php://filter/convert.base64-encode/resource=/etc/passwd",
+]
+
+
+@pytest.mark.parametrize("target", FILE_SCHEME_FETCHES)
+def test_a_file_scheme_fetch_of_a_system_file_is_ssrf(engine: RuleEngine, target: str) -> None:
+    (labelled,) = engine.label_events([request(target)])
+
+    assert labelled.label.category is ActivityCategory.SSRF, labelled.label.rule_id
+    assert labelled.label.severity is Severity.CRITICAL
+
+
+@pytest.mark.parametrize("target", FILE_READS_WITHOUT_A_SCHEME)
+def test_a_file_read_without_a_url_is_not_ssrf(engine: RuleEngine, target: str) -> None:
+    (labelled,) = engine.label_events([request(target)])
+
+    assert labelled.label.category is not ActivityCategory.SSRF, labelled.label.rule_id
 
 
 def test_human_paced_directory_enumeration_is_detected(engine: RuleEngine) -> None:

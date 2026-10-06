@@ -13,8 +13,8 @@
     "true_positives": 1140
   },
   "classification": {
-    "accuracy": 0.9620915032679739,
-    "macro_f1": 0.9134304290160649,
+    "accuracy": 0.9623529411764706,
+    "macro_f1": 0.927894597326387,
     "per_category": [
       {
         "category": "crawling",
@@ -150,11 +150,11 @@
       },
       {
         "category": "path_traversal",
-        "f1": 0.923076923076923,
+        "f1": 1.0,
         "false_negatives": 0,
-        "false_positives": 1,
-        "precision": 0.8571428571428571,
-        "predicted": 7,
+        "false_positives": 0,
+        "precision": 1.0,
+        "predicted": 6,
         "recall": 1.0,
         "recall_any": 1.0,
         "support": 6,
@@ -162,15 +162,15 @@
       },
       {
         "category": "ssrf",
-        "f1": 0.888888888888889,
-        "false_negatives": 1,
+        "f1": 1.0,
+        "false_negatives": 0,
         "false_positives": 0,
         "precision": 1.0,
-        "predicted": 4,
-        "recall": 0.8,
+        "predicted": 5,
+        "recall": 1.0,
         "recall_any": 1.0,
         "support": 5,
-        "true_positives": 4
+        "true_positives": 5
       }
     ],
     "top_confusions": [
@@ -225,7 +225,7 @@
         "predicted": "api_call"
       }
     ],
-    "weighted_f1": 0.9623085949033318
+    "weighted_f1": 0.9625745018359054
   },
   "crs_fingerprint": "1c4b66d67838c5e8",
   "granularity": "category",
@@ -239,17 +239,17 @@
     "max_duration_seconds": 28800,
     "split_on_user_agent_change": true
   },
-  "ruleset_fingerprint": "6d0a2e2bfe0a1f9ac96fd4a52b8cc959092626be55c4eb2628db2808884d4efb",
+  "ruleset_fingerprint": "4744a13c7da9e7cceb011e68419390eb68754207e315aeae2836e6687ff41104",
   "scenario": "apache-shopfront-medium-excerpt",
   "segmentation": {
     "boundaries_agreed": 244,
     "boundaries_expected": 245,
-    "boundaries_found": 521,
-    "boundary_f1": 0.6370757180156658,
-    "boundary_precision": 0.46833013435700577,
+    "boundaries_found": 520,
+    "boundary_f1": 0.6379084967320261,
+    "boundary_precision": 0.46923076923076923,
     "boundary_recall": 0.9959183673469387,
-    "fragmentation": 1.9292929292929293,
-    "predicted_episodes": 573,
+    "fragmentation": 1.9259259259259258,
+    "predicted_episodes": 572,
     "truth_activities": 297
   },
   "source_file_id": "excerpt.log",
