@@ -43,6 +43,7 @@ implying the CRS column was ever checked.
 | 2026-10-05 | *this pass* | **php** — a `${name}` placeholder is not PHP | 933 **179 → 178**, 941 61 → 61 after one recovered; overall 961 → **960** of 1,099 | 0 in every family; excerpt unchanged on both engines; the dataset's 41 / 129 / 659 placeholder requests no longer injection | 0, one narrowed, one widened |
 | 2026-10-05 | *this pass* | **recon** — content-discovery tools are enumeration | corpus unchanged, 961 of 1,099; medium caught 17,069 → 17,069 native, 17,071 → 17,071 CRS; **medium accuracy 0.9751 → 0.9945 native, 0.9747 → 0.9941 CRS** | 0 in every family; excerpt unchanged on both engines; medium 1 → 1 native, 74 → 74 CRS | 1, one narrowed |
 | 2026-10-05 | *this pass* | **the finish** — 934 and 943's last catchable shapes; every family closed out | 934 **91% → 95%** (176 → 183), 943 **90% → 92%** (36 → 37); overall 86.7% → **87.4%** (953 → 961 of 1,099) | 0 in every family; excerpt unchanged on both engines; medium 17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS | 2, three extended |
+| 2026-10-06 | *this pass* | **access** — forced browsing with nothing refused; the first `sequence` rule | corpus unchanged, 960 of 1,099; **caught +15 on the excerpt, small and medium, +10 on large** (medium 17,044 → 17,059 native); **`access_control` 0/24 → 15/24 excerpt, 9/31 → 24/31 medium**, precision 1.000 | native 0 → 0 everywhere; with CRS unchanged (small 1 → 1, the click ID) | 1, and a new rule kind |
 | 2026-10-06 | *this pass* | **crs** — the `${name}` placeholder, from the other engine | corpus unchanged (native only); caught unchanged on all three `2026-10-06` tiers, both engines (small 4,016, medium 17,045, large 40,613); **CRS macro F1 0.8412 → 0.8600 small, 0.8286 → 0.8687 medium, 0.7703 → 0.8293 large** | **CRS 45 → 1 small, 149 → 0 medium, 670 → 0 large**; native 0 → 0 on all three; excerpt and demo contain no `${name}` | 0, one engine condition |
 
 The 2026-09-20 pass is the first measured against a corpus containing a
@@ -823,6 +824,68 @@ false alarm left on small is CRS 942100 (libinjection) reading a Google Ads
 The cost is the same as the native rule's: CRS's own `/get?foo=${a}` case is
 no longer an injection when CRS alone saw it. The CRS corpus figure is native
 only and does not move.
+
+### 2026-10-06 — access: forced browsing with nothing refused, and a third kind of rule
+
+The last gap with security weight on the `2026-10-06` tiers, and the first one
+the rule model itself could not express. `access_control` named 9 of 31 on
+medium. Of the 22 missed, 13 were `/admin/*` bounces (302 to the login form),
+2 were `/account/` bounces, and **6 were the attack working**: one client was
+bounced from `/admin/`, `/admin/users` and `/admin/orders` and then answered 200
+on `/admin/ping` and `/admin/template` with no sign-in at all — the protected
+pages check, the tools behind them do not. `forced_browsing_succeeded` needs a
+4xx in its window and there was none.
+
+An administrator is bounced too and let in a moment later. What separates them
+is the sign-in between, which is **order, not quantity**, and is not an admin
+page — a window rule computes its metrics over its members only, so no window
+over admin pages could see it. Status ratios would have separated them on this
+build only because the dataset redraws timestamps and puts an administrator's
+post-login pages hours after the bounce; a real one signs in seconds later. So
+the engine gained a third kind of rule (`sequence`: `first`, then `then` within
+`within_seconds`, unless `unless_between`), labelling both ends and nothing
+else, and `admin_reached_without_signing_in` is the first rule written in it.
+
+**The false alarms it could have raised are the design.** Real deployments put
+the login page, or what it loads, under the admin path. `then` is a GET,
+anchored at the path's start, and never a login, logout or auth page, a static
+file or WordPress's `load-styles.php`; `unless_between` takes any redirect from
+a sign-in, single-sign-on or callback path, so a failed login (401, or the form
+again) does not silence it and a successful one does. Each was dropped in turn
+and its case failed:
+
+| guard dropped | flow that then accused an administrator |
+|---|---|
+| `then` excludes login pages and assets | Django (`/admin/login/`, `/static/admin/…`), WordPress (`/wp-admin/load-styles.php`) |
+| `then` is a GET | a console whose login form posts to itself, one failed attempt |
+| `unless_between` | every administrator, Django, WordPress and a single-sign-on callback |
+
+**What it cannot see:** a sign-in on another host whose log is not in the case.
+From one vhost's log that administrator looks exactly like this, which is why
+the confidence is 0.8, below the 0.85 triage reads as an exact shape.
+
+| native | caught | false alarms | `access_control` | macro F1 |
+|---|---:|---:|---:|---:|
+| excerpt | 1,123 → **1,138** | 0 → 0 | 0/24 → **15/24** | 0.8004 → **0.8751** |
+| `2026-10-06-small` | 4,013 → **4,028** | 0 → 0 | 9/34 → **24/34** | 0.8598 → **0.8896** |
+| `2026-10-06-medium` | 17,044 → **17,059** | 0 → 0 | 9/31 → **24/31** | 0.8696 → **0.8999** |
+| `2026-10-06-large` | 40,612 → **40,622** | 0 → 0 | 6/16 → **16/16** | 0.8301 → **0.8626** |
+
+Every `access_control` it names is right (precision 1.000 on all four), and
+with CRS the rows move the same way (excerpt 1,125 → 1,140, medium 17,045 →
+17,060, false alarms unchanged). The CRS corpus does not move — 960 of 1,099,
+0 fired wrongly — since a sequence cannot fire on one request. Whole-engine
+cost on 16,000-character admin paths built from the lookahead's own words is
+flat per character. In the demo log it fires on the forced-browsing scene's
+attacker and nowhere else.
+
+**Still missed on medium, all 7 listed:** one client trying other methods on a
+protected page — `POST`, `HEAD` and `OPTIONS /admin/users`, each bounced 302,
+and a `DELETE /api/cart` — to see whether the check is method-specific; two
+`/account/` bounces; and one `/admin/` bounce. None has a success after it,
+which is this rule's shape, and one request at a time each is what an
+administrator's bounce looks like. Verb tampering is its own signal and its
+own pass.
 
 ### 2026-10-05 — recon: the tools that sweep a wordlist are enumeration
 

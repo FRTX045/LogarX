@@ -1,20 +1,20 @@
 {
   "binary": {
-    "accuracy": 0.9780392156862745,
-    "f1": 0.9640102827763496,
-    "false_negatives": 84,
+    "accuracy": 0.9819607843137255,
+    "f1": 0.9706257982120051,
+    "false_negatives": 69,
     "false_positive_rate": 0.0,
     "false_positives": 0,
     "has_attacks": true,
     "precision": 1.0,
-    "recall": 0.9305210918114144,
+    "recall": 0.9429280397022333,
     "total": 3825,
     "true_negatives": 2616,
-    "true_positives": 1125
+    "true_positives": 1140
   },
   "classification": {
-    "accuracy": 0.9563398692810458,
-    "macro_f1": 0.8107281621114072,
+    "accuracy": 0.9602614379084967,
+    "macro_f1": 0.885453083362383,
     "per_category": [
       {
         "category": "crawling",
@@ -66,11 +66,11 @@
       },
       {
         "category": "browsing",
-        "f1": 0.8359788359788359,
+        "f1": 0.8494623655913979,
         "false_negatives": 0,
-        "false_positives": 62,
-        "precision": 0.7181818181818181,
-        "predicted": 220,
+        "false_positives": 56,
+        "precision": 0.7383177570093458,
+        "predicted": 214,
         "recall": 1.0,
         "recall_any": 1.0,
         "support": 158,
@@ -114,23 +114,23 @@
       },
       {
         "category": "access_control",
-        "f1": 0.0,
-        "false_negatives": 24,
+        "f1": 0.7692307692307693,
+        "false_negatives": 9,
         "false_positives": 0,
-        "precision": 0.0,
-        "predicted": 0,
-        "recall": 0.0,
-        "recall_any": 0.0,
+        "precision": 1.0,
+        "predicted": 15,
+        "recall": 0.625,
+        "recall_any": 0.625,
         "support": 24,
-        "true_positives": 0
+        "true_positives": 15
       },
       {
         "category": "authentication",
-        "f1": 0.65,
+        "f1": 0.8387096774193548,
         "false_negatives": 0,
-        "false_positives": 14,
-        "precision": 0.48148148148148145,
-        "predicted": 27,
+        "false_positives": 5,
+        "precision": 0.7222222222222222,
+        "predicted": 18,
         "recall": 1.0,
         "recall_any": 1.0,
         "support": 13,
@@ -185,16 +185,6 @@
         "predicted": "browsing"
       },
       {
-        "count": 13,
-        "expected": "access_control",
-        "predicted": "authentication"
-      },
-      {
-        "count": 10,
-        "expected": "access_control",
-        "predicted": "browsing"
-      },
-      {
         "count": 7,
         "expected": "reconnaissance",
         "predicted": "enumeration"
@@ -203,6 +193,16 @@
         "count": 5,
         "expected": "injection",
         "predicted": "reconnaissance"
+      },
+      {
+        "count": 4,
+        "expected": "access_control",
+        "predicted": "authentication"
+      },
+      {
+        "count": 4,
+        "expected": "access_control",
+        "predicted": "browsing"
       },
       {
         "count": 4,
@@ -225,7 +225,7 @@
         "predicted": "api_call"
       }
     ],
-    "weighted_f1": 0.9544132716382694
+    "weighted_f1": 0.9604381505786027
   },
   "crs_fingerprint": "1c4b66d67838c5e8",
   "granularity": "category",
@@ -239,17 +239,17 @@
     "max_duration_seconds": 28800,
     "split_on_user_agent_change": true
   },
-  "ruleset_fingerprint": "5bcfdcff474f63aec3a7f1fa60770bc679f49546eeca4c8158b2ba1355e774f5",
+  "ruleset_fingerprint": "d904be20c2cfbf8216dd82fd5862449993f97443751313d892ca61ac3aa5528e",
   "scenario": "apache-shopfront-medium-excerpt",
   "segmentation": {
     "boundaries_agreed": 244,
     "boundaries_expected": 245,
-    "boundaries_found": 528,
-    "boundary_f1": 0.63130659767141,
-    "boundary_precision": 0.4621212121212121,
+    "boundaries_found": 525,
+    "boundary_f1": 0.6337662337662338,
+    "boundary_precision": 0.46476190476190476,
     "boundary_recall": 0.9959183673469387,
-    "fragmentation": 1.9528619528619529,
-    "predicted_episodes": 580,
+    "fragmentation": 1.9427609427609427,
+    "predicted_episodes": 577,
     "truth_activities": 297
   },
   "source_file_id": "excerpt.log",
