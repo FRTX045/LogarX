@@ -30,6 +30,7 @@ __all__ = [
     "Condition",
     "Rule",
     "RulePackError",
+    "SequenceRule",
     "SignatureRule",
     "WindowRule",
     "load_rules",
@@ -245,7 +246,39 @@ class WindowRule(_RuleBase):
                 condition.compile()
 
 
-Rule = SignatureRule | WindowRule
+class SequenceBlock(BaseModel):
+    """One request, then another within a time, unless a third came between."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    within_seconds: Annotated[int, Field(gt=0)]
+    first: MatchBlock
+    then: MatchBlock
+    unless_between: MatchBlock | None = None
+
+    def blocks(self) -> list[MatchBlock]:
+        return [self.first, self.then, *([self.unless_between] if self.unless_between else [])]
+
+
+class SequenceRule(_RuleBase):
+    """Fires when one request follows another, with nothing that explains it between.
+
+    For what neither a single request nor a count can say. An administrator and
+    an intruder can both be bounced from `/admin/` to the login page and both be
+    let in to an admin page a minute later; what separates them is whether a
+    sign-in came between, which is order, not quantity. Both ends of a sequence
+    are labelled, and nothing else is.
+    """
+
+    sequence: SequenceBlock
+
+    def compile(self) -> None:
+        for block in self.sequence.blocks():
+            for condition in block.conditions:
+                condition.compile()
+
+
+Rule = SignatureRule | WindowRule | SequenceRule
 
 
 class _RulePack(BaseModel):
@@ -322,32 +355,43 @@ def _build_rule(raw: dict[str, Any], path: Path) -> Rule:
     rule_id = raw.get("id", "<unnamed>")
     body = {**raw, "source_pack": path.name}
 
-    has_match, has_window = "match" in body, "window" in body
-    if has_match == has_window:
+    kinds = [kind for kind in _KINDS if kind in body]
+    if len(kinds) != 1:
         raise RulePackError(
-            f"rule {rule_id!r} in {path.name} must have exactly one of: match, window"
+            f"rule {rule_id!r} in {path.name} must have exactly one of: {', '.join(_KINDS)}"
         )
 
-    model: type[Rule] = SignatureRule if has_match else WindowRule
+    model = _KINDS[kinds[0]]
     try:
         rule = model.model_validate(body)
     except ValidationError as exc:
         raise RulePackError(f"rule {rule_id!r} in {path.name}: {_first_problem(exc)}") from exc
 
     if isinstance(rule, SignatureRule):
-        _check_patterns(rule, path)
+        _check_patterns(rule.id, rule.match.conditions, path)
+    elif isinstance(rule, SequenceRule):
+        for block in rule.sequence.blocks():
+            _check_patterns(rule.id, block.conditions, path)
     return rule
 
 
-def _check_patterns(rule: SignatureRule, path: Path) -> None:
-    for condition in rule.match.conditions:
+#: The body that says what kind of rule a pack entry is, and the model for it.
+_KINDS: Final[dict[str, type[Rule]]] = {
+    "match": SignatureRule,
+    "window": WindowRule,
+    "sequence": SequenceRule,
+}
+
+
+def _check_patterns(rule_id: str, conditions: list[Condition], path: Path) -> None:
+    for condition in conditions:
         if condition.regex is None:
             continue
         try:
             re.compile(condition.regex)
         except re.error as exc:
             raise RulePackError(
-                f"rule {rule.id!r} in {path.name}: invalid regex {condition.regex!r}: {exc}"
+                f"rule {rule_id!r} in {path.name}: invalid regex {condition.regex!r}: {exc}"
             ) from exc
 
 

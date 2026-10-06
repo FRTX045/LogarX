@@ -15,7 +15,7 @@ import yaml
 from logarc.core.activity import ActivityCategory
 from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
-from logarc.detect.engine import RuleEngine
+from logarc.detect.engine import LabelledEvent, RuleEngine
 from logarc.detect.rulepacks import DEFAULT_RULEPACK_DIR, default_rules
 from logarc.detect.rules import load_rules
 
@@ -34,13 +34,14 @@ def request(
     user_agent: str | None = "Mozilla/5.0",
     seconds: float = 0,
     referer: str | None = None,
+    method: str = "GET",
 ) -> NormalizedEvent:
     path, _, query = target.partition("?")
     return NormalizedEvent(
         timestamp=START + timedelta(seconds=seconds),
         client_ip="203.0.113.5",
         evidence=EvidenceRef("access.log", int(seconds) + 1),
-        method="GET",
+        method=method,
         path=path,
         query=query or None,
         status=status,
@@ -412,6 +413,8 @@ def test_an_administrator_who_is_never_refused_is_left_alone(engine: RuleEngine)
     """
     events = [
         request("/admin/users", status=302, seconds=0),
+        request("/login?next=%2Fadmin%2Fusers", status=200, seconds=1),
+        request("/login", status=302, seconds=4, method="POST"),
         request("/admin/users", status=200, seconds=5),
         request("/admin/orders", status=200, seconds=10),
         request("/admin/", status=200, seconds=15),
@@ -421,6 +424,97 @@ def test_an_administrator_who_is_never_refused_is_left_alone(engine: RuleEngine)
 
     fired = [item.label.rule_id for item in labelled]
     assert "forced_browsing_succeeded" not in fired, f"fired on an administrator: {fired}"
+    assert not _access_control(labelled), f"an administrator accused: {fired}"
+
+
+def _access_control(labelled: list[LabelledEvent]) -> list[str]:
+    return [
+        f"{item.event.method} {item.event.target} {item.event.status}"
+        for item in labelled
+        if item.label.category is ActivityCategory.ACCESS_CONTROL
+    ]
+
+
+def test_an_admin_page_reached_without_signing_in_is_access_control(engine: RuleEngine) -> None:
+    """Measured on `2026-10-06-medium`: bounced from `/admin/`, `/admin/users`
+    and `/admin/orders`, then let into `/admin/ping` and `/admin/template` with
+    no sign-in at all. Every request in it was read as ordinary use, because
+    nothing was refused — and the requests where an attacker gets through are
+    the ones that matter most. An administrator signs in between."""
+    events = [
+        request("/admin/", status=302, seconds=0),
+        request("/admin/users", status=302, seconds=10),
+        request("/admin/orders", status=302, seconds=47),
+        request("/admin/ping?host=127.0.0.1", status=200, seconds=53),
+        request("/admin/template?tpl=Hello", status=200, seconds=75),
+    ]
+
+    labelled = engine.label_events(events)
+
+    assert len(_access_control(labelled)) == 5
+    assert labelled[3].label.rule_id == "admin_reached_without_signing_in"
+
+
+@pytest.mark.parametrize(
+    "flow",
+    [
+        pytest.param(
+            [
+                ("GET", "/admin/", 302),
+                ("GET", "/admin/login/?next=/admin/", 200),
+                ("GET", "/static/admin/css/base.css", 200),
+                ("POST", "/admin/login/?next=/admin/", 200),
+                ("POST", "/admin/login/?next=/admin/", 302),
+                ("GET", "/admin/", 200),
+            ],
+            id="django-login-under-admin-with-one-failed-attempt",
+        ),
+        pytest.param(
+            [
+                ("GET", "/wp-admin/", 302),
+                ("GET", "/wp-login.php?redirect_to=%2Fwp-admin%2F", 200),
+                ("GET", "/wp-admin/load-styles.php?c=0&load=login", 200),
+                ("GET", "/wp-admin/css/login.min.css", 200),
+                ("POST", "/wp-login.php", 302),
+                ("GET", "/wp-admin/", 200),
+            ],
+            id="wordpress-login-page-loads-from-wp-admin",
+        ),
+        pytest.param(
+            [
+                ("GET", "/admin/", 302),
+                ("GET", "/oauth2/callback?code=abc&state=xyz", 302),
+                ("GET", "/admin/", 200),
+            ],
+            id="single-sign-on-returning-through-a-callback",
+        ),
+        pytest.param(
+            [
+                ("GET", "/admin/", 200),
+                ("GET", "/admin/users", 200),
+                ("GET", "/admin/orders", 302),
+            ],
+            id="a-session-that-ran-out",
+        ),
+        pytest.param(
+            [
+                ("GET", "/console/", 302),
+                ("POST", "/console/", 200),
+            ],
+            id="a-failed-sign-in-posted-to-the-admin-page-itself",
+        ),
+    ],
+)
+def test_signing_in_to_an_admin_area_is_not_an_intrusion(
+    engine: RuleEngine, flow: list[tuple[str, str, int]]
+) -> None:
+    """The shapes that put a login page, or what it loads, under the admin path."""
+    events = [
+        request(target, status=status, seconds=n * 3, method=method)
+        for n, (method, target, status) in enumerate(flow)
+    ]
+
+    assert not _access_control(engine.label_events(events))
 
 
 def test_human_paced_directory_enumeration_is_detected(engine: RuleEngine) -> None:

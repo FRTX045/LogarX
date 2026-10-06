@@ -7,6 +7,26 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Sequence rules: one request, then another, unless something came between.**
+  A third kind of rule beside signatures and windows, for evidence that is
+  order rather than quantity — an administrator and an intruder are both
+  bounced from `/admin/` to the login page and both let into an admin page a
+  minute later, and only a sign-in between them tells them apart. Both ends of
+  a matched sequence are labelled and nothing else is. `docs/writing-rules.md`
+  has the format.
+
+- **Forced browsing that worked with nothing refused is named.** Bounced
+  from `/admin/` to the login page, then let into an admin page with no
+  sign-in between, is now access control rather than ordinary browsing — the
+  first sequence rule. Administrators signing in through Django, WordPress, a
+  single-sign-on callback or a plain login form are left alone, each pinned by
+  a test. On the committed excerpt access control goes from 0 of 24 named to
+  15 of 24; on the 235,732-request 2026-10-06 medium build from 9 of 31 to 24
+  of 31, with 15 more attacks caught and no false alarm added; every one it
+  names is right. A sign-in on another host whose log is not in the case
+  cannot be seen, which is why its confidence stays below the bar triage
+  treats as an exact shape.
+
 - **Case → Run OWASP CRS on this case.** With CRS turned off after scans,
   the window had no way to run it on one case; only `logarc enrich` could.
   The menu item runs it on the open case whatever the preference says, and

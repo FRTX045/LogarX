@@ -144,10 +144,15 @@ a69632f19c0372c0e0591ccd67196c1b23111c7f38b3ca051a7948200367c621  MANIFEST.json
 e6ac069ed71ab985a32667a87906173331587a3dfd9cc0be4fedada96801ec9b  MANIFEST.json
 ```
 
-All six runs are one ruleset, fingerprint `5bcfdcff474f63ae`, recorded in each output, and one
-source tree: logarc `cbb1235`, whose `src/` is `main`'s at `e87e8d7`. The CRS runs are revision
-`d694d465`, configuration `1c4b66d67838c5e8`, paranoia level 2, and include the `${name}`
-placeholder fix (PR #30); the native runs are identical with and without it, field for field.
+All six runs are one ruleset, fingerprint `d904be20c2cfbf82`, recorded in each output: the rules
+of the sequence-rule change (PR #33), which added `admin_reached_without_signing_in`. The same
+bytes were first scored on 2026-10-06 at `cbb1235` with fingerprint `5bcfdcff474f63ae`; the
+[rule-pack ledger](rule-pack-ledger.md) has both. The only requests that changed had been read as
+browsing or as a sign-in, every one is `access_control` in the truth, and no other category lost a
+correct answer. The CRS runs
+are revision `d694d465`, configuration `1c4b66d67838c5e8`, paranoia level 2, and include the
+`${name}` placeholder fix (PR #30); the native runs are identical with and without it, field for
+field.
 
 The README's ingest rate is the medium log ingested three times at `e87e8d7` with nothing else
 running: 84,623, 85,908 and 87,202 lines/s, median **85,908**, with the default four workers on
@@ -156,14 +161,14 @@ four physical cores (Windows 11, Python 3.12). It is a different measurement fro
 
 | | small native | small + CRS | medium native | medium + CRS | large native | large + CRS |
 |---|---:|---:|---:|---:|---:|---:|
-| Classification accuracy | 0.9955 | 0.9955 | **0.9959** | 0.9958 | 0.9961 | 0.9961 |
-| Weighted F1 | 0.9954 | 0.9954 | 0.9959 | 0.9959 | 0.9962 | 0.9962 |
-| Macro F1 | 0.8598 | 0.8600 | **0.8696** | 0.8687 | 0.8301 | 0.8293 |
+| Classification accuracy | 0.9957 | 0.9957 | **0.9959** | 0.9959 | 0.9961 | 0.9961 |
+| Weighted F1 | 0.9957 | 0.9957 | 0.9960 | 0.9960 | 0.9962 | 0.9962 |
+| Macro F1 | 0.8896 | 0.8898 | **0.8999** | 0.8991 | 0.8626 | 0.8618 |
 | Attack-or-not precision | 1.0000 | 0.9998 | **1.0000** | 1.0000 | 1.0000 | 1.0000 |
-| Attack-or-not recall | 0.9826 | 0.9833 | 0.9939 | 0.9939 | 0.9951 | 0.9952 |
-| Caught / missed | 4,013 / 71 | 4,016 / 68 | 17,044 / 105 | 17,045 / 104 | 40,612 / 198 | 40,613 / 197 |
+| Attack-or-not recall | 0.9863 | 0.9870 | 0.9948 | 0.9948 | 0.9954 | 0.9954 |
+| Caught / missed | 4,028 / 56 | 4,031 / 53 | 17,059 / 90 | 17,060 / 89 | 40,622 / 188 | 40,623 / 187 |
 | **False alarms** | **0** | 1 | **0** | **0** | **0** | **0** |
-| Boundary F1 | 0.8508 | 0.8508 | 0.8520 | 0.8512 | 0.8640 | 0.8639 |
+| Boundary F1 | 0.8515 | 0.8515 | 0.8522 | 0.8514 | 0.8641 | 0.8639 |
 
 **No false alarm natively on any of the three, and that is a count, not a rate.** The one CRS adds
 is on small: rule 942100 (libinjection) reading a Google Ads `gclid` click ID as SQL. CRS catches 3,
@@ -480,15 +485,17 @@ logarc evaluate -c /tmp/c -t tests/data/apache-shopfront/excerpt.truth.jsonl
 
 | committed excerpt, 3,825 requests | native | with CRS |
 |---|---:|---:|
-| Caught | 1,123 | **1,125** |
+| Caught | 1,138 | **1,140** |
 | **False alarms** | **0** | **0** |
-| Classification accuracy | 0.9561 | 0.9563 |
-| Macro F1 | 0.8004 | **0.8107** |
+| Classification accuracy | 0.9600 | 0.9603 |
+| Macro F1 | 0.8751 | **0.8855** |
 
-Figures as of 2026-10-05, after crawlers that never say `bot` and scripts
-described by what they asked for; on 2026-09-30, when the commerce action pack
-was removed, they were accuracy 0.9339 and 0.9341, macro F1 0.7855 and 0.7956.
-Detection has not moved since. The [rule-pack ledger](rule-pack-ledger.md) has
+Figures as of 2026-10-06, after the sequence rule that names forced browsing
+nothing refused: `access_control` went from 0 of 24 to 15 of 24, every one of
+them right, and 15 more attacks were caught with no false alarm added. On
+2026-10-05 they were 1,123 and 1,125 caught, accuracy 0.9561 and 0.9563, macro
+F1 0.8004 and 0.8107; on 2026-09-30, when the commerce action pack was removed,
+accuracy 0.9339 and 0.9341. The [rule-pack ledger](rule-pack-ledger.md) has
 each step and how to reproduce it.
 
 Both fixtures now carry a `crs_fingerprint`: the CRS one names the ruleset that
@@ -850,7 +857,7 @@ Ruleset `9edf8587…` (33 rules) against coreruleset `d694d465951e`, 200 case fi
 **This is history, not the ruleset shipping today.** It was true when written and
 is kept because the analysis under *Reading it* is what motivated ADR-0008 — but
 the rules have since changed substantially and the figures below are stale. The
-tree now holds 99 rules across twelve attack packs and one action pack; family
+tree now holds 100 rules across twelve attack packs and one action pack; family
 933 alone went from 0.012 to 0.68 on 2026-09-15.
 
 For current figures run `logarc score-crs`, which reports both directions —
@@ -1295,8 +1302,8 @@ the ordering within a session is as captured. The threshold sweeps are the part 
 most exposed to that, and the episode-gap table should be read as establishing that the parameter
 behaves sensibly rather than as choosing a value for a real deployment.
 
-**The smallest categories decide the macro average.** On the headline build `access_control`
-names 9 of 31 and `exploitation` 4 of 8, and they count as much as `static_asset` at 162,801.
+**The smallest categories decide the macro average.** On the headline build `exploitation`
+names 4 of 8 and `ssrf` 3 of 5, and they count as much as `static_asset` at 162,801.
 `unknown`, which no rule could assign until 2026-10-05, now names 124 of 201. Any per-class figure
 below about fifty requests of support should be read as an indication, not a measurement; five
 categories are below it on the headline build.

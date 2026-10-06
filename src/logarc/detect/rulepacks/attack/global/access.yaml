@@ -147,6 +147,63 @@ rules:
           op: ">"
           value: 0.0
 
+  # Forced browsing that succeeded with nothing refused at all — the case the
+  # rule above cannot see, because there is no 4xx in it.
+  #
+  # Measured on `2026-10-06-medium`: a client bounced 302 from `/admin/`,
+  # `/admin/users` and `/admin/orders`, then answered 200 on `/admin/ping` and
+  # `/admin/template` with no sign-in at all — the protected pages check, the
+  # tools behind them do not. Every request in it read as ordinary use. An
+  # administrator is bounced too, and let in a moment later; what separates
+  # the two is the sign-in between, which is order rather than quantity and is
+  # not an admin page, so no window over admin pages can see it. Hence a
+  # sequence rule.
+  #
+  # `then` is narrow on purpose, because real deployments put the login page,
+  # or what it loads, under the admin path: Django's `/admin/login/` and
+  # `/static/admin/…`, WordPress's `/wp-admin/load-styles.php` and
+  # `/wp-admin/css/…`. A GET, anchored at the path's start, and never a login,
+  # logout or auth page or a static file. `unless_between` takes any redirect
+  # from a sign-in, single-sign-on or callback path: a failed login is a 401 or
+  # the form again, never a redirect, so erring that way costs a finding, not a
+  # false alarm.
+  #
+  # **What it cannot see:** a sign-in on another host whose log is not in the
+  # case. Read from one vhost's log, that administrator looks exactly like
+  # this, so the confidence stays below the 0.85 that triage treats as an exact
+  # shape.
+  - id: admin_reached_without_signing_in
+    name: Admin Page Reached Without Signing In
+    category: access_control
+    owasp: "A01:2025"
+    severity: high
+    confidence: 0.8
+    references: ["CAPEC-87"]
+    sequence:
+      within_seconds: 300
+      first:
+        all:
+          - field: path_decoded
+            regex: '^/(admin|administrator|wp-admin|phpmyadmin|manager/html|console)\b'
+          - field: status
+            any_of: ["301", "302", "303", "307", "308"]
+      then:
+        all:
+          - field: method
+            any_of: ["GET", "HEAD"]
+          - field: path_decoded
+            regex: '^/(admin|administrator|wp-admin|phpmyadmin|manager/html|console)\b(?!.*(login|logout|signin|sign-in|auth|load-(styles|scripts)\.php|\.(css|js|map|png|gif|jpe?g|svg|ico|webp|woff2?|ttf|eot)$))'
+          - field: status
+            min: 200
+          - field: status
+            max: 299
+      unless_between:
+        all:
+          - field: path_decoded
+            regex: '/(login|log-in|signin|sign-in|wp-login\.php|sso|saml|oauth2?|callback|auth)\b'
+          - field: status
+            any_of: ["301", "302", "303", "307", "308"]
+
   - id: debug_endpoint_probe
     name: Debug or Status Endpoint Probe
     category: reconnaissance
