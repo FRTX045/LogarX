@@ -38,6 +38,7 @@ NAMES_THE_PIN = (
     "docs/evaluations/ip-prioritization-validation.md",
     "docs/evaluations/suspicious-recommendations-validation.md",
     "docs/ip-prioritization.md",
+    "src/logarc/detect/crs/setup.py",
 )
 
 SHA1 = re.compile(r"\b[0-9a-f]{40}\b")

@@ -382,14 +382,18 @@ Turned off or not, *Case → Run OWASP CRS on this case* runs it on the open
 case whenever asked, as `logarc enrich` does on the command line.
 
 The packaged Windows build carries the sidecar and the ruleset, so there is
-nothing to install. From source, build them once:
+nothing to install. From source, set them up once:
 
 ```bash
-git clone https://github.com/coreruleset/coreruleset.git vendor/coreruleset
-git -C vendor/coreruleset checkout d694d465951ee06347214f1291ae096e40700001
-cd crs && go build -o crs-sidecar .        # needs Go 1.25+; see crs/README.md
+logarc setup-crs                                # needs git, Go 1.25+ and a connection, once
 logarc enrich --case ./case-shop --paranoia 3   # run again, at another level
 ```
+
+`setup-crs` fetches the ruleset at the revision this project measures against
+(`d694d465951ee06347214f1291ae096e40700001`), builds the sidecar, and replays a
+known SQL injection to prove the two work together. It is the one time logarc
+reaches for the network, and only because it was asked to. The manual steps are
+in [crs/README.md](crs/README.md).
 
 Without the sidecar, a scan says once that CRS was not run and carries on: the
 case analyses on the bundled rules alone, and says so on every run.
@@ -408,6 +412,7 @@ case analyses on the bundled rules alone, and says so on every run.
 | `logarc evidence` | The raw log lines a finding rests on — the other half of the chain of custody. |
 | `logarc export` | A standalone HTML or JSON report for one client. |
 | `logarc enrich` | Run OWASP CRS over a case again, or at another paranoia level. |
+| `logarc setup-crs` | From a source checkout: fetch the pinned CRS ruleset and build the sidecar, once. |
 | `logarc formats` | See, write and try out log formats. |
 | `logarc evaluate` | Measure the reconstruction against a log whose content is known. |
 | `logarc benchmark` | Throughput, peak memory and reconstruction time, on a log you give it. |

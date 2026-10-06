@@ -195,6 +195,23 @@ def test_an_absent_ruleset_says_where_to_clone_it(tmp_path: Path) -> None:
     assert "git clone" in str(raised.value)
 
 
+@pytest.mark.parametrize("missing", ["sidecar", "ruleset"])
+def test_a_source_checkout_missing_crs_is_pointed_at_setup_crs(
+    tmp_path: Path, missing: str
+) -> None:
+    """Either half missing, the first thing said is the one command that fetches
+    the pinned ruleset and builds the sidecar; the manual steps follow it."""
+    binary = tmp_path / "crs-sidecar"
+    if missing == "ruleset":
+        binary.write_text("", encoding="utf-8")
+    config = SidecarConfig(binary=binary, rules=tmp_path / "absent")
+
+    with pytest.raises(CrsUnavailableError) as raised:
+        config.check()
+
+    assert "logarc setup-crs" in str(raised.value)
+
+
 def test_the_binary_name_follows_the_interpreter_not_the_build_host() -> None:
     """A Windows interpreter cannot spawn an ELF, and this project is developed
     with a Windows venv over a Linux toolchain."""

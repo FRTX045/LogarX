@@ -302,7 +302,10 @@ class SidecarConfig:
                 )
             raise CrsUnavailableError(
                 f"CRS sidecar not found at {self.binary}.\n"
-                f"Build it with:\n"
+                f"Set CRS up with:\n"
+                f"  logarc setup-crs\n"
+                f"which fetches the pinned ruleset and builds the sidecar, once (it needs git "
+                f"and Go 1.25+). Or build it by hand:\n"
                 f"  cd {_crs_dir()} && go build -o {self.binary.name} .\n"
                 f"Cross-compiling for a Windows interpreter:\n"
                 f"  GOOS=windows GOARCH=amd64 go build -o crs-sidecar.exe .\n"
@@ -310,7 +313,9 @@ class SidecarConfig:
             )
         if not (self.rules / "rules").is_dir():
             raise CrsUnavailableError(
-                f"CRS ruleset not found at {self.rules}. Clone it with:\n"
+                f"CRS ruleset not found at {self.rules}. Set it up with:\n"
+                f"  logarc setup-crs\n"
+                f"which fetches the revision this project measures against. Or clone it by hand:\n"
                 f"  git clone https://github.com/coreruleset/coreruleset.git {self.rules}"
             )
 
