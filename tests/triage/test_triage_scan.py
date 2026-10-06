@@ -209,6 +209,7 @@ def test_stored_profiles_keep_their_request_examples(tmp_path):
     sample[2] = replace(sample[2], query="attack")
     profile = profile_client(sample, probe_attack_engine(tmp_path))
     assert profile.sequence_examples
+    assert profile.exploit_examples
     assert _profile(json.loads(json.dumps(asdict(profile)))) == profile
 
 
@@ -220,6 +221,21 @@ def test_an_index_written_in_the_previous_layout_is_rebuilt(tmp_path, monkeypatc
         case.store.write(events())
         case.store.finalize()
     monkeypatch.setattr(scan, "_LAYOUT", 2)
+    old = scan.scan_case(case.root)
+    monkeypatch.undo()
+    current = scan.scan_case(case.root)
+    assert not current.cached
+    assert current.path != old.path
+
+
+def test_an_index_written_in_layout_five_is_rebuilt(tmp_path, monkeypatch):
+    """Read as current, it would show every client as having no exploit evidence."""
+    from logarc.triage import scan
+
+    with Case.create(tmp_path / "case") as case:
+        case.store.write(events())
+        case.store.finalize()
+    monkeypatch.setattr(scan, "_LAYOUT", 5)
     old = scan.scan_case(case.root)
     monkeypatch.undo()
     current = scan.scan_case(case.root)

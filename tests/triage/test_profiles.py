@@ -1,6 +1,8 @@
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from logarc.analysis import analyse_ip
 from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
@@ -73,7 +75,7 @@ def test_promoted_order_bounds_severity_and_explains_support_without_losing_evid
     assert "1,000 of 1,000" in support.text
     assert support.evidence == base.reasons[0].evidence
     assert rows[0].reasons[-len(base.reasons) :] == base.reasons
-    assert DEFAULT_POLICY.version == 3
+    assert DEFAULT_POLICY.version == 4
 
 
 def test_priority_score_matches_hand_calculated_support_severity_and_share():
@@ -508,3 +510,121 @@ def test_example_requests_keep_their_query(tmp_path):
     sample[2] = replace(sample[2], query="id=1&attack=union", path="/login")
     probe, attack = profile_client(sample, probe_attack_engine(tmp_path)).sequence_examples
     assert (probe.query, attack.query) == ("probe=1", "id=1&attack=union")
+
+
+EXCLUDED_FROM_EXPLOIT_EVIDENCE = (
+    ("admin_area_probe", "access_control"),
+    ("forced_browsing", "access_control"),
+    ("forced_browsing_succeeded", "exploitation"),
+    ("admin_reached_without_signing_in", "access_control"),
+    ("server_errors_provoked", "exploitation"),
+)
+
+
+def test_a_quiet_exploit_attempt_precedes_a_loud_probing_client(tmp_path):
+    from logarc.triage.profile import profile_client, rank_profiles
+
+    engine = fixture_rules(
+        tmp_path,
+        ("sweep", "enumeration", "medium", 0.9, "sweep"),
+        ("sqli_fixture", "injection", "high", 0.9, "attack"),
+    )
+    quiet = profile_client(events("192.0.2.9", 1, query="attack"), engine)
+    loud = profile_client(events("192.0.2.1", 500, query="sweep"), engine)
+    assert loud.exploit_examples == ()
+    assert quiet.exploit_rules == ("sqli_fixture",)
+    assert [example.note for example in quiet.exploit_examples] == ["Sqli Fixture"]
+    assert quiet.exploit_examples[0].evidence == EvidenceRef("source", 1)
+    ranked = rank_profiles([loud, quiet], "suspicious")
+    assert [row.profile.client_ip for row in ranked] == ["192.0.2.9", "192.0.2.1"]
+
+
+def test_inside_the_exploit_group_more_flagged_requests_come_first(tmp_path):
+    from logarc.triage.profile import profile_client, rank_profiles
+
+    engine = fixture_rules(tmp_path, ("sqli_fixture", "injection", "high", 0.9, "attack"))
+    few = profile_client(events("192.0.2.1", 2, query="attack"), engine)
+    many = profile_client(events("192.0.2.2", 30, query="attack"), engine)
+    ranked = rank_profiles([few, many], "suspicious")
+    assert [row.profile.client_ip for row in ranked] == ["192.0.2.2", "192.0.2.1"]
+
+
+@pytest.mark.parametrize(("rule_id", "category"), EXCLUDED_FROM_EXPLOIT_EVIDENCE)
+def test_an_excluded_rule_alone_does_not_place_a_client_first(tmp_path, rule_id, category):
+    from logarc.triage.profile import profile_client
+
+    engine = fixture_rules(
+        tmp_path,
+        (rule_id, category, "high", 0.9, "excluded"),
+        ("sqli_fixture", "injection", "high", 0.9, "attack"),
+    )
+    alone = profile_client(events(count=3, query="excluded"), engine)
+    assert alone.hostile_requests == 3
+    assert alone.exploit_examples == ()
+    assert alone.exploit_rules == ()
+    sample = events(count=3, query="excluded")
+    sample[2] = replace(sample[2], query="attack")
+    with_eligible = profile_client(sample, engine)
+    assert with_eligible.exploit_rules == ("sqli_fixture",)
+
+
+def test_an_eligible_match_that_loses_the_label_still_counts(tmp_path):
+    from logarc.triage.profile import profile_client
+
+    engine = fixture_rules(
+        tmp_path,
+        ("scanner_fixture", "reconnaissance", "critical", 0.95, "both"),
+        ("sqli_fixture", "injection", "high", 0.9, "both"),
+    )
+    sample = events(count=1, query="both")
+    (labelled,) = engine.label_events(sample)
+    assert labelled.label.rule_id == "scanner_fixture"
+    profile = profile_client(sample, engine)
+    assert profile.exploit_rules == ("sqli_fixture",)
+
+
+def test_is_exploit_evidence_by_rule_and_category(tmp_path):
+    from logarc.core.activity import ActivityCategory
+    from logarc.triage.profile import is_exploit_evidence
+
+    engine = fixture_rules(
+        tmp_path,
+        ("sqli_fixture", "injection", "high", 0.9, "attack"),
+        ("recon_fixture", "reconnaissance", "high", 0.9, "recon"),
+    )
+    (injection,) = engine.label_events(events(count=1, query="attack"))
+    (recon,) = engine.label_events(events(count=1, query="recon"))
+    assert is_exploit_evidence(injection.label)
+    assert not is_exploit_evidence(recon.label)
+    crs_label = replace(injection.label, rule_id="crs:942100", category=ActivityCategory.INJECTION)
+    assert not is_exploit_evidence(crs_label)
+
+
+def test_a_client_flagged_only_by_crs_stays_in_the_queue_without_exploit_evidence():
+    from logarc.detect.crs import CrsDetection
+    from logarc.triage.profile import profile_client, rank_profiles
+
+    sample = events(count=3)
+    detection = CrsDetection(
+        source_file_id="source",
+        line_no=1,
+        rule_id=942100,
+        severity="critical",
+        msg="Fixture detection",
+        matched_var="ARGS:q",
+        transformed_value="fixture",
+        attack_family="attack-sqli",
+    )
+    profile = profile_client(sample, RuleEngine(default_rules()), crs={("source", 1): [detection]})
+    assert profile.hostile_requests == 1
+    assert "injection" in profile.categories
+    assert profile.exploit_examples == ()
+    assert [row.profile for row in rank_profiles([profile], "suspicious")] == [profile]
+
+
+def test_a_window_rule_match_is_exploit_evidence():
+    from logarc.triage.profile import profile_client
+
+    sample = events(count=5, path="/login", method="POST", status=401)
+    profile = profile_client(sample, RuleEngine(default_rules()))
+    assert profile.exploit_rules == ("credential_attack",)
