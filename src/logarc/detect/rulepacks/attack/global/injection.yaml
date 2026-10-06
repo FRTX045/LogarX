@@ -29,8 +29,15 @@ rules:
     references: ["CAPEC-66"]
     match:
       any:
+        # The words are whole words by letters only: `reunion select` and
+        # `credit union selection` are prose, but a digit, a dot or `\N` before
+        # `union` (`1e0union select`, `.1union select`, `\Nunion select`) is how
+        # an injection gets past a filter that wants a space there, so those
+        # still match. `union(select 1)` matches too, `(` being a separator.
+        # Normalisation removes SQL comments, so `1/**/union/**/select` reaches
+        # the rule as `1unionselect` and is not caught by this pattern.
         - field: target_decoded
-          regex: &sqli_union 'union[\s/(]+(all[\s/(]+)?select'
+          regex: &sqli_union '(?:(?<![a-z])|(?<=\\n))union[\s/(]+(all[\s/(]+)?select\b'
         - field: user_agent_decoded
           regex: *sqli_union
 
@@ -398,8 +405,19 @@ rules:
     references: ["CAPEC-88"]
     match:
       any:
+        # `;`, `|` and a backtick are not query separators, so a command word
+        # after one is in command position. `&` is also the query-string
+        # separator, and the decoded target cannot tell `&cat=shoes` from an
+        # injected `%26cat%20/etc/passwd`: both read `&cat`. What does tell them
+        # apart is what follows the word. A parameter name is followed by `=`
+        # (after any name characters and whitespace: `cat[]=`, `cmd.x=`,
+        # `id-token=`), a command by its arguments or nothing, so after `&` a
+        # command word counts only when no such `=` comes next. An injected
+        # `&id=1` therefore stays unmatched on purpose: `id=1` is a shell
+        # variable assignment and runs nothing. A value-less flag such as
+        # `?debug&id` still matches.
         - field: target_decoded
-          regex: '[;|&`]\s*(cat|ls|id|whoami|uname|curl|wget|nc|bash|sh|powershell|cmd)\b'
+          regex: '[;|`]\s*(cat|ls|id|whoami|uname|curl|wget|nc|bash|sh|powershell|cmd)\b|&\s*(cat|ls|id|whoami|uname|curl|wget|nc|bash|sh|powershell|cmd)\b(?![\w.\-\[\]]*\s*=)'
         - field: target_decoded
           regex: '\$\(\s*\w+|\|\s*(bash|sh)\b'
         # A newline ends the intended command and starts the attacker's. Caught

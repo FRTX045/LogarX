@@ -2614,3 +2614,108 @@ def test_command_execution_rules_stay_off_ordinary_text(engine: RuleEngine, targ
 
     hostile = [label.rule_id for label in labelled.all_labels if label.category.is_hostile]
     assert not hostile, f"{target!r} was called hostile by {hostile}"
+
+
+def fired_rules(engine: RuleEngine, target: str) -> set[str]:
+    (labelled,) = engine.label_events([request(target)])
+    return {label.rule_id for label in labelled.all_labels}
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        # A command word that is a parameter NAME: the `&` is the separator.
+        "/products?sort=price&cat=shoes",
+        "/item?page=2&id=5",
+        "/x?a=1&cmd=list",
+        "/x?a=1&ls=1",
+        "/x?a=1&sh=2",
+        "/x?a=1&nc=2",
+        "/x?q=a&id=5&cat=2",
+        "/x?a=1&cat =shoes",
+        # Only the whole word is a command.
+        "/x?a=1&identity=x",
+        "/x?a=1&category=x",
+        # A parameter name that is a command word plus a suffix.
+        "/x?a=1&cat[]=shoes",
+        "/x?a=1&cat%5B%5D=shoes",
+        "/x?a=1&id[]=5",
+        "/x?a=1&cmd.x=10",
+        "/x?a=1&id-token=abc",
+        # An encoded ampersand with no command after it is an ordinary value.
+        "/x?q=salt%26pepper",
+        "/x?brand=AT%26T",
+    ],
+)
+def test_a_query_parameter_named_like_a_command_is_not_command_injection(
+    engine: RuleEngine, target: str
+) -> None:
+    assert "command_injection" not in fired_rules(engine, target)
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "/x?q=a;cat /etc/passwd",
+        "/x?q=|id",
+        "/x?q=`whoami`",
+        "/x?q=&&id",
+        "/x?q=& whoami",
+        "/x?q=x%26cat%20/etc/passwd",
+        "/x?q=x%26%26id",
+        "/x?q=x%3Bid",
+        "/x?q=x%7Cid",
+        "/x?host=127.0.0.1%26whoami",
+        "/x?host=1.1.1.1%26cat",
+        # `;` is not a query separator, so a command followed by `=` after it
+        # is still a command position.
+        "/x?q=x;id=1",
+        "/x?q=&curl http://e/?a=b",
+    ],
+)
+def test_a_command_after_a_shell_separator_is_still_command_injection(
+    engine: RuleEngine, target: str
+) -> None:
+    assert "command_injection" in fired_rules(engine, target)
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "/s?q=credit union selection",
+        "/s?q=union selections",
+        "/s?q=reunion select",
+        "/s?q=the union selected a leader",
+        "/s?q=trade union selectively",
+        "/s?q=a union selecting",
+        "/s?q=unions select",
+    ],
+)
+def test_union_select_must_be_whole_words(engine: RuleEngine, target: str) -> None:
+    assert "sqli_union_select" not in fired_rules(engine, target)
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "/s?id=1 union select 1,2,3",
+        "/s?id=1 UNION ALL SELECT null,null--",
+        "/s?id=1%20union%20select%20username%20from%20users",
+        "/s?id=UnIoN SeLeCt 1",
+        "/s?id=1 union(select 1)",
+        "/s?id=1 union all(select 1)",
+        "/s?id=1+union+select+1",
+        # Number-adjacent evasions: a digit, a dot or a `\N` before `union`.
+        "/s?id=1e0union select 1",
+        "/s?id=1e1union select 1",
+        "/s?id=.1union select 1",
+        "/s?id=1.0union select 1",
+        "/s?id=-1.0union all select 1",
+        r"/s?id=\Nunion select 1",
+        "/s?id=0x1union select 1",
+        "/s?id=0union select 1",
+        "/s?id=1union select 1",
+    ],
+)
+def test_union_select_whole_words_are_still_caught(engine: RuleEngine, target: str) -> None:
+    assert "sqli_union_select" in fired_rules(engine, target)
