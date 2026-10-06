@@ -560,3 +560,37 @@ rules:
         # character, so it trivially passes — and the whole guard is bypassed.
         - field: target_decoded
           regex: '<%(?![=@!]?\s*\w+\s*%>)[=@!]?\s*[^%]{0,64}%>'
+
+  # The payoff, not the probe: an injection that reaches for secrets.
+  #
+  # A probe asks whether the hole is there — `;id`, `{{7*7}}`, `' OR 1=1`. This
+  # takes something out of it: a command that reads the system's account
+  # files, template or code that opens them, or a UNION SELECT from the table
+  # of users. Measured on the three `2026-10-06` tiers, the first two shapes are
+  # `exploitation` in the truth every time and were read as path traversal; the
+  # same clients' probes before them are injection in both.
+  #
+  # Exact shapes only, which is why it outranks `sensitive_file_access` (0.95):
+  # a separator and a reader before the file, or a reading call around it, or
+  # a UNION that selects a credential column `FROM` a users table. The column is
+  # the line the truth draws on `2026-10-06-small`: the same client's
+  # `UNION SELECT …,username,… FROM users` a moment earlier, lining the columns
+  # up, is injection; the `…,password_hash,…` after it is exploitation. A file named with no injection around
+  # it — the corpus has `cat /etc/subuid` bare — stays path traversal, and a
+  # scanner's polyglot that UNION SELECTs from `information_schema` and names
+  # `../etc/passwd` inside `xp_cmdshell` is neither.
+  - id: injection_reaches_for_secrets
+    name: Injection Reading Secrets
+    category: exploitation
+    owasp: "A05:2025"
+    severity: critical
+    confidence: 0.97
+    references: ["CAPEC-88", "CAPEC-66"]
+    match:
+      any:
+        - field: target_decoded
+          regex: '(?:[;|&`]|\$\()\s*(cat|head|tail|less|more|nl|tac|base64|xxd|strings|od)\b[^;|&]{0,80}/(etc/(passwd|shadow|group)|proc/self/environ)\b'
+        - field: target_decoded
+          regex: '\b(file_get_contents|readfile|fopen|file|include|require|include_once|require_once|open|show_source|highlight_file)\s*\(\s*[''"]?(file://)?/(etc/(passwd|shadow|group)|proc/self/environ)\b'
+        - field: target_decoded
+          regex: '\bunion(\s+all)?\s+select\b[^;]{0,300}\b(password(_?hash)?|passwd|pass_?hash|pwd(_?hash)?|secret|api_?key)\b[^;]{0,300}\bfrom\s+[`"\[]?(users?|accounts?|admins?|administrators?|members?|customers?|credentials?|logins?)\b'

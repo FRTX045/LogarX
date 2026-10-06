@@ -38,6 +38,16 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Windows application already carries CRS. The "CRS was not run" notice and
   the missing-sidecar and missing-ruleset messages now name it first.
 
+- **An injection that reaches for secrets is named exploitation, not a
+  probe.** `;cat /etc/passwd` through a command injection, a template that
+  opens `/etc/passwd`, and a UNION selecting a password column from a users
+  table are what the probes before them were for, and were reported as path
+  traversal or plain injection. Exact shapes only: the same file named with no injection around
+  it, a search for "how to cat /etc/passwd", and a probe asking whether a
+  users table exists are left as they were. On the committed excerpt
+  exploitation goes from 4 of 8 named to 6 of 8, every one right, with
+  detection unchanged.
+
 - **Case → Run OWASP CRS on this case.** With CRS turned off after scans,
   the window had no way to run it on one case; only `logarc enrich` could.
   The menu item runs it on the open case whatever the preference says, and
