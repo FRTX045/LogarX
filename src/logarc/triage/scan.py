@@ -64,7 +64,7 @@ class TriageProgress:
 #: before a table was added is rebuilt rather than read as having nothing in it.
 #: Separate from `TriagePolicy.version`, which names the ranking that was
 #: validated and promoted; the layout changing is not the ranking changing.
-_LAYOUT = 5
+_LAYOUT = 7
 
 
 @dataclass(frozen=True)
@@ -120,8 +120,14 @@ def _profile(data: dict[str, Any]) -> ClientProfile:
             "reasons": tuple(_reason(reason) for reason in data["reasons"]),
             **{
                 name: _examples(data.get(name, []))
-                for name in ("distinct_examples", "sequence_examples", "recurrence_examples")
+                for name in (
+                    "distinct_examples",
+                    "sequence_examples",
+                    "recurrence_examples",
+                    "exploit_examples",
+                )
             },
+            "exploit_rules": tuple(data.get("exploit_rules", ())),
             "evidence": {
                 key: tuple(EvidenceRef(**ref) for ref in refs)
                 for key, refs in data["evidence"].items()

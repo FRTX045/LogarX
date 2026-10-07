@@ -1,5 +1,6 @@
 from dataclasses import replace
 
+import pytest
 from test_triage_evaluation import population
 
 
@@ -225,3 +226,49 @@ def test_the_gate_refuses_more_benign_clients_at_the_head_of_any_build():
     assert result["checks"]["head_yield"] is True
     assert result["checks"]["benign_head"] is False
     assert result["promote"] is False
+
+
+def exploit_fixture(tmp_path):
+    """An injection client, a client matching only an excluded-id access-control rule, and a
+    loud client that only probes, profiled by one engine."""
+    import test_profiles as helpers
+
+    from logarc.triage.profile import NOT_EXPLOIT_EVIDENCE, TARGETED, profile_client
+
+    engine = helpers.fixture_rules(
+        tmp_path,
+        ("sqli_probe", "injection", 3, 0.9, "union"),
+        ("admin_area_probe", "access_control", 3, 0.9, "admin"),
+        ("noisy_scan", "reconnaissance", 4, 0.9, "scan"),
+    )
+    fields = {"path": "/"}
+    profiles = [
+        profile_client(helpers.events("192.0.2.1", 3, query="q=union", **fields), engine),
+        profile_client(helpers.events("192.0.2.2", 2, query="q=admin", **fields), engine),
+        profile_client(helpers.events("192.0.2.3", 20, query="q=scan", **fields), engine),
+    ]
+    category_rules = frozenset(r.id for r in engine.rules if r.category in TARGETED)
+    return profiles, category_rules, category_rules - NOT_EXPLOIT_EVIDENCE
+
+
+def test_exploit_orderings_place_each_tier_and_the_application_agrees(tmp_path):
+    from logarc.evaluation.priorities import assert_same_ranked, exploit_orderings
+
+    profiles, category_rules, eligible = exploit_fixture(tmp_path)
+    orders = exploit_orderings(profiles, category_rules=category_rules, eligible_rules=eligible)
+    assert set(orders) == {"policy3", "exploit_first", "category_only", "app"}
+    assert_same_ranked(orders)
+    assert set(orders["category_only"][:2]) == {"192.0.2.1", "192.0.2.2"}
+    assert orders["exploit_first"][0] == "192.0.2.1"
+    assert orders["policy3"][0] == "192.0.2.3"
+    assert orders["exploit_first"] == orders["app"]
+
+
+def test_exploit_orderings_require_both_rule_sets(tmp_path):
+    from logarc.evaluation.priorities import exploit_orderings
+
+    profiles, category_rules, eligible = exploit_fixture(tmp_path)
+    with pytest.raises(TypeError):
+        exploit_orderings(profiles, eligible_rules=eligible)  # type: ignore[call-arg]
+    with pytest.raises(TypeError):
+        exploit_orderings(profiles, category_rules=category_rules)  # type: ignore[call-arg]

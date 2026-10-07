@@ -131,6 +131,30 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Suspicious activity puts clients with exploit evidence first.** A client
+  whose own request matched a native injection, path traversal, access-control,
+  credential, SSRF or exploitation rule now comes before every client without
+  such a match, and its recommendation opens with that rule and the request it
+  matched. Each group keeps the earlier ordering by flagged volume. CRS matches
+  never place a client first, and five rules that record where a client went or
+  what the server answered (`admin_area_probe`, `forced_browsing`,
+  `forced_browsing_succeeded`, `admin_reached_without_signing_in`,
+  `server_errors_provoked`) are left out, which can leave genuine access-control
+  attacks, and attacks that provoke server errors, in the second group. Two credential window
+  rules, `credential_attack` and `bulk_account_creation`, also judge by what the
+  server answered (5 responses of 400 or above within 300 s) but stay eligible,
+  because they are the only native view of password guessing and credential
+  stuffing an access log gives; a user who mistypes a password five times, or a
+  client stuck retrying an expired token, can therefore enter the first group.
+  Custom rules in those categories take part, and adding or changing a rule can change
+  the order. Existing triage indexes are rebuilt on first open.
+  Measured on the eleven development builds (synthetic, one shop, all examined
+  before): summed over 64 targeted-client appearances, 64 were in the first 10
+  under this design against 11 under policy 3, and the first group held no
+  non-targeted client. Development results, not evidence about real traffic; see
+  `docs/evaluations/exploit-evidence-first-validation.md` and
+  `docs/ip-prioritization.md`.
+
 - **CRS enrichment shares its work between up to four sidecars.** Each
   batch's distinct requests are split across as many sidecar processes as
   there are cores, up to four, and the answers merge back by line. Measured

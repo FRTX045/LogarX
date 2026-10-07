@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -9,6 +10,9 @@ import pytest
 
 from logarc.case import Case
 from logarc.evaluation.truth import GroundTruth, read_truth
+
+# Evaluation tests reuse the profile helpers in tests/triage.
+sys.path.insert(0, str(Path(__file__).parent.parent / "triage"))
 
 EXCERPT = Path(__file__).parent.parent / "data" / "apache-shopfront"
 

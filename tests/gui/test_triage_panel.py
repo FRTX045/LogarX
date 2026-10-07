@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 from PyQt6.QtTest import QTest
@@ -493,7 +494,7 @@ def test_the_queue_shows_each_clients_key_observation(qt_app, tmp_path):
     panel = selected_panel(qt_app, make_case(tmp_path))
     assert panel.table.horizontalHeaderItem(2).text() == "Key observation"
     assert panel.table.item(0, 2).text() == summary_for(panel._rows[0])
-    assert "requests flagged" in panel.table.item(0, 2).text()
+    assert panel.table.item(0, 2).text().startswith("Exploit evidence: ")
     assert panel.open_client.text() == "Inspect supporting requests"
     panel.close()
 
@@ -528,6 +529,25 @@ def test_clicking_an_example_opens_exactly_that_request(qt_app, tmp_path):
     panel.details.anchorClicked.emit(QUrl(f"example:{number}:0"))
     assert opened == [(row.profile.client_ip, (example.evidence,))]
     assert "Cannot open" not in panel.details.toHtml()
+    panel.close()
+
+
+def test_inspect_opens_exactly_the_exploit_request_for_a_first_group_client(qt_app, tmp_path):
+    panel = selected_panel(qt_app, make_case(tmp_path, count=2))
+    row = panel._rows[0]
+    lead = row.reasons[0]
+    assert lead.kind == "exploit_evidence"
+    assert len(lead.evidence) == 1
+    other = (EvidenceRef("source", 99),)
+    reasons = (lead, *(replace(reason, evidence=other) for reason in row.reasons[1:]))
+    assert len(reasons) > 1
+    panel._display([replace(row, reasons=reasons)])
+    panel.table.selectRow(0)
+    opened = []
+    panel.investigate.connect(lambda ip, refs: opened.append((ip, refs)))
+    panel.open_client.click()
+    assert opened == [(row.profile.client_ip, lead.evidence)]
+    assert opened[0][1] == tuple(example.evidence for example in row.profile.exploit_examples)
     panel.close()
 
 

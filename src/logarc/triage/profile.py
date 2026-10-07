@@ -54,13 +54,39 @@ TARGETED: Final = frozenset(
     }
 )
 
+#: Attack-category rules whose evidence also fits ordinary activity: each records
+#: where a client went or what the server answered, not a payload it sent. Their
+#: matches stay in the queue and its reasons; they cannot place a client first.
+NOT_EXPLOIT_EVIDENCE: Final = frozenset(
+    {
+        "admin_area_probe",
+        "forced_browsing",
+        "forced_browsing_succeeded",
+        "admin_reached_without_signing_in",
+        "server_errors_provoked",
+    }
+)
+
+
+def is_exploit_evidence(label: ActivityLabel) -> bool:
+    """Whether a match places its client first in the Suspicious queue.
+
+    A native rule in an attack category, other than the five above. CRS-derived
+    labels never do, wherever they are stored.
+    """
+    return (
+        label.category in TARGETED
+        and not label.rule_id.startswith("crs:")
+        and label.rule_id not in NOT_EXPLOIT_EVIDENCE
+    )
+
 
 @dataclass(frozen=True)
 class TriagePolicy:
     minimum_requests: int = 20
     minimum_population: int = 30
     minimum_model_population: int = 100
-    version: int = 3
+    version: int = 4
 
 
 DEFAULT_POLICY = TriagePolicy()
@@ -138,6 +164,14 @@ class ClientProfile:
     hostile_rules: dict[str, int] = field(default_factory=dict)
     """Flagged requests per rule with a hostile label, so one noisy rule can be named."""
     hostile_rule_names: dict[str, str] = field(default_factory=dict)
+    exploit_examples: tuple[RequestExample, ...] = ()
+    """Empty, or the first request in time with an eligible match; `note` is the name of the
+    strongest eligible rule on that request (severity, then confidence, then rule id).
+
+    A non-empty value places the client in the first group of the Suspicious queue.
+    """
+    exploit_rules: tuple[str, ...] = ()
+    """The rule id behind each exploit example, in the same order."""
 
 
 @dataclass(frozen=True)
@@ -173,6 +207,7 @@ def profile_client(
     hostile_times = []
     hostile_rules: Counter[str] = Counter()
     hostile_rule_names: dict[str, str] = {}
+    exploit: list[tuple[LabelledEvent, ActivityLabel]] = []
     for _, labelled in label_sessions(ordered, engine, policy=session_policy, crs=crs):
         sessions += 1
         pair = _probe_then_attack(labelled)
@@ -199,6 +234,17 @@ def profile_client(
             rules_matched.update(
                 {label.rule_id for label in item.all_labels} | {item.label.rule_id}
             )
+            if not exploit:
+                eligible = [
+                    label
+                    for label in {
+                        lab.rule_id: lab for lab in (*item.all_labels, item.label)
+                    }.values()
+                    if is_exploit_evidence(label)
+                ]
+                found = _strongest(eligible) if eligible else None
+                if found is not None:
+                    exploit = [(item, found)]
             hostile = [label for label in item.all_labels if label.category.is_hostile]
             if not hostile:
                 continue
@@ -312,6 +358,8 @@ def profile_client(
         dict(sorted(category_counts.items())),
         dict(sorted(hostile_rules.items())),
         dict(sorted(hostile_rule_names.items())),
+        tuple(_example(item, label.name) for item, label in exploit),
+        tuple(label.rule_id for _, label in exploit),
     )
 
 
@@ -426,7 +474,11 @@ def rank_profiles(
     queue: QueueName,
     policy: TriagePolicy = DEFAULT_POLICY,
 ) -> list[RankedClient]:
-    """Rank the complete population before the interface applies a page limit."""
+    """Rank the complete population before the interface applies a page limit.
+
+    The Suspicious queue puts clients with exploit evidence before all others;
+    each group is ordered by the priority score and its tie keys.
+    """
     if queue == "all":
         return [
             RankedClient(p, p.reasons)
@@ -436,6 +488,7 @@ def rank_profiles(
         selected = sorted(
             (p for p in profiles if p.hostile_requests),
             key=lambda p: (
+                0 if p.exploit_examples else 1,
                 -priority_score(p),
                 -len(p.categories),
                 -p.hostile_targets,

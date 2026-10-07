@@ -5,7 +5,7 @@ The **Where to start** tab offers two views:
 
 | View | What determines its order |
 | --- | --- |
-| Suspicious activity | Supporting requests weighted by bounded severity and supporting-request share; category breadth and hostile paths break score ties |
+| Suspicious activity | Clients with exploit evidence first, then all others; within each group, supporting requests weighted by bounded severity and supporting-request share, with category breadth and hostile paths breaking score ties |
 | Unusual activity | Strongest upper-tail statistical deviations from comparable clients in this case |
 
 Finding any one client, busy or quiet, is the client list's job. It shows the
@@ -22,7 +22,9 @@ Address search covers that population. The queue and the details below it share
 a divider the reader can drag; the details start with half the space. Select a
 row and choose **Inspect supporting requests** to reconstruct the client and
 select an activity containing its supporting source lines, or click an example
-request in the details to open reconstruction on that request. Requested source
+request in the details to open reconstruction on that request. For a client in
+the first group, Inspect opens the request that matched its exploit rule; for
+every other client it opens the sampled flagged requests. Requested source
 lines appear before the ordinary activity sample, within the same display limit.
 Counts describe all supporting requests; examples and references are a bounded
 sample.
@@ -41,27 +43,37 @@ results from previous requests cannot replace the current queue.
 Each Suspicious activity recommendation answers three questions, one block per
 reason: what was observed, why that deserves attention for this client, and which
 requests to inspect. The table's **Key observation** column shows the first
-block's observation, for example "40 of 50 requests flagged; strongest high".
+block's observation, for example "Exploit evidence: SQL Injection (UNION
+SELECT)" or, for a client without exploit evidence, "40 of 50 requests flagged;
+strongest high".
 
-1. **Flagged requests** comes first, because it is what the order rests on: how
-   many requests carry a hostile detection, their share, and the strongest
+1. **Exploit evidence** appears first for a client in the first group (see
+   [Exploit evidence first](#exploit-evidence-first)). It names one eligible rule
+   and the request it matched (the client's earliest eligible request; when
+   several eligible rules match it, the strongest by severity, then confidence),
+   with that request as an example. It does not show
+   what the request achieved, and the same rule can match harmless requests, so
+   the request is the thing to inspect. A client in the second group has no such
+   block.
+2. **Flagged requests** is what orders clients within a group: how many
+   requests carry a hostile detection, their share, and the strongest
    severity. Its why says what kind of flagged request dominates and whether it
    is most (half or more), a substantial part, or a small part (under a tenth) of
    the client's activity. When one rule matches every flagged request, it names
    that rule, because one noisy rule can explain a large count.
-2. **Distinct rule matches** counts bundled rules rated at confidence 0.85 or
+3. **Distinct rule matches** counts bundled rules rated at confidence 0.85 or
    above that matched different requests, each rule and each request counted
    once. The rating is the rule author's and describes the rule, not the
    request: a scanner's user-agent string qualifies as readily as an exploit
    pattern.
-3. **Probe, then an attack pattern** appears when, within one session, a
+4. **Probe, then an attack pattern** appears when, within one session, a
    reconnaissance or enumeration request is followed at a strictly later time by
    an injection, traversal, access-control, credential, SSRF or exploitation
    match. Requests logged at the same time are never paired, so with
    second-resolution logs a probe and an attack in the same second do not count. It says nothing
    about whether the probe led to the attempt; a shared IP or a scanner can
    produce the same ordering.
-4. **Recurrence across sessions** appears when detections fall in two or more
+5. **Recurrence across sessions** appears when detections fall in two or more
    sessions. Sessions under an hour apart may be one burst split by a session
    boundary, and the block says so. Session splits and shared IPs do not
    establish one actor.
@@ -72,17 +84,19 @@ be read stays visible with the reason and cannot be opened; one read from a
 source changed since ingest opens and shows its warning. These reasons are
 written when a page is read, so rewording them does not require a rescan.
 
-Blocks 2 to 4 are context for reading a client. They do not affect its rank.
+Blocks 3 to 5 are context for reading a client. They do not affect its rank.
 
 Suspicious activity uses the existing engine's native and CRS label precedence.
 Several rule matches on one request still count as one supporting request.
-Policy 3 uses
+Policy 4 puts clients with exploit evidence first and orders each group by
 `log2(1 + h) * (1 + s/4) * (0.5 + 0.5*h/n)`, where `h` is deduplicated hostile
 requests, `s` is existing severity and `n` is all requests. Ties use category
-breadth, distinct hostile paths, hostile requests and IP. The score determines
-investigation order, not attack probability. It passed the predeclared held-out
-promotion gate in the [validation report](evaluations/ip-prioritization-validation.md).
-Category labels are
+breadth, distinct hostile paths, hostile requests and IP. The order determines
+investigation priority, not attack probability. Policy 3 used the same score for
+every client with no first group; it passed the predeclared held-out promotion
+gate in the [validation report](evaluations/ip-prioritization-validation.md),
+which describes policy 3 and does not validate policy 4. Which clients are in the
+queue, and the other views, are unchanged. Category labels are
 observations and hypotheses to investigate; response codes and response sizes
 do not establish compromise. An IP can represent multiple users or systems.
 
@@ -104,6 +118,63 @@ client remains eligible for suspicious-activity recommendations.
 An empty queue means there are no eligible findings under the current policy.
 Missing CRS is stated explicitly; enrichment that ran and found no detections
 is distinguished from enrichment that never ran.
+
+## Exploit evidence first
+
+A client has exploit evidence when any of its requests carries a match by a
+native rule that is eligible. Eligible means the rule's category is injection,
+path traversal, access control, credential attack, SSRF or exploitation, and its
+id is not one of the five exclusions below. Every match on a request counts, not
+only the label the request is reported under, so an eligible match that loses
+the label to a scanner's user-agent rule still places the client first.
+
+Labels derived from OWASP CRS never place a client first, wherever they are
+stored; a client whose only attack evidence comes from CRS stays in the second
+group. Custom rules in the six categories take part like bundled ones, and
+adding or changing a rule, bundled or custom, can change which clients come
+first.
+
+Five rules are excluded. Each records where a client went or what the server
+answered rather than a payload the client sent, so its evidence also fits
+ordinary activity. Their matches still put a client in the queue, appear in its
+reasons and open in reconstruction; they only cannot place a client first.
+
+| Rule | What it records | Ordinary activity it also fits |
+| --- | --- | --- |
+| `admin_area_probe` | a request to an admin path refused with 401 or 403 | a staff member whose session expired, a bookmark to an admin page |
+| `forced_browsing` | at least 10 refusals (401/403) across at least 8 paths within 120 s | a single-page app whose token expired refreshing its own API calls |
+| `forced_browsing_succeeded` | at least 3 admin-path requests within 300 s, some refused and some served | a staff member signing in after a refusal |
+| `admin_reached_without_signing_in` | an admin path redirected, then an admin page served without a sign-in between them | a staff member whose sign-in the access log does not show (single sign-on, a session set elsewhere) |
+| `server_errors_provoked` | at least 5 responses of 500 or above within 120 s | any client during an outage or a broken deployment |
+
+`credential_attack` (5 or more responses of 400 or above to sign-in, auth,
+session or token paths within 300 s, across at most 3 distinct paths) and
+`bulk_account_creation` (5 or more responses of 400 or above to registration
+paths within 300 s, across at most 3 distinct paths) also judge by what the
+server answered, but they stay eligible: they are the only native view of
+password guessing and credential stuffing that an access log gives. So a user
+who mistypes a password five times, or a client stuck retrying an expired
+token, can enter the first group.
+
+Excluding the five can leave genuine access-control attacks, and attacks that
+provoke server errors, in the second group. In particular
+`admin_reached_without_signing_in` can record a real unauthenticated breach of
+an admin area; it is excluded because the access log cannot tell that breach
+from a sign-in it does not record.
+
+Within the first group a harmless client with many flagged requests, such as a
+retry loop, can outrank a quiet attacker, and a harmless client whose request
+matches an eligible rule outranks every client in the second group however low
+its score.
+
+Limits of what is known:
+
+- The development builds are one synthetic shop driven by the same campaign
+  scripts and contain almost none of the harmless requests that resemble
+  attacks. How often harmless clients enter the first group on real traffic is
+  unknown.
+- Whether a client in the first group can be dismissed quickly is not measured.
+- The order among first-group clients is not measured.
 
 ## Storage and execution
 
