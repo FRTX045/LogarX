@@ -587,6 +587,19 @@ def test_the_earliest_eligible_request_is_the_exploit_example_across_sessions(tm
     assert [example.evidence for example in profile.exploit_examples] == [EvidenceRef("source", 1)]
 
 
+def test_the_strongest_eligible_rule_on_the_request_is_named(tmp_path):
+    from logarc.triage.profile import profile_client
+
+    engine = fixture_rules(
+        tmp_path,
+        ("alpha_rule", "injection", "medium", 0.9, "both"),
+        ("zeta_rule", "injection", "critical", 0.9, "both"),
+    )
+    profile = profile_client(events(count=1, query="both"), engine)
+    assert profile.exploit_rules == ("zeta_rule",)
+    assert [example.note for example in profile.exploit_examples] == ["Zeta Rule"]
+
+
 def test_an_eligible_match_that_loses_the_label_still_counts(tmp_path):
     from logarc.triage.profile import profile_client
 

@@ -165,7 +165,8 @@ class ClientProfile:
     """Flagged requests per rule with a hostile label, so one noisy rule can be named."""
     hostile_rule_names: dict[str, str] = field(default_factory=dict)
     exploit_examples: tuple[RequestExample, ...] = ()
-    """Empty, or the first request in time with an eligible match; `note` is the rule's name.
+    """Empty, or the first request in time with an eligible match; `note` is the name of the
+    strongest eligible rule on that request (severity, then confidence, then rule id).
 
     A non-empty value places the client in the first group of the Suspicious queue.
     """
@@ -234,17 +235,14 @@ def profile_client(
                 {label.rule_id for label in item.all_labels} | {item.label.rule_id}
             )
             if not exploit:
-                found = next(
-                    (
-                        label
-                        for label in sorted(
-                            {lab.rule_id: lab for lab in (*item.all_labels, item.label)}.values(),
-                            key=lambda lab: lab.rule_id,
-                        )
-                        if is_exploit_evidence(label)
-                    ),
-                    None,
-                )
+                eligible = [
+                    label
+                    for label in {
+                        lab.rule_id: lab for lab in (*item.all_labels, item.label)
+                    }.values()
+                    if is_exploit_evidence(label)
+                ]
+                found = _strongest(eligible) if eligible else None
                 if found is not None:
                     exploit = [(item, found)]
             hostile = [label for label in item.all_labels if label.category.is_hostile]
