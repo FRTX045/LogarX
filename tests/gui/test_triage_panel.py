@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 from PyQt6.QtTest import QTest
@@ -537,6 +538,11 @@ def test_inspect_opens_exactly_the_exploit_request_for_a_first_group_client(qt_a
     lead = row.reasons[0]
     assert lead.kind == "exploit_evidence"
     assert len(lead.evidence) == 1
+    other = (EvidenceRef("source", 99),)
+    reasons = (lead, *(replace(reason, evidence=other) for reason in row.reasons[1:]))
+    assert len(reasons) > 1
+    panel._display([replace(row, reasons=reasons)])
+    panel.table.selectRow(0)
     opened = []
     panel.investigate.connect(lambda ip, refs: opened.append((ip, refs)))
     panel.open_client.click()

@@ -243,6 +243,21 @@ def test_an_index_written_in_layout_five_is_rebuilt(tmp_path, monkeypatch):
     assert current.path != old.path
 
 
+def test_an_index_written_in_layout_six_is_rebuilt(tmp_path, monkeypatch):
+    """Read as current, it would name the lowest-id rule rather than the strongest."""
+    from logarc.triage import scan
+
+    with Case.create(tmp_path / "case") as case:
+        case.store.write(events())
+        case.store.finalize()
+    monkeypatch.setattr(scan, "_LAYOUT", 6)
+    old = scan.scan_case(case.root)
+    monkeypatch.undo()
+    current = scan.scan_case(case.root)
+    assert not current.cached
+    assert current.path != old.path
+
+
 def test_suspicious_reasons_follow_the_code_not_the_cached_text(tmp_path):
     """A reworded reason must reach a case scanned before the rewording."""
     import sqlite3
