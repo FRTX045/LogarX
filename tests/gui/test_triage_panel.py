@@ -531,6 +531,20 @@ def test_clicking_an_example_opens_exactly_that_request(qt_app, tmp_path):
     panel.close()
 
 
+def test_inspect_opens_exactly_the_exploit_request_for_a_first_group_client(qt_app, tmp_path):
+    panel = selected_panel(qt_app, make_case(tmp_path, count=2))
+    row = panel._rows[0]
+    lead = row.reasons[0]
+    assert lead.kind == "exploit_evidence"
+    assert len(lead.evidence) == 1
+    opened = []
+    panel.investigate.connect(lambda ip, refs: opened.append((ip, refs)))
+    panel.open_client.click()
+    assert opened == [(row.profile.client_ip, lead.evidence)]
+    assert opened[0][1] == tuple(example.evidence for example in row.profile.exploit_examples)
+    panel.close()
+
+
 def test_an_unreadable_source_stays_visible_and_opens_nothing(qt_app, tmp_path):
     from PyQt6.QtCore import QUrl
 

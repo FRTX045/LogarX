@@ -22,7 +22,9 @@ Address search covers that population. The queue and the details below it share
 a divider the reader can drag; the details start with half the space. Select a
 row and choose **Inspect supporting requests** to reconstruct the client and
 select an activity containing its supporting source lines, or click an example
-request in the details to open reconstruction on that request. Requested source
+request in the details to open reconstruction on that request. For a client in
+the first group, Inspect opens the request that matched its exploit rule; for
+every other client it opens the sampled flagged requests. Requested source
 lines appear before the ordinary activity sample, within the same display limit.
 Counts describe all supporting requests; examples and references are a bounded
 sample.
@@ -47,7 +49,9 @@ strongest high".
 
 1. **Exploit evidence** appears first for a client in the first group (see
    [Exploit evidence first](#exploit-evidence-first)). It names one eligible rule
-   and the request it matched, with that request as an example. It does not show
+   and the request it matched (the client's earliest eligible request; when
+   several eligible rules match it, the strongest by severity, then confidence),
+   with that request as an example. It does not show
    what the request achieved, and the same rule can match harmless requests, so
    the request is the thing to inspect. A client in the second group has no such
    block.
