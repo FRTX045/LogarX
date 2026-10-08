@@ -262,7 +262,7 @@ def exploit_orderings(
     client the application placed by CRS level 1 evidence (`crs_placed`), which only the
     profile records, so that part is not computed separately. `category_only` stays native.
     `category_rules` are the ids of the engine's attack-category rules and `eligible_rules`
-    the same without the five exclusions; both are required so neither can be defaulted.
+    the same without the exclusions; both are required so neither can be defaulted.
     """
     selected = [p for p in profiles if p.hostile_requests]
 

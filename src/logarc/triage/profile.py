@@ -57,8 +57,9 @@ TARGETED: Final = frozenset(
 )
 
 #: Attack-category rules whose evidence also fits ordinary activity: each records
-#: where a client went or what the server answered, not a payload it sent. Their
-#: matches stay in the queue and its reasons; they cannot place a client first.
+#: where a client went, which methods it used or what the server answered, not a
+#: payload it sent. Their matches stay in the queue and its reasons; they cannot
+#: place a client first.
 NOT_EXPLOIT_EVIDENCE: Final = frozenset(
     {
         "admin_area_probe",
@@ -66,6 +67,7 @@ NOT_EXPLOIT_EVIDENCE: Final = frozenset(
         "forced_browsing_succeeded",
         "admin_reached_without_signing_in",
         "server_errors_provoked",
+        "verb_tampering",
     }
 )
 
@@ -73,7 +75,7 @@ NOT_EXPLOIT_EVIDENCE: Final = frozenset(
 def is_exploit_evidence(label: ActivityLabel) -> bool:
     """Whether a match places its client first in the Suspicious queue.
 
-    A native rule in an attack category, other than the five above. CRS-derived
+    A native rule in an attack category, other than the six above. CRS-derived
     labels never do, wherever they are stored; CRS reaches the first group only
     through detections, judged by `crs_exploit_category`.
     """

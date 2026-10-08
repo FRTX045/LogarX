@@ -639,6 +639,83 @@ def test_a_file_read_without_a_url_is_not_ssrf(engine: RuleEngine, target: str) 
     assert labelled.label.category is not ActivityCategory.SSRF, labelled.label.rule_id
 
 
+def test_several_methods_on_refused_paths_are_verb_tampering(engine: RuleEngine) -> None:
+    """The `2026-10-06-medium` episode: three methods redirected to sign in, then
+    a DELETE that was answered. The truth calls all four access control."""
+    events = [
+        request("/admin/users", method="POST", status=302, seconds=0),
+        request("/admin/users", method="HEAD", status=302, seconds=9),
+        request("/admin/orders", method="OPTIONS", status=302, seconds=17),
+        request("/api/cart?id=1", method="DELETE", status=200, seconds=30),
+    ]
+
+    labelled = engine.label_events(events)
+
+    assert [item.label.rule_id for item in labelled] == ["verb_tampering"] * 4
+    assert {item.label.category for item in labelled} == {ActivityCategory.ACCESS_CONTROL}
+
+
+#: Clients that use several methods and are not tampering with access control.
+NOT_VERB_TAMPERING = {
+    # An HTTP fingerprinter asking `/` which methods it answers, invented ones
+    # included; the truth calls it reconnaissance. The shopfront answered every
+    # one 200, but a server that refuses an unknown method (501) or TRACE (405)
+    # leaves it mostly refused, and only the path keeps it out.
+    "fingerprinting the root": [
+        ("/", "GET", 200),
+        ("/", "OPTIONS", 200),
+        ("/", "HEAD", 200),
+        ("/", "DLZB", 501),
+        ("/", "TRACE", 405),
+        ("/", "PROPFIND", 405),
+    ],
+    # An administrator's REST panel uses as many methods and is answered.
+    "an admin panel that is answered": [
+        ("/api/products", "GET", 200),
+        ("/api/products/3", "PUT", 200),
+        ("/api/products/4", "DELETE", 204),
+        ("/api/products/5", "PATCH", 200),
+    ],
+    # A shopper bounced to sign in, then using the account and the cart.
+    "a shopper": [
+        ("/account/", "GET", 302),
+        ("/account/", "GET", 200),
+        ("/api/cart", "POST", 200),
+        ("/account/orders", "GET", 200),
+    ],
+    # A staff member whose session expired mid-form: two methods, every one
+    # redirected to sign in. Two methods is what a form is, hence three.
+    "an expired session submitting a form": [
+        ("/admin/users", "GET", 302),
+        ("/admin/users", "POST", 302),
+        ("/admin/", "GET", 302),
+    ],
+}
+
+
+@pytest.mark.parametrize("name", NOT_VERB_TAMPERING)
+def test_several_methods_are_not_tampering_on_their_own(engine: RuleEngine, name: str) -> None:
+    events = [
+        request(path, method=method, status=status, seconds=n * 5)
+        for n, (path, method, status) in enumerate(NOT_VERB_TAMPERING[name])
+    ]
+
+    labelled = engine.label_events(events)
+
+    assert all("verb_tampering" not in {x.rule_id for x in item.all_labels} for item in labelled)
+
+
+def test_methods_tried_minutes_apart_are_not_one_attempt(engine: RuleEngine) -> None:
+    events = [
+        request("/admin/users", method=method, status=302, seconds=n * 200)
+        for n, method in enumerate(["POST", "HEAD", "OPTIONS"])
+    ]
+
+    labelled = engine.label_events(events)
+
+    assert all("verb_tampering" not in {x.rule_id for x in item.all_labels} for item in labelled)
+
+
 def test_human_paced_directory_enumeration_is_detected(engine: RuleEngine) -> None:
     seconds = [0, 40, 80, 120, 160, 200, 240, 300]
     targets = [f"/quiet-probe-{n % 6}" for n in range(8)]
