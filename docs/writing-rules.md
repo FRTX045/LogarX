@@ -119,10 +119,15 @@ distinction cannot be drawn from a single line, so it needs a window.
         - {metric: not_found_ratio, op: ">=", value: 0.7}
 ```
 
-Metrics: `request_count`, `distinct_paths`, `not_found_ratio`,
-`client_error_ratio`, `server_error_ratio`, `success_ratio`,
+Metrics: `request_count`, `distinct_paths`, `distinct_methods`,
+`not_found_ratio`, `client_error_ratio`, `server_error_ratio`, `success_ratio`,
 `distinct_statuses`, `requests_per_second`, `static_asset_ratio`. Operators:
 `>=`, `>`, `<=`, `<`, `==`, `!=`.
+
+`distinct_methods` counts the request methods a client used inside the window,
+case as logged; a line too malformed to name a method adds none. Two is what an
+ordinary client reaches (GET and POST, or GET and a CORS preflight), so a rule
+that means something unusual starts at three — `verb_tampering` does.
 
 `static_asset_ratio` is inferred from requested path suffixes, not a trusted
 server-side content type. It is useful as a bounded false-positive guard for a

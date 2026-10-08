@@ -169,13 +169,13 @@ def test_every_window_metric_measures_its_own_thing() -> None:
     share, a rule tuned to fire at 0.8 would fire on traffic that never had a
     4xx in it — and the finding would look ordinary.
 
-    The window below has four requests, three distinct canonical paths, and
-    statuses 404, 403, 500 and 200 across two seconds.
+    The window below has four requests, three distinct canonical paths, three
+    distinct methods, and statuses 404, 403, 500 and 200 across two seconds.
     """
     window = [
         event(0, path="/a.css", status=404, referer="https://example.test/"),
-        event(1, path="/a.css//", status=403),
-        event(1, path="/b", status=500),
+        event(1, path="/a.css//", status=403, method="HEAD"),
+        event(1, path="/b", status=500, method="OPTIONS"),
         event(2, path="/c", status=200),
     ]
 
@@ -183,6 +183,8 @@ def test_every_window_metric_measures_its_own_thing() -> None:
         "request_count": 4.0,
         # `/a` and `/a//` canonicalise to one path, so three rather than four.
         "distinct_paths": 3.0,
+        # GET twice, HEAD and OPTIONS once each.
+        "distinct_methods": 3.0,
         "distinct_statuses": 4.0,
         "not_found_ratio": 0.25,
         "client_error_ratio": 0.5,
@@ -252,6 +254,68 @@ rules:
     labelled = custom.label_events(events)
 
     assert all(item.label.rule_id == "custom_static_ratio" for item in labelled)
+
+
+def _distinct_methods_engine(tmp_path: Path) -> RuleEngine:
+    pack = tmp_path / "methods.yaml"
+    pack.write_text(
+        """
+version: 1
+rules:
+  - id: many_methods
+    name: Many methods
+    category: access_control
+    severity: medium
+    window:
+      span_seconds: 10
+      min_requests: 3
+      conditions:
+        - metric: distinct_methods
+          op: ">="
+          value: 3
+""",
+        encoding="utf-8",
+    )
+    return RuleEngine(load_rules([pack]))
+
+
+def test_distinct_methods_counts_the_methods_inside_the_window(tmp_path: Path) -> None:
+    events = [
+        event(0, method="POST"),
+        event(1, method="HEAD"),
+        event(2, method="OPTIONS"),
+    ]
+
+    labelled = _distinct_methods_engine(tmp_path).label_events(events)
+
+    assert all(item.label.rule_id == "many_methods" for item in labelled)
+
+
+def test_distinct_methods_forgets_a_method_that_slid_out(tmp_path: Path) -> None:
+    """HEAD and OPTIONS at the start, then GET and POST long after. No window
+    holds three methods; one that remembered the first two would see four."""
+    events = [
+        event(0, method="HEAD"),
+        event(1, method="OPTIONS"),
+        event(100, method="GET"),
+        event(101, method="GET"),
+        event(102, method="POST"),
+    ]
+
+    labelled = _distinct_methods_engine(tmp_path).label_events(events)
+
+    assert all(item.label.rule_id != "many_methods" for item in labelled)
+
+
+def test_a_request_with_no_method_is_not_a_method(tmp_path: Path) -> None:
+    """A line too malformed to name a method has not used one."""
+    events = [event(0, method="GET"), event(1, method="POST"), event(2), event(3)]
+    events[2] = replace(events[2], method=None)
+    events[3] = replace(events[3], method=None)
+
+    labelled = _distinct_methods_engine(tmp_path).label_events(events)
+
+    assert all(item.label.rule_id != "many_methods" for item in labelled)
 
 
 def test_a_matching_request_is_labelled(engine: RuleEngine) -> None:
