@@ -1353,3 +1353,18 @@ def test_subdomains_of_the_host_crs_was_told_are_covered_by_it() -> None:
     (labelled,) = engine.label_events(_fetching_elsewhere(), crs=crs_index(_off_domain()))
 
     assert labelled.label.rule_id == "crs:931130"
+
+
+def test_names_activity_is_public_and_is_the_check_rescue_applies() -> None:
+    from logarc.detect.engine import names_activity
+
+    query = crs_detection()
+    assert names_activity(query)
+    assert not names_activity(replace(query, matched_var="REQUEST_HEADERS:Referer"))
+    assert not names_activity(replace(query, matched_var="MATCHED_VARS:REQUEST_HEADERS:Referer"))
+    assert not names_activity(replace(query, transformed_value="${id}"))
+
+
+def test_crs_host_trusted_is_readable_from_the_engine() -> None:
+    assert RuleEngine([], site_hosts=("shop.test",), crs_host="shop.test").crs_host_trusted
+    assert not RuleEngine([], site_hosts=("shop.test",), crs_host="localhost").crs_host_trusted
