@@ -632,22 +632,13 @@ def test_is_exploit_evidence_by_rule_and_category(tmp_path):
     assert not is_exploit_evidence(crs_label)
 
 
-def test_a_client_flagged_only_by_crs_stays_in_the_queue_without_exploit_evidence(tmp_path):
-    from logarc.detect.crs import CrsDetection
+def test_a_crs_label_alone_never_places_a_client_first(tmp_path):
     from logarc.triage.profile import priority_score, profile_client, rank_profiles
 
     sample = events(count=3)
-    detection = CrsDetection(
-        source_file_id="source",
-        line_no=1,
-        rule_id=942100,
-        severity="critical",
-        msg="Fixture detection",
-        matched_var="ARGS:q",
-        transformed_value="fixture",
-        attack_family="attack-sqli",
+    profile = profile_client(
+        sample, RuleEngine(default_rules()), crs={("source", 1): [crs_detection(level=2)]}
     )
-    profile = profile_client(sample, RuleEngine(default_rules()), crs={("source", 1): [detection]})
     assert profile.hostile_requests == 1
     assert "injection" in profile.categories
     assert profile.exploit_examples == ()
@@ -660,6 +651,23 @@ def test_a_client_flagged_only_by_crs_stays_in_the_queue_without_exploit_evidenc
     assert priority_score(native) < priority_score(profile)
     ranked = rank_profiles([profile, native], "suspicious")
     assert [row.profile.client_ip for row in ranked] == ["192.0.2.9", "192.0.2.1"]
+
+
+def test_the_same_detection_at_level_one_places_the_client_first(tmp_path):
+    from logarc.triage.profile import priority_score, profile_client, rank_profiles
+
+    sample = events(count=3)
+    profile = profile_client(
+        sample, RuleEngine(default_rules()), crs={("source", 1): [crs_detection(level=1)]}
+    )
+    assert profile.exploit_rules == ("crs:942100",)
+    engine = fixture_rules(tmp_path, ("sqli_fixture", "injection", "high", 0.9, "attack"))
+    busy = events("192.0.2.9", 20)
+    busy[5] = replace(busy[5], query="attack")
+    native = profile_client(busy, engine)
+    assert priority_score(native) < priority_score(profile)
+    ranked = rank_profiles([profile, native], "suspicious")
+    assert [row.profile.client_ip for row in ranked] == ["192.0.2.1", "192.0.2.9"]
 
 
 def test_a_window_rule_match_is_exploit_evidence():
@@ -716,3 +724,107 @@ def test_crs_exploit_category(changes, trusted, expected):
 
     category = crs_exploit_category(crs_detection(**changes), site_host_known=trusted)
     assert (category.value if category else None) == expected
+
+
+def test_a_level_one_detection_alone_names_the_request_and_message():
+    from logarc.triage.profile import profile_client
+
+    engine = RuleEngine(default_rules())
+    profile = profile_client(events(count=3), engine, crs={("source", 2): [crs_detection(line=2)]})
+    assert profile.exploit_rules == ("crs:942100",)
+    assert [e.note for e in profile.exploit_examples] == ["Fixture detection"]
+    assert [e.evidence for e in profile.exploit_examples] == [EvidenceRef("source", 2)]
+    unnamed = profile_client(
+        events(count=3), engine, crs={("source", 2): [crs_detection(line=2, msg="")]}
+    )
+    assert [e.note for e in unnamed.exploit_examples] == ["CRS rule 942100"]
+
+
+def test_a_level_one_detection_counts_when_a_native_label_won(tmp_path):
+    from logarc.triage.profile import profile_client
+
+    engine = fixture_rules(tmp_path, ("recon_fixture", "reconnaissance", "high", 0.9, "probe"))
+    sample = events(count=2, query="probe")
+    (first, _) = engine.label_events(sample, crs={("source", 1): [crs_detection()]})
+    assert first.label.rule_id == "recon_fixture"
+    profile = profile_client(sample, engine, crs={("source", 1): [crs_detection()]})
+    assert profile.exploit_rules == ("crs:942100",)
+
+
+def test_a_level_two_rescue_label_is_not_exploit_evidence():
+    from logarc.triage.profile import profile_client
+
+    engine = RuleEngine(default_rules())
+    script = crs_detection(
+        rule_id=930121,
+        family="attack-lfi",
+        var="REQUEST_HEADERS:User-Agent",
+        value="libwww-perl/6.72",
+        level=2,
+        msg="OS File Access Attempt in REQUEST_FILENAME",
+    )
+    sample = events(count=2, user_agent="libwww-perl/6.72")
+    (first, _) = engine.label_events(sample, crs={("source", 1): [script]})
+    assert first.label.rule_id == "crs:930121"
+    profile = profile_client(sample, engine, crs={("source", 1): [script]})
+    assert profile.hostile_requests == 1
+    assert profile.exploit_examples == ()
+    assert profile.exploit_rules == ()
+
+
+def test_native_evidence_is_named_even_when_crs_evidence_came_first(tmp_path):
+    from logarc.triage.profile import profile_client
+
+    engine = fixture_rules(tmp_path, ("sqli_fixture", "injection", "high", 0.9, "attack"))
+    sample = events(count=3)
+    sample[2] = replace(sample[2], query="attack")
+    profile = profile_client(sample, engine, crs={("source", 1): [crs_detection()]})
+    assert profile.exploit_rules == ("sqli_fixture",)
+    assert [e.evidence for e in profile.exploit_examples] == [EvidenceRef("source", 3)]
+
+
+@pytest.mark.parametrize(
+    ("first", "second", "named"),
+    [
+        ((941100, "attack-xss", "critical"), (942100, "attack-sqli", "warning"), "crs:941100"),
+        ((941100, "attack-xss", "critical"), (942100, "attack-sqli", "critical"), "crs:942100"),
+    ],
+)
+def test_the_crs_tie_break_is_severity_then_rule_id(first, second, named):
+    from logarc.triage.profile import profile_client
+
+    detections = [
+        crs_detection(rule_id=rule, family=family, severity=severity)
+        for rule, family, severity in (first, second)
+    ]
+    profile = profile_client(
+        events(count=1), RuleEngine(default_rules()), crs={("source", 1): detections}
+    )
+    assert profile.exploit_rules == (named,)
+
+
+def test_only_the_eligible_detection_on_a_request_is_named():
+    from logarc.triage.profile import profile_client
+
+    detections = [
+        crs_detection(rule_id=942999, var="REQUEST_HEADERS:Referer"),
+        crs_detection(rule_id=942998, level=2),
+        crs_detection(rule_id=942100),
+    ]
+    profile = profile_client(
+        events(count=1), RuleEngine(default_rules()), crs={("source", 1): detections}
+    )
+    assert profile.exploit_rules == ("crs:942100",)
+
+
+def test_crs_exploit_evidence_changes_nothing_else_about_the_profile():
+    from logarc.triage.profile import priority_score, profile_client
+
+    engine = RuleEngine(default_rules())
+    sample = events(count=3)
+    at_one = profile_client(sample, engine, crs={("source", 2): [crs_detection(line=2, level=1)]})
+    at_two = profile_client(sample, engine, crs={("source", 2): [crs_detection(line=2, level=2)]})
+    assert at_one.exploit_rules == ("crs:942100",)
+    assert at_two.exploit_rules == ()
+    assert replace(at_one, exploit_examples=(), exploit_rules=()) == at_two
+    assert priority_score(at_one) == priority_score(at_two)
