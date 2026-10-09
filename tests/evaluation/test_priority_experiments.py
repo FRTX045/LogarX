@@ -272,3 +272,26 @@ def test_exploit_orderings_require_both_rule_sets(tmp_path):
         exploit_orderings(profiles, eligible_rules=eligible)  # type: ignore[call-arg]
     with pytest.raises(TypeError):
         exploit_orderings(profiles, category_rules=category_rules)  # type: ignore[call-arg]
+
+
+def test_exploit_orderings_place_a_crs_level_one_client_first_as_the_application_does(tmp_path):
+    import test_profiles as helpers
+
+    from logarc.detect.engine import RuleEngine
+    from logarc.detect.rulepacks import default_rules
+    from logarc.evaluation.priorities import exploit_orderings
+    from logarc.triage.profile import profile_client
+
+    profiles, category_rules, eligible = exploit_fixture(tmp_path)
+    detection = helpers.crs_detection(line=1)
+    placed = profile_client(
+        helpers.events("192.0.2.4", 30, path="/"),
+        RuleEngine(default_rules()),
+        crs={("source", 1): [detection]},
+    )
+    assert placed.exploit_rules == ("crs:942100",)
+    orders = exploit_orderings(
+        [*profiles, placed], category_rules=category_rules, eligible_rules=eligible
+    )
+    assert set(orders["exploit_first"][:2]) == {"192.0.2.1", "192.0.2.4"}
+    assert orders["exploit_first"] == orders["app"]
