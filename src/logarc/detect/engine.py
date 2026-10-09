@@ -407,6 +407,15 @@ class RuleEngine:
           domain reported as remote file inclusion.
         """
 
+    @property
+    def crs_host_trusted(self) -> bool:
+        """Whether CRS's off-domain verdicts (931130) can be trusted for this case.
+
+        Pass it as `site_host_known` to `category_for` wherever a detection is
+        judged outside this engine, so that judgement matches rescue's.
+        """
+        return self._crs_host_trusted
+
     @cached_property
     def fingerprint(self) -> str:
         """A digest of the ruleset, recorded so a report can name what produced it."""
@@ -885,7 +894,7 @@ _CHAIN_PREFIXES: Final[tuple[str, ...]] = ("matched_vars:", "matched_var:")
 _TEMPLATE_SLOT: Final = re.compile(r"\$\{[a-z_][a-z0-9_.]*\}", re.IGNORECASE)
 
 
-def _names_activity(detection: CrsDetection) -> bool:
+def names_activity(detection: CrsDetection) -> bool:
     """Whether this detection may be the answer, as opposed to corroboration.
 
     Attachment is not in question — a detection is kept as evidence either way,
@@ -924,7 +933,7 @@ def _rescue(
     candidates = [
         (detection, category)
         for detection in detections
-        if _names_activity(detection)
+        if names_activity(detection)
         and (
             category := category_for(
                 detection.rule_id, detection.attack_family, site_host_known=site_host_known

@@ -131,13 +131,26 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **CRS paranoia level 1 evidence can place a client first.** A CRS detection
+  at paranoia level 1 now puts its client in the first group of Suspicious
+  activity when it matched something the request itself carries (not a Referer
+  or an unfilled template slot) and this project maps the rule to an attack
+  category. Detections at paranoia level 2, which include rules matching
+  ordinary script User-Agents, do not, and CRS labels never do. A client with
+  native evidence is still named by its native rule and request; a client
+  placed by CRS says so and names the rule, and both explanations say the
+  first group is shared and ordered by the existing score. Counts, scores and
+  queue membership are unchanged. How often harmless clients are placed this
+  way on real traffic is not measured. Existing triage indexes are rebuilt on
+  first open. See `docs/ip-prioritization.md`.
+
 - **Suspicious activity puts clients with exploit evidence first.** A client
   whose own request matched a native injection, path traversal, access-control,
   credential, SSRF or exploitation rule now comes before every client without
-  such a match, and its recommendation opens with that rule and the request it
-  matched. Each group keeps the earlier ordering by flagged volume. CRS matches
-  never place a client first, and five rules that record where a client went or
-  what the server answered (`admin_area_probe`, `forced_browsing`,
+  exploit evidence, and its recommendation opens with that rule and the request
+  it matched. Each group keeps the earlier ordering by flagged volume. Five
+  rules that record where a client went or what the server answered
+  (`admin_area_probe`, `forced_browsing`,
   `forced_browsing_succeeded`, `admin_reached_without_signing_in`,
   `server_errors_provoked`) are left out, which can leave genuine access-control
   attacks, and attacks that provoke server errors, in the second group. Two credential window
@@ -148,8 +161,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   client stuck retrying an expired token, can therefore enter the first group.
   Custom rules in those categories take part, and adding or changing a rule can change
   the order. Existing triage indexes are rebuilt on first open.
-  Measured on the eleven development builds (synthetic, one shop, all examined
-  before): summed over 64 targeted-client appearances, 64 were in the first 10
+  Measured before CRS level 1 evidence could place a client first, on the
+  eleven development builds (synthetic, one shop, all examined before):
+  summed over 64 targeted-client appearances, 64 were in the first 10
   under this design against 11 under policy 3, and the first group held no
   non-targeted client. Development results, not evidence about real traffic; see
   `docs/evaluations/exploit-evidence-first-validation.md` and

@@ -167,6 +167,32 @@ def test_the_audit_flags_high_confidence_rules_that_matched_benign_truth(tmp_pat
     assert audit["low_support_without_match"] == []
 
 
+def test_exploit_study_counts_a_client_placed_by_crs_level_one_evidence(tmp_path):
+    """The sqlmap client has no native exploit evidence; a level 1 detection places it first."""
+    import json
+
+    from logarc.evaluation.triage_study import evaluate_exploit_case
+
+    root, source, truth = graded_fixture(tmp_path)
+    detection = {
+        "source_file_id": "access.log",
+        "line_no": 3,
+        "rule_id": 942100,
+        "severity": "critical",
+        "msg": "SQL Injection Attack Detected via libinjection",
+        "matched_var": "ARGS:q",
+        "transformed_value": "1 union select",
+        "attack_family": "attack-sqli",
+        "paranoia_level": 1,
+    }
+    (root / "crs.jsonl").write_text(json.dumps(detection) + "\n", encoding="utf-8")
+    result = evaluate_exploit_case(root, source, truth)
+    assert "192.0.2.20" in result["first_group"]["app"]
+    assert result["first_group"]["exploit_first"] == result["first_group"]["app"]
+    assert result["app_equals_exploit_first"] is True
+    assert result["crs_only_first"] == ["192.0.2.20"]
+
+
 def test_exploit_study_reports_orderings_identity_and_the_pre_exclusion_queue(tmp_path):
     from logarc.evaluation.triage_study import evaluate_exploit_case
 
@@ -183,7 +209,7 @@ def test_exploit_study_reports_orderings_identity_and_the_pre_exclusion_queue(tm
         "crs_only_first",
         "targeted",
     } <= set(result)
-    assert result["identity"]["policy_version"] == 4
+    assert result["identity"]["policy_version"] == 5
     assert result["app_equals_exploit_first"] is True
     assert result["crs_only_first"] == []
     assert set(result["methods"]) == {"policy3", "exploit_first", "category_only"}

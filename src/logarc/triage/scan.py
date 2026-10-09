@@ -64,7 +64,7 @@ class TriageProgress:
 #: before a table was added is rebuilt rather than read as having nothing in it.
 #: Separate from `TriagePolicy.version`, which names the ranking that was
 #: validated and promoted; the layout changing is not the ranking changing.
-_LAYOUT = 7
+_LAYOUT = 8
 
 
 @dataclass(frozen=True)

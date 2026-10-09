@@ -48,13 +48,16 @@ SELECT)" or, for a client without exploit evidence, "40 of 50 requests flagged;
 strongest high".
 
 1. **Exploit evidence** appears first for a client in the first group (see
-   [Exploit evidence first](#exploit-evidence-first)). It names one eligible rule
-   and the request it matched (the client's earliest eligible request; when
-   several eligible rules match it, the strongest by severity, then confidence),
-   with that request as an example. It does not show
-   what the request achieved, and the same rule can match harmless requests, so
-   the request is the thing to inspect. A client in the second group has no such
-   block.
+   [Exploit evidence first](#exploit-evidence-first)). It names one rule and the
+   request it matched, with that request as an example. For a client with native
+   evidence that is its earliest request with an eligible native match, named
+   after the strongest eligible rule on it (severity, then confidence), even
+   when CRS evidence came earlier. Otherwise it is the earliest request with CRS
+   paranoia level 1 evidence, named after the strongest qualifying CRS rule
+   (severity, then rule id), and the block says the rule is from OWASP CRS. It
+   does not show what the request achieved, and the same rule can match harmless
+   requests, so the request is the thing to inspect. A client in the second
+   group has no such block.
 2. **Flagged requests** is what orders clients within a group: how many
    requests carry a hostile detection, their share, and the strongest
    severity. Its why says what kind of flagged request dominates and whether it
@@ -88,14 +91,16 @@ Blocks 3 to 5 are context for reading a client. They do not affect its rank.
 
 Suspicious activity uses the existing engine's native and CRS label precedence.
 Several rule matches on one request still count as one supporting request.
-Policy 4 puts clients with exploit evidence first and orders each group by
+Policy 5 puts clients with exploit evidence, native or CRS paranoia level 1,
+first and orders each group by
 `log2(1 + h) * (1 + s/4) * (0.5 + 0.5*h/n)`, where `h` is deduplicated hostile
 requests, `s` is existing severity and `n` is all requests. Ties use category
 breadth, distinct hostile paths, hostile requests and IP. The order determines
 investigation priority, not attack probability. Policy 3 used the same score for
 every client with no first group; it passed the predeclared held-out promotion
 gate in the [validation report](evaluations/ip-prioritization-validation.md),
-which describes policy 3 and does not validate policy 4. Which clients are in the
+which describes policy 3 and does not validate policy 4 (the same first group
+with native evidence only) or policy 5. Which clients are in the
 queue, and the other views, are unchanged. Category labels are
 observations and hypotheses to investigate; response codes and response sizes
 do not establish compromise. An IP can represent multiple users or systems.
@@ -129,8 +134,17 @@ only the label the request is reported under, so an eligible match that loses
 the label to a scanner's user-agent rule still places the client first.
 
 Labels derived from OWASP CRS never place a client first, wherever they are
-stored; a client whose only attack evidence comes from CRS stays in the second
-group. Custom rules in the six categories take part like bundled ones, and
+stored. A CRS detection can, when all of these hold: it is at paranoia level 1,
+the level CRS designs for general deployment with minimal false-positive tuning;
+it matched something the request itself carries, not a Referer and not an
+unfilled `${name}` template slot; and this project maps the rule to one of the
+six categories above, which keeps out scanner identification (913100), the
+protocol and generic families, and rules that need a trusted site host when none
+was given. Severity is not required. When a client has native evidence too, its
+reason names the native rule. CRS evidence at paranoia level 2 or above does not
+qualify a client; native evidence on the same client still can. How often
+harmless clients enter the first group through CRS on real traffic is not
+measured. Custom rules in the six categories take part like bundled ones, and
 adding or changing a rule, bundled or custom, can change which clients come
 first.
 

@@ -236,6 +236,16 @@ def assert_same_ranked(orders: Mapping[str, Sequence[str]]) -> None:
         raise ValueError(f"orderings do not rank the same clients: {sorted(sets)}")
 
 
+def crs_placed(profile: ClientProfile) -> bool:
+    """Whether the application put this client first on CRS paranoia level 1 evidence alone.
+
+    Read from `exploit_rules`, because `hostile_rules` cannot tell a level 1
+    detection from any other CRS label. `exploit_rules` names a `crs:` rule
+    only when the client has no native exploit evidence.
+    """
+    return any(rule.startswith("crs:") for rule in profile.exploit_rules)
+
+
 def exploit_orderings(
     profiles: Sequence[ClientProfile],
     *,
@@ -247,8 +257,10 @@ def exploit_orderings(
 
     `exploit_first` and `category_only` read each client's `hostile_rules`, the rule ids of
     every hostile label on its requests, rather than `exploit_examples`, so the
-    application's ordering is checked against a separate computation. `crs:` ids appear in
-    `hostile_rules` but in neither rule set, so they never place a client first.
+    application's native ordering is checked against a separate computation. `crs:` ids
+    appear in `hostile_rules` but in neither rule set. `exploit_first` also puts first a
+    client the application placed by CRS level 1 evidence (`crs_placed`), which only the
+    profile records, so that part is not computed separately. `category_only` stays native.
     `category_rules` are the ids of the engine's attack-category rules and `eligible_rules`
     the same without the five exclusions; both are required so neither can be defaulted.
     """
@@ -273,7 +285,7 @@ def exploit_orderings(
     return {
         "policy3": order(lambda p: 0),
         "exploit_first": order(
-            lambda p: 0 if any(r in eligible_rules for r in p.hostile_rules) else 1
+            lambda p: 0 if crs_placed(p) or any(r in eligible_rules for r in p.hostile_rules) else 1
         ),
         "category_only": order(
             lambda p: 0 if any(r in category_rules for r in p.hostile_rules) else 1

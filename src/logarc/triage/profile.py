@@ -13,13 +13,15 @@ from typing import TYPE_CHECKING, Final, Literal
 from logarc.analysis import label_sessions
 from logarc.core.activity import ActivityCategory, Severity
 from logarc.core.evidence import EvidenceRef
+from logarc.detect.crs.mapping import category_for, severity_for
+from logarc.detect.engine import names_activity
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from logarc.core.activity import ActivityLabel
     from logarc.core.event import NormalizedEvent
-    from logarc.detect.crs import DetectionIndex
+    from logarc.detect.crs import CrsDetection, DetectionIndex
     from logarc.detect.engine import LabelledEvent, RuleEngine
     from logarc.sessionize.segmenter import SessionPolicy
 
@@ -72,7 +74,8 @@ def is_exploit_evidence(label: ActivityLabel) -> bool:
     """Whether a match places its client first in the Suspicious queue.
 
     A native rule in an attack category, other than the five above. CRS-derived
-    labels never do, wherever they are stored.
+    labels never do, wherever they are stored; CRS reaches the first group only
+    through detections, judged by `crs_exploit_category`.
     """
     return (
         label.category in TARGETED
@@ -81,12 +84,30 @@ def is_exploit_evidence(label: ActivityLabel) -> bool:
     )
 
 
+def crs_exploit_category(
+    detection: CrsDetection, *, site_host_known: bool
+) -> ActivityCategory | None:
+    """The targeted category a CRS detection gives as exploit evidence, or None.
+
+    Paranoia level 1 only, only a match the request itself carries
+    (`names_activity`), and only a rule this project maps into `TARGETED`.
+    `site_host_known` is the engine's `crs_host_trusted`. This judges
+    detections, never labels: a `crs:` label is not exploit evidence.
+    """
+    if detection.paranoia_level != 1 or not names_activity(detection):
+        return None
+    category = category_for(
+        detection.rule_id, detection.attack_family, site_host_known=site_host_known
+    )
+    return category if category in TARGETED else None
+
+
 @dataclass(frozen=True)
 class TriagePolicy:
     minimum_requests: int = 20
     minimum_population: int = 30
     minimum_model_population: int = 100
-    version: int = 4
+    version: int = 5
 
 
 DEFAULT_POLICY = TriagePolicy()
@@ -165,13 +186,15 @@ class ClientProfile:
     """Flagged requests per rule with a hostile label, so one noisy rule can be named."""
     hostile_rule_names: dict[str, str] = field(default_factory=dict)
     exploit_examples: tuple[RequestExample, ...] = ()
-    """Empty, or the first request in time with an eligible match; `note` is the name of the
-    strongest eligible rule on that request (severity, then confidence, then rule id).
+    """Empty, or one request. The first in time with an eligible native match, its `note`
+    the strongest eligible rule's name (severity, then confidence, then rule id); failing
+    that, the first with CRS level 1 evidence (`crs_exploit_category`), its `note` that
+    detection's message.
 
     A non-empty value places the client in the first group of the Suspicious queue.
     """
     exploit_rules: tuple[str, ...] = ()
-    """The rule id behind each exploit example, in the same order."""
+    """The rule id behind each exploit example, in the same order; `crs:<id>` for CRS."""
 
 
 @dataclass(frozen=True)
@@ -208,6 +231,8 @@ def profile_client(
     hostile_rules: Counter[str] = Counter()
     hostile_rule_names: dict[str, str] = {}
     exploit: list[tuple[LabelledEvent, ActivityLabel]] = []
+    crs_exploit: tuple[LabelledEvent, CrsDetection] | None = None
+    site_host_known = engine.crs_host_trusted
     for _, labelled in label_sessions(ordered, engine, policy=session_policy, crs=crs):
         sessions += 1
         pair = _probe_then_attack(labelled)
@@ -245,6 +270,18 @@ def profile_client(
                 found = _strongest(eligible) if eligible else None
                 if found is not None:
                     exploit = [(item, found)]
+            if not exploit and crs_exploit is None:
+                qualifying = [
+                    detection
+                    for detection in item.crs
+                    if crs_exploit_category(detection, site_host_known=site_host_known)
+                ]
+                if qualifying:
+                    # Rescue's tie-break among level 1 detections: severity, then rule id.
+                    crs_exploit = (
+                        item,
+                        max(qualifying, key=lambda d: (severity_for(d.severity), d.rule_id)),
+                    )
             hostile = [label for label in item.all_labels if label.category.is_hostile]
             if not hostile:
                 continue
@@ -317,6 +354,15 @@ def profile_client(
         features["bytes_mean"] = total / len(sizes)
         largest = sorted(sizes, key=lambda e: e.bytes_sent or 0, reverse=True)[:SAMPLE_SIZE]
         evidence["bytes_total"] = evidence["bytes_mean"] = tuple(e.evidence for e in largest)
+    if exploit:
+        exploit_examples = tuple(_example(item, label.name) for item, label in exploit)
+        exploit_rules = tuple(label.rule_id for _, label in exploit)
+    elif crs_exploit is not None:
+        item, detection = crs_exploit
+        exploit_examples = (_example(item, detection.msg or f"CRS rule {detection.rule_id}"),)
+        exploit_rules = (detection.label_id,)
+    else:
+        exploit_examples, exploit_rules = (), ()
     return ClientProfile(
         ordered[0].client_ip,
         len(ordered),
@@ -358,8 +404,8 @@ def profile_client(
         dict(sorted(category_counts.items())),
         dict(sorted(hostile_rules.items())),
         dict(sorted(hostile_rule_names.items())),
-        tuple(_example(item, label.name) for item, label in exploit),
-        tuple(label.rule_id for _, label in exploit),
+        exploit_examples,
+        exploit_rules,
     )
 
 
@@ -476,8 +522,9 @@ def rank_profiles(
 ) -> list[RankedClient]:
     """Rank the complete population before the interface applies a page limit.
 
-    The Suspicious queue puts clients with exploit evidence before all others;
-    each group is ordered by the priority score and its tie keys.
+    The Suspicious queue puts clients with exploit evidence, native or CRS
+    level 1, before all others; each group is ordered by the priority score and
+    its tie keys.
     """
     if queue == "all":
         return [

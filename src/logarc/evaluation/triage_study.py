@@ -15,6 +15,7 @@ from logarc.evaluation.priorities import (
     assert_same_ranked,
     audit_unusual,
     bonus_parts,
+    crs_placed,
     exploit_orderings,
     graded_orderings,
 )
@@ -254,7 +255,8 @@ def evaluate_exploit_case(root: Path, source: Path, truth_path: Path) -> dict[st
     order with the one computed here from `hostile_rules`. `orderings_share_members` only
     checks that the orderings rank the same clients, which they do by construction (one
     profile list). `crs_only_first` lists clients the application puts first that have no
-    eligible native rule among their hostile rules; it must be empty.
+    eligible native rule among their hostile rules: those placed by CRS paranoia level 1
+    evidence alone. It is reported, not required to be empty.
     """
     verified = _verified(root, source, truth_path)
     exclusions = verified.exclusions
@@ -277,8 +279,13 @@ def evaluate_exploit_case(root: Path, source: Path, truth_path: Path) -> dict[st
         for name in ("policy3", "exploit_first", "category_only")
     }
 
-    def first(order: list[str], group: frozenset[str]) -> list[str]:
-        return sorted(ip for ip in order if any(r in group for r in profiles[ip].hostile_rules))
+    def first(order: list[str], group: frozenset[str], crs: bool = False) -> list[str]:
+        return sorted(
+            ip
+            for ip in order
+            if (crs and crs_placed(profiles[ip]))
+            or any(r in group for r in profiles[ip].hostile_rules)
+        )
 
     app_first = [
         row.profile.client_ip
@@ -315,7 +322,7 @@ def evaluate_exploit_case(root: Path, source: Path, truth_path: Path) -> dict[st
         "methods": {name: asdict(value) for name, value in scores.items()},
         "first_group": {
             "policy3": [],
-            "exploit_first": first(orders["exploit_first"], eligible_rules),
+            "exploit_first": first(orders["exploit_first"], eligible_rules, crs=True),
             "category_only": first(orders["category_only"], category_rules),
             "app": sorted(app_first),
         },
