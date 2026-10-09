@@ -129,8 +129,17 @@ only the label the request is reported under, so an eligible match that loses
 the label to a scanner's user-agent rule still places the client first.
 
 Labels derived from OWASP CRS never place a client first, wherever they are
-stored; a client whose only attack evidence comes from CRS stays in the second
-group. Custom rules in the six categories take part like bundled ones, and
+stored. A CRS detection can, when all of these hold: it is at paranoia level 1,
+the level CRS designs for general deployment with minimal false-positive tuning;
+it matched something the request itself carries, not a Referer and not an
+unfilled `${name}` template slot; and this project maps the rule to one of the
+six categories above, which keeps out scanner identification (913100), the
+protocol and generic families, and rules that need a trusted site host when none
+was given. Severity is not required. When a client has native evidence too, its
+reason names the native rule. CRS evidence at paranoia level 2 or above does not
+qualify a client; native evidence on the same client still can. How often
+harmless clients enter the first group through CRS on real traffic is not
+measured. Custom rules in the six categories take part like bundled ones, and
 adding or changing a rule, bundled or custom, can change which clients come
 first.
 
