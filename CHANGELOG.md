@@ -135,9 +135,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   at paranoia level 1 now puts its client in the first group of Suspicious
   activity when it matched something the request itself carries (not a Referer
   or an unfilled template slot) and this project maps the rule to an attack
-  category. CRS labels still never do, so detections at paranoia level 2,
-  which include rules matching ordinary script User-Agents, do not. A client
-  with native evidence is still named by its native rule and request; a client
+  category. Detections at paranoia level 2, which include rules matching
+  ordinary script User-Agents, do not, and CRS labels never do. A client with
+  native evidence is still named by its native rule and request; a client
   placed by CRS says so and names the rule, and both explanations say the
   first group is shared and ordered by the existing score. Counts, scores and
   queue membership are unchanged. How often harmless clients are placed this
