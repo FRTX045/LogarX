@@ -15,9 +15,8 @@ to 235 in the medium check; and the low-support safeguard passed without testing
 protection of any detected low-support attacker, because none is detected.
 Keeping policy 3 does not mean its ordering is satisfactory.
 
-The design, grades, formulas and gate are those frozen in
-[the design document](../design/2026-09-23-suspicious-recommendations.md) before any
-build was scored. Records are in [suspicious-graded](suspicious-graded/): one per
+The grades, formulas and gate below were frozen before any build was scored.
+Records are in [suspicious-graded](suspicious-graded/): one per
 build, `frozen-selection.json` with hashes of the triage and evaluation code, the
 study script, and each case's manifest, CRS records, log and truth file, and
 `promotion.json` with the gate and every rank change.
@@ -42,6 +41,29 @@ Development builds 13, 19, 23 and 31 chose C2 over C1 on mean targeted yield at 
 (seed 23 was the only build where they differed). The choice was frozen before
 builds 41, 53, 67 and 71 were scored. The medium build and broken-links are checks
 only.
+
+## Frozen ordering definitions
+
+Policy 3 uses `log2(1 + h) * (1 + s/4) * (0.5 + 0.5 * h/n)`, where `h`
+is deduplicated hostile requests, `n` is all requests and `s` is the strongest
+severity, from INFO (0) to CRITICAL (4). C1 adds three bonuses to that score:
+
+- `D`: at most 3 distinct rule/request pairs, with no rule or request counted
+  twice. Only hostile bundled-rule labels at confidence 0.85 or above qualify;
+  CRS labels do not.
+- `Q`: 1 if a session contains a reconnaissance or enumeration request followed
+  at a strictly later timestamp by a different request in a targeted category,
+  otherwise 0.
+- `R`: `min(2, 0.5 * max(0, hostile_sessions - 1))`.
+
+C2 uses the same bonuses and formula, but replaces `h` with `min(h, 31)` only
+inside the logarithm. The share still uses the actual `h/n`. All methods keep
+the same tie-breaks: category breadth, distinct hostile paths, hostile requests,
+then IP. These bonuses are correlated contributions, not independent confidence.
+
+Development selection prefers higher mean targeted yield at 10, then at 25,
+then lower mean targeted rank, then C1. The gate's review-budget tiers are the
+first 10, ranks 11 to 25, ranks 26 to 50, and beyond 50.
 
 ## Gate
 
