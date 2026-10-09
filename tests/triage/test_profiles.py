@@ -828,3 +828,38 @@ def test_crs_exploit_evidence_changes_nothing_else_about_the_profile():
     assert at_two.exploit_rules == ()
     assert replace(at_one, exploit_examples=(), exploit_rules=()) == at_two
     assert priority_score(at_one) == priority_score(at_two)
+
+
+def test_crs_exploit_evidence_does_not_bring_a_client_into_the_queue(tmp_path):
+    from logarc.triage.profile import profile_client, rank_profiles
+
+    engine = fixture_rules(tmp_path, ("browse_fixture", "browsing", "low", 0.9, "plain"))
+    sample = events(count=3, query="plain")
+    profile = profile_client(sample, engine, crs={("source", 1): [crs_detection()]})
+    assert profile.hostile_requests == 0
+    assert profile.exploit_rules == ("crs:942100",)
+    assert rank_profiles([profile], "suspicious") == []
+
+
+def test_the_other_queues_ignore_exploit_evidence():
+    from logarc.triage.profile import RequestExample, TriagePolicy, profile_client, rank_profiles
+
+    engine = RuleEngine(default_rules())
+    profiles = [profile_client(events(f"192.0.2.{n}", 20 + n), engine) for n in range(4)]
+    evidence = (
+        RequestExample(EvidenceRef("source", 1), "GET", "/", "2026-01-01T00:00:00+00:00", "x"),
+    )
+    # Only some clients carry evidence, so an order that consulted it would change.
+    marked = [
+        replace(p, exploit_examples=evidence, exploit_rules=("crs:942100",)) if n % 2 == 0 else p
+        for n, p in enumerate(profiles)
+    ]
+    policy = TriagePolicy(minimum_requests=1, minimum_population=2)
+    for queue in ("unusual", "all"):
+        plain = [
+            (row.profile.client_ip, row.reasons) for row in rank_profiles(profiles, queue, policy)
+        ]
+        with_evidence = [
+            (row.profile.client_ip, row.reasons) for row in rank_profiles(marked, queue, policy)
+        ]
+        assert plain == with_evidence
