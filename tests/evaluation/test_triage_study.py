@@ -183,7 +183,7 @@ def test_exploit_study_reports_orderings_identity_and_the_pre_exclusion_queue(tm
         "crs_only_first",
         "targeted",
     } <= set(result)
-    assert result["identity"]["policy_version"] == 4
+    assert result["identity"]["policy_version"] == 5
     assert result["app_equals_exploit_first"] is True
     assert result["crs_only_first"] == []
     assert set(result["methods"]) == {"policy3", "exploit_first", "category_only"}

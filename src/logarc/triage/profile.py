@@ -107,7 +107,7 @@ class TriagePolicy:
     minimum_requests: int = 20
     minimum_population: int = 30
     minimum_model_population: int = 100
-    version: int = 4
+    version: int = 5
 
 
 DEFAULT_POLICY = TriagePolicy()
@@ -522,8 +522,9 @@ def rank_profiles(
 ) -> list[RankedClient]:
     """Rank the complete population before the interface applies a page limit.
 
-    The Suspicious queue puts clients with exploit evidence before all others;
-    each group is ordered by the priority score and its tie keys.
+    The Suspicious queue puts clients with exploit evidence, native or CRS
+    level 1, before all others; each group is ordered by the priority score and
+    its tie keys.
     """
     if queue == "all":
         return [

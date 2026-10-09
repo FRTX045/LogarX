@@ -75,7 +75,7 @@ def test_promoted_order_bounds_severity_and_explains_support_without_losing_evid
     assert "1,000 of 1,000" in support.text
     assert support.evidence == base.reasons[0].evidence
     assert rows[0].reasons[-len(base.reasons) :] == base.reasons
-    assert DEFAULT_POLICY.version == 4
+    assert DEFAULT_POLICY.version == 5
 
 
 def test_priority_score_matches_hand_calculated_support_severity_and_share():

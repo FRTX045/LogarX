@@ -278,3 +278,18 @@ def test_suspicious_reasons_follow_the_code_not_the_cached_text(tmp_path):
     (row,) = read_page(result.path, "suspicious").rows
     assert [reason.kind for reason in row.reasons[:2]] == ["exploit_evidence", "support"]
     assert "stale wording" not in {reason.text for reason in row.reasons}
+
+
+def test_an_index_written_in_layout_seven_is_rebuilt(tmp_path, monkeypatch):
+    """Read as current, it would leave clients with only CRS level 1 evidence in the second group."""
+    from logarc.triage import scan
+
+    with Case.create(tmp_path / "case") as case:
+        case.store.write(events())
+        case.store.finalize()
+    monkeypatch.setattr(scan, "_LAYOUT", 7)
+    old = scan.scan_case(case.root)
+    monkeypatch.undo()
+    current = scan.scan_case(case.root)
+    assert not current.cached
+    assert current.path != old.path
