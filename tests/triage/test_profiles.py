@@ -668,3 +668,51 @@ def test_a_window_rule_match_is_exploit_evidence():
     sample = events(count=5, path="/login", method="POST", status=401)
     profile = profile_client(sample, RuleEngine(default_rules()))
     assert profile.exploit_rules == ("credential_attack",)
+
+
+def crs_detection(
+    line=1,
+    rule_id=942100,
+    *,
+    level=1,
+    family="attack-sqli",
+    var="ARGS:q",
+    value="1 union select",
+    severity="critical",
+    msg="Fixture detection",
+):
+    from logarc.detect.crs import CrsDetection
+
+    return CrsDetection(
+        source_file_id="source",
+        line_no=line,
+        rule_id=rule_id,
+        severity=severity,
+        msg=msg,
+        matched_var=var,
+        transformed_value=value,
+        attack_family=family,
+        paranoia_level=level,
+    )
+
+
+@pytest.mark.parametrize(
+    ("changes", "trusted", "expected"),
+    [
+        ({}, False, "injection"),
+        ({"level": 2}, False, None),
+        ({"level": None}, False, None),
+        ({"var": "REQUEST_HEADERS:Referer"}, False, None),
+        ({"var": "MATCHED_VARS:REQUEST_HEADERS:Referer"}, False, None),
+        ({"value": "${id}"}, False, None),
+        ({"rule_id": 913100, "family": "attack-reputation-scanner"}, False, None),
+        ({"rule_id": 920250, "family": "attack-protocol"}, False, None),
+        ({"rule_id": 931130, "family": "attack-rfi"}, False, None),
+        ({"rule_id": 931130, "family": "attack-rfi"}, True, "ssrf"),
+    ],
+)
+def test_crs_exploit_category(changes, trusted, expected):
+    from logarc.triage.profile import crs_exploit_category
+
+    category = crs_exploit_category(crs_detection(**changes), site_host_known=trusted)
+    assert (category.value if category else None) == expected

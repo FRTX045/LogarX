@@ -13,13 +13,15 @@ from typing import TYPE_CHECKING, Final, Literal
 from logarc.analysis import label_sessions
 from logarc.core.activity import ActivityCategory, Severity
 from logarc.core.evidence import EvidenceRef
+from logarc.detect.crs.mapping import category_for
+from logarc.detect.engine import names_activity
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from logarc.core.activity import ActivityLabel
     from logarc.core.event import NormalizedEvent
-    from logarc.detect.crs import DetectionIndex
+    from logarc.detect.crs import CrsDetection, DetectionIndex
     from logarc.detect.engine import LabelledEvent, RuleEngine
     from logarc.sessionize.segmenter import SessionPolicy
 
@@ -79,6 +81,24 @@ def is_exploit_evidence(label: ActivityLabel) -> bool:
         and not label.rule_id.startswith("crs:")
         and label.rule_id not in NOT_EXPLOIT_EVIDENCE
     )
+
+
+def crs_exploit_category(
+    detection: CrsDetection, *, site_host_known: bool
+) -> ActivityCategory | None:
+    """The targeted category a CRS detection gives as exploit evidence, or None.
+
+    Paranoia level 1 only, only a match the request itself carries
+    (`names_activity`), and only a rule this project maps into `TARGETED`.
+    `site_host_known` is the engine's `crs_host_trusted`. This judges
+    detections, never labels: a `crs:` label is not exploit evidence.
+    """
+    if detection.paranoia_level != 1 or not names_activity(detection):
+        return None
+    category = category_for(
+        detection.rule_id, detection.attack_family, site_host_known=site_host_known
+    )
+    return category if category in TARGETED else None
 
 
 @dataclass(frozen=True)
