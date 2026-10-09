@@ -348,3 +348,75 @@ def test_the_order_of_the_queue_is_unchanged():
 def test_a_share_that_rounds_to_zero_is_not_shown_as_zero(plain):
     found = reason(replace(plain, hostile_requests=1, requests=5000), "support")
     assert found.text == "1 of 5,000 requests flagged (<1%); strongest severity high."
+
+
+CRS_WHY = (
+    "An OWASP CRS rule at paranoia level 1, the level CRS keeps for low false positives, "
+    "matched this client's own request (not a Referer), and this project maps that rule to an "
+    "attack category. This places the client in the first group, alongside clients placed there "
+    "by a bundled or custom rule. The existing score determines the order within that group. No "
+    "bundled or custom rule qualified. It does not show what the request achieved, and the same "
+    "rule can match harmless requests; inspect the request."
+)
+
+
+NATIVE_WHY = (
+    "A bundled or custom rule (not OWASP CRS) in an attack category, other than the few that only "
+    "record where a client went or what the server answered, matched this client's own request. "
+    "This places the client in the first group, alongside clients placed there by an OWASP CRS "
+    "rule at paranoia level 1. The existing score determines the order within that group. It does "
+    "not show what the request achieved, and the same rule can match harmless requests; inspect "
+    "the request."
+)
+
+
+def test_a_native_exploit_reason_describes_the_shared_first_group(plain):
+    from logarc.triage.reasons import suspicious_reasons
+
+    lead = suspicious_reasons(exploiting(plain))[0]
+    assert lead.why == NATIVE_WHY
+    assert lead.text == "SQL Injection (UNION SELECT) matched a request to /search."
+    assert lead.summary == "Exploit evidence: SQL Injection (UNION SELECT)"
+
+
+def crs_exploiting(plain, path="/search"):
+    return replace(
+        plain,
+        exploit_examples=(example(9, path, "SQL Injection Attack Detected via libinjection"),),
+        exploit_rules=("crs:942100",),
+    )
+
+
+def test_a_client_with_crs_exploit_evidence_says_it_is_crs(plain):
+    from logarc.triage.reasons import suspicious_reasons
+
+    profile = crs_exploiting(plain)
+    reasons = suspicious_reasons(profile)
+    assert kinds(reasons)[:2] == ["exploit_evidence", "support"]
+    lead = reasons[0]
+    assert lead.text == (
+        "SQL Injection Attack Detected via libinjection (OWASP CRS 942100) "
+        "matched a request to /search."
+    )
+    assert (
+        lead.summary
+        == "Exploit evidence: SQL Injection Attack Detected via libinjection (CRS 942100)"
+    )
+    assert lead.why == CRS_WHY
+    assert "eligible" not in lead.why
+    assert lead.evidence == (EvidenceRef("access.log", 9),)
+    assert lead.examples == profile.exploit_examples
+    assert chr(0x2014) not in f"{lead.text}{lead.why}{lead.summary}"
+    assert reasons[1:] == suspicious_reasons(plain)
+
+
+def test_a_crs_exploit_request_without_a_path_says_so(plain):
+    from logarc.triage.reasons import suspicious_reasons
+
+    profile = replace(
+        crs_exploiting(plain),
+        exploit_examples=(replace(example(9, note="CRS rule 942100"), path=None),),
+    )
+    assert suspicious_reasons(profile)[0].text == (
+        "CRS rule 942100 (OWASP CRS 942100) matched a request to an unrecorded path."
+    )

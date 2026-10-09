@@ -62,16 +62,38 @@ def _exploit_evidence(profile: ClientProfile) -> PriorityReason | None:
     if not profile.exploit_examples:
         return None
     first = profile.exploit_examples[0]
+    where = first.path or "an unrecorded path"
+    evidence = tuple(example.evidence for example in profile.exploit_examples)
+    rule = profile.exploit_rules[0] if profile.exploit_rules else ""
+    if rule.startswith("crs:"):
+        number = rule.removeprefix("crs:")
+        return PriorityReason(
+            f"{first.note} (OWASP CRS {number}) matched a request to {where}.",
+            evidence,
+            kind="exploit_evidence",
+            why=(
+                "An OWASP CRS rule at paranoia level 1, the level CRS keeps for low false "
+                "positives, matched this client's own request (not a Referer), and this project "
+                "maps that rule to an attack category. This places the client in the first "
+                "group, alongside clients placed there by a bundled or custom rule. The existing "
+                "score determines the order within that group. No bundled or custom rule qualified. "
+                "It does not show what the request achieved, and the same rule can match "
+                "harmless requests; inspect the request."
+            ),
+            summary=f"Exploit evidence: {first.note} (CRS {number})",
+            examples=profile.exploit_examples,
+        )
     return PriorityReason(
-        f"{first.note} matched a request to {first.path or 'an unrecorded path'}.",
-        tuple(example.evidence for example in profile.exploit_examples),
+        f"{first.note} matched a request to {where}.",
+        evidence,
         kind="exploit_evidence",
         why=(
             "A bundled or custom rule (not OWASP CRS) in an attack category, other than the few "
             "that only record where a client went or what the server answered, matched this "
-            "client's own request, which places it before clients with no such match. It does "
-            "not show what the request achieved, and the same rule can match harmless requests; "
-            "inspect the request."
+            "client's own request. This places the client in the first group, alongside clients "
+            "placed there by an OWASP CRS rule at paranoia level 1. The existing score determines "
+            "the order within that group. It does not show what the request achieved, and the same "
+            "rule can match harmless requests; inspect the request."
         ),
         summary=f"Exploit evidence: {first.note}",
         examples=profile.exploit_examples,
