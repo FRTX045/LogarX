@@ -144,16 +144,18 @@ a69632f19c0372c0e0591ccd67196c1b23111c7f38b3ca051a7948200367c621  MANIFEST.json
 e6ac069ed71ab985a32667a87906173331587a3dfd9cc0be4fedada96801ec9b  MANIFEST.json
 ```
 
-All six runs are one ruleset, fingerprint `110aace3bbd5d1bb`, recorded in each output and scored
+All six runs are one ruleset, fingerprint `2725c06bfd6917fb`, recorded in each output and scored
 2026-10-14: the rules after PR #33 (`admin_reached_without_signing_in`), the two injection rules
 narrowed in `812c4a3` (which moved nothing on these tiers), PR #35
 (`injection_reaches_for_secrets`), the naming pass after it (injection tools by User-Agent, a
-`file://` fetch as SSRF, `verb_tampering`) and `credential_guess_accepted`. The same bytes were
-first scored on 2026-10-06 at `cbb1235` with fingerprint `5bcfdcff474f63ae`; the
+`file://` fetch as SSRF, `verb_tampering`), `credential_guess_accepted` and
+`action_sign_in_wall`, with the episode builder keeping a page's own files with it. The same bytes
+were first scored on 2026-10-06 at `cbb1235` with fingerprint `5bcfdcff474f63ae`; the
 [rule-pack ledger](rule-pack-ledger.md) has every step. Each moved only requests the truth names
-`access_control`, `credential_attack`, `exploitation`, `injection` or `ssrf` — from browsing,
-sign-in, an API call, reconnaissance, injection or path traversal — and no category lost a correct
-answer. The CRS runs are revision `d694d465`, configuration `1c4b66d67838c5e8`, paranoia level 2,
+`access_control`, `authentication`, `credential_attack`, `exploitation`, `injection` or `ssrf` —
+from browsing, sign-in, an API call, reconnaissance, injection or path traversal — and no category
+lost a correct answer. The builder change moved no label and raised boundary F1 by about two points
+on every tier. The CRS runs are revision `d694d465`, configuration `1c4b66d67838c5e8`, paranoia level 2,
 and include the `${name}` placeholder fix (PR #30); the native runs are identical with and without
 it, field for field.
 
@@ -164,14 +166,14 @@ four physical cores (Windows 11, Python 3.12). It is a different measurement fro
 
 | | small native | small + CRS | medium native | medium + CRS | large native | large + CRS |
 |---|---:|---:|---:|---:|---:|---:|
-| Classification accuracy | 0.9959 | 0.9959 | **0.9960** | 0.9959 | 0.9962 | 0.9961 |
-| Weighted F1 | 0.9959 | 0.9959 | 0.9961 | 0.9960 | 0.9962 | 0.9962 |
-| Macro F1 | 0.9378 | 0.9378 | **0.9479** | 0.9470 | 0.9586 | 0.9579 |
+| Classification accuracy | 0.9961 | 0.9961 | **0.9963** | 0.9962 | 0.9965 | 0.9965 |
+| Weighted F1 | 0.9961 | 0.9961 | 0.9964 | 0.9963 | 0.9965 | 0.9965 |
+| Macro F1 | 0.9389 | 0.9390 | **0.9494** | 0.9485 | 0.9603 | 0.9595 |
 | Attack-or-not precision | 1.0000 | 0.9998 | **1.0000** | 1.0000 | 1.0000 | 1.0000 |
 | Attack-or-not recall | 0.9865 | 0.9873 | 0.9950 | 0.9951 | 0.9954 | 0.9954 |
 | Caught / missed | 4,029 / 55 | 4,032 / 52 | 17,064 / 85 | 17,065 / 84 | 40,623 / 187 | 40,624 / 186 |
 | **False alarms** | **0** | 1 | **0** | **0** | **0** | **0** |
-| Boundary F1 | 0.8520 | 0.8520 | 0.8524 | 0.8517 | 0.8641 | 0.8639 |
+| Boundary F1 | 0.8761 | 0.8761 | 0.8784 | 0.8776 | 0.8874 | 0.8873 |
 
 **No false alarm natively on any of the three, and that is a count, not a rate.** The one CRS adds
 is on small: rule 942100 (libinjection) reading a Google Ads `gclid` click ID as SQL. CRS catches 3,
@@ -191,9 +193,11 @@ is measured on fixed bytes in the ledger.
 User-Agent, the shape the [ledger](rule-pack-ledger.md) left alone on 2026-10-05 because the same
 request line is labelled by which campaign sent it. After it come 75 `unknown` read as
 `static_asset`, all the shop's own `FettleImporter/1.0` fetching its logo, which is site-specific;
-and 67 `authentication` read as `browsing`, two administrators viewing `/admin/`, `/admin/users`
-and `/admin/orders` — by the principle `action_account_area` states, a page behind a login is
-still a page view.
+and 53 `reconnaissance` read as `browsing`, 43 of them one client probing `/admin.php`,
+`/phpmyadmin/`, `/shell.php` and `/wp-login.php`, every probe answered 400. Until 2026-10-14 the
+third was 67 `authentication` read as `browsing`, and this paragraph explained them wrongly, as an
+administrator's page views. They were admin pages answering with the sign-in form, each followed by
+the sign-in page asking to come back; `action_sign_in_wall` names all of them.
 
 The commands that produced every column, per tier:
 

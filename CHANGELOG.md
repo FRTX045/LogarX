@@ -85,6 +85,17 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   false alarm. Rule writers get `first_at_least` on sequence rules, which it is
   built on.
 
+- **An admin page that asked for a sign-in is named as one.** A protected page
+  can answer with the sign-in form in place of itself, and the visitor follows
+  it to the sign-in page asking to come back. That admin page now reads as a
+  sign-in wall (authentication) instead of a page view, and the admin pages read
+  a moment before it, while still signed in, stay page views. Only the admin
+  area: on a public page, a visitor signing in by choice sends the same request.
+  On the three 2026-10-06 builds authentication is now named on every request
+  the truth gives it, 558, 1,781 and 7,204 (it missed 16, 67 and 302), with
+  detection unchanged and no false alarm. Rule writers get `closes: last` on
+  sequence rules, which labels only the request just before `then`.
+
 - **Case → Run OWASP CRS on this case.** With CRS turned off after scans,
   the window had no way to run it on one case; only `logarc enrich` could.
   The menu item runs it on the open case whatever the preference says, and
@@ -177,6 +188,16 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   says to reinstall, instead of pointing at a source install.
 
 ### Changed
+
+- **A page keeps the files it loaded in one activity, whatever kind of page it
+  is.** A sign-in page's stylesheets and images were cut away from it into an
+  activity of their own, because files count as ordinary browsing and signing
+  in does not; a sign-in with a few files became three activities. A file whose
+  Referer names the page before it now stays with that page. Ordinary pages are
+  unchanged, and so is anything after an attack. Labels do not move; where
+  activities begin and end agrees with the truth noticeably more often, boundary
+  F1 0.852 → 0.871, 0.852 → 0.873 and 0.864 → 0.882 on the three 2026-10-06
+  builds from this change alone.
 
 - **CRS paranoia level 1 evidence can place a client first.** A CRS detection
   at paranoia level 1 now puts its client in the first group of Suspicious
