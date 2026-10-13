@@ -43,6 +43,7 @@ implying the CRS column was ever checked.
 | 2026-10-05 | *this pass* | **php** — a `${name}` placeholder is not PHP | 933 **179 → 178**, 941 61 → 61 after one recovered; overall 961 → **960** of 1,099 | 0 in every family; excerpt unchanged on both engines; the dataset's 41 / 129 / 659 placeholder requests no longer injection | 0, one narrowed, one widened |
 | 2026-10-05 | *this pass* | **recon** — content-discovery tools are enumeration | corpus unchanged, 961 of 1,099; medium caught 17,069 → 17,069 native, 17,071 → 17,071 CRS; **medium accuracy 0.9751 → 0.9945 native, 0.9747 → 0.9941 CRS** | 0 in every family; excerpt unchanged on both engines; medium 1 → 1 native, 74 → 74 CRS | 1, one narrowed |
 | 2026-10-05 | *this pass* | **the finish** — 934 and 943's last catchable shapes; every family closed out | 934 **91% → 95%** (176 → 183), 943 **90% → 92%** (36 → 37); overall 86.7% → **87.4%** (953 → 961 of 1,099) | 0 in every family; excerpt unchanged on both engines; medium 17,069 / 1 → 17,069 / 1 native; 17,071 / 74 → 17,071 / 74 CRS | 2, three extended |
+| 2026-10-06 | *this pass* | **injection** — an injection that reaches for secrets is `exploitation` | corpus unchanged, 960 of 1,099; caught unchanged everywhere; **`exploitation` 4/8 → 6/8 excerpt and medium, 4/9 → 7/9 small, 0/2 → 2/2 large**, precision 1.000 | 0 → 0 everywhere native; CRS unchanged | 1 |
 | 2026-10-06 | *this pass* | **access** — forced browsing with nothing refused; the first `sequence` rule | corpus unchanged, 960 of 1,099; **caught +15 on the excerpt, small and medium, +10 on large** (medium 17,044 → 17,059 native); **`access_control` 0/24 → 15/24 excerpt, 9/31 → 24/31 medium**, precision 1.000 | native 0 → 0 everywhere; with CRS unchanged (small 1 → 1, the click ID) | 1, and a new rule kind |
 | 2026-10-06 | *this pass* | **crs** — the `${name}` placeholder, from the other engine | corpus unchanged (native only); caught unchanged on all three `2026-10-06` tiers, both engines (small 4,016, medium 17,045, large 40,613); **CRS macro F1 0.8412 → 0.8600 small, 0.8286 → 0.8687 medium, 0.7703 → 0.8293 large** | **CRS 45 → 1 small, 149 → 0 medium, 670 → 0 large**; native 0 → 0 on all three; excerpt and demo contain no `${name}` | 0, one engine condition |
 | 2026-10-06 | `52fd2c2` → `a37bc2b` | **command injection and 942 union select**: after `&` a command word is not an injection when a parameter `=` follows it, so `?sort=price&cat=shoes` and `&cat[]=` no longer match; `sqli_union_select` needs `union` not preceded by a letter and `select` as a whole word, so `reunion select` and `credit union selection` no longer match while number-adjacent evasions such as `1e0union select` and `union(select 1)` still do | corpus unchanged, 960 of 1,099 (942 106 of 135, 79%; 932 344 of 406, 85%); `score-crs` output byte-identical on `52fd2c2` and `a37bc2b`, CRS corpus at `d694d465951e` | 0 in every family (942 0/12, 932 0/64); excerpt unchanged on both engines, only `ruleset_fingerprint` moved; medium and other real-log columns not measured | 0, two narrowed |
@@ -887,6 +888,66 @@ and a `DELETE /api/cart` — to see whether the check is method-specific; two
 which is this rule's shape, and one request at a time each is what an
 administrator's bounce looks like. Verb tampering is its own signal and its
 own pass.
+
+### 2026-10-06 — injection: the payoff is not a probe
+
+`exploitation` named 4 of 8 on medium. Of the 4 missed, 2 were an avatar
+upload (refused 415, accepted 200) whose shell is used two days and a session
+later — knowable only from that later use, which is already `exploitation`, so
+left alone — and **2 were the attacker taking something**: `;cat /etc/passwd`
+through the ping tool and `{{file_get_contents('/etc/passwd')}}` through the
+template, read as path traversal by `sensitive_file_access`. The same client's
+`;id`, `;whoami` and `{{7*7}}` before them are `injection` in the truth and
+here. A probe asks whether the hole is there; these take from it.
+
+`injection_reaches_for_secrets` (`exploitation`, critical, 0.97) has three
+exact shapes: a separator and a reader before an account file (`;cat`,
+`|head`, `$(tail`…), a reading call around one (`file_get_contents(`,
+`readfile(`, `include(`…), and a UNION that selects a credential column FROM a
+users table. 0.97 because it has to outrank `sensitive_file_access` (critical,
+0.95) on the same request, and every shape is specific enough to earn it.
+
+**The SQL shape was first written too wide, and the truth drew the line.** As
+"UNION SELECT … FROM users" it fired on `2026-10-06-small`'s
+`UNION SELECT 1,2,3,username,5,6,7,8 FROM users` — the same client lining the
+columns up a moment before the payoff, `injection` in the truth — and took
+`injection` from 52/53 to 51/51. Requiring a credential column (`password`,
+`password_hash`, `passwd`, `secret`, `api_key`…) is what separates them: the
+`…,password_hash,…` after it is `exploitation`. Pinned both ways.
+
+Each guard was dropped in turn and its case failed: no separator (a search for
+"how to cat /etc/passwd", and a scanner's polyglot naming `../etc/passwd`
+inside `xp_cmdshell`); no FROM-a-users-table (asking `information_schema`
+whether `users` exists); no credential column (the column-lining query above);
+and each positive branch on its own payoff.
+
+| native | caught | false alarms | `exploitation` | `path_traversal` predicted | macro F1 |
+|---|---:|---:|---:|---:|---:|
+| excerpt | 1,138 → 1,138 | 0 → 0 | 4/8 → **6/8** | 9 → 7 (6 right) | 0.8751 → **0.8992** |
+| `2026-10-06-small` | 4,028 → 4,028 | 0 → 0 | 4/9 → **7/9** | 9 → 7 | 0.8896 → **0.9176** |
+| `2026-10-06-medium` | 17,059 → 17,059 | 0 → 0 | 4/8 → **6/8** | 9 → 7 | 0.8999 → **0.9223** |
+| `2026-10-06-large` | 40,622 → 40,622 | 0 → 0 | 0/2 → **2/2** | 12 → 10 | 0.8626 → **0.9404** |
+
+Every `exploitation` it names is right, detection does not move (these were
+already caught, as path traversal or injection), and nothing else loses a
+correct answer. With CRS the same: macro F1 0.8855 → 0.9096 excerpt, 0.9215
+medium, 0.9397 large, false alarms unchanged. **Large's jump is one small
+category, not a broad gain:** `exploitation` has 2 requests there, and going
+from 0 to 2 of 2 moves one fourteenth of the macro average from 0 to 1.
+Small's boundary F1 moved 0.8515 → 0.8512, the payoff now starting an episode
+of its own. CRS corpus unchanged, 960 of 1,099, 0 fired wrongly; cost flat per
+character on 16,000-character runs of each shape's own words. In the demo log
+it fires on three attacker scenes (sqlmap's UNION, PHP's `file_get_contents`,
+the command-injection client's `;cat /etc/passwd`) and nowhere else.
+
+**Rebased 2026-10-09 onto `459debc`**, after the command-injection and UNION
+narrowing (`812c4a3`, the row above this pass's in the table) and exploit
+evidence first. Every tier was scored again on both sides of this change, both
+engines, and the figures above are what came out at fingerprint
+`d7d94ead3cd178a0`. The same runs measured the narrowing on real traffic for
+the first time: on all three `2026-10-06` tiers it moved nothing, both
+engines, every headline figure and every category identical; only the
+fingerprint changed.
 
 ### 2026-10-05 — recon: the tools that sweep a wordlist are enumeration
 

@@ -209,7 +209,9 @@ def test_leading_reason_explains_the_strongest_evidence():
         sample[1], path="/product", query="id=1 UNION SELECT password FROM users", status=200
     )
     profile = profile_client(sample, RuleEngine(default_rules()))
-    assert "injection" in profile.reasons[0].text.lower()
+    # A UNION selecting a credential column FROM users is the payoff, not a
+    # probe: `injection_reaches_for_secrets` names it exploitation (2026-10-06).
+    assert "exploitation" in profile.reasons[0].text.lower()
     assert profile.reasons[0].evidence == (sample[1].evidence,)
 
 

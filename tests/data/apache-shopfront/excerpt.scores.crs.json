@@ -13,8 +13,8 @@
     "true_positives": 1140
   },
   "classification": {
-    "accuracy": 0.9602614379084967,
-    "macro_f1": 0.885453083362383,
+    "accuracy": 0.9607843137254902,
+    "macro_f1": 0.9095725536356993,
     "per_category": [
       {
         "category": "crawling",
@@ -138,23 +138,23 @@
       },
       {
         "category": "exploitation",
-        "f1": 0.6666666666666666,
-        "false_negatives": 4,
+        "f1": 0.8571428571428571,
+        "false_negatives": 2,
         "false_positives": 0,
         "precision": 1.0,
-        "predicted": 4,
-        "recall": 0.5,
-        "recall_any": 0.5,
+        "predicted": 6,
+        "recall": 0.75,
+        "recall_any": 0.75,
         "support": 8,
-        "true_positives": 4
+        "true_positives": 6
       },
       {
         "category": "path_traversal",
-        "f1": 0.8,
+        "f1": 0.923076923076923,
         "false_negatives": 0,
-        "false_positives": 3,
-        "precision": 0.6666666666666666,
-        "predicted": 9,
+        "false_positives": 1,
+        "precision": 0.8571428571428571,
+        "predicted": 7,
         "recall": 1.0,
         "recall_any": 1.0,
         "support": 6,
@@ -215,17 +215,17 @@
         "predicted": "api_call"
       },
       {
-        "count": 2,
-        "expected": "exploitation",
-        "predicted": "path_traversal"
-      },
-      {
         "count": 1,
         "expected": "access_control",
         "predicted": "api_call"
+      },
+      {
+        "count": 1,
+        "expected": "credential_attack",
+        "predicted": "authentication"
       }
     ],
-    "weighted_f1": 0.9604381505786027
+    "weighted_f1": 0.9610295939935756
   },
   "crs_fingerprint": "1c4b66d67838c5e8",
   "granularity": "category",
@@ -239,7 +239,7 @@
     "max_duration_seconds": 28800,
     "split_on_user_agent_change": true
   },
-  "ruleset_fingerprint": "6a1a0e27584ef8c23585143d9b713adcc68bc1ca29437ddd01e5e74cb54fa2c9",
+  "ruleset_fingerprint": "d7d94ead3cd178a0f3e593d49b9dabdbafcb16b1ba64f4bd0ab5dc648bb1382c",
   "scenario": "apache-shopfront-medium-excerpt",
   "segmentation": {
     "boundaries_agreed": 244,

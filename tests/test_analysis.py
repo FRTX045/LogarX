@@ -124,12 +124,20 @@ def test_episodes_are_linked_in_the_order_they_happened(campaign: Case) -> None:
 
 
 def test_a_successful_injection_is_not_reported_as_blocked(campaign: Case) -> None:
-    """The difference between an attempt and a breach."""
+    """The difference between an attempt and a breach.
+
+    The refused probes are injection, and blocked. The UNION that came back
+    with `username,password FROM users` is the payoff — exploitation since
+    2026-10-06 — and must read as having worked.
+    """
     result = analyse_ip(campaign.store, ATTACKER)
 
-    injection = [e for e in result.episodes if e.category is ActivityCategory.INJECTION]
-    assert injection
-    assert any(episode.outcome in {Outcome.SUCCESS, Outcome.MIXED} for episode in injection)
+    probes = [e for e in result.episodes if e.category is ActivityCategory.INJECTION]
+    breach = [e for e in result.episodes if e.category is ActivityCategory.EXPLOITATION]
+    assert probes
+    assert all(episode.outcome is Outcome.BLOCKED for episode in probes)
+    assert breach
+    assert any(episode.outcome in {Outcome.SUCCESS, Outcome.MIXED} for episode in breach)
 
 
 def test_every_node_traces_back_to_real_log_lines(campaign: Case) -> None:

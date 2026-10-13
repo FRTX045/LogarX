@@ -517,6 +517,60 @@ def test_signing_in_to_an_admin_area_is_not_an_intrusion(
     assert not _access_control(engine.label_events(events))
 
 
+# -- an injection that reaches for secrets is the payoff, not a probe ---------
+#
+# Measured on the three `2026-10-06` tiers: `;cat /etc/passwd` through the ping
+# tool and `{{file_get_contents('/etc/passwd')}}` through the template are
+# `exploitation` in the truth every time (1 + 1 per tier), read here as path
+# traversal; the client's `;id`, `;whoami` and `{{7*7}}` before them are
+# injection in both. A probe asks whether the hole is there; this takes from it.
+
+EXPLOITATION_PAYOFFS = [
+    "/admin/ping?host=127.0.0.1%3Bcat%20%2Fetc%2Fpasswd",
+    "/admin/ping?host=127.0.0.1%7Ccat%20%2Fetc%2Fpasswd",
+    "/admin/template?tpl=%7B%7Bfile_get_contents%28%27%2Fetc%2Fpasswd%27%29%7D%7D",
+    "/search?q=%22%20UNION%20SELECT%201%2C2%2Cusername%2Cpassword_hash%20FROM%20users--",
+]
+
+NOT_PAYOFFS = [
+    # The probes that came first: injection, not yet a payoff.
+    "/admin/ping?host=127.0.0.1%3Bid",
+    "/admin/template?tpl=%7B%7B7*7%7D%7D",
+    # A scanner's polyglot: it names /etc/passwd and UNION SELECT and reads
+    # neither from a user table. The truth calls it path traversal.
+    "/search?q=oak&x=1%20and%201=1%20union%20all%20select%201,null,table_name%20from"
+    "%20information_schema.tables--%3B%20exec%20xp_cmdshell('cat%20../../../etc/passwd')",
+    # A corpus case naming the file with no injection around it.
+    "/get?code=cat /etc/subuid",
+    # Somebody asking how, in a search box: the words, with no separator.
+    "/search?q=how+to+cat+%2Fetc%2Fpasswd+safely",
+    # Finding out whether a users table exists is still a probe: the table is
+    # named, but nothing is selected FROM it.
+    "/search?q=1%27%20union%20select%20table_name%20from%20information_schema.tables"
+    "%20where%20table_name=%27users%27--",
+    # Measured on `2026-10-06-small`: the same client's query a moment before
+    # the payoff, selecting only `username` FROM users to line the columns up.
+    # The truth calls it injection, and the hash it fetched next exploitation.
+    "/search?q=%22%20UNION%20SELECT%201%2C2%2C3%2Cusername%2C5%2C6%2C7%2C8%20FROM%20users--",
+]
+
+
+@pytest.mark.parametrize("target", EXPLOITATION_PAYOFFS)
+def test_an_injection_that_reaches_for_secrets_is_exploitation(
+    engine: RuleEngine, target: str
+) -> None:
+    (labelled,) = engine.label_events([request(target)])
+
+    assert labelled.label.category is ActivityCategory.EXPLOITATION, labelled.label.rule_id
+
+
+@pytest.mark.parametrize("target", NOT_PAYOFFS)
+def test_a_probe_or_a_mention_is_not_the_payoff(engine: RuleEngine, target: str) -> None:
+    (labelled,) = engine.label_events([request(target)])
+
+    assert "injection_reaches_for_secrets" not in {item.rule_id for item in labelled.all_labels}
+
+
 def test_human_paced_directory_enumeration_is_detected(engine: RuleEngine) -> None:
     seconds = [0, 40, 80, 120, 160, 200, 240, 300]
     targets = [f"/quiet-probe-{n % 6}" for n in range(8)]
