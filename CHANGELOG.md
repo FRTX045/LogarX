@@ -75,6 +75,16 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   committed excerpt SSRF goes from 3 of 5 named to 4 of 5 (5 of 5 with CRS),
   and path traversal loses its one wrong answer.
 
+- **The password guess that worked is named.** Five or more sign-ins refused,
+  then one accepted, inside five minutes: the accepted one is now reported as a
+  credential attack — the account being taken — where it read as an ordinary
+  sign-in. The refusals keep their own name. Two typos and then in, a sign-in
+  followed by refusals, and an accepted sign-in long after the refusals are
+  left alone, each pinned by a test. On the committed excerpt credential attack
+  goes from 38 of 39 named to 39 of 39, with one more attack caught and no
+  false alarm. Rule writers get `first_at_least` on sequence rules, which it is
+  built on.
+
 - **Case → Run OWASP CRS on this case.** With CRS turned off after scans,
   the window had no way to run it on one case; only `logarc enrich` could.
   The menu item runs it on the open case whatever the preference says, and
