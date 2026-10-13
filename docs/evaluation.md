@@ -144,17 +144,17 @@ a69632f19c0372c0e0591ccd67196c1b23111c7f38b3ca051a7948200367c621  MANIFEST.json
 e6ac069ed71ab985a32667a87906173331587a3dfd9cc0be4fedada96801ec9b  MANIFEST.json
 ```
 
-All six runs are one ruleset, fingerprint `2725c06bfd6917fb`, recorded in each output and scored
+All six runs are one ruleset, fingerprint `67bf7a57f4da4881`, recorded in each output and scored
 2026-10-14: the rules after PR #33 (`admin_reached_without_signing_in`), the two injection rules
 narrowed in `812c4a3` (which moved nothing on these tiers), PR #35
 (`injection_reaches_for_secrets`), the naming pass after it (injection tools by User-Agent, a
 `file://` fetch as SSRF, `verb_tampering`), `credential_guess_accepted` and
-`action_sign_in_wall`, with the episode builder keeping a page's own files with it. The same bytes
-were first scored on 2026-10-06 at `cbb1235` with fingerprint `5bcfdcff474f63ae`; the
-[rule-pack ledger](rule-pack-ledger.md) has every step. Each moved only requests the truth names
-`access_control`, `authentication`, `credential_attack`, `exploitation`, `injection` or `ssrf` —
-from browsing, sign-in, an API call, reconnaissance, injection or path traversal — and no category
-lost a correct answer. The builder change moved no label and raised boundary F1 by about two points
+`action_sign_in_wall`, with the episode builder keeping a page's own files with it, and
+`malformed_software_probe`. The same bytes were first scored on 2026-10-06 at `cbb1235` with
+fingerprint `5bcfdcff474f63ae`; the [rule-pack ledger](rule-pack-ledger.md) has every step. Each
+moved only requests the truth names `access_control`, `authentication`, `credential_attack`,
+`exploitation`, `injection`, `reconnaissance` or `ssrf` — from browsing, sign-in, an API call,
+reconnaissance, injection or path traversal — and no category lost a correct answer. The builder change moved no label and raised boundary F1 by about two points
 on every tier. The CRS runs are revision `d694d465`, configuration `1c4b66d67838c5e8`, paranoia level 2,
 and include the `${name}` placeholder fix (PR #30); the native runs are identical with and without
 it, field for field.
@@ -166,14 +166,14 @@ four physical cores (Windows 11, Python 3.12). It is a different measurement fro
 
 | | small native | small + CRS | medium native | medium + CRS | large native | large + CRS |
 |---|---:|---:|---:|---:|---:|---:|
-| Classification accuracy | 0.9961 | 0.9961 | **0.9963** | 0.9962 | 0.9965 | 0.9965 |
-| Weighted F1 | 0.9961 | 0.9961 | 0.9964 | 0.9963 | 0.9965 | 0.9965 |
-| Macro F1 | 0.9389 | 0.9390 | **0.9494** | 0.9485 | 0.9603 | 0.9595 |
+| Classification accuracy | 0.9963 | 0.9963 | **0.9965** | 0.9964 | 0.9966 | 0.9966 |
+| Weighted F1 | 0.9963 | 0.9963 | 0.9966 | 0.9965 | 0.9967 | 0.9967 |
+| Macro F1 | 0.9395 | 0.9395 | **0.9500** | 0.9492 | 0.9609 | 0.9601 |
 | Attack-or-not precision | 1.0000 | 0.9998 | **1.0000** | 1.0000 | 1.0000 | 1.0000 |
-| Attack-or-not recall | 0.9865 | 0.9873 | 0.9950 | 0.9951 | 0.9954 | 0.9954 |
-| Caught / missed | 4,029 / 55 | 4,032 / 52 | 17,064 / 85 | 17,065 / 84 | 40,623 / 187 | 40,624 / 186 |
+| Attack-or-not recall | 0.9890 | 0.9897 | 0.9976 | 0.9976 | 0.9991 | 0.9992 |
+| Caught / missed | 4,039 / 45 | 4,042 / 42 | 17,107 / 42 | 17,108 / 41 | 40,775 / 35 | 40,776 / 34 |
 | **False alarms** | **0** | 1 | **0** | **0** | **0** | **0** |
-| Boundary F1 | 0.8761 | 0.8761 | 0.8784 | 0.8776 | 0.8874 | 0.8873 |
+| Boundary F1 | 0.8769 | 0.8769 | 0.8791 | 0.8783 | 0.8879 | 0.8877 |
 
 **No false alarm natively on any of the three, and that is a count, not a rate.** The one CRS adds
 is on small: rule 942100 (libinjection) reading a Google Ads `gclid` click ID as SQL. CRS catches 3,
@@ -193,11 +193,14 @@ is measured on fixed bytes in the ledger.
 User-Agent, the shape the [ledger](rule-pack-ledger.md) left alone on 2026-10-05 because the same
 request line is labelled by which campaign sent it. After it come 75 `unknown` read as
 `static_asset`, all the shop's own `FettleImporter/1.0` fetching its logo, which is site-specific;
-and 53 `reconnaissance` read as `browsing`, 43 of them one client probing `/admin.php`,
-`/phpmyadmin/`, `/shell.php` and `/wp-login.php`, every probe answered 400. Until 2026-10-14 the
-third was 67 `authentication` read as `browsing`, and this paragraph explained them wrongly, as an
-administrator's page views. They were admin pages answering with the sign-in form, each followed by
-the sign-in page asking to come back; `action_sign_in_wall` names all of them.
+16 `enumeration` read as `browsing`, the pages one wordlist sweep found, each answered as it would be
+to anyone; and 10 `reconnaissance` read as `browsing`, mostly a tool's opening `GET /` and `HEAD /`.
+That last was 53 until 2026-10-14, when `malformed_software_probe` named one client's 43 hand-built
+probes for `/admin.php`, `/phpmyadmin/`, `/shell.php` and `/wp-login.php`, every one answered 400.
+Until the same day 67 `authentication` read as `browsing` stood above it too, and this paragraph
+explained them wrongly, as an administrator's page views. They were admin pages answering with the
+sign-in form, each followed by the sign-in page asking to come back; `action_sign_in_wall` names all
+of them.
 
 The commands that produced every column, per tier:
 
@@ -492,10 +495,10 @@ logarc evaluate -c /tmp/c -t tests/data/apache-shopfront/excerpt.truth.jsonl
 
 | committed excerpt, 3,825 requests | native | with CRS |
 |---|---:|---:|
-| Caught | 1,143 | **1,145** |
+| Caught | 1,186 | **1,188** |
 | **False alarms** | **0** | **0** |
-| Classification accuracy | 0.9634 | 0.9637 |
-| Macro F1 | 0.9395 | **0.9477** |
+| Classification accuracy | 0.9746 | 0.9749 |
+| Macro F1 | 0.9507 | **0.9590** |
 
 Figures as of 2026-10-14, after the sequence rule that names forced browsing
 nothing refused — `access_control` from 0 of 24 to 15 of 24, every one of them
@@ -504,9 +507,10 @@ names an injection reading secrets, `exploitation` from 4 of 8 to 6 of 8, and
 the naming pass after it: injection tools named by their User-Agent
 (`injection` 51 → 56 of 57), a `file://` fetch named SSRF (`ssrf` 3 → 4 of 5
 natively, 4 → 5 with CRS) and verb tampering (`access_control` 15 → 19 of 24,
-4 more attacks caught, no false alarm added), and the credential guess that worked
-(`credential_attack` 38 → 39 of 39, 1 more caught). On
-2026-10-05 they were 1,123 and 1,125 caught, accuracy 0.9561 and 0.9563, macro
+4 more attacks caught, no false alarm added), the credential guess that worked
+(`credential_attack` 38 → 39 of 39, 1 more caught), and the hand-built probe for
+known software answered 400 (`reconnaissance` 578 → 621 of 642, 43 more caught,
+no false alarm added). On 2026-10-05 they were 1,123 and 1,125 caught, accuracy 0.9561 and 0.9563, macro
 F1 0.8004 and 0.8107; on 2026-09-30, when the commerce action pack was removed,
 accuracy 0.9339 and 0.9341. The [rule-pack ledger](rule-pack-ledger.md) has
 each step and how to reproduce it.

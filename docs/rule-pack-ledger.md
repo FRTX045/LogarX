@@ -53,6 +53,7 @@ implying the CRS column was ever checked.
 | 2026-10-14 | *this pass* | **credential** — the guess that worked, on a counted sequence (`first_at_least`) | corpus unchanged, 960 of 1,099 (a sequence cannot fire on one request); **caught +1 on the excerpt and every tier**; **`credential_attack` 38/39 → 39/39 excerpt, 28/29 → 29/29 small, 38/39 → 39/39 medium, 44/45 → 45/45 large** | 0 → 0 everywhere, both engines | 1, and a sequence count |
 | 2026-10-14 | *this pass* | **action** — the admin page that asked for a sign-in, on a sequence that closes only the latest (`closes: last`) | corpus unchanged, 960 of 1,099; caught unchanged everywhere; **`authentication` 542/558 → 558/558 small, 1,714/1,781 → 1,781/1,781 medium, 6,902/7,204 → 7,204/7,204 large**, both engines; excerpt unchanged (no such page in it) | 0 → 0 everywhere, both engines | 1, and a sequence option |
 | 2026-10-14 | *this pass* | **episode** — a page keeps the files it loaded, whatever kind of page | labels unchanged on every tier and the excerpt; **boundary F1 0.8520 → 0.8711 small, 0.8524 → 0.8726 medium, 0.8641 → 0.8816 large** native (CRS 0.8711 / 0.8718 / 0.8814); excerpt byte-identical | 0 → 0 everywhere, both engines | 0, one builder rule |
+| 2026-10-14 | *this pass* | **recon** — a hand-built probe for known software, refused 400 | corpus unchanged, 960 of 1,099; **caught +43 on the excerpt and medium, +10 small, +152 large** (medium 17,064 → 17,107 native, 17,065 → 17,108 CRS); **`reconnaissance` 578/642 → 621/642 excerpt, 701/729 → 711/729 small, 2,631/2,695 → 2,674/2,695 medium, 10,240/10,438 → 10,392/10,438 large**, every new answer right | 0 → 0 everywhere native; CRS unchanged (small 1, the click ID) | 1 |
 
 The 2026-09-20 pass is the first measured against a corpus containing a
 legitimate administrator, and it went the same way round as the recon pass: it
@@ -1177,6 +1178,60 @@ User-Agent convention left alone on 2026-10-05), 75 `unknown` read as
 `static_asset` (the shop's importer, left alone), and 53 `reconnaissance` read
 as `browsing`, 43 of them one client's `/admin.php`, `/phpmyadmin/`,
 `/shell.php` and `/wp-login.php` probes, every one answered 400.
+
+### 2026-10-14 — recon: the probe the server refused to read
+
+The 43 above were one client, `203.0.113.6`, sending `GET /admin.php HTTP/1.1`
+and its three neighbours under the User-Agent `Mozilla/5.0 (compatible)`, every
+one answered 400 with the same 352 bytes. The same client sent the same paths as
+request lines no client sends, `GET /shell.php x` with no User-Agent at all, and
+`absent_user_agent` already named those: 55 of medium's 98.
+
+**Measured on the raw logs before the rule was written.** Every request on
+`known_software_probe`'s paths answered 400 is `reconnaissance` in the truth:
+22 / 98 / 310 on small / medium / large and 98 on the excerpt, one client on
+each. Answered 404, the same paths are mostly `enumeration` (941 / 3,638 /
+15,034 against 20 / 49 / 149), which is why `known_software_probe` asks for a
+404: the site saying the software is not there is finding out what is
+installed. A 400 says nothing about the software. It says the request was not
+one a browser sends, and a request built by hand for known attack surface is a
+tool probing it.
+
+`malformed_software_probe` (reconnaissance, low, 0.7) shares
+`known_software_probe`'s path list through one YAML anchor and asks for 400.
+It does not ask for a User-Agent; a request without one is still named by
+`absent_user_agent`, which outranks it. Never a 400 on an ordinary page: a stale
+form or a bad cookie earns one too, and only the path makes it a probe, pinned
+by `/p/12`, `/search?q=oak` and `/cart` at 400. Three mutations each fail a
+test: any path, 404 instead of 400, `enumeration` instead of `reconnaissance`.
+
+| native | caught | false alarms | `reconnaissance` | accuracy | macro F1 |
+|---|---:|---:|---:|---:|---:|
+| excerpt | 1,143 → 1,186 | 0 → 0 | 578/642 → **621/642** | 0.9634 → **0.9746** | 0.9395 → **0.9507** |
+| `2026-10-06-small` | 4,029 → 4,039 | 0 → 0 | 701/729 → **711/729** | 0.9961 → 0.9963 | 0.9389 → **0.9395** |
+| `2026-10-06-medium` | 17,064 → 17,107 | 0 → 0 | 2,631/2,695 → **2,674/2,695** | 0.9963 → 0.9965 | 0.9494 → **0.9500** |
+| `2026-10-06-large` | 40,623 → 40,775 | 0 → 0 | 10,240/10,438 → **10,392/10,438** | 0.9965 → 0.9966 | 0.9603 → **0.9609** |
+
+With CRS the same: 43, 10, 43 and 152 more caught on the excerpt, small, medium
+and large, false alarms unchanged (small's one, the click ID), macro F1 0.9477 →
+0.9590, 0.9390 → 0.9395, 0.9485 → 0.9492 and 0.9595 → 0.9601. Boundary F1 rises a
+little on both engines: natively 0.6379 → 0.6464 on the excerpt, 0.8761 → 0.8769,
+0.8784 → 0.8791 and 0.8874 → 0.8879 on the tiers. `browsing` loses only wrong
+answers, and every 400 on those paths is now `reconnaissance` on all three tiers
+(22, 98 and 310; the rest were already named by `absent_user_agent`). CRS corpus
+unchanged, 960 of 1,099, 0 fired wrongly. The demo gains a hand-built prober
+answered 400 on the four paths: 107 of 107 rules fire, 26 of 26 attackers are
+found, 0 false alarms.
+
+**Still getting through, on medium:** 702 `enumeration` read as
+`reconnaissance` and 75 `unknown` read as `static_asset`, both as above. Then 16
+`enumeration` read as `browsing`, every one from one wordlist sweep
+(`198.51.100.31`, an Internet Explorer 6 User-Agent): the pages it found,
+`/about`, `/cart`, `/admin` answered 301 and so on, each answered as it would be
+to anyone, so nothing in the request is the evidence, only the sweep around it.
+And 10 `reconnaissance` read as `browsing`: eight are a tool's opening `GET /`
+and `HEAD /`, two a script's first `/admin/ping` and `/admin/template` before it
+tried an injection on them.
 
 ### 2026-10-05 — recon: the tools that sweep a wordlist are enumeration
 
