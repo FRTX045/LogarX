@@ -240,6 +240,18 @@ class WindowRule(_RuleBase):
     requests only, and only those are labelled. The window then describes a
     behaviour rather than a period.
     """
+    outranks: tuple[ActivityCategory, ...] = ()
+    """Categories this rule's label leads over on the requests it labels, whatever
+    their severity. A sweep of misses that counts `/.env` among them is a wordlist
+    with `/.env` in it: the probe rule says what the request was, the sweep what
+    the client was doing. Only on the window's own requests, and only the
+    categories named; an attack inside the sweep still leads."""
+
+    @model_validator(mode="after")
+    def _not_itself(self) -> WindowRule:
+        if self.category in self.outranks:
+            raise ValueError("a window rule outranks its own category, which sets its label aside")
+        return self
 
     def compile(self) -> None:
         if self.member is not None:
