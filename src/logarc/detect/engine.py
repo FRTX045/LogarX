@@ -511,7 +511,7 @@ def _ends_of_sequences(
     One pass in time order. A request matching `first` is held; one matching
     `unless_between` lets go of everything held so far; one matching `then`
     closes every held request no more than `within_seconds` older, and both ends
-    are kept. `then` is tested before `first`, so a request matching both cannot
+    are kept, provided at least `first_at_least` are held. `then` is tested before `first`, so a request matching both cannot
     complete a sequence with itself.
     """
     spec = rule.sequence
@@ -527,7 +527,7 @@ def _ends_of_sequences(
                 held and labelled[held[0]].event.timestamp.timestamp() < when - spec.within_seconds
             ):
                 held.popleft()
-            if held:
+            if len(held) >= spec.first_at_least:
                 ends.update(held)
                 ends.add(index)
         if _block_holds(spec.first, view):

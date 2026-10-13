@@ -256,6 +256,10 @@ class SequenceBlock(BaseModel):
     first: MatchBlock
     then: MatchBlock
     unless_between: MatchBlock | None = None
+    first_at_least: Annotated[int, Field(gt=0)] = 1
+    """How many `first` requests must be held, inside `within_seconds`, when `then`
+    arrives. One is a sequence; five refused sign-ins and then an accepted one is
+    a count that only order can say."""
 
     def blocks(self) -> list[MatchBlock]:
         return [self.first, self.then, *([self.unless_between] if self.unless_between else [])]
