@@ -491,10 +491,12 @@ def low_and_slow(ip: str, day: int, hour: int) -> None:
 
 
 def credential_attack(ip: str, day: int, hour: int) -> None:
-    """Twelve refused sign-ins to one path inside three minutes.
+    """Twelve refused sign-ins to one path inside three minutes, then one accepted.
 
     The rule wants five or more failures at no more than three distinct paths,
     which is what separates a password guesser from somebody who mistyped once.
+    The thirteenth guess works: `credential_guess_accepted` names that sign-in,
+    which on its own reads as anybody logging in.
     """
     t = at(day, hour)
     for _ in range(12):
@@ -502,6 +504,7 @@ def credential_attack(ip: str, day: int, hour: int) -> None:
             t, ip, "POST /login HTTP/1.1", 401, 512, agent=PYTHON, referer=f"https://{SITE}/login"
         )
         t += timedelta(seconds=14)
+    write(t, ip, "POST /login HTTP/1.1", 302, 0, agent=PYTHON, referer=f"https://{SITE}/login")
 
 
 def bulk_registration(ip: str, day: int, hour: int) -> None:

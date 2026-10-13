@@ -262,7 +262,7 @@ rules:
     member:
       all:
         - field: path_decoded
-          regex: '/(login|signin|sign-in|auth|oauth|session|token|account/login)'
+          regex: &sign_in '/(login|signin|sign-in|auth|oauth|session|token|account/login)'
         - field: status
           min: 400
     window:
@@ -285,6 +285,52 @@ rules:
         - metric: distinct_paths
           op: "<="
           value: 3
+
+  # The guess that worked: five or more sign-ins refused, then one accepted,
+  # inside five minutes. `credential_attack` names the refusals; the accepted
+  # one was read as an ordinary sign-in, and it is the account being taken.
+  #
+  # Measured on the 2026-10-06 tiers and the excerpt: exactly one client on
+  # each, the attacker in the truth (six refused, one of them 429, then 302).
+  # Ordinary sign-ins follow one refusal (47, 149 and 631 times on small,
+  # medium and large) or two (1, 0 and 4), and never three or more, so five —
+  # `credential_attack`'s own floor — leaves a wide margin.
+  #
+  # A sequence rule labels both ends, so the refusals carry this label too.
+  # High and 0.75, below `credential_attack`'s 0.8, so a refusal keeps its own
+  # name and only the accepted sign-in is named this. **What it cannot tell
+  # apart:** someone who mistyped five times and then got it right; the
+  # refusals already make that client a credential attack.
+  - id: credential_guess_accepted
+    name: Sign-in Accepted After Repeated Refusals
+    category: credential_attack
+    owasp: "A07:2025"
+    severity: high
+    confidence: 0.75
+    references: ["CAPEC-49", "CAPEC-600"]
+    sequence:
+      within_seconds: 300
+      first_at_least: 5
+      first:
+        all:
+          - field: method
+            any_of: ["POST"]
+          - field: path_decoded
+            regex: *sign_in
+          - field: status
+            min: 400
+          - field: status
+            max: 499
+      then:
+        all:
+          - field: method
+            any_of: ["POST"]
+          - field: path_decoded
+            regex: *sign_in
+          - field: status
+            min: 200
+          - field: status
+            max: 399
 
   # Separate from `credential_attack` rather than folded into it, because they
   # are different behaviours that happen to share a category. Credential

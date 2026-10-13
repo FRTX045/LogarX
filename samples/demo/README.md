@@ -1,7 +1,7 @@
 # The demo log
 
 `demo.log` is the file to open when you want to show somebody what logarc does.
-It is 836 lines of three days' traffic against a fictional shop, and every
+It is 837 lines of three days' traffic against a fictional shop, and every
 feature the application has is reachable from it.
 
 ```bash
@@ -24,9 +24,9 @@ These are figures from a run, not intentions:
 
 | | |
 |---|---|
-| Lines / events / quarantined | 836 / 830 / 5 |
+| Lines / events / quarantined | 837 / 831 / 5 |
 | Clients | 37 |
-| Detection rules exercised | **104 of 104** |
+| Detection rules exercised | **105 of 105** |
 | Attackers flagged | 25 of 25 |
 | False alarms on the 12 ordinary clients | **0** without CRS, **0** with it |
 
@@ -38,7 +38,7 @@ python samples/demo/make_demo.py          # rebuilds; prints line count and sha2
 
 The build is deterministic — no randomness anywhere — so the same script always
 produces the same bytes. The current file is
-`cac5a3cbdb386ff87ad005964f70e1771f2d84ec70ec784c3162b9c6e7191035`.
+`2aff4c1a8d2223a7961f4d9e6b8164c6dd161d7f570f5434eef601ed500260ae`.
 
 That digest is recorded beside the log in `SHA256SUMS`, and
 `tests/samples/test_demo_log.py` checks it on every run of the suite — including
@@ -84,7 +84,7 @@ reading its story is a complete demonstration on its own.
 | `192.0.2.100` | sqlmap: tautology, UNION, time-based, error-based, schema probe, stacked query. Payloads are percent-encoded, one of them twice, so the evidence panel has something to decode |
 | `192.0.2.101` | Directory enumeration — 25 misses in 50 seconds. **The window rule no single line reveals** |
 | `192.0.2.102` | The same idea paced to slip under it: 9 misses over 4 minutes |
-| `192.0.2.103` | 12 refused sign-ins to one path |
+| `192.0.2.103` | 12 refused sign-ins to one path, then the thirteenth accepted |
 | `192.0.2.104` | Path traversal, the same file asked for five ways — plain, encoded, double-encoded, null-byte, backslash. Normalisation collapses all five before any rule sees them |
 | `192.0.2.105` | PHP: open tag, stream wrapper, superglobal, decode chain, comment evasion, config directive, `phpinfo()`, file function, object injection, then `system` without writing `system(` — `(system)('id')` and a variable called as a function |
 | `192.0.2.106` | XSS — script tag, event handler, `javascript:`, SVG, then three that get past a `<script` filter: a bare `alert()`, a tag spelled `<d i a l o g`, script through `url(javascript:`, and script that plants a session cookie. Sent with a **browser** User-Agent, deliberately (see below) |
@@ -162,7 +162,7 @@ feature lands that the demo log cannot show, add a client to
 script and commit the script, the log and `SHA256SUMS`.
 
 The check that matters is rule coverage, and nobody has to remember to run it:
-the suite runs it. It is 104 of 104 today, and a rule added to a pack that nothing
+the suite runs it. It is 105 of 105 today, and a rule added to a pack that nothing
 in this log triggers fails the build and names the rule. To run it on its own:
 
 ```bash
