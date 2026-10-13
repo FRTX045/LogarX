@@ -366,7 +366,7 @@ def crawler(ip: str, agent: str, day: int, hour: int, pages: int) -> None:
             t += timedelta(seconds=6)
 
 
-def signed_in_admin(ip: str, day: int, hour: int) -> None:
+def signed_in_admin(ip: str, day: int, hour: int, *, session_expired: bool = False) -> None:
     """The only client whose lines carry a username, and it is there to be a
     question rather than a feature.
 
@@ -375,8 +375,24 @@ def signed_in_admin(ip: str, day: int, hour: int) -> None:
     grouping by who rather than by where, and this client is what that idea
     would have to work from. Meanwhile it also gives `admin_area_probe` a
     counter-example: `/admin` answered 200 to a signed-in user is not a probe.
+
+    With `session_expired`, `/admin` first answers 200 with the sign-in form in
+    its place, a page the size of the form, and the administrator follows it to
+    the sign-in page asking to come back. That page is `action_sign_in_wall`.
     """
     t = at(day, hour)
+    if session_expired:
+        write(t, ip, "GET /admin HTTP/1.1", 200, 2_359)
+        t += timedelta(seconds=20)
+        write(
+            t,
+            ip,
+            "GET /login?next=%2Fadmin HTTP/1.1",
+            200,
+            2_351,
+            referer=f"https://{SITE}/admin",
+        )
+        t += timedelta(seconds=15)
     write(t, ip, "POST /login HTTP/1.1", 302, 0)
     t += timedelta(seconds=2)
     for path in ("/admin", "/admin/orders", "/admin/stock", "/admin/reports"):
@@ -1124,7 +1140,7 @@ def build() -> None:
     crawler("40.77.167.1", BINGBOT, 1, 2, pages=18)
 
     signed_in_admin("198.51.100.20", 0, 10)
-    signed_in_admin("198.51.100.20", 2, 15)
+    signed_in_admin("198.51.100.20", 2, 15, session_expired=True)
 
     # --- attacks, one client each -------------------------------------------
     sqli_campaign("192.0.2.100", 1, 3)
