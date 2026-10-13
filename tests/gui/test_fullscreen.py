@@ -352,17 +352,19 @@ def test_fitting_into_more_room_draws_the_graph_larger(qt_app: QApplication) -> 
     `fit` has a floor — below `MIN_FIT_SCALE` it stops shrinking and scrolls
     instead — so a graph big enough to hit that floor comes out the same size
     at any width, and a test using one would pass whether the refit happened or
-    not. Two nodes stay well clear of it.
+    not. One node stays well clear of it: 1.37 here at 600x400 against a floor
+    of 0.8. Two nodes did until the floor rose from 0.55, and then fitted at
+    exactly 0.8.
     """
     narrow = shown((600, 400))
-    narrow.show_graph(a_trace(2))
+    narrow.show_graph(a_trace(1))
     narrow.fit()
     qt_app.processEvents()
     small = narrow.transform().m11()
     narrow.close()
 
     wide = shown((1400, 900))
-    wide.show_graph(a_trace(2))
+    wide.show_graph(a_trace(1))
     wide.fit()
     qt_app.processEvents()
 
@@ -374,14 +376,15 @@ def test_the_graph_is_refitted_when_it_is_given_the_screen(qt_app: QApplication)
     """Otherwise full screen hands over the room and the graph stays the size
     it was — more space, no more readable, which is the whole reason for it.
 
-    Two nodes and a wide window, for the reason above: with a graph at the
-    scale floor this passes without the refit, and there is no point in a test
-    that cannot fail.
+    One node, for the reason above: with a graph at the scale floor this passes
+    without the refit, and there is no point in a test that cannot fail. It
+    fits at 1.23 in this window. Two nodes fitted at 0.65 until the floor rose
+    to 0.8, and the premise below caught it.
     """
     window = MainWindow()
     window.resize(1400, 800)
     window.show()
-    window._canvas.show_graph(a_trace(2))
+    window._canvas.show_graph(a_trace(1))
     qt_app.processEvents()
     window._canvas.fit()
     qt_app.processEvents()
