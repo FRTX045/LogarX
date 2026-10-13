@@ -144,13 +144,15 @@ a69632f19c0372c0e0591ccd67196c1b23111c7f38b3ca051a7948200367c621  MANIFEST.json
 e6ac069ed71ab985a32667a87906173331587a3dfd9cc0be4fedada96801ec9b  MANIFEST.json
 ```
 
-All six runs are one ruleset, fingerprint `d7d94ead3cd178a0`, recorded in each output and scored
-2026-10-09: the rules after PR #33, which added `admin_reached_without_signing_in`, the two injection
-rules narrowed in `812c4a3`, which moved nothing on these tiers, and PR #35, which added
-`injection_reaches_for_secrets`. The same bytes were first scored on 2026-10-06 at `cbb1235` with
-fingerprint `5bcfdcff474f63ae`; the [rule-pack ledger](rule-pack-ledger.md) has every step. Each
-moved only requests the truth names `access_control` or `exploitation` — from browsing, sign-in,
-injection or path traversal — and no category lost a correct answer. The CRS runs
+All six runs are one ruleset, fingerprint `7e9ed26c5ff11ae8`, recorded in each output and scored
+2026-10-09: the rules after PR #33 (`admin_reached_without_signing_in`), the two injection rules
+narrowed in `812c4a3` (which moved nothing on these tiers), PR #35
+(`injection_reaches_for_secrets`) and the naming pass after it (injection tools by User-Agent, a
+`file://` fetch as SSRF, `verb_tampering`). The same bytes were first scored on
+2026-10-06 at `cbb1235` with fingerprint `5bcfdcff474f63ae`; the
+[rule-pack ledger](rule-pack-ledger.md) has every step. Each moved only requests the truth names
+`access_control`, `exploitation`, `injection` or `ssrf` — from browsing, sign-in, an API call,
+reconnaissance, injection or path traversal — and no category lost a correct answer. The CRS runs
 are revision `d694d465`, configuration `1c4b66d67838c5e8`, paranoia level 2, and include the
 `${name}` placeholder fix (PR #30); the native runs are identical with and without it, field for
 field.
@@ -162,14 +164,14 @@ four physical cores (Windows 11, Python 3.12). It is a different measurement fro
 
 | | small native | small + CRS | medium native | medium + CRS | large native | large + CRS |
 |---|---:|---:|---:|---:|---:|---:|
-| Classification accuracy | 0.9958 | 0.9958 | **0.9959** | 0.9959 | 0.9961 | 0.9961 |
-| Weighted F1 | 0.9958 | 0.9958 | 0.9960 | 0.9960 | 0.9962 | 0.9962 |
-| Macro F1 | 0.9176 | 0.9177 | **0.9223** | 0.9215 | 0.9404 | 0.9397 |
+| Classification accuracy | 0.9958 | 0.9959 | **0.9960** | 0.9959 | 0.9962 | 0.9961 |
+| Weighted F1 | 0.9958 | 0.9959 | 0.9961 | 0.9960 | 0.9962 | 0.9962 |
+| Macro F1 | 0.9364 | 0.9365 | **0.9469** | 0.9461 | 0.9578 | 0.9571 |
 | Attack-or-not precision | 1.0000 | 0.9998 | **1.0000** | 1.0000 | 1.0000 | 1.0000 |
-| Attack-or-not recall | 0.9863 | 0.9870 | 0.9948 | 0.9948 | 0.9954 | 0.9954 |
-| Caught / missed | 4,028 / 56 | 4,031 / 53 | 17,059 / 90 | 17,060 / 89 | 40,622 / 188 | 40,623 / 187 |
+| Attack-or-not recall | 0.9863 | 0.9870 | 0.9950 | 0.9950 | 0.9954 | 0.9954 |
+| Caught / missed | 4,028 / 56 | 4,031 / 53 | 17,063 / 86 | 17,064 / 85 | 40,622 / 188 | 40,623 / 187 |
 | **False alarms** | **0** | 1 | **0** | **0** | **0** | **0** |
-| Boundary F1 | 0.8512 | 0.8512 | 0.8522 | 0.8514 | 0.8641 | 0.8639 |
+| Boundary F1 | 0.8517 | 0.8517 | 0.8524 | 0.8516 | 0.8641 | 0.8639 |
 
 **No false alarm natively on any of the three, and that is a count, not a rate.** The one CRS adds
 is on small: rule 942100 (libinjection) reading a Google Ads `gclid` click ID as SQL. CRS catches 3,
@@ -486,15 +488,19 @@ logarc evaluate -c /tmp/c -t tests/data/apache-shopfront/excerpt.truth.jsonl
 
 | committed excerpt, 3,825 requests | native | with CRS |
 |---|---:|---:|
-| Caught | 1,138 | **1,140** |
+| Caught | 1,142 | **1,144** |
 | **False alarms** | **0** | **0** |
-| Classification accuracy | 0.9605 | 0.9608 |
-| Macro F1 | 0.8992 | **0.9096** |
+| Classification accuracy | 0.9631 | 0.9634 |
+| Macro F1 | 0.9359 | **0.9441** |
 
-Figures as of 2026-10-06, after the sequence rule that names forced browsing
+Figures as of 2026-10-09, after the sequence rule that names forced browsing
 nothing refused — `access_control` from 0 of 24 to 15 of 24, every one of them
-right, and 15 more attacks caught with no false alarm added — and the rule that
-names an injection reading secrets, `exploitation` from 4 of 8 to 6 of 8. On
+right, and 15 more attacks caught with no false alarm added — the rule that
+names an injection reading secrets, `exploitation` from 4 of 8 to 6 of 8, and
+the naming pass after it: injection tools named by their User-Agent
+(`injection` 51 → 56 of 57), a `file://` fetch named SSRF (`ssrf` 3 → 4 of 5
+natively, 4 → 5 with CRS) and verb tampering (`access_control` 15 → 19 of 24,
+4 more attacks caught, no false alarm added). On
 2026-10-05 they were 1,123 and 1,125 caught, accuracy 0.9561 and 0.9563, macro
 F1 0.8004 and 0.8107; on 2026-09-30, when the commerce action pack was removed,
 accuracy 0.9339 and 0.9341. The [rule-pack ledger](rule-pack-ledger.md) has
@@ -1304,7 +1310,7 @@ the ordering within a session is as captured. The threshold sweeps are the part 
 most exposed to that, and the episode-gap table should be read as establishing that the parameter
 behaves sensibly rather than as choosing a value for a real deployment.
 
-**The smallest categories decide the macro average.** On the headline build `ssrf` names 3 of 5
+**The smallest categories decide the macro average.** On the headline build `ssrf` names 4 of 5
 and `exploitation` 6 of 8, and they count as much as `static_asset` at 162,801.
 `unknown`, which no rule could assign until 2026-10-05, now names 124 of 201. Any per-class figure
 below about fifty requests of support should be read as an indication, not a measurement; five

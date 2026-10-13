@@ -48,6 +48,33 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   exploitation goes from 4 of 8 named to 6 of 8, every one right, with
   detection unchanged.
 
+- **Verb tampering is named.** A client that tries three or more request
+  methods on admin, API or account paths within two minutes, with at most half
+  of them served, is reported as access control: an access check written for
+  GET and POST can wave HEAD, OPTIONS or DELETE through. An HTTP fingerprinter
+  probing `/`, an admin panel whose requests are answered, a shopper, and a
+  form submitted after its session expired are left alone, each pinned by a
+  test. The rule records methods and responses rather than a payload, so it
+  cannot place a client first in the Suspicious queue. On the committed excerpt
+  access control goes from 15 of 24 named to 19 of 24, with 4 more attacks
+  caught and no false alarm; on the 2026-10-06 medium build from 24 of 31 to
+  28 of 31. Rule writers get the `distinct_methods` window metric it is built
+  on.
+
+- **sqlmap, havij, commix and ghauri announce an injection, not a scan.**
+  Their User-Agent alone now reports a request as injection rather than
+  reconnaissance. It cannot place a client first in the Suspicious queue: a
+  User-Agent is what a client says it is, not a payload, and the first request
+  it marks is a tool's harmless baseline. Nikto, Nuclei, WPScan and the other
+  scanners are unchanged. On the committed excerpt injection goes from 51 of 57
+  named to 56 of 57; on the 2026-10-06 medium build from 47 of 53 to 52 of 53.
+
+- **A `file://` fetch of a system file is SSRF, not path traversal.**
+  `?url=file:///etc/passwd` asks the server to fetch a URL, and the file it
+  names is what makes that critical; it was reported as path traversal. On the
+  committed excerpt SSRF goes from 3 of 5 named to 4 of 5 (5 of 5 with CRS),
+  and path traversal loses its one wrong answer.
+
 - **Case → Run OWASP CRS on this case.** With CRS turned off after scans,
   the window had no way to run it on one case; only `logarc enrich` could.
   The menu item runs it on the open case whatever the preference says, and

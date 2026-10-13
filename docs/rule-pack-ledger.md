@@ -47,6 +47,9 @@ implying the CRS column was ever checked.
 | 2026-10-06 | *this pass* | **access** — forced browsing with nothing refused; the first `sequence` rule | corpus unchanged, 960 of 1,099; **caught +15 on the excerpt, small and medium, +10 on large** (medium 17,044 → 17,059 native); **`access_control` 0/24 → 15/24 excerpt, 9/31 → 24/31 medium**, precision 1.000 | native 0 → 0 everywhere; with CRS unchanged (small 1 → 1, the click ID) | 1, and a new rule kind |
 | 2026-10-06 | *this pass* | **crs** — the `${name}` placeholder, from the other engine | corpus unchanged (native only); caught unchanged on all three `2026-10-06` tiers, both engines (small 4,016, medium 17,045, large 40,613); **CRS macro F1 0.8412 → 0.8600 small, 0.8286 → 0.8687 medium, 0.7703 → 0.8293 large** | **CRS 45 → 1 small, 149 → 0 medium, 670 → 0 large**; native 0 → 0 on all three; excerpt and demo contain no `${name}` | 0, one engine condition |
 | 2026-10-06 | `52fd2c2` → `a37bc2b` | **command injection and 942 union select**: after `&` a command word is not an injection when a parameter `=` follows it, so `?sort=price&cat=shoes` and `&cat[]=` no longer match; `sqli_union_select` needs `union` not preceded by a letter and `select` as a whole word, so `reunion select` and `credit union selection` no longer match while number-adjacent evasions such as `1e0union select` and `union(select 1)` still do | corpus unchanged, 960 of 1,099 (942 106 of 135, 79%; 932 344 of 406, 85%); `score-crs` output byte-identical on `52fd2c2` and `a37bc2b`, CRS corpus at `d694d465951e` | 0 in every family (942 0/12, 932 0/64); excerpt unchanged on both engines, only `ruleset_fingerprint` moved; medium and other real-log columns not measured | 0, two narrowed |
+| 2026-10-09 | *this pass* | **recon** — sqlmap, havij, commix and ghauri are injection tools | corpus unchanged, 960 of 1,099; caught unchanged everywhere; **`injection` 51/57 → 56/57 excerpt, 52/59 → 57/59 small, 47/53 → 52/53 medium, 46/51 → 51/51 large**, both engines; `reconnaissance` predicted 5 fewer a tier, every one right | 0 → 0 everywhere native; CRS unchanged (small 1, the click ID) | 1, one narrowed |
+| 2026-10-09 | *this pass* | **ssrf** — a `file://` fetch of a system file is SSRF, not path traversal | corpus unchanged, 960 of 1,099; caught unchanged everywhere; **`ssrf` 3/5 → 4/5 on the excerpt and every tier** (excerpt 4/5 → 5/5 with CRS); `path_traversal` loses its one wrong answer on each | 0 → 0 everywhere, both engines | 1 |
+| 2026-10-09 | *this pass* | **access** — verb tampering, on a new `distinct_methods` window metric | corpus unchanged, 960 of 1,099 (a window rule cannot fire on one request); **caught +4 on the excerpt and medium** (medium 17,059 → 17,063 native, 17,060 → 17,064 CRS); **`access_control` 15/24 → 19/24 excerpt, 24/31 → 28/31 medium**; small and large hold no such episode | 0 → 0 everywhere, both engines | 1, and a window metric |
 
 The 2026-09-20 pass is the first measured against a corpus containing a
 legitimate administrator, and it went the same way round as the recon pass: it
@@ -948,6 +951,103 @@ engines, and the figures above are what came out at fingerprint
 the first time: on all three `2026-10-06` tiers it moved nothing, both
 engines, every headline figure and every category identical; only the
 fingerprint changed.
+
+### 2026-10-09 — naming pass: three shapes read as their neighbour
+
+Not missed attacks: requests already caught, or already read as something, under
+the wrong name. Each was found in the medium confusion table and confirmed
+request by request against the truth before a rule was written.
+
+**sqlmap, havij, commix and ghauri are injection tools.** `scanner_user_agent`
+called their User-Agent reconnaissance, which is right for Nikto or Nuclei
+(they map what is there) and wrong for these (they exist to inject). Five
+requests a tier are sqlmap's opening moves — on medium the baseline
+`/search?q=oak` (twice), a random-value check `q=9401`, and its two heuristic
+probes, `oak,,((,').)"` and a quote-and-angle-bracket marker — which carry no
+payload a signature can name, and the truth calls every one injection. The
+other 39 to 41 sqlmap requests a tier were already named by what they carry.
+`injection_tool_user_agent` (injection, medium, 0.95) takes the four names out
+of the scanner list. A User-Agent is the cheapest field to forge, which is why
+severity stays medium; but a client that names an injection tool and is then
+caught injecting is not a mapping exercise.
+
+**It was made exploit evidence by accident, and measured out of it.** As an
+injection label it counted as exploit evidence in the Suspicious queue. The
+first-group check on all three tiers (below) found the same clients first, but
+the sqlmap client's exploit example changed from a sensitive-file read to
+sqlmap's baseline `/search?q=oak` — the earliest request the User-Agent marks.
+An investigator opening it would see a search for "oak". A User-Agent is what
+a client says it is, not a payload it sent, so it joined `NOT_EXPLOIT_EVIDENCE`
+in its own commit, and the example went back to the payload.
+
+**A `file://` fetch of a system file is SSRF.** `?url=file:///etc/passwd`
+matched `sensitive_file_access` (path traversal, critical, 0.95) and
+`ssrf_alternate_scheme` (SSRF, high, 0.8), so the first named it. The truth
+calls it SSRF on every tier: the server was asked to fetch a URL, and the file
+it named is what makes that critical. `ssrf_file_scheme_reads_system_file`
+(SSRF, critical, 0.96) says both and leads. It names directories (`/etc/`,
+`/proc/`, `/sys/`, `/root/`, a credential dot-directory, a Windows system
+ini) rather than repeating `files.yaml`'s file names, which live in another
+pack where a YAML alias cannot reach them and would drift.
+
+**Verb tampering.** One medium client sent POST and HEAD to `/admin/users`
+and OPTIONS to `/admin/orders`, each redirected to sign in, then a DELETE the
+cart API answered: four methods in thirty seconds, all `access_control` in the
+truth, read as sign-in redirects and an API call. CRS's 911100 sees the DELETE
+under `attack-generic`, which ADR-0008 leaves unmapped. A window rule needed a
+new metric, `distinct_methods`, so it was measured before it was written: no
+client on any tier or the excerpt uses more than two methods inside five
+minutes except this one and an HTTP fingerprinter sending five, invented ones
+included, to `/` (reconnaissance in the truth). `verb_tampering` asks for three
+methods on admin, API or account paths within 120 s, at most half served.
+
+**One guard was not guarding.** Mutating the member path to `^/` failed no
+test: the fingerprinter case was written as the shopfront logged it, every
+method answered 200, so the success ratio kept it out and the path was never
+exercised. The case now carries what a server that refuses an unknown method
+answers (501, and 405 for TRACE), and the path mutation fails it. The other
+four mutations (no success ratio, two methods, five methods, a 1,000 s window)
+each failed a named case, including a form submitted after its session expired
+— two methods, every one redirected — which is the reason for three.
+
+It records which methods a client used and what the server answered, not a
+payload, so it joins `NOT_EXPLOIT_EVIDENCE` with the teammate's per-exclusion
+test. **What it can still catch wrongly:** an admin single-page app whose token
+expired, sending a GET, a PUT and a DELETE that are all refused. Not in any
+corpus here, so not measured.
+
+**In the Suspicious queue** (the first-group check referred to above), measured
+2026-10-13 on the new base — `cd06bf7`, with PR #36's CRS level-1 evidence —
+against this pass's head: the first group holds the same clients on all three
+tiers (7, 6 and 4), the queue the same members (127, 426 and 1,218), the
+sqlmap client's exploit example is its sensitive-file read, and the one change
+of order is on medium, where the verb-tampering client moves up one place with
+four more flagged requests. One harmless client sits in small's first group on
+both sides, `203.0.113.233`, placed by CRS 942100 reading a Google Ads click ID
+as SQL; that comes from PR #36, not from this pass, and is in `TODO.md`.
+
+**Where activity naming stops on medium**, after this pass. The large
+confusions are the campaign-level ones already recorded — `enumeration` read
+as `reconnaissance` 702 times, `reconnaissance` as `browsing` 53 (malformed
+requests answered 400), `enumeration` as `browsing` 16 (wordlist hits that
+exist). What is left in the small attack categories, where one request moves
+the macro average, by kind:
+
+- `credential_attack` 38 of 39: **the guess that worked.** Six refusals
+  (401, 429) in a minute, then `POST /login` answered 302 — read as an
+  ordinary sign-in. One on every tier (28 of 29 small, 44 of 45 large). It is
+  the most valuable request in that client's history and the next thing to
+  name; it needs a rule that can count the refusals before a redirect, which
+  neither a sequence rule nor `success_ratio` (2xx only) can. In `TODO.md`.
+- `access_control` 28 of 31: 3 bounces from `/account/` and `/admin/` with
+  nothing succeeding. A signed-out visitor does exactly this; only the
+  campaign around it says otherwise.
+- `exploitation` 6 of 8: an avatar upload, refused 415 then accepted 200,
+  whose shell is used two days later. Knowable only from that use.
+- `injection` 52 of 53: a `POST /contact` whose payload is in the body, which
+  an access log does not have.
+- `ssrf` 4 of 5: an import of the site's own stylesheet by URL — the probe
+  before the internal ones, indistinguishable from the feature working.
 
 ### 2026-10-05 — recon: the tools that sweep a wordlist are enumeration
 
