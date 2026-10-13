@@ -1,7 +1,7 @@
 # The demo log
 
 `demo.log` is the file to open when you want to show somebody what logarc does.
-It is 839 lines of three days' traffic against a fictional shop, and every
+It is 841 lines of three days' traffic against a fictional shop, and every
 feature the application has is reachable from it.
 
 ```bash
@@ -24,10 +24,10 @@ These are figures from a run, not intentions:
 
 | | |
 |---|---|
-| Lines / events / quarantined | 839 / 833 / 5 |
-| Clients | 37 |
-| Detection rules exercised | **106 of 106** |
-| Attackers flagged | 25 of 25 |
+| Lines / events / quarantined | 841 / 835 / 5 |
+| Clients | 38 |
+| Detection rules exercised | **107 of 107** |
+| Attackers flagged | 26 of 26 |
 | False alarms on the 12 ordinary clients | **0** without CRS, **0** with it |
 
 Re-measure at any time:
@@ -38,7 +38,7 @@ python samples/demo/make_demo.py          # rebuilds; prints line count and sha2
 
 The build is deterministic — no randomness anywhere — so the same script always
 produces the same bytes. The current file is
-`b172e2ccdd1350b9610c22cbdfdee42f5304f8d4b22b925a05b6edb8d1a4259e`.
+`f745fcbdde184ec18e557d6998a002f6d621aa192fdd589195d544846a00ad96`.
 
 That digest is recorded beside the log in `SHA256SUMS`, and
 `tests/samples/test_demo_log.py` checks it on every run of the suite — including
@@ -106,6 +106,7 @@ reading its story is a complete demonstration on its own.
 | `192.0.2.122` | A Django ORM lookup reading a password hash a character at a time, then asking which accounts carry an admin flag. A lookup alone is how Django filters; what it is aimed at is the evidence |
 | `192.0.2.123` | A tool working out which database is behind the stock API: a `1=1` probe, a subquery, SQLite's `GLOB`, then PostgreSQL's `::int` cast and `lo_import` reading `/etc/passwd`. The last request carries its payload **in the User-Agent**, which the SQL rules read too |
 | `192.0.2.124` | Verb tampering: POST, HEAD and OPTIONS to admin pages, each redirected to sign in, then a DELETE the cart API answers — four methods in thirty seconds, looking for the one the access check forgot |
+| `192.0.2.125` | A hand-built probe: `/phpmyadmin/` and `/wp-login.php` written as raw HTTP/1.1 requests, both rejected 400, so the server never said whether the software is there. Reconnaissance, where the same paths answered 404 are enumeration |
 
 **Six damaged lines** sit at the end. Five reach quarantine and one blank line
 is skipped outright, so the ingest summary reads 5. They are there so a reader
@@ -162,7 +163,7 @@ feature lands that the demo log cannot show, add a client to
 script and commit the script, the log and `SHA256SUMS`.
 
 The check that matters is rule coverage, and nobody has to remember to run it:
-the suite runs it. It is 106 of 106 today, and a rule added to a pack that nothing
+the suite runs it. It is 107 of 107 today, and a rule added to a pack that nothing
 in this log triggers fails the build and names the rule. To run it on its own:
 
 ```bash

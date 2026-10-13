@@ -166,11 +166,41 @@ rules:
     match:
       all:
         - field: path_decoded
-          regex: '^/(?:wp-admin|wp-login\.php|wp-content|wp-includes|xmlrpc\.php|administrator|phpmyadmin|pma|myadmin|adminer(?:\.php)?|admin\.php|shell\.php|test\.php|old|vendor/phpunit)(?:[/?]|$)'
+          regex: &software_path '^/(?:wp-admin|wp-login\.php|wp-content|wp-includes|xmlrpc\.php|administrator|phpmyadmin|pma|myadmin|adminer(?:\.php)?|admin\.php|shell\.php|test\.php|old|vendor/phpunit)(?:[/?]|$)'
         - field: status
           any_of: ["404", "410"]
         - field: user_agent
           regex: '\S'
+
+  # The same paths, answered 400: the server rejected the request itself. A
+  # 404 is the site saying the software is not there, which is finding out what
+  # is installed. A 400 says nothing about the software, only that the request
+  # was not one a browser sends (on the `2026-10-06` tiers, HTTP/1.1 lines a
+  # tool built by hand). A request built by hand for known attack surface is a
+  # tool probing it, so reconnaissance, not enumeration.
+  #
+  # Measured on the raw logs first: every 400 on these paths is reconnaissance
+  # in the truth, 22 / 98 / 310 on small / medium / large and 98 on the
+  # committed excerpt, and every 404 on them is mostly enumeration (941 / 3,638
+  # / 15,034 against 20 / 49 / 149). `/admin.php`, `/phpmyadmin/`, `/shell.php`
+  # and `/wp-login.php` at 400 matched nothing and were read as page views;
+  # the other paths in the list already had a rule naming them.
+  #
+  # Never a 400 on an ordinary page: a stale form or a bad cookie earns one too,
+  # and only the path makes it a probe.
+  - id: malformed_software_probe
+    name: Hand-Built Probe for Known Software
+    category: reconnaissance
+    owasp: "A01:2025"
+    severity: low
+    confidence: 0.7
+    references: ["CAPEC-169"]
+    match:
+      all:
+        - field: path_decoded
+          regex: *software_path
+        - field: status
+          any_of: ["400"]
 
   # Every rule below declares `member`: the requests it is actually about.
   # Without it a window is only a span of time, so a burst of 404s next to a
