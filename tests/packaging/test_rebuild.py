@@ -11,6 +11,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -250,3 +251,134 @@ def test_verification_accepts_a_probe_that_found_942100(
     rebuild: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     assert _probe_says(rebuild, monkeypatch, tmp_path, PROBE_GOOD) is None
+
+
+# -- the tree it builds ----------------------------------------------------
+#
+# The post-merge hook starts a rebuild in the background and hands the prompt
+# back, so the tree can move under it: a `git checkout` while the suite runs,
+# and the tests, the sidecar and PyInstaller each read whichever branch was
+# there at the moment they looked. These run the real sequence against a real
+# repository, with the slow steps stubbed, and move the tree where the suite
+# would be running.
+
+
+def _git(repo: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", "-C", str(repo), *args], capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+
+def _commit(repo: Path, text: str) -> None:
+    (repo / "a.py").write_text(text, encoding="utf-8")
+    _git(repo, "add", "a.py")
+    _git(repo, "commit", "-q", "-m", text.strip())
+
+
+@pytest.fixture
+def tree(rebuild: ModuleType, bundles: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A repository standing in for the checkout, every slow step stubbed."""
+    repo = bundles / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "rebuild@example.invalid")
+    _git(repo, "config", "user.name", "rebuild")
+    _git(repo, "config", "core.autocrlf", "false")
+    _commit(repo, "x = 1\n")
+
+    def build() -> tuple[bool, str]:
+        _staged(rebuild)
+        return True, ""
+
+    monkeypatch.setattr(rebuild, "ROOT", repo)
+    monkeypatch.setattr(rebuild, "GIT_DIR", repo / ".git")
+    monkeypatch.setattr(rebuild, "STATUS", bundles / "dist" / "BUILD-STATUS.txt")
+    monkeypatch.setattr(rebuild, "MARKER", repo / ".git" / "logarc-build-failed")
+    monkeypatch.setattr(rebuild.crs_bundle, "prepare", lambda: [])
+    monkeypatch.setattr(rebuild, "build", build)
+    monkeypatch.setattr(rebuild, "verify", lambda bundle: [])
+    monkeypatch.setattr(rebuild, "size_mb", lambda path: 1.0)
+    return repo
+
+
+def _while_testing(rebuild: ModuleType, monkeypatch: pytest.MonkeyPatch, move) -> None:
+    def run_tests() -> tuple[bool, str]:
+        move()
+        return True, ""
+
+    monkeypatch.setattr(rebuild, "run_tests", run_tests)
+
+
+def test_a_quiet_tree_is_built_and_stamped_with_its_commit(
+    rebuild: ModuleType, tree: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _while_testing(rebuild, monkeypatch, lambda: None)
+    built = _git(tree, "rev-parse", "--short", "HEAD")
+
+    assert rebuild._rebuild() == 0
+    assert (rebuild.LIVE / "logarc.exe").exists()
+    assert rebuild.STATUS.read_text(encoding="utf-8").split()[2] == built
+
+
+def test_a_branch_switched_during_the_run_is_not_put_in_place(
+    rebuild: ModuleType, tree: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def switch() -> None:
+        _git(tree, "checkout", "-q", "-b", "feat/x")
+        _commit(tree, "x = 2\n")
+
+    _while_testing(rebuild, monkeypatch, switch)
+
+    assert rebuild._rebuild() == 1
+    assert not rebuild.LIVE.exists()
+    assert "NOT REBUILT" in rebuild.STATUS.read_text(encoding="utf-8")
+    assert "changed while it was being built" in rebuild.MARKER.read_text(encoding="utf-8")
+
+
+def test_a_switch_away_and_back_during_the_run_is_caught(
+    rebuild: ModuleType, tree: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """HEAD ends where it started, but the build read the other branch meanwhile."""
+
+    def away_and_back() -> None:
+        _git(tree, "checkout", "-q", "-b", "feat/x")
+        _commit(tree, "x = 2\n")
+        _git(tree, "checkout", "-q", "main")
+
+    _while_testing(rebuild, monkeypatch, away_and_back)
+
+    assert rebuild._rebuild() == 1
+    assert not rebuild.LIVE.exists()
+
+
+def test_an_edit_during_the_run_is_caught(
+    rebuild: ModuleType, tree: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _while_testing(
+        rebuild, monkeypatch, lambda: (tree / "a.py").write_text("x = 3\n", encoding="utf-8")
+    )
+
+    assert rebuild._rebuild() == 1
+    assert not rebuild.LIVE.exists()
+
+
+def test_an_edit_already_there_at_the_start_does_not_stop_it(
+    rebuild: ModuleType, tree: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A rebuild by hand of uncommitted work is allowed; only movement is refused."""
+    (tree / "a.py").write_text("x = 4\n", encoding="utf-8")
+    _while_testing(rebuild, monkeypatch, lambda: None)
+
+    assert rebuild._rebuild() == 0
+
+
+def test_a_second_edit_to_a_modified_file_is_caught(
+    rebuild: ModuleType, tree: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`git status` says ` M a.py` before and after; only the content moved."""
+    (tree / "a.py").write_text("x = 4\n", encoding="utf-8")
+    _while_testing(
+        rebuild, monkeypatch, lambda: (tree / "a.py").write_text("x = 5\n", encoding="utf-8")
+    )
+
+    assert rebuild._rebuild() == 1

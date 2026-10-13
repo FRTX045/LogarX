@@ -361,6 +361,12 @@ The staging checks also load the packaged Qt extensions in an isolated process.
 Windows system DLLs take precedence during collection, so unrelated tools on
 `PATH` cannot substitute an incompatible ICU library and break GUI startup.
 
+It builds the working tree, so it also refuses a tree that moved while it ran.
+A branch switch, a pull or an edit during those minutes would leave the tests,
+the sidecar and PyInstaller each reading something different. When that
+happens nothing is swapped in, and the status file says what moved. Run it
+again once the tree is settled.
+
 ### OWASP CRS
 
 The bundled rules classify *behaviour*; OWASP CRS enumerates payload *syntax*,

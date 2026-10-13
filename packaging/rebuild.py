@@ -32,6 +32,7 @@ wrong tool for this job:
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import shutil
@@ -84,6 +85,46 @@ def head() -> str:
     return subprocess.run(
         ["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True
     ).stdout.strip()
+
+
+def tree_state() -> tuple[str, int, str, str]:
+    """What the build reads: the commit, how often HEAD has moved, and the edits on top.
+
+    Every step here reads the working tree whenever it gets to it, and the hook
+    hands the prompt back while it runs. A `git checkout` meanwhile means the
+    tests, the sidecar and PyInstaller each read a different branch, and the
+    result was stamped with whichever commit was there at the end. Compared
+    at the start and before the swap, so a tree that moved is never put in place.
+
+    The reflog's size catches a switch away and back again, which leaves HEAD
+    where it started after the build has read the other branch. The diff's hash
+    catches an edit to a file that was already modified, which `git status`
+    alone reports the same way before and after.
+    """
+    reflog = GIT_DIR / "logs" / "HEAD"
+    diff = subprocess.run(["git", "diff", "HEAD", "--binary"], cwd=ROOT, capture_output=True).stdout
+    status = subprocess.run(
+        ["git", "status", "--porcelain", "-uall"], cwd=ROOT, capture_output=True, text=True
+    ).stdout
+    return (
+        head(),
+        reflog.stat().st_size if reflog.exists() else 0,
+        status,
+        hashlib.sha256(diff).hexdigest(),
+    )
+
+
+def _how_it_moved(before: tuple[str, int, str, str], after: tuple[str, int, str, str]) -> str:
+    if before[0] != after[0]:
+        moved = f"HEAD was {before[0]} at the start and is {after[0]} now."
+    elif before[1] != after[1]:
+        moved = f"HEAD left {before[0]} and came back to it."
+    else:
+        moved = f"HEAD stayed at {before[0]}, but files changed."
+    return (
+        f"{moved}\nThe build read the tree while it moved, so it is a mix of what was there.\n"
+        "Run it again once the tree is settled:\n  .venv\\Scripts\\python.exe packaging\\rebuild.py"
+    )
 
 
 def take_lock() -> bool:
@@ -252,6 +293,7 @@ def check_qt_runtime(bundle: Path) -> str | None:
         return None
     probe = """
 import ctypes
+import hashlib
 import os
 import sys
 from pathlib import Path
@@ -450,6 +492,7 @@ def main() -> int:
 
 def _rebuild() -> int:
     """Test, build, check, swap — stopping at the first thing that is wrong."""
+    started = tree_state()
     passed, detail = run_tests()
     if not passed:
         return fail("the test suite is red, so nothing was packaged", detail)
@@ -478,6 +521,12 @@ def _rebuild() -> int:
             "\n".join(f"  - {problem}" for problem in problems),
         )
 
+    if (now := tree_state()) != started:
+        return fail(
+            "the working tree changed while it was being built, so nothing was put in place",
+            _how_it_moved(started, now),
+        )
+
     try:
         swap(staged)
     except OSError as exc:
@@ -504,7 +553,7 @@ def _rebuild() -> int:
     stamp = time.strftime("%Y-%m-%d %H:%M:%S")
     say(f"verified and swapped in ({size_mb(LIVE):.0f} MB)")
     STATUS.write_text(
-        f"{stamp}  {head()}  ok  {size_mb(LIVE):.0f} MB\n"
+        f"{stamp}  {started[0]}  ok  {size_mb(LIVE):.0f} MB\n"
         "tests green; rule packs bundled; version metadata bundled; no QtWebEngine; "
         "Qt runtime loads; CRS sidecar bundled and catches 942100\n",
         encoding="utf-8",
