@@ -565,6 +565,27 @@ def forced_browsing(ip: str, day: int, hour: int) -> None:
         t += timedelta(seconds=9)
 
 
+def verb_tampering(ip: str, day: int, hour: int) -> None:
+    """Four methods in thirty seconds, looking for the one the access check forgot.
+
+    POST and HEAD to the admin user list and OPTIONS to the orders, each
+    redirected to sign in, then a DELETE that the cart API answers. An access
+    rule written for GET and POST can wave the others through, which is the
+    whole of the attack. The shape is the `2026-10-06-medium` episode the truth
+    calls access control, from a browser, as a proxy tool replaying requests
+    would send it.
+    """
+    t = at(day, hour, 12)
+    for method, path, status in (
+        ("POST", "/admin/users", 302),
+        ("HEAD", "/admin/users", 302),
+        ("OPTIONS", "/admin/orders", 302),
+        ("DELETE", "/api/cart?id=1", 200),
+    ):
+        write(t, ip, f"{method} {path} HTTP/1.1", status, 0 if status == 302 else 412)
+        t += timedelta(seconds=10)
+
+
 def server_errors(ip: str, day: int, hour: int) -> None:
     """Six requests that make the application fall over inside two minutes.
 
@@ -1127,6 +1148,7 @@ def build() -> None:
     database_fingerprint("192.0.2.123", 0, 15)
     nosql_and_shellshock("192.0.2.119", 2, 4)
     headless_client("192.0.2.120", 1, 11)
+    verb_tampering("192.0.2.124", 2, 19)
 
 
 #: Lines the parser cannot read, appended after everything else.

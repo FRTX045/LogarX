@@ -204,6 +204,57 @@ rules:
           - field: status
             any_of: ["301", "302", "303", "307", "308"]
 
+  # HTTP verb tampering: one client trying several methods on the paths that
+  # turned it away, looking for the one the access check forgot. An access rule
+  # written for GET and POST can wave HEAD, OPTIONS or DELETE through.
+  #
+  # Measured on `2026-10-06-medium`: a client sent POST and HEAD to
+  # `/admin/users` and OPTIONS to `/admin/orders`, each redirected to sign in,
+  # then DELETE to `/api/cart?id=1`, answered 200 — four methods in 30 seconds.
+  # The truth calls all four `access_control`; they were read as sign-in
+  # redirects and an API call. CRS's 911100 ("Method is not allowed by policy")
+  # sees the DELETE, but `attack-generic` is deliberately unmapped (ADR-0008),
+  # so nothing named it.
+  #
+  # **Why three methods, on these paths, mostly refused.** On every 2026-10-06
+  # tier and the excerpt no other client uses more than two methods inside
+  # five minutes: GET with POST, or GET with a CORS preflight. Two is also what
+  # a form is, submitted by someone whose session has expired. The one other
+  # client that uses more is an HTTP fingerprinter sending five methods
+  # (including invented ones) to `/`, which the truth calls reconnaissance.
+  # The shopfront answered every one, so the success ratio keeps it out there;
+  # a server that refuses an unknown method (501) or TRACE (405) leaves it
+  # mostly refused, and then only the path keeps it out. An administrator's
+  # REST panel uses as many methods on `/api/` and is answered every time,
+  # which the success ratio keeps out.
+  #
+  # **What it can still catch wrongly:** the same panel after its token expired,
+  # firing a GET, a PUT and a DELETE that are all refused. That is why it is
+  # medium and why it cannot place a client first in the Suspicious queue
+  # (`NOT_EXPLOIT_EVIDENCE`): it records which methods a client used and what
+  # the server answered, not a payload.
+  - id: verb_tampering
+    name: HTTP Verb Tampering
+    category: access_control
+    owasp: "A01:2025"
+    severity: medium
+    confidence: 0.75
+    references: ["CAPEC-274"]
+    member:
+      all:
+        - field: path_decoded
+          regex: '^/(admin|administrator|wp-admin|manager|console|api|account)\b'
+    window:
+      span_seconds: 120
+      min_requests: 3
+      conditions:
+        - metric: distinct_methods
+          op: ">="
+          value: 3
+        - metric: success_ratio
+          op: "<="
+          value: 0.5
+
   - id: debug_endpoint_probe
     name: Debug or Status Endpoint Probe
     category: reconnaissance

@@ -12,7 +12,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 import yaml
 
-from logarc.core.activity import ActivityCategory
+from logarc.core.activity import ActivityCategory, Severity
 from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
 from logarc.detect.engine import LabelledEvent, RuleEngine
@@ -306,7 +306,7 @@ def test_shellshock_is_detected_in_the_user_agent(engine: RuleEngine) -> None:
 
 
 def test_a_scanner_announces_itself(engine: RuleEngine) -> None:
-    (labelled,) = engine.label_events([request("/", user_agent="sqlmap/1.7#stable")])
+    (labelled,) = engine.label_events([request("/", user_agent="Nikto/2.5.0")])
 
     assert labelled.label.rule_id == "scanner_user_agent"
 
@@ -330,15 +330,47 @@ CONTENT_DISCOVERY_AGENTS = [
     "Wfuzz/3.1.0",
 ]
 
-# Tools that fingerprint, scan for vulnerabilities, or exploit: they stay with
-# the scanner rule, and their own payloads are named by the payload rules.
+# Tools that fingerprint or scan for vulnerabilities: they stay with the scanner
+# rule, and their own payloads are named by the payload rules.
 RECONNAISSANCE_AGENTS = [
     "Mozilla/5.00 (Nikto/2.5.0) (Evasions:None) (Test:Port Check)",
     "Mozilla/5.0 (compatible; Nmap Scripting Engine; https://nmap.org/book/nse.html)",
     "WhatWeb/0.5.5",
     "Nuclei - Open-source project (github.com/projectdiscovery/nuclei)",
-    "sqlmap/1.7#stable",
 ]
+
+# Tools whose job is injection. sqlmap was in the list above, on the reasoning
+# that its payloads are named by the payload rules — true of the payloads, and
+# not of its baseline and heuristic requests, which carry none: on each
+# `2026-10-06` tier 5 of them were named reconnaissance, and the truth calls
+# every sqlmap request but one injection (43 to 45 a tier).
+INJECTION_TOOL_AGENTS = [
+    "sqlmap/1.7#stable (https://sqlmap.org)",
+    "sqlmap/1.8.11#stable",
+    "commix/v4.0-stable (https://commixproject.com)",
+    "Havij",
+    "ghauri/1.3.8",
+]
+
+
+@pytest.mark.parametrize("agent", INJECTION_TOOL_AGENTS)
+def test_an_injection_tool_is_injection_even_with_nothing_in_the_request(
+    engine: RuleEngine, agent: str
+) -> None:
+    (labelled,) = engine.label_events([request("/search?q=oak", user_agent=agent)])
+
+    assert labelled.label.rule_id == "injection_tool_user_agent"
+    assert labelled.label.category is ActivityCategory.INJECTION
+
+
+def test_an_injection_tool_s_payload_still_names_what_it_did(engine: RuleEngine) -> None:
+    """The tool is the fallback, never the verdict: a traversal sqlmap sends is
+    still path traversal, as the truth has it."""
+    (labelled,) = engine.label_events(
+        [request("/download?file=../../../../etc/passwd", user_agent="sqlmap/1.7#stable")]
+    )
+
+    assert labelled.label.category is ActivityCategory.PATH_TRAVERSAL
 
 
 @pytest.mark.parametrize("agent", CONTENT_DISCOVERY_AGENTS)
@@ -569,6 +601,119 @@ def test_a_probe_or_a_mention_is_not_the_payoff(engine: RuleEngine, target: str)
     (labelled,) = engine.label_events([request(target)])
 
     assert "injection_reaches_for_secrets" not in {item.rule_id for item in labelled.all_labels}
+
+
+#: A URL parameter handed `file://` and a system file. Both SSRF and a file read
+#: match these, and the one that leads is a taxonomy call that
+#: `test_known_payloads_reach_the_right_category` leaves open. The shopfront truth
+#: settles it, once on every tier: the server was asked to *fetch a URL*, so it is
+#: SSRF, and the file it names is what makes it critical.
+FILE_SCHEME_FETCHES = [
+    "/admin/import-image?url=file%3A%2F%2F%2Fetc%2Fpasswd",
+    "/fetch?url=file:///etc/passwd",
+    "/fetch?url=file://localhost/etc/shadow",
+    "/proxy?u=file:///proc/self/environ",
+    "/fetch?url=file:///c:/windows/win.ini",
+]
+
+#: The same files with no URL around them: a file read, not a fetch.
+FILE_READS_WITHOUT_A_SCHEME = [
+    "/download?file=../../../../etc/passwd",
+    "/download?file=/etc/passwd",
+    "/page?doc=php://filter/convert.base64-encode/resource=/etc/passwd",
+]
+
+
+@pytest.mark.parametrize("target", FILE_SCHEME_FETCHES)
+def test_a_file_scheme_fetch_of_a_system_file_is_ssrf(engine: RuleEngine, target: str) -> None:
+    (labelled,) = engine.label_events([request(target)])
+
+    assert labelled.label.category is ActivityCategory.SSRF, labelled.label.rule_id
+    assert labelled.label.severity is Severity.CRITICAL
+
+
+@pytest.mark.parametrize("target", FILE_READS_WITHOUT_A_SCHEME)
+def test_a_file_read_without_a_url_is_not_ssrf(engine: RuleEngine, target: str) -> None:
+    (labelled,) = engine.label_events([request(target)])
+
+    assert labelled.label.category is not ActivityCategory.SSRF, labelled.label.rule_id
+
+
+def test_several_methods_on_refused_paths_are_verb_tampering(engine: RuleEngine) -> None:
+    """The `2026-10-06-medium` episode: three methods redirected to sign in, then
+    a DELETE that was answered. The truth calls all four access control."""
+    events = [
+        request("/admin/users", method="POST", status=302, seconds=0),
+        request("/admin/users", method="HEAD", status=302, seconds=9),
+        request("/admin/orders", method="OPTIONS", status=302, seconds=17),
+        request("/api/cart?id=1", method="DELETE", status=200, seconds=30),
+    ]
+
+    labelled = engine.label_events(events)
+
+    assert [item.label.rule_id for item in labelled] == ["verb_tampering"] * 4
+    assert {item.label.category for item in labelled} == {ActivityCategory.ACCESS_CONTROL}
+
+
+#: Clients that use several methods and are not tampering with access control.
+NOT_VERB_TAMPERING = {
+    # An HTTP fingerprinter asking `/` which methods it answers, invented ones
+    # included; the truth calls it reconnaissance. The shopfront answered every
+    # one 200, but a server that refuses an unknown method (501) or TRACE (405)
+    # leaves it mostly refused, and only the path keeps it out.
+    "fingerprinting the root": [
+        ("/", "GET", 200),
+        ("/", "OPTIONS", 200),
+        ("/", "HEAD", 200),
+        ("/", "DLZB", 501),
+        ("/", "TRACE", 405),
+        ("/", "PROPFIND", 405),
+    ],
+    # An administrator's REST panel uses as many methods and is answered.
+    "an admin panel that is answered": [
+        ("/api/products", "GET", 200),
+        ("/api/products/3", "PUT", 200),
+        ("/api/products/4", "DELETE", 204),
+        ("/api/products/5", "PATCH", 200),
+    ],
+    # A shopper bounced to sign in, then using the account and the cart.
+    "a shopper": [
+        ("/account/", "GET", 302),
+        ("/account/", "GET", 200),
+        ("/api/cart", "POST", 200),
+        ("/account/orders", "GET", 200),
+    ],
+    # A staff member whose session expired mid-form: two methods, every one
+    # redirected to sign in. Two methods is what a form is, hence three.
+    "an expired session submitting a form": [
+        ("/admin/users", "GET", 302),
+        ("/admin/users", "POST", 302),
+        ("/admin/", "GET", 302),
+    ],
+}
+
+
+@pytest.mark.parametrize("name", NOT_VERB_TAMPERING)
+def test_several_methods_are_not_tampering_on_their_own(engine: RuleEngine, name: str) -> None:
+    events = [
+        request(path, method=method, status=status, seconds=n * 5)
+        for n, (path, method, status) in enumerate(NOT_VERB_TAMPERING[name])
+    ]
+
+    labelled = engine.label_events(events)
+
+    assert all("verb_tampering" not in {x.rule_id for x in item.all_labels} for item in labelled)
+
+
+def test_methods_tried_minutes_apart_are_not_one_attempt(engine: RuleEngine) -> None:
+    events = [
+        request("/admin/users", method=method, status=302, seconds=n * 200)
+        for n, method in enumerate(["POST", "HEAD", "OPTIONS"])
+    ]
+
+    labelled = engine.label_events(events)
+
+    assert all("verb_tampering" not in {x.rule_id for x in item.all_labels} for item in labelled)
 
 
 def test_human_paced_directory_enumeration_is_detected(engine: RuleEngine) -> None:

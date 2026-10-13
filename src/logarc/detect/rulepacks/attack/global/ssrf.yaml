@@ -189,3 +189,26 @@ rules:
       any:
         - field: query_decoded
           regex: '=\s*(file|gopher|dict|ftp|jar)://'
+
+  # `?url=file:///etc/passwd` is two things at once: a fetch of a URL, and a
+  # read of a system file. `sensitive_file_access` reports the second at
+  # critical, `ssrf_alternate_scheme` the first at high, and so the request was
+  # named path traversal. The shopfront truth calls it SSRF on every tier: the
+  # server was asked to fetch a URL, and the file it named is what makes that
+  # critical. This rule says both, one point more confident so that it leads,
+  # and leaves the file-read label beside it as evidence.
+  #
+  # It names directories rather than repeating `files.yaml`'s list of file
+  # names, which would drift: a `file:` URL into the system's own trees or a
+  # credential directory, or at a Windows system ini.
+  - id: ssrf_file_scheme_reads_system_file
+    name: SSRF reading a system file (file:// in a parameter)
+    category: ssrf
+    owasp: "A01:2025"
+    severity: critical
+    confidence: 0.96
+    references: ["CAPEC-664"]
+    match:
+      any:
+        - field: query_decoded
+          regex: '=\s*file:[^&\s]{0,80}?(?:/(?:etc|proc|sys|root)/|/\.(?:ssh|aws|docker)/|[/\\](?:win|boot)\.ini\b)'

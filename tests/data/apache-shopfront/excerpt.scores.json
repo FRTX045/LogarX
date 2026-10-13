@@ -1,20 +1,20 @@
 {
   "binary": {
-    "accuracy": 0.9814379084967321,
-    "f1": 0.9697486152535151,
-    "false_negatives": 71,
+    "accuracy": 0.982483660130719,
+    "f1": 0.9715014887282007,
+    "false_negatives": 67,
     "false_positive_rate": 0.0,
     "false_positives": 0,
     "has_attacks": true,
     "precision": 1.0,
-    "recall": 0.9412737799834574,
+    "recall": 0.9445822994210091,
     "total": 3825,
     "true_negatives": 2616,
-    "true_positives": 1138
+    "true_positives": 1142
   },
   "classification": {
-    "accuracy": 0.9605228758169935,
-    "macro_f1": 0.8992058736008265,
+    "accuracy": 0.9631372549019608,
+    "macro_f1": 0.9358523158899739,
     "per_category": [
       {
         "category": "crawling",
@@ -42,11 +42,11 @@
       },
       {
         "category": "reconnaissance",
-        "f1": 0.8947368421052632,
+        "f1": 0.8982128982128983,
         "false_negatives": 64,
-        "false_positives": 72,
-        "precision": 0.8892307692307693,
-        "predicted": 650,
+        "false_positives": 67,
+        "precision": 0.896124031007752,
+        "predicted": 645,
         "recall": 0.9003115264797508,
         "recall_any": 0.9112149532710281,
         "support": 642,
@@ -78,11 +78,11 @@
       },
       {
         "category": "api_call",
-        "f1": 0.9753086419753086,
+        "f1": 0.9813664596273292,
         "false_negatives": 0,
-        "false_positives": 4,
-        "precision": 0.9518072289156626,
-        "predicted": 83,
+        "false_positives": 3,
+        "precision": 0.9634146341463414,
+        "predicted": 82,
         "recall": 1.0,
         "recall_any": 1.0,
         "support": 79,
@@ -90,15 +90,15 @@
       },
       {
         "category": "injection",
-        "f1": 0.9444444444444444,
-        "false_negatives": 6,
+        "f1": 0.9911504424778761,
+        "false_negatives": 1,
         "false_positives": 0,
         "precision": 1.0,
-        "predicted": 51,
-        "recall": 0.8947368421052632,
-        "recall_any": 0.8947368421052632,
+        "predicted": 56,
+        "recall": 0.9824561403508771,
+        "recall_any": 0.9824561403508771,
         "support": 57,
-        "true_positives": 51
+        "true_positives": 56
       },
       {
         "category": "credential_attack",
@@ -114,23 +114,23 @@
       },
       {
         "category": "access_control",
-        "f1": 0.7692307692307693,
-        "false_negatives": 9,
+        "f1": 0.8837209302325582,
+        "false_negatives": 5,
         "false_positives": 0,
         "precision": 1.0,
-        "predicted": 15,
-        "recall": 0.625,
-        "recall_any": 0.625,
+        "predicted": 19,
+        "recall": 0.7916666666666666,
+        "recall_any": 0.7916666666666666,
         "support": 24,
-        "true_positives": 15
+        "true_positives": 19
       },
       {
         "category": "authentication",
-        "f1": 0.8387096774193548,
+        "f1": 0.9285714285714286,
         "false_negatives": 0,
-        "false_positives": 5,
-        "precision": 0.7222222222222222,
-        "predicted": 18,
+        "false_positives": 2,
+        "precision": 0.8666666666666667,
+        "predicted": 15,
         "recall": 1.0,
         "recall_any": 1.0,
         "support": 13,
@@ -150,11 +150,11 @@
       },
       {
         "category": "path_traversal",
-        "f1": 0.923076923076923,
+        "f1": 1.0,
         "false_negatives": 0,
-        "false_positives": 1,
-        "precision": 0.8571428571428571,
-        "predicted": 7,
+        "false_positives": 0,
+        "precision": 1.0,
+        "predicted": 6,
         "recall": 1.0,
         "recall_any": 1.0,
         "support": 6,
@@ -162,15 +162,15 @@
       },
       {
         "category": "ssrf",
-        "f1": 0.7499999999999999,
-        "false_negatives": 2,
+        "f1": 0.888888888888889,
+        "false_negatives": 1,
         "false_positives": 0,
         "precision": 1.0,
-        "predicted": 3,
-        "recall": 0.6,
+        "predicted": 4,
+        "recall": 0.8,
         "recall_any": 0.8,
         "support": 5,
-        "true_positives": 3
+        "true_positives": 4
       }
     ],
     "top_confusions": [
@@ -190,16 +190,6 @@
         "predicted": "enumeration"
       },
       {
-        "count": 5,
-        "expected": "injection",
-        "predicted": "reconnaissance"
-      },
-      {
-        "count": 4,
-        "expected": "access_control",
-        "predicted": "authentication"
-      },
-      {
         "count": 4,
         "expected": "access_control",
         "predicted": "browsing"
@@ -217,15 +207,25 @@
       {
         "count": 1,
         "expected": "access_control",
-        "predicted": "api_call"
+        "predicted": "authentication"
       },
       {
         "count": 1,
         "expected": "credential_attack",
         "predicted": "authentication"
+      },
+      {
+        "count": 1,
+        "expected": "injection",
+        "predicted": "api_call"
+      },
+      {
+        "count": 1,
+        "expected": "ssrf",
+        "predicted": "browsing"
       }
     ],
-    "weighted_f1": 0.960789518643869
+    "weighted_f1": 0.9635200773467499
   },
   "crs_fingerprint": null,
   "granularity": "category",
@@ -239,17 +239,17 @@
     "max_duration_seconds": 28800,
     "split_on_user_agent_change": true
   },
-  "ruleset_fingerprint": "d7d94ead3cd178a0f3e593d49b9dabdbafcb16b1ba64f4bd0ab5dc648bb1382c",
+  "ruleset_fingerprint": "7e9ed26c5ff11ae8b6da31ad48274eabf25f30c74667bc54e8a0f54c87cfe137",
   "scenario": "apache-shopfront-medium-excerpt",
   "segmentation": {
     "boundaries_agreed": 244,
     "boundaries_expected": 245,
-    "boundaries_found": 527,
-    "boundary_f1": 0.6321243523316062,
-    "boundary_precision": 0.4629981024667932,
+    "boundaries_found": 521,
+    "boundary_f1": 0.6370757180156658,
+    "boundary_precision": 0.46833013435700577,
     "boundary_recall": 0.9959183673469387,
-    "fragmentation": 1.9494949494949494,
-    "predicted_episodes": 579,
+    "fragmentation": 1.9292929292929293,
+    "predicted_episodes": 573,
     "truth_activities": 297
   },
   "source_file_id": "excerpt.log",

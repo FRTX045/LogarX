@@ -519,6 +519,8 @@ EXCLUDED_FROM_EXPLOIT_EVIDENCE = (
     ("forced_browsing", "access_control"),
     ("forced_browsing_succeeded", "access_control"),
     ("admin_reached_without_signing_in", "access_control"),
+    ("verb_tampering", "access_control"),
+    ("injection_tool_user_agent", "injection"),
     ("server_errors_provoked", "exploitation"),
 )
 

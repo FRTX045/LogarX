@@ -75,6 +75,7 @@ WINDOW_METRICS: Final[frozenset[str]] = frozenset(
     {
         "request_count",
         "distinct_paths",
+        "distinct_methods",
         "not_found_ratio",
         "client_error_ratio",
         "server_error_ratio",

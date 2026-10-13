@@ -723,6 +723,7 @@ def _cover_maximal_windows(
 class _WindowMeasurements:
     total: int = 0
     paths: Counter[str] = field(default_factory=Counter)
+    methods: Counter[str] = field(default_factory=Counter)
     statuses: Counter[int | None] = field(default_factory=Counter)
     not_found: int = 0
     client_errors: int = 0
@@ -733,6 +734,8 @@ class _WindowMeasurements:
     def add(self, event: NormalizedEvent) -> None:
         self.total += 1
         self.paths[canonical_path(event.path)] += 1
+        if event.method is not None:
+            self.methods[event.method] += 1
         self.statuses[event.status] += 1
         self.not_found += event.status == 404
         self.client_errors += _in_range(event.status, 400, 499)
@@ -746,6 +749,10 @@ class _WindowMeasurements:
         self.paths[path] -= 1
         if not self.paths[path]:
             del self.paths[path]
+        if event.method is not None:
+            self.methods[event.method] -= 1
+            if not self.methods[event.method]:
+                del self.methods[event.method]
         self.statuses[event.status] -= 1
         if not self.statuses[event.status]:
             del self.statuses[event.status]
@@ -763,6 +770,8 @@ class _WindowMeasurements:
                 return float(self.total)
             case "distinct_paths":
                 return float(len(self.paths))
+            case "distinct_methods":
+                return float(len(self.methods))
             case "distinct_statuses":
                 return float(len(self.statuses))
             case "not_found_ratio":
