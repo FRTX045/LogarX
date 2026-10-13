@@ -105,6 +105,18 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   alarm, and accuracy goes from 0.963 to 0.975; on the three 2026-10-06 builds
   10, 43 and 152 more, every request of that shape now named.
 
+- **A sweep keeps the named files it probed.** A client sweeping a wordlist of
+  missing pages that includes `/.svn/entries` was reported as probing for a
+  configuration file at that request, which cut the sweep into pieces around
+  it. The sweep now names those requests as enumeration, and the probe stays
+  among the matches. A file the server handed over keeps its own name, and an
+  attack inside the sweep still leads. On the three 2026-10-06 builds
+  enumeration gains 68, 262 and 1,021 right answers, and 6, 25 and 80 are lost:
+  a reconnaissance campaign's own probes sent from inside a sweep;
+  accuracy goes from 0.996 to 0.997 on medium, and episode boundaries are
+  right more often (boundary F1 0.879 to 0.914). Detection is unchanged. Rule
+  writers get `outranks` on window rules, which it is built on.
+
 - **Case → Run OWASP CRS on this case.** With CRS turned off after scans,
   the window had no way to run it on one case; only `logarc enrich` could.
   The menu item runs it on the open case whatever the preference says, and

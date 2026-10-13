@@ -144,18 +144,24 @@ a69632f19c0372c0e0591ccd67196c1b23111c7f38b3ca051a7948200367c621  MANIFEST.json
 e6ac069ed71ab985a32667a87906173331587a3dfd9cc0be4fedada96801ec9b  MANIFEST.json
 ```
 
-All six runs are one ruleset, fingerprint `67bf7a57f4da4881`, recorded in each output and scored
+All six runs are one ruleset, fingerprint `328f237c91a986c6`, recorded in each output and scored
 2026-10-14: the rules after PR #33 (`admin_reached_without_signing_in`), the two injection rules
 narrowed in `812c4a3` (which moved nothing on these tiers), PR #35
 (`injection_reaches_for_secrets`), the naming pass after it (injection tools by User-Agent, a
 `file://` fetch as SSRF, `verb_tampering`), `credential_guess_accepted` and
-`action_sign_in_wall`, with the episode builder keeping a page's own files with it, and
-`malformed_software_probe`. The same bytes were first scored on 2026-10-06 at `cbb1235` with
-fingerprint `5bcfdcff474f63ae`; the [rule-pack ledger](rule-pack-ledger.md) has every step. Each
-moved only requests the truth names `access_control`, `authentication`, `credential_attack`,
-`exploitation`, `injection`, `reconnaissance` or `ssrf` — from browsing, sign-in, an API call,
-reconnaissance, injection or path traversal — and no category lost a correct answer. The builder change moved no label and raised boundary F1 by about two points
-on every tier. The CRS runs are revision `d694d465`, configuration `1c4b66d67838c5e8`, paranoia level 2,
+`action_sign_in_wall`, with the episode builder keeping a page's own files with it,
+`malformed_software_probe`, and the directory-enumeration windows naming the probes inside their
+own sweeps (`outranks`). The same bytes were first scored on 2026-10-06 at `cbb1235` with
+fingerprint `5bcfdcff474f63ae`; the [rule-pack ledger](rule-pack-ledger.md) has every step.
+
+Until the last, each moved only requests the truth names `access_control`, `authentication`,
+`credential_attack`, `exploitation`, `injection`, `reconnaissance` or `ssrf` — from browsing,
+sign-in, an API call, reconnaissance, injection or path traversal — and no category lost a correct
+answer. The sweep change did lose some: on medium it moved 287 configuration-file probes from
+`reconnaissance` to `enumeration`, 262 of them rightly and 25 a reconnaissance campaign's own probes
+sent from inside a sweep (6 of 74 on small, 80 of 1,101 on large). The builder change moved no label
+and raised boundary F1 by about two points on every tier, and the sweep change by about three more.
+The CRS runs are revision `d694d465`, configuration `1c4b66d67838c5e8`, paranoia level 2,
 and include the `${name}` placeholder fix (PR #30); the native runs are identical with and without
 it, field for field.
 
@@ -166,14 +172,14 @@ four physical cores (Windows 11, Python 3.12). It is a different measurement fro
 
 | | small native | small + CRS | medium native | medium + CRS | large native | large + CRS |
 |---|---:|---:|---:|---:|---:|---:|
-| Classification accuracy | 0.9963 | 0.9963 | **0.9965** | 0.9964 | 0.9966 | 0.9966 |
-| Weighted F1 | 0.9963 | 0.9963 | 0.9966 | 0.9965 | 0.9967 | 0.9967 |
-| Macro F1 | 0.9395 | 0.9395 | **0.9500** | 0.9492 | 0.9609 | 0.9601 |
+| Classification accuracy | 0.9973 | 0.9973 | **0.9975** | 0.9975 | 0.9976 | 0.9976 |
+| Weighted F1 | 0.9972 | 0.9972 | 0.9975 | 0.9975 | 0.9976 | 0.9976 |
+| Macro F1 | 0.9427 | 0.9428 | **0.9532** | 0.9525 | 0.9646 | 0.9639 |
 | Attack-or-not precision | 1.0000 | 0.9998 | **1.0000** | 1.0000 | 1.0000 | 1.0000 |
 | Attack-or-not recall | 0.9890 | 0.9897 | 0.9976 | 0.9976 | 0.9991 | 0.9992 |
 | Caught / missed | 4,039 / 45 | 4,042 / 42 | 17,107 / 42 | 17,108 / 41 | 40,775 / 35 | 40,776 / 34 |
 | **False alarms** | **0** | 1 | **0** | **0** | **0** | **0** |
-| Boundary F1 | 0.8769 | 0.8769 | 0.8791 | 0.8783 | 0.8879 | 0.8877 |
+| Boundary F1 | 0.9096 | 0.9096 | 0.9136 | 0.9137 | 0.9184 | 0.9184 |
 
 **No false alarm natively on any of the three, and that is a count, not a rate.** The one CRS adds
 is on small: rule 942100 (libinjection) reading a Google Ads `gclid` click ID as SQL. CRS catches 3,
@@ -188,10 +194,14 @@ so the change says the pair improved, not how much of it the rules did. What eac
 is measured on fixed bytes in the ledger.
 
 **What is still wrong, on medium, natively.** The commonest mistake is still a neighbouring name:
-702 `enumeration` requests read as `reconnaissance`. 701 are probes for named files — `/.svn/entries`,
-`/backup.zip`, `/db.sql`, `/cgi-bin/test.cgi` and a few dotfiles — mostly under a browser's
-User-Agent, the shape the [ledger](rule-pack-ledger.md) left alone on 2026-10-05 because the same
-request line is labelled by which campaign sent it. After it come 75 `unknown` read as
+440 `enumeration` requests read as `reconnaissance`. 433 are lone probes answered 404 for four
+files — `/backup.zip`, `/.svn/entries`, `/db.sql` and `/cgi-bin/test.cgi`, one or two from each of
+about eighty clients, mostly under a browser's User-Agent — with no sweep around them. A probe for a
+named file is reconnaissance by the boundary ADR-0005 draws; the truth calls these enumeration
+because of which campaign sent them, the convention the [ledger](rule-pack-ledger.md) left alone on
+2026-10-05. It was 702 until 2026-10-14, when the directory-enumeration windows began naming the
+probes inside their own sweeps; that put 262 right and 25 wrong, and those 25 are most of the 34
+`reconnaissance` now read as `enumeration`. After them come 75 `unknown` read as
 `static_asset`, all the shop's own `FettleImporter/1.0` fetching its logo, which is site-specific;
 16 `enumeration` read as `browsing`, the pages one wordlist sweep found, each answered as it would be
 to anyone; and 10 `reconnaissance` read as `browsing`, mostly a tool's opening `GET /` and `HEAD /`.
@@ -498,7 +508,7 @@ logarc evaluate -c /tmp/c -t tests/data/apache-shopfront/excerpt.truth.jsonl
 | Caught | 1,186 | **1,188** |
 | **False alarms** | **0** | **0** |
 | Classification accuracy | 0.9746 | 0.9749 |
-| Macro F1 | 0.9507 | **0.9590** |
+| Macro F1 | 0.9508 | **0.9592** |
 
 Figures as of 2026-10-14, after the sequence rule that names forced browsing
 nothing refused — `access_control` from 0 of 24 to 15 of 24, every one of them
@@ -510,7 +520,9 @@ natively, 4 → 5 with CRS) and verb tampering (`access_control` 15 → 19 of 24
 4 more attacks caught, no false alarm added), the credential guess that worked
 (`credential_attack` 38 → 39 of 39, 1 more caught), and the hand-built probe for
 known software answered 400 (`reconnaissance` 578 → 621 of 642, 43 more caught,
-no false alarm added). On 2026-10-05 they were 1,123 and 1,125 caught, accuracy 0.9561 and 0.9563, macro
+no false alarm added). The sweeps naming their own probes broke even here, 17
+right for 17 wrong, with accuracy unchanged and boundary F1 0.646 → 0.666. On
+2026-10-05 they were 1,123 and 1,125 caught, accuracy 0.9561 and 0.9563, macro
 F1 0.8004 and 0.8107; on 2026-09-30, when the commerce action pack was removed,
 accuracy 0.9339 and 0.9341. The [rule-pack ledger](rule-pack-ledger.md) has
 each step and how to reproduce it.
