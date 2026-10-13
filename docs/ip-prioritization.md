@@ -129,7 +129,7 @@ is distinguished from enrichment that never ran.
 A client has exploit evidence when any of its requests carries a match by a
 native rule that is eligible. Eligible means the rule's category is injection,
 path traversal, access control, credential attack, SSRF or exploitation, and its
-id is not one of the six exclusions below. Every match on a request counts, not
+id is not one of the seven exclusions below. Every match on a request counts, not
 only the label the request is reported under, so an eligible match that loses
 the label to a scanner's user-agent rule still places the client first.
 
@@ -148,10 +148,16 @@ measured. Custom rules in the six categories take part like bundled ones, and
 adding or changing a rule, bundled or custom, can change which clients come
 first.
 
-Six rules are excluded. Each records where a client went, which methods it
-used or what the server answered rather than a payload the client sent, so its
-evidence also fits ordinary activity. Their matches still put a client in the queue, appear in its
-reasons and open in reconstruction; they only cannot place a client first.
+Seven rules are excluded, because none of them is a payload the client sent.
+Six record where a client went, which methods it used or what the server
+answered, so their evidence also fits ordinary activity. The seventh,
+`injection_tool_user_agent`, records what the client says it is. That is not
+ordinary activity, but a tool's first requests are harmless baselines, so as the
+example that places a client first it would show a search for "oak" instead of
+the payload that came later; on every 2026-10-06 build the sqlmap client is in
+the first group through its payloads either way. Their matches still put a
+client in the queue, appear in its reasons and open in reconstruction; they only
+cannot place a client first.
 
 | Rule | What it records | Ordinary activity it also fits |
 | --- | --- | --- |
@@ -161,6 +167,7 @@ reasons and open in reconstruction; they only cannot place a client first.
 | `admin_reached_without_signing_in` | an admin path redirected, then an admin page served without a sign-in between them | a staff member whose sign-in the access log does not show (single sign-on, a session set elsewhere) |
 | `server_errors_provoked` | at least 5 responses of 500 or above within 120 s | any client during an outage or a broken deployment |
 | `verb_tampering` | at least 3 methods on admin, API or account paths within 120 s, at most half of them served | an administrator's single-page app whose token expired, sending a GET, a PUT and a DELETE that are all refused |
+| `injection_tool_user_agent` | a User-Agent naming sqlmap, havij, commix or ghauri | none, but no payload either: the tool's harmless first requests (`/search?q=oak`) would be the example shown |
 
 `credential_attack` (5 or more responses of 400 or above to sign-in, auth,
 session or token paths within 300 s, across at most 3 distinct paths) and
@@ -171,8 +178,9 @@ password guessing and credential stuffing that an access log gives. So a user
 who mistypes a password five times, or a client stuck retrying an expired
 token, can enter the first group.
 
-Excluding the six can leave genuine access-control attacks, and attacks that
-provoke server errors, in the second group. In particular
+Excluding the seven can leave genuine access-control attacks, attacks that
+provoke server errors, and an injection tool none of whose payloads a rule
+catches, in the second group. In particular
 `admin_reached_without_signing_in` can record a real unauthenticated breach of
 an admin area; it is excluded because the access log cannot tell that breach
 from a sign-in it does not record.

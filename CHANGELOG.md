@@ -158,12 +158,15 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   whose own request matched a native injection, path traversal, access-control,
   credential, SSRF or exploitation rule now comes before every client without
   exploit evidence, and its recommendation opens with that rule and the request
-  it matched. Each group keeps the earlier ordering by flagged volume. Six
-  rules that record where a client went, which methods it used or what the
-  server answered (`admin_area_probe`, `forced_browsing`,
+  it matched. Each group keeps the earlier ordering by flagged volume. Seven
+  rules whose evidence is not a payload the client sent are left out: six that
+  record where a client went, which methods it used or what the server
+  answered (`admin_area_probe`, `forced_browsing`,
   `forced_browsing_succeeded`, `admin_reached_without_signing_in`,
-  `server_errors_provoked`, `verb_tampering`) are left out, which can leave
-  genuine access-control attacks, and attacks that provoke server errors, in the second group. Two credential window
+  `server_errors_provoked`, `verb_tampering`), and
+  `injection_tool_user_agent`, which records what the client says it is. That
+  can leave genuine access-control attacks, and attacks that provoke server
+  errors, in the second group. Two credential window
   rules, `credential_attack` and `bulk_account_creation`, also judge by what the
   server answered (5 responses of 400 or above within 300 s) but stay eligible,
   because they are the only native view of password guessing and credential
