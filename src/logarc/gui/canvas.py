@@ -74,13 +74,16 @@ __all__ = ["MIN_FIT_SCALE", "STARTUP_MESSAGE", "WAITING_MESSAGE", "ActivityCanva
 STARTUP_MESSAGE: Final = "Open a case, or ingest logs into a new one."
 WAITING_MESSAGE: Final = "Select a client to reconstruct what it did."
 
+#: Leave more room around the empty-canvas message than around an activity graph.
+_PLACEHOLDER_SCALE: Final = 0.75
+
 #: How far `fit` may shrink a graph. A long session trace is a wide, flat chain,
 #: and fitting one to the window scales the whole scene down until the captions
 #: inside the nodes are a grey smudge. Below this the graph stops carrying the
 #: information it exists to carry, so the view stops at this scale and lets the
 #: investigator pan instead. Requiring a pan is a smaller failure than
 #: presenting a picture nobody can read.
-MIN_FIT_SCALE: Final = 0.55
+MIN_FIT_SCALE: Final = 0.8
 
 #: How far the corner button sits from the canvas edge. Small, because the
 #: patch it covers is a patch of graph given up.
@@ -113,15 +116,9 @@ _EXPAND_MARGIN: Final = 2
 _EXPAND_ARM: Final = 4
 _EXPAND_PEN: Final = 2.0
 
-#: The scale text is sized against. Every caption is drawn `1 / _LEGIBLE_AT`
-#: times larger in scene units, so that when the view sits at this scale the
-#: words come out at exactly the point size they are written as — and a graph
-#: that opens at the fit floor is captioned the size it always was.
-#:
-#: Tied to `MIN_FIT_SCALE` rather than chosen separately: the floor exists
-#: because below it a graph stops carrying what it exists to carry, and the
-#: captions are most of that.
-_LEGIBLE_AT: Final = MIN_FIT_SCALE
+#: Reference scale for scene typography. Keep geometry stable while raising
+#: the minimum viewing scale: a 7.5pt caption now opens at about 11pt or larger.
+_LEGIBLE_AT: Final = 0.55
 
 #: How much clear ground a caption keeps around it, in scene units. Small: the
 #: point is that captions do not touch, not that they stand apart.
@@ -670,6 +667,10 @@ class ActivityCanvas(QGraphicsView):
     def resizeEvent(self, event: QResizeEvent | None) -> None:  # noqa: N802 - Qt's naming
         super().resizeEvent(event)
         self._place_expand()
+        # Placeholder text was fitted before the panel received its final size.
+        # Refit it after layout so larger UI fonts do not leave the message clipped.
+        if not self._nodes:
+            self.fit()
 
     def drawBackground(self, painter: QPainter | None, rect: QRectF) -> None:  # noqa: N802
         """The ground under the graph: the theme's colour, then its grid.
@@ -1290,6 +1291,9 @@ class ActivityCanvas(QGraphicsView):
             # every draw, centring hides both ends and starts the reader in the
             # middle of a chronology.
             self.centerOn(graph.topLeft())
+        if not self._nodes:
+            self.scale(_PLACEHOLDER_SCALE, _PLACEHOLDER_SCALE)
+            self.centerOn(graph.center())
         # Last, because it reads the region on screen and the fit has just
         # decided that. The graph keeps its place: the paper only ever grows
         # around what the view is already showing.

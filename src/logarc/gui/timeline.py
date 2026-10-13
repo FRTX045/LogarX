@@ -38,16 +38,16 @@ __all__ = ["Timeline"]
 
 #: How tall the band stands, and the room kept around the bars for the two
 #: dates written beneath them.
-_HEIGHT = 58
+_HEIGHT = 66
 _INSET = 8
-_BELOW = 18
+_BELOW = 26
 
 #: How far the mouse must travel before a press counts as picking a stretch. A
 #: click that selects nothing would otherwise narrow the case to one instant and
 #: empty the window, which reads as the band having broken.
 _ENOUGH = 4
 
-_CAPTION_POINTS = 7.5
+_CAPTION_POINTS = 11.0
 
 
 class Timeline(QWidget):

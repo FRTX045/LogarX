@@ -63,19 +63,19 @@ UI_FAMILIES: Final = ("Segoe UI Variable Text", "Segoe UI", "Inter", "sans-serif
 #: and `100.66.1.152` only lines up under `100.66.2.9` if the digits are.
 MONO_FAMILIES: Final = ("Cascadia Mono", "Consolas", "DejaVu Sans Mono", "monospace")
 
-#: The type scale, as offsets from whatever the platform's base UI size is.
+#: The type scale, relative to a readable UI base. Larger system text is kept.
 #:
-#: Relative rather than absolute because the base size is a system accessibility
-#: setting, and a window that pins 9pt overrides someone who asked for larger
-#: text everywhere else. What is fixed is the *ratio* between the roles, which
-#: is the part that carries the hierarchy.
+#: Some desktops supply a tiny default font. Set a minimum without overriding
+#: a reader who already chose larger system text.
+_UI_POINTS: Final = 13.0
+_MONO_POINTS: Final = 12.0
 _TITLE_STEP: Final = 3.0
 _HEADING_STEP: Final = 1.0
 _CAPTION_STEP: Final = -1.0
 #: No smaller than this, whatever the arithmetic says. A caption on a machine
 #: set to a small base font was arriving at 6pt, which is not a quiet label but
 #: an unreadable one.
-_FLOOR: Final = 7.5
+_FLOOR: Final = 11.0
 
 
 def _sized(base: QFont, step: float, *, weight: QFont.Weight | None = None) -> QFont:
@@ -103,18 +103,19 @@ def caption_font(base: QFont) -> QFont:
 
 
 def ui_font(base: QFont | None = None) -> QFont:
-    """The interface face, at the platform's own size."""
+    """The interface face, at least 13pt and respecting larger system text."""
     font = QFont(base) if base is not None else QFont()
     font.setFamilies(list(UI_FAMILIES))
+    font.setPointSizeF(max(font.pointSizeF(), _UI_POINTS))
     return font
 
 
 def mono_font(point_size: float) -> QFont:
-    """The evidence face. Sized absolutely — this one is a column, not prose."""
+    """The evidence face, with a readable minimum for raw log lines."""
     font = QFont()
     font.setFamilies(list(MONO_FAMILIES))
     font.setStyleHint(QFont.StyleHint.Monospace)
-    font.setPointSizeF(point_size)
+    font.setPointSizeF(max(point_size, _MONO_POINTS))
     return font
 
 
