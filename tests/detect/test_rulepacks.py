@@ -939,6 +939,33 @@ def test_a_probe_for_software_the_site_does_not_run_is_enumeration(
     )
 
 
+@pytest.mark.parametrize("target", ["/admin.php", "/phpmyadmin/", "/shell.php", "/wp-login.php"])
+def test_a_probe_the_server_rejected_as_malformed_is_reconnaissance(
+    engine: RuleEngine, target: str
+) -> None:
+    """The `2026-10-06` client that crafts its requests by hand: the same software
+    paths, answered 400. The server rejected the request itself, so it never said
+    whether the software is there, which is what makes a 404 enumeration. A request
+    built by hand for known attack surface is a tool probing it: every one of them
+    is reconnaissance in the truth (22 / 98 / 310 on small / medium / large, 98 on
+    the excerpt), and these four paths were read as page views."""
+    (labelled,) = engine.label_events(
+        [request(target, status=400, user_agent="Mozilla/5.0 (compatible)")]
+    )
+
+    assert labelled.label.category is ActivityCategory.RECONNAISSANCE, (
+        f"{target!r} matched {[label.rule_id for label in labelled.all_labels] or 'nothing'}"
+    )
+
+
+@pytest.mark.parametrize("target", ["/p/12", "/search?q=oak", "/cart"])
+def test_an_ordinary_page_answered_400_is_not_a_probe(engine: RuleEngine, target: str) -> None:
+    """A 400 alone is a broken request, not an attack: a stale form, a bad cookie."""
+    (labelled,) = engine.label_events([request(target, status=400)])
+
+    assert "malformed_software_probe" not in {label.rule_id for label in labelled.all_labels}
+
+
 @pytest.mark.parametrize("target", ["/wp-admin/", "/phpmyadmin/", "/administrator/"])
 def test_the_same_path_answered_normally_is_the_site_running_that_software(
     engine: RuleEngine, target: str

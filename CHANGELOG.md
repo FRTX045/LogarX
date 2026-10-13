@@ -96,6 +96,15 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   detection unchanged and no false alarm. Rule writers get `closes: last` on
   sequence rules, which labels only the request just before `then`.
 
+- **A probe for known software that the server refused is reconnaissance.**
+  `/admin.php`, `/phpmyadmin/`, `/shell.php` and `/wp-login.php` answered 400
+  are a request built by hand for known attack surface, and now read as
+  reconnaissance where they read as page views. Answered 404 they stay
+  enumeration, as before, and a 400 on an ordinary page stays out. On the
+  committed excerpt 43 more attacks are caught (1,143 to 1,186) with no false
+  alarm, and accuracy goes from 0.963 to 0.975; on the three 2026-10-06 builds
+  10, 43 and 152 more, every request of that shape now named.
+
 - **Case → Run OWASP CRS on this case.** With CRS turned off after scans,
   the window had no way to run it on one case; only `logarc enrich` could.
   The menu item runs it on the open case whatever the preference says, and

@@ -239,15 +239,15 @@ after every scan by default, is the paragraph below the table.
 | | |
 |---:|---|
 | **0.996** | accuracy over 235,732 requests |
-| **0.996** | weighted F1 |
-| **0.949** | macro F1 — *see below* |
-| **1.000 / 0.995** | attack precision / recall |
+| **0.997** | weighted F1 |
+| **0.950** | macro F1 — *see below* |
+| **1.000 / 0.998** | attack precision / recall |
 | **0 requests** | false alarms, in 235,732 |
 | **85,908** | lines per second ingesting, with the default four workers |
 | **0** | lines quarantined, and 0 truth lines unmatched |
 
 **Both numbers, or neither.** No false alarm in 235,732 requests is one axis and
-not a claim that the rules are nearly right. Macro F1 of 0.949 is the other, and
+not a claim that the rules are nearly right. Macro F1 of 0.950 is the other, and
 it is an unweighted mean over fourteen categories, so a category with five
 requests counts as much as one with 162,801. The weakest are the smallest:
 `ssrf` names 4 of 5, `exploitation` 6 of 8 and `unknown` 124 of 201. The
@@ -257,7 +257,7 @@ something on the second. Both are printed so neither can hide the other.
 
 **With OWASP CRS at paranoia level 2**, the same build scores accuracy 0.996,
 macro F1 0.949 and **0 false alarms**, and catches one attack the native rules
-miss: 17,065 against 17,064. Across the three `2026-10-06` builds CRS adds 1 to
+miss: 17,108 against 17,107. Across the three `2026-10-06` builds CRS adds 1 to
 3 catches per build and one false alarm in all — a Google Ads click ID read as
 SQL on the small one. Until 2026-10-06 CRS also called the shop's own unfilled
 `?id=${id}` placeholder an injection, 149 times on this build;
@@ -268,7 +268,7 @@ what changed.
 a regression.** Until September 2026 accuracy was measured against a corpus this
 project generated itself, which scored macro F1 0.958. Moving to a log written by
 a real server dropped it to 0.633, and work on the rules — and on defects the
-dataset found in itself — has since brought it to 0.949 on the current build:
+dataset found in itself — has since brought it to 0.950 on the current build:
 against real traffic, not against a corpus built to be scored. That first
 drop was the first honest measurement, and
 [ADR-0011](docs/adr/0011-a-real-server-log-is-the-headline-corpus.md) records why

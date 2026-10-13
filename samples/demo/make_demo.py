@@ -926,6 +926,20 @@ def nosql_and_shellshock(ip: str, day: int, hour: int) -> None:
         t += timedelta(seconds=13)
 
 
+def hand_built_probe(ip: str, day: int, hour: int) -> None:
+    """Requests written by hand for known attack surface, and rejected as such.
+
+    The server answers 400: the request was not one a browser sends, so it never
+    said whether phpMyAdmin or WordPress is there. That is what separates this
+    from `known_software_probe`'s 404, and why it is reconnaissance, a tool
+    probing, rather than enumeration. `malformed_software_probe`.
+    """
+    t = at(day, hour)
+    for path in ("/phpmyadmin/", "/wp-login.php"):
+        write(t, ip, f"GET {path} HTTP/1.1", 400, 352, agent="Mozilla/5.0 (compatible)")
+        t += timedelta(seconds=40)
+
+
 def headless_client(ip: str, day: int, hour: int) -> None:
     """Sends no User-Agent at all, which no browser does.
 
@@ -1168,6 +1182,7 @@ def build() -> None:
     nosql_and_shellshock("192.0.2.119", 2, 4)
     headless_client("192.0.2.120", 1, 11)
     verb_tampering("192.0.2.124", 2, 19)
+    hand_built_probe("192.0.2.125", 1, 13)
 
 
 #: Lines the parser cannot read, appended after everything else.
