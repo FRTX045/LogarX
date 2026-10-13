@@ -37,6 +37,7 @@ def labelled(
     bytes_sent: int = 100,
     severity: Severity = Severity.MEDIUM,
     rule_id: str = "rule",
+    referer: str | None = None,
 ) -> LabelledEvent:
     event = NormalizedEvent(
         timestamp=START + timedelta(seconds=seconds),
@@ -46,6 +47,7 @@ def labelled(
         path=path,
         status=status,
         bytes_sent=bytes_sent,
+        referer=referer,
     )
     activity = label(category, rule_id=rule_id, severity=severity)
     return LabelledEvent(event=event, label=activity, all_labels=[activity])
@@ -194,6 +196,67 @@ def test_signing_in_is_still_its_own_step() -> None:
         ActivityCategory.BROWSING,
         ActivityCategory.AUTHENTICATION,
         ActivityCategory.BROWSING,
+    ]
+
+
+def _files(seconds: float, referer: str | None, count: int = 5) -> list[LabelledEvent]:
+    return [
+        labelled(
+            ActivityCategory.STATIC_ASSET,
+            seconds=seconds + n * 0.1,
+            path=f"/assets/{n}.css",
+            severity=Severity.INFO,
+            referer=referer,
+        )
+        for n in range(count)
+    ]
+
+
+def test_a_sign_in_page_keeps_the_files_it_loaded() -> None:
+    """The stylesheets a sign-in page pulls in are part of loading it, as their
+    Referer says. Cut away as ordinary use, five of them were too many to be
+    absorbed, and one sign-in became three episodes."""
+    events = [
+        labelled(ActivityCategory.AUTHENTICATION, seconds=0, path="/login", severity=Severity.INFO),
+        *_files(1, "https://shop.test/login?next=%2Fadmin"),
+        labelled(ActivityCategory.AUTHENTICATION, seconds=4, path="/login", severity=Severity.INFO),
+    ]
+
+    (episode,) = build_episodes(events)
+
+    assert episode.request_count == 7
+    assert episode.activity.category is ActivityCategory.AUTHENTICATION
+
+
+def test_a_file_the_page_did_not_load_is_not_claimed() -> None:
+    """The next page's images can arrive before its document. Without a Referer
+    naming the sign-in page, they belong to what follows, as before."""
+    for referer in (None, "https://shop.test/p/1"):
+        events = [
+            labelled(
+                ActivityCategory.AUTHENTICATION, seconds=0, path="/login", severity=Severity.INFO
+            ),
+            *_files(1, referer),
+            labelled(ActivityCategory.BROWSING, seconds=2, path="/p/1", severity=Severity.INFO),
+        ]
+
+        episodes = build_episodes(events)
+
+        assert [e.request_count for e in episodes] == [1, 6], referer
+
+
+def test_a_file_after_an_attack_is_still_its_own_step() -> None:
+    """An attack's request keeps its own episode, whatever fetched what."""
+    events = [
+        labelled(ActivityCategory.INJECTION, seconds=0, path="/search"),
+        *_files(1, "https://shop.test/search"),
+    ]
+
+    episodes = build_episodes(events)
+
+    assert [e.activity.category for e in episodes] == [
+        ActivityCategory.INJECTION,
+        ActivityCategory.STATIC_ASSET,
     ]
 
 

@@ -23,6 +23,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import TYPE_CHECKING, Final
+from urllib.parse import urlsplit
 
 from logarc.core.activity import ActivityCategory
 from logarc.core.episode import Episode, derive_outcome
@@ -179,23 +180,51 @@ def segment(
 def _split(labelled: Sequence[LabelledEvent], policy: EpisodePolicy) -> list[list[LabelledEvent]]:
     runs: list[list[LabelledEvent]] = []
     current: list[LabelledEvent] = []
+    # The request the run is about: the last one that was not a file it loaded.
+    page: LabelledEvent | None = None
 
     for item in labelled:
-        if current and _is_boundary(current[-1], item, policy):
+        if current and page and _is_boundary(page, current[-1], item, policy):
             runs.append(current)
             current = []
+            page = None
         current.append(item)
+        if page is None or not _loaded_by(page, item):
+            page = item
 
     if current:
         runs.append(current)
     return runs
 
 
-def _is_boundary(previous: LabelledEvent, item: LabelledEvent, policy: EpisodePolicy) -> bool:
-    if _boundary_class(previous.label.category) != _boundary_class(item.label.category):
-        return True
+def _loaded_by(page: LabelledEvent, item: LabelledEvent) -> bool:
+    """A static file the page itself asked for, as its Referer says.
+
+    Part of loading that page, whatever kind of page it was. Without this a
+    sign-in page's stylesheets were ordinary use and the page was not, so they
+    were cut away from it, and what followed was compared with its last image
+    rather than with the page. Ordinary pages were never affected: they and
+    their files are one class already. A hostile request keeps its own episode
+    whatever it fetched, and a file without a Referer naming the page may be the
+    next page's, arriving before its document.
+    """
+    return (
+        item.label.category is ActivityCategory.STATIC_ASSET
+        and not page.label.category.is_hostile
+        and item.event.referer is not None
+        and urlsplit(item.event.referer).path == page.event.path
+    )
+
+
+def _is_boundary(
+    page: LabelledEvent, previous: LabelledEvent, item: LabelledEvent, policy: EpisodePolicy
+) -> bool:
     gap = item.event.timestamp - previous.event.timestamp
-    return gap > policy.max_gap
+    if gap > policy.max_gap:
+        return True
+    if _loaded_by(page, item):
+        return False
+    return _boundary_class(page.label.category) != _boundary_class(item.label.category)
 
 
 def _absorb_noise(

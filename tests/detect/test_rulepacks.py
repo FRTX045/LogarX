@@ -759,6 +759,90 @@ def test_a_sign_in_after_a_typo_is_not_a_guess(engine: RuleEngine, name: str) ->
     )
 
 
+ADMIN = "http://shop.test/admin/"
+
+
+def test_the_admin_page_that_asked_for_a_sign_in_is_authentication(engine: RuleEngine) -> None:
+    """The `2026-10-06` episode, on every tier: `/admin/` answered 200 with the
+    sign-in form, and the administrator followed it to `/login?next=/admin/`.
+    The admin page they had really been reading a moment before stays a page view,
+    and the sign-in keeps its own name."""
+    events = [
+        request("/admin/orders", seconds=0),
+        request("/admin/", seconds=40),
+        request("/login?next=%2Fadmin%2F", seconds=65, referer=ADMIN),
+    ]
+
+    labelled = engine.label_events(events)
+
+    assert labelled[1].label.rule_id == "action_sign_in_wall"
+    assert labelled[1].label.category is ActivityCategory.AUTHENTICATION
+    assert labelled[0].label.category is ActivityCategory.BROWSING
+    assert labelled[2].label.rule_id == "action_sign_in"
+
+
+#: A page and then a sign-in that is not a sign-in wall.
+NOT_A_SIGN_IN_WALL = {
+    # A public page, and the visitor chose to sign in from it. Nothing there was
+    # protected, so nothing asked for a sign-in.
+    "public page": [
+        request("/p/12", seconds=0),
+        request("/login?next=%2Fp%2F12", seconds=20, referer="http://shop.test/p/12"),
+    ],
+    # The admin page redirected rather than showing a form, so the page held
+    # before the sign-in is the public one the visitor came from.
+    "public page, then a redirect": [
+        request("/p/12", seconds=0),
+        request("/admin/", status=302, seconds=10),
+        request("/login?next=%2Fadmin%2F", seconds=11, referer=ADMIN),
+    ],
+    # Sent back somewhere other than the admin area.
+    "returns elsewhere": [
+        request("/admin/", seconds=0),
+        request("/login?next=%2Fcart", seconds=20, referer=ADMIN),
+    ],
+    # The sign-in was not reached from the admin page.
+    "no referer": [
+        request("/admin/", seconds=0),
+        request("/login?next=%2Fadmin%2F", seconds=20),
+    ],
+    "reached from another page": [
+        request("/admin/", seconds=0),
+        request("/login?next=%2Fadmin%2F", seconds=20, referer="http://shop.test/p/12"),
+    ],
+    # Refused, not shown a form: the refusal rules' business, not this.
+    "refused": [
+        request("/admin/", status=403, seconds=0),
+        request("/login?next=%2Fadmin%2F", seconds=20, referer=ADMIN),
+    ],
+    # Signed in between: the admin page was read while signed in.
+    "signed in between": [
+        request("/admin/", seconds=0),
+        request("/login", method="POST", status=302, seconds=10),
+        request("/login?next=%2Fadmin%2F", seconds=20, referer=ADMIN),
+    ],
+    # Longer than the window.
+    "much later": [
+        request("/admin/", seconds=0),
+        request("/login?next=%2Fadmin%2F", seconds=400, referer=ADMIN),
+    ],
+    # A crawler is a crawler, wherever it went.
+    "crawler": [
+        request("/admin/", seconds=0, user_agent="Googlebot/2.1"),
+        request("/login?next=%2Fadmin%2F", seconds=20, referer=ADMIN, user_agent="Googlebot/2.1"),
+    ],
+}
+
+
+@pytest.mark.parametrize("name", NOT_A_SIGN_IN_WALL)
+def test_a_page_before_a_sign_in_is_not_always_a_wall(engine: RuleEngine, name: str) -> None:
+    labelled = engine.label_events(NOT_A_SIGN_IN_WALL[name])
+
+    assert all(
+        "action_sign_in_wall" not in {x.rule_id for x in item.all_labels} for item in labelled
+    )
+
+
 def test_human_paced_directory_enumeration_is_detected(engine: RuleEngine) -> None:
     seconds = [0, 40, 80, 120, 160, 200, 240, 300]
     targets = [f"/quiet-probe-{n % 6}" for n in range(8)]
@@ -1601,10 +1685,14 @@ def test_the_action_guard_and_the_ladder_name_the_same_crawlers() -> None:
     pack = DEFAULT_RULEPACK_DIR / "action" / "global.yaml"
     guards: set[frozenset[str]] = set()
     for rule in yaml.safe_load(pack.read_text(encoding="utf-8"))["rules"]:
-        for condition in rule["match"].get("all", []) + rule["match"].get("any", []):
-            found = re.fullmatch(r"\^\(\?!\.\*\((.+)\)\)", condition.get("regex", ""))
-            if condition.get("field") == "user_agent_decoded" and found:
-                guards.add(frozenset(found.group(1).split("|")))
+        sequence = rule.get("sequence", {})
+        blocks = [rule.get("match"), rule.get("member")]
+        blocks += [sequence.get(step) for step in ("first", "then", "unless_between")]
+        for block in filter(None, blocks):
+            for condition in block.get("all", []) + block.get("any", []):
+                found = re.fullmatch(r"\^\(\?!\.\*\((.+)\)\)", condition.get("regex", ""))
+                if condition.get("field") == "user_agent_decoded" and found:
+                    guards.add(frozenset(found.group(1).split("|")))
 
     assert guards == {frozenset(_CRAWLER_HINTS)}
 

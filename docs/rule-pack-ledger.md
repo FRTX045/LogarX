@@ -51,6 +51,8 @@ implying the CRS column was ever checked.
 | 2026-10-09 | *this pass* | **ssrf** — a `file://` fetch of a system file is SSRF, not path traversal | corpus unchanged, 960 of 1,099; caught unchanged everywhere; **`ssrf` 3/5 → 4/5 on the excerpt and every tier** (excerpt 4/5 → 5/5 with CRS); `path_traversal` loses its one wrong answer on each | 0 → 0 everywhere, both engines | 1 |
 | 2026-10-09 | *this pass* | **access** — verb tampering, on a new `distinct_methods` window metric | corpus unchanged, 960 of 1,099 (a window rule cannot fire on one request); **caught +4 on the excerpt and medium** (medium 17,059 → 17,063 native, 17,060 → 17,064 CRS); **`access_control` 15/24 → 19/24 excerpt, 24/31 → 28/31 medium**; small and large hold no such episode | 0 → 0 everywhere, both engines | 1, and a window metric |
 | 2026-10-14 | *this pass* | **credential** — the guess that worked, on a counted sequence (`first_at_least`) | corpus unchanged, 960 of 1,099 (a sequence cannot fire on one request); **caught +1 on the excerpt and every tier**; **`credential_attack` 38/39 → 39/39 excerpt, 28/29 → 29/29 small, 38/39 → 39/39 medium, 44/45 → 45/45 large** | 0 → 0 everywhere, both engines | 1, and a sequence count |
+| 2026-10-14 | *this pass* | **action** — the admin page that asked for a sign-in, on a sequence that closes only the latest (`closes: last`) | corpus unchanged, 960 of 1,099; caught unchanged everywhere; **`authentication` 542/558 → 558/558 small, 1,714/1,781 → 1,781/1,781 medium, 6,902/7,204 → 7,204/7,204 large**, both engines; excerpt unchanged (no such page in it) | 0 → 0 everywhere, both engines | 1, and a sequence option |
+| 2026-10-14 | *this pass* | **episode** — a page keeps the files it loaded, whatever kind of page | labels unchanged on every tier and the excerpt; **boundary F1 0.8520 → 0.8711 small, 0.8524 → 0.8726 medium, 0.8641 → 0.8816 large** native (CRS 0.8711 / 0.8718 / 0.8814); excerpt byte-identical | 0 → 0 everywhere, both engines | 0, one builder rule |
 
 The 2026-09-20 pass is the first measured against a corpus containing a
 legitimate administrator, and it went the same way round as the recon pass: it
@@ -1098,6 +1100,83 @@ macro F1 0.9441 → 0.9477 excerpt, 0.9461 → 0.9470 medium. Each tier's `authe
 wrong answer, every one of them the accepted guess, and nothing else moves. CRS corpus unchanged,
 960 of 1,099, 0 fired wrongly. The demo's password guesser now gets in on its thirteenth try, and
 the rule fires there and nowhere else.
+
+### 2026-10-14 — action: the admin page that asked for a sign-in
+
+The first pass aimed at activity rather than attacks. Re-measured first: the
+TODO's `browsing` read as `crawling` was already gone (fixed 2026-10-05), and
+the largest benign confusion left was `authentication` read as `browsing`, 16 /
+67 / 302 on small / medium / large. `docs/evaluation.md` had explained those
+as administrators' page views, "a page behind a login is still a page view".
+**That was wrong, and the raw lines said so.** On medium, `GET /admin/` answered
+200 with 2,359 bytes, the size of the 2,351-byte sign-in form, not of an admin
+page; 25 seconds later the same client asked for `/login?next=%2Fadmin%2F`
+with `/admin/` as its Referer. The page was the sign-in form, served in place.
+
+**Measured on the raw logs before the rule was written.** Every page followed
+within a minute by a sign-in that names it as the place to return to, with it
+as the Referer, is `authentication` in the truth: 16, 67 and 302, exactly the
+confusion, and nothing else. But the truth also has 615 / 2,497 admin page
+views that are `browsing` (medium / large), so the path is not the evidence;
+the sign-in that follows is.
+
+**Only the admin area.** On a public page a visitor who chooses to sign in
+sends the same `next=` back to it, and that page was no wall. The dataset has
+no such case, which is why the rule may not lean on its absence: an admin page
+is the one place where being asked to sign in to come back means the page did
+not let them in.
+
+**Every held page, or only the last.** A sequence labels every `first` it holds
+when `then` arrives, and an administrator whose session ran out had been
+reading real admin pages a moment before. Measured with the engine, labelling
+every held page named 39 real admin pages wrongly on large at a 60-second
+window and 185 at 300 (7 and 45 on medium). `closes: last` labels only the
+latest: 16 / 67 / 302 and nothing wrong, flat from 60 to 300 seconds; only at
+1,800 does a sign-in pair with a page from an earlier visit. It is a general
+option, documented in `docs/writing-rules.md`, mutation-tested three ways.
+
+`action_sign_in_wall` (authentication, info, 0.85): a GET of an admin page
+answered 2xx, not a sign-in path or a file, by a non-crawler; then a GET of a
+sign-in page whose return parameter names the admin area, reached from it;
+unless a sign-in worked between. 0.85 sits under `action_sign_in`'s 0.9, so the
+sign-in request it also closes keeps that name. Pinned against nine
+neighbouring shapes (public page; public page then an admin redirect; returns
+elsewhere; no Referer; reached from another page; refused; signed in between;
+much later; crawler), and each of eight mutations fails one of them.
+
+**It cost segmentation, and the cost was a builder defect.** Alone, the rule
+moved boundary F1 0.8520 → 0.8489 on small and 0.8524 → 0.8489 on medium. The
+wall page, now `authentication`, stopped sharing a class with the eleven files
+it had loaded, which count as ordinary use; eleven is too many to absorb, so
+the page became an episode of its own. Not the rule's fault: every sign-in
+page's own files were being cut away from it the same way, and the wall only
+made it visible. The builder now keeps a static file with the benign page
+before it when its Referer names that page, and compares what follows with the
+page rather than its last image. Ordinary pages are unchanged (they share a
+class with their files already), and so is anything after a hostile request or
+without a Referer naming the page. Labels do not move.
+
+| native | `authentication` | macro F1 | boundary F1, builder alone | boundary F1, both |
+|---|---:|---:|---:|---:|
+| `2026-10-06-small` | 542 → **558 of 558** | 0.9378 → **0.9389** | 0.8520 → 0.8711 | 0.8520 → **0.8761** |
+| `2026-10-06-medium` | 1,714 → **1,781 of 1,781** | 0.9479 → **0.9494** | 0.8524 → 0.8726 | 0.8524 → **0.8784** |
+| `2026-10-06-large` | 6,902 → **7,204 of 7,204** | 0.9586 → **0.9603** | 0.8641 → 0.8816 | 0.8641 → **0.8874** |
+
+With CRS the same: macro F1 0.9378 → 0.9390, 0.9470 → 0.9485, 0.9579 → 0.9595,
+boundary F1 → 0.8761, 0.8776, 0.8873. Caught and false alarms are unchanged on
+every tier and both engines; the excerpt is byte-identical apart from the
+ruleset fingerprint (it holds no such page); the CRS corpus is unchanged, 960
+of 1,099, 0 fired wrongly. In the demo, the signed-in administrator's session
+has run out on the third day, and the rule fires on that `/admin` and nowhere
+else (106 of 106 rules, 25 of 25 attackers, 0 false alarms).
+
+**Still getting through, on medium:** 702 `enumeration` read as
+`reconnaissance` (TODO.md has the shape: 68 of small's 156 carry an enumeration
+window label, which by ADR-0005 is a different argument from the
+User-Agent convention left alone on 2026-10-05), 75 `unknown` read as
+`static_asset` (the shop's importer, left alone), and 53 `reconnaissance` read
+as `browsing`, 43 of them one client's `/admin.php`, `/phpmyadmin/`,
+`/shell.php` and `/wp-login.php` probes, every one answered 400.
 
 ### 2026-10-05 — recon: the tools that sweep a wordlist are enumeration
 

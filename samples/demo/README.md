@@ -1,7 +1,7 @@
 # The demo log
 
 `demo.log` is the file to open when you want to show somebody what logarc does.
-It is 837 lines of three days' traffic against a fictional shop, and every
+It is 839 lines of three days' traffic against a fictional shop, and every
 feature the application has is reachable from it.
 
 ```bash
@@ -24,9 +24,9 @@ These are figures from a run, not intentions:
 
 | | |
 |---|---|
-| Lines / events / quarantined | 837 / 831 / 5 |
+| Lines / events / quarantined | 839 / 833 / 5 |
 | Clients | 37 |
-| Detection rules exercised | **105 of 105** |
+| Detection rules exercised | **106 of 106** |
 | Attackers flagged | 25 of 25 |
 | False alarms on the 12 ordinary clients | **0** without CRS, **0** with it |
 
@@ -38,7 +38,7 @@ python samples/demo/make_demo.py          # rebuilds; prints line count and sha2
 
 The build is deterministic — no randomness anywhere — so the same script always
 produces the same bytes. The current file is
-`2aff4c1a8d2223a7961f4d9e6b8164c6dd161d7f570f5434eef601ed500260ae`.
+`b172e2ccdd1350b9610c22cbdfdee42f5304f8d4b22b925a05b6edb8d1a4259e`.
 
 That digest is recorded beside the log in `SHA256SUMS`, and
 `tests/samples/test_demo_log.py` checks it on every run of the suite — including
@@ -72,7 +72,7 @@ attacks is not a log, and it makes the detection look easier than it is.
 | `198.51.100.13` | Searches five times, buys nothing. **Also the CRS false positive — see below** |
 | `198.51.100.14` | Almost pure API traffic, which is what a phone app looks like from the server |
 | `198.51.100.15`–`.17` | Extra shoppers, so the ordinary clients are not all one shape |
-| `198.51.100.20` | A signed-in administrator. Legitimate `/admin` access answered 200, and the only client whose lines carry a username. Kept clean on purpose: it is the counter-example |
+| `198.51.100.20` | A signed-in administrator. Legitimate `/admin` access answered 200, and the only client whose lines carry a username. Kept clean on purpose: it is the counter-example. On the third day its session has run out: `/admin` answers with the sign-in form, read as a sign-in wall, not a page view |
 | `203.0.113.50` | A `python-requests` price checker doing nothing wrong. **A regression test you can see** — this User-Agent used to be filed under reconnaissance, which made every harmless script an attacker |
 | `66.249.66.1`, `40.77.167.1` | Googlebot and bingbot working through the catalogue, `robots.txt` first |
 
@@ -162,7 +162,7 @@ feature lands that the demo log cannot show, add a client to
 script and commit the script, the log and `SHA256SUMS`.
 
 The check that matters is rule coverage, and nobody has to remember to run it:
-the suite runs it. It is 105 of 105 today, and a rule added to a pack that nothing
+the suite runs it. It is 106 of 106 today, and a rule added to a pack that nothing
 in this log triggers fails the build and names the rule. To run it on its own:
 
 ```bash

@@ -192,6 +192,15 @@ sequence cannot — which is `credential_guess_accepted`. Because every held
 request takes the label, give such a rule a confidence below the rule that
 already names those requests, so they keep their own name.
 
+`closes: last` (default `all`) labels only the latest held `first` request when
+`then` arrives, not every one inside the window. Use it when the request that
+matters is the one just before: of three admin pages and then a sign-in that
+asks to go back to the admin area, only the third showed a sign-in form, and the
+two before it were read while signed in. That is `action_sign_in_wall`, and
+labelling every held page instead mislabelled 39 real admin pages on the large
+test build at a 60-second window, 185 at 300. `first_at_least` still counts
+everything held.
+
 Sequences are found within one session, like every other label, so
 `within_seconds` longer than the session idle gap buys nothing.
 

@@ -260,6 +260,11 @@ class SequenceBlock(BaseModel):
     """How many `first` requests must be held, inside `within_seconds`, when `then`
     arrives. One is a sequence; five refused sign-ins and then an accepted one is
     a count that only order can say."""
+    closes: Literal["all", "last"] = "all"
+    """Which held `first` requests `then` labels: every one inside the window, or
+    only the latest. `last` is the request just before: of three admin pages and
+    then a sign-in asking to go back to the admin area, only the third asked for
+    the sign-in, and the two before it were ordinary use."""
 
     def blocks(self) -> list[MatchBlock]:
         return [self.first, self.then, *([self.unless_between] if self.unless_between else [])]

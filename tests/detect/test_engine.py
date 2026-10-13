@@ -716,6 +716,79 @@ def test_a_count_of_zero_is_refused(tmp_path: Path) -> None:
         load_rules([path])
 
 
+LAST_SEQUENCE_PACK = """
+version: 1
+rules:
+  - id: page_then_sign_in
+    name: Page Then Sign In
+    category: authentication
+    severity: info
+    sequence:
+      within_seconds: 300
+      closes: last
+      first:
+        all:
+          - {field: path_decoded, contains: '/admin'}
+      then:
+        all:
+          - {field: path_decoded, contains: '/login'}
+"""
+
+
+def _closed(
+    tmp_path: Path, events: list[NormalizedEvent], pack: str = LAST_SEQUENCE_PACK
+) -> list[int]:
+    path = tmp_path / "last.yaml"
+    path.write_text(pack, encoding="utf-8")
+    labelled = RuleEngine(load_rules([path])).label_events(events)
+    return [
+        item.event.evidence.line_no
+        for item in labelled
+        if "page_then_sign_in" in [label.rule_id for label in item.all_labels]
+    ]
+
+
+def _admin_then_sign_in() -> list[NormalizedEvent]:
+    return [
+        event(0, path="/admin/orders"),
+        event(20, path="/admin/users"),
+        event(40, path="/admin/"),
+        event(60, path="/login"),
+    ]
+
+
+def test_closing_the_last_labels_only_the_request_just_before_then(tmp_path: Path) -> None:
+    """Three admin pages and a sign-in: only the page that sent them there was the wall."""
+    assert _closed(tmp_path, _admin_then_sign_in()) == [41, 61]
+
+
+def test_closing_every_held_request_is_still_the_default(tmp_path: Path) -> None:
+    pack = LAST_SEQUENCE_PACK.replace("      closes: last\n", "")
+
+    assert _closed(tmp_path, _admin_then_sign_in(), pack) == [1, 21, 41, 61]
+
+
+def test_closing_the_last_still_keeps_to_the_window(tmp_path: Path) -> None:
+    assert _closed(tmp_path, [event(0, path="/admin/"), event(400, path="/login")]) == []
+
+
+def test_closing_the_last_still_counts_every_held_request(tmp_path: Path) -> None:
+    """`first_at_least` is about what was held; `closes` only about what is labelled."""
+    pack = LAST_SEQUENCE_PACK.replace("closes: last", "closes: last\n      first_at_least: 2")
+    one = [event(0, path="/admin/"), event(20, path="/login")]
+
+    assert _closed(tmp_path, one, pack) == []
+    assert _closed(tmp_path, _admin_then_sign_in(), pack) == [41, 61]
+
+
+def test_an_unknown_way_of_closing_is_refused(tmp_path: Path) -> None:
+    path = tmp_path / "first.yaml"
+    path.write_text(LAST_SEQUENCE_PACK.replace("closes: last", "closes: first"), encoding="utf-8")
+
+    with pytest.raises(RulePackError, match="closes"):
+        load_rules([path])
+
+
 def test_a_rule_with_two_kinds_of_body_is_refused(tmp_path: Path) -> None:
     path = tmp_path / "both.yaml"
     path.write_text(

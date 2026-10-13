@@ -127,9 +127,78 @@ rules:
     match:
       all:
         - field: path_decoded
-          regex: '^/(login|signin|sign-in|log-in|auth(/(login|signin|token|callback))?|session|users?/(sign_in|login)|account/(login|signin))(/|$)'
+          regex: &sign_in_path '^/(login|signin|sign-in|log-in|auth(/(login|signin|token|callback))?|session|users?/(sign_in|login)|account/(login|signin))(/|$)'
         - field: user_agent_decoded
           regex: *not_a_crawler
+
+  # The admin page that asked for a sign-in. A protected page can answer 200
+  # with the sign-in form in place of itself, and the next thing the visitor
+  # does is follow it: the sign-in page, asked to come back to the admin area,
+  # reached from the admin page. Read alone, that admin page is a page view.
+  #
+  # Measured on the `2026-10-06` tiers: every page followed by a sign-in that
+  # names it as the place to return to, with it as the Referer, is filed by the
+  # truth as `authentication`, 16 / 67 / 302 on small / medium / large, and
+  # every one was read as browsing. The same page answered 2,359 bytes, the
+  # size of the sign-in form, not of an admin page.
+  #
+  # **Only the admin area.** On a public page a visitor signing in by choice
+  # sends the same `next=`, and that page was not a wall. An admin page is the
+  # one place where being asked to sign in to come back means the page did not
+  # let them in.
+  #
+  # **`closes: last`.** The sequence holds every admin page it sees, and an
+  # administrator whose session ran out had been reading real ones a moment
+  # before. Measured with the rule labelling every held page instead: 39 of
+  # those real pages on large at a 60-second window, 185 at 300. Only the page
+  # just before the sign-in is the wall, and with that the window can be as
+  # long as the others here without labelling anything wrong (60 to 300
+  # seconds measured; a sign-in half an hour later pairs with a page from an
+  # earlier visit).
+  #
+  # Below `action_sign_in`, so the sign-in request it also closes keeps that
+  # name; above everything else here, so the wall is not a page view.
+  - id: action_sign_in_wall
+    name: Sign-In Wall
+    category: authentication
+    severity: info
+    confidence: 0.85
+    sequence:
+      within_seconds: 300
+      closes: last
+      first:
+        all:
+          - field: method
+            any_of: ["GET"]
+          - field: path_decoded
+            regex: '^/(admin|administrator|wp-admin|manager/html|console)\b(?!.*(login|logout|signin|sign-in|auth|\.(css|js|mjs|map|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|eot)$))'
+          - field: status
+            min: 200
+          - field: status
+            max: 299
+          - field: user_agent_decoded
+            regex: *not_a_crawler
+      then:
+        all:
+          - field: method
+            any_of: ["GET"]
+          - field: path_decoded
+            regex: *sign_in_path
+          - field: query_decoded
+            regex: '(^|&)(next|return|return_?to|redirect(_?to|_uri)?|continue|back)=\s*(https?://[^/&]+)?/(admin|administrator|wp-admin|manager/html|console)\b'
+          - field: referer_decoded
+            regex: '^(https?://[^/]+)?/(admin|administrator|wp-admin|manager/html|console)\b'
+      # A sign-in that worked: what was read before it was read signed in.
+      unless_between:
+        all:
+          - field: method
+            any_of: ["POST"]
+          - field: path_decoded
+            regex: *sign_in_path
+          - field: status
+            min: 300
+          - field: status
+            max: 399
 
   - id: action_sign_out
     name: Sign Out
