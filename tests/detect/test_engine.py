@@ -652,6 +652,70 @@ def test_one_request_cannot_be_both_ends_of_a_sequence(tmp_path: Path) -> None:
     ) == [1, 10]
 
 
+COUNTED_SEQUENCE_PACK = """
+version: 1
+rules:
+  - id: accepted_after_refusals
+    name: Accepted After Refusals
+    category: credential_attack
+    severity: high
+    sequence:
+      within_seconds: 300
+      first_at_least: 3
+      first:
+        all:
+          - {field: path_decoded, contains: '/login'}
+          - {field: status, min: 400}
+      then:
+        all:
+          - {field: path_decoded, contains: '/login'}
+          - {field: status, max: 399}
+"""
+
+
+def _counted(tmp_path: Path, events: list[NormalizedEvent]) -> list[int]:
+    path = tmp_path / "counted.yaml"
+    path.write_text(COUNTED_SEQUENCE_PACK, encoding="utf-8")
+    labelled = RuleEngine(load_rules([path])).label_events(events)
+    return [
+        item.event.evidence.line_no
+        for item in labelled
+        if "accepted_after_refusals" in [label.rule_id for label in item.all_labels]
+    ]
+
+
+def test_a_counted_first_needs_that_many_before_then(tmp_path: Path) -> None:
+    """Two refusals and a success is someone who mistyped; three is the count."""
+    two = [event(n * 10, path="/login", status=401, method="POST") for n in range(2)]
+    three = [event(n * 10, path="/login", status=401, method="POST") for n in range(3)]
+    success = event(40, path="/login", status=302, method="POST")
+
+    assert _counted(tmp_path, [*two, success]) == []
+    assert _counted(tmp_path, [*three, success]) == [1, 11, 21, 41]
+
+
+def test_a_counted_first_counts_only_inside_the_window(tmp_path: Path) -> None:
+    """Three refusals, but the first is too old by the time the success comes."""
+    events = [
+        event(0, path="/login", status=401, method="POST"),
+        event(200, path="/login", status=401, method="POST"),
+        event(250, path="/login", status=401, method="POST"),
+        event(320, path="/login", status=302, method="POST"),
+    ]
+
+    assert _counted(tmp_path, events) == []
+
+
+def test_a_count_of_zero_is_refused(tmp_path: Path) -> None:
+    path = tmp_path / "zero.yaml"
+    path.write_text(
+        COUNTED_SEQUENCE_PACK.replace("first_at_least: 3", "first_at_least: 0"), encoding="utf-8"
+    )
+
+    with pytest.raises(RulePackError, match="first_at_least"):
+        load_rules([path])
+
+
 def test_a_rule_with_two_kinds_of_body_is_refused(tmp_path: Path) -> None:
     path = tmp_path / "both.yaml"
     path.write_text(

@@ -184,6 +184,14 @@ when a request matching `then` follows one matching `first` by no more than
 not part of what the rule saw. A request matching both `first` and `then` cannot
 complete a sequence with itself.
 
+`first_at_least` (default 1) makes `first` a count: the rule fires only when at
+least that many `first` requests are held inside `within_seconds` when `then`
+arrives, and every one of them is labelled. It is how "five refused sign-ins,
+then one accepted" is said — order a window cannot see, and a count a plain
+sequence cannot — which is `credential_guess_accepted`. Because every held
+request takes the label, give such a rule a confidence below the rule that
+already names those requests, so they keep their own name.
+
 Sequences are found within one session, like every other label, so
 `within_seconds` longer than the session idle gap buys nothing.
 

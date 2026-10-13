@@ -716,6 +716,49 @@ def test_methods_tried_minutes_apart_are_not_one_attempt(engine: RuleEngine) -> 
     assert all("verb_tampering" not in {x.rule_id for x in item.all_labels} for item in labelled)
 
 
+def _sign_ins(*attempts: tuple[float, int]) -> list[NormalizedEvent]:
+    return [
+        request("/login", method="POST", status=status, seconds=seconds)
+        for seconds, status in attempts
+    ]
+
+
+def test_the_guess_that_worked_is_a_credential_attack(engine: RuleEngine) -> None:
+    """The `2026-10-06` episode, on every tier: six refusals (one rate-limited)
+    inside a minute, then the seventh accepted. The accepted one is the account
+    being taken; the refusals keep their own name."""
+    events = _sign_ins((0, 401), (12, 401), (36, 401), (39, 429), (58, 401), (59, 401), (72, 302))
+
+    labelled = engine.label_events(events)
+
+    assert labelled[-1].label.rule_id == "credential_guess_accepted"
+    assert labelled[-1].label.category is ActivityCategory.CREDENTIAL_ATTACK
+    assert {item.label.rule_id for item in labelled[:-1]} == {"credential_attack"}
+
+
+#: Sign-ins that are not a guess being accepted.
+NOT_A_GUESS_ACCEPTED = {
+    # Two typos and in: on the tiers, 832 ordinary sign-ins follow one or two
+    # refusals and none follows three or more.
+    "two typos, then in": ((0, 401), (8, 401), (20, 302)),
+    # Signed in, then refused five times: a session, then something else.
+    "in, then refused": ((0, 302), (10, 401), (20, 401), (30, 401), (40, 401), (50, 401)),
+    # Five refusals, then in ten minutes later: outside the window.
+    "in, much later": ((0, 401), (10, 401), (20, 401), (30, 401), (40, 401), (640, 302)),
+    # Refused every time and never let in: `credential_attack`, not this.
+    "never in": tuple((n * 10, 401) for n in range(7)),
+}
+
+
+@pytest.mark.parametrize("name", NOT_A_GUESS_ACCEPTED)
+def test_a_sign_in_after_a_typo_is_not_a_guess(engine: RuleEngine, name: str) -> None:
+    labelled = engine.label_events(_sign_ins(*NOT_A_GUESS_ACCEPTED[name]))
+
+    assert all(
+        "credential_guess_accepted" not in {x.rule_id for x in item.all_labels} for item in labelled
+    )
+
+
 def test_human_paced_directory_enumeration_is_detected(engine: RuleEngine) -> None:
     seconds = [0, 40, 80, 120, 160, 200, 240, 300]
     targets = [f"/quiet-probe-{n % 6}" for n in range(8)]

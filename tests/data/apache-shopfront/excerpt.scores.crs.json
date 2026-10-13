@@ -1,20 +1,20 @@
 {
   "binary": {
-    "accuracy": 0.9830065359477124,
-    "f1": 0.9723756906077349,
-    "false_negatives": 65,
+    "accuracy": 0.9832679738562091,
+    "f1": 0.9728122344944774,
+    "false_negatives": 64,
     "false_positive_rate": 0.0,
     "false_positives": 0,
     "has_attacks": true,
     "precision": 1.0,
-    "recall": 0.946236559139785,
+    "recall": 0.9470636889991728,
     "total": 3825,
     "true_negatives": 2616,
-    "true_positives": 1144
+    "true_positives": 1145
   },
   "classification": {
-    "accuracy": 0.9633986928104575,
-    "macro_f1": 0.9440799611576088,
+    "accuracy": 0.9636601307189543,
+    "macro_f1": 0.9477244648021125,
     "per_category": [
       {
         "category": "crawling",
@@ -102,15 +102,15 @@
       },
       {
         "category": "credential_attack",
-        "f1": 0.9870129870129869,
-        "false_negatives": 1,
+        "f1": 1.0,
+        "false_negatives": 0,
         "false_positives": 0,
         "precision": 1.0,
-        "predicted": 38,
-        "recall": 0.9743589743589743,
-        "recall_any": 0.9743589743589743,
+        "predicted": 39,
+        "recall": 1.0,
+        "recall_any": 1.0,
         "support": 39,
-        "true_positives": 38
+        "true_positives": 39
       },
       {
         "category": "access_control",
@@ -126,11 +126,11 @@
       },
       {
         "category": "authentication",
-        "f1": 0.9285714285714286,
+        "f1": 0.962962962962963,
         "false_negatives": 0,
-        "false_positives": 2,
-        "precision": 0.8666666666666667,
-        "predicted": 15,
+        "false_positives": 1,
+        "precision": 0.9285714285714286,
+        "predicted": 14,
         "recall": 1.0,
         "recall_any": 1.0,
         "support": 13,
@@ -211,11 +211,6 @@
       },
       {
         "count": 1,
-        "expected": "credential_attack",
-        "predicted": "authentication"
-      },
-      {
-        "count": 1,
         "expected": "injection",
         "predicted": "api_call"
       },
@@ -225,7 +220,7 @@
         "predicted": "injection"
       }
     ],
-    "weighted_f1": 0.9637233996721222
+    "weighted_f1": 0.9639727025358041
   },
   "crs_fingerprint": "1c4b66d67838c5e8",
   "granularity": "category",
@@ -239,17 +234,17 @@
     "max_duration_seconds": 28800,
     "split_on_user_agent_change": true
   },
-  "ruleset_fingerprint": "7e9ed26c5ff11ae8b6da31ad48274eabf25f30c74667bc54e8a0f54c87cfe137",
+  "ruleset_fingerprint": "110aace3bbd5d1bb2d87a5f3226de05c20379bbad209eab030f404539f7ec790",
   "scenario": "apache-shopfront-medium-excerpt",
   "segmentation": {
     "boundaries_agreed": 244,
     "boundaries_expected": 245,
-    "boundaries_found": 519,
-    "boundary_f1": 0.6387434554973822,
-    "boundary_precision": 0.4701348747591522,
+    "boundaries_found": 518,
+    "boundary_f1": 0.6395806028833552,
+    "boundary_precision": 0.47104247104247104,
     "boundary_recall": 0.9959183673469387,
-    "fragmentation": 1.9225589225589226,
-    "predicted_episodes": 571,
+    "fragmentation": 1.9191919191919191,
+    "predicted_episodes": 570,
     "truth_activities": 297
   },
   "source_file_id": "excerpt.log",

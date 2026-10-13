@@ -50,6 +50,7 @@ implying the CRS column was ever checked.
 | 2026-10-09 | *this pass* | **recon** — sqlmap, havij, commix and ghauri are injection tools | corpus unchanged, 960 of 1,099; caught unchanged everywhere; **`injection` 51/57 → 56/57 excerpt, 52/59 → 57/59 small, 47/53 → 52/53 medium, 46/51 → 51/51 large**, both engines; `reconnaissance` predicted 5 fewer a tier, every one right | 0 → 0 everywhere native; CRS unchanged (small 1, the click ID) | 1, one narrowed |
 | 2026-10-09 | *this pass* | **ssrf** — a `file://` fetch of a system file is SSRF, not path traversal | corpus unchanged, 960 of 1,099; caught unchanged everywhere; **`ssrf` 3/5 → 4/5 on the excerpt and every tier** (excerpt 4/5 → 5/5 with CRS); `path_traversal` loses its one wrong answer on each | 0 → 0 everywhere, both engines | 1 |
 | 2026-10-09 | *this pass* | **access** — verb tampering, on a new `distinct_methods` window metric | corpus unchanged, 960 of 1,099 (a window rule cannot fire on one request); **caught +4 on the excerpt and medium** (medium 17,059 → 17,063 native, 17,060 → 17,064 CRS); **`access_control` 15/24 → 19/24 excerpt, 24/31 → 28/31 medium**; small and large hold no such episode | 0 → 0 everywhere, both engines | 1, and a window metric |
+| 2026-10-14 | *this pass* | **credential** — the guess that worked, on a counted sequence (`first_at_least`) | corpus unchanged, 960 of 1,099 (a sequence cannot fire on one request); **caught +1 on the excerpt and every tier**; **`credential_attack` 38/39 → 39/39 excerpt, 28/29 → 29/29 small, 38/39 → 39/39 medium, 44/45 → 45/45 large** | 0 → 0 everywhere, both engines | 1, and a sequence count |
 
 The 2026-09-20 pass is the first measured against a corpus containing a
 legitimate administrator, and it went the same way round as the recon pass: it
@@ -1048,6 +1049,55 @@ the macro average, by kind:
   an access log does not have.
 - `ssrf` 4 of 5: an import of the site's own stylesheet by URL — the probe
   before the internal ones, indistinguishable from the feature working.
+
+### 2026-10-14 — credential: the guess that worked
+
+The last miss in `credential_attack` on every tier was the same request. On
+medium, `192.0.2.23` sent six `POST /login` refused inside a minute (five 401,
+one 429), then a seventh answered 302 — read as `action_sign_in`. The truth
+calls it credential attack, and to an investigator it is the one request in
+that client's history that matters: the account was taken.
+
+**Neither existing kind of rule could say it.** A window counts but has no
+order, so "accepted, then refused five times" would match too. A sequence has
+order but pairs one `first` with one `then`, so it could not ask for five
+refusals. `first_at_least` makes the sequence's first step a count: the rule
+fires when at least that many `first` requests are held inside the window as
+`then` arrives. One condition in `_ends_of_sequences`, mutation-tested three
+ways (ignore the count, accept zero, count before dropping stale requests).
+
+**Measured on the raw logs before it was written:** exactly one client on
+every tier and the excerpt is accepted after five or more refusals inside
+five minutes, the attacker. Ordinary sign-ins follow one refusal (47, 149 and
+631 times on small, medium and large) or two (1, 0 and 4), never three or
+more. Five is `credential_attack`'s own floor, and the data leaves room under
+it, so the threshold is set by what is defensible rather than by this log.
+
+`credential_guess_accepted` (credential attack, high, 0.75) shares
+`credential_attack`'s sign-in path list through one YAML anchor. A sequence
+labels every request it held, so the refusals carry this label too; 0.75 sits
+under `credential_attack`'s 0.8, so they keep their own name and only the
+accepted sign-in is named this. Mutations each failed a named case: a count of
+two (two typos, then in), confidence above 0.8 (the refusals renamed), a
+`then` that accepts a refusal (never let in), a 1,000 s window (in, ten
+minutes later).
+
+**What it cannot tell apart:** somebody who mistyped five times and then got
+it right. The refusals already make that client a credential attack, so the
+report says nothing new about them that it did not already say.
+
+| native | caught | false alarms | `credential_attack` | macro F1 |
+|---|---:|---:|---:|---:|
+| excerpt | 1,142 → 1,143 | 0 → 0 | 38/39 → **39/39** | 0.9359 → **0.9395** |
+| `2026-10-06-small` | 4,028 → 4,029 | 0 → 0 | 28/29 → **29/29** | 0.9364 → **0.9378** |
+| `2026-10-06-medium` | 17,063 → 17,064 | 0 → 0 | 38/39 → **39/39** | 0.9469 → **0.9479** |
+| `2026-10-06-large` | 40,622 → 40,623 | 0 → 0 | 44/45 → **45/45** | 0.9578 → **0.9586** |
+
+With CRS the same: one more caught on each, false alarms unchanged (small's one, the click ID),
+macro F1 0.9441 → 0.9477 excerpt, 0.9461 → 0.9470 medium. Each tier's `authentication` loses one
+wrong answer, every one of them the accepted guess, and nothing else moves. CRS corpus unchanged,
+960 of 1,099, 0 fired wrongly. The demo's password guesser now gets in on its thirteenth try, and
+the rule fires there and nowhere else.
 
 ### 2026-10-05 — recon: the tools that sweep a wordlist are enumeration
 

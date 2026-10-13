@@ -10,6 +10,7 @@ shop.test:443 192.0.2.103 - - [09/Mar/2026:01:01:52 +0000] "POST /login HTTP/1.1
 shop.test:443 192.0.2.103 - - [09/Mar/2026:01:02:06 +0000] "POST /login HTTP/1.1" 401 512 "https://shop.test/login" "python-requests/2.32.3"
 shop.test:443 192.0.2.103 - - [09/Mar/2026:01:02:20 +0000] "POST /login HTTP/1.1" 401 512 "https://shop.test/login" "python-requests/2.32.3"
 shop.test:443 192.0.2.103 - - [09/Mar/2026:01:02:34 +0000] "POST /login HTTP/1.1" 401 512 "https://shop.test/login" "python-requests/2.32.3"
+shop.test:443 192.0.2.103 - - [09/Mar/2026:01:02:48 +0000] "POST /login HTTP/1.1" 302 - "https://shop.test/login" "python-requests/2.32.3"
 shop.test:443 192.0.2.115 - - [09/Mar/2026:02:14:00 +0000] "GET / HTTP/1.1" 200 24800 "-" "curl/8.6.0"
 shop.test:443 192.0.2.115 - - [09/Mar/2026:02:14:01 +0000] "GET /assets/css/site.css HTTP/1.1" 200 18402 "https://shop.test/" "curl/8.6.0"
 shop.test:443 192.0.2.115 - - [09/Mar/2026:02:14:01 +0000] "GET /assets/css/layout.css HTTP/1.1" 200 9117 "https://shop.test/" "curl/8.6.0"
