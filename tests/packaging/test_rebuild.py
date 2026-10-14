@@ -294,6 +294,7 @@ def tree(rebuild: ModuleType, bundles: Path, monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(rebuild, "GIT_DIR", repo / ".git")
     monkeypatch.setattr(rebuild, "STATUS", bundles / "dist" / "BUILD-STATUS.txt")
     monkeypatch.setattr(rebuild, "MARKER", repo / ".git" / "logarc-build-failed")
+    monkeypatch.setattr(rebuild.crs_bundle, "build_sidecar", lambda: None)
     monkeypatch.setattr(rebuild.crs_bundle, "prepare", lambda: [])
     monkeypatch.setattr(rebuild, "build", build)
     monkeypatch.setattr(rebuild, "verify", lambda bundle: [])
@@ -318,6 +319,36 @@ def test_a_quiet_tree_is_built_and_stamped_with_its_commit(
     assert rebuild._rebuild() == 0
     assert (rebuild.LIVE / "logarc.exe").exists()
     assert rebuild.STATUS.read_text(encoding="utf-8").split()[2] == built
+
+
+def test_the_sidecar_is_built_before_the_suite_runs(
+    rebuild: ModuleType, tree: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The suite's CRS contract tests run the checkout's `crs/crs-sidecar.exe`.
+    Built only after them, a merge that changed `crs/` tested the binary from
+    before it: PR #47's five path tests failed against a build from that
+    morning, and nothing was packaged."""
+    order: list[str] = []
+    monkeypatch.setattr(rebuild.crs_bundle, "build_sidecar", lambda: order.append("sidecar"))
+    _while_testing(rebuild, monkeypatch, lambda: order.append("tests"))
+
+    assert rebuild._rebuild() == 0
+    assert order == ["sidecar", "tests"]
+
+
+def test_a_sidecar_that_will_not_build_stops_the_run_before_the_suite(
+    rebuild: ModuleType, tree: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def broken() -> None:
+        raise rebuild.crs_bundle.CrsBundleError("go: cannot find main module")
+
+    tested: list[bool] = []
+    monkeypatch.setattr(rebuild.crs_bundle, "build_sidecar", broken)
+    _while_testing(rebuild, monkeypatch, lambda: tested.append(True))
+
+    assert rebuild._rebuild() != 0
+    assert tested == []
+    assert "cannot find main module" in rebuild.STATUS.read_text(encoding="utf-8")
 
 
 def test_a_branch_switched_during_the_run_is_not_put_in_place(

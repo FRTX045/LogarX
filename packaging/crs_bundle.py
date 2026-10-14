@@ -137,20 +137,30 @@ def reset_stage(stage: Path) -> None:
     stage.mkdir(parents=True)
 
 
+def build_sidecar(*, crs_dir: Path = CRS_DIR) -> None:
+    """Build `crs/` into the checkout's sidecar, the binary the test suite runs.
+
+    Fresh every time rather than reused, so the shipped binary, and the one the
+    suite checked before it, is always the one `crs/main.go` describes now and
+    never one compiled weeks ago.
+    """
+    _run([_go(), "build", "-trimpath", "-o", _binary_name(), "."], crs_dir)
+
+
 def prepare(*, crs_dir: Path = CRS_DIR, ruleset: Path = RULESET, stage: Path = STAGE) -> list[str]:
     """Build the sidecar and stage what the bundle needs beside it.
 
-    Built every time rather than reused, so the shipped binary is always the one
-    `crs/main.go` describes now and never one compiled weeks ago. Returns the
-    dependency modules that carried no licence file.
+    Built again here, which Go's cache makes nearly free after `build_sidecar`,
+    so this is complete on its own. Returns the dependency modules that carried
+    no licence file.
     """
     if not _request_rules(ruleset):
         raise CrsBundleError(
             f"the CRS ruleset is not at {ruleset} (no rules/REQUEST-*.conf); "
             "fetch it as crs/README.md describes"
         )
+    build_sidecar(crs_dir=crs_dir)
     go = _go()
-    _run([go, "build", "-trimpath", "-o", _binary_name(), "."], crs_dir)
 
     reset_stage(stage)
     revision = _run(["git", "-C", str(ruleset), "rev-parse", "HEAD"], ROOT).strip()
