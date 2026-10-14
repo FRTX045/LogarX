@@ -881,6 +881,62 @@ def test_low_slow_enumeration_does_not_count_refused_paths(engine: RuleEngine) -
     assert all(item.label.rule_id != "directory_enumeration_low_slow" for item in labelled)
 
 
+def _slow_sweep_ending(last: NormalizedEvent) -> list[NormalizedEvent]:
+    """Seven misses forty seconds apart, then `last`."""
+    return [request(f"/quiet-probe-{n}", status=404, seconds=n * 40) for n in range(7)] + [last]
+
+
+def test_a_named_file_inside_a_sweep_is_one_of_its_wordlist_entries(engine: RuleEngine) -> None:
+    """`/.svn/entries` answered 404 among a sweep's misses is the sweep's, not a
+    probe of its own: on the 2026-10-06 medium build 262 of 287 configuration
+    probes inside a sweep are enumeration. The probe stays among the matches."""
+    labelled = engine.label_events(
+        _slow_sweep_ending(request("/.svn/entries", status=404, seconds=280))
+    )
+
+    assert labelled[-1].label.rule_id == "directory_enumeration_low_slow"
+    assert "config_file_exposure" in {label.rule_id for label in labelled[-1].all_labels}
+
+
+def test_a_fast_sweep_names_its_own_named_files_too() -> None:
+    """The quick sweep claims them on its own, not only through the slow one."""
+    rules = [rule for rule in default_rules() if rule.id != "directory_enumeration_low_slow"]
+    events = [request(f"/word-{n}", status=404, seconds=n * 2) for n in range(19)]
+
+    labelled = RuleEngine(rules).label_events(
+        [*events, request("/.git/HEAD", status=404, seconds=38)]
+    )
+
+    assert labelled[-1].label.rule_id == "directory_enumeration"
+
+
+def test_a_named_file_the_server_handed_over_keeps_its_name(engine: RuleEngine) -> None:
+    """Served, the probe found something, and a sweep of misses never counted it."""
+    labelled = engine.label_events(
+        [
+            *_slow_sweep_ending(request("/quiet-probe-7", status=404, seconds=280)),
+            request("/.env", seconds=290),
+        ]
+    )
+
+    assert labelled[-2].label.rule_id == "directory_enumeration_low_slow"
+    assert labelled[-1].label.rule_id == "config_file_exposure"
+
+
+def test_a_named_file_with_no_sweep_around_it_is_reconnaissance(engine: RuleEngine) -> None:
+    (labelled,) = engine.label_events([request("/.svn/entries", status=404)])
+
+    assert labelled.label.rule_id == "config_file_exposure"
+
+
+def test_an_injection_inside_a_sweep_still_leads(engine: RuleEngine) -> None:
+    last = request("/item?id=1' union select null,null--", status=404, seconds=280)
+
+    labelled = engine.label_events(_slow_sweep_ending(last))
+
+    assert labelled[-1].label.category is ActivityCategory.INJECTION
+
+
 def test_refused_paths_are_forced_browsing_rather_than_enumeration(engine: RuleEngine) -> None:
     """Two different behaviours, told apart by what the server answered.
 

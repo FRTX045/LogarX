@@ -131,7 +131,9 @@ def recurring(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
     Here enumeration is interrupted twice, which is what a scanner working
     through a wordlist actually looks like: three enumeration episodes on the
-    trace, one 35-request node on the behaviour map.
+    trace, one 35-request node on the behaviour map. The interruption is a file
+    it found, `/.env` handed over: a miss of `/.env` would be one more entry in
+    the sweep and interrupt nothing.
     """
     root = tmp_path_factory.mktemp("recurring")
     lines = [_line(0, "/")]
@@ -140,7 +142,7 @@ def recurring(tmp_path_factory: pytest.TempPathFactory) -> Path:
         for index in range(count):
             lines.append(_line(at, f"/admin/b{burst}-{index}", status=404))
             at += 1
-        lines.append(_line(at, "/.env", status=404))
+        lines.append(_line(at, "/.env"))
         at += 2
 
     log = root / "access.log"

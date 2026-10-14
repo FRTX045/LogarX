@@ -148,6 +148,24 @@ requests while lenient recall was 1.000 — the rule was firing every time and
 being outranked every time. Narrowing the members to 404–410 moved overall
 accuracy from 0.919 to 0.973. See [evaluation.md](evaluation.md).
 
+`outranks` (default none) names categories the window's label leads over on the
+requests it labels, whatever their severity:
+
+```yaml
+    category: enumeration
+    severity: medium
+    outranks: [reconnaissance]
+```
+
+A sweep of misses that counts `/.env` among them is a wordlist with `/.env` in
+it. `config_file_exposure` is high and the sweep is medium, so by severity alone
+the probe would name the request, and each probe inside the sweep would split it
+into pieces. With `outranks` the sweep leads and the probe stays among the
+matches, which is what triage reads. It applies only to the window's own
+requests, so with members of 404–410 a file the server handed over is never the
+sweep's. Only the categories named yield: an injection inside the sweep still
+leads. A window cannot outrank its own category.
+
 ### Sequence rules — this, then that, unless something between
 
 Some evidence is order, not quantity. An administrator and an intruder can both
@@ -253,7 +271,8 @@ rather than a guess.
 ## How a request gets its label
 
 When several rules match one request, the highest severity becomes the primary
-label and the rest are kept. They are not discarded: `AnalysisResult.assignments`
+label and the rest are kept; a window rule's `outranks` sets the categories it
+names aside first, on the requests that window labelled. They are not discarded: `AnalysisResult.assignments`
 carries every match, so a rule that fired and lost is distinguishable from a
 rule that never fired at all. That distinction is what `recall_any` measures in
 the evaluation, and it is the difference between "the rule is wrong" and "the

@@ -789,6 +789,121 @@ def test_an_unknown_way_of_closing_is_refused(tmp_path: Path) -> None:
         load_rules([path])
 
 
+OUTRANKING_PACK = """
+version: 1
+rules:
+  - id: config_probe
+    name: Configuration File Probe
+    category: reconnaissance
+    severity: high
+    confidence: 0.9
+    match:
+      any:
+        - {field: path_decoded, contains: '/.env'}
+
+  - id: union_select
+    name: SQL Injection
+    category: injection
+    severity: high
+    confidence: 0.9
+    match:
+      any:
+        - {field: target_decoded, contains: 'union select'}
+
+  - id: sweep
+    name: Sweep
+    category: enumeration
+    severity: medium
+    confidence: 0.85
+    outranks: [reconnaissance]
+    member:
+      all:
+        - {field: status, min: 404}
+        - {field: status, max: 410}
+    window:
+      span_seconds: 60
+      min_requests: 5
+      conditions:
+        - {metric: distinct_paths, op: ">=", value: 5}
+"""
+
+
+def _led(
+    tmp_path: Path, events: list[NormalizedEvent], pack: str = OUTRANKING_PACK
+) -> list[LabelledEvent]:
+    path = tmp_path / "outranks.yaml"
+    path.write_text(pack, encoding="utf-8")
+    return RuleEngine(load_rules([path])).label_events(events)
+
+
+def _sweep_past(last: NormalizedEvent) -> list[NormalizedEvent]:
+    """Four misses a second apart, then `last`: a sweep if `last` is a miss too."""
+    return [event(n, path=f"/{word}", status=404) for n, word in enumerate("abcd")] + [last]
+
+
+def test_a_sweep_names_the_probe_it_counted_as_its_own(tmp_path: Path) -> None:
+    """A wordlist with `/.env` in it is still a wordlist: the sweep leads, and the
+    probe stays among the matches for anything that reads them all."""
+    labelled = _led(tmp_path, _sweep_past(event(4, path="/.env", status=404)))
+
+    assert labelled[-1].label.rule_id == "sweep"
+    assert "config_probe" in [label.rule_id for label in labelled[-1].all_labels]
+
+
+def test_without_outranks_the_more_severe_probe_still_leads(tmp_path: Path) -> None:
+    pack = OUTRANKING_PACK.replace("    outranks: [reconnaissance]\n", "")
+
+    labelled = _led(tmp_path, _sweep_past(event(4, path="/.env", status=404)), pack)
+
+    assert labelled[-1].label.rule_id == "config_probe"
+
+
+def test_a_file_the_server_handed_over_is_not_the_sweeps(tmp_path: Path) -> None:
+    """Served, the probe found something, and the sweep never counted it: it keeps
+    its own name."""
+    labelled = _led(
+        tmp_path, [*_sweep_past(event(4, path="/x", status=404)), event(5, path="/.env")]
+    )
+
+    assert labelled[-2].label.rule_id == "sweep"
+    assert labelled[-1].label.rule_id == "config_probe"
+
+
+def test_an_attack_inside_a_sweep_still_leads(tmp_path: Path) -> None:
+    """`outranks` names what yields. Injection is not on the list."""
+    last = event(4, path="/item", query="id=1 union select 1", status=404)
+
+    labelled = _led(tmp_path, _sweep_past(last))
+
+    assert labelled[-1].label.rule_id == "union_select"
+
+
+def test_a_probe_with_no_sweep_around_it_keeps_its_name(tmp_path: Path) -> None:
+    labelled = _led(tmp_path, [event(0, path="/a", status=404), event(1, path="/.env", status=404)])
+
+    assert labelled[-1].label.rule_id == "config_probe"
+
+
+def test_outranking_a_category_that_does_not_exist_is_refused(tmp_path: Path) -> None:
+    path = tmp_path / "unknown.yaml"
+    path.write_text(OUTRANKING_PACK.replace("[reconnaissance]", "[recon]"), encoding="utf-8")
+
+    with pytest.raises(RulePackError, match="outranks"):
+        load_rules([path])
+
+
+def test_a_window_cannot_outrank_its_own_category(tmp_path: Path) -> None:
+    """It would set its own label aside on every request it labels."""
+    path = tmp_path / "itself.yaml"
+    path.write_text(
+        OUTRANKING_PACK.replace("[reconnaissance]", "[reconnaissance, enumeration]"),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RulePackError, match="outranks its own category"):
+        load_rules([path])
+
+
 def test_a_rule_with_two_kinds_of_body_is_refused(tmp_path: Path) -> None:
     path = tmp_path / "both.yaml"
     path.write_text(

@@ -54,6 +54,7 @@ implying the CRS column was ever checked.
 | 2026-10-14 | *this pass* | **action** — the admin page that asked for a sign-in, on a sequence that closes only the latest (`closes: last`) | corpus unchanged, 960 of 1,099; caught unchanged everywhere; **`authentication` 542/558 → 558/558 small, 1,714/1,781 → 1,781/1,781 medium, 6,902/7,204 → 7,204/7,204 large**, both engines; excerpt unchanged (no such page in it) | 0 → 0 everywhere, both engines | 1, and a sequence option |
 | 2026-10-14 | *this pass* | **episode** — a page keeps the files it loaded, whatever kind of page | labels unchanged on every tier and the excerpt; **boundary F1 0.8520 → 0.8711 small, 0.8524 → 0.8726 medium, 0.8641 → 0.8816 large** native (CRS 0.8711 / 0.8718 / 0.8814); excerpt byte-identical | 0 → 0 everywhere, both engines | 0, one builder rule |
 | 2026-10-14 | *this pass* | **recon** — a hand-built probe for known software, refused 400 | corpus unchanged, 960 of 1,099; **caught +43 on the excerpt and medium, +10 small, +152 large** (medium 17,064 → 17,107 native, 17,065 → 17,108 CRS); **`reconnaissance` 578/642 → 621/642 excerpt, 701/729 → 711/729 small, 2,631/2,695 → 2,674/2,695 medium, 10,240/10,438 → 10,392/10,438 large**, every new answer right | 0 → 0 everywhere native; CRS unchanged (small 1, the click ID) | 1 |
+| 2026-10-14 | *this pass* | **recon** — a sweep keeps the named files it probed, on a new window option (`outranks`) | corpus byte-identical, 960 of 1,099; caught unchanged everywhere; **`enumeration` +68 / +262 / +1,021 on small / medium / large, `reconnaissance` −6 / −25 / −80**; accuracy 0.9963 → 0.9973, 0.9965 → 0.9975, 0.9966 → 0.9976; **boundary F1 0.8769 → 0.9096, 0.8791 → 0.9136, 0.8879 → 0.9184**; excerpt 17 right for 17 wrong | 0 → 0 everywhere native; CRS unchanged (small 1, the click ID) | 0, a window option on two rules |
 
 The 2026-09-20 pass is the first measured against a corpus containing a
 legitimate administrator, and it went the same way round as the recon pass: it
@@ -1232,6 +1233,79 @@ to anyone, so nothing in the request is the evidence, only the sweep around it.
 And 10 `reconnaissance` read as `browsing`: eight are a tool's opening `GET /`
 and `HEAD /`, two a script's first `/admin/ping` and `/admin/template` before it
 tried an injection on them.
+
+### 2026-10-14 — recon: a sweep keeps the named files it probed
+
+The largest confusion left was `enumeration` read as `reconnaissance`: 156 / 702 /
+2,795 on small / medium / large. Before anything was written, the requests a
+reconnaissance rule named were split by whether the client's own behaviour had
+also earned them an enumeration window label:
+
+| medium, `config_file_exposure` leading, answered 404 | truth `enumeration` | truth `reconnaissance` |
+|---|---:|---:|
+| inside a sweep | **262** | 25 |
+| no sweep around it | 113 | **1,272** |
+
+The probe's own label is right when it stands alone and wrong when the client was
+sweeping, and inside the sweep it won only on severity: `config_file_exposure` is
+high, both sweeps medium. `backup_file_probe` (medium, 0.75) already lost to the
+sweep on confidence, which is why only configuration files showed it. A status
+rule ("a configuration probe answered 404 is enumeration") would have put 1,272
+wrong for 113 right; the evidence is the sweep, not the answer.
+
+**What the 25 are.** `/.env`, `/.git/config`, `/.aws/credentials` and
+`/config.json`, from the same four clients whose sweep surrounds them; 258 of the
+262 are `/.svn/entries`. The truth files them under different activity instances
+of one client running at once: on `192.0.2.233` every reconnaissance probe is in an
+odd-numbered instance (`#1`, `#3`, …) and every `/.svn/entries` in an even-numbered
+one (`#2`, `#8`, …). By behaviour they cannot be told apart (`/.svn/entries` and `/.git/config` are the same kind of file), so a
+rule that got the 25 right would be reading the dataset's wordlist. The reading
+taken is ADR-0005's: a sweep that includes `/.env` is a wordlist with `/.env` in it.
+The same split holds on the other tiers: 68 and 1,021 right (every one
+`/.svn/entries`, `/.git/HEAD` or `/web.config`) for 6 and 80 wrong, the same four paths.
+
+**`outranks`**, a window-rule option: the categories the window's label leads
+over on the requests that window labelled, whatever their severity. They are set
+aside when the primary label is chosen, not removed, so the probe stays among the
+matches that triage reads for severity and high-confidence reasons. Both
+directory-enumeration windows outrank `reconnaissance`. Their members are 404–410,
+so a file the server handed over is never the sweep's, and only the categories
+named yield: an injection inside a sweep still leads. A window that names its own
+category is refused. Four engine mutations (ignore it; apply it to every request
+rather than the window's own; set aside every other label; drop the own-category
+guard) and removing either rule's line each fail a named test.
+
+| native | `enumeration` | `reconnaissance` | accuracy | macro F1 | boundary F1 |
+|---|---:|---:|---:|---:|---:|
+| `2026-10-06-small` | 3,040 → **3,108** of 3,213 | 711 → 705 of 729 | 0.9963 → **0.9973** | 0.9395 → **0.9427** | 0.8769 → **0.9096** |
+| `2026-10-06-medium` | 13,587 → **13,849** of 14,312 | 2,674 → 2,649 of 2,695 | 0.9965 → **0.9975** | 0.9500 → **0.9532** | 0.8791 → **0.9136** |
+| `2026-10-06-large` | 27,425 → **28,446** of 30,244 | 10,392 → 10,312 of 10,438 | 0.9966 → **0.9976** | 0.9609 → **0.9646** | 0.8879 → **0.9184** |
+
+**Boundary F1 rose three points or more on every tier.** Each probe had been an
+episode of its own cut out of the sweep. On medium the change removed 481
+boundaries (episodes 9,581 → 9,100), and only 6 of them were boundaries the truth
+has: boundary precision 0.798 → 0.858.
+
+With CRS the same: `enumeration` +68 / +276 / +1,035 (the CRS runs began with 14
+more of these wrong on medium and large), `reconnaissance` −6 / −25 / −80, macro F1
+0.9395 → 0.9428, 0.9492 → 0.9525, 0.9601 → 0.9639, boundary F1 0.8769 → 0.9096,
+0.8783 → 0.9137, 0.8877 → 0.9184. Caught and false alarms are unchanged on every
+tier and both engines (small's one with CRS, the click ID). The committed excerpt
+breaks even: 17 `/.svn/entries` right for 17 wrong, `/.git/config`, `/.env`,
+`/config.json` and `/.aws/credentials` from one client, `192.0.2.231`. Accuracy is
+unchanged at 0.9746 (0.9749 with CRS), macro F1 0.9507 → 0.9508 (0.9590 → 0.9592),
+boundary F1 0.6464 → 0.6657 (0.6481 → 0.6676). CRS corpus byte-identical, 960 of
+1,099; the demo still exercises 107 of 107 rules.
+
+**Still getting through, on medium:** 440 `enumeration` read as `reconnaissance`.
+433 are lone probes answered 404 for four files, `/backup.zip` (113),
+`/.svn/entries` (113), `/db.sql` (107) and `/cgi-bin/test.cgi` (100), one or two
+from each of about eighty clients, mostly under a browser's User-Agent, with no
+sweep around them. No sweep caught them because there was none to catch, and a
+named-file probe on its own is reconnaissance by ADR-0005. It is the campaign convention the 2026-10-05 entry left alone. Then 34
+`reconnaissance` read as `enumeration`, the 25 above and nine lower-severity
+probes (`/actuator/health`, `/.well-known/security.txt`) that already yielded to
+the sweep before this pass.
 
 ### 2026-10-05 — recon: the tools that sweep a wordlist are enumeration
 

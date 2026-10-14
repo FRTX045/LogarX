@@ -488,19 +488,27 @@ class RuleEngine:
         # same requests, and a view built per rule would normalise each one
         # again for every rule that looks at it.
         views = [RequestView(item.event, site_hosts=self.site_hosts) for item in labelled]
+        # Per request, the categories a window that labelled it leads over. They
+        # are set aside when the primary label is chosen and stay in `all_labels`.
+        outranked: dict[int, set[ActivityCategory]] = {}
         for rule in self._windows:
             members = [index for index, view in enumerate(views) if _is_member(rule, view)]
             label = _to_label(rule)
             for index in _members_of_matching_windows(rule, labelled, members):
                 labelled[index].all_labels.append(label)
+                if rule.outranks:
+                    outranked.setdefault(index, set()).update(rule.outranks)
         for sequence in self._sequences:
             label = _to_label(sequence)
             for index in _ends_of_sequences(sequence, labelled, views):
                 labelled[index].all_labels.append(label)
 
-        for item, view in zip(labelled, views, strict=True):
+        for index, (item, view) in enumerate(zip(labelled, views, strict=True)):
             if item.all_labels:
-                item.label = _primary(item.all_labels, view)
+                set_aside = outranked.get(index, set())
+                item.label = _primary(
+                    [label for label in item.all_labels if label.category not in set_aside], view
+                )
 
 
 def _ends_of_sequences(
