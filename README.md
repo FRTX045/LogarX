@@ -355,10 +355,11 @@ and leaves copies of the tool behind.
 Use `rebuild.py` rather than `pyinstaller` directly, because **PyInstaller exits
 0 on a bundle that is missing what it could not see** — the rule packs are data
 that nothing imports, and a build without them reports every request as benign.
-The script runs the tests, builds into a staging directory, checks for the things
-an exit code cannot, and only then swaps the result into place. One of those
-checks sends the bundled sidecar a SQL injection and requires CRS rule 942100
-to answer, so a bundle whose CRS starts but cannot find its rules is refused.
+The script builds the CRS sidecar, runs the tests against it, builds into a
+staging directory, checks for the things an exit code cannot, and only then
+swaps the result into place. One of those checks sends the bundled sidecar a
+SQL injection and requires CRS rule 942100 to answer, so a bundle whose CRS
+starts but cannot find its rules is refused.
 
 The staging checks also load the packaged Qt extensions in an isolated process.
 Windows system DLLs take precedence during collection, so unrelated tools on

@@ -28,6 +28,11 @@ wrong tool for this job:
 * **A hook runs this after a merge.** Work arriving from someone else is exactly
   the work least likely to have been verified, so the tests run first and a red
   suite stops the build rather than packaging it.
+
+* **The sidecar is built before the tests.** The suite's CRS contract tests run
+  the checkout's `crs/crs-sidecar.exe`, and built only afterwards it was
+  whatever an earlier day left there: the merge of PR #47 changed `crs/`, its
+  new tests ran against the morning's binary, and nothing was packaged.
 """
 
 from __future__ import annotations
@@ -493,13 +498,20 @@ def main() -> int:
 def _rebuild() -> int:
     """Test, build, check, swap — stopping at the first thing that is wrong."""
     started = tree_state()
+    # Before the tests, whose CRS contract tests run this binary: built after
+    # them, a merge that changed `crs/` was tested against the build before it.
+    say("building the CRS sidecar the suite and the bundle will use")
+    try:
+        crs_bundle.build_sidecar()
+    except crs_bundle.CrsBundleError as exc:
+        return fail("the CRS sidecar could not be built", str(exc))
+
     passed, detail = run_tests()
     if not passed:
         return fail("the test suite is red, so nothing was packaged", detail)
 
-    # After the tests, so a red suite still stops everything first, and before
-    # PyInstaller, whose spec refuses to build without what this stages.
-    say("building the CRS sidecar and staging its ruleset and licences")
+    # Before PyInstaller, whose spec refuses to build without what this stages.
+    say("staging the CRS sidecar's ruleset and licences")
     try:
         unlicensed = crs_bundle.prepare()
     except crs_bundle.CrsBundleError as exc:
