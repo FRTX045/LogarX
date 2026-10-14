@@ -26,13 +26,13 @@ from logarc.detect.crs.sidecar import SidecarConfig, primary_site_host, run_side
 from logarc.detect.crs.store import write_detections
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator
+    from collections.abc import Callable, Iterator, Sequence
     from pathlib import Path
 
     from logarc.core.event import NormalizedEvent
     from logarc.detect.crs.sidecar import CrsDetection
 
-__all__ = ["EnrichOutcome", "EnrichProgress", "enrich_case"]
+__all__ = ["EnrichOutcome", "EnrichProgress", "crs_config", "enrich_case"]
 
 #: How often to report, in requests. Small enough that a bar moves visibly on a
 #: case of any size, large enough that the reporting is not the expensive part —
@@ -76,6 +76,22 @@ class EnrichOutcome:
         return self.replayed / self.seconds if self.seconds else 0.0
 
 
+def crs_config(site_hosts: Sequence[str], base: SidecarConfig | None = None) -> SidecarConfig:
+    """The configuration CRS runs a case with: `base`, told the case's own site.
+
+    The host CRS compares every URL in a parameter against comes from the case,
+    whatever configuration the caller built. It is a fact about the site, not a
+    preference: the command line builds its own for the paranoia level and has
+    no way to set a host, and if the answer only applied when nothing was
+    passed, `logarc enrich` would go on telling CRS that every site is
+    `localhost`. The window asks the same question when it judges whether a
+    case's CRS results are current, which is why both ask it here.
+    """
+    config = base or SidecarConfig()
+    site_host = primary_site_host(site_hosts)
+    return replace(config, host=site_host) if site_host is not None else config
+
+
 def enrich_case(
     root: Path,
     *,
@@ -90,20 +106,11 @@ def enrich_case(
     sidecar or the ruleset is missing. Both are the caller's to word: this layer
     does not know whether it is talking to a terminal or a dialog.
     """
-    config = config or SidecarConfig()
     replayed = 0
     stopped = False
 
     with Case.open(root) as opened:
-        # The host CRS compares every URL in a parameter against comes from the
-        # case, whatever config the caller built. It is a fact about the site,
-        # not a preference: the command line builds its own config for the
-        # paranoia level and has no way to set a host, and if the answer only
-        # applied when no config was passed, `logarc enrich` would go on telling
-        # CRS that every site is `localhost`.
-        site_host = primary_site_host(opened.site_hosts)
-        if site_host is not None:
-            config = replace(config, host=site_host)
+        config = crs_config(opened.site_hosts, config)
 
         total = opened.manifest.total_events_parsed
         stream = opened.store.all_events()

@@ -224,3 +224,15 @@ def test_the_outcome_names_the_configuration_that_actually_ran(
     assert outcome.config.host == "shop.test"
     with Case.open(case_dir) as case:
         assert outcome.config.fingerprint() == case.manifest.config["crs_fingerprint"]
+
+
+def test_a_rerun_tells_crs_the_case_s_own_site() -> None:
+    """The window asks whether a case's CRS results are current by comparing how
+    they were made with how a rerun would make them, so both have to come from
+    one place. A case answered for `shop.test` was enriched with that host;
+    compared against `localhost` it would always look out of date."""
+    from logarc.enrich import crs_config
+
+    assert crs_config(("shop.test",)).host == "shop.test"
+    assert crs_config(()).host == SidecarConfig().host
+    assert crs_config(("shop.test",), SidecarConfig(paranoia=3)).paranoia == 3
