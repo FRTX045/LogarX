@@ -35,6 +35,7 @@ from logarc.gui.theme import GAP, PAD, ROOM, caption_font, heading_font
 from logarc.style import NOTICE_TINT, THEME
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from logarc.gui.quarantine_notice import Notice
@@ -95,6 +96,13 @@ class NoticeBanner(QFrame):
         self._more.setFont(caption_font(self._more.font()))
         self._more.clicked.connect(self._show_the_rest)
 
+        # What the strip offers to do about it, when there is something: the
+        # older-CRS notice runs CRS again. Named per notice by `show_notice`.
+        self._act = QPushButton("")
+        self._act.setFont(caption_font(self._act.font()))
+        self._act.clicked.connect(self._do_action)
+        self._action: Callable[[], None] | None = None
+
         close = QToolButton()
         close.setText("✕")
         close.setToolTip("Dismiss until this case is opened again.")
@@ -116,6 +124,7 @@ class NoticeBanner(QFrame):
         row.addLayout(words, 1)
         row.addWidget(self._more, 0, Qt.AlignmentFlag.AlignTop)
         row.addWidget(self._reveal, 0, Qt.AlignmentFlag.AlignTop)
+        row.addWidget(self._act, 0, Qt.AlignmentFlag.AlignTop)
         row.addWidget(close, 0, Qt.AlignmentFlag.AlignTop)
 
         self._quarantine_dir: Path | None = None
@@ -126,7 +135,13 @@ class NoticeBanner(QFrame):
         """Both lines, for tests and for anything needing the whole message."""
         return f"{self._headline.text()} {self._detail.text()}".strip()
 
-    def show_notice(self, notice: Notice | None, *, quarantine_dir: Path | None = None) -> None:
+    def show_notice(
+        self,
+        notice: Notice | None,
+        *,
+        quarantine_dir: Path | None = None,
+        action: tuple[str, Callable[[], None]] | None = None,
+    ) -> None:
         """Show `notice`, or hide the strip when there is none.
 
         Called on every case open, the clean ones included — passing `None` has
@@ -136,6 +151,9 @@ class NoticeBanner(QFrame):
         """
         self._quarantine_dir = quarantine_dir
         self._notice = notice
+        self._action = action[1] if action is not None else None
+        self._act.setText(action[0] if action is not None else "")
+        self._act.setVisible(action is not None)
         if notice is None:
             self.hide()
             return
@@ -169,6 +187,10 @@ class NoticeBanner(QFrame):
         box.setText(head)
         box.setInformativeText("\n\n".join(rest))
         box.exec()
+
+    def _do_action(self) -> None:
+        if self._action is not None:
+            self._action()
 
     def _open_quarantine(self) -> None:
         if self._quarantine_dir is not None:
