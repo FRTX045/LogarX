@@ -942,6 +942,25 @@ _CLICK_ID_VARS: Final = frozenset(
 #: through it like any other parameter, so anything else still names.
 _CLICK_TOKEN: Final = re.compile(r"[A-Za-z0-9._-]+")
 
+#: CRS rules that look for file paths from a word list in the User-Agent and
+#: the Referer: 930121 (`lfi-os-files.data`) and 932161 (`unix-shell.data`).
+#: The list is matched anywhere in the header, and one entry is `perl/`, which
+#: `libwww-perl/6.72` contains across its name and version. On the
+#: `2026-10-06` tiers that was every one of 930121's User-Agent matches, 434 on
+#: large, and once the Windows sidecar read paths the way the Linux one does it
+#: was the whole of CRS's false alarms: 17 on small, 72 on medium.
+_FILE_LIST_RULES: Final = frozenset({930121, 932161})
+
+#: A User-Agent made of nothing but `name/version` products, each version
+#: starting with a digit (RFC 9110's `product`, without comments, which can
+#: hold anything). It names a client, and a file path cannot sit inside one
+#: without a second `/`. Every User-Agent attack CRS's corpus holds for these
+#: rules is a path or a command, and none fits.
+_PRODUCTS: Final = re.compile(
+    r"[A-Za-z0-9!#$%&'*+.^_`|~-]+/[0-9][A-Za-z0-9!#$%&'*+.^_`|~-]*"
+    r"(?: [A-Za-z0-9!#$%&'*+.^_`|~-]+/[0-9][A-Za-z0-9!#$%&'*+.^_`|~-]*)*"
+)
+
 
 def names_activity(detection: CrsDetection) -> bool:
     """Whether this detection may be the answer, as opposed to corroboration.
@@ -959,6 +978,9 @@ def names_activity(detection: CrsDetection) -> bool:
         prefix = next(p for p in _CHAIN_PREFIXES if variable.startswith(p))
         variable = variable.removeprefix(prefix)
     if variable in _CLICK_ID_VARS and _CLICK_TOKEN.fullmatch(detection.transformed_value):
+        return False
+    # They read only the User-Agent and the Referer, and a Referer never names.
+    if detection.rule_id in _FILE_LIST_RULES and _PRODUCTS.fullmatch(detection.transformed_value):
         return False
     return not variable.startswith(_HEARSAY_VARS)
 
