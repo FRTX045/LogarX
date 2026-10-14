@@ -217,6 +217,14 @@ def _covers(host: str, name: str) -> bool:
     return name == host or name.endswith("." + host)
 
 
+#: Raised whenever the sidecar's own code changes what CRS reports for the same
+#: rules and settings, so that the fingerprint changes with it. 2 is
+#: `crs/paths.go`: until then the Windows build cleaned paths with backslashes
+#: and missed every rule that looks for a file path, 104 detections on CRS's
+#: regression corpus.
+SIDECAR_REVISION: Final = 2
+
+
 @dataclass(frozen=True, slots=True)
 class SidecarConfig:
     """Everything that changes what the sidecar would report.
@@ -253,7 +261,8 @@ class SidecarConfig:
         return ref or None
 
     def fingerprint(self) -> str:
-        """A digest of the ruleset revision, the conf files, the paranoia level and the host.
+        """A digest of the ruleset revision, the conf files, the paranoia level, the
+        host and the sidecar's own revision.
 
         Recorded beside the native ruleset fingerprint so a report can name
         everything that produced it, and compared on re-runs so that retuning
@@ -270,6 +279,7 @@ class SidecarConfig:
         # parameter against it — so two cases enriched with different hosts must
         # not claim one configuration.
         digest.update(self.host.encode())
+        digest.update(f"sidecar {SIDECAR_REVISION}".encode())
         return digest.hexdigest()[:16]
 
     def as_config(self) -> dict[str, Any]:

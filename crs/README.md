@@ -87,6 +87,17 @@ These are deliberate, not defaults.
 | **Paranoia level 2** | Measured, not guessed. A false positive costs more here than in the tool this came from — a detection can set a request's `ActivityCategory`, and a category change starts a new episode. That argued for PL1, and the numbers did not support it: across CRS's own 1,194 access-log-visible regression payloads, PL1 reached 67% and PL2 reached 90%. PL2 is also the ceiling: on 365 lines of real 2010 WordPress traffic, PL1 and PL2 leave the hostile-episode count unchanged, while **PL3 flags a plain `GET /` as "Unix Shell Code Found in Request"** and invents an episode. |
 | Anomaly score ignored | `tx.anomaly_score` and rule 949110 are a blocking heuristic for a decision this tool does not make. Per-rule severity is kept; the aggregate is discarded. |
 
+### Paths are cleaned the same way on every system
+
+CRS's file lists (`lfi-os-files.data`, `restricted-files.data`, `unix-shell.data`) are written
+with forward slashes, and the rules that read them first clean the path with `t:normalizePath` or
+`t:normalizePathWin`. Coraza v3.7.0 implements both with Go's `path/filepath`, whose `Clean` on
+Windows turns every `/` into `\`. So the Windows sidecar compared `/etc/passwd` as `\etc\passwd`
+and found nothing: on CRS's regression corpus it made 104 fewer detections than the Linux one, all
+in 930120, 930121, 930130, 930140, 932160 and 932161, and `/.git/config` passed as harmless.
+`paths.go` registers both transformations again on Go's `path`, which is what `path/filepath`
+already is on Linux, so the Linux sidecar reports what it did and the Windows one now matches it.
+
 ### Removed rules
 
 Twelve rules are removed by ID. Each is a `&REQUEST_HEADERS:X` presence test on a header Apache
