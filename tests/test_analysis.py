@@ -63,6 +63,11 @@ def campaign(tmp_path: Path) -> Case:
         lines.append(line(seconds=at, target=path, status=404, size=0))
         at += 2
 
+    # A pause longer than the slow sweep's five minutes. Run straight into the
+    # sweep, the probes would be its first wordlist entries instead — see
+    # `test_probes_that_run_straight_into_a_sweep_are_its_first_entries`.
+    at += 360
+
     # Directory enumeration: a wordlist against a 404 wall.
     for index in range(30):
         lines.append(line(seconds=at, target=f"/admin/{index}", status=404, size=0))
@@ -105,6 +110,27 @@ def test_the_reconstruction_reads_as_a_sequence(campaign: Case) -> None:
     assert categories.index(ActivityCategory.RECONNAISSANCE) < categories.index(
         ActivityCategory.INJECTION
     )
+
+
+def test_probes_that_run_straight_into_a_sweep_are_its_first_entries(tmp_path: Path) -> None:
+    """Four named files two seconds apart, then thirty misses: from the log alone
+    that is a wordlist beginning with `/.env`, and the sweep names all of it. The
+    probes stay among the matches."""
+    lines: list[str] = []
+    at = 0
+    for path in ("/.env", "/.git/config", "/backup.sql", "/phpinfo.php"):
+        lines.append(line(seconds=at, target=path, status=404, size=0))
+        at += 2
+    for index in range(30):
+        lines.append(line(seconds=at, target=f"/admin/{index}", status=404, size=0))
+        at += 1
+
+    result = analyse_ip(build_case(tmp_path, lines).store, ATTACKER)
+
+    assert [episode.category for episode in result.episodes] == [ActivityCategory.ENUMERATION]
+    first = result.assignments[0].labelled
+    assert first.event.path == "/.env"
+    assert "config_file_exposure" in [label.rule_id for label in first.all_labels]
 
 
 def test_the_graph_is_far_smaller_than_the_log(campaign: Case) -> None:
