@@ -56,6 +56,7 @@ implying the CRS column was ever checked.
 | 2026-10-14 | *this pass* | **recon** — a hand-built probe for known software, refused 400 | corpus unchanged, 960 of 1,099; **caught +43 on the excerpt and medium, +10 small, +152 large** (medium 17,064 → 17,107 native, 17,065 → 17,108 CRS); **`reconnaissance` 578/642 → 621/642 excerpt, 701/729 → 711/729 small, 2,631/2,695 → 2,674/2,695 medium, 10,240/10,438 → 10,392/10,438 large**, every new answer right | 0 → 0 everywhere native; CRS unchanged (small 1, the click ID) | 1 |
 | 2026-10-14 | *this pass* | **recon** — a sweep keeps the named files it probed, on a new window option (`outranks`) | corpus byte-identical, 960 of 1,099; caught unchanged everywhere; **`enumeration` +68 / +262 / +1,021 on small / medium / large, `reconnaissance` −6 / −25 / −80**; accuracy 0.9963 → 0.9973, 0.9965 → 0.9975, 0.9966 → 0.9976; **boundary F1 0.8769 → 0.9096, 0.8791 → 0.9136, 0.8879 → 0.9184**; excerpt 17 right for 17 wrong | 0 → 0 everywhere native; CRS unchanged (small 1, the click ID) | 0, a window option on two rules |
 | 2026-10-14 | *this pass* | **crs** — an ad platform's click ID is not a payload | corpus unchanged (native only); caught unchanged on every tier and both engines; small with CRS macro F1 0.9428 → 0.9434; medium and large carry no CRS match on a click ID at any level, so cannot move | **CRS 1 → 0 on small**, the last CRS false alarm on the `2026-10-06` tiers; native 0 → 0 | 0, one engine condition |
+| 2026-10-14 | *this pass* | **crs** — the Windows sidecar reads paths like the Linux one; a client's `name/version` is not a file path | corpus unchanged (native only); CRS corpus 4,232 → 4,336 detections on Windows, equal to Linux rule by rule; with CRS caught **+1 on small and large**, medium unchanged; small recall 0.9897 → 0.9900, large macro F1 0.9639 → 0.9640 | CRS 0 → 0 on every tier (the path fix alone: **0 → 17 / 72 / 151**, all 930121 on `libwww-perl/6.72`); native 0 → 0 | 0; one engine condition, one sidecar file |
 
 The 2026-09-20 pass is the first measured against a corpus containing a
 legitimate administrator, and it went the same way round as the recon pass: it
@@ -1307,6 +1308,45 @@ named-file probe on its own is reconnaissance by ADR-0005. It is the campaign co
 `reconnaissance` read as `enumeration`, the 25 above and nine lower-severity
 probes (`/actuator/health`, `/.well-known/security.txt`) that already yielded to
 the sweep before this pass.
+
+### 2026-10-14 — crs: the Windows sidecar reads paths; a client's name is not a path
+
+Found by the corpus record added with RE2 (PR #46): replayed on Linux, CRS's
+regression corpus gave 104 more detections than on Windows, all in six rules
+that look for file paths from a word list — 930120, 930121, 930130, 930140,
+932160 and 932161. Coraza v3.7.0's `t:normalizePath` and `t:normalizePathWin`
+call `path/filepath.Clean`, which on Windows turns `/` into `\`, while the
+lists are written with `/`. So on Windows `/etc/passwd` was compared as
+`\etc\passwd`, and `/.git/config`, `/bin/bash` in a parameter and file paths in
+the User-Agent passed as harmless. `crs/paths.go` registers the two
+transformations again on `path`; the Windows corpus then matches Linux rule by
+rule (4,336, digest `9ca1a14a…`). Five contract payloads pin it, and dropping
+either half of the fix fails the ones that half covers.
+
+**Every CRS figure published for the tiers until now was Windows's.** The
+path fix alone, re-enriching the three `2026-10-06` cases: caught +1 on small
+and large, and false alarms **0 → 17, 72 and 151**. Every one was 930121
+finding `perl/` inside the User-Agent `libwww-perl/6.72` (434 detections on
+large); the Linux sidecar had always raised them. 930121's other new matches
+are Referer copies of real traversal and probes, and 930130's are the `/.git/config`,
+`/.env` and `/.aws/credentials` probes the native rules already call
+reconnaissance; it maps there too, so it gives triage no exploit evidence.
+
+A 930121 or 932161 match in a User-Agent made only of `name/version` products,
+each version starting with a digit, no longer names the request
+(`_FILE_LIST_RULES`, `_PRODUCTS`); it stays attached. Every User-Agent attack
+in CRS's corpus for these rules is a path or a command and none fits; a path
+beside a product, or a product whose version is not a number, still names.
+Three mutations each fail a test (any rule excused, a prefix match, any
+version).
+
+Both together, with CRS: small caught 4,042 → 4,043 (`GET /.DS_Store` 404,
+browsing → reconnaissance), recall 0.9897 → 0.9900; medium identical in every
+field; large 40,776 → 40,777, macro F1 0.9639 → 0.9640; false alarms 0 on all
+three. The Suspicious queue is unchanged on all three (126 / 426 / 1,218 ranked, same
+first group, nobody moved). The sidecar binary now has a revision in the CRS
+fingerprint (`SIDECAR_REVISION = 2`), so the excerpt's CRS fixture moves only
+in that field, and the triage index layout is 10.
 
 ### 2026-10-14 — crs: an ad platform's click ID is not a payload
 

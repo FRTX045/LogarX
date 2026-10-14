@@ -161,9 +161,10 @@ answer. The sweep change did lose some: on medium it moved 287 configuration-fil
 `reconnaissance` to `enumeration`, 262 of them rightly and 25 a reconnaissance campaign's own probes
 sent from inside a sweep (6 of 74 on small, 80 of 1,101 on large). The builder change moved no label
 and raised boundary F1 by about two points on every tier, and the sweep change by about three more.
-The CRS runs are revision `d694d465`, configuration `1c4b66d67838c5e8`, paranoia level 2,
+The CRS runs are revision `d694d465`, configuration `f4a1c8296441d261`, paranoia level 2,
 and include the `${name}` placeholder fix (PR #30); the native runs are identical with and without
-it, field for field.
+it, field for field. They were re-run on 2026-10-14 after the Windows sidecar was found misreading
+file paths, which is why their configuration differs from the excerpt's older figures; see below.
 
 The README's ingest rate is the medium log ingested three times at `e87e8d7` with nothing else
 running: 84,623, 85,908 and 87,202 lines/s, median **85,908**, with the default four workers on
@@ -174,10 +175,10 @@ four physical cores (Windows 11, Python 3.12). It is a different measurement fro
 |---|---:|---:|---:|---:|---:|---:|
 | Classification accuracy | 0.9973 | 0.9973 | **0.9975** | 0.9975 | 0.9976 | 0.9976 |
 | Weighted F1 | 0.9972 | 0.9972 | 0.9975 | 0.9975 | 0.9976 | 0.9976 |
-| Macro F1 | 0.9427 | 0.9434 | **0.9532** | 0.9525 | 0.9646 | 0.9639 |
+| Macro F1 | 0.9427 | 0.9434 | **0.9532** | 0.9525 | 0.9646 | 0.9640 |
 | Attack-or-not precision | 1.0000 | 1.0000 | **1.0000** | 1.0000 | 1.0000 | 1.0000 |
-| Attack-or-not recall | 0.9890 | 0.9897 | 0.9976 | 0.9976 | 0.9991 | 0.9992 |
-| Caught / missed | 4,039 / 45 | 4,042 / 42 | 17,107 / 42 | 17,108 / 41 | 40,775 / 35 | 40,776 / 34 |
+| Attack-or-not recall | 0.9890 | 0.9900 | 0.9976 | 0.9976 | 0.9991 | 0.9992 |
+| Caught / missed | 4,039 / 45 | 4,043 / 41 | 17,107 / 42 | 17,108 / 41 | 40,775 / 35 | 40,777 / 33 |
 | **False alarms** | **0** | **0** | **0** | **0** | **0** | **0** |
 | Boundary F1 | 0.9096 | 0.9099 | 0.9136 | 0.9137 | 0.9184 | 0.9184 |
 
@@ -186,7 +187,18 @@ Until 2026-10-14 CRS added one on small: rule 942100 (libinjection) reading a Go
 click ID as SQL, which also placed that harmless visitor seventh in the Suspicious queue. A CRS
 match on an ad platform's click-ID parameter whose value is an opaque token no longer names the
 request; CRS's own regression corpus keeps two such tokens as false positives for 942440. CRS
-catches 3, 1 and 1 more attacks than the native rules on the three tiers.
+catches 4, 1 and 2 more attacks than the native rules on the three tiers.
+
+**Until 2026-10-14 the Windows sidecar misread file paths, and the CRS columns were Windows's.**
+Coraza tidies a path with Go's `path/filepath`, which on Windows writes `\`, so CRS's lists of
+system files and secrets never matched there: on CRS's own regression corpus the Windows sidecar
+found 104 fewer things than the Linux one. With that fixed (`crs/paths.go`), small and large each
+catch one more attack, a `/.DS_Store` probe the native rules read as browsing among them, and the
+three tiers' new CRS evidence otherwise lands on requests the native rules already named. It also showed a
+false alarm the Linux sidecar had always raised: rule 930121 finding the path `perl/` inside the
+User-Agent `libwww-perl/6.72`, 17, 72 and 151 times on the three tiers. A file-list match inside a
+User-Agent made only of `name/version` products no longer names a request, so both systems now
+report the zero above.
 
 Before the placeholder fix, CRS scored 45, 149 and 670 false alarms on these tiers, all of them the
 shop's unfilled `?id=${id}` requests apart from the click ID on small. The

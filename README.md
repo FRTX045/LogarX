@@ -258,8 +258,10 @@ something on the second. Both are printed so neither can hide the other.
 **With OWASP CRS at paranoia level 2**, the same build scores accuracy 0.997,
 macro F1 0.952 and **0 false alarms**, and catches one attack the native rules
 miss: 17,108 against 17,107. Across the three `2026-10-06` builds CRS adds 1 to
-3 catches per build and no false alarm; until 2026-10-14 it added one on the
-small build, a Google Ads click ID read as SQL. Until 2026-10-06 CRS also called
+4 catches per build and no false alarm; until 2026-10-14 it added one on the
+small build, a Google Ads click ID read as SQL. Until the same day the Windows
+build of CRS also missed file paths such as `/etc/passwd` and `/.git/config`,
+which the Linux build always caught; both now find the same. Until 2026-10-06 CRS also called
 the shop's own unfilled `?id=${id}` placeholder an injection, 149 times on this
 build;
 [the rule-pack ledger](docs/rule-pack-ledger.md) has how that was found and
