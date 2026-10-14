@@ -219,13 +219,13 @@ _MAX_SCALE: Final = 6.0
 #: it. The dot width is divided by the zoom before it is used, so a dot stays
 #: the same size on screen however far in the view is — a texture, not another
 #: thing that grows when the graph does.
-_GRID_PITCH: Final = 24.0
+_GRID_PITCH: Final = 20.0
 _GRID_DOT: Final = 1.6
+_GRID_OPACITY: Final = 0.30
 
-#: Below this zoom the dots are closer together on screen than they are wide,
-#: and the grid stops reading as texture and starts reading as a wash over the
-#: evidence. Drawn only while it is still a grid.
-_GRID_MIN_SCALE: Final = 0.45
+#: Thin the grid as the view zooms out, keeping this much space between dots
+#: on screen instead of hiding the background altogether.
+_GRID_MIN_PITCH: Final = 14.0
 
 #: How heavy an arrow is drawn while the node it hangs off is being moved.
 #: A floor, not a replacement: a weight-1 transition comes out at 1.7 units,
@@ -247,7 +247,7 @@ _LIT_WIDTH: Final = 2.0
 _SCENE_MARGIN: Final = 24.0
 
 
-def _steps(start: float, stop: float) -> list[float]:
+def _steps(start: float, stop: float, pitch: float) -> list[float]:
     """Grid lines from `start` up to `stop`, one pitch apart.
 
     Bounded rather than a bare `while`: the visible rectangle grows without
@@ -255,8 +255,8 @@ def _steps(start: float, stop: float) -> list[float]:
     far past any sane viewport and exists so a stray transform cannot turn a
     background paint into a hang.
     """
-    count = min(int((stop - start) / _GRID_PITCH) + 1, 400)
-    return [start + index * _GRID_PITCH for index in range(max(count, 0))]
+    count = min(int((stop - start) / pitch) + 1, 400)
+    return [start + index * pitch for index in range(max(count, 0))]
 
 
 @dataclass(frozen=True, slots=True)
@@ -686,25 +686,32 @@ class ActivityCanvas(QGraphicsView):
         if painter is None:  # pragma: no cover - Qt always supplies one
             return
         scale = self.transform().m11()
-        if scale < _GRID_MIN_SCALE:
+        if scale <= 0:
             return
+        pitch = _GRID_PITCH
+        while pitch * scale < _GRID_MIN_PITCH:
+            pitch *= 2
 
-        pen = QPen(QColor(THEME.grid_dot))
+        dot = QColor(THEME.grid_dot)
+        dot.setAlphaF(_GRID_OPACITY)
+        pen = QPen(dot)
         # In scene units, so the division cancels the zoom and the dot lands the
         # same size on screen at every magnification.
         pen.setWidthF(_GRID_DOT / scale)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.save()
         painter.setPen(pen)
 
-        first_x = math.floor(rect.left() / _GRID_PITCH) * _GRID_PITCH
-        first_y = math.floor(rect.top() / _GRID_PITCH) * _GRID_PITCH
+        first_x = math.floor(rect.left() / pitch) * pitch
+        first_y = math.floor(rect.top() / pitch) * pitch
         points = [
             QPointF(x, y)
-            for x in _steps(first_x, rect.right())
-            for y in _steps(first_y, rect.bottom())
+            for x in _steps(first_x, rect.right(), pitch)
+            for y in _steps(first_y, rect.bottom(), pitch)
         ]
         if points:
             painter.drawPoints(*points)
+        painter.restore()
 
     @property
     def graph_scene(self) -> QGraphicsScene:

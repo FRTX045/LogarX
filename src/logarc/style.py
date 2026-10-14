@@ -269,7 +269,7 @@ DARK: Final = Theme(
     on_accent="#001226",
     tint="#0e2a45",
     edge_ink="#8a8987",
-    grid_dot="#1b1a19",
+    grid_dot="#8a8987",
     alert="#e14d5f",
     severity={
         Severity.INFO: "#6e7a85",
