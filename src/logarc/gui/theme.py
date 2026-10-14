@@ -22,11 +22,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Final
 
 from PyQt6.QtGui import QColor, QFont, QPalette
+from PyQt6.QtWidgets import QProxyStyle, QStyle
 
 from logarc.style import THEME
 
 if TYPE_CHECKING:
-    from PyQt6.QtWidgets import QApplication
+    from PyQt6.QtWidgets import QApplication, QStyleOption, QWidget
 
 __all__ = [
     "GAP",
@@ -76,6 +77,23 @@ _CAPTION_STEP: Final = -1.0
 #: set to a small base font was arriving at 6pt, which is not a quiet label but
 #: an unreadable one.
 _FLOOR: Final = 11.0
+
+
+class _ReadableStyle(QProxyStyle):
+    """Keep narrow controls usable independently of the text size."""
+
+    def pixelMetric(  # noqa: N802 - Qt's naming
+        self,
+        metric: QStyle.PixelMetric,
+        option: QStyleOption | None = None,
+        widget: QWidget | None = None,
+    ) -> int:
+        minimums = {
+            QStyle.PixelMetric.PM_TextCursorWidth: 2,
+        }
+        value = super().pixelMetric(metric, option, widget)
+        minimum = minimums.get(metric)
+        return max(value, minimum) if minimum is not None else value
 
 
 def _sized(base: QFont, step: float, *, weight: QFont.Weight | None = None) -> QFont:
@@ -177,6 +195,6 @@ def apply_theme(app: QApplication) -> None:
     colours while everything around them changed, which is a more confusing
     result than not having tried.
     """
-    app.setStyle("Fusion")
+    app.setStyle(_ReadableStyle("Fusion"))
     app.setPalette(palette())
     app.setFont(ui_font(app.font()))

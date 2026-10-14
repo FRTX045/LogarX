@@ -16,6 +16,10 @@ serialisation of the reconstruction, and narrowing a reconstruction to a
 Window state — preferences, saved arrangements, the recent-case list — is the
 window's own and has no command-line equivalent by nature.
 
+The WSL launcher requests a 32 px cursor. This default applies to this application
+and respects existing environment settings. For a larger cursor, launch with
+`XCURSOR_SIZE=48 logarc-gui`.
+
 ---
 
 ## The menus

@@ -56,6 +56,7 @@ from logarc.gui.client_filter import is_whole_address
 from logarc.gui.crs import CrsCard, CrsUnavailable
 from logarc.gui.crs_notice import stale_crs_notice
 from logarc.gui.density import Density, buckets_for
+from logarc.gui.display import configure_display
 from logarc.gui.evidence_panel import EvidencePanel
 from logarc.gui.format_editor import FormatChoice, FormatEditor
 from logarc.gui.format_notice import drift_notice
@@ -1879,6 +1880,7 @@ class MainWindow(QMainWindow):
 def main() -> int:
     """Entry point for the `logarc-gui` command."""
     multiprocessing.freeze_support()
+    configure_display()
     # Reused if one is already up. There never is in production; it is what
     # lets this function be called from a test at all, and an entry point that
     # cannot be called is an entry point nothing checks.
