@@ -911,6 +911,37 @@ _CHAIN_PREFIXES: Final[tuple[str, ...]] = ("matched_vars:", "matched_var:")
 #: a slot, and still names the request.
 _TEMPLATE_SLOT: Final = re.compile(r"\$\{[a-z_][a-z0-9_.]*\}", re.IGNORECASE)
 
+#: Parameters an ad platform appends to a landing page's link, each carrying an
+#: opaque click token: Google (`gclid`, `gbraid`, `wbraid`, `dclid`), Meta,
+#: Microsoft, TikTok, X, Yandex and LinkedIn.
+#:
+#: libinjection (942100) read Google's `-1--dq671umzg…` as SQL — a number and
+#: a comment — at paranoia level 1. Across the 1,262 requests carrying one of
+#: these on the `2026-10-06` tiers that was the only CRS match, and it was the
+#: only CRS false alarm on them; it also placed a harmless visitor seventh in
+#: the Suspicious queue on small.
+_CLICK_ID_VARS: Final = frozenset(
+    f"{collection}:{name}"
+    for collection in ("args", "args_get", "args_names")
+    for name in (
+        "gclid",
+        "gbraid",
+        "wbraid",
+        "dclid",
+        "fbclid",
+        "msclkid",
+        "ttclid",
+        "twclid",
+        "yclid",
+        "li_fat_id",
+    )
+)
+
+#: What a click token is made of. A quote, a space, a bracket or a semicolon is
+#: no ad platform's, and a site that stores the click ID can be injected
+#: through it like any other parameter, so anything else still names.
+_CLICK_TOKEN: Final = re.compile(r"[A-Za-z0-9._-]+")
+
 
 def names_activity(detection: CrsDetection) -> bool:
     """Whether this detection may be the answer, as opposed to corroboration.
@@ -927,6 +958,8 @@ def names_activity(detection: CrsDetection) -> bool:
     while variable.startswith(_CHAIN_PREFIXES):
         prefix = next(p for p in _CHAIN_PREFIXES if variable.startswith(p))
         variable = variable.removeprefix(prefix)
+    if variable in _CLICK_ID_VARS and _CLICK_TOKEN.fullmatch(detection.transformed_value):
+        return False
     return not variable.startswith(_HEARSAY_VARS)
 
 

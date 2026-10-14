@@ -64,7 +64,9 @@ class TriageProgress:
 #: before a table was added is rebuilt rather than read as having nothing in it.
 #: Separate from `TriagePolicy.version`, which names the ranking that was
 #: validated and promoted; the layout changing is not the ranking changing.
-_LAYOUT = 8
+#: Raised too when what counts as evidence changes and the rules fingerprint
+#: cannot see it: 9 is an ad click ID no longer counting as level 1 evidence.
+_LAYOUT = 9
 
 
 @dataclass(frozen=True)
