@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import re
 import stat
 import sys
 from pathlib import Path, PurePosixPath
@@ -242,3 +243,65 @@ def test_a_module_with_no_licence_file_is_reported(bundle: ModuleType, tmp_path:
     unlicensed = bundle.copy_licences([("example.com/bare", source)], tmp_path / "licenses")
 
     assert unlicensed == ["example.com/bare"]
+
+
+def test_code_compiled_into_a_module_ships_its_notices_beside_the_modules_own(
+    bundle: ModuleType, tmp_path: Path
+) -> None:
+    """go-re2 carries RE2, wasi-libc and libc++ inside a WebAssembly module, and
+    their licences are not in the Go module for the copy above to find."""
+    source = tmp_path / "mod" / "go-re2@v1"
+    source.mkdir(parents=True)
+    (source / "LICENSE").write_text("MIT")
+    kept = tmp_path / "crs" / "licenses" / "go-re2"
+    (kept / "re2").mkdir(parents=True)
+    (kept / "re2" / "LICENSE").write_text("BSD")
+    dest = tmp_path / "licenses"
+
+    unlicensed = bundle.copy_licences(
+        [("github.com/wasilibs/go-re2", source)],
+        dest,
+        compiled_in={"github.com/wasilibs/go-re2": kept},
+    )
+
+    target = dest / "github.com" / "wasilibs" / "go-re2"
+    assert (target / "LICENSE").read_text() == "MIT"
+    assert (target / "compiled-in" / "re2" / "LICENSE").read_text() == "BSD"
+    assert unlicensed == []
+
+
+def test_compiled_in_code_whose_notices_are_missing_is_reported(
+    bundle: ModuleType, tmp_path: Path
+) -> None:
+    source = tmp_path / "mod" / "go-re2@v1"
+    source.mkdir(parents=True)
+    (source / "LICENSE").write_text("MIT")
+
+    unlicensed = bundle.copy_licences(
+        [("github.com/wasilibs/go-re2", source)],
+        tmp_path / "licenses",
+        compiled_in={"github.com/wasilibs/go-re2": tmp_path / "absent"},
+    )
+
+    assert unlicensed == ["github.com/wasilibs/go-re2 (the code compiled into it)"]
+
+
+def test_every_module_with_code_compiled_in_has_its_notices_kept(bundle: ModuleType) -> None:
+    kept = bundle.compiled_in(ROOT / "crs")
+
+    assert kept, "nothing listed: go-re2 at least carries RE2 and libc++"
+    for module, folder in kept.items():
+        assert any(folder.rglob("LICENSE*")), f"{module}: no licence under {folder}"
+
+
+def test_the_notices_kept_for_go_re2_are_for_the_version_the_sidecar_builds_with() -> None:
+    """An upgrade may build from other versions of RE2 and the C library, or
+    from other projects, so the list is read again whenever go-re2 moves."""
+    go_mod = (ROOT / "crs" / "go.mod").read_text(encoding="utf-8")
+    readme = (ROOT / "crs" / "licenses" / "go-re2" / "README.md").read_text(encoding="utf-8")
+
+    required = re.search(r"github\.com/wasilibs/go-re2 (v[\w.-]+)", go_mod)
+    described = re.search(r"`github\.com/wasilibs/go-re2` (v[\w.-]+)", readme)
+
+    assert required and described
+    assert described.group(1) == required.group(1)

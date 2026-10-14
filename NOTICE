@@ -22,10 +22,26 @@ Go module compiled into the sidecar is under `_internal/licenses/crs-sidecar/`.
   https://github.com/corazawaf/libinjection-go
   Licensed under the Apache License, Version 2.0
 
+  coraza-wasilibs
+  Copyright Juan Pablo Tosso and the OWASP Coraza contributors
+  https://github.com/corazawaf/coraza-wasilibs
+  Licensed under the Apache License, Version 2.0
+
+  wazero
+  Copyright the wazero authors
+  https://github.com/tetratelabs/wazero
+  Licensed under the Apache License, Version 2.0
+
   OWASP CRS (Core Rule Set)
   Copyright the OWASP CRS project
   https://github.com/coreruleset/coreruleset
   Licensed under the Apache License, Version 2.0
+
+One file here is not this project's own: `crs/rx.go` is adapted from
+coraza-wasilibs and keeps its Apache-2.0 header. The sidecar's regular
+expressions run on go-re2 (MIT), which carries RE2, wasi-libc and libc++
+compiled to WebAssembly; their notices are in `crs/licenses/go-re2/`, and ship
+beside go-re2's own licence in the packaged application.
 
 You may obtain a copy of the Apache License, Version 2.0 at
 

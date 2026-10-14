@@ -119,6 +119,11 @@ single run holds, without paying process startup per request."""
 #: half of that Go's `regexp`; `crs/main.go`'s own work — JSON, setting up the
 #: transaction — is under 2%, and no setting of the garbage collector moved
 #: the time. Running more of them is the lever this side has.
+#:
+#: Since 2026-10-14 `@rx` runs on RE2 (`crs/rx.go`), and six is still the
+#: fastest count: 19.8 and 19.4 s on the medium build, against 19.9 and
+#: 20.6 s with four and 21.5 and 21.4 s with eight. Six hold 362 MB at their
+#: peak on the large build, and the timer above was at worst 17.6 ms late.
 MAX_DEFAULT_WORKERS: Final = 6
 
 
@@ -133,9 +138,11 @@ def default_workers() -> int:
 DEFAULT_WORKERS: Final = default_workers()
 
 _MIN_SHARE: Final = 500
-"""Fewest requests worth a sidecar of their own. One starts in about 0.11 s and
-then costs about 0.6 ms a request, so below a few hundred the start-up is most
-of the work and splitting would make a small batch slower."""
+"""Fewest requests worth a sidecar of their own. One starts in about 0.7 s,
+most of it compiling RE2 (`crs/rx.go`), and then costs about 0.7 ms a request.
+It starts once a run rather than once a share, since it lives for the whole run,
+but below a few hundred requests the start is still most of the work and
+splitting would make a small run slower."""
 
 _REMEMBERED: Final = 250_000
 """Distinct requests whose CRS answer is kept, so a repeat is not replayed.

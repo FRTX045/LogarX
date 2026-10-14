@@ -31,7 +31,9 @@ go build -o crs-sidecar .                                # native
 GOOS=windows GOARCH=amd64 go build -o crs-sidecar.exe .  # cross-compile
 ```
 
-Cross-compilation is clean because Coraza's dependency tree is pure Go, and it is **required** when
+Cross-compilation is clean because Coraza's dependency tree is pure Go. RE2 is no exception: it
+arrives compiled to WebAssembly inside go-re2 and runs on wazero, which is Go too, so no C
+toolchain is involved. Cross-compiling is **required** when
 the Python interpreter running `logarc` targets a different OS than the toolchain — a Windows venv
 cannot spawn an ELF binary. `logarc` looks for `crs-sidecar.exe` on Windows and `crs-sidecar`
 elsewhere; `LOGARC_CRS_BINARY` overrides both.
@@ -39,14 +41,16 @@ elsewhere; `LOGARC_CRS_BINARY` overrides both.
 Neither binary nor the ruleset clone is committed. The packaged Windows build carries both:
 `packaging/rebuild.py` builds the sidecar fresh with `-trimpath`, and `packaging/crs_bundle.py`
 bundles it with the request rules, their data files, the ruleset's revision (as a `REVISION` file,
-since the bundle has no `.git`) and the licence of every Go module linked into it. Pinned versions — reproducing a measurement
-requires all three:
+since the bundle has no `.git`) and the licence of every Go module linked into it, with the notices
+for the code compiled into go-re2 from `licenses/go-re2/`. Pinned versions — reproducing a
+measurement requires all of them:
 
 | | |
 |---|---|
 | CRS | `4.29.0-dev`, commit `d694d465` |
 | Coraza | `v3.7.0` |
 | libinjection-go | `v0.3.2` |
+| go-re2 | `v1.6.0`: RE2 `2023-03-01`, run on wazero `v1.7.2` |
 
 ## Interface
 
@@ -61,6 +65,11 @@ stdin, one object per line: `line_no`, `client_ip`, `method`, `raw_target`, `pro
 `referer`, `user_agent`. A null `method` (Apache writes `-` for aborted connections and 408s) is
 skipped, not an error.
 
+A line `{"flush": N}` is answered with `{"flushed": N}` once everything before it has been, and
+stdout is flushed. `logarc` keeps each sidecar running for a whole replay and sends it one share
+of requests after another, each followed by a marker, so it knows where one share's answers end
+without closing the pipe.
+
 stdout, one object per **matched datum** — a rule matching in two parameters emits two lines
 sharing a `rule_id`, because collapsing them would discard the anchor for `transformed_value`.
 
@@ -74,6 +83,32 @@ of each rule's chain.
 raw target        /search?q=%27+ORDER+BY+8--+-
 transformed_value ' ORDER BY 8-- -
 ```
+
+## Regular expressions: RE2
+
+CRS's `@rx` runs on RE2 rather than Go's `regexp` (`rx.go`, adapted from coraza-wasilibs). Go's
+`regexp` was half of a sidecar's time. Measured 2026-10-14 on the three `2026-10-06` tiers, six
+sidecars each, the middle of three runs, the same detections on every one:
+
+| | Go `regexp` | RE2 |
+|---|---|---|
+| small, 63,310 lines | 10.1 s | 8.8 s |
+| medium, 235,732 lines | 28.6 s | 21.3 s |
+| large, 941,031 lines | 69.1 s | 49.0 s |
+
+What it costs: a sidecar starts in about 0.7 s instead of 0.1 s, because wazero compiles RE2 at
+launch, so the sidecars now live for a whole run instead of one per share of requests. Each
+holds about 4 MB more at its peak (six: 362 MB against 338 MB on the large tier), and the binary
+grows from 21.7 MB to 28.1 MB. A 20 ms timer in a Qt window, while six replayed the large tier,
+fired at worst 17.6 ms late, against 22.9 ms with Go's `regexp`. Six is still the fastest count:
+on the medium tier 19.8 and 19.4 s, against 19.9 and 20.6 s with four and 21.5 and 21.4 s with
+eight. Only `@rx` moved. coraza-wasilibs would also
+swap `@pm`, `@detectSQLi` and `@detectXSS` for WebAssembly builds, and importing it for `@rx`
+alone started two WebAssembly modules nobody called, which cost 0.3 s of every start.
+
+A regex engine that reads one pattern differently would change detections quietly, so
+`tests/detect/crs/test_corpus_detections.py` replays CRS's whole regression corpus and compares
+every detection, by rule and by digest, with a committed record. CI builds the sidecar and runs it.
 
 ## Configuration decisions
 
