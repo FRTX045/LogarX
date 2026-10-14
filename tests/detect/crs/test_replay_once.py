@@ -25,9 +25,11 @@ from __future__ import annotations
 import ipaddress
 import os
 import subprocess
+import sys
 import threading
 from dataclasses import replace
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -40,7 +42,6 @@ from logarc.detect.crs.sidecar import SidecarConfig, run_sidecar
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
 
 START = datetime(2024, 5, 1, tzinfo=UTC)
 ATTACK = "/search?q=1' UNION SELECT pw"
@@ -508,3 +509,30 @@ def test_a_sidecar_that_died_refuses_the_next_share_at_once(
     raised = _finishing_within(30, lambda: run_sidecar(events, config=config, workers=1))
 
     assert isinstance(raised, sidecar.CrsUnavailableError)
+
+
+def test_a_share_too_big_for_a_pipe_from_a_sidecar_that_talks_is_answered(
+    config: SidecarConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fake above passes lines in memory, so it cannot deadlock; real pipes
+    can. Here a share's records and its answers each overflow one, and the
+    sidecar fills its stderr before every answer. Writing the share with
+    nobody reading the answers, or never reading stderr, would leave both
+    processes waiting on each other."""
+    script = Path(__file__).with_name("chatty_sidecar.py")
+    real_popen = subprocess.Popen
+
+    def chatty(_argv: list[str], **kwargs: Any) -> subprocess.Popen[str]:
+        return real_popen([sys.executable, str(script)], **kwargs)
+
+    monkeypatch.setattr(subprocess, "Popen", chatty)
+    monkeypatch.setattr(sidecar, "_BATCH", 3_000)
+    events = [request(n, f"/search?q=union+{n}+{'a' * 200}") for n in range(1, 6_001)]
+    found: list[sidecar.CrsDetection] = []
+
+    raised = _finishing_within(
+        60, lambda: found.extend(run_sidecar(events, config=config, workers=1))
+    )
+
+    assert raised is None
+    assert [item.line_no for item in found] == list(range(1, 6_001))
