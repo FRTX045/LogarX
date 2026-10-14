@@ -89,11 +89,33 @@ class _ReadableStyle(QProxyStyle):
         widget: QWidget | None = None,
     ) -> int:
         minimums = {
+            QStyle.PixelMetric.PM_ScrollBarExtent: 20,
+            QStyle.PixelMetric.PM_ScrollBarSliderMin: 42,
             QStyle.PixelMetric.PM_TextCursorWidth: 2,
         }
         value = super().pixelMetric(metric, option, widget)
         minimum = minimums.get(metric)
         return max(value, minimum) if minimum is not None else value
+
+
+_CONTROLS: Final = f"""
+QScrollBar {{ background: {THEME.surface}; border: 1px solid {THEME.edge}; }}
+QScrollBar:vertical {{ width: 20px; margin: 2px; }}
+QScrollBar:horizontal {{ height: 20px; margin: 2px; }}
+QScrollBar::handle {{
+    background: {THEME.faint};
+    border: 1px solid {THEME.muted};
+    border-radius: 6px;
+    margin: 2px;
+}}
+QScrollBar::handle:vertical {{ min-height: 42px; }}
+QScrollBar::handle:horizontal {{ min-width: 42px; }}
+QScrollBar::handle:hover {{ background: {THEME.muted}; }}
+QScrollBar::handle:pressed {{ background: {THEME.accent}; }}
+QScrollBar::handle:disabled {{ background: {THEME.edge}; border-color: {THEME.edge}; }}
+QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
+QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
+"""
 
 
 def _sized(base: QFont, step: float, *, weight: QFont.Weight | None = None) -> QFont:
@@ -198,3 +220,4 @@ def apply_theme(app: QApplication) -> None:
     app.setStyle(_ReadableStyle("Fusion"))
     app.setPalette(palette())
     app.setFont(ui_font(app.font()))
+    app.setStyleSheet(_CONTROLS)
