@@ -276,6 +276,29 @@ func main() {
 		if line == "" {
 			continue
 		}
+		// A sidecar that lives for a whole run is sent one share after another,
+		// each followed by {"flush": N}. Everything before the marker has been
+		// answered by the time it is read, so the reply says so and goes out
+		// now rather than at the end of the input.
+		if strings.HasPrefix(line, `{"flush":`) {
+			var marker struct {
+				Flush int `json:"flush"`
+			}
+			if err := json.Unmarshal([]byte(line), &marker); err != nil {
+				malformed++
+				fmt.Fprintf(os.Stderr, "crs-sidecar: malformed flush marker: %v\n", err)
+				continue
+			}
+			if err := encoder.Encode(map[string]int{"flushed": marker.Flush}); err != nil {
+				fmt.Fprintf(os.Stderr, "crs-sidecar: encode: %v\n", err)
+				os.Exit(1)
+			}
+			if err := out.Flush(); err != nil {
+				fmt.Fprintf(os.Stderr, "crs-sidecar: flush: %v\n", err)
+				os.Exit(1)
+			}
+			continue
+		}
 		var rec record
 		if err := json.Unmarshal([]byte(line), &rec); err != nil {
 			malformed++
