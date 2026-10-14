@@ -124,3 +124,94 @@ def test_a_file_path_is_recognised_on_every_system(
     )
 
     assert rule_id in {item.rule_id for item in run_sidecar([request], config=CONFIG)}
+
+
+def test_a_flush_marker_is_answered_before_the_input_ends() -> None:
+    """A sidecar that lives for a whole run is sent one share after another.
+    After each share comes `{"flush": N}`, and the answers to everything before
+    it, then `{"flushed": N}`, must arrive while the input is still open. Twice,
+    so the second share is answered by the same process."""
+    import json
+    import queue
+    import subprocess
+    import threading
+
+    from logarc.detect.crs.sidecar import as_record
+
+    process = subprocess.Popen(
+        [
+            str(CONFIG.binary),
+            "--rules",
+            str(CONFIG.rules),
+            "--conf",
+            str(CONFIG.conf),
+            "--paranoia",
+            str(CONFIG.paranoia),
+            "--host",
+            CONFIG.host,
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        encoding="utf-8",
+    )
+    assert process.stdin is not None and process.stdout is not None
+    lines: queue.Queue[str] = queue.Queue()
+    reader = threading.Thread(
+        target=lambda: [lines.put(line) for line in process.stdout], daemon=True
+    )
+    reader.start()
+
+    def share(line_no: int, target: str) -> list[dict[str, object]]:
+        assert process.stdin is not None
+        process.stdin.write(json.dumps(as_record(event(target, line_no))) + "\n")
+        process.stdin.write(json.dumps({"flush": line_no}) + "\n")
+        process.stdin.flush()
+        answers = []
+        while True:
+            answer = json.loads(lines.get(timeout=30))
+            if answer == {"flushed": line_no}:
+                return answers
+            answers.append(answer)
+
+    try:
+        first = share(1, "/search?q=1%27%20UNION%20SELECT%20pw")
+        second = share(2, "/index.html")
+    finally:
+        process.stdin.close()
+        process.wait(timeout=30)
+        reader.join(timeout=30)
+        process.stdout.close()
+
+    assert 942100 in {answer["rule_id"] for answer in first}
+    assert {answer["line_no"] for answer in first} == {1}
+    assert second == []
+    assert process.returncode == 0
+
+
+def test_a_protocol_newer_than_the_sidecar_is_refused_at_once() -> None:
+    """logarc names the protocol it speaks with `--protocol`. A binary asked
+    for one it does not know must exit saying so, before reading a line,
+    rather than be sent input it cannot answer and leave the run waiting."""
+    import subprocess
+
+    result = subprocess.run(
+        [
+            str(CONFIG.binary),
+            "--rules",
+            str(CONFIG.rules),
+            "--conf",
+            str(CONFIG.conf),
+            "--protocol",
+            "3",
+        ],
+        input="",
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert "speaks protocol 2" in result.stderr

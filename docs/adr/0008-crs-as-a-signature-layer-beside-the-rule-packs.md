@@ -197,3 +197,25 @@ edits away its own wrong numbers is worth less than one that keeps them.
 nothing here treats CRS's rule ids as ground truth for a category — the mapping
 table and its withholdings stand exactly as decided above. The third bucket is
 that same refusal, applied to the answer key rather than to the findings.
+
+## Amendment, 2026-10-14 — RE2 inside the sidecar
+
+**The sidecar's `@rx` runs on RE2 instead of Go's `regexp`.** Go's `regexp` was
+half of a sidecar's time, and RE2 compiled to WebAssembly, run on wazero, takes
+CRS replay of the 941,031-line 2026-10-06 large tier from 69.1 s to 49.0 s with
+the same detections on all three tiers and on CRS's regression corpus.
+`crs/README.md` has the measurements and what they cost.
+
+That adds to the "two Apache-2.0 dependencies" above: wazero (Apache-2.0),
+go-re2 (MIT), and the code go-re2 carries compiled in — RE2 and cre2
+(BSD-3-Clause), wasi-libc with musl and cloudlibc in it, and LLVM's libc++. None
+of their licences is in the Go module, so their texts are kept in
+`crs/licenses/go-re2/` and ship beside go-re2's own. The operator itself,
+`crs/rx.go`, is adapted from coraza-wasilibs and keeps its Apache-2.0 header.
+The sidecar in the packaged application grows from about 22 MB to about 28 MB.
+
+**A detection-changing engine would now fail a test.** The regex engine is the
+second component this project does not write, beside Coraza, and either could
+change what CRS reports with nothing here changing. So every detection the
+sidecar makes on the regression corpus is pinned, by rule and by digest, in
+`tests/data/crs-corpus-detections.json`, and CI replays the corpus against it.

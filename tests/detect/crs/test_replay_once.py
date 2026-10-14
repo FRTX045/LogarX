@@ -23,15 +23,17 @@ answer.
 from __future__ import annotations
 
 import ipaddress
-import json
 import os
 import subprocess
+import sys
 import threading
 from dataclasses import replace
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from fake_sidecar import FakeCrs
 
 from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
@@ -39,7 +41,7 @@ from logarc.detect.crs import sidecar
 from logarc.detect.crs.sidecar import SidecarConfig, run_sidecar
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from collections.abc import Callable
 
 START = datetime(2024, 5, 1, tzinfo=UTC)
 ATTACK = "/search?q=1' UNION SELECT pw"
@@ -73,45 +75,10 @@ def request(
     )
 
 
-class FakeCrs:
-    """Stands in for the sidecar: records what it is sent, answers like CRS."""
-
-    def __init__(self) -> None:
-        self.sent: list[dict[str, Any]] = []
-        self.calls: list[int] = []
-
-    def __call__(self, *_args: object, **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        records = [json.loads(line) for line in str(kwargs["input"]).splitlines()]
-        self.sent.extend(records)
-        self.calls.append(len(records))
-        out = [
-            json.dumps(
-                {
-                    "line_no": record["line_no"],
-                    "rule_id": 942100,
-                    "severity": "CRITICAL",
-                    "msg": "SQL Injection Attack Detected via libinjection",
-                    "matched_var": "ARGS:q",
-                    "transformed_value": record["raw_target"],
-                    "attack_family": "attack-sqli",
-                    "paranoia_level": 1,
-                    "tags": ["attack-sqli"],
-                    "capec": [],
-                }
-            )
-            for record in records
-            if "union" in record["raw_target"].lower()
-        ]
-        return subprocess.CompletedProcess([], 0, "\n".join(out), "")
-
-    def lines_sent(self) -> list[int]:
-        return [record["line_no"] for record in self.sent]
-
-
 @pytest.fixture
 def crs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FakeCrs:
     fake = FakeCrs()
-    monkeypatch.setattr(subprocess, "run", fake)
+    monkeypatch.setattr(subprocess, "Popen", fake)
     return fake
 
 
@@ -267,21 +234,19 @@ def test_mapped_loopback_stays_apart_even_where_python_does_not_call_it_loopback
 
 
 class _BarrierCrs(FakeCrs):
-    """A fake that waits until `parties` sidecars are running at once.
+    """A fake whose shares wait until `parties` sidecars are answering at once.
 
     Concurrency proven rather than timed: sent one after another, the first
-    call waits alone and the barrier breaks, so the test fails on the fact
+    share waits alone and the barrier breaks, so the test fails on the fact
     and not on how fast this machine is."""
 
     def __init__(self, parties: int) -> None:
         super().__init__()
         self.barrier = threading.Barrier(parties, timeout=10)
-        self.lock = threading.Lock()
 
-    def __call__(self, *args: object, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+    def share(self, records: list[dict[str, Any]]) -> list[str]:
         self.barrier.wait()
-        with self.lock:
-            return super().__call__(*args, **kwargs)
+        return super().share(records)
 
 
 def _many(count: int) -> list[NormalizedEvent]:
@@ -296,7 +261,7 @@ def test_a_large_batch_is_shared_between_sidecars(
     config: SidecarConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake = _BarrierCrs(parties=4)
-    monkeypatch.setattr(subprocess, "run", fake)
+    monkeypatch.setattr(subprocess, "Popen", fake)
 
     found = run_sidecar(_many(2_000), config=config, workers=4)
 
@@ -353,7 +318,7 @@ def test_the_next_batch_starts_while_the_last_is_still_running(
     alone and the barrier breaks."""
     monkeypatch.setattr(sidecar, "_BATCH", 1)
     fake = _BarrierCrs(parties=2)
-    monkeypatch.setattr(subprocess, "run", fake)
+    monkeypatch.setattr(subprocess, "Popen", fake)
 
     found = run_sidecar([request(1), request(2, OTHER_ATTACK)], config=config, workers=2)
 
@@ -392,3 +357,198 @@ def test_batching_changes_nothing_but_the_time(
 
     assert pieces == whole
     assert len(whole) == 20
+
+
+# -- sidecars that live for the whole run -----------------------------------
+#
+# A sidecar used to start for every batch share: up to 288 on the large tier.
+# Measured 2026-10-14, that start-up is 0.14 s on Go's regexp and 0.92 s with
+# RE2 compiled to WebAssembly, whose matching is a third faster — so the faster
+# engine only pays if each sidecar starts once and is sent share after share.
+
+
+def test_a_sidecar_starts_only_when_a_share_finds_none_free(
+    crs: FakeCrs, config: SidecarConfig
+) -> None:
+    """A three-line probe must not start six of them."""
+    run_sidecar([request(1), request(2, OTHER_ATTACK), request(3, "/")], config=config, workers=6)
+
+    assert crs.spawned == 1
+
+
+def test_one_sidecar_answers_batch_after_batch(
+    crs: FakeCrs, config: SidecarConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Five batches, one share each, one worker: one process for all five."""
+    monkeypatch.setattr(sidecar, "_BATCH", 1)
+
+    found = run_sidecar(
+        [request(n, f"/p/{n}?q=1 union select {n}") for n in range(1, 6)], config=config, workers=1
+    )
+
+    assert crs.spawned == 1
+    assert crs.calls == [1, 1, 1, 1, 1]
+    assert [line for _, line in _where(found)] == [1, 2, 3, 4, 5]
+
+
+def test_never_more_sidecars_than_workers(
+    config: SidecarConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = _BarrierCrs(parties=4)
+    monkeypatch.setattr(subprocess, "Popen", fake)
+    monkeypatch.setattr(sidecar, "_BATCH", 1_000)
+
+    run_sidecar(_many(8_000), config=config, workers=4)
+
+    assert fake.spawned == 4
+    assert len(fake.calls) > 4, "several batches, so sidecars were reused"
+
+
+def test_every_sidecar_is_closed_when_the_run_ends(crs: FakeCrs, config: SidecarConfig) -> None:
+    run_sidecar(_many(2_000), config=config, workers=4)
+
+    assert crs.spawned >= 1
+    assert crs.all_closed()
+    assert all(process.stdin.closed for process in crs.processes)
+    assert all(process.stdout.closed and process.stderr.closed for process in crs.processes)
+
+
+def _finishing_within(seconds: float, call: Callable[[], object]) -> BaseException | None:
+    """Run `call` on a thread and fail the test if it has not finished in time.
+
+    A dead sidecar handed another share waits forever. Hung, a test is found
+    an hour later as a CI timeout instead of by its name.
+    """
+    outcome: list[BaseException | None] = []
+
+    def run() -> None:
+        try:
+            call()
+        except BaseException as raised:
+            outcome.append(raised)
+        else:
+            outcome.append(None)
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    thread.join(seconds)
+    assert outcome, f"still running after {seconds} s"
+    return outcome[0]
+
+
+def test_a_sidecar_dying_mid_share_fails_the_run_with_its_own_words(
+    crs: FakeCrs, config: SidecarConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An answer cut short is not an empty answer: returning what arrived would
+    look exactly like a share with nothing in it. The last share dies, so a run
+    that read it as empty would end as if nothing had gone wrong."""
+    monkeypatch.setattr(sidecar, "_BATCH", 1)
+    crs.fail_on_share = 2
+    events = [request(1), request(2, OTHER_ATTACK)]
+
+    raised = _finishing_within(30, lambda: run_sidecar(events, config=config, workers=1))
+
+    assert isinstance(raised, sidecar.CrsUnavailableError)
+    assert "something broke mid-share" in str(raised)
+    assert crs.all_closed()
+
+
+def test_every_sidecar_is_closed_when_the_run_fails(
+    crs: FakeCrs, config: SidecarConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Six processes left running after a failed enrichment would hold the case
+    open and the cores busy until the window closed."""
+    monkeypatch.setattr(sidecar, "_BATCH", 1_000)
+    crs.fail_on_share = 3
+
+    raised = _finishing_within(30, lambda: run_sidecar(_many(8_000), config=config, workers=4))
+
+    assert isinstance(raised, sidecar.CrsUnavailableError)
+    assert crs.spawned >= 1
+    assert crs.all_closed()
+
+
+def test_two_shares_on_one_sidecar_keep_their_answers_apart(
+    crs: FakeCrs, config: SidecarConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The flush marker is the only thing between one share's answers and the
+    next one's; an attack in the first must not be credited to the second."""
+    monkeypatch.setattr(sidecar, "_BATCH", 1)
+
+    found = run_sidecar([request(1), request(2, "/plain")], config=config, workers=1)
+
+    assert crs.spawned == 1
+    assert _where(found) == [("access.log", 1)]
+
+
+def test_an_answer_to_a_share_that_was_not_sent_stops_the_run(
+    config: SidecarConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A flush answered with another share's number means Python and the
+    sidecar are out of step, and every answer after it would be credited to the
+    wrong lines. Read as a detection it failed with a `KeyError` that named
+    nothing; it is a broken sidecar, and says so."""
+    monkeypatch.setattr(subprocess, "Popen", FakeCrs(answer=lambda _records: ['{"flushed": 99}']))
+
+    with pytest.raises(sidecar.CrsUnavailableError, match="out of step"):
+        run_sidecar([request(1)], config=config)
+
+
+def test_a_sidecar_that_died_refuses_the_next_share_at_once(
+    crs: FakeCrs, config: SidecarConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The second batch is already queued when the first one's sidecar dies,
+    and goes to the same sidecar. Its output has ended once, and that end was
+    read by the first share; the second must read it too, not wait forever for
+    an answer — even through a pipe that took the write."""
+    monkeypatch.setattr(sidecar, "_BATCH", 1)
+    crs.fail_on_share = 1
+    crs.pipe_outlives_process = True
+    events = [request(1), request(2, OTHER_ATTACK)]
+
+    raised = _finishing_within(30, lambda: run_sidecar(events, config=config, workers=1))
+
+    assert isinstance(raised, sidecar.CrsUnavailableError)
+
+
+def test_a_sidecar_older_than_this_code_is_named_rather_than_waited_on(
+    crs: FakeCrs, config: SidecarConfig
+) -> None:
+    """A source checkout that pulls this and keeps the binary it built before:
+    that binary reads a flush marker as a record with no method, skips it and
+    answers nothing, so a run would wait for it forever. Started with
+    `--protocol`, it refuses the flag at once, and the error says what to do."""
+    crs.predates_protocol = True
+
+    raised = _finishing_within(30, lambda: run_sidecar([request(1)], config=config))
+
+    assert isinstance(raised, sidecar.CrsUnavailableError)
+    assert "older than this logarc" in str(raised)
+    assert "logarc setup-crs" in str(raised)
+
+
+def test_a_share_too_big_for_a_pipe_from_a_sidecar_that_talks_is_answered(
+    config: SidecarConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fake above passes lines in memory, so it cannot deadlock; real pipes
+    can. Here a share's records and its answers each overflow one, and the
+    sidecar fills its stderr before every answer. Writing the share with
+    nobody reading the answers, or never reading stderr, would leave both
+    processes waiting on each other."""
+    script = Path(__file__).with_name("chatty_sidecar.py")
+    real_popen = subprocess.Popen
+
+    def chatty(_argv: list[str], **kwargs: Any) -> subprocess.Popen[str]:
+        return real_popen([sys.executable, str(script)], **kwargs)
+
+    monkeypatch.setattr(subprocess, "Popen", chatty)
+    monkeypatch.setattr(sidecar, "_BATCH", 3_000)
+    events = [request(n, f"/search?q=union+{n}+{'a' * 200}") for n in range(1, 6_001)]
+    found: list[sidecar.CrsDetection] = []
+
+    raised = _finishing_within(
+        60, lambda: found.extend(run_sidecar(events, config=config, workers=1))
+    )
+
+    assert raised is None
+    assert [item.line_no for item in found] == list(range(1, 6_001))

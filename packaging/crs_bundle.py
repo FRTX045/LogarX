@@ -22,6 +22,7 @@ import shutil
 import stat
 import subprocess
 import sys
+from collections.abc import Mapping
 from pathlib import Path, PurePosixPath
 from typing import Final
 
@@ -42,6 +43,12 @@ _LICENCES_DEST: Final = "licenses/crs-sidecar"
 
 #: What counts as a licence notice in a Go module's root.
 _NOTICE_PREFIXES: Final = ("LICENSE", "LICENCE", "COPYING", "NOTICE")
+
+#: Modules with other projects' code compiled into them, whose notices are not
+#: in the module, and the folder under `crs/licenses/` that keeps them instead.
+#: go-re2 embeds RE2, wasi-libc and libc++ built to WebAssembly; that folder's
+#: README says what came from where.
+_COMPILED_IN: Final = {"github.com/wasilibs/go-re2": "go-re2"}
 
 
 class CrsBundleError(RuntimeError):
@@ -96,15 +103,35 @@ def modules_from_go_list(output: str, *, main_dir: Path) -> list[tuple[str, Path
     return sorted(seen.items())
 
 
-def copy_licences(modules: list[tuple[str, Path]], dest: Path) -> list[str]:
+def compiled_in(crs_dir: Path) -> dict[str, Path]:
+    """Where the notices for code compiled into a module are kept, by module."""
+    return {module: crs_dir / "licenses" / name for module, name in _COMPILED_IN.items()}
+
+
+def copy_licences(
+    modules: list[tuple[str, Path]],
+    dest: Path,
+    *,
+    compiled_in: Mapping[str, Path] | None = None,
+) -> list[str]:
     """Copy each module's licence and notice files under its module path.
+
+    A module in `compiled_in` also gets that folder, under `compiled-in/`,
+    for the code built into it that its own files do not cover.
 
     Returns the modules that had none. A binary built from one of those is
     shipping code with no notice beside it, which is for a person to look at,
     not for this function to paper over.
     """
+    compiled_in = compiled_in or {}
     unlicensed = []
     for module, source in modules:
+        kept = compiled_in.get(module)
+        if kept is not None:
+            if not kept.is_dir():
+                unlicensed.append(f"{module} (the code compiled into it)")
+            else:
+                shutil.copytree(kept, dest / PurePosixPath(module) / "compiled-in")
         notices = [
             path
             for path in sorted(source.iterdir())
@@ -170,7 +197,11 @@ def prepare(*, crs_dir: Path = CRS_DIR, ruleset: Path = RULESET, stage: Path = S
         [go, "list", "-deps", "-f", "{{with .Module}}{{.Path}}\t{{.Dir}}{{end}}", "."], crs_dir
     )
     licences = stage / "licenses"
-    unlicensed = copy_licences(modules_from_go_list(listing, main_dir=crs_dir), licences)
+    unlicensed = copy_licences(
+        modules_from_go_list(listing, main_dir=crs_dir),
+        licences,
+        compiled_in=compiled_in(crs_dir),
+    )
     # The standard library is compiled in as well, under Go's own licence.
     goroot = Path(_run([go, "env", "GOROOT"], crs_dir).strip())
     if (goroot / "LICENSE").exists():
