@@ -23,6 +23,10 @@ import (
 	"github.com/corazawaf/coraza/v3/types"
 )
 
+// protocolVersion is the newest stdin protocol this build answers: 1 is records
+// until the input ends, 2 adds flush markers.
+const protocolVersion = 2
+
 // presenceTestRules fire on 100% of replayed records regardless of content:
 // each is a &REQUEST_HEADERS:X presence test on a header Apache never logs, so
 // "absent from the log" is indistinguishable from "absent from the request".
@@ -255,7 +259,18 @@ func main() {
 	// and PL2 reached 90%, while every negative control produced the same
 	// number of hostile episodes at every level from 1 to 4.
 	paranoia := flag.Int("paranoia", 2, "CRS paranoia level")
+	// The stdin protocol the caller speaks. 2 added {"flush": N}. logarc
+	// passes the number, so a binary built before it refuses the flag at once,
+	// Go's flag package exiting on one it does not know, rather than being
+	// sent markers it would read as records and never answer.
+	protocol := flag.Int("protocol", 0, "stdin protocol the caller speaks; this build speaks up to 2")
 	flag.Parse()
+	if *protocol > protocolVersion {
+		fmt.Fprintf(os.Stderr,
+			"crs-sidecar: speaks protocol %d at most, asked for %d; rebuild it\n",
+			protocolVersion, *protocol)
+		os.Exit(2)
+	}
 
 	waf, err := buildWAF(*rules, *confDir, *paranoia)
 	if err != nil {

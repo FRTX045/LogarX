@@ -188,3 +188,30 @@ def test_a_flush_marker_is_answered_before_the_input_ends() -> None:
     assert {answer["line_no"] for answer in first} == {1}
     assert second == []
     assert process.returncode == 0
+
+
+def test_a_protocol_newer_than_the_sidecar_is_refused_at_once() -> None:
+    """logarc names the protocol it speaks with `--protocol`. A binary asked
+    for one it does not know must exit saying so, before reading a line,
+    rather than be sent input it cannot answer and leave the run waiting."""
+    import subprocess
+
+    result = subprocess.run(
+        [
+            str(CONFIG.binary),
+            "--rules",
+            str(CONFIG.rules),
+            "--conf",
+            str(CONFIG.conf),
+            "--protocol",
+            "3",
+        ],
+        input="",
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert "speaks protocol 2" in result.stderr

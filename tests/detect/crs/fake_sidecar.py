@@ -94,7 +94,7 @@ class _Input:
 class FakeProcess:
     """One sidecar: records accumulate until a flush marker, then are answered."""
 
-    def __init__(self, crs: FakeCrs) -> None:
+    def __init__(self, crs: FakeCrs, argv: list[str]) -> None:
         self.crs = crs
         self._crs = crs
         self._pending: list[Record] = []
@@ -105,12 +105,17 @@ class FakeProcess:
         self.shares = 0
         if crs.fail_at_start is not None:
             self._exit(1, crs.fail_at_start)
+        elif crs.predates_protocol and "--protocol" in argv:
+            # What Go's flag package does with a flag it was never given.
+            self._exit(2, "flag provided but not defined: -protocol\nUsage of crs-sidecar:")
 
     def receive(self, line: str) -> None:
         if self.returncode is not None or not line.strip():
             return
         data = json.loads(line)
-        if set(data) != {"flush"}:
+        if set(data) != {"flush"} or self._crs.predates_protocol:
+            # A sidecar older than the marker reads it as a record with no
+            # method, skips it, and answers nothing.
             self._pending.append(data)
             return
         records, self._pending = self._pending, []
@@ -155,7 +160,9 @@ class FakeCrs:
     with that message on stderr, as a sidecar that cannot load its rules does;
     `fail_on_share` makes the nth share across all processes kill its process
     before answering; `pipe_outlives_process` lets a write to a process that
-    has exited succeed, the worst a pipe could do.
+    has exited succeed, the worst a pipe could do; `predates_protocol` is a
+    binary built before `--protocol`, which rejects the flag and never answers
+    a flush marker.
     """
 
     def __init__(self, answer: Callable[[list[Record]], list[str]] = union_rule) -> None:
@@ -166,6 +173,7 @@ class FakeCrs:
         self.fail_at_start: str | None = None
         self.fail_on_share: int | None = None
         self.pipe_outlives_process = False
+        self.predates_protocol = False
         self.killed = 0
         self._lock = threading.Lock()
 
@@ -173,8 +181,8 @@ class FakeCrs:
     def spawned(self) -> int:
         return len(self.processes)
 
-    def __call__(self, *_args: object, **_kwargs: object) -> FakeProcess:
-        process = FakeProcess(self)
+    def __call__(self, argv: list[str], **_kwargs: object) -> FakeProcess:
+        process = FakeProcess(self, argv)
         with self._lock:
             self.processes.append(process)
         return process

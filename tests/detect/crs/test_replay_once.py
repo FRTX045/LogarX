@@ -511,6 +511,22 @@ def test_a_sidecar_that_died_refuses_the_next_share_at_once(
     assert isinstance(raised, sidecar.CrsUnavailableError)
 
 
+def test_a_sidecar_older_than_this_code_is_named_rather_than_waited_on(
+    crs: FakeCrs, config: SidecarConfig
+) -> None:
+    """A source checkout that pulls this and keeps the binary it built before:
+    that binary reads a flush marker as a record with no method, skips it and
+    answers nothing, so a run would wait for it forever. Started with
+    `--protocol`, it refuses the flag at once, and the error says what to do."""
+    crs.predates_protocol = True
+
+    raised = _finishing_within(30, lambda: run_sidecar([request(1)], config=config))
+
+    assert isinstance(raised, sidecar.CrsUnavailableError)
+    assert "older than this logarc" in str(raised)
+    assert "logarc setup-crs" in str(raised)
+
+
 def test_a_share_too_big_for_a_pipe_from_a_sidecar_that_talks_is_answered(
     config: SidecarConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:

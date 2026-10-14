@@ -654,6 +654,13 @@ def _settle(
 #: left to write.
 _CLOSE_SECONDS: Final = 30
 
+#: The stdin protocol spoken to the sidecar, passed as `--protocol`: 2 is
+#: shares followed by flush markers. A binary built before the flag refuses it
+#: at once, where it would otherwise read every marker as a record with no
+#: method and never answer, and the run would wait forever. That is a source
+#: checkout that pulled this and kept its old build.
+_PROTOCOL: Final = 2
+
 
 class _Sidecar:
     """One sidecar process, sent one share after another for a whole run.
@@ -670,6 +677,7 @@ class _Sidecar:
     """
 
     def __init__(self, config: SidecarConfig) -> None:
+        self._binary = config.binary
         # Fixed argv: the binary path comes from config, never from log content.
         self._process = subprocess.Popen(
             [
@@ -682,6 +690,8 @@ class _Sidecar:
                 str(config.paranoia),
                 "--host",
                 config.host,
+                "--protocol",
+                str(_PROTOCOL),
             ],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -762,6 +772,13 @@ class _Sidecar:
             code = self._process.wait()
         self._threads[1].join(timeout=_CLOSE_SECONDS)
         said = "\n".join(self._said).strip()
+        if "flag provided but not defined: -protocol" in said or "speaks protocol" in said:
+            return CrsUnavailableError(
+                f"crs-sidecar at {self._binary} is older than this logarc, so it cannot "
+                f"be sent requests one share after another.\n"
+                f"Rebuild it with: logarc setup-crs\n"
+                f"or set {BINARY_ENV} to a current build. It said: {said.splitlines()[0]}"
+            )
         return CrsUnavailableError(f"crs-sidecar exited {code}: {said or 'no output'}")
 
     def close(self) -> None:

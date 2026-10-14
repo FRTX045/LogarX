@@ -68,7 +68,9 @@ skipped, not an error.
 A line `{"flush": N}` is answered with `{"flushed": N}` once everything before it has been, and
 stdout is flushed. `logarc` keeps each sidecar running for a whole replay and sends it one share
 of requests after another, each followed by a marker, so it knows where one share's answers end
-without closing the pipe.
+without closing the pipe. It passes `--protocol 2` too: a binary built before
+flush markers rejects the unknown flag at once, and `logarc` says to rebuild it, where it would
+otherwise read every marker as a record and never answer.
 
 stdout, one object per **matched datum** — a rule matching in two parameters emits two lines
 sharing a `rule_id`, because collapsing them would discard the anchor for `transformed_value`.
