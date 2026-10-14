@@ -20,7 +20,6 @@ import pytest
 from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
 from logarc.detect.crs.sidecar import (
-    _BATCH,
     AUTO_ENV,
     BINARY_ENV,
     CrsDetection,
@@ -405,14 +404,23 @@ def test_a_case_is_streamed_rather_than_gathered_before_the_first_call(
     Measured at the moment of the first invocation rather than by peak memory:
     how many events had to exist for work to begin is the property that decides
     whether a twelve-million-line case is enrichable, and it is exact.
+
+    The next batch is read while the last is replayed, so by the time a sidecar
+    is called the stream may be up to two batches in, never three: settling the
+    first batch waits for its answer before a third is read. Three batches in
+    all, so gathering the stream first is told apart from streaming it. The
+    bound was once one batch, and it raced the read-ahead: a worker thread that
+    started late saw the next batch's first event already pulled.
     """
+    batch = 50
+    monkeypatch.setattr("logarc.detect.crs.sidecar._BATCH", batch)
     pulled = 0
     pulled_at_first_call: list[int] = []
     records_sent: list[int] = []
 
     def events() -> Iterator[NormalizedEvent]:
         nonlocal pulled
-        for line_no in range(1, _BATCH + 2):  # one more than a single batch holds
+        for line_no in range(1, 3 * batch + 1):
             pulled += 1
             # Each its own page: identical requests are replayed once, and this
             # is about streaming, not about repeats.
@@ -427,9 +435,9 @@ def test_a_case_is_streamed_rather_than_gathered_before_the_first_call(
 
     run_sidecar(events(), config=working_config(tmp_path))
 
-    assert pulled_at_first_call[0] <= _BATCH
+    assert pulled_at_first_call[0] <= 2 * batch
     # Streaming must not be bought by dropping the tail.
-    assert sum(records_sent) == _BATCH + 1
+    assert sum(records_sent) == 3 * batch
 
 
 def test_every_record_reaches_the_sidecar_under_its_own_source(

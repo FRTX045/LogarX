@@ -717,6 +717,9 @@ def crs_detection(
         ({"var": "REQUEST_HEADERS:Referer"}, False, None),
         ({"var": "MATCHED_VARS:REQUEST_HEADERS:Referer"}, False, None),
         ({"value": "${id}"}, False, None),
+        # An ad platform's click token, as 942100 read Google's on small.
+        ({"var": "ARGS:gclid", "value": "-1--dq671umzg6zVcqRhZ2M_T9N92iG4rCJPtQ"}, False, None),
+        ({"var": "ARGS:gclid", "value": "1' OR '1'='1"}, False, "injection"),
         ({"rule_id": 913100, "family": "attack-reputation-scanner"}, False, None),
         ({"rule_id": 920250, "family": "attack-protocol"}, False, None),
         ({"rule_id": 931130, "family": "attack-rfi"}, False, None),

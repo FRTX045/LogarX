@@ -55,6 +55,7 @@ implying the CRS column was ever checked.
 | 2026-10-14 | *this pass* | **episode** — a page keeps the files it loaded, whatever kind of page | labels unchanged on every tier and the excerpt; **boundary F1 0.8520 → 0.8711 small, 0.8524 → 0.8726 medium, 0.8641 → 0.8816 large** native (CRS 0.8711 / 0.8718 / 0.8814); excerpt byte-identical | 0 → 0 everywhere, both engines | 0, one builder rule |
 | 2026-10-14 | *this pass* | **recon** — a hand-built probe for known software, refused 400 | corpus unchanged, 960 of 1,099; **caught +43 on the excerpt and medium, +10 small, +152 large** (medium 17,064 → 17,107 native, 17,065 → 17,108 CRS); **`reconnaissance` 578/642 → 621/642 excerpt, 701/729 → 711/729 small, 2,631/2,695 → 2,674/2,695 medium, 10,240/10,438 → 10,392/10,438 large**, every new answer right | 0 → 0 everywhere native; CRS unchanged (small 1, the click ID) | 1 |
 | 2026-10-14 | *this pass* | **recon** — a sweep keeps the named files it probed, on a new window option (`outranks`) | corpus byte-identical, 960 of 1,099; caught unchanged everywhere; **`enumeration` +68 / +262 / +1,021 on small / medium / large, `reconnaissance` −6 / −25 / −80**; accuracy 0.9963 → 0.9973, 0.9965 → 0.9975, 0.9966 → 0.9976; **boundary F1 0.8769 → 0.9096, 0.8791 → 0.9136, 0.8879 → 0.9184**; excerpt 17 right for 17 wrong | 0 → 0 everywhere native; CRS unchanged (small 1, the click ID) | 0, a window option on two rules |
+| 2026-10-14 | *this pass* | **crs** — an ad platform's click ID is not a payload | corpus unchanged (native only); caught unchanged on every tier and both engines; small with CRS macro F1 0.9428 → 0.9434; medium and large carry no CRS match on a click ID at any level, so cannot move | **CRS 1 → 0 on small**, the last CRS false alarm on the `2026-10-06` tiers; native 0 → 0 | 0, one engine condition |
 
 The 2026-09-20 pass is the first measured against a corpus containing a
 legitimate administrator, and it went the same way round as the recon pass: it
@@ -1306,6 +1307,41 @@ named-file probe on its own is reconnaissance by ADR-0005. It is the campaign co
 `reconnaissance` read as `enumeration`, the 25 above and nine lower-severity
 probes (`/actuator/health`, `/.well-known/security.txt`) that already yielded to
 the sweep before this pass.
+
+### 2026-10-14 — crs: an ad platform's click ID is not a payload
+
+The last CRS false alarm on the `2026-10-06` tiers, found on 2026-10-13: on
+small, `203.0.113.233`'s landing request
+`GET /?gclid=-1--dq671umzg6z…` was named an injection by 942100 (libinjection),
+which read the token's `-1--` as a number and a comment. It also placed that
+harmless visitor seventh of 127 in the Suspicious queue, in the first group,
+through PR #36's CRS level-1 evidence.
+
+**Measured first:** across the 1,262 requests carrying an ad click ID on the
+three tiers (57 / 243 / 962), CRS matched exactly one, at any paranoia level,
+and it was this one. CRS's own regression corpus keeps two click IDs as false
+positives for the neighbouring rule 942440 (`942440.yaml`, tests 19 and 20).
+
+`names_activity`, which already keeps a `${id}` placeholder and a Referer from
+naming a request, now does the same for a match on an ad platform's click-ID
+parameter (`gclid`, `gbraid`, `wbraid`, `dclid`, `fbclid`, `msclkid`, `ttclid`,
+`twclid`, `yclid`, `li_fat_id`) whose value is a token: letters, digits, `-`,
+`_` and `.` only. The detection stays attached. A quote, a space, a bracket or
+a semicolon still names, because a site that stores the click ID can be
+injected through it; the same token in any other parameter still names. Three
+mutations each fail a test (any value in a click ID; a token in any parameter;
+one name dropped). Triage reads the same check, so the visitor leaves the
+Suspicious queue altogether: 127 ranked → 126, first group 7 → 6.
+
+**A saved queue would have hidden it.** A triage index is reused while its
+identity matches, and the identity holds the rules' fingerprint, not the
+engine's code, so a case scanned before this change kept the visitor first. The
+index layout is now 9; an index written in layout 8 is rebuilt, pinned the way
+layouts 2, 5, 6 and 7 already are.
+
+Small with CRS: false alarms **1 → 0**, caught 4,042 unchanged, macro F1 0.9428
+→ 0.9434, boundary F1 0.9096 → 0.9099, the request now a page view. Native is
+unchanged everywhere; the excerpt fixtures are byte-identical.
 
 ### 2026-10-05 — recon: the tools that sweep a wordlist are enumeration
 

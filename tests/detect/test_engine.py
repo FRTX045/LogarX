@@ -1233,6 +1233,87 @@ def test_php_s_own_variable_syntax_still_names_the_request(engine: RuleEngine) -
         assert labelled.label.rule_id == "crs:933135", value
 
 
+#: The one CRS false alarm on the 2026-10-06 tiers, as the sidecar reported it.
+GCLID = "-1--dq671umzg6zVcqRhZ2M_T9N92iG4rCJPtQ0DLxJtpGszECGM45OhueC"
+
+
+def _click(parameter: str, value: str) -> CrsDetection:
+    return crs_detection(matched_var=f"ARGS:{parameter}", transformed_value=value)
+
+
+@pytest.mark.parametrize(
+    "parameter",
+    [
+        "gclid",
+        "gbraid",
+        "wbraid",
+        "dclid",
+        "fbclid",
+        "msclkid",
+        "ttclid",
+        "twclid",
+        "yclid",
+        "li_fat_id",
+    ],
+)
+def test_an_ad_click_id_does_not_name_the_request(engine: RuleEngine, parameter: str) -> None:
+    """An ad platform appends an opaque token to the landing page's link, and
+    libinjection (942100) read Google's `-1--dq671umzg…` as SQL: a number and a
+    comment. That was the only CRS false alarm on the `2026-10-06` tiers, and
+    it put a harmless visitor seventh in the Suspicious queue on small. The
+    detection stays attached; it may not name the request."""
+    events = [event(path="/", query=f"{parameter}={GCLID}", user_agent="Mozilla/5.0")]
+
+    (labelled,) = engine.label_events(events, crs=crs_index(_click(parameter, GCLID)))
+
+    assert not labelled.label.category.is_hostile
+    assert [item.rule_id for item in labelled.crs] == [942100]
+
+
+@pytest.mark.parametrize(
+    ("parameter", "value"),
+    [
+        ("fbclid", "IwAR1dug0BYxe0ukhZ2vKrdQwLAxVFRJ--Q2Y7OBJE_0uId9-Eh-sJWLdVk2E"),
+        (
+            "gclid",
+            "j0KCQiA1NebBhDDARIsAANiDD3_RJeMv8zScF--mC1jf8fO8PDYJCxD9xdwT7iQ59QIIwL-86ncQtMaAh0lEALw_wcB",
+        ),
+    ],
+)
+def test_crs_s_own_click_id_false_positives_are_click_tokens(parameter: str, value: str) -> None:
+    """CRS's regression corpus keeps these two as false positives against 942440
+    (942440.yaml, tests 19 and 20): its own maintainers' answer to the same
+    question, for the neighbouring rule."""
+    from logarc.detect.engine import names_activity
+
+    assert not names_activity(
+        crs_detection(rule_id=942440, matched_var=f"ARGS:{parameter}", transformed_value=value)
+    )
+
+
+@pytest.mark.parametrize("value", ["1' OR '1'='1", "-1 union select 1", "x<script>", "a;id"])
+def test_a_payload_carried_in_a_click_id_still_names_the_request(
+    engine: RuleEngine, value: str
+) -> None:
+    """Only an opaque token is excused. A quote, a space, a bracket or a
+    semicolon is no ad platform's, and a click ID that a site stores is as
+    injectable as any other parameter."""
+    (labelled,) = engine.label_events(
+        [event(path="/", query="gclid=x")], crs=crs_index(_click("gclid", value))
+    )
+
+    assert labelled.label.rule_id == "crs:942100", value
+
+
+def test_the_same_token_in_another_parameter_still_names_the_request(engine: RuleEngine) -> None:
+    """The excuse is the parameter an ad platform owns, not the shape alone."""
+    (labelled,) = engine.label_events(
+        [event(path="/", query="q=x")], crs=crs_index(_click("q", GCLID))
+    )
+
+    assert labelled.label.rule_id == "crs:942100"
+
+
 def test_a_real_claim_still_outranks_crs(engine: RuleEngine) -> None:
     """The other side of that fix: LOW and above is a claim, and it keeps its
     precedence even against a critical CRS detection."""

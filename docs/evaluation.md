@@ -174,16 +174,19 @@ four physical cores (Windows 11, Python 3.12). It is a different measurement fro
 |---|---:|---:|---:|---:|---:|---:|
 | Classification accuracy | 0.9973 | 0.9973 | **0.9975** | 0.9975 | 0.9976 | 0.9976 |
 | Weighted F1 | 0.9972 | 0.9972 | 0.9975 | 0.9975 | 0.9976 | 0.9976 |
-| Macro F1 | 0.9427 | 0.9428 | **0.9532** | 0.9525 | 0.9646 | 0.9639 |
-| Attack-or-not precision | 1.0000 | 0.9998 | **1.0000** | 1.0000 | 1.0000 | 1.0000 |
+| Macro F1 | 0.9427 | 0.9434 | **0.9532** | 0.9525 | 0.9646 | 0.9639 |
+| Attack-or-not precision | 1.0000 | 1.0000 | **1.0000** | 1.0000 | 1.0000 | 1.0000 |
 | Attack-or-not recall | 0.9890 | 0.9897 | 0.9976 | 0.9976 | 0.9991 | 0.9992 |
 | Caught / missed | 4,039 / 45 | 4,042 / 42 | 17,107 / 42 | 17,108 / 41 | 40,775 / 35 | 40,776 / 34 |
-| **False alarms** | **0** | 1 | **0** | **0** | **0** | **0** |
-| Boundary F1 | 0.9096 | 0.9096 | 0.9136 | 0.9137 | 0.9184 | 0.9184 |
+| **False alarms** | **0** | **0** | **0** | **0** | **0** | **0** |
+| Boundary F1 | 0.9096 | 0.9099 | 0.9136 | 0.9137 | 0.9184 | 0.9184 |
 
-**No false alarm natively on any of the three, and that is a count, not a rate.** The one CRS adds
-is on small: rule 942100 (libinjection) reading a Google Ads `gclid` click ID as SQL. CRS catches 3,
-1 and 1 more attacks than the native rules on the three tiers.
+**No false alarm on any of the three, natively or with CRS, and that is a count, not a rate.**
+Until 2026-10-14 CRS added one on small: rule 942100 (libinjection) reading a Google Ads `gclid`
+click ID as SQL, which also placed that harmless visitor seventh in the Suspicious queue. A CRS
+match on an ad platform's click-ID parameter whose value is an opaque token no longer names the
+request; CRS's own regression corpus keeps two such tokens as false positives for 942440. CRS
+catches 3, 1 and 1 more attacks than the native rules on the three tiers.
 
 Before the placeholder fix, CRS scored 45, 149 and 670 false alarms on these tiers, all of them the
 shop's unfilled `?id=${id}` requests apart from the click ID on small. The
