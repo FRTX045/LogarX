@@ -292,8 +292,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   are sent one share after another, each followed by a marker the sidecar
   answers once everything before it is answered. On its own, with Go's
   `regexp`, that took the 2026-10-06 builds from 9.4 s to 9.2 s, 28.2 s to
-  25.2 s and 77.0 s to 66.4 s, with identical detections. What it made
-  possible matters more:
+  25.2 s and 77.0 s to 66.4 s, with identical detections. A source checkout
+  whose sidecar was built before this is told to rebuild it with
+  `logarc setup-crs`, rather than left waiting. What it made possible matters
+  more:
 
 - **…and CRS's regular expressions run on RE2.** Go's `regexp` was half of a
   sidecar's time; RE2, compiled to WebAssembly and run inside the sidecar,
