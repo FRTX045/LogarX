@@ -286,6 +286,27 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   responsive: a 20 ms timer fired at worst 41.5 ms late, against 39.7 ms
   with four. Six cost about 330 MB while they run.
 
+- **…and each sidecar lives for the whole run.** One used to be started for
+  every share of every batch of 20,000 requests, up to 288 processes on the
+  941,031-line build. Now up to six start when a share first needs them and
+  are sent one share after another, each followed by a marker the sidecar
+  answers once everything before it is answered. On its own, with Go's
+  `regexp`, that took the 2026-10-06 builds from 9.4 s to 9.2 s, 28.2 s to
+  25.2 s and 77.0 s to 66.4 s, with identical detections. What it made
+  possible matters more:
+
+- **…and CRS's regular expressions run on RE2.** Go's `regexp` was half of a
+  sidecar's time; RE2, compiled to WebAssembly and run inside the sidecar,
+  takes the three builds from 10.1 s to 8.8 s, 28.6 s to 21.3 s and 69.1 s to
+  49.0 s against the step above, measured the same day, with identical
+  detections on every build and on CRS's regression corpus. It costs a slower
+  start, 0.7 s instead of 0.1 s, paid once a run now; about 4 MB more for each
+  sidecar (six: 362 MB against 338 MB); and about 6 MB more sidecar in the
+  packaged application, which now also ships the licences of the code RE2
+  brings with it. The window stays responsive while six run: a 20 ms timer
+  fired at worst 17.6 ms late. A test now replays the whole corpus and fails
+  if a Coraza or RE2 upgrade changes a single detection.
+
 - **A `${name}` placeholder is no longer called PHP injection.** A web page's
   template placeholder sent before it was filled in — `?id=${id}` — was
   reported as injection at high severity; it is what every template language
