@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from fake_sidecar import FakeCrs
 
 import logarc.detect.crs.sidecar as sidecar_module
 from logarc.core.event import NormalizedEvent
@@ -338,11 +339,9 @@ def test_an_enrichment_that_found_nothing_still_counts_as_applied(tmp_path: Path
     assert evidence.index is None
 
 
-def _fake_run(stdout: str = "", stderr: str = "", returncode: int = 0):
-    def run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess([], returncode, stdout, stderr)
-
-    return run
+def _answering(*lines: str) -> FakeCrs:
+    """A sidecar that answers every share with the same output lines."""
+    return FakeCrs(answer=lambda _records: list(lines))
 
 
 def working_config(tmp_path: Path) -> SidecarConfig:
@@ -357,7 +356,9 @@ def test_a_failing_sidecar_reports_its_own_error(
 ) -> None:
     """A non-zero exit means the replay did not happen. Returning an empty
     detection set would look exactly like a clean corpus."""
-    monkeypatch.setattr(subprocess, "run", _fake_run(stderr="cannot load rules", returncode=1))
+    fake = FakeCrs()
+    fake.fail_at_start = "cannot load rules"
+    monkeypatch.setattr(subprocess, "Popen", fake)
 
     with pytest.raises(CrsUnavailableError) as raised:
         run_sidecar([event()], config=working_config(tmp_path))
@@ -370,7 +371,7 @@ def test_an_unreadable_line_costs_one_detection_not_the_run(
 ) -> None:
     """Losing one detection beats losing the whole enrichment."""
     good = json.dumps(detection().to_dict())
-    monkeypatch.setattr(subprocess, "run", _fake_run(stdout=f"not json\n{good}\n\n"))
+    monkeypatch.setattr(subprocess, "Popen", _answering("not json", good, ""))
 
     found = run_sidecar([event()], config=working_config(tmp_path))
 
@@ -442,12 +443,12 @@ def test_a_case_is_streamed_rather_than_gathered_before_the_first_call(
             # is about streaming, not about repeats.
             yield event(path=f"/page/{line_no}", line_no=line_no)
 
-    def run(*_args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def answer(records: list[dict[str, object]]) -> list[str]:
         pulled_at_first_call.append(pulled)
-        records_sent.append(len(str(kwargs["input"]).splitlines()))
-        return subprocess.CompletedProcess([], 0, "", "")
+        records_sent.append(len(records))
+        return []
 
-    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(subprocess, "Popen", FakeCrs(answer=answer))
 
     run_sidecar(events(), config=working_config(tmp_path))
 
@@ -461,9 +462,7 @@ def test_every_record_reaches_the_sidecar_under_its_own_source(
 ) -> None:
     """A detection is keyed by `(source_file_id, line_no)`, so a case holding
     two logs must not have one's findings attributed to the other."""
-    monkeypatch.setattr(
-        subprocess, "run", _fake_run(stdout=json.dumps(detection(line_no=1).to_dict()))
-    )
+    monkeypatch.setattr(subprocess, "Popen", _answering(json.dumps(detection(line_no=1).to_dict())))
     first = event(line_no=1)
     second = NormalizedEvent(
         timestamp=START,

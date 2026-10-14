@@ -19,9 +19,13 @@ import hashlib
 import ipaddress
 import json
 import os
+import queue
 import subprocess
 import sys
+import threading
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import suppress
 from dataclasses import dataclass, field, replace
 from itertools import groupby, islice
 from pathlib import Path
@@ -506,19 +510,29 @@ def run_sidecar(
     # One pool for the whole run, so the sidecars are shared across batches and
     # never more than `workers` of them run at once. Threads rather than
     # processes because the work happens in the sidecars; a thread here only
-    # waits on its pipe.
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        running: _Dispatched | None = None
-        for source_file_id, group in groupby(events, key=_source_of):
-            # `group` is only valid until the outer iterator advances, so it is
-            # drained here rather than stashed.
-            while batch := list(islice(group, _BATCH)):
-                ahead = _dispatch(pool, config, batch, source_file_id, remembered, running, workers)
-                if running is not None:
-                    found.extend(_settle(running, remembered))
-                running = ahead
-        if running is not None:
-            found.extend(_settle(running, remembered))
+    # waits on its pipe. The sidecars outlive every share and are closed after
+    # the pool, whichever way the run ends.
+    with _Sidecars(config, workers) as sidecars:
+        pool = ThreadPoolExecutor(max_workers=workers)
+        try:
+            running: _Dispatched | None = None
+            for source_file_id, group in groupby(events, key=_source_of):
+                # `group` is only valid until the outer iterator advances, so it
+                # is drained here rather than stashed.
+                while batch := list(islice(group, _BATCH)):
+                    ahead = _dispatch(
+                        pool, sidecars, batch, source_file_id, remembered, running, workers
+                    )
+                    if running is not None:
+                        found.extend(_settle(running, remembered))
+                    running = ahead
+            if running is not None:
+                found.extend(_settle(running, remembered))
+        except BaseException:
+            # Shares not yet started would only be thrown away.
+            pool.shutdown(wait=True, cancel_futures=True)
+            raise
+        pool.shutdown(wait=True)
     return found
 
 
@@ -541,7 +555,7 @@ class _Dispatched:
 
 def _dispatch(
     pool: ThreadPoolExecutor,
-    config: SidecarConfig,
+    sidecars: _Sidecars,
     batch: Sequence[NormalizedEvent],
     source_file_id: str,
     remembered: dict[bytes, tuple[CrsDetection, ...]],
@@ -562,18 +576,18 @@ def _dispatch(
             known[key] = remembered[key]
         elif key not in pending and key not in fresh:
             fresh[key] = event
-    replies = _share(pool, config, list(fresh.values()), source_file_id, workers) if fresh else []
+    replies = _share(pool, sidecars, list(fresh.values()), source_file_id, workers) if fresh else []
     return _Dispatched(batch, keys, source_file_id, fresh, known, replies)
 
 
 def _share(
     pool: ThreadPoolExecutor,
-    config: SidecarConfig,
+    sidecars: _Sidecars,
     events: Sequence[NormalizedEvent],
     source_file_id: str,
     workers: int,
 ) -> list[Future[list[CrsDetection]]]:
-    """`_invoke`, with the requests split between up to `workers` sidecars.
+    """The requests split between up to `workers` sidecars.
 
     Each request goes to exactly one of them, and a detection names the line
     it came from, so the answers merge back by line whatever order the
@@ -582,7 +596,7 @@ def _share(
     shares = max(1, min(workers, len(events) // _MIN_SHARE))
     size = -(-len(events) // shares)
     return [
-        pool.submit(_invoke, config, events[start : start + size], source_file_id=source_file_id)
+        pool.submit(sidecars.answer, events[start : start + size], source_file_id)
         for start in range(0, len(events), size)
     ]
 
@@ -628,47 +642,180 @@ def _settle(
     return found
 
 
-def _invoke(
-    config: SidecarConfig,
-    events: Sequence[NormalizedEvent],
-    *,
-    source_file_id: str,
-) -> list[CrsDetection]:
-    payload = "\n".join(json.dumps(as_record(event)) for event in events)
-    # Fixed argv: the binary path comes from config, never from log content.
-    result = subprocess.run(
-        [
-            str(config.binary),
-            "--rules",
-            str(config.rules),
-            "--conf",
-            str(config.conf),
-            "--paranoia",
-            str(config.paranoia),
-            "--host",
-            config.host,
-        ],
-        input=payload,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=False,
-    )
-    if result.returncode != 0:
-        raise CrsUnavailableError(
-            f"crs-sidecar exited {result.returncode}: {result.stderr.strip() or 'no output'}"
-        )
+#: How long a sidecar may take to exit once its input is closed, before it is
+#: killed. Every share has been answered by then, so it has only its summary
+#: left to write.
+_CLOSE_SECONDS: Final = 30
 
-    detections: list[CrsDetection] = []
-    for line in result.stdout.splitlines():
-        if not line.strip():
-            continue
+
+class _Sidecar:
+    """One sidecar process, sent one share after another for a whole run.
+
+    Each share is followed by `{"flush": N}`, which the sidecar answers with
+    `{"flushed": N}` once everything before it is answered (`crs/main.go`). Its
+    stdout and stderr are drained by threads of their own, so a share larger
+    than a pipe holds is written while its answers flow back rather than
+    deadlocking against them.
+
+    There is no time limit on a share, as there was none on the process that
+    ran one before: CRS evaluating a request is CPU-bound and finite, and a
+    limit would have to be a guess about the slowest machine.
+    """
+
+    def __init__(self, config: SidecarConfig) -> None:
+        # Fixed argv: the binary path comes from config, never from log content.
+        self._process = subprocess.Popen(
+            [
+                str(config.binary),
+                "--rules",
+                str(config.rules),
+                "--conf",
+                str(config.conf),
+                "--paranoia",
+                str(config.paranoia),
+                "--host",
+                config.host,
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+        )
+        self._answers: queue.Queue[str | None] = queue.Queue()
+        # The last of what it said on stderr: its summary, or why it stopped.
+        self._said: deque[str] = deque(maxlen=50)
+        self._shares = 0
+        self._threads = [
+            threading.Thread(target=self._drain_stdout, daemon=True),
+            threading.Thread(target=self._drain_stderr, daemon=True),
+        ]
+        for thread in self._threads:
+            thread.start()
+
+    def _drain_stdout(self) -> None:
+        assert self._process.stdout is not None
+        for line in self._process.stdout:
+            self._answers.put(line)
+        self._answers.put(None)
+
+    def _drain_stderr(self) -> None:
+        assert self._process.stderr is not None
+        for line in self._process.stderr:
+            self._said.append(line.rstrip())
+
+    def answer(self, events: Sequence[NormalizedEvent], source_file_id: str) -> list[CrsDetection]:
+        self._shares += 1
+        marker = self._shares
+        payload = "".join(json.dumps(as_record(event)) + "\n" for event in events)
+        payload += json.dumps({"flush": marker}) + "\n"
+        assert self._process.stdin is not None
         try:
-            data = json.loads(line)
-        except json.JSONDecodeError:
-            # The sidecar writes its run summary to stderr, so anything
-            # unparseable on stdout is a genuine surprise. Skipped rather than
-            # fatal: losing one detection beats losing the whole enrichment.
-            continue
-        detections.append(CrsDetection.from_json(data, source_file_id=source_file_id))
-    return detections
+            self._process.stdin.write(payload)
+            self._process.stdin.flush()
+        except OSError:
+            raise self._failed() from None
+
+        detections: list[CrsDetection] = []
+        while True:
+            line = self._answers.get()
+            if line is None:
+                # Left for whoever asks next: an output that has ended stays
+                # ended, and a share handed this sidecar after it died would
+                # otherwise wait for an answer forever. Ending before the share
+                # was answered means it exited, and an answer cut short must not
+                # read as a share with nothing in it.
+                self._answers.put(None)
+                raise self._failed()
+            if not line.strip():
+                continue
+            try:
+                data = json.loads(line)
+            except json.JSONDecodeError:
+                # The sidecar writes its run summary to stderr, so anything
+                # unparseable on stdout is a genuine surprise. Skipped rather
+                # than fatal: losing one detection beats losing the enrichment.
+                continue
+            if "flushed" in data:
+                if data["flushed"] == marker:
+                    return detections
+                # Nothing it says after this can be trusted to the right lines.
+                self._process.kill()
+                raise CrsUnavailableError(
+                    f"crs-sidecar is out of step: it answered share {data['flushed']} "
+                    f"while share {marker} was waiting"
+                )
+            detections.append(CrsDetection.from_json(data, source_file_id=source_file_id))
+
+    def _failed(self) -> CrsUnavailableError:
+        try:
+            code = self._process.wait(timeout=_CLOSE_SECONDS)
+        except subprocess.TimeoutExpired:
+            self._process.kill()
+            code = self._process.wait()
+        self._threads[1].join(timeout=_CLOSE_SECONDS)
+        said = "\n".join(self._said).strip()
+        return CrsUnavailableError(f"crs-sidecar exited {code}: {said or 'no output'}")
+
+    def close(self) -> None:
+        """Close its input, let it exit, and kill it only if it will not."""
+        assert self._process.stdin is not None
+        with suppress(OSError):
+            self._process.stdin.close()
+        try:
+            self._process.wait(timeout=_CLOSE_SECONDS)
+        except subprocess.TimeoutExpired:
+            self._process.kill()
+            self._process.wait()
+        for thread in self._threads:
+            thread.join(timeout=_CLOSE_SECONDS)
+        for stream in (self._process.stdout, self._process.stderr):
+            if stream is not None:
+                stream.close()
+
+
+class _Sidecars:
+    """Up to `limit` sidecars for one run, started only when a share needs one.
+
+    A share takes an idle sidecar, or starts one if fewer than `limit` have
+    been, and gives it back when it is done. One that failed is given back too:
+    the run is failing, and a share that takes it is refused at once rather
+    than left waiting for an answer. Closing the pool closes every sidecar it
+    started.
+    """
+
+    def __init__(self, config: SidecarConfig, limit: int) -> None:
+        self._config = config
+        self._limit = limit
+        self._idle: queue.Queue[_Sidecar] = queue.Queue()
+        self._started: list[_Sidecar] = []
+        self._lock = threading.Lock()
+
+    def __enter__(self) -> _Sidecars:
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.close()
+
+    def answer(self, events: Sequence[NormalizedEvent], source_file_id: str) -> list[CrsDetection]:
+        sidecar = self._take()
+        try:
+            return sidecar.answer(events, source_file_id)
+        finally:
+            self._idle.put(sidecar)
+
+    def _take(self) -> _Sidecar:
+        try:
+            return self._idle.get_nowait()
+        except queue.Empty:
+            pass
+        with self._lock:
+            if len(self._started) < self._limit:
+                sidecar = _Sidecar(self._config)
+                self._started.append(sidecar)
+                return sidecar
+        return self._idle.get()
+
+    def close(self) -> None:
+        for sidecar in self._started:
+            sidecar.close()
