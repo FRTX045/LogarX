@@ -17,7 +17,8 @@ Window state — preferences, saved arrangements, the recent-case list — is th
 window's own and has no command-line equivalent by nature.
 
 Scrollbars have 20 px tracks, brighter handles, and a minimum handle length of
-42 px.
+42 px. The dividers between panels use 5 px lines with a 1 px margin on each
+side and highlight blue when hovered.
 
 The WSL launcher requests a 32 px cursor. This default applies to this application
 and respects existing environment settings. For a larger cursor, launch with
