@@ -7,6 +7,18 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A case checked with an older CRS says so when it is opened.** A case
+  keeps the CRS results it was enriched with. When the CRS on this computer
+  would now give different ones — a newer ruleset, other settings, or a
+  sidecar that reads requests differently — an amber strip under the menu
+  says the results may miss attacks, with a **Run CRS again** button that
+  replaces them and leaves the rest of the case alone. Every Windows case
+  enriched before the file-path fix below gets it: those let `/etc/passwd`,
+  `/.git/config` and the like pass unnoticed. The strip stays down on a case
+  never checked with CRS, on one checked at a paranoia level chosen on the
+  command line (a rerun from the window would quietly undo that choice), and
+  on a computer where CRS cannot run.
+
 - **Sequence rules: one request, then another, unless something came between.**
   A third kind of rule beside signatures and windows, for evidence that is
   order rather than quantity — an administrator and an intruder are both
@@ -786,7 +798,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   on, the 2026-10-06 small and large builds each catch one more attack, a
   `/.DS_Store` probe among them; false alarms stay at zero because of the next
   entry. A case enriched before this keeps its CRS results until CRS is run on
-  it again, and the configuration it records now says which sidecar made them.
+  it again, and the configuration it records now says which sidecar made them,
+  so the window offers that rerun when such a case is opened.
 
 - **A Perl client's name is no longer read as a file path.** With paths read
   correctly, CRS rule 930121 found `perl/`, one of its file paths, inside the

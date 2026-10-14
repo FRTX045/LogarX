@@ -43,7 +43,7 @@ from logarc.caseview import (
 from logarc.core.graph import GraphKind
 from logarc.core.window import EVERYTHING, TimeWindow
 from logarc.detect.crs import CrsEvidence, CrsUnavailableError, SidecarConfig, runs_by_default
-from logarc.enrich import EnrichOutcome, EnrichProgress, enrich_case
+from logarc.enrich import EnrichOutcome, EnrichProgress, crs_config, enrich_case
 from logarc.episode.builder import DEFAULT_EVIDENCE_SAMPLE
 from logarc.formats import drifted_sources
 from logarc.gui import crash, prefs, recent
@@ -54,6 +54,7 @@ from logarc.gui.canvas import ActivityCanvas
 from logarc.gui.case_chooser import CaseChooser
 from logarc.gui.client_filter import is_whole_address
 from logarc.gui.crs import CrsCard, CrsUnavailable
+from logarc.gui.crs_notice import stale_crs_notice
 from logarc.gui.density import Density, buckets_for
 from logarc.gui.evidence_panel import EvidencePanel
 from logarc.gui.format_editor import FormatChoice, FormatEditor
@@ -81,7 +82,7 @@ from logarc.timerange import nobody_here, summary
 from logarc.triage.scan import read_rule_matches
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from logarc.analysis import AnalysisResult
     from logarc.core.evidence import EvidenceRef
@@ -125,6 +126,17 @@ _TAB_NAMES = {GraphKind.TRACE: "Trace", GraphKind.BEHAVIOUR: "Behaviour"}
 #: The evidence face, spelled for Qt's rich text rather than for `QFont`. The
 #: heading is a `QLabel` of markup, so the family list has to travel as CSS.
 _MONO_CSS = ",".join(f"'{family}'" for family in MONO_FAMILIES)
+
+
+def _crs_config_now(site_hosts: Sequence[str]) -> SidecarConfig | None:
+    """The configuration running CRS on a case would use here, or None when it
+    cannot run here at all. Reads the disk, so it is asked on the worker."""
+    config = crs_config(site_hosts)
+    try:
+        config.check()
+    except CrsUnavailableError:
+        return None
+    return config
 
 
 def _settings() -> QSettings:
@@ -194,6 +206,9 @@ class MainWindow(QMainWindow):
         # been edited — and a reader who has taken in the first should be able
         # to dismiss it without losing the second.
         self._format_notice = NoticeBanner()
+        # A third, for the same reason: a case checked with an older CRS is
+        # complete and intact, and says so with an offer to run CRS again.
+        self._older_crs = NoticeBanner()
         self._clients = ClientTable()
         self._triage = TriagePanel()
         self._triage.investigate.connect(lambda ip, refs: self._reconstruct(ip, evidence=refs))
@@ -294,6 +309,7 @@ class MainWindow(QMainWindow):
         stack.setSpacing(0)
         stack.addWidget(self._notice)
         stack.addWidget(self._format_notice)
+        stack.addWidget(self._older_crs)
         # Beside the notice for the same reason, and it matters more here than
         # it looks: the range governs the client list as well as the graph, so
         # sitting over the graph alone it would claim to narrow one of the two
@@ -981,14 +997,20 @@ class MainWindow(QMainWindow):
             # it belongs on the worker beside the rest of the reading. The engine
             # never does this: the case was read from its own copy long before.
             drifted = drift_notice(drifted_sources(manifest.sources))
-            return view, snapshot, notice, drifted
+            # Here too: it reads the CRS configuration files and the ruleset's
+            # revision, and checks the sidecar is there to run again.
+            older = stale_crs_notice(
+                manifest.config if view.crs.fingerprint is not None else None,
+                _crs_config_now(manifest.config.get(Case.SITE_HOSTS_KEY) or ()),
+            )
+            return view, snapshot, notice, drifted, older
 
         self._busy(f"Opening {path}…")
 
         def done(loaded: Any) -> None:
             if generation != self._load_generation:
                 return
-            view, snapshot, notice, drifted = loaded
+            view, snapshot, notice, drifted, older = loaded
             summaries = view.listed
             self._remember_case(snapshot)
             self._case_path = path
@@ -1025,6 +1047,11 @@ class MainWindow(QMainWindow):
             # No quarantine folder: nothing was refused. Passing one would offer
             # a button that opens a directory holding nothing to do with this.
             self._format_notice.show_notice(drifted)
+            # Looked up when pressed, not bound now, so the button always runs
+            # what the window would run from the Case menu.
+            self._older_crs.show_notice(
+                older, action=("Run CRS again", lambda: self._run_crs_now())
+            )
             self._heading.setText("")
             self._tabs.setVisible(False)
             self._clients.show_clients(summaries, total=view.whole.clients)
@@ -1464,6 +1491,7 @@ class MainWindow(QMainWindow):
             self._time_filter,
             self._notice,
             self._format_notice,
+            self._older_crs,
             self._tabs,
             self._heading,
             self._legend,
