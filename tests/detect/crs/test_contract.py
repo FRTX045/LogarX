@@ -16,6 +16,7 @@ the evidence of it would be four lines of "skipped" that a green tick hides.
 from __future__ import annotations
 
 import os
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
@@ -92,3 +93,34 @@ def test_detections_carry_the_line_they_came_from() -> None:
 
     assert {item.line_no for item in detections} == {2}
     assert {item.source_file_id for item in detections} == {"access.log"}
+
+
+#: Requests whose file path only CRS's word lists recognise, each with the rule
+#: that names it. The lists are written with forward slashes, and the rules
+#: clean the path with `t:normalizePath` or `t:normalizePathWin` before
+#: looking. Coraza cleans it with Go's `path/filepath`, which on Windows turns
+#: every `/` into `\`, so on the Windows sidecar none of these fired and every
+#: one passed as harmless; on Linux they all fired. `crs/paths.go` cleans
+#: paths the same way on both.
+PATHS_CRS_READS = [
+    pytest.param("/get?file=/etc/passwd", None, None, 930120, id="os-file-in-a-parameter"),
+    pytest.param("/.git/config", None, None, 930130, id="restricted-file"),
+    pytest.param("/get?cmd=/bin/bash", None, None, 932160, id="unix-shell"),
+    pytest.param("/get", "cat /root/.ssh/id_rsa", None, 930121, id="os-file-in-the-user-agent"),
+    pytest.param(
+        "/get", None, "http://example.com/?f=/etc/shadow", 932161, id="unix-shell-in-the-referer"
+    ),
+]
+
+
+@pytest.mark.parametrize(("target", "user_agent", "referer", "rule_id"), PATHS_CRS_READS)
+def test_a_file_path_is_recognised_on_every_system(
+    target: str, user_agent: str | None, referer: str | None, rule_id: int
+) -> None:
+    request = replace(
+        event(target, 1),
+        user_agent=user_agent or "curl/8.0",
+        referer=referer,
+    )
+
+    assert rule_id in {item.rule_id for item in run_sidecar([request], config=CONFIG)}

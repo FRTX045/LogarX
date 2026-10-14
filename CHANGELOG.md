@@ -753,6 +753,28 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **On Windows, CRS now recognises file paths.** CRS keeps lists of system
+  files, secrets and shell paths written with `/`, and tidies a request's path
+  before looking. On Windows that tidying wrote `\` instead, so the Windows
+  build let `/etc/passwd` in a parameter, `/.git/config`, `/bin/bash` and a
+  path in the User-Agent pass as harmless: on CRS's own test corpus it found
+  104 fewer things than the Linux build, in six rules. Paths are now tidied
+  the same way everywhere, and Windows finds exactly what Linux does. With CRS
+  on, the 2026-10-06 small and large builds each catch one more attack, a
+  `/.DS_Store` probe among them; false alarms stay at zero because of the next
+  entry. A case enriched before this keeps its CRS results until CRS is run on
+  it again, and the configuration it records now says which sidecar made them.
+
+- **A Perl client's name is no longer read as a file path.** With paths read
+  correctly, CRS rule 930121 found `perl/`, one of its file paths, inside the
+  User-Agent `libwww-perl/6.72`, and called 17, 72 and 151 ordinary requests
+  on the three 2026-10-06 builds path traversal, as the Linux build always
+  had. A User-Agent made only of `name/version` names a client, so a match of
+  CRS's file lists inside one stays attached as evidence but no longer names
+  the request. A path in the User-Agent, such as `cat /root/.ssh/id_rsa`,
+  still does. A Suspicious list saved before this is rebuilt rather than
+  reused.
+
 - **An ad click ID is no longer read as an attack.** CRS's libinjection check
   read a Google Ads click ID in a landing-page link (`?gclid=-1--dq671…`) as
   SQL. That was the only CRS false alarm on the three 2026-10-06 builds, and it

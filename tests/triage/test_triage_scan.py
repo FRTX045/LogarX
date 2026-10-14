@@ -309,3 +309,20 @@ def test_an_index_written_in_layout_eight_is_rebuilt(tmp_path, monkeypatch):
     current = scan.scan_case(case.root)
     assert not current.cached
     assert current.path != old.path
+
+
+def test_an_index_written_in_layout_nine_is_rebuilt(tmp_path, monkeypatch):
+    """Read as current, it would keep a visitor whose only level-1 evidence was
+    a file-list match inside a client's name, `libwww-perl/6.72`, in the first
+    group."""
+    from logarc.triage import scan
+
+    with Case.create(tmp_path / "case") as case:
+        case.store.write(events())
+        case.store.finalize()
+    monkeypatch.setattr(scan, "_LAYOUT", 9)
+    old = scan.scan_case(case.root)
+    monkeypatch.undo()
+    current = scan.scan_case(case.root)
+    assert not current.cached
+    assert current.path != old.path

@@ -762,15 +762,18 @@ def test_a_level_two_rescue_label_is_not_exploit_evidence():
     from logarc.triage.profile import profile_client
 
     engine = RuleEngine(default_rules())
+    # A log file in the User-Agent. This was `libwww-perl/6.72` until a file-list
+    # match inside a client's `name/version` stopped naming the request at all
+    # (`_FILE_LIST_RULES` in detect/engine.py); the level is what is tested.
     script = crs_detection(
         rule_id=930121,
         family="attack-lfi",
         var="REQUEST_HEADERS:User-Agent",
-        value="libwww-perl/6.72",
+        value="/var/log/apache2/access.log",
         level=2,
         msg="OS File Access Attempt in REQUEST_FILENAME",
     )
-    sample = events(count=2, user_agent="libwww-perl/6.72")
+    sample = events(count=2, user_agent="/var/log/apache2/access.log")
     (first, _) = engine.label_events(sample, crs={("source", 1): [script]})
     assert first.label.rule_id == "crs:930121"
     profile = profile_client(sample, engine, crs={("source", 1): [script]})

@@ -1314,6 +1314,75 @@ def test_the_same_token_in_another_parameter_still_names_the_request(engine: Rul
     assert labelled.label.rule_id == "crs:942100"
 
 
+def _file_list(rule_id: int, user_agent: str) -> CrsDetection:
+    """A CRS file-list rule matching in the User-Agent, lower-cased as CRS reports it."""
+    return crs_detection(
+        rule_id=rule_id,
+        family="attack-lfi" if rule_id // 1000 == 930 else "attack-rce",
+        msg="OS File Access Attempt in REQUEST_HEADERS",
+        matched_var="REQUEST_HEADERS:User-Agent",
+        transformed_value=user_agent.lower(),
+    )
+
+
+@pytest.mark.parametrize("rule_id", [930121, 932161])
+@pytest.mark.parametrize(
+    "user_agent", ["libwww-perl/6.72", "Python-urllib/3.9", "w3m/0.5.1 libwww-perl/6.08"]
+)
+def test_a_client_s_name_and_version_is_not_a_file_path(
+    engine: RuleEngine, rule_id: int, user_agent: str
+) -> None:
+    """930121 looks for twelve hundred file paths in the User-Agent, and one is
+    `perl/`, which `libwww-perl/6.72` contains across its name and version. On
+    the 2026-10-06 tiers that was every one of its User-Agent matches and the
+    whole of CRS's false alarms once the Windows sidecar read paths the way the
+    Linux one does: 17 on small, 72 on medium. A User-Agent made only of
+    `name/version` products names a client; it cannot be reading a file. The
+    detection stays attached; it may not name the request."""
+    events = [event(path="/api/stock", query="id=2", user_agent=user_agent)]
+
+    (labelled,) = engine.label_events(events, crs=crs_index(_file_list(rule_id, user_agent)))
+
+    assert not labelled.label.category.is_hostile
+    assert [item.rule_id for item in labelled.crs] == [rule_id]
+
+
+@pytest.mark.parametrize(
+    "user_agent",
+    [
+        "cat /root/.ssh/id_rsa",
+        "/etc/shadow",
+        "etc/passwd",
+        "Mozilla/5.0 (X11; Linux x86_64) /etc/passwd",
+        "libwww-perl/6.72 /etc/passwd",
+    ],
+)
+def test_a_file_path_in_the_user_agent_still_names_the_request(
+    engine: RuleEngine, user_agent: str
+) -> None:
+    """Every User-Agent attack in CRS's own corpus for these rules is a path or
+    a command, and none is a list of products. A path beside a product, or a
+    product whose version is not a number, is not excused either."""
+    (labelled,) = engine.label_events(
+        [event(path="/get", user_agent=user_agent)],
+        crs=crs_index(_file_list(930121, user_agent)),
+    )
+
+    assert labelled.label.rule_id == "crs:930121", user_agent
+
+
+def test_a_client_s_name_still_names_the_request_for_another_rule(engine: RuleEngine) -> None:
+    """The excuse is the file lists, which read a product boundary as a path,
+    not the shape of the User-Agent alone."""
+    detection = replace(_file_list(932161, "libwww-perl/6.72"), rule_id=932239)
+
+    (labelled,) = engine.label_events(
+        [event(path="/get", user_agent="libwww-perl/6.72")], crs=crs_index(detection)
+    )
+
+    assert labelled.label.rule_id == "crs:932239"
+
+
 def test_a_real_claim_still_outranks_crs(engine: RuleEngine) -> None:
     """The other side of that fix: LOW and above is a claim, and it keeps its
     precedence even against a critical CRS detection."""

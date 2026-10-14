@@ -65,8 +65,9 @@ class TriageProgress:
 #: Separate from `TriagePolicy.version`, which names the ranking that was
 #: validated and promoted; the layout changing is not the ranking changing.
 #: Raised too when what counts as evidence changes and the rules fingerprint
-#: cannot see it: 9 is an ad click ID no longer counting as level 1 evidence.
-_LAYOUT = 9
+#: cannot see it: 9 is an ad click ID no longer counting as level 1 evidence,
+#: 10 a file-list match inside a client's `name/version` no longer counting.
+_LAYOUT = 10
 
 
 @dataclass(frozen=True)

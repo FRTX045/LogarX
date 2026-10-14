@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+import logarc.detect.crs.sidecar as sidecar_module
 from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
 from logarc.detect.crs.sidecar import (
@@ -236,6 +237,21 @@ def test_the_fingerprint_changes_when_the_paranoia_level_does(tmp_path: Path) ->
     loud = SidecarConfig(rules=tmp_path, conf=tmp_path, paranoia=3)
 
     assert quiet.fingerprint() != loud.fingerprint()
+
+
+def test_the_fingerprint_changes_when_the_sidecar_reads_requests_differently(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The binary is part of what CRS reports, not only the rules: until
+    `crs/paths.go` the Windows build missed every rule that looks for a file
+    path. A case enriched before a change like that and one enriched after must
+    not claim one configuration."""
+    config = SidecarConfig(rules=tmp_path, conf=tmp_path)
+    before = config.fingerprint()
+
+    monkeypatch.setattr(sidecar_module, "SIDECAR_REVISION", sidecar_module.SIDECAR_REVISION + 1)
+
+    assert config.fingerprint() != before
 
 
 def test_the_recorded_config_names_what_produced_a_result(tmp_path: Path) -> None:
