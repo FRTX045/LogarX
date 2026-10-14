@@ -753,6 +753,17 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An ad click ID is no longer read as an attack.** CRS's libinjection check
+  read a Google Ads click ID in a landing-page link (`?gclid=-1--dq671…`) as
+  SQL. That was the only CRS false alarm on the three 2026-10-06 builds, and it
+  placed a harmless visitor seventh in the Suspicious list. A CRS match on an
+  ad platform's click-ID parameter (`gclid`, `fbclid`, `msclkid` and their
+  kind) whose value is only letters, digits, `-`, `_` and `.` stays attached
+  as evidence but no longer names the request or puts its client first. A
+  quote, a space or a bracket in a click ID still counts. With CRS on, the
+  small build goes from one false alarm to none; nothing else moves. A
+  Suspicious list saved before this is rebuilt rather than reused.
+
 - **A query parameter named like a command is no longer command injection.**
   `?sort=price&cat=shoes`, `?page=2&id=5` and `&cat[]=` read as `&cat`, `&id`
   after the query separator and matched the shell-command rule. After `&` a
