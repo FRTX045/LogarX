@@ -171,7 +171,14 @@ branch = true
 #
 # `bench_worker` is out of reach even so — it is a `python -m` entry point, not
 # a multiprocessing worker — which is why it stays omitted below.
-concurrency = ["multiprocessing"]
+#
+# And threads, which naming `multiprocessing` alone stopped coverage tracing:
+# the default it replaced was `thread`. Everything a `ThreadPoolExecutor` ran
+# read as never run, which hid the CRS sidecar's per-share code all along and,
+# once the sidecars became long-lived, its whole pool: `detect/crs/sidecar.py`
+# measured 77.75% without `thread` and 96.93% with it on 2026-10-14, the same
+# 130 tests passing both times.
+concurrency = ["multiprocessing", "thread"]
 parallel = true
 sigterm = true
 # One module, excluded because the number would be a lie, not because the code
@@ -210,11 +217,11 @@ omit = [
 # Measured rather than argued: a counter inside `Job.run` says it ran 261 times
 # during the GUI suite. Coverage reports those same lines as never run.
 #
-# Two ways out were tried and neither is taken:
+# Two ways out were tried, and neither reaches them:
 #
-# * `concurrency = ["multiprocessing", "thread"]` - identical numbers, to the
-#   statement. The default already includes threads; it is foreign threads that
-#   are out of reach, not unlisted ones.
+# * `thread` in `concurrency` above - identical numbers for these modules, to
+#   the statement. It reaches threads the `threading` module started, which is
+#   why it is there, and Qt's are not among them.
 # * `COVERAGE_CORE=sysmon` - `sys.monitoring` is process-wide and would see
 #   them, but this coverage cannot measure branches under it. Branch coverage is
 #   worth more than these lines; the omit list above exists because a number
