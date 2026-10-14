@@ -20,6 +20,10 @@ Scrollbars have 20 px tracks, brighter handles, and a minimum handle length of
 42 px. The dividers between panels use 5 px lines with a 1 px margin on each
 side and highlight blue when hovered.
 
+On WSL, the menu strip has 34 × 28 px minimize, maximize/restore, and close
+buttons with 15 px symbols. Drag its empty space to move the window,
+double-click to maximize or restore, and drag an edge or corner to resize.
+
 The WSL launcher requests a 32 px cursor. This default applies to this application
 and respects existing environment settings. For a larger cursor, launch with
 `XCURSOR_SIZE=48 logarc-gui`.

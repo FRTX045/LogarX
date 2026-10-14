@@ -73,6 +73,7 @@ from logarc.gui.theme import GAP, MONO_FAMILIES, PAD, TIGHT, apply_theme, headin
 from logarc.gui.time_filter import TimeFilterBar
 from logarc.gui.triage import TriagePanel
 from logarc.gui.who_else import WhoElseDialog, unavailable
+from logarc.gui.window_controls import install_window_controls
 from logarc.gui.workers import run_job
 from logarc.ingest.pipeline import IngestCancelled
 from logarc.ingest.quarantine import DIRECTORY_NAME as QUARANTINE_DIR
@@ -232,6 +233,7 @@ class MainWindow(QMainWindow):
 
         self._build_layout()
         self._build_menu()
+        self._window_controls = install_window_controls(self)
         # What the reader left set at the last launch, put back. The menu used
         # to do this as a side effect of checking its own boxes; with the menu
         # entries gone it is said outright.

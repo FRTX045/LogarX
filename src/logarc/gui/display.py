@@ -12,7 +12,11 @@ def is_wsl() -> bool:
 
 
 def configure_display() -> None:
-    """Use a larger WSL cursor, keeping explicit overrides."""
+    """Use a larger WSL cursor, keeping explicit overrides.
+
+    Window buttons are drawn by `window_controls`; no decoration plugin is
+    forced, since plugins can hide buttons according to desktop settings.
+    """
     if not is_wsl():
         return
     os.environ.setdefault("XCURSOR_SIZE", "32")
