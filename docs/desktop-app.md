@@ -23,6 +23,8 @@ side and highlight blue when hovered.
 On WSL, the menu strip has 34 × 28 px minimize, maximize/restore, and close
 buttons with 15 px symbols. Drag its empty space to move the window,
 double-click to maximize or restore, and drag an edge or corner to resize.
+Graph fullscreen hides the strip and restores the previous window state when
+leaving fullscreen.
 
 The WSL launcher requests a 32 px cursor. This default applies to this application
 and respects existing environment settings. For a larger cursor, launch with

@@ -519,3 +519,19 @@ def test_the_button_and_the_menu_agree(qt_app: QApplication) -> None:
     assert ticked is True
     assert window._fullscreen_action.isChecked() is False
     window.close()
+
+
+def test_graph_fullscreen_restores_maximised_window(qt_app: QApplication) -> None:
+    window = MainWindow()
+    window.showMaximized()
+    qt_app.processEvents()
+    window._full_screen.apply(True)
+    qt_app.processEvents()
+    assert window.isFullScreen()
+    assert window.menuBar().isHidden()
+
+    window._full_screen.apply(False)
+    qt_app.processEvents()
+    assert window.isMaximized()
+    assert window.menuBar().isVisible()
+    window.close()

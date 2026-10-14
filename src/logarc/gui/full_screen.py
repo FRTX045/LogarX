@@ -43,6 +43,7 @@ class FullScreen:
         self._cover = cover
         self._action: QAction | None = None
         self._on = False
+        self._was_maximised = False
 
         # What was hidden on the way in, so only that is shown on the way out.
         # A reader who turned the traffic band off in Preferences must not find
@@ -71,6 +72,7 @@ class FullScreen:
         self._canvas.set_expanded(on)
 
         if on:
+            self._was_maximised = self._window.isMaximized()
             self._covered = [w for w in self._cover() if w is not None and not w.isHidden()]
             for widget in self._covered:
                 widget.hide()
@@ -79,7 +81,10 @@ class FullScreen:
             for widget in self._covered:
                 widget.show()
             self._covered = []
-            self._window.showNormal()
+            if self._was_maximised:
+                self._window.showMaximized()
+            else:
+                self._window.showNormal()
         # Refitted once the new geometry exists, not now. `showFullScreen`
         # returns before Qt has laid the window out again, so fitting here
         # frames the graph to the size the canvas has just stopped being —
