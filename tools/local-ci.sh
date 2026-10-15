@@ -110,6 +110,9 @@ linux_tests() {  # linux_tests <python version>
   local log=$RUN/linux-$1.log
   { image "$1" && in_container "$1" '
       (cd crs && go build -o crs-sidecar .)
+      # On every CPU path, as ci.yml does (crs/memmove_test.go).
+      (cd crs && go test -ldflags=-checklinkname=0 -count=1 ./... &&
+        GODEBUG=cpu.all=off go test -ldflags=-checklinkname=0 -count=1 ./...)
       python -c "import sys; print(\"python\", sys.version.split()[0])"
       pytest -p no:cacheprovider --ignore=tests/gui -n 4 \
         --cov=logarc --cov-report=term-missing --cov-fail-under=0
@@ -178,8 +181,12 @@ windows_side() {
   # A junction, made by PowerShell: through Git Bash, `cmd //c mklink /J` had
   # its switch mangled and failed with nothing but a line on stderr.
   powershell.exe -NoProfile -Command "New-Item -ItemType Junction -Path '$(cygpath -w "$WT/vendor/coreruleset")' -Target '$(cygpath -w "$RULESET")' | Out-Null"
+  # Built, then tested on every CPU path, as ci.yml does (crs/memmove_test.go).
   if [ ! -d "$WT/vendor/coreruleset/rules" ] ||
-     ! (cd "$WT/crs" && "$GO" build -o crs-sidecar.exe .) > "$RUN/sidecar-windows.log" 2>&1; then
+     ! (cd "$WT/crs" && "$GO" build -o crs-sidecar.exe . &&
+        "$GO" test -ldflags=-checklinkname=0 -count=1 ./... &&
+        GODEBUG=cpu.all=off "$GO" test -ldflags=-checklinkname=0 -count=1 ./...) \
+       > "$RUN/sidecar-windows.log" 2>&1; then
     for py in $PYTHONS; do record "windows-$py" 2; done; return
   fi
   for py in $PYTHONS; do windows_tests "$py"; done

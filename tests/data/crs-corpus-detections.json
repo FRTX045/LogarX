@@ -1,8 +1,8 @@
 {
   "crs_revision": "d694d465951ee06347214f1291ae096e40700001",
-  "requests": 5051,
+  "requests": 5060,
   "detections": 4336,
-  "digest": "9ca1a14ad324584b173e0d3342b5395fb57473ace96eb35dee517b2ebb668cb6",
+  "digest": "c9cd7c40126adee58cc55e1b7efcbf2e4feb34b7feab48f53f4a9646643cc56c",
   "by_rule": {
     "911100": 17,
     "913100": 5,

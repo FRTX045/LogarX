@@ -1,7 +1,7 @@
 """What the sidecar detects on the CRS regression corpus, pinned.
 
 The sidecar is built from code this project does not write: Coraza, and the
-RE2 engine that evaluates CRS's regular expressions (`crs/wasm.go`). Either can
+RE2 engine that evaluates CRS's regular expressions (`crs/rx.go`). Either can
 change what CRS reports with nothing here changing. A regex engine that reads
 one pattern differently from Go's would add or lose detections quietly, and the
 contract tests replay four requests, too few to notice. This replays every
@@ -10,6 +10,13 @@ request the corpus holds and compares the answer with the one recorded.
 Counts per rule and a digest are recorded rather than the detections, because
 the detections carry attack payloads verbatim and a virus scanner quarantined a
 file of them.
+
+The corpus itself carries them too, and a scanner takes those as well:
+Defender removed three of its files from a Windows checkout, and the record of
+2026-10-14 was written from the 5,051 requests left rather than the 5,060 CI
+replays. So a checkout missing any corpus file is not compared, and is never
+recorded from: the test says which files are gone, and skips unless
+`LOGARC_REQUIRE_CRS=1`, where it fails.
 
 After a deliberate change, such as a Coraza or ruleset upgrade, regenerate the
 record and read the per-rule diff before committing it:
@@ -26,6 +33,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -50,6 +58,44 @@ pytestmark = pytest.mark.skipif(
     _unbuilt and os.environ.get(REQUIRE_ENV) != "1",
     reason=f"CRS sidecar or ruleset not built; see crs/README.md (set {REQUIRE_ENV}=1 to require)",
 )
+
+
+def missing_from_corpus() -> list[str]:
+    """Corpus files the ruleset's git checkout tracks and no longer has.
+
+    Empty where that cannot be asked, a ruleset that is not a git checkout: the
+    count in the record still catches a short corpus there, only less helpfully.
+    """
+    try:
+        listed = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(CONFIG.rules),
+                "ls-files",
+                "--deleted",
+                "--",
+                "tests/regression/tests",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return []
+    return listed.split()
+
+
+def incomplete_corpus(missing: list[str]) -> str:
+    names = ", ".join(Path(one).name for one in missing[:5])
+    more = f" and {len(missing) - 5} more" if len(missing) > 5 else ""
+    return (
+        f"{len(missing)} CRS corpus file(s) are missing from {CONFIG.rules} ({names}{more}), "
+        "most likely removed by a virus scanner, which takes CRS's attack samples for "
+        "malware. A short corpus cannot be compared with the record. Restore them with "
+        f"`git -C {CONFIG.rules} checkout -- tests/regression/tests` and exclude that "
+        "folder from scanning, or rely on CI, whose clone is complete."
+    )
 
 
 def corpus_events() -> list[NormalizedEvent]:
@@ -88,6 +134,10 @@ def replay_corpus() -> dict[str, Any]:
 
 
 def test_the_corpus_is_detected_exactly_as_recorded() -> None:
+    if missing := missing_from_corpus():
+        if os.environ.get(REQUIRE_ENV) == "1":
+            pytest.fail(incomplete_corpus(missing))
+        pytest.skip(incomplete_corpus(missing))
     recorded = json.loads(RECORDED.read_text(encoding="utf-8"))
 
     now = replay_corpus()
@@ -104,6 +154,8 @@ def test_the_corpus_is_detected_exactly_as_recorded() -> None:
 
 
 if __name__ == "__main__":
+    if missing := missing_from_corpus():
+        raise SystemExit(f"not written: {incomplete_corpus(missing)}")
     # Bytes, so Windows writes the same `\n` endings as everywhere else:
     # `tests/data` is stored exactly as written.
     RECORDED.write_bytes((json.dumps(replay_corpus(), indent=2) + "\n").encode("utf-8"))

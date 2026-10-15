@@ -119,6 +119,20 @@ jobs:
             go build -o crs-sidecar .
           fi
 
+      # The sidecar has to work on whatever CPU a user has, and some of what Go
+      # runs depends on it. The RE2 build of 2026-10-14 crashed loading CRS on
+      # Intel CPUs from Ice Lake on, and nowhere else, because Go's memmove takes
+      # another path there (crs/memmove_test.go). Which CPU a runner draws is
+      # luck, so the test takes that path on purpose, and the second run turns
+      # every optional CPU feature off, the other end of the range.
+      # -checklinkname=0 lets the test reach the runtime's switch for that path.
+      - name: Test the CRS sidecar on every CPU path
+        shell: bash
+        working-directory: crs
+        run: |
+          go test -ldflags=-checklinkname=0 -count=1 ./...
+          GODEBUG=cpu.all=off go test -ldflags=-checklinkname=0 -count=1 ./...
+
       # The engine and the window are run separately, and the reason is a
       # crash rather than tidiness. The GUI suite segfaults on the Linux
       # runners now and then — three times so far, on different Python versions

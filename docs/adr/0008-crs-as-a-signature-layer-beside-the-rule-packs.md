@@ -219,3 +219,57 @@ second component this project does not write, beside Coraza, and either could
 change what CRS reports with nothing here changing. So every detection the
 sidecar makes on the regression corpus is pinned, by rule and by digest, in
 `tests/data/crs-corpus-detections.json`, and CI replays the corpus against it.
+
+## Amendment, 2026-10-15 — RE2 compiled ahead, not at start-up
+
+**The amendment above shipped a sidecar that crashed on newer Intel CPUs.**
+go-re2 v1.6.0 ran RE2 on wazero v1.7.2, which compiled the WebAssembly to
+machine code when the sidecar started, and that code called Go's `memmove`
+counting on it to leave DX alone. From Go 1.24 on, `memmove` writes DX when it
+copies 2 KiB or more with `REP MOVSQ`, which it does on Intel CPUs with both
+ERMS and FSRM: Ice Lake, 2019, and most Intel CPUs since. On those the sidecar
+panicked loading CRS (`wasm error: invalid table access`), and on no other.
+wazero fixed it in v1.9.0 (its #2375). It was not seen here because the one
+computer that measured the change, and that ran CI while GitHub's runners were
+unavailable, has a Comet Lake CPU without FSRM; a teammate's machine found it,
+and one of GitHub's runners did on the first run after they came back.
+
+**Decision: go-re2 v1.12.0, which translates RE2 to Go before the build.** Its
+default build runs wasm2go over the WebAssembly module and compiles the result
+with the rest of the sidecar, so nothing generates machine code at run time and
+wazero is not linked in at all. That retires the kind of fault, not only this
+one: what runs is ordinary Go, compiled by the Go toolchain that knows its own
+calling convention. v1.10.0, which keeps wazero with the fix, was measured
+beside it and was slower on every build. Measured 2026-10-15, alternating, six
+sidecars, the middle of three runs, identical detections throughout:
+
+| | Go `regexp` | go-re2 v1.6.0 | go-re2 v1.12.0 |
+|---|---|---|---|
+| start-up | 0.12 s | 1.02 s | 0.32 s |
+| small, 63,310 lines | 13.6 s | 11.2 s | 9.4 s |
+| medium, 235,732 lines | 31.7 s | 27.0 s | 20.7 s |
+| large, 941,031 lines | 90.1 s | 64.1 s | 56.2 s |
+
+The Go `regexp` column was measured in a separate run against v1.12.0, whose
+own figures there were 8.1 s, 21.3 s and 53.8 s. Go `regexp`'s three large runs
+spread from 80.5 to 105.2 s, the widest of any. The machine was slower than on
+2026-10-14 throughout, so none of these compares with the figures in the
+amendment above.
+
+The licence folder gains Abseil, which the newer RE2 is built with, and keeps
+the rest at the versions wasi-sdk-25 builds from; `crs/licenses/go-re2/README.md`
+lists them.
+
+**What keeps it from happening again.** A CPU-dependent fault passes every test
+on a machine that does not take the path, so `crs/memmove_test.go` takes it on
+purpose: it sets the runtime's own switch for that copy path, loads CRS, and
+matches an attack through RE2, then does the same as the CPU copies. CI runs it
+on Windows and Linux, and again with `GODEBUG=cpu.all=off`. Against go-re2
+v1.6.0 it fails on any amd64 machine with the panic above. And the merge gate
+is GitHub's CI again, whose runners are a mix of CPUs, rather than one desk.
+
+**The corpus record was also short.** Defender had removed three CRS corpus
+files from the checkout the record was written from, so "the same detections
+on CRS's regression corpus" above covered 5,051 of 5,060 requests. The record is
+now written from a clean clone, and a checkout missing corpus files is neither
+compared nor recorded from.
