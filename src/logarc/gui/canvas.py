@@ -211,25 +211,19 @@ _ZOOM_STEP: Final = 1.15
 _MIN_SCALE: Final = 0.15
 _MAX_SCALE: Final = 6.0
 
-#: The canvas grid: how far apart the dots sit, in scene units, and how wide
-#: they are drawn on screen.
+#: The canvas grid: spacing and dot width in screen pixels.
 #:
 #: A ground for the graph to sit on. Without one the largest region of the
 #: window is an unbroken rectangle of one colour, which reads as a surface that
 #: failed to draw rather than as a surface with nothing on it yet — the same
 #: complaint that made an empty canvas look broken when it was pale.
 #:
-#: The pitch is in scene units so the grid pans with the graph and belongs to
-#: it. The dot width is divided by the zoom before it is used, so a dot stays
-#: the same size on screen however far in the view is — a texture, not another
-#: thing that grows when the graph does.
+#: Divide both measurements by the zoom so this remains a background texture
+#: at every scale, including when the short IP prompt is fitted to the canvas.
+#: The dots remain anchored to the scene origin so they follow panning.
 _GRID_PITCH: Final = 20.0
 _GRID_DOT: Final = 1.6
 _GRID_OPACITY: Final = 0.30
-
-#: Thin the grid as the view zooms out, keeping this much space between dots
-#: on screen instead of hiding the background altogether.
-_GRID_MIN_PITCH: Final = 14.0
 
 #: How heavy an arrow is drawn while the node it hangs off is being moved.
 #: A floor, not a replacement: a weight-1 transition comes out at 1.7 units,
@@ -686,15 +680,16 @@ class ActivityCanvas(QGraphicsView):
         right answer: a grid is an on-screen affordance for panning, and printing
         it into a deliverable would put texture behind evidence.
         """
+        # Include the whole viewport, even when the scene only holds a prompt.
+        # Qt's painter clip still limits updates to the exposed region.
+        rect = rect.united(self._on_screen())
         super().drawBackground(painter, rect)
         if painter is None:  # pragma: no cover - Qt always supplies one
             return
         scale = self.transform().m11()
         if scale <= 0:
             return
-        pitch = _GRID_PITCH
-        while pitch * scale < _GRID_MIN_PITCH:
-            pitch *= 2
+        pitch = _GRID_PITCH / scale
 
         dot = QColor(THEME.grid_dot)
         dot.setAlphaF(_GRID_OPACITY)
