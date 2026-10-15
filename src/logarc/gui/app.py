@@ -851,8 +851,24 @@ class MainWindow(QMainWindow):
             self._crs_card = None
 
     def _crs_failed(self, message: str, detail: str) -> None:
+        """Say that CRS did not finish, in words a reader can act on.
+
+        In this order: it did not finish; why, in a line; that the case is as
+        it was; how to try again. The job's message is `Type: reason`, and the
+        type is the program talking to itself. Whatever the sidecar printed is
+        in `detail`, behind Show Details: on 2026-10-15 a Go panic was the whole
+        of this dialog's text and ran off the bottom of the screen.
+        """
         self._close_crs_card()
-        self.report_error(message, detail)
+        reason = message.partition(": ")[2] or message
+        self.report_error(
+            "CRS did not finish.",
+            detail,
+            explanation=(
+                f"{reason}\n\nNothing in the case was changed, and everything else in it "
+                "works. To try again: Case → Run OWASP CRS on this case."
+            ),
+        )
         # The case is as it was before CRS started, and complete. Without this
         # the scan CRS was holding back never ran, and Where to start stayed
         # empty — once rare, then every case's fate the day CRS became the
@@ -1863,17 +1879,22 @@ class MainWindow(QMainWindow):
             self._ingest_card.stopping()
         self._status.setText("Stopping after the batch in flight…")
 
-    def report_error(self, message: str, detail: str) -> None:
+    def report_error(self, message: str, detail: str, *, explanation: str = "") -> None:
+        """`message` in the status line and the dialog; `explanation` under it
+        in the dialog; `detail` behind Show Details and in the terminal."""
         self._progress.hide()
         self._status.setText(message)
         if detail:
             # The window gets a sentence; the terminal keeps the traceback, so a
-            # failure is never only a dialog nobody wrote down.
-            print(detail, file=sys.stderr)
+            # failure is never only a dialog nobody wrote down. Written so that
+            # the writing cannot fail, or the dialog below would not come up.
+            crash.write_down(detail, sys.stderr)
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Icon.Warning)
         box.setWindowTitle("logarc")
         box.setText(message)
+        if explanation:
+            box.setInformativeText(explanation)
         if detail:
             box.setDetailedText(detail)
         box.exec()

@@ -366,6 +366,41 @@ def test_a_failing_sidecar_reports_its_own_error(
     assert "cannot load rules" in str(raised.value)
 
 
+#: What the go-re2 v1.6.0 sidecar printed on a newer Intel CPU, shortened.
+GO_PANIC = (
+    "panic: wasm error: invalid table access\n"
+    "\twasm stack trace:\n"
+    "\t\t.$24(i32,i32,i32,i32)\n"
+    "\n"
+    "goroutine 1 [running]:\n"
+    "github.com/wasilibs/go-re2/internal.newRE(0x2ca2dfdf12c0, {0xdee01100?, 0x2ca2df8f8d38?})\n"
+    "\tgithub.com/wasilibs/go-re2@v1.6.0/internal/re2_wazero.go:288 +0x265\n"
+    "main.main()\n"
+    "\tcrs/main.go:275 +0x24d"
+)
+
+
+def test_a_sidecar_that_crashes_is_reported_in_one_line_with_its_output_kept(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The window and the command line show the message, and a Go panic is a
+    stack of forty lines a reader can do nothing with: in the window it ran off
+    the bottom of the screen. The first line says what happened; the whole of it
+    is kept for whoever reports it."""
+    fake = FakeCrs()
+    fake.fail_at_start = GO_PANIC
+    monkeypatch.setattr(subprocess, "Popen", fake)
+
+    with pytest.raises(CrsUnavailableError) as raised:
+        run_sidecar([event()], config=working_config(tmp_path))
+
+    message = str(raised.value)
+    assert "\n" not in message
+    assert message.startswith("CRS stopped unexpectedly")
+    assert "panic: wasm error: invalid table access" in message
+    assert raised.value.detail == GO_PANIC
+
+
 def test_an_unreadable_line_costs_one_detection_not_the_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

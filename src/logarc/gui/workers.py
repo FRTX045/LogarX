@@ -70,8 +70,13 @@ class Job(QRunnable):
         except Exception as exc:
             # Both halves matter: the window needs a sentence a person can act
             # on, and the terminal needs the traceback. Swallowing either is how
-            # a forensic tool ends up failing quietly.
-            self.signals.failed.emit(f"{type(exc).__name__}: {exc}", traceback.format_exc())
+            # a forensic tool ends up failing quietly. An error may carry more
+            # than its sentence, a sidecar's own output, and that goes with the
+            # traceback rather than into the sentence.
+            detail = traceback.format_exc()
+            if said := getattr(exc, "detail", ""):
+                detail = f"{said}\n\n{detail}"
+            self.signals.failed.emit(f"{type(exc).__name__}: {exc}", detail)
         else:
             self.signals.finished.emit(result)
 

@@ -22,13 +22,14 @@ from __future__ import annotations
 
 import sys
 import traceback
+from contextlib import suppress
 from types import TracebackType
 from typing import TYPE_CHECKING, TextIO
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-__all__ = ["install"]
+__all__ = ["install", "write_down"]
 
 #: How many times the reader is shown the same trouble before the net falls
 #: silent. A slot that raises on every repaint raises hundreds of times, and a
@@ -40,6 +41,25 @@ _ENOUGH = 3
 #: Not caught. These are the reader leaving, not the tool breaking, and a net
 #: that swallowed them would print a message and carry on running.
 _LEAVING = (KeyboardInterrupt, SystemExit)
+
+
+def write_down(detail: str, stream: TextIO | None) -> None:
+    """Write `detail` to `stream` without ever failing.
+
+    The window writes a failure down before it shows it, and the writing must
+    not be what fails. Redirected on Windows, stderr is the code page, which has
+    no bytes for a user folder named in Chinese: printing raised, and the dialog
+    after it never came up. What the stream cannot encode is escaped instead.
+    The packaged application has no console, so no stream at all.
+    """
+    if stream is None:
+        return
+    encoding = getattr(stream, "encoding", None) or "utf-8"
+    text = detail.encode(encoding, "backslashreplace").decode(encoding)
+    # A stream closed or gone under us leaves nowhere to write, and that too
+    # must not stop the dialog.
+    with suppress(OSError, ValueError):
+        print(text, file=stream, end="" if text.endswith("\n") else "\n")
 
 
 def install(
@@ -79,7 +99,7 @@ def install(
             # below takes it over.
             report(f"{kind.__name__}: {value}", detail)
             return
-        print(detail, file=stream or sys.stderr, end="")
+        write_down(detail, stream or sys.stderr)
 
     sys.excepthook = net
     return previous

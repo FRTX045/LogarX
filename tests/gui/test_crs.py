@@ -73,7 +73,7 @@ class _Watched:
         monkeypatch.setattr(window._triage, "start", lambda *args, **_: self.scans.append(args))
         monkeypatch.setattr(window, "_crs_missing", self.missing.append)
         monkeypatch.setattr(
-            window, "report_error", lambda message, _detail: self.errors.append(message)
+            window, "report_error", lambda message, _detail, **_: self.errors.append(message)
         )
 
 
@@ -206,7 +206,7 @@ def test_a_crs_run_that_fails_still_lets_the_scan_start(
     watched.window._crs_failed("CRS stopped unexpectedly.", "")
     settled(qt_app)
 
-    assert watched.errors == ["CRS stopped unexpectedly."]
+    assert watched.errors == ["CRS did not finish."]
     assert watched.scans, "a failed CRS run left the case with no prioritization scan"
 
 

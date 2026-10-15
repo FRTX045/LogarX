@@ -155,12 +155,21 @@ no answer is ever wrong."""
 
 
 class CrsUnavailableError(RuntimeError):
-    """The sidecar binary or the ruleset it needs is not present.
+    """The sidecar binary or the ruleset it needs is not present, or it failed.
 
     Carries the build instructions rather than only the missing path: this is
     the error a first-time user hits, and a bare "not found" makes an optional
     component look broken instead of unbuilt.
+
+    `detail` is what a failing sidecar said, when that was more than a line. The
+    message is what the window and the terminal show, so it stays a line; a Go
+    panic is forty lines of stack that nobody reading them can act on, and the
+    whole of it is still needed by whoever reports the fault.
     """
+
+    def __init__(self, message: str, *, detail: str = "") -> None:
+        super().__init__(message)
+        self.detail = detail
 
 
 def binary_name() -> str:
@@ -779,7 +788,11 @@ class _Sidecar:
                 f"Rebuild it with: logarc setup-crs\n"
                 f"or set {BINARY_ENV} to a current build. It said: {said.splitlines()[0]}"
             )
-        return CrsUnavailableError(f"crs-sidecar exited {code}: {said or 'no output'}")
+        first = said.splitlines()[0].strip() if said else "no output"
+        return CrsUnavailableError(
+            f"CRS stopped unexpectedly (crs-sidecar exited {code}: {first})",
+            detail=said if "\n" in said else "",
+        )
 
     def close(self) -> None:
         """Close its input, let it exit, and kill it only if it will not."""
