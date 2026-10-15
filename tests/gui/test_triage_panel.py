@@ -41,6 +41,7 @@ def test_panel_pages_and_searches_all_clients(qt_app, tmp_path):
     panel.show_result(result)
     settled(qt_app)
     assert panel.table.rowCount() == 100
+    assert panel.caption.text() == "Showing 1\u2013100 of 105 IPs with suspicious activity"
     expected_rank = next(
         panel.table.item(index, 0).text()
         for index in range(panel.table.rowCount())
@@ -50,10 +51,15 @@ def test_panel_pages_and_searches_all_clients(qt_app, tmp_path):
     panel.next_page.click()
     settled(qt_app)
     assert panel.table.rowCount() == 5
+    assert panel.caption.text() == "Showing 101\u2013105 of 105 IPs with suspicious activity"
     panel.search.setText("192.0.2.104")
     QTest.qWait(200)
     settled(qt_app)
     assert panel.table.rowCount() == 1
+    assert (
+        panel.caption.text()
+        == "Showing 1\u20131 of 1 IP with suspicious activity (matching your search)"
+    )
     assert panel.table.item(0, 1).text() == "192.0.2.104"
     assert panel.table.item(0, 0).text() == expected_rank
     assert "CRS not applied" in panel.notice.text()

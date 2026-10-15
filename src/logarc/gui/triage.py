@@ -35,6 +35,7 @@ from logarc.gui.recommendation import (
 from logarc.gui.splitter import PanelSplitter
 from logarc.gui.theme import PAD, TIGHT
 from logarc.gui.workers import run_job
+from logarc.style import plural
 from logarc.triage.process import run_scan
 from logarc.triage.profile import DEFAULT_POLICY, QueueName, RankedClient
 from logarc.triage.scan import ScanCancelled, TriagePage, TriageProgress, TriageResult, read_page
@@ -308,7 +309,17 @@ class TriagePanel(QWidget):
             self._display(page.rows)
             self.previous_page.setEnabled(page.offset > 0)
             self.next_page.setEnabled(page.offset + len(page.rows) < page.total)
-            text = f"{page.offset + 1 if page.rows else 0:,}-{page.offset + len(page.rows):,} of {page.total:,} matching IPs"
+            if page.rows:
+                text = (
+                    f"Showing {page.offset + 1:,}\u2013{page.offset + len(page.rows):,} "
+                    f"of {plural(page.total, 'IP')} with {queue} activity"
+                )
+            else:
+                text = f"No IPs with {queue} activity"
+            if query.strip():
+                text += " (matching your search)"
+            elif not page.rows:
+                text += " in this time range"
             if queue == "unusual":
                 policy = DEFAULT_POLICY
                 if result.eligible < policy.minimum_population:
@@ -316,7 +327,7 @@ class TriagePanel(QWidget):
                 else:
                     text += ". Unusual within this case; legitimate activity can be unusual. Missing fields are excluded from comparisons."
             elif queue == "suspicious" and not page.total:
-                text += ". No matching hostile detections; this does not establish that the traffic is safe."
+                text += ". This does not establish that the traffic is safe."
             self.caption.setText(text)
 
         def failed(message: str, detail: str) -> None:
