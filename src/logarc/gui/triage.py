@@ -99,6 +99,9 @@ class TriagePanel(QWidget):
         self.caption.setTextFormat(Qt.TextFormat.PlainText)
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(("Rank", "IP address", "Key observation", "Requests"))
+        row_header = self.table.verticalHeader()
+        if row_header is not None:
+            row_header.hide()
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
