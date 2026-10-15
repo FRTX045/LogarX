@@ -72,6 +72,8 @@ class TriagePanel(QWidget):
         self._offset = 0
         self._shown: RankedClient | None = None
         self._expanded: frozenset[tuple[int, int]] = frozenset()
+        self._opened: frozenset[int] = frozenset()
+        self._context_open = False
         self._sources: dict[EvidenceRef, SourceStatus] = {}
         self._source_generation = 0
         self._source_error = ""
@@ -370,6 +372,8 @@ class TriagePanel(QWidget):
         row = self._rows[index]
         if row is not self._shown:
             self._shown, self._expanded, self._sources = row, frozenset(), {}
+            self._opened = frozenset()
+            self._context_open = False
             self._source_error = ""
             self._source_generation += 1
             self._source_timer.start()
@@ -384,7 +388,12 @@ class TriagePanel(QWidget):
         width = (self.details.viewport() or self.details).width()
         path_chars = max(20, 2 * max(width - 24, 0) // max(metrics.averageCharWidth(), 1))
         html = render_recommendation(
-            self._shown, self._sources, path_chars=path_chars, expanded=self._expanded
+            self._shown,
+            self._sources,
+            path_chars=path_chars,
+            expanded=self._expanded,
+            opened=self._opened,
+            show_context=self._context_open,
         )
         if self._source_error:
             html = (
@@ -438,13 +447,21 @@ class TriagePanel(QWidget):
         run_job(work, on_done=done, on_error=failed)
 
     def _anchor(self, url: QUrl) -> None:
-        """Open a reason's evidence or one example request, or show an example's full path."""
+        """Toggle detail sections, inspect evidence, or show an example's full path."""
         parsed = parse_anchor(url)
         row = self._shown
         if parsed is None or row is None:
             return
         kind, number, index = parsed
+        if kind == "context":
+            self._context_open = not self._context_open
+            self._render()
+            return
         if number >= len(row.reasons):
+            return
+        if kind == "details":
+            self._opened = self._opened.symmetric_difference({number})
+            self._render()
             return
         reason = row.reasons[number]
         if kind == "reason":

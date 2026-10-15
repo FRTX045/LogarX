@@ -7,7 +7,8 @@ reason, and nothing is substituted for it.
 
 Anchors are `reason:<n>`, which opens a reason's evidence, `example:<n>:<m>`,
 which opens one example request, and `expand:<n>:<m>`, which asks for that
-example's full request path; `parse_anchor` reads them back.
+example's full request path. `details:<n>` toggles one finding and `context:0`
+toggles measurements and coverage; `parse_anchor` reads them back.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from datetime import UTC, datetime
 from html import escape
 from typing import TYPE_CHECKING
 
+from logarc.style import plural
 from logarc.triage.profile import FEATURES, HIGH_CONFIDENCE
 
 if TYPE_CHECKING:
@@ -66,19 +68,42 @@ def render_recommendation(
     *,
     path_chars: int | None = None,
     expanded: frozenset[tuple[int, int]] = frozenset(),
+    opened: frozenset[int] = frozenset(),
+    show_context: bool = False,
 ) -> str:
     """The details area for `row`.
 
     `status` marks references that did not read cleanly. `path_chars` is how much of
     a request path fits the space given to it, measured by the caller; a longer path
     is cut there with a link to show it whole, unless its (reason, example) is in
-    `expanded`.
+    `expanded`. Findings start with a compact observation; `opened` selects
+    those whose explanations and examples are shown. Measurements and coverage
+    appear only when `show_context` is requested.
     """
     status = status or {}
-    parts = [f"<p><b>{escape(row.profile.client_ip)}</b></p>"]
-    for number, reason in enumerate(row.reasons):
-        parts.append(_block(number, reason, status, path_chars, expanded))
     profile = row.profile
+    parts = [
+        f"<p><b>{escape(profile.client_ip)}</b><br>"
+        f"{plural(profile.requests, 'request')} · "
+        f"{plural(profile.hostile_requests, 'flagged request')}</p>"
+    ]
+    if status:
+        unavailable = sum(not state.can_open for state in status.values())
+        warnings = len(status) - unavailable
+        notes = []
+        if unavailable:
+            notes.append(f"{plural(unavailable, 'sample source line')} unavailable")
+        if warnings:
+            notes.append(f"{plural(warnings, 'sample source line')} with warnings")
+        parts.append(
+            "<p><b>Source warning:</b> " + "; ".join(notes) + ". Open a finding for details.</p>"
+        )
+    for number, reason in enumerate(row.reasons):
+        parts.append(_block(number, reason, status, path_chars, expanded, number in opened))
+    mark = "\u25bc" if show_context else "\u25b6"
+    parts.append(f'<p><b><a href="context:0">{mark} More context</a></b></p>')
+    if not show_context:
+        return "".join(parts)
     responses = ", ".join(f"{code}: {count}" for code, count in profile.statuses.items())
     lines = [
         f"Responses: {responses or 'not recorded'}. "
@@ -104,9 +129,14 @@ def _block(
     status: Mapping[EvidenceRef, SourceStatus],
     path_chars: int | None,
     expanded: frozenset[tuple[int, int]],
+    opened: bool,
 ) -> str:
-    title = TITLES.get(reason.kind)
-    lines = [f"<b>{number + 1}. {escape(title)}</b>"] if title else []
+    title = TITLES.get(reason.kind, FEATURES.get(reason.metric, "Activity indicator"))
+    mark = "\u25bc" if opened else "\u25b6"
+    lines = [f'<b><a href="details:{number}">{mark} {number + 1}. {escape(title)}</a></b>']
+    if not opened:
+        lines.append(escape(reason.summary or reason.text))
+        return "<p>" + "<br>".join(lines) + "</p>"
     observed = f'<a href="reason:{number}">{escape(reason.text)}</a>'
     lines.append(f"Observed: {observed}" if title else observed)
     if reason.why:
@@ -180,12 +210,13 @@ def _ref(ref: EvidenceRef, status: Mapping[EvidenceRef, SourceStatus]) -> str:
 
 
 def parse_anchor(url: QUrl) -> tuple[str, int, int] | None:
-    """`("reason", n, -1)`, `("example", n, m)` or `("expand", n, m)` for an anchor this
-    module wrote, else None."""
+    """Read only the evidence, example, disclosure and context anchors written here."""
     scheme, path = url.scheme(), url.path()
     parts = path.split(":")
-    if scheme == "reason" and len(parts) == 1 and parts[0].isdigit():
-        return ("reason", int(parts[0]), -1)
+    if scheme in ("reason", "details") and len(parts) == 1 and parts[0].isdigit():
+        return (scheme, int(parts[0]), -1)
+    if scheme == "context" and path == "0":
+        return ("context", 0, -1)
     if scheme in ("example", "expand") and len(parts) == 2 and all(p.isdigit() for p in parts):
         return (scheme, int(parts[0]), int(parts[1]))
     return None

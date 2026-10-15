@@ -67,6 +67,8 @@ def test_panel_pages_and_searches_all_clients(qt_app, tmp_path):
 
 
 def test_reason_click_emits_original_evidence_and_escapes_log_fields(qt_app, tmp_path):
+    from PyQt6.QtCore import QUrl
+
     from logarc.gui.triage import TriagePanel
 
     panel = TriagePanel()
@@ -75,6 +77,8 @@ def test_reason_click_emits_original_evidence_and_escapes_log_fields(qt_app, tmp
     selected = []
     panel.investigate.connect(lambda ip, refs: selected.append((ip, refs)))
     panel.table.selectRow(0)
+    assert "Responses:" not in panel.details.toPlainText()
+    panel.details.anchorClicked.emit(QUrl("context:0"))
     assert "Responses: 200: 1." in panel.details.toPlainText()
     panel.open_client.click()
     assert selected == [("192.0.2.0", (EvidenceRef("source", 1),))]
@@ -237,6 +241,7 @@ def test_each_reason_links_to_its_own_evidence(qt_app, tmp_path):
     panel.table.selectRow(0)
     selected = []
     panel.investigate.connect(lambda ip, refs: selected.append((ip, refs)))
+    panel.details.anchorClicked.emit(QUrl(f"details:{len(row.reasons)}"))
     panel.details.anchorClicked.emit(QUrl(f"reason:{len(row.reasons)}"))
     assert selected == [(row.profile.client_ip, extra.evidence)]
     assert extra.text in panel.details.toPlainText()
@@ -530,6 +535,7 @@ def test_clicking_an_example_opens_exactly_that_request(qt_app, tmp_path):
     panel = selected_panel(qt_app, root)
     row = panel._rows[0]
     number, example = first_example(row)
+    panel.details.anchorClicked.emit(QUrl(f"details:{number}"))
     opened = []
     panel.investigate.connect(lambda ip, refs: opened.append((ip, refs)))
     panel.details.anchorClicked.emit(QUrl(f"example:{number}:0"))
@@ -563,6 +569,7 @@ def test_an_unreadable_source_stays_visible_and_opens_nothing(qt_app, tmp_path):
     panel = selected_panel(qt_app, make_case(tmp_path))
     row = panel._rows[0]
     number, example = first_example(row)
+    panel.details.anchorClicked.emit(QUrl(f"details:{number}"))
     text = panel.details.toPlainText()
     assert str(example.evidence) in text
     assert "Cannot open" in text
@@ -581,6 +588,7 @@ def test_a_source_changed_since_ingest_still_opens_with_its_warning(qt_app, tmp_
     panel = selected_panel(qt_app, root)
     row = panel._rows[0]
     number, example = first_example(row)
+    panel.details.anchorClicked.emit(QUrl(f"details:{number}"))
     assert "Warning:" in panel.details.toPlainText()
     assert "Cannot open" not in panel.details.toPlainText()
     opened = []
@@ -629,6 +637,7 @@ def test_show_full_request_expands_only_that_example(qt_app, tmp_path):
     panel.table.selectRow(0)
     checked(qt_app, panel)
     assert long_path not in panel.details.toPlainText()
+    panel.details.anchorClicked.emit(QUrl(f"details:{number}"))
     assert "Show full request" in panel.details.toPlainText()
     panel.details.anchorClicked.emit(QUrl(f"expand:{number}:0"))
     assert long_path in panel.details.toPlainText().replace("\n", "")
@@ -707,6 +716,7 @@ def test_rewriting_the_details_keeps_the_readers_place(qt_app, tmp_path):
     panel._display([replace(row, reasons=tuple(reasons))])
     panel.table.selectRow(0)
     checked(qt_app, panel)
+    panel.details.anchorClicked.emit(QUrl(f"details:{number}"))
     bar = panel.details.verticalScrollBar()
     assert bar.maximum() > 0
     bar.setValue(bar.maximum() // 2)
@@ -729,4 +739,40 @@ def test_a_failed_source_check_says_the_sources_were_not_checked(qt_app, tmp_pat
     panel.table.selectRow(0)
     checked(qt_app, panel)
     assert "Sources could not be checked" in panel.details.toPlainText()
+    panel.close()
+
+
+def test_findings_open_independently_without_leaving_the_queue(qt_app, tmp_path):
+    from PyQt6.QtCore import QUrl
+
+    panel = selected_panel(qt_app, make_case(tmp_path))
+    assert len(panel._shown.reasons) >= 2
+    opened = []
+    panel.investigate.connect(lambda *args: opened.append(args))
+    assert "Why:" not in panel.details.toPlainText()
+    assert "Examples:" not in panel.details.toPlainText()
+    panel.details.anchorClicked.emit(QUrl("details:0"))
+    assert panel._opened == frozenset({0})
+    assert "Why:" in panel.details.toPlainText()
+    panel.details.anchorClicked.emit(QUrl("details:1"))
+    assert panel._opened == frozenset({0, 1})
+    panel.details.anchorClicked.emit(QUrl("details:0"))
+    assert panel._opened == frozenset({1})
+    assert opened == []
+    panel.close()
+
+
+def test_context_and_disclosure_choices_survive_source_updates(qt_app, tmp_path):
+    from PyQt6.QtCore import QUrl
+
+    panel = selected_panel(qt_app, make_case(tmp_path))
+    panel.details.anchorClicked.emit(QUrl("details:0"))
+    panel.details.anchorClicked.emit(QUrl("context:0"))
+    panel._render()
+    assert panel._opened == frozenset({0})
+    assert panel._context_open
+    assert "Recorded measurements:" in panel.details.toPlainText()
+    panel.details.anchorClicked.emit(QUrl("context:0"))
+    assert "Recorded measurements:" not in panel.details.toPlainText()
+    assert panel._opened == frozenset({0})
     panel.close()
