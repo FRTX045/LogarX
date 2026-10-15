@@ -915,6 +915,10 @@ def enrich(
     except ValueError as exc:
         raise fail(str(exc)) from exc
     except (CrsUnavailableError, *USER_ERRORS) as exc:
+        # CRS is the whole job here, so what the sidecar said is shown, above
+        # the line that says what happened: a report of the fault needs it.
+        if said := getattr(exc, "detail", ""):
+            errors.print(said, style="dim", markup=False, highlight=False)
         raise fail(str(exc)) from exc
 
     _report_enrichment(outcome)

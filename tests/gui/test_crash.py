@@ -11,6 +11,7 @@ because what is being checked is precisely that Qt never gets the chance.
 
 from __future__ import annotations
 
+import io
 import os
 import sys
 
@@ -21,7 +22,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from PyQt6.QtCore import QObject, pyqtSignal
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QMessageBox
 
 from logarc.gui import app as app_module
 from logarc.gui import crash
@@ -163,6 +164,49 @@ def test_a_storm_is_written_down_rather_than_shown_again(
     assert len(seen) == 3, "the reader should be told, then left alone"
     written = capsys.readouterr().err
     assert "again 9" in written, "the ones past the limit are still recorded"
+
+
+# -- where the terminal cannot take it ------------------------------------
+
+#: A traceback through a Windows user folder named in Chinese.
+THROUGH_A_CHINESE_FOLDER = 'File "C:\\Users\\王伟\\logarc\\src\\app.py", line 1\nValueError: x'
+
+
+def _narrow() -> io.TextIOWrapper:
+    """stderr as a redirected Windows console has it: the code page, strictly."""
+    return io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
+
+
+def test_writing_down_never_fails_on_what_the_stream_cannot_encode() -> None:
+    """The window writes a failure's details to stderr before it shows them, and
+    redirected on Windows stderr is the code page. A character it has no byte for
+    raised there, and the dialog after it never came up."""
+    stream = _narrow()
+
+    crash.write_down(THROUGH_A_CHINESE_FOLDER, stream)
+
+    stream.seek(0)
+    written = stream.read()
+    assert "ValueError: x" in written
+    assert "\\u738b" in written, "kept as an escape, not dropped"
+
+
+def test_writing_down_to_no_stream_at_all_is_nothing() -> None:
+    """The packaged application has no console, and no stderr."""
+    crash.write_down(THROUGH_A_CHINESE_FOLDER, None)
+
+
+def test_the_dialog_still_comes_up_where_the_terminal_cannot_print_its_details(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    shown: list[str] = []
+    monkeypatch.setattr(QMessageBox, "exec", lambda box: shown.append(box.text()) or 0)
+    monkeypatch.setattr(sys, "stderr", _narrow())
+    window = app_module.MainWindow()
+
+    window.report_error("CRS did not finish.", THROUGH_A_CHINESE_FOLDER)
+
+    assert shown == ["CRS did not finish."]
 
 
 def test_installing_hands_back_the_hook_it_replaced() -> None:

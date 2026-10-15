@@ -788,6 +788,17 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **When CRS fails, the window says so in words a reader can use.** A sidecar
+  that crashed had its whole output shown as the dialog's message: on a newer
+  Intel CPU, a Go stack taller than the screen, and nothing about whether the
+  case was still good. The dialog now says CRS did not finish, gives the
+  reason in a line, says that nothing in the case was changed and how to try
+  again, and keeps the sidecar's output behind Show Details. On the command
+  line the reason is one line after an ingest, and `logarc enrich`, where CRS
+  is the whole job, prints the output under it. And a failure's details
+  written to a terminal that cannot encode them, a redirected Windows console
+  and a user folder named in Chinese, no longer stop the dialog coming up.
+
 - **CRS works on newer Intel processors again.** From the RE2 change above
   until this one, the sidecar crashed as it started on most Intel CPUs from
   Ice Lake (2019) on, `panic: wasm error: invalid table access`, so CRS never ran

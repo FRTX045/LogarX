@@ -18,7 +18,10 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 from PyQt6.QtWidgets import QApplication
 
 from conftest import settled
+from logarc.detect.crs import CrsUnavailableError
 from logarc.gui.workers import run_job
+
+SIDECAR_SAID = "goroutine 1 [running]:\nmain.main()"
 
 
 def test_a_job_can_report_figures_as_well_as_a_sentence(qt_app: QApplication) -> None:
@@ -52,6 +55,27 @@ def test_a_job_can_report_figures_as_well_as_a_sentence(qt_app: QApplication) ->
     assert said == ["opening", "still going"]
     assert advanced == [{"lines": 5}]
     assert done == ["finished"]
+
+
+def test_a_failure_that_carries_more_than_its_message_hands_it_on(qt_app: QApplication) -> None:
+    """A sidecar's own output is kept on the error rather than in its message,
+    which the window shows as a sentence. It still has to reach the dialog's
+    details, beside the traceback, or the one thing a report needs is lost."""
+    failed: list[tuple[str, str]] = []
+    # Built here, not on the line that raises it: a traceback quotes that line,
+    # and a test that looked for the output there would pass on the quotation.
+    error = CrsUnavailableError("CRS stopped unexpectedly", detail=SIDECAR_SAID)
+
+    def work(_report: Callable[[object], None]) -> None:
+        raise error
+
+    run_job(work, on_done=lambda _r: None, on_error=lambda m, d: failed.append((m, d)))
+    settled(qt_app, timeout=10.0)
+
+    ((message, detail),) = failed
+    assert SIDECAR_SAID not in message
+    assert SIDECAR_SAID in detail
+    assert "Traceback" in detail
 
 
 def test_a_job_that_reports_nothing_structured_still_works(qt_app: QApplication) -> None:
