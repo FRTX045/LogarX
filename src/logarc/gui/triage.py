@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal
-from PyQt6.QtGui import QFontMetrics
+from PyQt6.QtGui import QFontMetrics, QTextOption
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
@@ -33,7 +33,7 @@ from logarc.gui.recommendation import (
     summary_for,
 )
 from logarc.gui.splitter import PanelSplitter
-from logarc.gui.theme import PAD, TIGHT
+from logarc.gui.theme import GAP, PAD, ROOM, TIGHT
 from logarc.gui.workers import run_job
 from logarc.style import plural
 from logarc.triage.process import run_scan
@@ -118,6 +118,13 @@ class TriagePanel(QWidget):
         # is a deliberate act: double-click, or Inspect supporting requests.
         self.table.cellDoubleClicked.connect(lambda row, column: self._investigate())
         self.details = QTextBrowser()
+        document = self.details.document()
+        if document is not None:
+            document.setDocumentMargin(ROOM)
+            # Stable glyph measurements prevent fallback-font headings being
+            # clipped when expanding a card makes the scrollbar appear.
+            document.setUseDesignMetrics(True)
+        self.details.setWordWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
         self.details.setOpenLinks(False)
         self.details.anchorClicked.connect(self._anchor)
         self.details.setPlaceholderText(
@@ -386,7 +393,9 @@ class TriagePanel(QWidget):
             return
         metrics = QFontMetrics(self.details.font())
         width = (self.details.viewport() or self.details).width()
-        path_chars = max(20, 2 * max(width - 24, 0) // max(metrics.averageCharWidth(), 1))
+        # Leave room for the document inset, card padding and its thin border.
+        content_width = max(width - 2 * (ROOM + GAP + 2), 0)
+        path_chars = max(20, 2 * content_width // max(metrics.averageCharWidth(), 1))
         html = render_recommendation(
             self._shown,
             self._sources,

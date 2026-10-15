@@ -184,14 +184,15 @@ def test_blocks_are_titled_for_what_they_count_and_explain_the_threshold():
     ) in html
 
 
-def test_example_time_is_shown_in_utc_on_its_own_line():
+def test_example_separates_request_rule_and_utc_source_metadata():
     late = RequestExample(
         EvidenceRef("access.log", 3), "GET", "/login", "2026-03-11T11:00:33+07:00", "Rule A"
     )
     html = render_opened(row(matches(late)))
     assert "2026-03-11 04:00:33 UTC" in html
     assert "2026-03-11T11:00:33+07:00" not in html
-    assert re.search(r"GET /login \(Rule A\)</a><br>2026-03-11 04:00:33 UTC<br>", html)
+    assert re.search(r"GET /login</a><br><span[^>]*>Rule A</span><br>", html)
+    assert "2026-03-11 04:00:33 UTC · access.log:3" in html
 
 
 def test_a_long_path_is_cut_to_fit_and_can_be_expanded():

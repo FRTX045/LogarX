@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from html import escape
 from typing import TYPE_CHECKING
 
-from logarc.style import plural
+from logarc.style import THEME, plural
 from logarc.triage.profile import FEATURES, HIGH_CONFIDENCE
 
 if TYPE_CHECKING:
@@ -42,6 +42,47 @@ NOTES = {
     "distinct_rules": f"Counted: bundled rules rated at confidence {HIGH_CONFIDENCE} or above. "
     "The rating describes the rule, not the request.",
 }
+
+# QTextDocument supports tables and paragraph spacing, but not browser layout
+# features such as flexbox or rounded cards. Keep this native rich text and use
+# the same surfaces and type colours as the rest of the desktop interface.
+_STYLES = f"""<style>
+p {{ margin-top: 0; margin-bottom: 10px; }}
+a {{ color: {THEME.accent}; }}
+.secondary {{ color: {THEME.muted}; }}
+.section {{ margin-top: 14px; margin-bottom: 6px; }}
+.disclosure {{ color: {THEME.ink}; text-decoration: none; }}
+.context {{ color: {THEME.muted}; text-decoration: none; }}
+</style>"""
+
+
+def _card(content: str) -> str:
+    """A padded finding with a quiet surface and space before the next one."""
+    return (
+        f'<table width="100%" cellspacing="0" cellpadding="12" '
+        f'bgcolor="{THEME.raised}" style="border: 1px solid {THEME.line};">'
+        f"<tr><td>{content}</td></tr></table>"
+        '<p style="margin-top: 0; margin-bottom: 0; font-size: 8px;">&nbsp;</p>'
+    )
+
+
+def _disclosure(anchor: str, title: str, opened: bool, *, context: bool = False) -> str:
+    mark = "\u25be" if opened else "\u25b8"
+    role = "context" if context else "disclosure"
+    return f'<a class="{role}" href="{anchor}">{mark} {escape(title)}</a>'
+
+
+def _measurements(items: Mapping[str, str]) -> str:
+    """Aligned labels and values; cells can wrap in a narrow panel."""
+    return (
+        '<table width="100%" cellspacing="0" cellpadding="4">'
+        + "".join(
+            f'<tr><td class="secondary">{escape(label)}:</td>'
+            f'<td align="right">{escape(value)}</td></tr>'
+            for label, value in items.items()
+        )
+        + "</table>"
+    )
 
 
 @dataclass(frozen=True)
@@ -83,9 +124,12 @@ def render_recommendation(
     status = status or {}
     profile = row.profile
     parts = [
-        f"<p><b>{escape(profile.client_ip)}</b><br>"
+        _STYLES,
+        f'<p style="margin-bottom: 4px;"><b>{escape(profile.client_ip)}</b></p>'
+        '<p class="secondary">'
         f"{plural(profile.requests, 'request')} · "
-        f"{plural(profile.hostile_requests, 'flagged request')}</p>"
+        f"{plural(profile.hostile_requests, 'flagged request')}</p>",
+        f'<p class="secondary">{plural(len(row.reasons), "finding")} · Open to see evidence.</p>',
     ]
     if status:
         unavailable = sum(not state.can_open for state in status.values())
@@ -100,26 +144,35 @@ def render_recommendation(
         )
     for number, reason in enumerate(row.reasons):
         parts.append(_block(number, reason, status, path_chars, expanded, number in opened))
-    mark = "\u25bc" if show_context else "\u25b6"
-    parts.append(f'<p><b><a href="context:0">{mark} More context</a></b></p>')
+    parts.append(
+        '<p class="section"><b>'
+        + _disclosure("context:0", "More context", show_context, context=True)
+        + "</b></p>"
+    )
     if not show_context:
         return "".join(parts)
-    responses = ", ".join(f"{code}: {count}" for code, count in profile.statuses.items())
-    lines = [
-        f"Responses: {responses or 'not recorded'}. "
-        "A 200 response alone does not establish that an attack succeeded.",
-        "Examples and source lines are samples, not the complete supporting set.",
-        "",
-        "Recorded measurements:",
-        *(f"{FEATURES[name]}: {value:,.3g}" for name, value in profile.features.items()),
-        "",
-        "Field coverage:",
-        *(
-            f"{name}: {count:,}/{profile.requests:,} requests"
-            for name, count in profile.coverage.items()
-        ),
-    ]
-    parts.append("<p>" + "<br>".join(escape(line) for line in lines) + "</p>")
+    responses = ", ".join(f"{code}: {count:,}" for code, count in profile.statuses.items())
+    parts.extend(
+        [
+            f"<p>Responses: {escape(responses or 'not recorded')}.</p>",
+            '<p class="secondary">A 200 response alone does not establish that an attack '
+            "succeeded. Examples and source lines are samples, not the complete supporting set.</p>",
+            '<p class="section"><b>Recorded measurements:</b></p>',
+            _measurements(
+                {
+                    FEATURES[name]: f"{value:,.0f}" if value % 1 == 0 else f"{value:,.3g}"
+                    for name, value in profile.features.items()
+                }
+            ),
+            '<p class="section"><b>Field coverage:</b></p>',
+            _measurements(
+                {
+                    name: f"{count:,}/{profile.requests:,} requests"
+                    for name, count in profile.coverage.items()
+                }
+            ),
+        ]
+    )
     return "".join(parts)
 
 
@@ -132,19 +185,20 @@ def _block(
     opened: bool,
 ) -> str:
     title = TITLES.get(reason.kind, FEATURES.get(reason.metric, "Activity indicator"))
-    mark = "\u25bc" if opened else "\u25b6"
-    lines = [f'<b><a href="details:{number}">{mark} {number + 1}. {escape(title)}</a></b>']
+    lines = [
+        "<p><b>" + _disclosure(f"details:{number}", f"{number + 1}. {title}", opened) + "</b></p>"
+    ]
     if not opened:
-        lines.append(escape(reason.summary or reason.text))
-        return "<p>" + "<br>".join(lines) + "</p>"
-    observed = f'<a href="reason:{number}">{escape(reason.text)}</a>'
-    lines.append(f"Observed: {observed}" if title else observed)
+        lines.append(f'<p class="secondary">{escape(reason.summary or reason.text)}</p>')
+        return _card("".join(lines))
+    lines.append(f"<p><b>Observed:</b><br>{escape(reason.text)}</p>")
     if reason.why:
-        lines.append(f"Why: {escape(reason.why)}")
+        lines.append(f"<p><b>Why:</b><br>{escape(reason.why)}</p>")
     if reason.kind in NOTES:
-        lines.append(f"<small>{escape(NOTES[reason.kind])}</small>")
+        lines.append(f'<p class="secondary">{escape(NOTES[reason.kind])}</p>')
+    lines.append(f'<p><a href="reason:{number}">Inspect supporting requests</a></p>')
     if reason.examples:
-        lines.append(f"Examples: {len(reason.examples)} shown")
+        lines.append(f'<p class="section"><b>Examples: {len(reason.examples)} shown</b></p>')
         lines.extend(
             _example(
                 number,
@@ -157,9 +211,12 @@ def _block(
         )
     elif reason.evidence:
         lines.append(
-            "Sample source lines: " + ", ".join(_ref(ref, status) for ref in reason.evidence)
+            '<p class="section"><b>Sample source lines:</b></p>'
+            '<p class="secondary">'
+            + "<br>".join(_ref(ref, status) for ref in reason.evidence)
+            + "</p>"
         )
-    return "<p>" + "<br>".join(lines) + "</p>"
+    return _card("".join(lines))
 
 
 def _when(timestamp: str) -> str:
@@ -185,19 +242,21 @@ def _example(
     if cut and path_chars is not None:
         target = target[: max(path_chars - 1, 1)] + "\u2026"
     request = " ".join(part for part in (item.method, target) if part)
-    label = escape(request + (f" ({item.note})" if item.note else ""))
+    label = escape(request)
+    note = f'<br><span class="secondary">{escape(item.note)}</span>' if item.note else ""
     reference = escape(str(item.evidence))
-    more = f' <a href="expand:{number}:{index}">Show full request</a>' if cut else ""
+    more = f'<br><a href="expand:{number}:{index}">Show full request</a>' if cut else ""
     when = escape(_when(item.timestamp))
     if state is not None and not state.can_open:
         return (
-            f"{label}{more}<br>{when}<br>"
-            f"<small>{reference}. Cannot open: {escape(state.note)}</small>"
+            f"<p>{label}{more}{note}<br>"
+            f'<span class="secondary">{when} · {reference}</span><br>'
+            f"Cannot open: {escape(state.note)}</p>"
         )
-    warning = f". Warning: {escape(state.note)}" if state is not None else ""
+    warning = f"<br>Warning: {escape(state.note)}" if state is not None else ""
     return (
-        f'<a href="example:{number}:{index}">{label}</a>{more}<br>{when}<br>'
-        f"<small>{reference}{warning}</small>"
+        f'<p><a href="example:{number}:{index}">{label}</a>{more}{note}<br>'
+        f'<span class="secondary">{when} · {reference}</span>{warning}</p>'
     )
 
 
