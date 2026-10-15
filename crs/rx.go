@@ -18,12 +18,11 @@ import (
 	"github.com/wasilibs/go-re2/experimental"
 )
 
-// The @rx operator on RE2 compiled to WebAssembly instead of Go's regexp, which
-// was half of a sidecar's time. Measured 2026-10-14 on the three 2026-10-06
-// tiers, six sidecars, the middle of three runs: 10.1 s becomes 8.8 s, 28.6 s
-// becomes 21.3 s and 69.1 s becomes 49.0 s, with the same detections on every
-// tier and on CRS's regression corpus. A sidecar starts in 0.7 s rather than
-// 0.1 s, wazero compiling RE2, which is why the sidecars live for a whole run.
+// The @rx operator on RE2 instead of Go's regexp, which was half of a sidecar's
+// time. go-re2 v1.12.0 builds RE2 to WebAssembly and translates that to Go,
+// so it is compiled with the sidecar like any other Go. v1.6.0 ran it on
+// wazero instead, which compiled it to machine code at start-up and crashed on
+// Intel CPUs from Ice Lake on (memmove_test.go). Figures: README.md.
 //
 // Written here rather than taken from coraza-wasilibs, whose package also
 // carries pm, detectSQLi and detectXSS on two more WebAssembly modules. Each

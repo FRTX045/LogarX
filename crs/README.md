@@ -31,9 +31,9 @@ go build -o crs-sidecar .                                # native
 GOOS=windows GOARCH=amd64 go build -o crs-sidecar.exe .  # cross-compile
 ```
 
-Cross-compilation is clean because Coraza's dependency tree is pure Go. RE2 is no exception: it
-arrives compiled to WebAssembly inside go-re2 and runs on wazero, which is Go too, so no C
-toolchain is involved. Cross-compiling is **required** when
+Cross-compilation is clean because Coraza's dependency tree is pure Go. RE2 is no exception: go-re2
+builds it to WebAssembly and translates that to Go, so no C toolchain is involved. Cross-compiling
+is **required** when
 the Python interpreter running `logarc` targets a different OS than the toolchain — a Windows venv
 cannot spawn an ELF binary. `logarc` looks for `crs-sidecar.exe` on Windows and `crs-sidecar`
 elsewhere; `LOGARC_CRS_BINARY` overrides both.
@@ -50,7 +50,22 @@ measurement requires all of them:
 | CRS | `4.29.0-dev`, commit `d694d465` |
 | Coraza | `v3.7.0` |
 | libinjection-go | `v0.3.2` |
-| go-re2 | `v1.6.0`: RE2 `2023-03-01`, run on wazero `v1.7.2` |
+| go-re2 | `v1.12.0`: RE2 `2025-11-05`, translated to Go |
+
+## Tests
+
+```bash
+go test -ldflags=-checklinkname=0 ./...
+GODEBUG=cpu.all=off go test -ldflags=-checklinkname=0 ./...
+```
+
+The sidecar has to work on whatever CPU a user has, and some of what Go runs depends on it.
+`memmove_test.go` loads CRS and matches two attacks twice: once with Go's memory copy on the path
+Intel CPUs from Ice Lake on take, where the go-re2 v1.6.0 build crashed, and once as this CPU
+copies. The second command makes that "as this CPU" a CPU with no optional features at all. The
+linker flag lets the test reach the runtime's switch for that path; the sidecar itself is built
+without it. CI runs both, on Windows and Linux. The Python tests (`tests/detect/crs/`) cover the
+rest, through the built binary.
 
 ## Interface
 
@@ -89,24 +104,32 @@ transformed_value ' ORDER BY 8-- -
 ## Regular expressions: RE2
 
 CRS's `@rx` runs on RE2 rather than Go's `regexp` (`rx.go`, adapted from coraza-wasilibs). Go's
-`regexp` was half of a sidecar's time. Measured 2026-10-14 on the three `2026-10-06` tiers, six
-sidecars each, the middle of three runs, the same detections on every one:
+`regexp` was half of a sidecar's time. go-re2 builds RE2 to WebAssembly and translates that to Go,
+so it is compiled into the sidecar like the rest of it. Measured 2026-10-15 on the three
+`2026-10-06` tiers, six sidecars each, the two builds alternating, the middle of three runs, the
+same detections on every one:
 
 | | Go `regexp` | RE2 |
 |---|---|---|
-| small, 63,310 lines | 10.1 s | 8.8 s |
-| medium, 235,732 lines | 28.6 s | 21.3 s |
-| large, 941,031 lines | 69.1 s | 49.0 s |
+| small, 63,310 lines | 13.6 s | 8.1 s |
+| medium, 235,732 lines | 31.7 s | 21.3 s |
+| large, 941,031 lines | 90.1 s | 53.8 s |
 
-What it costs: a sidecar starts in about 0.7 s instead of 0.1 s, because wazero compiles RE2 at
-launch, so the sidecars now live for a whole run instead of one per share of requests. Each
-holds about 4 MB more at its peak (six: 362 MB against 338 MB on the large tier), and the binary
-grows from 21.7 MB to 28.1 MB. A 20 ms timer in a Qt window, while six replayed the large tier,
-fired at worst 17.6 ms late, against 22.9 ms with Go's `regexp`. Six is still the fastest count:
-on the medium tier 19.8 and 19.4 s, against 19.9 and 20.6 s with four and 21.5 and 21.4 s with
-eight. Only `@rx` moved. coraza-wasilibs would also
-swap `@pm`, `@detectSQLi` and `@detectXSS` for WebAssembly builds, and importing it for `@rx`
+Go `regexp`'s three large runs spread from 80.5 to 105.2 s; RE2's from 50.2 to 57.9 s. What it
+costs: a sidecar starts in 0.32 s instead of 0.12 s, so the sidecars live for a whole run instead
+of one per share of requests, and the binary grows from 21.7 MB to 28.7 MB. It holds less, not
+more: six replaying the large tier peaked at 278 MB together, 46 to 49 MB each, against 339 MB
+with Go's `regexp`. A 20 ms timer in a Qt window meanwhile fired at worst 14.7, 29.3 and 29.0 ms
+late over three runs, and 99% of the time within 7 ms, as it does with Go's `regexp`. Four and six
+sidecars are within noise of each other on the medium tier, 18.8 and 20.1 s against 19.0 and
+19.1 s, and eight is slower, 20.3 s twice, so six stays. Only `@rx` moved. coraza-wasilibs would
+also swap `@pm`, `@detectSQLi` and `@detectXSS` for WebAssembly builds, and importing it for `@rx`
 alone started two WebAssembly modules nobody called, which cost 0.3 s of every start.
+
+Until 2026-10-15 the sidecar used go-re2 v1.6.0, which ran RE2 on wazero, compiling it to machine
+code as the sidecar started. That crashed on most Intel CPUs from Ice Lake on, where Go copies
+memory with a register wazero counted on keeping. ADR-0008's amendment of 2026-10-15 has the story
+and the figures for both; `memmove_test.go` keeps it from coming back.
 
 A regex engine that reads one pattern differently would change detections quietly, so
 `tests/detect/crs/test_corpus_detections.py` replays CRS's whole regression corpus and compares

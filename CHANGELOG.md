@@ -788,6 +788,25 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **CRS works on newer Intel processors again.** From the RE2 change above
+  until this one, the sidecar crashed as it started on most Intel CPUs from
+  Ice Lake (2019) on, `panic: wasm error: invalid table access`, so CRS never ran
+  there; the case was still complete, without CRS results. The fault was in
+  go-re2 v1.6.0's runtime, wazero v1.7.2, which compiled RE2 to machine code at
+  start-up and counted on Go's memory copy leaving a register alone. From Go
+  1.24 on it does not, on Intel CPUs with fast short `REP MOVS`. The computer
+  the change was measured on has no such CPU, and neither did the machine CI
+  ran on while GitHub's runners were unavailable. go-re2 v1.12.0 translates
+  RE2 to Go before the sidecar is built, so nothing is compiled while it runs
+  and wazero is no longer in it. Measured the same day, the old and new
+  sidecars alternating: identical detections on all three 2026-10-06 builds
+  (2,386, 8,459 and 18,134), start-up 1.02 s → 0.32 s, and 11.2 s → 9.4 s,
+  27.0 s → 20.7 s and 64.1 s → 56.2 s. A test in `crs/` now takes the copy
+  path those CPUs take on every machine, CI runs it on Windows and Linux and
+  again with every optional CPU feature off, and a source checkout rebuilds
+  its sidecar with `logarc setup-crs`. The licences shipped with it now
+  include Abseil, which the newer RE2 needs.
+
 - **On Windows, CRS now recognises file paths.** CRS keeps lists of system
   files, secrets and shell paths written with `/`, and tidies a request's path
   before looking. On Windows that tidying wrote `\` instead, so the Windows

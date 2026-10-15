@@ -46,8 +46,8 @@ _NOTICE_PREFIXES: Final = ("LICENSE", "LICENCE", "COPYING", "NOTICE")
 
 #: Modules with other projects' code compiled into them, whose notices are not
 #: in the module, and the folder under `crs/licenses/` that keeps them instead.
-#: go-re2 embeds RE2, wasi-libc and libc++ built to WebAssembly; that folder's
-#: README says what came from where.
+#: go-re2 embeds RE2, Abseil, wasi-libc and libc++, built to WebAssembly and
+#: translated to Go; that folder's README says what came from where.
 _COMPILED_IN: Final = {"github.com/wasilibs/go-re2": "go-re2"}
 
 
