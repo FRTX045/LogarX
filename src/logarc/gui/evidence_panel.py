@@ -16,20 +16,20 @@ import html
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QFont, QPalette, QTextCursor, QTextOption
+from PyQt6.QtGui import QColor, QFont, QPalette
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QHeaderView,
     QLabel,
     QTableWidget,
     QTableWidgetItem,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
 from logarc.gui._qt import SORT_KEY, SortableItem, required
-from logarc.gui.evidence_view import ALERT_COLOUR, COLUMNS, Cell, Detail, cells_for, detail_for
+from logarc.gui.evidence_details import EvidenceDetails
+from logarc.gui.evidence_view import COLUMNS, Cell, Detail, cells_for, detail_for
 from logarc.gui.splitter import PanelSplitter
 from logarc.gui.theme import PAD, TIGHT, caption_font, mono_font
 from logarc.style import (
@@ -77,7 +77,7 @@ class EvidencePanel(QWidget):
 
         self._table = _build_table(font)
         self._table.itemSelectionChanged.connect(self._selection_changed)
-        self._detail = _build_detail(font)
+        self._detail = EvidenceDetails(font)
 
         # Split, so the reader decides how much of each they want: a wide
         # episode wants more table, a long payload more detail.
@@ -272,31 +272,7 @@ class EvidencePanel(QWidget):
         self._show_detail(detail_for(lines[index], decode=self._decode))
 
     def _show_detail(self, detail: Detail) -> None:
-        self._detail.clear()
-        self._write(f"Source (log file:line): {detail.source}", EVIDENCE_MUTED, bold=True)
-        for label, value, colour in detail.fields:
-            self._write(f"{label}: {value}" if label else value, colour)
-        if detail.note:
-            self._write(f"Source warning: {detail.note}", ALERT_COLOUR)
-        if detail.raw is not None:
-            self._write("")
-            self._write("Original log line (as logged)", EVIDENCE_MUTED, bold=True)
-            self._write("Exact text from the source log:", EVIDENCE_MUTED)
-            self._write(detail.raw, EVIDENCE_INK)
-        self._detail.moveCursor(QTextCursor.MoveOperation.Start)
-        self._detail.ensureCursorVisible()
-
-    def _write(self, text: str, colour: str = EVIDENCE_INK, *, bold: bool = False) -> None:
-        cursor = self._detail.textCursor()
-        cursor.movePosition(QTextCursor.MoveOperation.End)
-        if not required(self._detail.document(), "evidence document").isEmpty():
-            cursor.insertBlock()
-        formatting = cursor.charFormat()
-        formatting.setForeground(QColor(colour))
-        formatting.setFontWeight(QFont.Weight.Bold if bold else QFont.Weight.Normal)
-        # Log values are text, even when a request or raw line looks like HTML.
-        cursor.insertText(text, formatting)
-        self._detail.setTextCursor(cursor)
+        self._detail.show_detail(detail)
 
 
 def _build_table(font: QFont) -> QTableWidget:
@@ -347,30 +323,6 @@ def _build_table(font: QFont) -> QTableWidget:
     # is unbounded, and the only one worth widening the panel for.
     header.setSectionResizeMode(COLUMNS.index("Request"), QHeaderView.ResizeMode.Stretch)
     return table
-
-
-def _build_detail(font: QFont) -> QTextEdit:
-    detail = QTextEdit()
-    detail.setReadOnly(True)
-    detail.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
-    # Break mid-token where there is nothing to break at: a 59-character
-    # injection payload is one unbroken word, and wrapping politely would send
-    # exactly the line worth reading off the edge.
-    detail.setWordWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
-    detail.setFont(font)
-    # Pinned light, not inherited. The colours written here are chosen against a
-    # pale ground, so on a machine themed dark an inherited background renders
-    # the evidence dark on dark — illegible evidence is the one failure this
-    # panel cannot have, and it would not look like a fault. Set on the palette
-    # rather than through a stylesheet so it stays inspectable: a stylesheet
-    # leaves `palette()` reporting the inherited colour, which would make a test
-    # of this pass while the panel is unreadable.
-    paper = detail.palette()
-    paper.setColor(QPalette.ColorRole.Base, QColor(PAPER))
-    paper.setColor(QPalette.ColorRole.Text, QColor(EVIDENCE_INK))
-    detail.setPalette(paper)
-    detail.setStyleSheet(f"QTextEdit {{ border: 1px solid {PAPER_EDGE}; }}")
-    return detail
 
 
 def _chip(text: str, colour: str | None = None) -> str:

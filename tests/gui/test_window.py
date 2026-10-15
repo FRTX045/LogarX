@@ -1218,6 +1218,17 @@ def test_refilling_the_evidence_table_measures_each_row_a_bounded_number_of_time
     panel.close()
 
 
+def _read_all_details(panel: EvidencePanel) -> str:
+    """Open each section as a reader would before checking the full record."""
+    for section in panel._detail.sections.values():
+        section.button.setChecked(True)
+    return "\n".join(
+        section.content.toPlainText()
+        for section in panel._detail.sections.values()
+        if not section.isHidden()
+    )
+
+
 def test_choosing_a_row_shows_that_request_in_full(qt_app: QApplication, campaign: Path) -> None:
     """The table truncates a payload however wide it is. This is where the
     reader goes for all of it — and for the original line."""
@@ -1227,13 +1238,13 @@ def test_choosing_a_row_shows_that_request_in_full(qt_app: QApplication, campaig
 
     panel.select_row(0)
 
-    detail = panel._detail.toPlainText()
+    detail = _read_all_details(panel)
     assert f"Source (log file:line): {lines[0].ref}" in detail  # type: ignore[attr-defined]
     assert "Request (method + target): GET " in detail
     assert "Response status:" in detail
     assert "Response size (bytes sent):" in detail
     assert "User agent (reported software):" in detail
-    assert "Original log line (as logged)" in detail
+    assert "Exact text from the source log (as logged):" in detail
     assert str(lines[0].ref) in detail  # type: ignore[attr-defined]
     assert lines[0].text in detail  # type: ignore[attr-defined]
 
@@ -1245,7 +1256,7 @@ def test_html_looking_raw_evidence_is_displayed_as_literal_text(qt_app: QApplica
     panel = EvidencePanel()
     panel._show_detail(Detail(source="access.log:1", fields=(), raw=raw, note=None))
 
-    assert panel._detail.toPlainText().endswith(raw)
+    assert _read_all_details(panel).endswith(raw)
     panel.close()
 
 
@@ -1268,7 +1279,7 @@ def test_the_detail_follows_the_row_after_the_table_is_sorted(
 
     shown_source = panel._table.item(0, COLUMNS.index("Source"))
     assert shown_source is not None
-    assert shown_source.text() in panel._detail.toPlainText()
+    assert shown_source.text() in _read_all_details(panel)
 
 
 def _merged(case: Path) -> tuple[object, object]:
@@ -1807,7 +1818,10 @@ def test_the_framed_evidence_surface_is_still_paper_when_it_is_painted(
         for widget, what in ((panel._table, "table"), (panel._detail, "detail")):
             viewport = widget.viewport()
             assert viewport is not None
-            inside = QPoint(viewport.width() // 2, viewport.height() - 4)
+            # The detail now contains collapsible headers. Its left content
+            # margin stays bare even when those headers fill the viewport.
+            x = 1 if what == "detail" else viewport.width() // 2
+            inside = QPoint(x, viewport.height() - 4)
             point = viewport.mapTo(panel, inside)
             assert painted.pixelColor(point).name() == PAPER, f"the {what} lost its ground"
         panel.close()
@@ -1878,11 +1892,11 @@ def test_the_detail_changes_when_a_different_activity_is_opened(
 
     panel = EvidencePanel()
     panel.show_evidence(first, first_lines)
-    assert str(first_lines[0].ref) in panel._detail.toPlainText()
+    assert str(first_lines[0].ref) in _read_all_details(panel)
 
     panel.show_evidence(second, second_lines)
 
-    detail = panel._detail.toPlainText()
+    detail = _read_all_details(panel)
     assert str(second_lines[0].ref) in detail, "the detail still describes the old activity"
     assert str(first_lines[0].ref) not in detail
 
