@@ -1228,8 +1228,25 @@ def test_choosing_a_row_shows_that_request_in_full(qt_app: QApplication, campaig
     panel.select_row(0)
 
     detail = panel._detail.toPlainText()
+    assert f"Source (log file:line): {lines[0].ref}" in detail  # type: ignore[attr-defined]
+    assert "Request (method + target): GET " in detail
+    assert "Response status:" in detail
+    assert "Response size (bytes sent):" in detail
+    assert "User agent (reported software):" in detail
+    assert "Original log line (as logged)" in detail
     assert str(lines[0].ref) in detail  # type: ignore[attr-defined]
     assert lines[0].text in detail  # type: ignore[attr-defined]
+
+
+def test_html_looking_raw_evidence_is_displayed_as_literal_text(qt_app: QApplication) -> None:
+    from logarc.gui.evidence_view import Detail
+
+    raw = '<b>literal evidence</b>  "GET /<img> HTTP/1.1"'
+    panel = EvidencePanel()
+    panel._show_detail(Detail(source="access.log:1", fields=(), raw=raw, note=None))
+
+    assert panel._detail.toPlainText().endswith(raw)
+    panel.close()
 
 
 def test_the_detail_follows_the_row_after_the_table_is_sorted(

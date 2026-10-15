@@ -273,22 +273,30 @@ class EvidencePanel(QWidget):
 
     def _show_detail(self, detail: Detail) -> None:
         self._detail.clear()
-        self._write(detail.source, EVIDENCE_MUTED, bold=True)
+        self._write(f"Source (log file:line): {detail.source}", EVIDENCE_MUTED, bold=True)
         for label, value, colour in detail.fields:
-            self._write(f"{label:<4} {value}" if label else value, colour)
+            self._write(f"{label}: {value}" if label else value, colour)
         if detail.note:
-            self._write(f"! {detail.note}", ALERT_COLOUR)
+            self._write(f"Source warning: {detail.note}", ALERT_COLOUR)
         if detail.raw is not None:
             self._write("")
-            self._write("as logged", EVIDENCE_MUTED)
+            self._write("Original log line (as logged)", EVIDENCE_MUTED, bold=True)
+            self._write("Exact text from the source log:", EVIDENCE_MUTED)
             self._write(detail.raw, EVIDENCE_INK)
         self._detail.moveCursor(QTextCursor.MoveOperation.Start)
         self._detail.ensureCursorVisible()
 
     def _write(self, text: str, colour: str = EVIDENCE_INK, *, bold: bool = False) -> None:
-        self._detail.setTextColor(QColor(colour))
-        self._detail.setFontWeight(QFont.Weight.Bold if bold else QFont.Weight.Normal)
-        self._detail.append(text)
+        cursor = self._detail.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        if not required(self._detail.document(), "evidence document").isEmpty():
+            cursor.insertBlock()
+        formatting = cursor.charFormat()
+        formatting.setForeground(QColor(colour))
+        formatting.setFontWeight(QFont.Weight.Bold if bold else QFont.Weight.Normal)
+        # Log values are text, even when a request or raw line looks like HTML.
+        cursor.insertText(text, formatting)
+        self._detail.setTextCursor(cursor)
 
 
 def _build_table(font: QFont) -> QTableWidget:

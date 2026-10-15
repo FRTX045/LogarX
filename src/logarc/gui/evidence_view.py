@@ -20,6 +20,7 @@ beneath it, and a right-to-left override would reverse how a hostile path reads.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Final
 
 from logarc.style import (
@@ -110,8 +111,7 @@ class Detail:
     source: str
 
     fields: tuple[tuple[str, str, str], ...]
-    """`(label, value, colour)`. The label carries the emphasis for the status,
-    which is where a served response has to catch the eye."""
+    """`(label, value, colour)`, with full field names for readers new to logs."""
 
     raw: str | None
     """The source line, exactly as the log holds it.
@@ -137,21 +137,41 @@ def detail_for(line: EvidenceLine, *, decode: bool) -> Detail:
     if event is not None:
         target = event.target
         shown = decode_target(target) if decode else display_safe(target)
-        fields.append((display_safe(event.method or "?"), shown, EVIDENCE_INK))
-        if event.status is not None:
-            served = 200 <= event.status < 400
-            size = format_bytes(event.bytes_sent) if event.bytes_sent is not None else ""
-            fields.append(
-                (
-                    str(event.status),
-                    f"{size} {'served' if served else 'refused'}".strip(),
-                    status_colour(str(event.status)),
-                )
+        method = display_safe(event.method or "(method not recorded)")
+        fields.append(
+            (
+                "Request (method + target)",
+                f"{method} {shown or '(target not recorded)'}",
+                EVIDENCE_INK,
             )
+        )
+        fields.append(("Client IP (logged address)", display_safe(event.client_ip), EVIDENCE_MUTED))
+        fields.append(("Time (UTC)", f"{event.timestamp:%Y-%m-%d %H:%M:%S}", EVIDENCE_MUTED))
+        if event.protocol:
+            fields.append(("HTTP version", display_safe(event.protocol), EVIDENCE_MUTED))
+        if event.status is not None:
+            try:
+                status = f"{event.status} — {HTTPStatus(event.status).phrase}"
+            except ValueError:
+                status = str(event.status)
+            fields.append(("Response status", status, status_colour(str(event.status))))
+        else:
+            fields.append(("Response status", "Not recorded", EVIDENCE_MUTED))
+        fields.append(
+            (
+                "Response size (bytes sent)",
+                format_bytes(event.bytes_sent) if event.bytes_sent is not None else "Not recorded",
+                EVIDENCE_MUTED,
+            )
+        )
         if event.referer and event.referer != "-":
-            fields.append(("ref", display_safe(event.referer), EVIDENCE_MUTED))
+            fields.append(("Referrer (previous page)", display_safe(event.referer), EVIDENCE_MUTED))
         if event.user_agent and event.user_agent != "-":
-            fields.append(("ua", display_safe(event.user_agent), EVIDENCE_MUTED))
+            fields.append(
+                ("User agent (reported software)", display_safe(event.user_agent), EVIDENCE_MUTED)
+            )
+        if event.host and event.host != "-":
+            fields.append(("Host (requested site)", display_safe(event.host), EVIDENCE_MUTED))
     elif line.text is None:
         note = display_safe(line.note or "source not readable")
         fields.append(("", f"unavailable — {note}", ALERT_COLOUR))

@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
+
 from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
 from logarc.evidence import EvidenceLine
@@ -153,8 +155,82 @@ def test_the_detail_carries_the_whole_request() -> None:
     labels = {label for label, _value, _colour in detail.fields}
 
     assert detail.source == "access.log:36"
-    assert labels >= {"GET", "200", "ua"}
+    assert labels >= {
+        "Request (method + target)",
+        "Client IP (logged address)",
+        "Time (UTC)",
+        "Response status",
+        "Response size (bytes sent)",
+        "User agent (reported software)",
+    }
     assert any("' OR '1'='1" in value for _l, value, _c in detail.fields)
+
+
+@pytest.mark.parametrize(
+    ("status", "meaning"),
+    [
+        (200, "OK"),
+        (302, "Found"),
+        (403, "Forbidden"),
+        (404, "Not Found"),
+        (500, "Internal Server Error"),
+    ],
+)
+def test_response_status_explains_the_server_code(status: int, meaning: str) -> None:
+    from logarc.gui.evidence_view import detail_for
+
+    fields = {
+        label: value
+        for label, value, _colour in detail_for(line(status=status), decode=True).fields
+    }
+
+    assert fields["Response status"] == f"{status} — {meaning}"
+
+
+def test_an_unrecognized_status_is_preserved_without_inventing_a_meaning() -> None:
+    from logarc.gui.evidence_view import detail_for
+
+    fields = {
+        label: value for label, value, _colour in detail_for(line(status=499), decode=True).fields
+    }
+
+    assert fields["Response status"] == "499"
+
+
+def test_missing_response_fields_are_explained_and_known_size_is_still_shown() -> None:
+    from logarc.gui.evidence_view import detail_for
+
+    fields = {
+        label: value for label, value, _colour in detail_for(line(status=None), decode=True).fields
+    }
+    assert fields["Response status"] == "Not recorded"
+    assert fields["Response size (bytes sent)"] == "10.4 KB"
+    fields = {
+        label: value for label, value, _colour in detail_for(line(size=None), decode=True).fields
+    }
+    assert fields["Response size (bytes sent)"] == "Not recorded"
+
+
+def test_optional_log_fields_have_explanatory_names() -> None:
+    from dataclasses import replace
+
+    from logarc.gui.evidence_view import detail_for
+
+    evidence = line()
+    assert evidence.event is not None
+    evidence = replace(
+        evidence,
+        event=replace(
+            evidence.event, protocol="HTTP/1.1", referer="https://example.com/", host="example.com"
+        ),
+    )
+    fields = {label: value for label, value, _colour in detail_for(evidence, decode=True).fields}
+
+    assert fields["HTTP version"] == "HTTP/1.1"
+    assert fields["Referrer (previous page)"] == "https://example.com/"
+    assert fields["Host (requested site)"] == "example.com"
+    assert fields["Client IP (logged address)"] == "127.0.0.1"
+    assert fields["Time (UTC)"] == "2026-08-03 22:35:18"
 
 
 def test_the_detail_holds_the_original_line_byte_for_byte() -> None:
