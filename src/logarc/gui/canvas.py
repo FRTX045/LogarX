@@ -223,7 +223,7 @@ _MAX_SCALE: Final = 6.0
 #: The dots remain anchored to the scene origin so they follow panning.
 _GRID_PITCH: Final = 20.0
 _GRID_DOT: Final = 1.6
-_GRID_OPACITY: Final = 0.30
+_GRID_OPACITY: Final = 0.39
 
 #: How heavy an arrow is drawn while the node it hangs off is being moved.
 #: A floor, not a replacement: a weight-1 transition comes out at 1.7 units,
