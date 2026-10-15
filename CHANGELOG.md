@@ -807,6 +807,14 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   its sidecar with `logarc setup-crs`. The licences shipped with it now
   include Abseil, which the newer RE2 needs.
 
+- **The corpus record is made from the whole corpus.** "Identical detections
+  on CRS's regression corpus" above was true of 5,051 of its 5,060 requests:
+  Windows Defender had removed three of its files from the checkout the record
+  was written from, taking them for malware. CI's clone is complete, so the
+  record failed there. It is now written from a clean clone, and a checkout
+  missing any corpus file is neither compared nor recorded from: the test
+  names the files and skips, or fails where CRS is required.
+
 - **On Windows, CRS now recognises file paths.** CRS keeps lists of system
   files, secrets and shell paths written with `/`, and tidies a request's path
   before looking. On Windows that tidying wrote `\` instead, so the Windows
