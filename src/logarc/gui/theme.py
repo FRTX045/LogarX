@@ -116,10 +116,6 @@ QScrollBar::handle:pressed {{ background: {THEME.accent}; }}
 QScrollBar::handle:disabled {{ background: {THEME.edge}; border-color: {THEME.edge}; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
 QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
-QSplitter::handle {{ background: {THEME.edge}; }}
-QSplitter::handle:horizontal {{ width: 5px; margin: 0 1px; }}
-QSplitter::handle:vertical {{ height: 5px; margin: 1px 0; }}
-QSplitter::handle:hover {{ background: {THEME.accent}; }}
 """
 
 

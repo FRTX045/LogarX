@@ -16,7 +16,6 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
-    QSplitter,
     QTabBar,
     QTableWidget,
     QTableWidgetItem,
@@ -33,6 +32,7 @@ from logarc.gui.recommendation import (
     render_recommendation,
     summary_for,
 )
+from logarc.gui.splitter import PanelSplitter
 from logarc.gui.theme import PAD, TIGHT
 from logarc.gui.workers import run_job
 from logarc.triage.process import run_scan
@@ -119,7 +119,7 @@ class TriagePanel(QWidget):
         )
         # The reader decides how much of the panel the recommendation gets: at a
         # fixed height either the queue or the reasons were cut off.
-        self.split = QSplitter(Qt.Orientation.Vertical)
+        self.split = PanelSplitter(Qt.Orientation.Vertical)
         self.split.addWidget(self.table)
         self.split.addWidget(self.details)
         self.split.setChildrenCollapsible(False)

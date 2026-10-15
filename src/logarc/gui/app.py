@@ -69,6 +69,7 @@ from logarc.gui.progress_card import IngestCard
 from logarc.gui.quarantine_notice import notice_for
 from logarc.gui.recent import RecentCase
 from logarc.gui.site_hosts import SiteHostsOffer
+from logarc.gui.splitter import PanelSplitter
 from logarc.gui.theme import GAP, MONO_FAMILIES, PAD, TIGHT, apply_theme, heading_font
 from logarc.gui.time_filter import TimeFilterBar
 from logarc.gui.triage import TriagePanel
@@ -394,7 +395,7 @@ class MainWindow(QMainWindow):
         self._clients.setMinimumWidth(220)
         self._evidence.setMinimumWidth(200)
 
-        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter = PanelSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(self._clients)
         splitter.addWidget(centre)
         splitter.addWidget(self._evidence)

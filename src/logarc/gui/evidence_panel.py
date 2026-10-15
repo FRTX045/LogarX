@@ -21,7 +21,6 @@ from PyQt6.QtWidgets import (
     QAbstractItemView,
     QHeaderView,
     QLabel,
-    QSplitter,
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
@@ -31,6 +30,7 @@ from PyQt6.QtWidgets import (
 
 from logarc.gui._qt import SORT_KEY, SortableItem, required
 from logarc.gui.evidence_view import ALERT_COLOUR, COLUMNS, Cell, Detail, cells_for, detail_for
+from logarc.gui.splitter import PanelSplitter
 from logarc.gui.theme import PAD, TIGHT, caption_font, mono_font
 from logarc.style import (
     EVIDENCE_INK,
@@ -81,7 +81,7 @@ class EvidencePanel(QWidget):
 
         # Split, so the reader decides how much of each they want: a wide
         # episode wants more table, a long payload more detail.
-        split = QSplitter(Qt.Orientation.Vertical)
+        split = PanelSplitter(Qt.Orientation.Vertical)
         split.addWidget(self._table)
         split.addWidget(self._detail)
         split.setStretchFactor(0, 3)
