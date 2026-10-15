@@ -77,6 +77,10 @@ WAITING_MESSAGE: Final = "Select an IP."
 #: Leave more room around the empty-canvas message than around an activity graph.
 _PLACEHOLDER_SCALE: Final = 0.75
 
+#: The short IP prompt is enlarged more by fitting. Keep it 60% smaller without
+#: shrinking the longer startup instruction.
+_IP_PROMPT_SCALE: Final = _PLACEHOLDER_SCALE * 0.4
+
 #: How far `fit` may shrink a graph. A long session trace is a wide, flat chain,
 #: and fitting one to the window scales the whole scene down until the captions
 #: inside the nodes are a grey smudge. Below this the graph stops carrying the
@@ -1082,6 +1086,7 @@ class ActivityCanvas(QGraphicsView):
         self._base.clear()
 
     def _show_message(self, text: str) -> None:
+        self._message_scale = _IP_PROMPT_SCALE if text == WAITING_MESSAGE else _PLACEHOLDER_SCALE
         item = QGraphicsSimpleTextItem(text)
         item.setBrush(QBrush(QColor(_EDGE_COLOUR)))
         self._scene.addItem(item)
@@ -1299,7 +1304,7 @@ class ActivityCanvas(QGraphicsView):
             # middle of a chronology.
             self.centerOn(graph.topLeft())
         if not self._nodes:
-            self.scale(_PLACEHOLDER_SCALE, _PLACEHOLDER_SCALE)
+            self.scale(self._message_scale, self._message_scale)
             self.centerOn(graph.center())
         # Last, because it reads the region on screen and the fit has just
         # decided that. The graph keeps its place: the paper only ever grows
