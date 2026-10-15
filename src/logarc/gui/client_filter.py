@@ -104,7 +104,7 @@ def _counts(
     searching: bool,
     reordered: bool,
 ) -> str:
-    opening = "Select one to reconstruct what it did."
+    opening = "Select an IP."
     wanted = query.strip()
     last = first + shown - 1
     if not wanted:

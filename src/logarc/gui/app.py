@@ -1040,8 +1040,7 @@ class MainWindow(QMainWindow):
             self._result = None
             self._selected = None
             self._canvas.show_graph_placeholder()
-            # The canvas is already saying "Select a client to reconstruct what
-            # it did" across the middle of the window. Repeating it above the
+            # The canvas already says "Select an IP". Repeating it above the
             # canvas and inviting an activity selection beside it made three
             # messages for one state, two of them about steps that cannot be
             # taken yet.

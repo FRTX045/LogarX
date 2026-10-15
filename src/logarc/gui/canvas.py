@@ -72,7 +72,7 @@ __all__ = ["MIN_FIT_SCALE", "STARTUP_MESSAGE", "WAITING_MESSAGE", "ActivityCanva
 #: a case is open there is no client to pick yet, and telling the reader to pick
 #: one would point at an empty table.
 STARTUP_MESSAGE: Final = "Open a case, or ingest logs into a new one."
-WAITING_MESSAGE: Final = "Select a client to reconstruct what it did."
+WAITING_MESSAGE: Final = "Select an IP."
 
 #: Leave more room around the empty-canvas message than around an activity graph.
 _PLACEHOLDER_SCALE: Final = 0.75
