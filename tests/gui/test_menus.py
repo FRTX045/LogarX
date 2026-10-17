@@ -179,12 +179,14 @@ def test_saying_ok_applies_every_setting_at_once(
     window = MainWindow()
     assert window._canvas.wrap, "premise: wrapping starts on"
     assert window._density is Density.FINE, "premise: the band starts fine"
+    assert window._canvas.sessions, "premise: session boxes start on"
 
     _answer(
         monkeypatch,
         QDialog.DialogCode.Accepted,
         **{
             "view/wrap_traces": False,
+            "view/session_boxes": False,
             "view/band_density": Density.COARSE,
             "view/traffic_band": False,
             "view/decode_targets": False,
@@ -194,6 +196,7 @@ def test_saying_ok_applies_every_setting_at_once(
     window._show_preferences()
 
     assert window._canvas.wrap is False
+    assert window._canvas.sessions is False
     assert window._density is Density.COARSE
     assert window._time_filter._band.isHidden()
     assert window._evidence._decode is False
@@ -210,6 +213,20 @@ def test_saying_ok_writes_them_down(qt_app: QApplication, monkeypatch: pytest.Mo
     second = MainWindow()
 
     assert second._canvas.wrap is False
+    second.close()
+
+
+def test_the_session_boxes_choice_is_remembered(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = MainWindow()
+    _answer(monkeypatch, QDialog.DialogCode.Accepted, **{"view/session_boxes": False})
+    first._show_preferences()
+    first.close()
+
+    second = MainWindow()
+
+    assert second._canvas.sessions is False
     second.close()
 
 

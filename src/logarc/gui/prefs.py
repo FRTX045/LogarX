@@ -86,6 +86,16 @@ EVERY: tuple[Setting, ...] = (
         group="Graph",
     ),
     Setting(
+        key="view/session_boxes",
+        label="Outline each session",
+        note=(
+            "Draw a box around each visit on the trace, with its number, how many "
+            "activities it holds and when it ran."
+        ),
+        default=True,
+        group="Graph",
+    ),
+    Setting(
         key="view/traffic_band",
         label="Show the traffic band",
         note="Draw where the case's traffic sits, above the date fields.",

@@ -1536,6 +1536,7 @@ class MainWindow(QMainWindow):
         band's counting needs no applying — `_buckets` reads it when it asks.
         """
         self._apply_wrap(bool(self._prefs["view/wrap_traces"]))
+        self._apply_sessions(bool(self._prefs["view/session_boxes"]))
         self._apply_band(bool(self._prefs["view/traffic_band"]))
         self._apply_evidence_view(bool(self._prefs["view/decode_targets"]))
 
@@ -1560,6 +1561,7 @@ class MainWindow(QMainWindow):
         """
         self._prefs = dict(chosen)
         self._apply_wrap(bool(chosen["view/wrap_traces"]))
+        self._apply_sessions(bool(chosen["view/session_boxes"]))
         self._apply_band(bool(chosen["view/traffic_band"]))
         self._apply_evidence_view(bool(chosen["view/decode_targets"]))
         self._apply_density(prefs.density_in(chosen))
@@ -1641,6 +1643,14 @@ class MainWindow(QMainWindow):
         # redrawing again to place the nodes would double the cost of a toggle
         # on the graphs where it is already slowest.
         self._canvas.set_wrap(wrap, positions=self._arrangements_kept.saved_positions(wrap=wrap))
+
+    def _apply_sessions(self, shown: bool) -> None:
+        """Box each session on the trace, or stop.
+
+        A behaviour map has no sessions to box, so this decides nothing while
+        one is on screen; the choice holds for the trace when it comes back.
+        """
+        self._canvas.set_sessions(shown)
 
     def _apply_evidence_view(self, decode: bool) -> None:
         """How targets are shown in the evidence panel.

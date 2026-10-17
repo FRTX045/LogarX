@@ -367,3 +367,61 @@ def test_an_activity_dragged_onto_another_box_stays_in_its_own(qt_app: QApplicat
     assert outline_of(canvas, "1.2.3.4#1/2").contains(held(node_item(canvas, "1.2.3.4#1/2")))
     for patch_item in patches(canvas):
         assert patch_item.brush().color() == QColor(SESSION_GROUND)
+
+
+# -- the switch ------------------------------------------------------------
+
+
+def test_turning_the_boxes_off_takes_them_away_and_nothing_else(qt_app: QApplication) -> None:
+    canvas = drawn(trace(3, 2))
+    drag(canvas, "1.2.3.4#1/2", QPoint(60, 30))
+    canvas.highlight("1.2.3.4#2/1")
+    where = canvas.positions
+    zoom = canvas.transform()
+    centre = canvas.mapToScene(canvas.viewport().rect().center())
+
+    canvas.set_sessions(False)
+
+    assert canvas.sessions is False
+    assert session_boxes(canvas) == []
+    assert not [i for i in canvas.graph_scene.items() if i.zValue() < 0], "a box left behind"
+    words = [i.text() for i in canvas.graph_scene.items() if isinstance(i, QGraphicsSimpleTextItem)]
+    assert not [w for w in words if w.startswith("Session ")], "a label left behind"
+    assert all(ground.brush().color() == QColor(PAPER) for ground in patches(canvas))
+    assert canvas.positions == where
+    assert canvas.transform() == zoom
+    assert canvas.mapToScene(canvas.viewport().rect().center()) == centre
+    assert canvas.can_undo, "the drag can still be taken back"
+    assert canvas._selected == "1.2.3.4#2/1"
+
+
+def test_turning_them_back_on_boxes_the_activities_where_they_are(qt_app: QApplication) -> None:
+    canvas = drawn(trace(3, 2))
+    canvas.set_sessions(False)
+    drag(canvas, "1.2.3.4#1/2", QPoint(160, 0))
+
+    canvas.set_sessions(True)
+
+    assert len(session_boxes(canvas)) == 2
+    assert outline_of(canvas, "1.2.3.4#1/2").contains(held(node_item(canvas, "1.2.3.4#1/2")))
+    assert all(ground.brush().color() == QColor(SESSION_GROUND) for ground in patches(canvas))
+
+
+def test_a_graph_drawn_with_the_boxes_off_has_none(qt_app: QApplication) -> None:
+    """The window restores the choice while it is being built, before any
+    graph exists; it has to hold for every graph drawn after."""
+    canvas = ActivityCanvas()
+    canvas.set_sessions(False)
+
+    canvas.show_graph(trace(2, 2))
+
+    assert session_boxes(canvas) == []
+    assert all(ground.brush().color() == QColor(PAPER) for ground in patches(canvas))
+
+
+def test_a_wrap_toggle_keeps_the_boxes(qt_app: QApplication) -> None:
+    canvas = drawn(trace(7, 2))
+
+    canvas.set_wrap(False)
+
+    assert len(session_boxes(canvas)) == 2

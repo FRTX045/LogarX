@@ -822,6 +822,40 @@ class ActivityCanvas(QGraphicsView):
         if selected is not None:
             self.highlight(selected)
 
+    def set_sessions(self, shown: bool) -> None:
+        """Box each session of the trace, or stop.
+
+        Moves nothing. Unlike a wrap, this redraws no activity: the boxes are
+        taken away or put round the activities where they now stand, so the
+        reader's zoom, place, selection and Undo history all survive it, and
+        an arrangement they have not saved is still there to save.
+
+        Safe before anything is drawn: the window hands over the remembered
+        choice while it is still being built.
+        """
+        if shown == self._sessions:
+            return
+        self._sessions = shown
+        graph = self._graph
+        if graph is None or not self._nodes or graph.kind is not GraphKind.TRACE:
+            return
+        self._patch_ground = SESSION_GROUND if shown else PAPER
+        for patch in self._patches:
+            patch.setBrush(QBrush(QColor(self._patch_ground)))
+        if shown:
+            self._draw_sessions(graph)
+        else:
+            self._forget_sessions()
+        self._spread_paper()
+
+    def _forget_sessions(self) -> None:
+        """Take every box off the scene, and every reference to one with it."""
+        for box in self._boxes:
+            self._scene.removeItem(box.shape)
+            self._scene.removeItem(box.label)
+        self._boxes.clear()
+        self._box_of.clear()
+
     # -- moving ------------------------------------------------------------
 
     def _node_moved(self, node_id: str) -> None:
