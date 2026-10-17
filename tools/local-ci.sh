@@ -11,8 +11,7 @@
 #   tests on Windows       natively, when this is Windows (Git Bash)
 # Every test job builds the CRS sidecar, sets LOGARC_REQUIRE_CRS=1, runs the
 # engine half with coverage and the window half with --cov-append, so the 94%
-# floor in pyproject.toml applies; on Linux the window half is retried once on
-# exit 139 only, as CI does.
+# floor in pyproject.toml applies.
 #
 # The Python versions and the CRS pin are read from the workflow, not repeated
 # here, so the two cannot drift; tests/test_local_ci.py holds that.
@@ -116,11 +115,7 @@ linux_tests() {  # linux_tests <python version>
       python -c "import sys; print(\"python\", sys.version.split()[0])"
       pytest -p no:cacheprovider --ignore=tests/gui -n 4 \
         --cov=logarc --cov-report=term-missing --cov-fail-under=0
-      run() { QT_QPA_PLATFORM=offscreen pytest -p no:cacheprovider tests/gui --cov=logarc --cov-append --cov-report=term-missing; }
-      set +e
-      run; code=$?
-      if [ "$code" -eq 139 ]; then echo "WARNING: GUI suite segfaulted (known intermittent); running it once more"; run; code=$?; fi
-      exit $code'; } > "$log" 2>&1
+      QT_QPA_PLATFORM=offscreen pytest -p no:cacheprovider tests/gui --cov=logarc --cov-append --cov-report=term-missing'; } > "$log" 2>&1
   record "linux-$1" $?
 }
 

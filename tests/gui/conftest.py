@@ -27,17 +27,29 @@ from PyQt6.QtWidgets import QApplication
 
 from logarc.gui import app, workers
 
+#: Kept here, not only in the fixture's cache, so nothing pytest lets go of can
+#: take the application with it.
+_application: QApplication | None = None
 
-@pytest.fixture(scope="module")
+
+@pytest.fixture(scope="session")
 def qt_app() -> QApplication:
-    """The one application object, reused across a module.
+    """The one application object, for the whole run.
 
-    Qt permits exactly one `QApplication` per process, so this hands back
-    whichever already exists. Module scope rather than session because that is
-    what every copy of this fixture used, and a widget left over from another
-    file is a state a test did not ask for.
+    Qt supports one `QApplication` per process, built before any widget and
+    kept until the last one is gone. This was scoped to a module once, and the
+    fixture held the only reference, so pytest let go of it at the end of every
+    file and PyQt deleted it: 31 applications in one run. Windows still alive
+    at that moment lost their C++ objects with it, and the cyclic collector
+    finished them off later, inside a new window's `__init__`, touching freed
+    memory. That was the Linux segfault in `MainWindow.__init__`.
+    `test_one_application.py` holds this in place.
     """
-    return QApplication.instance() or QApplication([])
+    global _application
+    if _application is None:
+        found = QApplication.instance()
+        _application = found if isinstance(found, QApplication) else QApplication([])
+    return _application
 
 
 def settled(qt_app: QApplication, timeout: float = 30.0) -> None:
