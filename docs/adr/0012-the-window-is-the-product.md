@@ -1,6 +1,7 @@
 # ADR-0012: The window is the product; the command line is a developer tool
 
-- **Status:** Proposed
+- **Status:** Accepted. The build check is in force now; the rest is carried
+  out at the first public release (see *When* below).
 - **Date:** 2026-10-17
 
 ## Context
@@ -64,6 +65,20 @@ swapped in.
 "run `logarc enrich`" or "rebuild with `logarc setup-crs`" names the menu or
 button instead. Messages only a developer can reach, such as a source
 checkout's missing sidecar, name `logarc-dev setup-crs`.
+
+## When
+
+**Now:** the build check. A user can only get logarc as the packaged
+application, so it is the one part that protects anybody today.
+
+**At the first public release:** the rename to `logarc-dev`, the deleted
+commands and the documents. Until then the command line is still how this
+project builds, measures and debugs from day to day, and renaming it under
+work in progress would cost more than it saves.
+
+**Meanwhile, one rule:** a new feature for users is built in the window only,
+never as a new command, so that nothing more is built twice before the
+command line is cut back.
 
 ## Consequences
 
