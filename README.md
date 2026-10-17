@@ -514,7 +514,7 @@ passed; 3 means nothing failed but some jobs could not run on this machine.
 | [docs/adding-a-parser.md](docs/adding-a-parser.md) | Supporting another log format |
 | [docs/evaluation.md](docs/evaluation.md) | How accuracy is measured, the numbers, and their limits |
 | [docs/manual-test-plan.md](docs/manual-test-plan.md) | What the automated suite cannot check |
-| [docs/adr/](docs/adr/) | Eleven architecture decision records, including the ones that were wrong |
+| [docs/adr/](docs/adr/) | The architecture decision records, including the ones that were wrong |
 | [CHANGELOG.md](CHANGELOG.md) | What has changed, including what falls short |
 
 ---
