@@ -97,6 +97,7 @@ class FakeProcess:
     def __init__(self, crs: FakeCrs, argv: list[str]) -> None:
         self.crs = crs
         self._crs = crs
+        self.argv = argv
         self._pending: list[Record] = []
         self.stdin = _Input(self)
         self.stdout = _Stream()
