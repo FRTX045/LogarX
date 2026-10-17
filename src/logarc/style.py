@@ -84,6 +84,7 @@ __all__ = [
     "session_rule",
     "severity_colour",
     "severity_legend",
+    "severity_text_colour",
     "shorten_agent",
     "status_colour",
     "style_for",
@@ -173,6 +174,14 @@ class Theme:
     #: that still has to be read, so it clears AA too.
     faint: str
 
+    #: Logged IP addresses and host names. This identifies the subject, without
+    #: suggesting that the address is safe, hostile, or a clickable link.
+    identity: str
+    #: Recorded times and durations, consistent across lists and detail panes.
+    timestamp: str
+    #: Incomplete coverage, provisional results and other actionable cautions.
+    warning: str
+
     #: The ring drawn around the activity whose evidence is on screen, and the
     #: colour of anything else that means "this is the one you chose".
     #:
@@ -209,6 +218,9 @@ class Theme:
     #: separation, and holds one guarantee instead: nothing falls below 3:1 on
     #: the surface, and critical is never the faintest thing on the canvas.
     severity: Mapping[Severity, str]
+    #: The same severity hues, adjusted for readable text rather than node fills.
+    #: Small lettering must clear 4.5:1 even on a selected or striped table row.
+    severity_text: Mapping[Severity, str]
     #: Outcome as an outline. A border is drawn at the fill's edge and its job
     #: is to read *against that fill*, which is why the dark theme keeps dark
     #: outlines: on dark every fill is bright.
@@ -227,6 +239,9 @@ LIGHT: Final = Theme(
     ink="#1f2933",
     muted="#566470",
     faint="#616e7c",
+    identity="#246a63",
+    timestamp="#65518f",
+    warning="#805b14",
     accent="#2c6ea8",
     on_accent="#ffffff",
     tint="#cfe0f5",
@@ -239,6 +254,13 @@ LIGHT: Final = Theme(
         Severity.MEDIUM: "#d8a33c",
         Severity.HIGH: "#d4693a",
         Severity.CRITICAL: "#b5273a",
+    },
+    severity_text={
+        Severity.INFO: "#566470",
+        Severity.LOW: "#246a63",
+        Severity.MEDIUM: "#805b14",
+        Severity.HIGH: "#99451f",
+        Severity.CRITICAL: "#a72235",
     },
     outcomes={
         # Solid and heavy: it worked. This is the one an investigator must not
@@ -270,18 +292,28 @@ DARK: Final = Theme(
     ink="#efeeed",
     muted="#b2b1af",
     faint="#8a8987",
+    identity="#79c9c0",
+    timestamp="#b9ade3",
+    warning="#d0a144",
     accent="#49a9ff",
     on_accent="#001226",
     tint="#0e2a45",
     edge_ink="#8a8987",
     grid_dot="#8a8987",
-    alert="#e14d5f",
+    alert="#ff8293",
     severity={
         Severity.INFO: "#6e7a85",
         Severity.LOW: "#4baaa5",
         Severity.MEDIUM: "#d0a144",
         Severity.HIGH: "#d47548",
         Severity.CRITICAL: "#e14d5f",
+    },
+    severity_text={
+        Severity.INFO: "#b2b1af",
+        Severity.LOW: "#4baaa5",
+        Severity.MEDIUM: "#d0a144",
+        Severity.HIGH: "#eba27b",
+        Severity.CRITICAL: "#ff8293",
     },
     outcomes={
         # One colour for all four, light, and the style carries the meaning.
@@ -397,6 +429,11 @@ def severity_colour(severity: Severity, *, theme: Theme = THEME) -> str:
     agreeing about what a severity looks like is an invariant with a test on it.
     """
     return theme.severity[severity]
+
+
+def severity_text_colour(severity: Severity, *, theme: Theme = THEME) -> str:
+    """A detection's severity as readable lettering, in the canvas's hue family."""
+    return theme.severity_text[severity]
 
 
 def outcome_border(outcome: Outcome, *, theme: Theme = THEME) -> Border:
