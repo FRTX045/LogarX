@@ -329,7 +329,13 @@ sudo apt install libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 \
   libxcb-keysyms1 libxcb-render-util0 libxcb-shape0 libxcb-xkb1 libxcb-util1
 ```
 
-Wayland needed nothing beyond what the system already had.
+Wayland needed nothing beyond what the system already had. That smoke test did
+not cover leaving graph fullscreen from a maximized window. On 2026-10-17, that
+transition reproduced a fatal WSLg Wayland protocol error (configured size
+`0 × 0`), while repeated X11 fullscreen transitions completed successfully.
+The launcher now defaults to `xcb` on WSL when `DISPLAY` is available, preserving
+explicit `QT_QPA_PLATFORM` settings and other desktops' defaults. See
+[WSL display behavior](docs/desktop-app.md).
 
 ```bash
 pip install -e ".[gui]"      # the tool and the desktop application

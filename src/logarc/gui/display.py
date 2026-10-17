@@ -12,11 +12,16 @@ def is_wsl() -> bool:
 
 
 def configure_display() -> None:
-    """Use a larger WSL cursor, keeping explicit overrides.
+    """Use stable WSL window transitions and a readable cursor.
 
     Window buttons are drawn by `window_controls`; no decoration plugin is
     forced, since plugins can hide buttons according to desktop settings.
+    WSLg's native Wayland path can terminate the process when fullscreen returns
+    to maximized with a zero-size configure. Prefer its X11 server when offered,
+    before QApplication connects; explicit Qt backend choices still win.
     """
     if not is_wsl():
         return
+    if os.environ.get("DISPLAY"):
+        os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
     os.environ.setdefault("XCURSOR_SIZE", "32")
