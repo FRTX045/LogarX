@@ -14,6 +14,7 @@ open eyes. The other two are faults, and the tests for them are here.
 from __future__ import annotations
 
 import os
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from itertools import pairwise
 
@@ -380,11 +381,17 @@ def test_the_graph_is_refitted_when_it_is_given_the_screen(qt_app: QApplication)
     without the refit, and there is no point in a test that cannot fail. It
     fits at 1.23 in this window. Two nodes fitted at 0.65 until the floor rose
     to 0.8, and the premise below caught it.
+
+    Drawn as a behaviour map, which has no session box. On a trace the node
+    sits in a box as wide as its label, and under the offscreen platform's
+    fontless metrics that label alone is 931 units: the one node then fits
+    only at the floor, the premise fails, and it fails on the font rather than
+    on anything about full screen. `fit` is the same code for either view.
     """
     window = MainWindow()
     window.resize(1400, 800)
     window.show()
-    window._canvas.show_graph(a_trace(1))
+    window._canvas.show_graph(replace(a_trace(1), kind=GraphKind.BEHAVIOUR))
     qt_app.processEvents()
     window._canvas.fit()
     qt_app.processEvents()

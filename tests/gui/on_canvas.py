@@ -17,9 +17,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from logarc.gui.canvas import ActivityCanvas, _EdgeArt, _NodeItem
+    from logarc.gui.canvas import ActivityCanvas, _EdgeArt, _NodeItem, _SessionBox
 
-__all__ = ["edge_between", "node_item", "node_items"]
+__all__ = ["box_text", "edge_between", "node_item", "node_items", "session_boxes"]
 
 
 def node_item(canvas: ActivityCanvas, node_id: str) -> _NodeItem:
@@ -53,3 +53,14 @@ def edge_between(canvas: ActivityCanvas, source_id: str, target_id: str) -> _Edg
     )
     assert len(drawn) == 1, f"{len(drawn)} arrows {source_id} -> {target_id}, expected one"
     return drawn[0]
+
+
+def session_boxes(canvas: ActivityCanvas) -> list[_SessionBox]:
+    """Every session's box, in the order the sessions are drawn."""
+    return list(canvas._boxes)
+
+
+def box_text(box: _SessionBox) -> str:
+    """What a box's label says."""
+    (text,) = box.label.childItems()
+    return text.text()  # type: ignore[attr-defined]
