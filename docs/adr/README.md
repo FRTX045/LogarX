@@ -22,10 +22,11 @@ longer holds, so this is where the state of each record is written down.
 | [0005](0005-measuring-accuracy-against-generated-ground-truth.md) | Measure accuracy against generated ground truth | **Partly superseded by [0011](0011-a-real-server-log-is-the-headline-corpus.md)** — the generator it describes was removed. How to *score* still stands; the corpus does not. |
 | [0006](0006-qgraphicsview-rather-than-an-embedded-browser.md) | Draw the activity graph on QGraphicsView, not in an embedded browser | Accepted |
 | [0007](0007-scoring-detection-against-the-crs-regression-corpus.md) | Score detection against the OWASP CRS regression corpus | **Accepted, tooling since removed.** The measurement was taken once; `logarc score-crs` went in `2868e78` and is not coming back, so the figure cannot currently be re-derived. |
-| [0008](0008-crs-as-a-signature-layer-beside-the-rule-packs.md) | Run OWASP CRS beside the rule packs, not instead of them | **Accepted, amended 2026-09-15** — `score-crs` returns, scoring this project's rules against CRS's corpus rather than CRS's own. The amendment's first figures were wrong and are corrected in place, with the correction recorded. |
+| [0008](0008-crs-as-a-signature-layer-beside-the-rule-packs.md) | Run OWASP CRS beside the rule packs, not instead of them | **Accepted, amended 2026-09-15, 2026-10-14 and 2026-10-15** — `score-crs` returns, scoring this project's rules against CRS's corpus rather than CRS's own; the amendment's first figures were wrong and are corrected in place, with the correction recorded. Then CRS's `@rx` moves to RE2, and the RE2 build that crashed on newer Intel CPUs is replaced by one compiled ahead of time. |
 | [0009](0009-parallel-ingest-rather-than-a-native-parser.md) | Parallelise ingest rather than rewrite the parser in another language | Accepted |
 | [0010](0010-a-log-format-is-data-that-travels-with-the-work.md) | A log format is data, and it travels with the work | Accepted |
 | [0011](0011-a-real-server-log-is-the-headline-corpus.md) | A real server's log is the headline corpus, and the generator is removed | Accepted |
+| [0012](0012-the-window-is-the-product.md) | The window is the product; the command line is a developer tool | **Accepted, carried out in two steps.** The build check that keeps the command line out of the packaged application is in force; the rename to `logarc-dev` and the deleted commands wait for the first public release. |
 
 ## Which to read first
 
