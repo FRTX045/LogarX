@@ -33,7 +33,7 @@ def test_wsl_enlarges_cursor_without_replacing_window_buttons(
 
     assert os.environ["XCURSOR_SIZE"] == "32"
     assert "QT_WAYLAND_DECORATION" not in os.environ
-    assert os.environ["QT_QPA_PLATFORM"] == "xcb"
+    assert "QT_QPA_PLATFORM" not in os.environ
 
 
 @pytest.mark.parametrize("backend", ["wayland", "offscreen", "xcb", "xcb;wayland"])

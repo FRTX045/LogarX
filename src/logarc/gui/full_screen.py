@@ -16,6 +16,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QGuiApplication
+
+from logarc.gui.display import is_wsl
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -78,6 +81,17 @@ class FullScreen:
                 widget.hide()
             self._window.showFullScreen()
         else:
+            # WSLg may configure fullscreen -> maximized as 0x0 and then
+            # terminate the Wayland connection. Unmap first so the maximized
+            # window gets a fresh surface. Keep Wayland's correct input and
+            # screen coordinates rather than switching to XWayland, whose
+            # borderless windows can have a visible/input offset (WSLg #1015).
+            if (
+                self._was_maximised
+                and is_wsl()
+                and QGuiApplication.platformName().startswith("wayland")
+            ):
+                self._window.hide()
             for widget in self._covered:
                 widget.show()
             self._covered = []

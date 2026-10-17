@@ -26,12 +26,13 @@ double-click to maximize or restore, and drag an edge or corner to resize.
 Graph fullscreen hides the strip and restores the previous window state when
 leaving fullscreen.
 
-On WSL, the launcher defaults to Qt's X11 (`xcb`) backend when `DISPLAY` is
-available. WSLg's native Wayland backend can close the application when returning
-from fullscreen to a maximized window, reporting a configured size of `0 × 0`.
-This matches [WSLg issue #1428](https://github.com/microsoft/wslg/issues/1428).
-The default is local to this application; an explicit `QT_QPA_PLATFORM` setting
-is preserved, and other desktops keep Qt's normal backend selection.
+On WSL, Qt keeps its normal display-backend selection. Returning from graph
+fullscreen to a maximized Wayland window briefly hides and shows that same
+window, giving it a fresh display surface. This avoids the fatal `0 × 0`
+configuration reported in [WSLg issue #1428](https://github.com/microsoft/wslg/issues/1428).
+Forcing X11 introduced incorrect borderless-window bounds and cursor hit positions
+([WSLg issue #1015](https://github.com/microsoft/wslg/issues/1015)), so the launcher
+does not force that backend. Explicit `QT_QPA_PLATFORM` settings remain respected.
 
 The WSL launcher requests a 32 px cursor. This default applies to this application
 and respects existing environment settings. For a larger cursor, launch with

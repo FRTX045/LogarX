@@ -542,3 +542,55 @@ def test_graph_fullscreen_restores_maximised_window(qt_app: QApplication) -> Non
     assert window.isMaximized()
     assert window.menuBar().isVisible()
     window.close()
+
+
+@pytest.mark.parametrize(
+    "backend,wsl,maximized",
+    [
+        ("wayland", True, True),
+        ("wayland-egl", True, True),
+        ("wayland", True, False),
+        ("wayland", False, True),
+        ("xcb", True, True),
+    ],
+)
+def test_restore_unmaps_only_the_unsafe_wsl_wayland_transition(
+    qt_app: QApplication,
+    monkeypatch: pytest.MonkeyPatch,
+    backend: str,
+    wsl: bool,
+    maximized: bool,
+) -> None:
+    from logarc.gui import full_screen
+
+    monkeypatch.setattr(full_screen, "is_wsl", lambda: wsl)
+    monkeypatch.setattr(full_screen.QGuiApplication, "platformName", lambda: backend)
+    window = MainWindow()
+    window._canvas.show_graph(a_trace(3))
+    if maximized:
+        window.showMaximized()
+    else:
+        window.show()
+    qt_app.processEvents()
+    before = _shown(window)
+    positions = window._canvas.positions
+    mapped_at_restore = []
+    restore = window.showMaximized if maximized else window.showNormal
+
+    def recorded_restore():
+        mapped_at_restore.append(window.isVisible())
+        restore()
+
+    monkeypatch.setattr(window, "showMaximized" if maximized else "showNormal", recorded_restore)
+    for _ in range(3):
+        window._full_screen.apply(True)
+        qt_app.processEvents()
+        window._full_screen.apply(False)
+        qt_app.processEvents()
+        assert window.isVisible()
+        assert window.isMaximized() == maximized
+        assert _shown(window) == before
+        assert window._canvas.positions == positions
+    needs_remap = wsl and backend.startswith("wayland") and maximized
+    assert mapped_at_restore == [not needs_remap] * 3
+    window.close()
