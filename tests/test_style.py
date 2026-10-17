@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from itertools import combinations, pairwise
 
 import pytest
@@ -12,6 +13,7 @@ from logarc.core.activity import ActivityCategory, Outcome, Severity
 from logarc.core.evidence import EvidenceRef
 from logarc.core.graph import GraphKind, GraphNode
 from logarc.style import (
+    CAPTION_COLOUR,
     EVIDENCE_INK,
     EVIDENCE_MUTED,
     LIGHT,
@@ -19,7 +21,9 @@ from logarc.style import (
     PAPER_STRIPE,
     SELECTION_COLOUR,
     SELECTION_TINT,
+    SESSION_GROUND,
     SIZE_NOTE,
+    THEME,
     NodeStyle,
     decode_target,
     edge_label,
@@ -31,6 +35,7 @@ from logarc.style import (
     outcome_border,
     outcome_legend,
     plural,
+    session_caption,
     severity_colour,
     severity_legend,
     shorten_agent,
@@ -586,3 +591,61 @@ def test_the_outcome_channel_does_not_lean_on_colour() -> None:
 
     assert len({border.colour for border in borders}) == 1, "outcome is not carried by hue"
     assert len({(border.style, border.width) for border in borders}) == len(borders)
+
+
+# -- a session's box -------------------------------------------------------
+
+
+def _spell(start: datetime, end: datetime) -> GraphNode:
+    return replace(node(), start=start, end=end)
+
+
+def test_a_session_box_says_which_visit_how_much_and_when() -> None:
+    nodes = [
+        _spell(datetime(2026, 3, 9, 1, 55, tzinfo=UTC), datetime(2026, 3, 9, 2, 1, tzinfo=UTC)),
+        _spell(datetime(2026, 3, 9, 2, 20, tzinfo=UTC), datetime(2026, 3, 9, 2, 26, tzinfo=UTC)),
+    ]
+
+    caption = session_caption(2, 69, nodes)
+
+    assert caption == "Session 2 of 69 · 2 activities · 09 Mar 01:55\u201302:26"
+
+
+def test_a_session_inside_one_minute_gives_one_time() -> None:
+    """A range from 09:42 to 09:42 reads as a typing error."""
+    moment = datetime(2026, 3, 12, 9, 42, 5, tzinfo=UTC)
+
+    caption = session_caption(1, 150, [_spell(moment, moment + timedelta(seconds=30))])
+
+    assert caption == "Session 1 of 150 · 1 activity · 12 Mar 09:42"
+
+
+def test_a_session_across_midnight_says_both_days() -> None:
+    """23:50 to 00:20 on its own reads as running backwards."""
+    nodes = [
+        _spell(datetime(2026, 3, 9, 23, 50, tzinfo=UTC), datetime(2026, 3, 9, 23, 55, tzinfo=UTC)),
+        _spell(datetime(2026, 3, 10, 0, 10, tzinfo=UTC), datetime(2026, 3, 10, 0, 20, tzinfo=UTC)),
+    ]
+
+    caption = session_caption(3, 3, nodes)
+
+    assert caption == "Session 3 of 3 · 2 activities · 09 Mar 23:50 \u2013 10 Mar 00:20"
+
+
+def test_a_box_ground_is_the_paper_with_a_breath_of_the_accent() -> None:
+    """Derived rather than chosen, so it follows the theme. Pinned here so the
+    blend cannot drift into a colour nobody measured."""
+    assert SESSION_GROUND == "#13171a"
+
+
+def test_everything_drawn_inside_a_box_still_reads_against_it() -> None:
+    """The floors the theme already states for the plain ground, held again for
+    the box ground: text at 4.5:1, every severity and every outline at 3:1.
+    Measured 2026-10-17: caption 15.55, label 8.41, faintest severity 4.11."""
+    assert contrast(CAPTION_COLOUR, SESSION_GROUND) >= 4.5
+    assert contrast(THEME.muted, SESSION_GROUND) >= 4.5
+    assert contrast(SELECTION_COLOUR, SESSION_GROUND) >= 3.0
+    for level in Severity:
+        assert contrast(severity_colour(level), SESSION_GROUND) >= 3.0, level
+    for outcome in Outcome:
+        assert contrast(outcome_border(outcome).colour, SESSION_GROUND) >= 3.0, outcome
