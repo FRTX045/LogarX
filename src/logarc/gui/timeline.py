@@ -47,7 +47,7 @@ _BELOW = 26
 #: empty the window, which reads as the band having broken.
 _ENOUGH = 4
 
-_CAPTION_POINTS = 11.0
+_CAPTION_POINTS = 12.0
 
 
 class Timeline(QWidget):

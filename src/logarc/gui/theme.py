@@ -69,15 +69,15 @@ MONO_FAMILIES: Final = ("Cascadia Mono", "Consolas", "DejaVu Sans Mono", "monosp
 #:
 #: Some desktops supply a tiny default font. Set a minimum without overriding
 #: a reader who already chose larger system text.
-_UI_POINTS: Final = 13.0
-_MONO_POINTS: Final = 12.0
+_UI_POINTS: Final = 14.0
+_MONO_POINTS: Final = 13.0
 _TITLE_STEP: Final = 3.0
 _HEADING_STEP: Final = 1.0
 _CAPTION_STEP: Final = -1.0
 #: No smaller than this, whatever the arithmetic says. A caption on a machine
 #: set to a small base font was arriving at 6pt, which is not a quiet label but
 #: an unreadable one.
-_FLOOR: Final = 11.0
+_FLOOR: Final = 12.0
 
 
 class _ReadableStyle(QProxyStyle):
@@ -163,7 +163,7 @@ def caption_font(base: QFont) -> QFont:
 
 
 def ui_font(base: QFont | None = None) -> QFont:
-    """The interface face, at least 13pt and respecting larger system text."""
+    """The interface face, at least 14pt and respecting larger system text."""
     font = QFont(base) if base is not None else QFont()
     font.setFamilies(list(UI_FAMILIES))
     font.setPointSizeF(max(font.pointSizeF(), _UI_POINTS))

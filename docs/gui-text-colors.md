@@ -3,8 +3,8 @@
 Text color identifies a role, not a verdict about the traffic. Labels, values,
 severity names, and status messages remain readable without recognizing a hue.
 Normal prose and requests use neutral ink; supporting descriptions and source
-references use muted ink. Font sizes and the dark document surfaces stay as they
-are. Rank numbers and format-preview field labels use muted ink because they are
+references use muted ink. Text size follows the GUI's type scale independently
+of color. Rank numbers and format-preview field labels use muted ink because they are
 structure beside the values, rather than the evidence to read first.
 
 | Role | Where it appears | Reason |

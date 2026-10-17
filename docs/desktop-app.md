@@ -16,6 +16,11 @@ serialisation of the reconstruction, and narrowing a reconstruction to a
 Window state — preferences, saved arrangements, the recent-case list — is the
 window's own and has no command-line equivalent by nature.
 
+Interface text starts at 14 pt, evidence text at 13 pt, and small interface
+captions at 12 pt. Larger system font choices are preserved. Graph captions and
+transition labels are slightly larger too, opening at about 11.6 pt or more at
+the default minimum zoom; zooming scales the graph and its text together.
+
 Scrollbars have 20 px tracks, brighter handles, and a minimum handle length of
 42 px. The dividers between panels use 5 px lines with a 1 px margin on each
 side and highlight blue when hovered.
