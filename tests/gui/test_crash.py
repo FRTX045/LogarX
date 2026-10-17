@@ -229,9 +229,16 @@ def test_the_entry_point_puts_the_net_up(
     Driven through `main` rather than by reading it: this one line is the whole
     difference between a window that says what went wrong and a window that
     disappears.
+
+    The theme and the display defaults are left out because they are applied
+    to the whole application, which every later test shares: themed here, two
+    layout tests in `test_window.py` measured Fusion's widths instead of the
+    ones they were written against.
     """
     installed: list[object] = []
     monkeypatch.setattr(app_module.crash, "install", lambda report, **kw: installed.append(report))
+    monkeypatch.setattr(app_module, "apply_theme", lambda app: None)
+    monkeypatch.setattr(app_module, "configure_display", lambda: None)
     monkeypatch.setattr(app_module.MainWindow, "show", lambda self: None)
     monkeypatch.setattr(app_module.MainWindow, "offer_start", lambda self: None)
     monkeypatch.setattr(app_module.QApplication, "exec", lambda self: 0)
