@@ -828,8 +828,9 @@ class ActivityCanvas(QGraphicsView):
         """Bring everything attached to an activity along with it.
 
         Called on every mouse-move event of a drag, and it touches only what
-        moved: the arrows filed under this node, and the ring if this is the
-        node being read.
+        moved: the arrows filed under this node, the ring if this is the node
+        being read, and the box of the session it belongs to — one box, of the
+        hundred and fifty a busy client can have.
 
         Not for speed. Reshaping every arrow in the graph instead measured the
         same to three decimal places — 0.339 ms against 0.343 ms on a 600-node
@@ -852,6 +853,11 @@ class ActivityCanvas(QGraphicsView):
 
         if self._halo is not None and self._selected == node_id:
             self._halo.setPos(item.pos())
+
+        box = self._box_of.get(node_id)
+        if box is not None:
+            self._fit_box(box)
+            self._grow_scene_for(box.shape)
 
         self._grow_scene_for(item)
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 from datetime import UTC, datetime, timedelta
 from itertools import combinations, pairwise
+from unittest.mock import patch
 
 import pytest
 
@@ -17,7 +18,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
-from dragging import mouse
+from dragging import drag, mouse
 from on_canvas import box_text, node_item, node_items, session_boxes
 from PyQt6.QtCore import QEvent, QPoint, QRectF
 from PyQt6.QtGui import QColor, QImage, QPainter
@@ -129,7 +130,7 @@ def test_a_behaviour_map_has_no_boxes(qt_app: QApplication) -> None:
     canvas = drawn(behaviour_map())
 
     assert session_boxes(canvas) == []
-    assert all(patch.brush().color() == QColor(PAPER) for patch in patches(canvas))
+    assert all(ground.brush().color() == QColor(PAPER) for ground in patches(canvas))
 
 
 def test_nothing_drawn_means_no_boxes(qt_app: QApplication) -> None:
@@ -211,8 +212,8 @@ def test_every_word_inside_a_box_sits_on_the_box_ground(qt_app: QApplication) ->
 
     found = patches(canvas)
     assert len(found) == 5 + 3 + 2, "premise: captions, arrow numbers, box labels"
-    for patch in found:
-        assert patch.brush().color() == QColor(SESSION_GROUND)
+    for ground in found:
+        assert ground.brush().color() == QColor(SESSION_GROUND)
     for box in session_boxes(canvas):
         assert box.shape.brush().color() == QColor(SESSION_GROUND)
         assert box.shape.brush().color().alpha() == 255, "opaque, so the patches match it"
@@ -277,3 +278,92 @@ def test_a_press_inside_a_box_off_an_activity_pans(qt_app: QApplication) -> None
 
     assert canvas.horizontalScrollBar().value() != before
     canvas.close()
+
+
+# -- a box follows its activities -----------------------------------------
+
+
+def outline_of(canvas: ActivityCanvas, node_id: str) -> QRectF:
+    return canvas._box_of[node_id].shape.sceneBoundingRect()
+
+
+def test_a_box_follows_an_activity_dragged_out_of_it(qt_app: QApplication) -> None:
+    canvas = drawn(trace(3, 2))
+    moved = "1.2.3.4#1/3"
+    before = outline_of(canvas, moved)
+
+    drag(canvas, moved, QPoint(160, 0))
+
+    assert outline_of(canvas, moved).contains(held(node_item(canvas, moved)))
+    assert outline_of(canvas, moved).width() > before.width()
+
+
+def test_undo_and_reset_take_the_box_back(qt_app: QApplication) -> None:
+    canvas = drawn(trace(3, 2))
+    moved = "1.2.3.4#1/3"
+    before = outline_of(canvas, moved)
+
+    drag(canvas, moved, QPoint(160, 0))
+    assert outline_of(canvas, moved) != before, "premise: the drag took the box with it"
+    canvas.undo_move()
+    assert outline_of(canvas, moved) == before
+
+    drag(canvas, moved, QPoint(160, 0))
+    assert outline_of(canvas, moved) != before, "premise: the drag took the box with it"
+    canvas.reset_layout()
+    assert outline_of(canvas, moved) == before
+
+
+def test_a_saved_arrangement_opens_with_its_boxes_round_it(qt_app: QApplication) -> None:
+    graph = trace(3)
+    canvas = drawn(graph)
+    far = (2_000.0, 600.0)
+
+    canvas.show_graph(graph, positions={"1.2.3.4#1/2": far})
+
+    assert outline_of(canvas, "1.2.3.4#1/2").contains(held(node_item(canvas, "1.2.3.4#1/2")))
+
+
+def test_a_box_survives_a_redraw(qt_app: QApplication) -> None:
+    """Redrawing clears the scene. A box kept from before it would be a
+    wrapper round a deleted item, and the next drag would reach into it: the
+    class of fault behind the Linux crash in PR #54."""
+    graph = trace(3, 2)
+    canvas = drawn(graph)
+    canvas.show_graph(graph)
+    canvas.set_wrap(False)
+
+    drag(canvas, "1.2.3.4#2/2", QPoint(120, 40))
+
+    assert len(session_boxes(canvas)) == 2
+    assert outline_of(canvas, "1.2.3.4#2/2").contains(held(node_item(canvas, "1.2.3.4#2/2")))
+
+
+def test_a_drag_reshapes_only_the_box_it_moved_in(qt_app: QApplication) -> None:
+    """A busy client has a hundred and fifty boxes. A drag sends a position
+    change per mouse-move event, and each one should touch one box."""
+    from logarc.gui.canvas import _SessionBox
+
+    canvas = drawn(trace(*([1] * 150)))
+    seen: list[tuple[str, ...]] = []
+    original = _SessionBox.reshape
+
+    def counting(box: _SessionBox, around: QRectF) -> None:
+        seen.append(box.node_ids)
+        original(box, around)
+
+    with patch.object(_SessionBox, "reshape", counting):
+        node_item(canvas, "1.2.3.4#75/1").setPos(9_000.0, 9_000.0)
+
+    assert seen == [("1.2.3.4#75/1",)]
+
+
+def test_an_activity_dragged_onto_another_box_stays_in_its_own(qt_app: QApplication) -> None:
+    canvas = drawn(trace(2, 2))
+    target = canvas._box_of["1.2.3.4#2/1"].shape.sceneBoundingRect().center()
+
+    node_item(canvas, "1.2.3.4#1/2").setPos(target)
+
+    assert outline_of(canvas, "1.2.3.4#1/2").contains(held(node_item(canvas, "1.2.3.4#1/2")))
+    for patch_item in patches(canvas):
+        assert patch_item.brush().color() == QColor(SESSION_GROUND)
