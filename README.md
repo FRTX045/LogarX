@@ -18,9 +18,9 @@ browsing → reconnaissance → directory enumeration → SQL injection → data
 
 Every box links back to the exact raw log lines that produced it.
 
-![The logarc window: the client list, one client's trace, and the 19 log lines behind the selected SQL injection](docs/images/screenshot-trace.png)
+![The logarc window: the client list, one client's trace with each session in a box, and the 46 log lines behind the selected SQL injection](docs/images/screenshot-trace.png)
 
-<sub>sqlmap against a shop. The selected activity is 19 requests of `UNION ALL SELECT`, and the outcome is **success** — the server answered 200. The panel on the right is the evidence: line numbers, statuses, and the raw line exactly as Apache wrote it.</sub>
+<sub>sqlmap against a shop, in the last of three sessions. The selected activity is 46 requests — 30 `UNION ALL SELECT`, 11 always-true conditions, one column count, and four known only by sqlmap's user agent — and the outcome is **success**: the server answered 200 to every one. The panel on the right is the evidence: line numbers, statuses, and the raw line exactly as Apache wrote it.</sub>
 
 ---
 
