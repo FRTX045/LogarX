@@ -45,8 +45,9 @@ and respects existing environment settings. For a larger cursor, launch with
 first thing anyone looks for there.
 
 Several behaviours that read like menu items are **preferences**, under
-**Edit → Preferences…**: *Wrap long traces*, *Show the traffic band*, and
-*Reopen the last case on start*. They are remembered between launches.
+**Edit → Preferences…**: *Wrap long traces*, *Outline each session*, *Show the
+traffic band*, and *Reopen the last case on start*. They are remembered between
+launches.
 
 ---
 
@@ -110,6 +111,13 @@ on one line is as wide as it is long and shrinks to an unreadable smudge when
 fitted to the window. The *Wrap long traces* preference turns the fold off when
 the straight timeline is worth more than legible captions; the graph is then
 panned rather than fitted, opening on its first activity.
+
+Each session sits in a box of its own, labelled with its number, how many
+activities it holds and when it ran, such as `Session 2 of 69 · 2 activities ·
+09 Mar 01:55–02:26`. That gives the session count in the header something on the
+canvas to point to. A box follows its activities when they are dragged. The
+*Outline each session* preference turns the boxes off, and nothing moves when
+it does.
 
 ![The behaviour map: 557 requests folded into five activities](images/screenshot-behaviour.png)
 

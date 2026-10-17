@@ -7,6 +7,17 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Each session on the trace sits in a box of its own.** The header said
+  `69 sessions` and nothing on the canvas answered to the number. Now every
+  visit is a faint blue box labelled with its number, how many activities it
+  holds and when it ran: `Session 2 of 69 · 2 activities · 09 Mar 01:55–02:26`.
+  A box follows its activities when one is dragged, undone or reset, and a
+  press inside one off an activity still pans the view. The behaviour map has
+  none, because one circle there folds many sessions together. **Edit →
+  Preferences → Outline each session** turns them off without moving anything.
+  Chosen from screenshots of the real window over a ring around each session
+  and a divider between them.
+
 - **The development tools are published, under `tools/`.** Git hooks that
   stop a commit CI's lint job would reject and, when asked, rebuild `dist/`
   once work lands on `main`. A script that rewrites the CRS corpus record

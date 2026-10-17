@@ -872,6 +872,34 @@ candidates the ordering is the thing most likely to be wrong.
 
 ---
 
+## 22. Each session is boxed, and the boxes can be turned off
+
+1. Reconstruct `192.0.2.231` from the shopfront excerpt.
+
+**Pass:** every session is in a faint blue box labelled `Session k of 69 ·
+n activities · time`. No caption carries a darker square behind it. No two
+boxes touch.
+
+2. Drag an activity well to the right of its row, then press Ctrl+Z.
+
+**Pass:** the box stretches to hold it while it is away, and shrinks back
+with it.
+
+3. Press inside a box on empty ground and drag.
+
+**Pass:** the view pans. Nothing is selected.
+
+4. **Edit → Preferences… → Graph → Outline each session**, off, OK.
+
+**Pass:** the boxes go. Nothing moves, the zoom stays, and Ctrl+Z still takes
+back the drag from step 2.
+
+5. Switch to **Behaviour**.
+
+**Pass:** no boxes there, whichever way the preference is set.
+
+---
+
 ## Recording a run
 
 | # | Check | Result | Notes |
@@ -897,5 +925,6 @@ candidates the ordering is the thing most likely to be wrong.
 | 19 | An IIS log reads from its own header; its directives are not quarantined | | |
 | 20 | A pattern reads a syslog-wrapped log; a year-less time format is refused | | |
 | 21 | The fourteen shipped formats read as a list you can choose from | | |
+| 22 | Sessions are boxed; the boxes follow a drag and can be turned off | | |
 
 Version tested: ______  ·  Date: ______  ·  Machine: ______

@@ -40,7 +40,8 @@ from logarc.core.activity import Outcome, Severity
 from logarc.core.graph import GraphKind
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
+    from datetime import datetime
 
     from logarc.core.graph import GraphNode
 
@@ -59,6 +60,7 @@ __all__ = [
     "SELECTION_COLOUR",
     "SELECTION_TINT",
     "SELECTION_WIDTH",
+    "SESSION_GROUND",
     "SIZE_NOTE",
     "THEME",
     "Border",
@@ -77,6 +79,7 @@ __all__ = [
     "outcome_border",
     "outcome_legend",
     "plural",
+    "session_caption",
     "severity_colour",
     "severity_legend",
     "shorten_agent",
@@ -348,6 +351,31 @@ PIN_MARK: Final = "★"
 #: The accent, because pinning is a choice the reader made — the same thing the
 #: ring around a selected node says elsewhere.
 PIN_COLOUR: Final = THEME.accent
+
+
+def _blend(under: str, over: str, share: float) -> str:
+    """`over` laid on `under` at `share` opacity, as the one opaque colour that
+    results. Opaque because whatever is drawn on it has to match it exactly."""
+    lower = [int(under[i : i + 2], 16) for i in (1, 3, 5)]
+    upper = [int(over[i : i + 2], 16) for i in (1, 3, 5)]
+    return "#" + "".join(
+        f"{round(low + share * (high - low)):02x}" for low, high in zip(lower, upper, strict=True)
+    )
+
+
+#: The inside of a session's box: the paper with a breath of the accent over
+#: it, the blue the reader picked from the mockups on 2026-10-17.
+#:
+#: One opaque colour rather than a translucent fill, because everything written
+#: inside a box sits on a patch that hides the arrow behind it, and that patch
+#: has to be exactly this colour or every caption carries a dark square. A
+#: translucent fill composites to this only where nothing else overlaps it.
+#:
+#: Measured against it: caption ink 15.55:1, muted 8.41:1, selection ring
+#: 7.21:1, faintest severity (info) 4.11:1 — every floor the theme states for
+#: the plain ground still holds, which
+#: `test_everything_drawn_inside_a_box_still_reads_against_it` keeps true.
+SESSION_GROUND: Final = _blend(THEME.surface, THEME.accent, 0.05)
 
 
 @dataclass(frozen=True, slots=True)
@@ -665,3 +693,33 @@ def edge_label(kind: GraphKind, *, weight: int, gap_seconds: float | None) -> st
     if kind is GraphKind.TRACE or weight <= 1:
         return gap
     return f"x{weight:,}" + (f" · {gap}" if gap else "")
+
+
+def session_caption(index: int, total: int, nodes: Sequence[GraphNode]) -> str:
+    """What a session's box says: which visit, how much happened, and when.
+
+    `Session 2 of 69 · 2 activities · 09 Mar 01:55\u201302:26`. The count of
+    sessions is the one the header gives, so the box and the header agree.
+    `nodes` is never empty: a session is drawn because it has activities.
+    """
+    start = min(node.start for node in nodes)
+    end = max(node.end for node in nodes)
+    return (
+        f"Session {index:,} of {total:,}"
+        f" · {plural(len(nodes), 'activity', 'activities')}"
+        f" · {_session_span(start, end)}"
+    )
+
+
+def _session_span(start: datetime, end: datetime) -> str:
+    """When a session ran, in the window's `09 Mar 01:55` form.
+
+    One time for a session inside one minute, where a range from 09:42 to
+    09:42 would read as a typing error; both days for one that crosses
+    midnight, where 23:50 to 00:20 would read as running backwards.
+    """
+    if start.date() != end.date():
+        return f"{start:%d %b %H:%M} \u2013 {end:%d %b %H:%M}"
+    if (start.hour, start.minute) == (end.hour, end.minute):
+        return f"{start:%d %b %H:%M}"
+    return f"{start:%d %b %H:%M}\u2013{end:%H:%M}"

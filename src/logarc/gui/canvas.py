@@ -44,8 +44,8 @@ from PyQt6.QtWidgets import (
     QToolButton,
 )
 
-from logarc.core.graph import reciprocal_pairs
-from logarc.graphbuild.layout import COLUMN, ROW, Point, layout_graph
+from logarc.core.graph import GraphKind, reciprocal_pairs
+from logarc.graphbuild.layout import COLUMN, ROW, Point, layout_graph, sessions_in
 from logarc.gui.arrangement import Move, MoveHistory, Positions
 from logarc.style import (
     CAPTION_COLOUR,
@@ -53,8 +53,10 @@ from logarc.style import (
     PAPER_EDGE,
     SELECTION_COLOUR,
     SELECTION_WIDTH,
+    SESSION_GROUND,
     THEME,
     edge_label,
+    session_caption,
     style_for,
     summarise,
 )
@@ -243,6 +245,22 @@ _LIT_WIDTH: Final = 2.0
 #: graph that fitted its window with 176 units to spare. The bars are gone now,
 #: so this number no longer decides anything the reader sees.
 _SCENE_MARGIN: Final = 24.0
+
+#: A session's box. Drawn round the activities of one visit on a trace, so the
+#: header's "69 sessions" has something on the canvas to answer to.
+#:
+#: The padding is what keeps two boxes apart: sessions are laid out two rows
+#: apart, and at 20 the closest two boxes on the shopfront excerpt still have
+#: 91 units of paper between them (192.0.2.231, 69 sessions; 203.0.113.6, 150).
+_SESSION_PAD: Final = 20.0
+_SESSION_CORNER: Final = 14.0
+#: The outline and the label, both `muted`: 8.4:1 on the box ground, a step
+#: below the captions it holds, which is the order they should be read in.
+_SESSION_EDGE: Final = THEME.muted
+_SESSION_EDGE_WIDTH: Final = 1.4
+_SESSION_INK: Final = THEME.muted
+#: A heading for the box, a point above the captions inside it.
+_SESSION_POINTS: Final = 8.5
 
 
 def _steps(start: float, stop: float, pitch: float) -> list[float]:
@@ -441,6 +459,45 @@ class _EdgeArt:
             self.label.setVisible(room)
 
 
+class _SessionBox:
+    """One session's box on the canvas: the fill and outline, the label, and
+    which activities it holds.
+
+    Reshaped, never rebuilt, when one of its activities moves, for the reason
+    `_EdgeArt` is: a drag sends a position change per mouse-move event.
+    """
+
+    __slots__ = ("label", "node_ids", "shape")
+
+    def __init__(
+        self, *, shape: QGraphicsPathItem, label: QGraphicsRectItem, node_ids: tuple[str, ...]
+    ) -> None:
+        self.shape = shape
+        self.label = label
+        self.node_ids = node_ids
+
+    def reshape(self, around: QRectF) -> None:
+        """Fit the box to `around`, the activities it holds, in scene units.
+
+        Raised at the top by the label's height so the label sits above the
+        first row, and never narrower than the label: a one-activity session's
+        label is wider than its activity, and it would otherwise run out over
+        the edge of its own box.
+        """
+        head = self.label.rect().height()
+        width = max(around.width(), self.label.rect().width()) + _SESSION_PAD * 2
+        box = QRectF(
+            around.left() - _SESSION_PAD,
+            around.top() - _SESSION_PAD - head,
+            width,
+            around.height() + _SESSION_PAD * 2 + head,
+        )
+        path = QPainterPath()
+        path.addRoundedRect(box, _SESSION_CORNER, _SESSION_CORNER)
+        self.shape.setPath(path)
+        self.label.setPos(box.left() + _SESSION_PAD / 2, box.top() + _SESSION_PAD / 2)
+
+
 class _NodeItem(QGraphicsEllipseItem):
     """One activity. Carries its node id so a click can be traced back.
 
@@ -606,6 +663,15 @@ class ActivityCanvas(QGraphicsView):
         # arrangement itself, and there would be no way back to the layout.
         self._base: dict[str, Point] = {}
         self._wrap = True
+        # A box round each session of a trace, and the switch for it. On by
+        # default; the window hands over the reader's choice before any graph.
+        self._sessions = True
+        self._boxes: list[_SessionBox] = []
+        self._box_of: dict[str, _SessionBox] = {}
+        # Every patch a caption or an arrow's number is written on, so turning
+        # the boxes on or off can repaint them in the ground they now sit on.
+        self._patches: list[QGraphicsRectItem] = []
+        self._patch_ground = PAPER
         # Nodes are placed with `setPos` while a graph is being drawn, and every
         # one of those is a position change. Without this the first node placed
         # would ask for arrows that are not on the canvas yet, and the scene
@@ -722,6 +788,11 @@ class ActivityCanvas(QGraphicsView):
         """Whether a long trace is folded onto further rows."""
         return self._wrap
 
+    @property
+    def sessions(self) -> bool:
+        """Whether each session of a trace is drawn as a box."""
+        return self._sessions
+
     def set_wrap(self, wrap: bool, positions: Positions | None = None) -> None:
         """Fold long traces onto further rows, or lay each one out on one line.
 
@@ -751,14 +822,49 @@ class ActivityCanvas(QGraphicsView):
         if selected is not None:
             self.highlight(selected)
 
+    def set_sessions(self, shown: bool) -> None:
+        """Box each session of the trace, or stop.
+
+        Moves nothing. Unlike a wrap, this redraws no activity: the boxes are
+        taken away or put round the activities where they now stand, so the
+        reader's zoom, place, selection and Undo history all survive it, and
+        an arrangement they have not saved is still there to save.
+
+        Safe before anything is drawn: the window hands over the remembered
+        choice while it is still being built.
+        """
+        if shown == self._sessions:
+            return
+        self._sessions = shown
+        graph = self._graph
+        if graph is None or not self._nodes or graph.kind is not GraphKind.TRACE:
+            return
+        self._patch_ground = SESSION_GROUND if shown else PAPER
+        for patch in self._patches:
+            patch.setBrush(QBrush(QColor(self._patch_ground)))
+        if shown:
+            self._draw_sessions(graph)
+        else:
+            self._forget_sessions()
+        self._spread_paper()
+
+    def _forget_sessions(self) -> None:
+        """Take every box off the scene, and every reference to one with it."""
+        for box in self._boxes:
+            self._scene.removeItem(box.shape)
+            self._scene.removeItem(box.label)
+        self._boxes.clear()
+        self._box_of.clear()
+
     # -- moving ------------------------------------------------------------
 
     def _node_moved(self, node_id: str) -> None:
         """Bring everything attached to an activity along with it.
 
         Called on every mouse-move event of a drag, and it touches only what
-        moved: the arrows filed under this node, and the ring if this is the
-        node being read.
+        moved: the arrows filed under this node, the ring if this is the node
+        being read, and the box of the session it belongs to — one box, of the
+        hundred and fifty a busy client can have.
 
         Not for speed. Reshaping every arrow in the graph instead measured the
         same to three decimal places — 0.339 ms against 0.343 ms on a 600-node
@@ -781,6 +887,11 @@ class ActivityCanvas(QGraphicsView):
 
         if self._halo is not None and self._selected == node_id:
             self._halo.setPos(item.pos())
+
+        box = self._box_of.get(node_id)
+        if box is not None:
+            self._fit_box(box)
+            self._grow_scene_for(box.shape)
 
         self._grow_scene_for(item)
 
@@ -1026,11 +1137,16 @@ class ActivityCanvas(QGraphicsView):
             self._drawing = False
 
     def _draw(self, graph: ActivityGraph, positions: dict[str, Point]) -> None:
-        """Put the arrows down, then the activities on top of them.
+        """Put the arrows down, then the activities on top of them, then a box
+        round each session.
 
         Separated from `show_graph` so the guard around it is one statement and
         cannot be left half applied by an early return added later.
         """
+        boxed = self._sessions and graph.kind is GraphKind.TRACE
+        # Decided before anything is written, because every caption and arrow
+        # number is written on a patch of this.
+        self._patch_ground = SESSION_GROUND if boxed else PAPER
         by_id = {node.node_id: node for node in graph.nodes}
         # Resolved once for the whole graph rather than per edge: the question is
         # about the graph, and asking it inside the loop would be quadratic in
@@ -1049,8 +1165,65 @@ class ActivityCanvas(QGraphicsView):
                 )
         for node in graph.nodes:
             self._draw_node(node, positions[node.node_id])
+        if boxed:
+            self._draw_sessions(graph)
 
         self.fit()
+
+    def _draw_sessions(self, graph: ActivityGraph) -> None:
+        """Box each session of a trace, round its activities where they stand.
+
+        Where they stand, not where the layout put them: a saved arrangement
+        has already been applied, and a box drawn at the layout would hold
+        nothing.
+        """
+        groups = sessions_in(graph)
+        pen = QPen(QColor(_SESSION_EDGE))
+        pen.setWidthF(_SESSION_EDGE_WIDTH)
+        for index, nodes in enumerate(groups, start=1):
+            shape = QGraphicsPathItem()
+            shape.setPen(pen)
+            shape.setBrush(QBrush(QColor(SESSION_GROUND)))
+            # Under the arrows, which sit at zero, and so under everything.
+            shape.setZValue(-1)
+            # Takes no button, so a press on the paper inside a box pans the
+            # view as it does everywhere else on the paper.
+            shape.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+            self._scene.addItem(shape)
+            label = self._canvas_text(
+                session_caption(index, len(groups), nodes),
+                colour=_SESSION_INK,
+                point_size=_SESSION_POINTS,
+                anchor=QPointF(),
+                ground=SESSION_GROUND,
+                centred=False,
+                bold=True,
+            )
+            for part in (label, *label.childItems()):
+                part.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+            box = _SessionBox(
+                shape=shape, label=label, node_ids=tuple(node.node_id for node in nodes)
+            )
+            self._fit_box(box)
+            self._boxes.append(box)
+            for node in nodes:
+                self._box_of[node.node_id] = box
+
+    def _session_content(self, box: _SessionBox) -> QRectF:
+        """What a box has to hold: its activities with their captions, and the
+        numbers on the arrows between them."""
+        content = QRectF()
+        for node_id in box.node_ids:
+            item = self._nodes[node_id]
+            content = content.united(item.sceneBoundingRect())
+            content = content.united(item.mapRectToScene(item.childrenBoundingRect()))
+            for art in self._edges_by_node.get(node_id, ()):
+                if art.label is not None and art.label.isVisible():
+                    content = content.united(art.label.sceneBoundingRect())
+        return content
+
+    def _fit_box(self, box: _SessionBox) -> None:
+        box.reshape(self._session_content(box))
 
     def show_graph_placeholder(self, text: str = WAITING_MESSAGE) -> None:
         """Clear the canvas back to its waiting state.
@@ -1075,6 +1248,9 @@ class ActivityCanvas(QGraphicsView):
         self._edge_art.clear()
         self._edges_by_node.clear()
         self._halo = None
+        self._boxes.clear()
+        self._box_of.clear()
+        self._patches.clear()
         self._selected = None
         self._lit = None
         self._history.clear()
@@ -1115,13 +1291,16 @@ class ActivityCanvas(QGraphicsView):
         # `layout.py` rather than by exempting the words from the zoom: the
         # spacing there is set so a caption of this size clears its neighbours
         # and the circles either side of it.
-        self._canvas_text(
-            summarise(node),
-            colour=CAPTION_COLOUR,
-            point_size=_CAPTION_POINTS,
-            anchor=QPointF(0.0, style.radius),
-            gap=_CAPTION_GAP,
-            parent=item,
+        self._patches.append(
+            self._canvas_text(
+                summarise(node),
+                colour=CAPTION_COLOUR,
+                point_size=_CAPTION_POINTS,
+                anchor=QPointF(0.0, style.radius),
+                ground=self._patch_ground,
+                gap=_CAPTION_GAP,
+                parent=item,
+            )
         )
 
     def _canvas_text(
@@ -1131,10 +1310,18 @@ class ActivityCanvas(QGraphicsView):
         colour: str,
         point_size: float,
         anchor: QPointF,
+        ground: str,
         gap: float = 0.0,
         parent: QGraphicsItem | None = None,
+        centred: bool = True,
+        bold: bool = False,
     ) -> QGraphicsRectItem:
         """Text on the canvas, scaling with the drawing it belongs to.
+
+        `ground` is what the patch under the words is painted: the paper, or a
+        session box's fill when the words sit inside one. `centred` hangs the
+        text from the middle of `anchor`, as a caption hangs under its circle;
+        off, it starts at `anchor`, as a box's label starts at its corner.
 
         The whole picture grows and shrinks together, the way zooming a
         photograph does. That is what makes overlap a property of the layout
@@ -1161,7 +1348,7 @@ class ActivityCanvas(QGraphicsView):
         beneath the words.
         """
         backdrop = QGraphicsRectItem(parent)
-        backdrop.setBrush(QBrush(QColor(PAPER)))
+        backdrop.setBrush(QBrush(QColor(ground)))
         backdrop.setPen(QPen(Qt.PenStyle.NoPen))
         # Above the edges, below the nodes: the words survive an arrow passing
         # behind them without hiding the circle they describe.
@@ -1174,6 +1361,8 @@ class ActivityCanvas(QGraphicsView):
         label.setBrush(QBrush(QColor(colour)))
         font = QFont()
         font.setPointSizeF(point_size / _LEGIBLE_AT)
+        if bold:
+            font.setWeight(QFont.Weight.DemiBold)
         label.setFont(font)
         bounds = label.boundingRect()
         padding = _TEXT_PADDING / _LEGIBLE_AT
@@ -1187,9 +1376,8 @@ class ActivityCanvas(QGraphicsView):
 
         # In scene units, like everything else here, so the centring and the gap
         # hold at every zoom by scaling rather than by being exempt from it.
-        backdrop.setTransform(
-            QTransform().translate(-(bounds.width() + padding * 2) / 2, gap / _LEGIBLE_AT)
-        )
+        across = -(bounds.width() + padding * 2) / 2 if centred else 0.0
+        backdrop.setTransform(QTransform().translate(across, gap / _LEGIBLE_AT))
         return backdrop
 
     def _draw_edge(
@@ -1232,10 +1420,13 @@ class ActivityCanvas(QGraphicsView):
                 colour=_LABEL_COLOUR,
                 point_size=_LABEL_SIZE,
                 anchor=shape.label_at,
+                ground=self._patch_ground,
             )
             if label
             else None
         )
+        if backdrop is not None:
+            self._patches.append(backdrop)
 
         art = _EdgeArt(
             source_id=source.node_id,
