@@ -43,6 +43,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import traceback
 from importlib import metadata
@@ -292,6 +293,50 @@ def check_no_browser_engine(bundle: Path) -> str | None:
     return None
 
 
+#: ADR-0012: the window is the product, and the command line is a developer
+#: tool. These are its package, under either name it has had, and the libraries
+#: it alone uses; none of them belongs in what a user installs.
+_COMMAND_LINE = ("logarc.cli", "logarc.devtools", "typer", "click")
+
+
+def command_line_in(modules: list[str]) -> list[str]:
+    """The modules in `modules` that belong to the command line, sorted.
+
+    By dotted name rather than by prefix: `click` is not `clickhouse_driver`.
+    """
+    return sorted(
+        name
+        for name in modules
+        if any(name == root or name.startswith(root + ".") for root in _COMMAND_LINE)
+    )
+
+
+def check_no_command_line(bundle: Path) -> str | None:
+    """ADR-0012: no command-line code in the packaged application.
+
+    Read from the Python archive inside the executable, which is where
+    PyInstaller puts every module it collected. Today nothing in the window
+    imports the command line, so this holds by accident; checked, it holds
+    because a build that breaks it is not swapped in.
+    """
+    try:
+        from PyInstaller.archive.readers import CArchiveReader, ZlibArchiveReader
+
+        package = CArchiveReader(str(bundle / "logarc.exe"))
+        archive = next(name for name in package.toc if name.endswith(".pyz"))
+        with tempfile.TemporaryDirectory() as scratch:
+            pyz = Path(scratch) / "modules.pyz"
+            pyz.write_bytes(package.extract(archive))
+            modules = list(ZlibArchiveReader(str(pyz)).toc)
+    except Exception as exc:
+        # Any failure to read is a refusal: not read is not clean.
+        return f"could not read the bundled modules from logarc.exe: {exc}"
+    if found := command_line_in(modules):
+        shown = ", ".join(found[:5]) + (f" and {len(found) - 5} more" if len(found) > 5 else "")
+        return f"the command line is in the bundle ({shown}) - see ADR-0012"
+    return None
+
+
 def check_qt_runtime(bundle: Path) -> str | None:
     """Load the staged Qt extensions in isolation before replacing the bundle."""
     if os.name != "nt":
@@ -391,6 +436,7 @@ def verify(bundle: Path) -> list[str]:
         check_rule_packs,
         check_metadata,
         check_no_browser_engine,
+        check_no_command_line,
         check_qt_runtime,
         check_crs,
     )
@@ -567,7 +613,7 @@ def _rebuild() -> int:
     STATUS.write_text(
         f"{stamp}  {started[0]}  ok  {size_mb(LIVE):.0f} MB\n"
         "tests green; rule packs bundled; version metadata bundled; no QtWebEngine; "
-        "Qt runtime loads; CRS sidecar bundled and catches 942100\n",
+        "no command line; Qt runtime loads; CRS sidecar bundled and catches 942100\n",
         encoding="utf-8",
     )
     MARKER.unlink(missing_ok=True)

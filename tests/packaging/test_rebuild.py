@@ -138,6 +138,7 @@ def test_verification_rejects_a_qt_runtime_that_cannot_load(
         "check_rule_packs",
         "check_metadata",
         "check_no_browser_engine",
+        "check_no_command_line",
         "check_crs",
     ):
         monkeypatch.setattr(rebuild, name, lambda bundle: None)
@@ -149,6 +150,45 @@ def test_verification_rejects_a_qt_runtime_that_cannot_load(
     errors = rebuild.verify(tmp_path)
     assert errors and "Qt runtime" in errors[0]
     assert "missing procedure" in errors[0]
+
+
+def test_the_command_line_is_found_among_the_bundled_modules(rebuild: ModuleType) -> None:
+    """ADR-0012: the window is the product, and the command line is a developer
+    tool that never ships. Matched by dotted name, so `click` is not
+    `clickhouse_driver` and `logarc.cli` is not a `logarc.client_filter`."""
+    bundled = [
+        "logarc.gui.app",
+        "logarc.cli.main",
+        "logarc.devtools",
+        "typer.core",
+        "click",
+        "clickhouse_driver",
+        "logarc.client_filter",
+    ]
+
+    assert rebuild.command_line_in(bundled) == [
+        "click",
+        "logarc.cli.main",
+        "logarc.devtools",
+        "typer.core",
+    ]
+
+
+def test_a_bundle_without_the_command_line_holds_none_of_it(rebuild: ModuleType) -> None:
+    assert rebuild.command_line_in(["logarc.gui.app", "PyQt6.QtCore", "duckdb"]) == []
+
+
+def test_a_bundle_whose_modules_cannot_be_read_is_refused(
+    rebuild: ModuleType, tmp_path: Path
+) -> None:
+    """Not read is not clean: a check that passed whatever it could not open
+    would pass the one build it exists to stop."""
+    (tmp_path / "logarc.exe").write_bytes(b"not an archive")
+
+    problem = rebuild.check_no_command_line(tmp_path)
+
+    assert problem is not None
+    assert "could not read" in problem
 
 
 def test_verification_rejects_a_bundle_without_the_crs_sidecar(

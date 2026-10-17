@@ -7,6 +7,16 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **The packaged application is checked to hold no command line.** ADR-0012
+  makes the window the product and the command line a developer tool, and
+  the rebuild now reads the module list out of the built `logarc.exe` and
+  refuses the build if any of the command line, `typer` or `click` is in it.
+  It never has been: the application is built from the window's entry point,
+  and its 1,155 modules include none of them. Checked rather than assumed, by
+  building a small application that imports `typer`, which it refuses. The
+  rest of the decision, renaming the command to `logarc-dev` and deleting the
+  commands that repeat the window, waits for the first public release.
+
 - **A case checked with an older CRS says so when it is opened.** A case
   keeps the CRS results it was enriched with. When the CRS on this computer
   would now give different ones — a newer ruleset, other settings, or a
