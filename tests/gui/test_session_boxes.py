@@ -8,8 +8,10 @@ on them.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from itertools import combinations, pairwise
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -29,6 +31,8 @@ from PyQt6.QtWidgets import (
     QGraphicsSimpleTextItem,
 )
 
+from logarc.analysis import analyse_ip
+from logarc.case import Case
 from logarc.core.activity import ActivityCategory, Outcome, Severity
 from logarc.core.evidence import EvidenceRef
 from logarc.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
@@ -425,3 +429,37 @@ def test_a_wrap_toggle_keeps_the_boxes(qt_app: QApplication) -> None:
     canvas.set_wrap(False)
 
     assert len(session_boxes(canvas)) == 2
+
+
+# -- measured on the shopfront excerpt ------------------------------------
+
+EXCERPT = Path(__file__).parent.parent / "data" / "apache-shopfront" / "excerpt.log"
+
+
+@pytest.fixture(scope="module")
+def shopfront(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Case]:
+    case_dir = tmp_path_factory.mktemp("shopfront") / "case"
+    with Case.create(case_dir) as case:
+        case.ingest([EXCERPT])
+    with Case.open(case_dir) as case:
+        yield case
+
+
+@pytest.mark.parametrize("client", ["192.0.2.231", "203.0.113.6"])
+def test_the_busiest_shopfront_clients_boxes_stand_apart(
+    qt_app: QApplication, shopfront: Case, client: str
+) -> None:
+    """The two clients the mockups were judged on: 69 sessions of up to seven
+    activities, and 150 sessions of one. Measured by hand on 2026-10-17 with
+    no overlap and 91 units at the closest; this holds it there."""
+    result = analyse_ip(shopfront.store, client)
+    canvas = ActivityCanvas()
+    canvas.show_graph(result.trace)
+
+    boxes = session_boxes(canvas)
+    total = len(result.sessions)
+    assert len(boxes) == total, "a box for every session the header counts"
+    assert box_text(boxes[-1]).startswith(f"Session {total} of {total} · ")
+    outlines = [box.shape.sceneBoundingRect() for box in boxes]
+    for one, other in combinations(outlines, 2):
+        assert not one.intersects(other)
