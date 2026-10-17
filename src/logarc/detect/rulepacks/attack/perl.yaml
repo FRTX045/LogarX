@@ -8,8 +8,8 @@
 # It was the **largest single gap** in CRS family 934 when this pack was written
 # — 35 of 122 misses, more than Node.js and prototype pollution together, and
 # more than the family's entire remaining tail. That is worth recording because
-# the gap had been classified twice before as something else: an earlier note in
-# `TODO.md` called 934's remainder "two shapes, Node.js and prototype
+# the gap had been classified twice before as something else: an earlier
+# working note called 934's remainder "two shapes, Node.js and prototype
 # pollution", and the Perl block is bigger than both.
 #
 # **Classify by shape before writing anything, and expect the first classifier

@@ -159,7 +159,7 @@ _RULE_WITHHELD: Final[frozenset[int]] = frozenset({932236})
 #:
 #: **An earlier version of this comment said 931130 compares against
 #: `TX:ALLOWED_HOSTS`, a list an operator configures.** That was wrong — it was
-#: written without reading the rule, repeated in `TODO.md`, the ledger and
+#: written without reading the rule, repeated in working notes, the ledger and
 #: `docs/evaluation.md`, and passed to the dataset project, which repeated it
 #: back. The conclusion survived, since the rule was told nothing true about
 #: the site either way. The mechanism did not, and the real one is what made
