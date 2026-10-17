@@ -27,8 +27,13 @@ def _published() -> list[Path]:
 
 def test_no_published_file_points_at_the_unpublished_todo_list() -> None:
     """Six did, found on 2026-10-17: the rule-pack ledger four times, a CRS
-    mapping comment and a rule pack's comment. Each said "in `TODO.md`" to a
-    reader who has no such file."""
+    mapping comment and a rule pack's comment. Each sent the reader to the
+    working list by name, and the reader has no such file.
+
+    This file names it only in pieces, so as not to be one of them. Checked
+    with it committed: run before then, `git ls-files` does not list the test
+    and it cannot see itself, which is how a first version passed here and
+    failed on CI."""
     pointing = [
         str(path.relative_to(ROOT))
         for path in _published()
