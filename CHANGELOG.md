@@ -7,6 +7,14 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **The development tools are published, under `tools/`.** Git hooks that
+  stop a commit CI's lint job would reject and, when asked, rebuild `dist/`
+  once work lands on `main`. A script that rewrites the CRS corpus record
+  from a fresh clone in a Linux container, for Windows checkouts a virus
+  scanner has left incomplete. And the scripts that measured the CRS
+  sidecar: replay time, start-up time, memory, and how late the window's
+  event loop runs during a replay. `tools/README.md` says how to use each.
+
 - **The packaged application is checked to hold no command line.** ADR-0012
   makes the window the product and the command line a developer tool, and
   the rebuild now reads the module list out of the built `logarc.exe` and

@@ -23,6 +23,10 @@ record and read the per-rule diff before committing it:
 
     python tests/detect/crs/test_corpus_detections.py
 
+On Windows, where the scanner leaves the corpus incomplete and this refuses to
+record from it, `tools/regen-crs-corpus.sh` does the same in a Linux container
+from a fresh clone.
+
 Skipped like the contract tests when the sidecar is not built, and required in
 CI by `LOGARC_REQUIRE_CRS=1`.
 """
