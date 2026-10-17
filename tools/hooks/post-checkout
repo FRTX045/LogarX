@@ -1,0 +1,4 @@
+#!/bin/sh
+# Report a rebuild that failed. Branch switches are frequent enough that the
+# news is seen soon, and the check costs one file test.
+. "$(dirname "$0")/rebuild-warning.sh"

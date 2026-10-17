@@ -1,0 +1,48 @@
+#!/bin/sh
+# Stop a commit that CI's lint job would reject.
+#
+# The lint job runs `ruff check .` AND `ruff format --check .`. Running only the
+# first before committing once put a red build on a branch: one test line was
+# two characters too long to keep its wrapping, `ruff format` would have joined
+# it, and nothing said so until CI did.
+#
+# Runs on the whole tree, not on staged files, because that is what CI runs. A
+# hook that checked only what was staged would pass a commit that leaves the
+# tree unformatted, which is the same red build one step later.
+
+# Not while git is replaying commits. A rebase or a cherry-pick would otherwise
+# run this once per rewritten commit, and a tree mid-replay is not the tree the
+# author is being asked about.
+_gitdir=${GIT_DIR:-$(git rev-parse --git-dir 2>/dev/null)}
+if [ -d "$_gitdir/rebase-merge" ] || [ -d "$_gitdir/rebase-apply" ] \
+   || [ -f "$_gitdir/CHERRY_PICK_HEAD" ] || [ -f "$_gitdir/MERGE_HEAD" ]; then
+    exit 0
+fi
+
+_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+
+# The checkout's own ruff. One from somewhere else on PATH may be a different
+# version with different opinions, which would make this hook and CI disagree,
+# the one thing it exists to prevent.
+_ruff="$_root/.venv/Scripts/ruff.exe"
+[ -x "$_ruff" ] || _ruff="$_root/.venv/bin/ruff"
+if [ ! -x "$_ruff" ]; then
+    # No venv is not a reason to block a commit. Say so and step aside; CI
+    # still checks.
+    echo "pre-commit: no ruff in .venv, skipping the lint check" >&2
+    exit 0
+fi
+
+_failed=0
+"$_ruff" check "$_root" || _failed=1
+"$_ruff" format --check "$_root" || _failed=1
+
+if [ "$_failed" -ne 0 ]; then
+    echo "" >&2
+    echo "pre-commit: this is what CI's lint job would say." >&2
+    echo "  ruff check --fix . && ruff format .   # with .venv's ruff" >&2
+    echo "  git commit --no-verify                # to commit it anyway" >&2
+    exit 1
+fi
+
+exit 0

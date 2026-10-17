@@ -1,0 +1,46 @@
+#!/bin/sh
+# Rebuild dist/ when a commit lands on main without a merge, and report a
+# rebuild that failed.
+#
+# The rebuild is off unless asked for:  git config logarc.rebuild true
+#
+# post-merge covers the usual route, a branch merged into main. A commit made
+# straight on main fires no merge, so without this dist/ silently falls behind;
+# it once shipped an application two commits stale, missing a rule, for that
+# reason. A commit on any other branch is left alone and picked up by
+# post-merge when the branch lands, so a five-commit branch still rebuilds
+# once, not five times.
+#
+# No lock is taken here. packaging/rebuild.py holds dist/.rebuild.lock itself
+# and says another rebuild is already running rather than racing, so two hooks
+# firing close together cannot leave a half-written bundle.
+_hooks=$(dirname "$0")
+
+if [ "$(git config --bool logarc.rebuild 2>/dev/null)" = "true" ] \
+   && [ "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" = "main" ]; then
+    _gitdir=${GIT_DIR:-$(git rev-parse --git-dir 2>/dev/null)}
+    # Not while git is replaying commits: a rebase or a cherry-pick sequence
+    # would fire this once per commit it rewrites, and only the last matters.
+    if [ ! -d "$_gitdir/rebase-merge" ] && [ ! -d "$_gitdir/rebase-apply" ] \
+       && [ ! -f "$_gitdir/CHERRY_PICK_HEAD" ]; then
+        # Against the first parent, so a conflicted merge finished by hand,
+        # which runs post-commit and not post-merge, is compared with the
+        # branch it landed on rather than with the side it absorbed.
+        _touched=$(git diff --name-only HEAD^ HEAD 2>/dev/null \
+            || git diff --name-only HEAD 2>/dev/null)
+        case "$_touched" in
+            *src/logarc/*|*packaging/*|*pyproject.toml*)
+                _root=$(git rev-parse --show-toplevel)
+                _py="$_root/.venv/Scripts/python.exe"
+                [ -x "$_py" ] || _py=python
+                _log="$HOME/.cache/logarc-build.log"
+                mkdir -p "$(dirname "$_log")"
+                echo "--- $(date '+%Y-%m-%d %H:%M:%S') post-commit $(git rev-parse --short HEAD)" >> "$_log"
+                "$_py" "$_root/packaging/rebuild.py" >> "$_log" 2>&1 &
+                echo "[logarc] commit landed on main - rebuilding dist/ in the background (log: $_log)"
+                ;;
+        esac
+    fi
+fi
+
+. "$_hooks/rebuild-warning.sh"

@@ -10,44 +10,21 @@ read and comparing it with the workflow parsed independently.
 
 from __future__ import annotations
 
-import os
-import shutil
 import subprocess
 from pathlib import Path
 
-import pytest
 import yaml
+
+from shell import bash
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = "tools/local-ci.sh"
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 
 
-def _bash() -> str:
-    """A bash that can run a script by its repository path.
-
-    On Windows that means Git Bash. `bash` on PATH can be WSL's launcher in
-    System32, which runs inside Linux and cannot open this checkout's paths.
-    """
-    if os.name == "nt":
-        git_bash = (
-            Path(os.environ.get("PROGRAMFILES", r"C:\Program Files")) / "Git" / "bin" / "bash.exe"
-        )
-        if git_bash.exists():
-            return str(git_bash)
-        found = shutil.which("bash")
-        if found and "system32" not in found.lower():
-            return found
-        pytest.skip("Git Bash is not installed")
-    found = shutil.which("bash")
-    if found is None:
-        pytest.skip("bash is not installed")
-    return found
-
-
 def _printed_matrix() -> dict[str, str]:
     done = subprocess.run(
-        [_bash(), SCRIPT, "--print-matrix"],
+        [bash(), SCRIPT, "--print-matrix"],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -57,7 +34,7 @@ def _printed_matrix() -> dict[str, str]:
 
 
 def test_the_script_is_valid_bash() -> None:
-    subprocess.run([_bash(), "-n", SCRIPT], cwd=ROOT, check=True)
+    subprocess.run([bash(), "-n", SCRIPT], cwd=ROOT, check=True)
 
 
 def test_the_python_versions_are_the_workflows() -> None:
