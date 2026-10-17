@@ -18,9 +18,9 @@ from typing import TYPE_CHECKING, Final
 from logarc.core.graph import GraphKind
 
 if TYPE_CHECKING:
-    from logarc.core.graph import ActivityGraph
+    from logarc.core.graph import ActivityGraph, GraphNode
 
-__all__ = ["COLUMN", "ROW", "Point", "layout_graph"]
+__all__ = ["COLUMN", "ROW", "Point", "layout_graph", "sessions_in"]
 
 #: Spacing in abstract units. Renderers scale from here.
 #:
@@ -78,6 +78,30 @@ def layout_graph(graph: ActivityGraph, *, wrap: bool = True) -> dict[str, Point]
     return _radial_layout(graph)
 
 
+def sessions_in(graph: ActivityGraph) -> tuple[tuple[GraphNode, ...], ...]:
+    """A trace's activities, grouped by the session each one belongs to.
+
+    In drawing order: the groups in the order their first activity appears, and
+    each group in the order its activities do, which for a trace is the order
+    they happened.
+
+    The session is read off the episode id, the part before the slash:
+    `192.0.2.231#2/4` is the fourth activity of session 2. One rule, used by
+    the layout to give each session its block and by the canvas to draw a box
+    round that block, so the two cannot disagree about where a session ends.
+    Activities with no episode id at all share one group, as they always shared
+    one block; nothing a reconstruction draws has none.
+
+    Meaningless on a behaviour map, whose nodes each fold many sessions
+    together, and nothing asks it of one.
+    """
+    groups: dict[str, list[GraphNode]] = {}
+    for node in graph.nodes:
+        session = node.episode_ids[0].split("/")[0] if node.episode_ids else ""
+        groups.setdefault(session, []).append(node)
+    return tuple(tuple(group) for group in groups.values())
+
+
 def _wrap_width(count: int) -> int:
     """How many nodes to put on a row before starting the next.
 
@@ -115,24 +139,18 @@ def _chronological_layout(graph: ActivityGraph, *, wrap: bool = True) -> dict[st
     panned rather than fitted.
     """
     positions: dict[str, Point] = {}
-    by_session: dict[str, list[str]] = {}
-
-    for node in graph.nodes:
-        session = node.episode_ids[0].split("/")[0] if node.episode_ids else ""
-        by_session.setdefault(session, []).append(node.node_id)
-
     row = 0
-    for index, node_ids in enumerate(by_session.values()):
+    for index, nodes in enumerate(sessions_in(graph)):
         if index:
             row += _SESSION_GAP
-        width = _wrap_width(len(node_ids)) if wrap else len(node_ids)
-        for position, node_id in enumerate(node_ids):
+        width = _wrap_width(len(nodes)) if wrap else len(nodes)
+        for position, node in enumerate(nodes):
             line, offset = divmod(position, width)
             # Odd rows run right to left, so the last node of one row sits above
             # the first of the next.
             column = offset if line % 2 == 0 else width - 1 - offset
-            positions[node_id] = Point(x=column * COLUMN, y=(row + line) * ROW)
-        row += (len(node_ids) - 1) // width
+            positions[node.node_id] = Point(x=column * COLUMN, y=(row + line) * ROW)
+        row += (len(nodes) - 1) // width
 
     return positions
 

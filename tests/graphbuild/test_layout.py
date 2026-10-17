@@ -8,7 +8,7 @@ from logarc.core.activity import ActivityCategory, ActivityLabel, Outcome, Sever
 from logarc.core.episode import Episode
 from logarc.core.evidence import EvidenceRef
 from logarc.graphbuild.build import build_behaviour_map, build_trace_graph
-from logarc.graphbuild.layout import layout_graph
+from logarc.graphbuild.layout import layout_graph, sessions_in
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 
@@ -276,3 +276,40 @@ def test_the_busiest_activity_always_lands_in_the_same_place() -> None:
     )
 
     assert layout_graph(first)["injection"] == layout_graph(second)["injection"]
+
+
+def test_activities_are_grouped_by_the_session_they_belong_to() -> None:
+    """The layout gives each session its block and the canvas draws a box round
+    it. One answer to which session an activity is in, for both, or a box can
+    be drawn round a block it does not match."""
+    graph = build_trace_graph(
+        [
+            episode(ActivityCategory.INJECTION, index=1, session="1.2.3.4#1"),
+            episode(ActivityCategory.INJECTION, index=2, session="1.2.3.4#1"),
+            episode(ActivityCategory.RECONNAISSANCE, index=1, session="1.2.3.4#2"),
+        ],
+        client_ip="1.2.3.4",
+    )
+
+    groups = [[node.node_id for node in group] for group in sessions_in(graph)]
+
+    assert groups == [["1.2.3.4#1/1", "1.2.3.4#1/2"], ["1.2.3.4#2/1"]]
+
+
+def test_a_windowed_session_is_still_one_session() -> None:
+    """Read over a stretch of time, a session id carries the window's tag
+    before the `#`. It is part of the session's name, not a boundary in it."""
+    graph = build_trace_graph(
+        [
+            episode(ActivityCategory.INJECTION, index=1, session="1.2.3.4@0900-1000#1"),
+            episode(ActivityCategory.INJECTION, index=2, session="1.2.3.4@0900-1000#1"),
+            episode(ActivityCategory.INJECTION, index=1, session="1.2.3.4@0900-1000#2"),
+        ],
+        client_ip="1.2.3.4",
+    )
+
+    assert [len(group) for group in sessions_in(graph)] == [2, 1]
+
+
+def test_an_empty_trace_has_no_sessions() -> None:
+    assert sessions_in(build_trace_graph([], client_ip="1.2.3.4")) == ()
