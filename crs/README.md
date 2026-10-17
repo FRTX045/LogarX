@@ -107,7 +107,7 @@ CRS's `@rx` runs on RE2 rather than Go's `regexp` (`rx.go`, adapted from coraza-
 `regexp` was half of a sidecar's time. go-re2 builds RE2 to WebAssembly and translates that to Go,
 so it is compiled into the sidecar like the rest of it. Measured 2026-10-15 on the three
 `2026-10-06` tiers, six sidecars each, the two builds alternating, the middle of three runs, the
-same detections on every one:
+same detections on every one (`tools/measure/`; `tools/README.md` says how):
 
 | | Go `regexp` | RE2 |
 |---|---|---|

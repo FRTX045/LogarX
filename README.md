@@ -502,6 +502,17 @@ and on Windows Git Bash and Go 1.25+. A summary is printed and kept under
 `~/.cache/logarc-ci/runs/` (`LOGARC_CI_DIR` moves it). Exit 0 means every job
 passed; 3 means nothing failed but some jobs could not run on this machine.
 
+### Git hooks and the other tools
+
+```bash
+git config core.hooksPath tools/hooks
+```
+
+Stops a commit that CI's lint job would reject. [tools/README.md](tools/README.md)
+describes the hooks and the rest of `tools/`: an opt-in rebuild of `dist/` when
+work lands on `main`, a script that rewrites the CRS corpus record from a
+complete clone, and the scripts that measured the CRS sidecar.
+
 ---
 
 ## Documentation
