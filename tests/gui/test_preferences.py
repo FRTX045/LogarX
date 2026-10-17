@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import QApplication, QCheckBox, QComboBox, QGroupBox
 from logarc.gui import prefs
 from logarc.gui.density import Density
 from logarc.gui.preferences import PreferencesDialog
+from logarc.gui.theme import ui_font
 
 
 def _opened(values: dict[str, bool | Density] | None = None) -> PreferencesDialog:
@@ -53,6 +54,42 @@ def test_the_groups_are_drawn_as_groups_in_order(qt_app: QApplication) -> None:
     boxes = [box.title() for box in dialog.findChildren(QGroupBox)]
 
     assert boxes == list(prefs.GROUPS)
+
+
+def test_larger_text_scrolls_without_clipping_notes_or_confirmation_buttons(
+    qt_app: QApplication,
+) -> None:
+    from PyQt6.QtCore import QPoint, QRect
+    from PyQt6.QtWidgets import QDialogButtonBox, QLabel, QScrollArea
+
+    original_font = qt_app.font()
+    qt_app.setFont(ui_font(original_font))
+    dialog = _opened()
+    try:
+        dialog.resize(560, 420)
+        dialog.show()
+        qt_app.processEvents()
+        scroll = dialog.findChild(QScrollArea)
+        assert scroll is not None
+        body = scroll.widget()
+        bar = scroll.verticalScrollBar()
+        assert body is not None and bar is not None
+        assert bar.maximum() > 0
+        for note in body.findChildren(QLabel):
+            assert note.height() >= note.heightForWidth(note.width())
+        buttons = dialog.findChild(QDialogButtonBox)
+        assert buttons is not None and buttons.isVisible()
+        assert dialog.rect().contains(buttons.geometry())
+        bar.setValue(bar.maximum())
+        qt_app.processEvents()
+        viewport = scroll.viewport()
+        assert viewport is not None
+        last_control = dialog._controls["cases/reopen_last"]
+        rect = QRect(last_control.mapTo(viewport, QPoint()), last_control.size())
+        assert viewport.rect().contains(rect)
+    finally:
+        dialog.close()
+        qt_app.setFont(original_font)
 
 
 def test_each_setting_says_what_it_is_for_on_screen(qt_app: QApplication) -> None:

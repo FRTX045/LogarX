@@ -20,6 +20,8 @@ Interface text starts at 14 pt, evidence text at 13 pt, and small interface
 captions at 12 pt. Larger system font choices are preserved. Graph captions and
 transition labels are slightly larger too, opening at about 11.6 pt or more at
 the default minimum zoom; zooming scales the graph and its text together.
+Preferences uses a scrolling page when its explanations need more room, with
+the confirmation buttons always visible below it.
 
 Scrollbars have 20 px tracks, brighter handles, and a minimum handle length of
 42 px. The dividers between panels use 5 px lines with a 1 px margin on each
