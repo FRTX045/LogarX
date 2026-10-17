@@ -133,22 +133,10 @@ jobs:
           go test -ldflags=-checklinkname=0 -count=1 ./...
           GODEBUG=cpu.all=off go test -ldflags=-checklinkname=0 -count=1 ./...
 
-      # The engine and the window are run separately, and the reason is a
-      # crash rather than tidiness. The GUI suite segfaults on the Linux
-      # runners now and then — three times so far, on different Python versions
-      # and in different tests, always inside `MainWindow.__init__` building a
-      # `QAction`. The third, on 2026-09-21, was a documentation-only commit
-      # with no Python changed at all, which is the clearest sign yet that it
-      # belongs to the runner rather than to anything a change introduces.
-      # Exit 139 takes the whole pytest process with it, so in one
-      # run that meant losing the result of 1,100 tests that had nothing to do
-      # with Qt.
-      #
-      # Split, a crash in the window costs the window's results and nothing
-      # else, and the failure reads as "the GUI suite crashed" instead of
-      # "pytest exited 139". It does not fix the crash and is not meant to:
-      # `TODO.md` carries what is known about it, including three attempted
-      # fixes that measured worse.
+      # The engine and the window are run separately. A crash in one costs only
+      # its own results, and a failure says which half it was in; when the
+      # window's tests used to segfault, one crash took the results of 1,100
+      # tests that had nothing to do with Qt with it.
       #
       # `--cov-append` on the second run is what keeps one coverage figure
       # across the two.
@@ -168,31 +156,20 @@ jobs:
           --cov=logarc --cov-report=term-missing --cov-report=xml
           --cov-fail-under=0
 
-      # One automatic retry, for exactly one failure: a segfault (exit 139) on
-      # Linux. Measured on 2026-09-24 by reproducing CI's command in WSL: it
-      # hits about one Linux job in thirteen, and a native backtrace shows
-      # `QWidget::insertAction` running on a menu Qt had created a few lines
-      # earlier and that was already freed. The root cause is not found yet;
-      # `TODO.md` has the evidence and what was ruled out. Until it is, a
-      # crash that has nothing to do with the change under test should not
-      # turn `main` red. A test failure (exit 1) is never retried, two crashes
-      # in a row still fail, and the retry leaves a warning on the run so a
-      # green result never hides that it happened.
+      # No retry. Until 2026-10-17 this step ran the window's tests a second
+      # time after a segfault (exit 139) on Linux, which hit 8 of the 120 Linux
+      # jobs run from 2026-09-22 to 2026-10-05, always inside
+      # `MainWindow.__init__` on a menu bar, status bar
+      # or menu Qt had made a line earlier and that was already freed. The
+      # cause was the tests' own `qt_app` fixture: it let the `QApplication`
+      # be deleted at the end of every test file, taking windows that were
+      # still alive with it (`tests/gui/test_one_application.py`). A crash
+      # here is a failure again.
       - name: Test the window
-        shell: bash
         env:
           QT_QPA_PLATFORM: offscreen
           LOGARC_REQUIRE_CRS: "1"
-        run: |
-          run() { pytest tests/gui --cov=logarc --cov-append --cov-report=term-missing --cov-report=xml; }
-          run && exit 0
-          code=$?
-          if [ "$code" -eq 139 ] && [ "$RUNNER_OS" = "Linux" ]; then
-            echo "::warning title=GUI suite segfaulted::Known intermittent Qt crash on the Linux runners (TODO.md); running the GUI suite once more."
-            run
-          else
-            exit "$code"
-          fi
+        run: pytest tests/gui --cov=logarc --cov-append --cov-report=term-missing --cov-report=xml
 
       # Coverage was measured on every run and then thrown away: `coverage.xml`
       # was written and nothing ever read it, so the only way to learn the
