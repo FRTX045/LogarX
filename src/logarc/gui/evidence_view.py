@@ -87,7 +87,7 @@ def cells_for(line: EvidenceLine, *, decode: bool) -> tuple[Cell, ...]:
         Cell(
             text=f"{event.timestamp:%H:%M:%S}" if event else "",
             sort_key=event.timestamp.timestamp() if event else None,
-            colour=EVIDENCE_MUTED,
+            colour=THEME.timestamp,
         ),
         _request_cell(line, decode=decode),
         Cell(
@@ -145,8 +145,8 @@ def detail_for(line: EvidenceLine, *, decode: bool) -> Detail:
                 EVIDENCE_INK,
             )
         )
-        fields.append(("Client IP (logged address)", display_safe(event.client_ip), EVIDENCE_MUTED))
-        fields.append(("Time (UTC)", f"{event.timestamp:%Y-%m-%d %H:%M:%S}", EVIDENCE_MUTED))
+        fields.append(("Client IP (logged address)", display_safe(event.client_ip), THEME.identity))
+        fields.append(("Time (UTC)", f"{event.timestamp:%Y-%m-%d %H:%M:%S}", THEME.timestamp))
         if event.protocol:
             fields.append(("HTTP version", display_safe(event.protocol), EVIDENCE_MUTED))
         if event.status is not None:
@@ -171,7 +171,7 @@ def detail_for(line: EvidenceLine, *, decode: bool) -> Detail:
                 ("User agent (reported software)", display_safe(event.user_agent), EVIDENCE_MUTED)
             )
         if event.host and event.host != "-":
-            fields.append(("Host (requested site)", display_safe(event.host), EVIDENCE_MUTED))
+            fields.append(("Host (requested site)", display_safe(event.host), THEME.identity))
     elif line.text is None:
         note = display_safe(line.note or "source not readable")
         fields.append(("", f"unavailable — {note}", ALERT_COLOUR))

@@ -41,7 +41,7 @@ from logarc.style import (
     SELECTION_TINT,
     THEME,
     format_requests,
-    severity_colour,
+    severity_text_colour,
 )
 
 if TYPE_CHECKING:
@@ -141,7 +141,7 @@ class EvidencePanel(QWidget):
         this panel is what gets read into a case file.
         """
         self._shown = (node, lines)
-        colour = severity_colour(node.severity)
+        colour = severity_text_colour(node.severity)
         # A behaviour node is several visits to one activity; a trace node is
         # always one, and saying "across 1 activities" on every node of the view
         # that opens by default would be noise.
@@ -188,7 +188,8 @@ class EvidencePanel(QWidget):
             f"<b>{html.escape(node.label)}</b></div>"
             f'<div style="color:{EVIDENCE_MUTED}">'
             f"{format_requests(node.request_count)}{visits} · "
-            f"{node.start:%Y-%m-%d %H:%M:%S} → {node.end:%H:%M:%S}</div>"
+            f'<span style="color:{THEME.timestamp}">'
+            f"{node.start:%Y-%m-%d %H:%M:%S} → {node.end:%H:%M:%S}</span></div>"
             f'<div style="font-size:{max(base - 1.0, 7.5):.1f}pt">{" ".join(chips)}</div>'
             f'<div style="font-size:{max(base - 1.0, 7.5):.1f}pt;color:{THEME.faint}">'
             f"Showing {shown} {noun}</div>"

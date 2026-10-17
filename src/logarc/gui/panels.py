@@ -30,7 +30,7 @@ from logarc.caseview import CLIENT_LIMIT
 from logarc.gui._qt import SORT_KEY, SortableItem, required
 from logarc.gui.client_filter import caption as filter_caption
 from logarc.gui.client_filter import matches
-from logarc.gui.theme import PAD, TIGHT, caption_font, mono_font
+from logarc.gui.theme import PAD, TIGHT, caption_font, colour_text, mono_font
 from logarc.style import (
     SIZE_NOTE,
     THEME,
@@ -237,7 +237,7 @@ class ClientTable(QWidget):
 
         self._caption = QLabel("No case open.")
         self._caption.setFont(caption_font(self._caption.font()))
-        self._caption.setStyleSheet(f"color:{THEME.muted};")
+        colour_text(self._caption, THEME.muted)
         layout = QVBoxLayout(self)
         # Not flush against the frame. At zero the caption and the first column
         # both start at x=0, and the window edge cut the leading character off
@@ -344,6 +344,7 @@ class ClientTable(QWidget):
             return
         self._searching = False
         self._caption.setText(f"Could not search the whole case for {wanted}: {message}")
+        colour_text(self._caption, THEME.alert)
 
     def set_open_client(self, client_ip: str | None) -> None:
         """Say which client is being read, so the list can mark it or say it is absent."""
@@ -453,6 +454,7 @@ class ClientTable(QWidget):
         return self._open is None or self.select_quietly(self._open)
 
     def _refresh_caption(self) -> None:
+        colour_text(self._caption, THEME.muted)
         shown = sum(not self._table.isRowHidden(row) for row in range(self._table.rowCount()))
         header = required(self._table.horizontalHeader(), "column header")
         reordered = (
@@ -482,6 +484,9 @@ class ClientTable(QWidget):
             item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         if column == _ADDRESS:
             item.setFont(mono_font(self._table.font().pointSizeF()))
+            item.setForeground(QColor(THEME.identity))
+        elif column in (4, 5):
+            item.setForeground(QColor(THEME.timestamp))
         if sort_key is not None:
             # Sort on the number, not on the formatted text: "1,000" sorts
             # before "9" as a string, which would silently mis-rank the table.

@@ -38,7 +38,7 @@ from PyQt6.QtWidgets import (
 
 from logarc.gui._qt import required
 from logarc.gui.crs import _COST, _GAIN, _quiet, _side, _Spoken, _titled, _wrapped
-from logarc.gui.theme import GAP, ROOM, TIGHT, mono_font
+from logarc.gui.theme import GAP, ROOM, TIGHT, colour_text, mono_font
 from logarc.style import THEME
 
 if TYPE_CHECKING:
@@ -76,6 +76,7 @@ class SiteHostsOffer(_Spoken):
         self._field = QLineEdit(", ".join(suggestion.hosts))
         self._field.setFont(mono_font(_FIELD_POINTS))
         self._field.setPlaceholderText("example.com, www.example.com")
+        colour_text(self._field, THEME.identity)
 
         self._quiet_it = QCheckBox("Don't ask this again")
 

@@ -73,7 +73,7 @@ class NoticeBanner(QFrame):
 
         self._headline = QLabel("")
         self._headline.setFont(heading_font(self._headline.font()))
-        self._headline.setStyleSheet(f"color: {THEME.ink}; background: transparent;")
+        self._headline.setStyleSheet(f"color: {THEME.warning}; background: transparent;")
 
         self._detail = QLabel("")
         self._detail.setFont(caption_font(self._detail.font()))

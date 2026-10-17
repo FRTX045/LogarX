@@ -70,7 +70,7 @@ from logarc.gui.quarantine_notice import notice_for
 from logarc.gui.recent import RecentCase
 from logarc.gui.site_hosts import SiteHostsOffer
 from logarc.gui.splitter import PanelSplitter
-from logarc.gui.theme import GAP, MONO_FAMILIES, PAD, TIGHT, apply_theme, heading_font
+from logarc.gui.theme import GAP, MONO_FAMILIES, PAD, TIGHT, apply_theme, colour_text, heading_font
 from logarc.gui.time_filter import TimeFilterBar
 from logarc.gui.triage import TriagePanel
 from logarc.gui.who_else import WhoElseDialog, unavailable
@@ -241,6 +241,7 @@ class MainWindow(QMainWindow):
         self._restore_preferences()
 
         self._status = QLabel("Open a case, or ingest logs into a new one.")
+        colour_text(self._status, THEME.muted)
         self._progress = QProgressBar()
         self._progress.setRange(0, 0)
         self._progress.hide()
@@ -367,7 +368,7 @@ class MainWindow(QMainWindow):
             QTabBar::tab:hover {{ color: {THEME.ink}; }}
             QTabBar::tab:selected {{
                 background: {THEME.raised};
-                color: {THEME.ink};
+                color: {THEME.accent};
                 border: 1px solid {THEME.edge};
                 border-top: 2px solid {THEME.accent};
             }}
@@ -800,6 +801,7 @@ class MainWindow(QMainWindow):
         """
         if self._case_path is None:
             self._status.setText("Open a case first, then run CRS on it.")
+            colour_text(self._status, THEME.muted)
             return
         try:
             SidecarConfig().check()
@@ -1394,7 +1396,7 @@ class MainWindow(QMainWindow):
             # address to monospace makes it an address rather than the first
             # word of a sentence.
             self._heading.setText(
-                f'<span style="font-family:{_MONO_CSS}">'
+                f'<span style="font-family:{_MONO_CSS};color:{THEME.identity}">'
                 f"<b>{result.client_ip}</b></span>"
                 # Normal weight, explicitly: the label itself is set in the
                 # heading face, which is DemiBold, and without this the counts
@@ -1872,6 +1874,7 @@ class MainWindow(QMainWindow):
         """Show that work is running, and offer to stop it when it can be."""
         self._stop = stop
         self._status.setText(message)
+        colour_text(self._status, THEME.accent)
         self._progress.show()
         self._cancel.setEnabled(True)
         self._cancel.setVisible(stop is not None)
@@ -1879,6 +1882,7 @@ class MainWindow(QMainWindow):
     def _idle(self, message: str) -> None:
         self._stop = None
         self._status.setText(message)
+        colour_text(self._status, THEME.muted)
         self._progress.hide()
         self._cancel.hide()
 
@@ -1892,12 +1896,14 @@ class MainWindow(QMainWindow):
         if self._ingest_card is not None:
             self._ingest_card.stopping()
         self._status.setText("Stopping after the batch in flight…")
+        colour_text(self._status, THEME.warning)
 
     def report_error(self, message: str, detail: str, *, explanation: str = "") -> None:
         """`message` in the status line and the dialog; `explanation` under it
         in the dialog; `detail` behind Show Details and in the terminal."""
         self._progress.hide()
         self._status.setText(message)
+        colour_text(self._status, THEME.alert)
         if detail:
             # The window gets a sentence; the terminal keeps the traceback, so a
             # failure is never only a dialog nobody wrote down. Written so that

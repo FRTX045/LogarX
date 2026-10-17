@@ -217,7 +217,7 @@ class Timeline(QWidget):
         font = QFont()
         font.setPointSizeF(_CAPTION_POINTS)
         painter.setFont(font)
-        painter.setPen(QPen(QColor(THEME.faint)))
+        painter.setPen(QPen(QColor(THEME.timestamp)))
         below = QRect(track.left(), track.bottom() + 2, track.width(), _BELOW - 2)
         painter.drawText(below, int(Qt.AlignmentFlag.AlignLeft), _stamp(self._first))
         painter.drawText(below, int(Qt.AlignmentFlag.AlignRight), _stamp(self._last))

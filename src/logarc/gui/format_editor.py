@@ -54,7 +54,7 @@ from logarc.gui.format_preview import (
     preview_mapping,
     preview_pattern,
 )
-from logarc.gui.theme import GAP, ROOM, caption_font
+from logarc.gui.theme import GAP, ROOM, caption_font, colour_text
 from logarc.parsers.columns import FIELDS_DIRECTIVE, declared_columns
 from logarc.parsers.fieldnames import MAPPABLE
 from logarc.parsers.fieldnames import guess_mapping as guess_from_names
@@ -713,6 +713,7 @@ class FormatEditor(QDialog):
     def _refuse(self, why: str) -> bool:
         self._trouble = why
         self._status.setText(why)
+        colour_text(self._status, THEME.alert)
         return False
 
     # -- keeping the screen current --------------------------------------
@@ -770,6 +771,12 @@ class FormatEditor(QDialog):
         # where the other two are about the directive in front of the reader,
         # and it is the one they cannot work out from what they can see.
         self._status.setText(self._library_trouble or self._trouble or result.status)
+        failed = (
+            self._library_trouble
+            or self._trouble
+            or (not result.ok and self._sample.toPlainText().strip())
+        )
+        colour_text(self._status, THEME.alert if failed else THEME.muted)
         # The extra fields last, under the canonical ones and named as the log
         # names them rather than as the schema would: they are not schema
         # fields, and dressing them up as though they were would suggest the
@@ -777,8 +784,15 @@ class FormatEditor(QDialog):
         rows = [*result.fields, *result.extra]
         self._fields.setRowCount(len(rows))
         for row, (field, value) in enumerate(rows):
-            self._fields.setItem(row, 0, QTableWidgetItem(field))
-            self._fields.setItem(row, 1, QTableWidgetItem(value))
+            label = QTableWidgetItem(field)
+            label.setForeground(QColor(THEME.muted))
+            item = QTableWidgetItem(value)
+            if row < len(result.fields) and field in ("Client", "Host"):
+                item.setForeground(QColor(THEME.identity))
+            elif row < len(result.fields) and field == "When":
+                item.setForeground(QColor(THEME.timestamp))
+            self._fields.setItem(row, 0, label)
+            self._fields.setItem(row, 1, item)
 
 
 class FormatChoice(QDialog):

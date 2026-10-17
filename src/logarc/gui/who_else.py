@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QDialog,
@@ -29,6 +30,7 @@ from PyQt6.QtWidgets import (
 )
 
 from logarc.gui.theme import PAD
+from logarc.style import THEME
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -113,7 +115,10 @@ class WhoElseDialog(QDialog):
             for column, value in enumerate(
                 (match.client_ip, f"{match.matched:,}", f"{match.won:,}", f"{match.requests:,}")
             ):
-                self.table.setItem(index, column, QTableWidgetItem(value))
+                item = QTableWidgetItem(value)
+                if column == 0:
+                    item.setForeground(QColor(THEME.identity))
+                self.table.setItem(index, column, item)
         self.table.setVisible(bool(rows))
         self.note.setVisible(bool(rows))
 

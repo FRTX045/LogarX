@@ -50,6 +50,10 @@ _STYLES = f"""<style>
 p {{ margin-top: 0; margin-bottom: 10px; }}
 a {{ color: {THEME.accent}; }}
 .secondary {{ color: {THEME.muted}; }}
+.identity {{ color: {THEME.identity}; }}
+.timestamp {{ color: {THEME.timestamp}; }}
+.caution {{ color: {THEME.warning}; }}
+.error {{ color: {THEME.alert}; }}
 .section {{ margin-top: 14px; margin-bottom: 6px; }}
 .disclosure {{ color: {THEME.ink}; text-decoration: none; }}
 .context {{ color: {THEME.muted}; text-decoration: none; }}
@@ -125,10 +129,11 @@ def render_recommendation(
     profile = row.profile
     parts = [
         _STYLES,
-        f'<p style="margin-bottom: 4px;"><b>{escape(profile.client_ip)}</b></p>'
+        f'<p class="identity" style="margin-bottom: 4px;"><b>{escape(profile.client_ip)}</b></p>'
         '<p class="secondary">'
         f"{plural(profile.requests, 'request')} · "
-        f"{plural(profile.hostile_requests, 'flagged request')}</p>",
+        f'<span class="{"caution" if profile.hostile_requests else "secondary"}">'
+        f"{plural(profile.hostile_requests, 'flagged request')}</span></p>",
         f'<p class="secondary">{plural(len(row.reasons), "finding")} · Open to see evidence.</p>',
     ]
     if status:
@@ -140,7 +145,9 @@ def render_recommendation(
         if warnings:
             notes.append(f"{plural(warnings, 'sample source line')} with warnings")
         parts.append(
-            "<p><b>Source warning:</b> " + "; ".join(notes) + ". Open a finding for details.</p>"
+            '<p class="error"><b>Source warning:</b> '
+            + "; ".join(notes)
+            + ". Open a finding for details.</p>"
         )
     for number, reason in enumerate(row.reasons):
         parts.append(_block(number, reason, status, path_chars, expanded, number in opened))
@@ -250,13 +257,17 @@ def _example(
     if state is not None and not state.can_open:
         return (
             f"<p>{label}{more}{note}<br>"
-            f'<span class="secondary">{when} · {reference}</span><br>'
-            f"Cannot open: {escape(state.note)}</p>"
+            f'<span class="timestamp">{when}</span> · '
+            f'<span class="secondary">{reference}</span><br>'
+            f'<span class="error">Cannot open: {escape(state.note)}</span></p>'
         )
-    warning = f"<br>Warning: {escape(state.note)}" if state is not None else ""
+    warning = (
+        f'<br><span class="error">Warning: {escape(state.note)}</span>' if state is not None else ""
+    )
     return (
         f'<p><a href="example:{number}:{index}">{label}</a>{more}{note}<br>'
-        f'<span class="secondary">{when} · {reference}</span>{warning}</p>'
+        f'<span class="timestamp">{when}</span> · '
+        f'<span class="secondary">{reference}</span>{warning}</p>'
     )
 
 

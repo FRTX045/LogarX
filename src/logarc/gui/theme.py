@@ -39,6 +39,7 @@ __all__ = [
     "UI_FAMILIES",
     "apply_theme",
     "caption_font",
+    "colour_text",
     "heading_font",
     "title_font",
 ]
@@ -116,7 +117,25 @@ QScrollBar::handle:pressed {{ background: {THEME.accent}; }}
 QScrollBar::handle:disabled {{ background: {THEME.edge}; border-color: {THEME.edge}; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
 QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
+QTabBar::tab:selected {{ color: {THEME.accent}; }}
 """
+
+
+def colour_text(widget: QWidget, colour: str) -> None:
+    """Colour a text role without making disabled controls look enabled.
+
+    Palette roles cover labels, fields and buttons. Explicit widget stylesheets
+    still take precedence; those should use the theme role in their own rules.
+    """
+    colours = widget.palette()
+    for group in (QPalette.ColorGroup.Active, QPalette.ColorGroup.Inactive):
+        for role in (
+            QPalette.ColorRole.WindowText,
+            QPalette.ColorRole.Text,
+            QPalette.ColorRole.ButtonText,
+        ):
+            colours.setColor(group, role, QColor(colour))
+    widget.setPalette(colours)
 
 
 def _sized(base: QFont, step: float, *, weight: QFont.Weight | None = None) -> QFont:

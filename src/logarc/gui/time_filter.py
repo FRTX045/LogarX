@@ -58,7 +58,7 @@ QLabel {{ color: {THEME.muted}; }}
 QLabel#timeFilterSummary {{ color: {THEME.ink}; }}
 QDateTimeEdit {{
     background: {THEME.surface};
-    color: {THEME.ink};
+    color: {THEME.timestamp};
     border: 1px solid {THEME.edge};
     border-radius: 2px;
     padding: 2px 6px;
