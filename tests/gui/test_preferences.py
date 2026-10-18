@@ -56,10 +56,26 @@ def test_the_groups_are_drawn_as_groups_in_order(qt_app: QApplication) -> None:
     assert boxes == list(prefs.GROUPS)
 
 
+def test_explanations_can_be_hidden_without_changing_preferences(qt_app: QApplication) -> None:
+    dialog = _opened()
+    before = dialog.chosen()
+    assert all(note.isHidden() for note in dialog._notes)
+    dialog.explanations.click()
+    assert all(not note.isHidden() for note in dialog._notes)
+    assert dialog.chosen() == before
+    dialog.explanations.click()
+    assert all(note.isHidden() for note in dialog._notes)
+    assert dialog.chosen() == before
+    for setting in prefs.EVERY:
+        assert dialog._controls[setting.key].toolTip() == setting.note
+    dialog.close()
+
+
 def test_larger_text_scrolls_without_clipping_notes_or_confirmation_buttons(
     qt_app: QApplication,
 ) -> None:
     from PyQt6.QtCore import QPoint, QRect
+    from PyQt6.QtTest import QTest
     from PyQt6.QtWidgets import QDialogButtonBox, QLabel, QScrollArea
 
     original_font = qt_app.font()
@@ -67,8 +83,11 @@ def test_larger_text_scrolls_without_clipping_notes_or_confirmation_buttons(
     dialog = _opened()
     try:
         dialog.resize(560, 420)
+        dialog.explanations.setChecked(True)
         dialog.show()
         qt_app.processEvents()
+        # Revealing wrapped notes queues another height-for-width layout pass.
+        QTest.qWait(20)
         scroll = dialog.findChild(QScrollArea)
         assert scroll is not None
         body = scroll.widget()
@@ -102,6 +121,7 @@ def test_each_setting_says_what_it_is_for_on_screen(qt_app: QApplication) -> Non
     """Not only in the catalogue. The menu carried these as status tips; a
     dialog that dropped them would make the move a step backwards."""
     dialog = _opened()
+    dialog.explanations.setChecked(True)
     written = dialog.grab().size()  # forces a layout, so nothing is unbuilt
     assert written.isValid()
 

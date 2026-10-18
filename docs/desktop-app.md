@@ -23,6 +23,13 @@ the default minimum zoom; zooming scales the graph and its text together.
 Preferences uses a scrolling page when its explanations need more room, with
 the confirmation buttons always visible below it.
 
+Optional text starts closed. **About these queues** explains how investigation
+results should be read, **Activity details** shows the time range, matching rules
+and OWASP mapping, and **Graph key** explains the graph's colors, outlines and
+sizes. Each can be opened and closed independently. Counts, active filters,
+provisional scan state and source warnings remain visible. Preferences offers
+**Show explanations**; individual controls also explain themselves on hover.
+
 Scrollbars have 20 px tracks, brighter handles, and a minimum handle length of
 42 px. The dividers between panels use 5 px lines with a 1 px margin on each
 side and highlight blue when hovered.
