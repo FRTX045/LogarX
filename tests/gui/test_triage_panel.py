@@ -508,7 +508,28 @@ def test_the_queue_shows_each_clients_key_observation(qt_app, tmp_path):
     assert panel.table.horizontalHeaderItem(2).text() == "Key observation"
     assert panel.table.item(0, 2).text() == summary_for(panel._rows[0])
     assert panel.table.item(0, 2).text().startswith("Exploit evidence: ")
-    assert panel.open_client.text() == "Inspect supporting requests"
+    assert panel.open_client.text() == "Inspect IP"
+    panel.close()
+
+
+def test_queue_guidance_stays_available_without_filling_the_panel(qt_app, tmp_path):
+    from logarc.gui.triage import TriagePanel
+
+    panel = TriagePanel()
+    panel.show_result(scan_case(make_case(tmp_path)))
+    settled(qt_app)
+    assert "CRS not applied" in panel.notice.text()
+    assert "compromise" not in panel.notice.text()
+    assert panel.guidance.content.isHidden()
+    panel.guidance.button.click()
+    assert not panel.guidance.content.isHidden()
+    assert "do not establish intent or compromise" in panel.guidance.content.text()
+    assert "Legitimate activity can be unusual" in panel.guidance.content.text()
+    panel.queues.setCurrentIndex(1)
+    settled(qt_app)
+    assert panel.guidance.button.isChecked()
+    panel.guidance.button.click()
+    assert panel.guidance.content.isHidden()
     panel.close()
 
 
