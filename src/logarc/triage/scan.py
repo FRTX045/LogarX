@@ -17,6 +17,7 @@ from logarc.case import Case
 from logarc.core.evidence import EvidenceRef
 from logarc.core.window import EVERYTHING, TimeWindow
 from logarc.detect.crs.sidecar import CrsDetection
+from logarc.search import labels_for_activity
 from logarc.sessionize.segmenter import SessionPolicy
 from logarc.storage.event_store import ParquetEventStore
 from logarc.triage.profile import (
@@ -221,17 +222,22 @@ def read_activity_clients(path: Path, rule_ids: frozenset[str]) -> frozenset[str
 
 
 def read_activity_counts(path: Path) -> list[tuple[str, int]]:
-    """Each activity the scan saw, with how many clients; most clients first."""
-    with closing(sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)) as connection:
-        rows = connection.execute(
-            """
-            SELECT kind.category, count(DISTINCT rules.ip)
-            FROM rules JOIN (SELECT DISTINCT rule, category FROM labels) kind USING (rule)
-            GROUP BY kind.category
-            ORDER BY count(DISTINCT rules.ip) DESC, kind.category
-            """
-        ).fetchall()
-    return [(category, int(clients)) for category, clients in rows]
+    """Each activity the scan saw, with how many clients; most clients first.
+
+    Counted as `activity:` finds them, by category and by rule name, so the
+    number offered beside a value is the number of clients choosing it lists.
+    Counted by category alone, `enumeration` left out an injection rule named
+    *schema enumeration* that the search then listed.
+    """
+    labels = read_labels(path)
+    counts = [
+        (category, len(read_activity_clients(path, labels_for_activity(labels, category))))
+        for category in sorted({category for _rule, _name, category in labels})
+    ]
+    return sorted(
+        ((category, clients) for category, clients in counts if clients),
+        key=lambda item: (-item[1], item[0]),
+    )
 
 
 def read_profiles(path: Path) -> tuple[ClientProfile, ...]:

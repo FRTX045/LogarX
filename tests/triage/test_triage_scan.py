@@ -395,6 +395,41 @@ def test_the_activities_in_a_scan_with_how_many_clients(tmp_path):
     assert listed == sorted(listed, key=lambda item: (-item[1], item[0])), "most clients first"
 
 
+def test_the_count_beside_an_activity_is_the_clients_it_finds(tmp_path):
+    """`SQL Injection (schema enumeration)` is an injection that `activity:enumeration`
+    also finds. Counted by category alone, the box offered `enumeration`, 1 client,
+    and listed two."""
+    from dataclasses import replace
+
+    from logarc.search import labels_for_activity
+    from logarc.triage.scan import (
+        read_activity_clients,
+        read_activity_counts,
+        read_labels,
+        scan_case,
+    )
+
+    with Case.create(tmp_path / "case") as case:
+        case.store.write(scanned("192.0.2.31"))
+        probe = events(
+            "192.0.2.88",
+            1,
+            path="/item",
+            query="id=1 union select name from information_schema.tables",
+        )
+        case.store.write([replace(e, evidence=replace(e.evidence, line_no=900)) for e in probe])
+        case.store.finalize()
+    result = scan_case(case.root)
+    labels = read_labels(result.path)
+
+    def found(value):
+        return len(read_activity_clients(result.path, labels_for_activity(labels, value)))
+
+    assert found("enumeration") == 2, "premise: the schema probe is found by its name"
+    for category, clients in read_activity_counts(result.path):
+        assert clients == found(category), category
+
+
 def test_an_index_without_labels_is_rebuilt(tmp_path):
     """Read as empty, a missing table would answer that no client did anything."""
     import sqlite3
