@@ -29,6 +29,7 @@ from PyQt6.QtWidgets import (
 )
 
 from logarc.gui._qt import SORT_KEY, SortableItem, required
+from logarc.gui.disclosure import Disclosure
 from logarc.gui.evidence_details import EvidenceDetails
 from logarc.gui.evidence_view import (
     COLUMNS,
@@ -71,8 +72,8 @@ _STATUS = COLUMNS.index("Status")
 _SIZE = COLUMNS.index("Size")
 
 
-#: What the box says before anything is typed: what it filters, and two examples.
-EVIDENCE_HINT = "Filter these lines\u2026   status:404   path:/admin   or any text"
+#: A short field hint; filter examples are available in its tooltip and suggestions.
+EVIDENCE_HINT = "Filter these lines\u2026"
 
 
 class EvidencePanel(QWidget):
@@ -95,6 +96,7 @@ class EvidencePanel(QWidget):
         self.filter_box = FilterBox(
             scope=Scope.EVIDENCE, placeholder=EVIDENCE_HINT, accessible_name="Filter these lines"
         )
+        self.filter_box.setToolTip("Filter by text, status:404, path:/admin, or other log fields")
         self.filter_box.textChanged.connect(lambda _: self._rest.start())
         self._rest = QTimer(self)
         self._rest.setSingleShot(True)
@@ -118,6 +120,12 @@ class EvidencePanel(QWidget):
         # asking for something two steps further on was noise over it.
         self._heading = QLabel("")
         self._heading.setWordWrap(True)
+        self._metadata = QLabel()
+        self._metadata.setWordWrap(True)
+        self._metadata.setTextFormat(Qt.TextFormat.RichText)
+        self._metadata.setFont(caption_font(self._metadata.font()))
+        self.activity_details = Disclosure("Activity details", self._metadata)
+        self.activity_details.hide()
 
         font = mono_font(8.5)
 
@@ -143,6 +151,7 @@ class EvidencePanel(QWidget):
         layout.setContentsMargins(PAD, TIGHT, PAD, TIGHT)
         layout.setSpacing(PAD)
         layout.addWidget(self._heading)
+        layout.addWidget(self.activity_details)
         layout.addWidget(self.filter_box)
         layout.addWidget(self.strip)
         layout.addWidget(split)
@@ -167,7 +176,9 @@ class EvidencePanel(QWidget):
         anything has been chosen.
         """
         self._shown = None
-        self._heading.setText("Select an activity to see the lines behind it." if prompt else "")
+        self._heading.setText("Select an activity." if prompt else "")
+        self._metadata.clear()
+        self.activity_details.hide()
         self._table.setRowCount(0)
         self._detail.clear()
         self.strip.hide()
@@ -242,18 +253,24 @@ class EvidencePanel(QWidget):
         # the panel reading `Blocked` beside a canvas caption reading `blocked`
         # for the same activity — one name for one thing, in one case.
         chips.append(_chip(f"Outcome: {node.outcome.value}"))
+        metadata = [
+            f'<span style="color:{THEME.timestamp}">'
+            f"Time (UTC): {node.start:%Y-%m-%d %H:%M:%S} → {node.end:%Y-%m-%d %H:%M:%S}</span>",
+            f"Matched by: {html.escape(', '.join(node.rule_ids))}",
+        ]
         if node.owasp:
-            chips.append(_chip(f"OWASP: {html.escape(node.owasp)}"))
-        chips.append(_chip(f"Matched by: {html.escape(', '.join(node.rule_ids))}"))
+            metadata.append(f"OWASP: {html.escape(node.owasp)}")
+        self._metadata.setText(
+            f'<span style="color:{EVIDENCE_MUTED}">' + "<br>".join(metadata) + "</span>"
+        )
+        self.activity_details.show()
 
         base = self._heading.font().pointSizeF()
         self._heading.setText(
             f'<div style="font-size:{base + 3.0:.1f}pt;color:{colour}">'
             f"<b>{html.escape(node.label)}</b></div>"
             f'<div style="color:{EVIDENCE_MUTED}">'
-            f"{format_requests(node.request_count)}{visits} · "
-            f'<span style="color:{THEME.timestamp}">'
-            f"{node.start:%Y-%m-%d %H:%M:%S} → {node.end:%H:%M:%S}</span></div>"
+            f"{format_requests(node.request_count)}{visits}</div>"
             f'<div style="font-size:{max(base - 1.0, 7.5):.1f}pt">{" ".join(chips)}</div>'
             + (
                 f'<div style="font-size:{max(base - 1.0, 7.5):.1f}pt;color:{THEME.faint}">'

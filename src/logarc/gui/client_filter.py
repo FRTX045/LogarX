@@ -83,7 +83,7 @@ def caption(
         reordered=reordered,
     )
     if missing_open:
-        text += f" {missing_open}, open now, is not in this list; filter by its address to show it."
+        text += f" Current IP: {missing_open} (outside this list)."
     return text
 
 
@@ -97,18 +97,17 @@ def _counts(
     searching: bool,
     reordered: bool,
 ) -> str:
-    opening = "Select an IP."
     wanted = query.strip()
     last = first + shown - 1
     if not wanted:
         if not total:
             return "No clients."
         if shown >= total:
-            return f"{plural(total, 'client')}. {opening}"
+            return plural(total, "client")
         # Paged. Named by the case's total alone, the caption would invite the
         # reader to select any client when only this page is there to select.
         order = " by request count, sorted within this page" if reordered else ", busiest first"
-        return f"Clients {first:,}\u2013{last:,} of {total:,}{order}. {opening}"
+        return f"Clients {first:,}\u2013{last:,} of {total:,}{order}"
     if searching:
         return f"Searching the whole case for {wanted}\u2026"
     found = shown if matching is None else matching

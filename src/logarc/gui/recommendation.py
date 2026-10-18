@@ -134,7 +134,7 @@ def render_recommendation(
         f"{plural(profile.requests, 'request')} · "
         f'<span class="{"caution" if profile.hostile_requests else "secondary"}">'
         f"{plural(profile.hostile_requests, 'flagged request')}</span></p>",
-        f'<p class="secondary">{plural(len(row.reasons), "finding")} · Open to see evidence.</p>',
+        f'<p class="secondary">{plural(len(row.reasons), "finding")}</p>',
     ]
     if status:
         unavailable = sum(not state.can_open for state in status.values())

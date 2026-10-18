@@ -1339,13 +1339,11 @@ def test_a_single_activity_does_not_count_itself(qt_app: QApplication, campaign:
     assert "activities" not in panel._heading.text()
 
 
-def test_the_heading_labels_each_fact_on_a_line_of_its_own(
+def test_activity_summary_keeps_outcome_and_folds_rule_metadata(
     qt_app: QApplication, recurring: Path
 ) -> None:
-    """The heading grew a fact at a time and the outcome stayed buried in the
-    middle of the first line, between the request count and the timestamps —
-    the one field that says whether any of it worked, in the position the eye
-    reaches last. Labelled lines instead, each one a name and a value."""
+    """Outcome remains a labelled fact beside the activity. Supporting rule
+    identifiers are available on request without filling the summary."""
     node, lines = _merged(recurring)
     panel = EvidencePanel()
 
@@ -1353,8 +1351,37 @@ def test_the_heading_labels_each_fact_on_a_line_of_its_own(
 
     heading = panel._heading.text()
     assert "Outcome: blocked" in heading
-    assert "Matched by: directory_enumeration" in heading
+    assert "Matched by:" not in heading
+    assert "Matched by: directory_enumeration" in panel._metadata.text()
+    assert panel._metadata.isHidden()
     assert "outcome blocked" not in heading, "the old inline form"
+
+
+def test_activity_details_follow_selection_and_can_be_closed(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    with Case.open(campaign) as case:
+        graph = analyse_ip(case.store, CLIENT).trace
+        first = graph.nodes[0]
+        second = next(node for node in graph.nodes if node.rule_ids != first.rule_ids)
+        first_lines = case.read_evidence(first.evidence)
+        second_lines = case.read_evidence(second.evidence)
+    panel = EvidencePanel()
+    panel.show()
+    panel.show_evidence(first, first_lines)
+    assert panel._metadata.isHidden()
+    panel.activity_details.button.click()
+    assert panel._metadata.isVisible()
+    panel.show_evidence(second, second_lines)
+    assert panel.activity_details.button.isChecked()
+    assert ", ".join(second.rule_ids) in panel._metadata.text()
+    assert ", ".join(first.rule_ids) not in panel._metadata.text()
+    panel.activity_details.button.click()
+    assert panel._metadata.isHidden()
+    panel.clear()
+    assert panel.activity_details.isHidden()
+    assert not panel._metadata.text()
+    panel.close()
 
 
 def test_the_panel_says_how_much_of_the_evidence_is_on_screen(
@@ -3400,8 +3427,6 @@ def test_a_client_opened_from_elsewhere_is_named_when_it_is_not_listed(
     settled(qt_app)
     window._reconstruct("10.0.0.5")
     settled(qt_app)
-    assert window._clients._caption.text().endswith(
-        "10.0.0.5, open now, is not in this list; filter by its address to show it."
-    )
+    assert window._clients._caption.text().endswith("Current IP: 10.0.0.5 (outside this list).")
     window.close()
     settled(qt_app)

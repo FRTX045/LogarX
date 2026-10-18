@@ -149,9 +149,7 @@ def test_an_open_client_outside_the_list_is_named_not_added(partial: ClientTable
     partial.client_chosen.connect(chosen.append)
     partial.set_open_client("10.0.9.9")
     assert "10.0.9.9" not in on_screen(partial)
-    assert partial._caption.text().endswith(
-        "10.0.9.9, open now, is not in this list; filter by its address to show it."
-    )
+    assert partial._caption.text().endswith("Current IP: 10.0.9.9 (outside this list).")
     partial.set_open_client("10.0.0.2")
     assert partial._table.currentRow() >= 0
     assert "open now" not in partial._caption.text()
