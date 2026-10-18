@@ -1158,6 +1158,19 @@ def test_a_click_tells_the_window_nothing(qt_app: QApplication) -> None:
 # -- when the number no longer fits on the arrow --------------------------
 
 
+def crowded(art: _EdgeArt) -> float:
+    """A distance between two centres that leaves the arrow half as long as its
+    number's patch: crowded at any text size.
+
+    A fixed nudge was not. The layout spreads with its captions, and once they
+    grew from 7.5pt to 8pt the two activities started 411 units apart on Windows,
+    so moving one 250 closer left an arrow 99 long, more than the 88 its number
+    needs, and the number rightly stayed.
+    """
+    assert art.label is not None
+    return art.source_radius + art.target_radius + art.label.rect().width() / 2
+
+
 def test_a_number_is_written_on_an_arrow_that_has_room_for_it(
     qt_app: QApplication,
 ) -> None:
@@ -1182,9 +1195,9 @@ def test_the_number_gets_out_of_the_way_when_the_arrow_gets_short(
     canvas = ready(2)
     art = edge_between(canvas, "n0", "n1")
     assert art.label is not None
-    home = QPointF(node_item(canvas, "n1").pos())
+    start = node_item(canvas, "n0").pos()
 
-    node_item(canvas, "n1").setPos(home.x() - 250.0, home.y())
+    node_item(canvas, "n1").setPos(start.x() + crowded(art), start.y())
 
     assert not art.label.isVisible()
 
@@ -1194,7 +1207,8 @@ def test_the_number_comes_back_when_the_arrow_does(qt_app: QApplication) -> None
     art = edge_between(canvas, "n0", "n1")
     assert art.label is not None
     home = QPointF(node_item(canvas, "n1").pos())
-    node_item(canvas, "n1").setPos(home.x() - 250.0, home.y())
+    start = node_item(canvas, "n0").pos()
+    node_item(canvas, "n1").setPos(start.x() + crowded(art), start.y())
     assert not art.label.isVisible(), "premise: it got out of the way"
 
     node_item(canvas, "n1").setPos(home)
@@ -1212,9 +1226,10 @@ def test_a_graph_opened_on_a_crowded_arrangement_hides_the_number_too(
     canvas.resize(600, 480)
     laid_out = ActivityCanvas()
     laid_out.show_graph(chain(2))
-    home = laid_out.positions["n1"]
+    start = laid_out.positions["n0"]
+    close = crowded(edge_between(laid_out, "n0", "n1"))
 
-    canvas.show_graph(chain(2), positions={"n1": (home[0] - 250.0, home[1])})
+    canvas.show_graph(chain(2), positions={"n1": (start[0] + close, start[1])})
 
     art = edge_between(canvas, "n0", "n1")
     assert art.label is not None
