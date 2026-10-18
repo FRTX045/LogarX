@@ -185,3 +185,23 @@ def test_an_open_client_outside_a_search_is_named_as_outside_any_list() -> None:
     )  # fmt: skip
 
     assert text.endswith(" Current IP: 100.99.203.115 (outside this list).")
+
+
+def test_an_activity_on_more_clients_than_a_page_names_the_page() -> None:
+    """On the large tier `activity:api_call` names 4,916 clients and a page holds
+    500; the caption read as though every one of them were listed."""
+    from logarc.gui.client_filter import match_caption
+
+    paged = match_caption(
+        shown=500, total=7_450, query="activity:api_call", first=501, matching=4_916,
+        requests=0, counted=False,
+    )  # fmt: skip
+    whole = match_caption(
+        shown=3, total=7_450, query="activity:injection", first=1, matching=3,
+        requests=0, counted=False,
+    )  # fmt: skip
+
+    assert paged == (
+        "Clients 501\u20131,000 of 4,916 that match activity:api_call in the Where to start scan"
+    )
+    assert whole == "3 of 7,450 clients match activity:injection in the Where to start scan"

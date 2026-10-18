@@ -112,7 +112,12 @@ def match_caption(
     reached but not in how many of their requests.
     """
     wanted = query.strip()
-    if not counted:
+    if not counted and shown < matching:
+        text = (
+            f"Clients {first:,}\u2013{first + shown - 1:,} of {matching:,} that match {wanted}"
+            " in the Where to start scan"
+        )
+    elif not counted:
         text = f"{matching:,} of {total:,} clients match {wanted} in the Where to start scan"
     elif matching == 0:
         text = f"No client sent a request matching {wanted}. {total:,} in the case."
