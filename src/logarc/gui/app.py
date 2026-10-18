@@ -500,6 +500,12 @@ class MainWindow(QMainWindow):
             action.setCheckable(True)
         self._trace_action.setChecked(True)
         view_menu.addSeparator()
+        self._timeline_action = self._add(view_menu, "&Timeline", self._timeline_from_menu)
+        self._timeline_action.setCheckable(True)
+        self._timeline_action.setStatusTip(
+            "Show or hide the traffic timeline above the date fields."
+        )
+        view_menu.addSeparator()
         self._fit_action = self._add(view_menu, "&Fit to window", self._canvas.fit)
         view_menu.addSeparator()
         self._fullscreen_action = self._add(view_menu, "F&ull screen", self._fullscreen_from_menu)
@@ -1605,6 +1611,15 @@ class MainWindow(QMainWindow):
     def _apply_band(self, showing: bool) -> None:
         """Draw the traffic above the fields, or stop drawing it."""
         self._time_filter.show_band(showing)
+        # The action uses triggered, so synchronizing its check does not apply
+        # or save the preference again.
+        self._timeline_action.setChecked(showing)
+
+    def _timeline_from_menu(self) -> None:
+        """Use the same saved choice as the Preferences dialog."""
+        self._apply_preferences(
+            {**self._prefs, "view/traffic_band": self._timeline_action.isChecked()}
+        )
 
     def _buckets(self) -> int:
         """How many buckets to ask for, at the counting now in force.

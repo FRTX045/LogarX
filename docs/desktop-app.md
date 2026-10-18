@@ -60,16 +60,20 @@ and respects existing environment settings. For a larger cursor, launch with
 |---|---|
 | **Case** | Open case… (Ctrl+O) · Recently opened… (Ctrl+Shift+O) · Ingest logs into a new case… · Log formats… · Exit |
 | **Edit** | Undo node move (Ctrl+Z) · Save this arrangement (Ctrl+S) · Reset layout (Ctrl+Shift+R) · Preferences… (Ctrl+,) |
-| **View** | Trace (chronological) · Behaviour map · Fit to window · Full screen |
+| **View** | Trace (chronological) · Behaviour map · Timeline · Fit to window · Full screen |
 | **Export** | HTML report… · JSON graph… · PNG image… |
 
 `Edit` rather than `View` for the arrangement entries, because Ctrl+Z is the
 first thing anyone looks for there.
 
 Several behaviours that read like menu items are **preferences**, under
-**Edit → Preferences…**: *Wrap long traces*, *Outline each session*, *Show the
-traffic band*, and *Reopen the last case on start*. They are remembered between
+**Edit → Preferences…**: *Wrap long traces*, *Outline each session*, *Show
+timeline*, and *Reopen the last case on start*. They are remembered between
 launches.
+
+**View → Timeline** toggles the blue traffic timeline above the panels. The date
+filters stay available when it is hidden. This uses the same saved choice as
+**Show timeline** in Preferences and preserves it when leaving fullscreen.
 
 ---
 

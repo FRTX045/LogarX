@@ -347,6 +347,24 @@ def test_coming_back_does_not_undo_a_preference(qt_app: QApplication) -> None:
     window.close()
 
 
+@pytest.mark.parametrize("showing", [True, False])
+def test_fullscreen_preserves_the_timeline_menu_choice(qt_app: QApplication, showing: bool) -> None:
+    window = MainWindow()
+    window.show()
+    if not showing:
+        window._timeline_action.trigger()
+    qt_app.processEvents()
+
+    window._full_screen.apply(True)
+    qt_app.processEvents()
+    assert not window._time_filter._band.isVisible()
+    window._full_screen.apply(False)
+    qt_app.processEvents()
+    assert window._time_filter._band.isVisible() == showing
+    assert window._timeline_action.isChecked() == showing
+    window.close()
+
+
 def test_fitting_into_more_room_draws_the_graph_larger(qt_app: QApplication) -> None:
     """The property full screen leans on, checked where it can be seen.
 
