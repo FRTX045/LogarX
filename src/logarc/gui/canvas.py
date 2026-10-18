@@ -251,7 +251,8 @@ _SCENE_MARGIN: Final = 24.0
 #:
 #: The padding is what keeps two boxes apart: sessions are laid out two rows
 #: apart, and at 20 the closest two boxes on the shopfront excerpt still have
-#: 91 units of paper between them (192.0.2.231, 69 sessions; 203.0.113.6, 150).
+#: 90 units of paper between them (192.0.2.231, 69 sessions; 101 on
+#: 203.0.113.6, 150), with every activity given the widest one's room across.
 _SESSION_PAD: Final = 20.0
 _SESSION_CORNER: Final = 14.0
 #: The outline and the label, both `muted`: 8.4:1 on the box ground, a step
@@ -476,16 +477,21 @@ class _SessionBox:
         self.label = label
         self.node_ids = node_ids
 
-    def reshape(self, around: QRectF) -> None:
+    def reshape(self, around: QRectF, *, at_least: float) -> None:
         """Fit the box to `around`, the activities it holds, in scene units.
 
         Raised at the top by the label's height so the label sits above the
-        first row, and never narrower than the label: a one-activity session's
-        label is wider than its activity, and it would otherwise run out over
-        the edge of its own box.
+        first row, and never narrower than `at_least`: a one-activity session's
+        label is wider than its activity, and would otherwise run out over the
+        edge of its own box. The canvas hands every box the same floor, the
+        widest label among them, so one-activity boxes come out one width
+        rather than as wide as their own dates happen to be.
         """
         head = self.label.rect().height()
-        width = max(around.width(), self.label.rect().width()) + _SESSION_PAD * 2
+        # Its own label too, whatever the floor: the floor leaves out labels
+        # whose boxes were wide enough for them when drawn, and a drag can draw
+        # those activities together until they are not.
+        width = max(around.width(), at_least, self.label.rect().width()) + _SESSION_PAD * 2
         box = QRectF(
             around.left() - _SESSION_PAD,
             around.top() - _SESSION_PAD - head,
@@ -672,6 +678,11 @@ class ActivityCanvas(QGraphicsView):
         # the boxes on or off can repaint them in the ground they now sit on.
         self._patches: list[QGraphicsRectItem] = []
         self._patch_ground = PAPER
+        # How far either side of its centre every activity in a box is given
+        # room, and how narrow a box may be: both taken from the largest on the
+        # trace when the boxes are drawn, so a column of boxes shares its edges.
+        self._reach = (0.0, 0.0)
+        self._box_floor = 0.0
         # Nodes are placed with `setPos` while a graph is being drawn, and every
         # one of those is a position change. Without this the first node placed
         # would ask for arrows that are not on the canvas yet, and the scene
@@ -1176,10 +1187,15 @@ class ActivityCanvas(QGraphicsView):
         Where they stand, not where the layout put them: a saved arrangement
         has already been applied, and a box drawn at the layout would hold
         nothing.
+
+        Every label is written before any box is fitted, because each box is
+        made at least as wide as the widest of them.
         """
         groups = sessions_in(graph)
+        self._reach = self._widest_reach()
         pen = QPen(QColor(_SESSION_EDGE))
         pen.setWidthF(_SESSION_EDGE_WIDTH)
+        drawn: list[_SessionBox] = []
         for index, nodes in enumerate(groups, start=1):
             shape = QGraphicsPathItem()
             shape.setPen(pen)
@@ -1201,29 +1217,69 @@ class ActivityCanvas(QGraphicsView):
             )
             for part in (label, *label.childItems()):
                 part.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
-            box = _SessionBox(
-                shape=shape, label=label, node_ids=tuple(node.node_id for node in nodes)
+            drawn.append(
+                _SessionBox(
+                    shape=shape, label=label, node_ids=tuple(node.node_id for node in nodes)
+                )
             )
+        # Only the labels that are wider than their own activities set it: a
+        # long label on a wide box is held by the box already, and taken as the
+        # floor it would widen every one-activity box past what any of their
+        # own labels ask for.
+        self._box_floor = max(
+            (
+                box.label.rect().width()
+                for box in drawn
+                if box.label.rect().width() >= self._session_content(box).width()
+            ),
+            default=0.0,
+        )
+        for box in drawn:
             self._fit_box(box)
             self._boxes.append(box)
-            for node in nodes:
-                self._box_of[node.node_id] = box
+            for node_id in box.node_ids:
+                self._box_of[node_id] = box
+
+    def _widest_reach(self) -> tuple[float, float]:
+        """How far the widest activity on the canvas reaches left and right of
+        its centre, caption included.
+
+        Every activity in a box is given this much room across rather than its
+        own. Sized by its own, a box started where its widest caption did, so a
+        column of boxes was ragged by the difference between captions. The
+        layout already spaces every activity by the widest, so this is room the
+        activity has anyway.
+
+        Across only. Given the tallest activity's height as well, a one-request
+        activity with a one-line caption sat in a box as tall as a 46-request
+        one with three lines, with empty ground above and below it.
+        """
+        left = right = 0.0
+        for item in self._nodes.values():
+            centre = item.pos().x()
+            held = item.sceneBoundingRect().united(item.mapRectToScene(item.childrenBoundingRect()))
+            left = max(left, centre - held.left())
+            right = max(right, held.right() - centre)
+        return left, right
 
     def _session_content(self, box: _SessionBox) -> QRectF:
-        """What a box has to hold: its activities with their captions, and the
-        numbers on the arrows between them."""
+        """What a box has to hold: its activities with their captions, each
+        given the widest activity's room across, and the numbers on the arrows
+        between them."""
+        left, right = self._reach
         content = QRectF()
         for node_id in box.node_ids:
             item = self._nodes[node_id]
-            content = content.united(item.sceneBoundingRect())
-            content = content.united(item.mapRectToScene(item.childrenBoundingRect()))
+            held = item.sceneBoundingRect().united(item.mapRectToScene(item.childrenBoundingRect()))
+            centre = item.pos().x()
+            content = content.united(QRectF(centre - left, held.top(), left + right, held.height()))
             for art in self._edges_by_node.get(node_id, ()):
                 if art.label is not None and art.label.isVisible():
                     content = content.united(art.label.sceneBoundingRect())
         return content
 
     def _fit_box(self, box: _SessionBox) -> None:
-        box.reshape(self._session_content(box))
+        box.reshape(self._session_content(box), at_least=self._box_floor)
 
     def show_graph_placeholder(self, text: str = WAITING_MESSAGE) -> None:
         """Clear the canvas back to its waiting state.
