@@ -19,6 +19,7 @@ import html
 from typing import TYPE_CHECKING, Final
 
 from PyQt6.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt, pyqtSignal
+from PyQt6.QtGui import QFontMetrics
 from PyQt6.QtWidgets import (
     QFrame,
     QLabel,
@@ -252,6 +253,10 @@ class SuggestionList(QFrame):
         self._list = QListWidget()
         self._list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._list.setFrameShape(QFrame.Shape.NoFrame)
+        # A note is read whole or not at all: the list is made wide enough for
+        # its rows (`_place`), and a scroll bar across would only take the room
+        # the last row needs.
+        self._list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._list.setStyleSheet(
             "QListWidget { background:transparent; }"
             f" QListWidget::item {{ padding:3px 6px; color:{THEME.ink}; }}"
@@ -292,7 +297,18 @@ class SuggestionList(QFrame):
     def _place(self, under: QWidget) -> None:
         host = required(self.parentWidget(), "window")
         corner = under.mapTo(host, QPoint(0, under.height() + 2))
-        width = max(under.width(), 320)
+        # As wide as its longest row, which in a narrow panel is wider than the
+        # box: it then grows leftwards, over the canvas, rather than past the
+        # window's edge. Never narrower than the box, never wider than the window.
+        rows = self._list
+        across = rows.sizeHintForColumn(0) + 2 * (self.frameWidth() + rows.frameWidth())
+        # A character to spare. Fitted to the pixel, a row drawn at 125% came out
+        # a pixel wider and lost its last characters to an ellipsis.
+        if rows.count():
+            across += QFontMetrics(required(rows.item(0), "row").font()).averageCharWidth()
+        if rows.count() > _ROWS_SHOWN:
+            across += required(rows.verticalScrollBar(), "scroll bar").sizeHint().width()
+        width = max(under.width(), 320, across)
         width = min(width, host.width() - 4)
         self.setFixedWidth(width)
         self.adjustSize()

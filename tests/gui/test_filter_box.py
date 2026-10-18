@@ -17,9 +17,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from PyQt6.QtCore import QEvent, Qt
-from PyQt6.QtGui import QFocusEvent
+from PyQt6.QtGui import QFocusEvent, QFontMetrics
 from PyQt6.QtTest import QTest
-from PyQt6.QtWidgets import QApplication, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QApplication, QHBoxLayout, QVBoxLayout, QWidget
 
 from logarc.gui.filter_box import FilterBox
 from logarc.search import Scope
@@ -271,6 +271,46 @@ def test_an_event_after_the_box_lets_go_of_its_field_is_ignored(
         box.edit = edit
 
     assert raised == []
+
+
+def at_the_right_edge(host: QWidget, *, box_width: int, host_width: int) -> FilterBox:
+    """A narrow box against the right edge of a wide window: the evidence panel's place."""
+    box = FilterBox(scope=Scope.EVIDENCE, placeholder="Filter", accessible_name="Filter")
+    box.setFixedWidth(box_width)
+    row = QHBoxLayout(host)
+    row.addStretch(1)
+    row.addWidget(box, 0, Qt.AlignmentFlag.AlignTop)
+    host.resize(host_width, 360)
+    host.show()
+    QApplication.processEvents()
+    return box
+
+
+def test_the_list_is_as_wide_as_its_longest_row(window: QWidget) -> None:
+    """Its notes are longer than a narrow box. Held to the box's width it scrolled
+    sideways, and the scroll bar pushed its last row out of sight."""
+    box = at_the_right_edge(window, box_width=300, host_width=1000)
+    focus(box)
+    shown = box.suggestion_list
+    rows = shown._list
+
+    # With a character to spare: at 125% a row that fitted to the pixel was drawn
+    # a pixel wider and lost its last characters to an ellipsis.
+    spare = QFontMetrics(rows.item(0).font()).averageCharWidth()
+    assert rows.sizeHintForColumn(0) + spare <= rows.viewport().width(), "every row fits across"
+    assert not rows.horizontalScrollBar().isVisible()
+    last = rows.item(rows.count() - 1)
+    assert rows.visualItemRect(last).bottom() <= rows.viewport().height(), "every row in sight"
+    assert shown.geometry().right() <= window.width(), "grown leftwards, inside the window"
+
+
+def test_a_window_too_narrow_for_the_rows_still_never_scrolls_sideways(window: QWidget) -> None:
+    box = at_the_right_edge(window, box_width=240, host_width=260)
+    focus(box)
+    shown = box.suggestion_list
+
+    assert shown.geometry().width() <= window.width()
+    assert not shown._list.horizontalScrollBar().isVisible()
 
 
 # -- in a narrow panel ----------------------------------------------------------------
