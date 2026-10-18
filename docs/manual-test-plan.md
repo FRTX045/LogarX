@@ -962,6 +962,70 @@ the canvas is faded.
 
 ---
 
+## 24. The client box searches the whole case
+
+1. Open a case made from the shopfront excerpt: 52 clients, 9 to 15 March 2026.
+   Wait for Where to start to finish its scan, then click the box above the
+   client list.
+
+**Pass:** a list opens under the box, headed `SEARCH THE CASE BY`: ip, status,
+path, method, activity, after and before, each with an example, then
+`any text`.
+
+2. Type `status:`.
+
+**Pass:** the list becomes `VALUES IN THE CASE`, most common first: `200` with
+48 clients · 2,438 requests, `404` with 10 clients · 703 requests, `400` with
+1 client · 316 requests, and so on, then the classes.
+
+3. Clear the box, type `path:/admin` and a space.
+
+**Pass:** it becomes a chip. The list holds eight clients, with a **Match**
+column beside **Client**, `192.0.2.231` first with 55. Above it:
+`8 of 52 clients sent a request matching path:/admin · 123 requests`.
+
+4. Replace it with `status:4xx method:POST`.
+
+**Pass:** three clients: `192.0.2.23` with 38, then `100.67.118.193` and
+`192.0.2.22` with 1 each.
+`3 of 52 clients sent a request matching status:4xx method:POST · 40 requests`.
+
+5. Open `192.0.2.23`.
+
+**Pass:** the evidence box holds the same two chips, and the first
+**Credential Attack**, on 10 March at 19:12, is selected:
+`Filtered · 6 of 6 lines match status:4xx method:POST`. The Page View and
+Project Metadata Probe activities are faded; the three Credential Attacks are not.
+
+6. Press `192.0.2.23` again to let go of it. Clear the box and type
+   `activity:enumeration`.
+
+**Pass:** five clients, with no Match column:
+`5 of 52 clients match activity:enumeration in the Where to start scan`. Typing
+`activity:` instead lists `VALUES IN THE CASE` with how many clients each
+activity was seen on, and `enumeration` says 5.
+
+7. Clear the box and type `after:2026-03-15 status:404`, then a space.
+
+**Pass:** the `after:` chip leaves the box and the range above the list moves to
+15 March onwards: the line beside it says `11 of 52 clients`. The box holds
+`status:404`, and the list `3 of 52 clients sent a request matching status:404
+· 102 requests`, `192.0.2.231` first with 78.
+
+8. Type `before:12:00` and a space.
+
+**Pass:** it is read on 15 March, the range's first day: the range ends before
+noon on the 15th, `9 of 52 clients`. The list keeps `status:404`, now
+`· 33 requests`, `192.0.2.231` first with 16.
+
+9. Clear the box, then type `after:23:00 before:22:00` and a space.
+
+**Pass:** the range does not move, and the line above the list says
+`Could not search the whole case for after:23:00 before:22:00: the range would
+end before it starts`.
+
+---
+
 ## Recording a run
 
 | # | Check | Result | Notes |
@@ -989,5 +1053,6 @@ the canvas is faded.
 | 21 | The fourteen shipped formats read as a list you can choose from | | |
 | 22 | Sessions are boxed and explained; the boxes follow a drag and can be turned off | | |
 | 23 | The evidence filters, says how much it kept, fades the canvas, and resets per client | | |
+| 24 | The client box finds clients by their requests, moves the range for a time, and opens a client filtered | | |
 
 Version tested: ______  ·  Date: ______  ·  Machine: ______
