@@ -80,8 +80,8 @@ def test_the_caption_says_how_many_of_the_whole_case_match() -> None:
     )
 
 
-def test_the_caption_without_a_filter_is_the_one_it_always_was() -> None:
-    assert caption(shown=49_175, total=49_175, query="") == ("49,175 clients. Select an IP.")
+def test_unfiltered_caption_keeps_the_case_count_without_extra_instructions() -> None:
+    assert caption(shown=49_175, total=49_175, query="") == "49,175 clients"
 
 
 def test_a_capped_list_says_it_holds_only_the_busiest_of_them() -> None:
@@ -94,7 +94,7 @@ def test_a_capped_list_says_it_holds_only_the_busiest_of_them() -> None:
     as a case of 500.
     """
     assert caption(shown=500, total=119_880, query="") == (
-        "Clients 1\u2013500 of 119,880, busiest first. Select an IP."
+        "Clients 1\u2013500 of 119,880, busiest first"
     )
 
 
@@ -120,13 +120,13 @@ def test_an_empty_case_is_not_described_as_a_filter_result() -> None:
 
 def test_a_later_page_says_which_clients_it_holds() -> None:
     assert caption(shown=431, total=931, query="", first=501) == (
-        "Clients 501\u2013931 of 931, busiest first. Select an IP."
+        "Clients 501\u2013931 of 931, busiest first"
     )
 
 
 def test_a_page_sorted_another_way_says_the_order_is_only_within_it() -> None:
     assert caption(shown=500, total=931, query="", reordered=True) == (
-        "Clients 1\u2013500 of 931 by request count, sorted within this page. Select an IP."
+        "Clients 1\u2013500 of 931 by request count, sorted within this page"
     )
 
 
@@ -153,9 +153,7 @@ def test_more_matches_than_a_page_are_paged() -> None:
 
 def test_an_open_client_outside_the_list_is_named() -> None:
     text = caption(shown=500, total=931, query="", missing_open="100.99.203.115")
-    assert text.endswith(
-        " 100.99.203.115, open now, is not in this list; filter by its address to show it."
-    )
+    assert text.endswith(" Current IP: 100.99.203.115 (outside this list).")
 
 
 def test_an_activity_search_waits_for_the_scan_and_says_how_far_it_has_got() -> None:

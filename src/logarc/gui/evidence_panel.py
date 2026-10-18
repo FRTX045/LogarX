@@ -19,7 +19,6 @@ from PyQt6.QtCore import QEvent, QObject, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QPalette
 from PyQt6.QtWidgets import (
     QAbstractItemView,
-    QHeaderView,
     QLabel,
     QPushButton,
     QTableWidget,
@@ -29,6 +28,8 @@ from PyQt6.QtWidgets import (
 )
 
 from logarc.gui._qt import SORT_KEY, SortableItem, required
+from logarc.gui.columns import ColumnWidths
+from logarc.gui.disclosure import Disclosure
 from logarc.gui.evidence_details import EvidenceDetails
 from logarc.gui.evidence_view import (
     COLUMNS,
@@ -71,8 +72,8 @@ _STATUS = COLUMNS.index("Status")
 _SIZE = COLUMNS.index("Size")
 
 
-#: What the box says before anything is typed: what it filters, and two examples.
-EVIDENCE_HINT = "Filter these lines\u2026   status:404   path:/admin   or any text"
+#: A short field hint; filter examples are available in its tooltip and suggestions.
+EVIDENCE_HINT = "Filter these lines\u2026"
 
 
 class EvidencePanel(QWidget):
@@ -95,6 +96,7 @@ class EvidencePanel(QWidget):
         self.filter_box = FilterBox(
             scope=Scope.EVIDENCE, placeholder=EVIDENCE_HINT, accessible_name="Filter these lines"
         )
+        self.filter_box.setToolTip("Filter by text, status:404, path:/admin, or other log fields")
         self.filter_box.textChanged.connect(lambda _: self._rest.start())
         self._rest = QTimer(self)
         self._rest.setSingleShot(True)
@@ -118,10 +120,17 @@ class EvidencePanel(QWidget):
         # asking for something two steps further on was noise over it.
         self._heading = QLabel("")
         self._heading.setWordWrap(True)
+        self._metadata = QLabel()
+        self._metadata.setWordWrap(True)
+        self._metadata.setTextFormat(Qt.TextFormat.RichText)
+        self._metadata.setFont(caption_font(self._metadata.font()))
+        self.activity_details = Disclosure("Activity details", self._metadata)
+        self.activity_details.hide()
 
         font = mono_font(8.5)
 
         self._table = _build_table(font)
+        self._column_sizes = ColumnWidths(self._table, fill=COLUMNS.index("Request"))
         self._table.itemSelectionChanged.connect(self._selection_changed)
         self.no_results = self._build_no_results()
         self._detail = EvidenceDetails(font)
@@ -143,6 +152,7 @@ class EvidencePanel(QWidget):
         layout.setContentsMargins(PAD, TIGHT, PAD, TIGHT)
         layout.setSpacing(PAD)
         layout.addWidget(self._heading)
+        layout.addWidget(self.activity_details)
         layout.addWidget(self.filter_box)
         layout.addWidget(self.strip)
         layout.addWidget(split)
@@ -167,7 +177,9 @@ class EvidencePanel(QWidget):
         anything has been chosen.
         """
         self._shown = None
-        self._heading.setText("Select an activity to see the lines behind it." if prompt else "")
+        self._heading.setText("Select an activity." if prompt else "")
+        self._metadata.clear()
+        self.activity_details.hide()
         self._table.setRowCount(0)
         self._detail.clear()
         self.strip.hide()
@@ -242,18 +254,24 @@ class EvidencePanel(QWidget):
         # the panel reading `Blocked` beside a canvas caption reading `blocked`
         # for the same activity — one name for one thing, in one case.
         chips.append(_chip(f"Outcome: {node.outcome.value}"))
+        metadata = [
+            f'<span style="color:{THEME.timestamp}">'
+            f"Time (UTC): {node.start:%Y-%m-%d %H:%M:%S} → {node.end:%Y-%m-%d %H:%M:%S}</span>",
+            f"Matched by: {html.escape(', '.join(node.rule_ids))}",
+        ]
         if node.owasp:
-            chips.append(_chip(f"OWASP: {html.escape(node.owasp)}"))
-        chips.append(_chip(f"Matched by: {html.escape(', '.join(node.rule_ids))}"))
+            metadata.append(f"OWASP: {html.escape(node.owasp)}")
+        self._metadata.setText(
+            f'<span style="color:{EVIDENCE_MUTED}">' + "<br>".join(metadata) + "</span>"
+        )
+        self.activity_details.show()
 
         base = self._heading.font().pointSizeF()
         self._heading.setText(
             f'<div style="font-size:{base + 3.0:.1f}pt;color:{colour}">'
             f"<b>{html.escape(node.label)}</b></div>"
             f'<div style="color:{EVIDENCE_MUTED}">'
-            f"{format_requests(node.request_count)}{visits} · "
-            f'<span style="color:{THEME.timestamp}">'
-            f"{node.start:%Y-%m-%d %H:%M:%S} → {node.end:%H:%M:%S}</span></div>"
+            f"{format_requests(node.request_count)}{visits}</div>"
             f'<div style="font-size:{max(base - 1.0, 7.5):.1f}pt">{" ".join(chips)}</div>'
             + (
                 f'<div style="font-size:{max(base - 1.0, 7.5):.1f}pt;color:{THEME.faint}">'
@@ -267,30 +285,21 @@ class EvidencePanel(QWidget):
         # Sorting off while filling. With it on, each row is re-sorted against
         # the rows already placed and the remaining values land in other rows.
         self._table.setSortingEnabled(False)
-        # Sizing off while filling as well. Sized to their contents, every cell
-        # put in asks where its column starts, and the header answers by
-        # measuring every row of that column again: a refill of 2,000 lines was
-        # minutes of frozen window. Put back once the rows are in, each column
-        # is measured once.
-        header = required(self._table.horizontalHeader(), "column header")
-        modes = [header.sectionResizeMode(section) for section in range(header.count())]
-        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        # Interactive headers avoid re-measuring every column on each inserted
+        # cell. Untouched widths are fitted once when the refill is complete.
         sizes = False
-        try:
-            self._table.setRowCount(len(lines))
-            for row, line in enumerate(lines):
-                for column, cell in enumerate(cells_for(line, decode=self._decode)):
-                    self._table.setItem(row, column, _item(cell, index=row, column=column))
-                    sizes = sizes or (column == _SIZE and bool(cell.text))
-        finally:
-            for section, mode in enumerate(modes):
-                header.setSectionResizeMode(section, mode)
+        self._table.setRowCount(len(lines))
+        for row, line in enumerate(lines):
+            for column, cell in enumerate(cells_for(line, decode=self._decode)):
+                self._table.setItem(row, column, _item(cell, index=row, column=column))
+                sizes = sizes or (column == _SIZE and bool(cell.text))
         self._table.setSortingEnabled(True)
         # A column costs its heading's width whatever it holds, and several log
         # formats carry no response size at all. Empty on every row it was taking
         # that width from `Request`, which is where the payload goes. Hidden only
         # while there is nothing in it — one size anywhere brings it back.
         self._table.setColumnHidden(_SIZE, not sizes)
+        self._column_sizes.fit_unset()
         # Opened in the order the log holds, not in whatever order the widget
         # last happened to be sorted by. Evidence is a sequence of events and
         # the first thing a reader wants is the sequence; sorting by size or
@@ -460,10 +469,6 @@ def _build_table(font: QFont) -> QTableWidget:
     # being structure rather than content, they are set a step quieter than the
     # rows they label rather than competing with them.
     header.setFont(caption_font(QFont()))
-    header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-    # `Target` takes whatever is left over. It is the only column whose content
-    # is unbounded, and the only one worth widening the panel for.
-    header.setSectionResizeMode(COLUMNS.index("Request"), QHeaderView.ResizeMode.Stretch)
     return table
 
 

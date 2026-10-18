@@ -57,6 +57,7 @@ from logarc.gui.client_filter import awaiting_scan, is_whole_address
 from logarc.gui.crs import CrsCard, CrsUnavailable
 from logarc.gui.crs_notice import stale_crs_notice
 from logarc.gui.density import Density, buckets_for
+from logarc.gui.disclosure import Disclosure
 from logarc.gui.display import configure_display
 from logarc.gui.evidence_panel import EvidencePanel
 from logarc.gui.evidence_view import Filtered, RequestFilter
@@ -335,7 +336,8 @@ class MainWindow(QMainWindow):
         column.addWidget(self._heading)
         column.addWidget(self._canvas)
         column.addWidget(self._arrangement_bar)
-        column.addWidget(self._legend)
+        self._graph_key = Disclosure("Graph key", self._legend)
+        column.addWidget(self._graph_key)
 
         self._workspace = QTabWidget()
         self._workspace.addTab(self._triage, "Where to start")
@@ -520,6 +522,12 @@ class MainWindow(QMainWindow):
         for action in (self._trace_action, self._behaviour_action):
             action.setCheckable(True)
         self._trace_action.setChecked(True)
+        view_menu.addSeparator()
+        self._timeline_action = self._add(view_menu, "&Timeline", self._timeline_from_menu)
+        self._timeline_action.setCheckable(True)
+        self._timeline_action.setStatusTip(
+            "Show or hide the traffic timeline above the date fields."
+        )
         view_menu.addSeparator()
         self._fit_action = self._add(view_menu, "&Fit to window", self._canvas.fit)
         view_menu.addSeparator()
@@ -1708,7 +1716,7 @@ class MainWindow(QMainWindow):
             self._older_crs,
             self._tabs,
             self._heading,
-            self._legend,
+            self._graph_key,
             self.menuBar(),
             self.statusBar(),
         ]
@@ -1769,6 +1777,15 @@ class MainWindow(QMainWindow):
     def _apply_band(self, showing: bool) -> None:
         """Draw the traffic above the fields, or stop drawing it."""
         self._time_filter.show_band(showing)
+        # The action uses triggered, so synchronizing its check does not apply
+        # or save the preference again.
+        self._timeline_action.setChecked(showing)
+
+    def _timeline_from_menu(self) -> None:
+        """Use the same saved choice as the Preferences dialog."""
+        self._apply_preferences(
+            {**self._prefs, "view/traffic_band": self._timeline_action.isChecked()}
+        )
 
     def _buckets(self) -> int:
         """How many buckets to ask for, at the counting now in force.

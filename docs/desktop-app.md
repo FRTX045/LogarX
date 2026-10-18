@@ -23,6 +23,19 @@ the default minimum zoom; zooming scales the graph and its text together.
 Preferences uses a scrolling page when its explanations need more room, with
 the confirmation buttons always visible below it.
 
+Optional text starts closed. **About these queues** explains how investigation
+results should be read, **Activity details** shows the time range, matching rules
+and OWASP mapping, and **Graph key** explains the graph's colors, outlines and
+sizes. Each can be opened and closed independently. Counts, active filters,
+provisional scan state and source warnings remain visible. Preferences offers
+**Show explanations**; individual controls also explain themselves on hover.
+
+Every table supports resizing columns by dragging the edge between headings,
+including the client list, requests, investigation queues and dialog tables.
+Double-click an edge to fit that column to its contents, or right-click a heading
+for **Fit this column to contents** and **Reset column widths**. Manual widths
+stay in place when rows refresh or filters change, for the life of that window.
+
 Scrollbars have 20 px tracks, brighter handles, and a minimum handle length of
 42 px. The dividers between panels use 5 px lines with a 1 px margin on each
 side and highlight blue when hovered.
@@ -53,16 +66,20 @@ and respects existing environment settings. For a larger cursor, launch with
 |---|---|
 | **Case** | Open case… (Ctrl+O) · Recently opened… (Ctrl+Shift+O) · Ingest logs into a new case… · Log formats… · Exit |
 | **Edit** | Undo node move (Ctrl+Z) · Save this arrangement (Ctrl+S) · Reset layout (Ctrl+Shift+R) · Preferences… (Ctrl+,) |
-| **View** | Trace (chronological) · Behaviour map · Fit to window · Full screen |
+| **View** | Trace (chronological) · Behaviour map · Timeline · Fit to window · Full screen |
 | **Export** | HTML report… · JSON graph… · PNG image… |
 
 `Edit` rather than `View` for the arrangement entries, because Ctrl+Z is the
 first thing anyone looks for there.
 
 Several behaviours that read like menu items are **preferences**, under
-**Edit → Preferences…**: *Wrap long traces*, *Outline each session*, *Show the
-traffic band*, and *Reopen the last case on start*. They are remembered between
+**Edit → Preferences…**: *Wrap long traces*, *Outline each session*, *Show
+timeline*, and *Reopen the last case on start*. They are remembered between
 launches.
+
+**View → Timeline** toggles the blue traffic timeline above the panels. The date
+filters stay available when it is hidden. This uses the same saved choice as
+**Show timeline** in Preferences and preserves it when leaving fullscreen.
 
 ---
 

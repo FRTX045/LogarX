@@ -97,8 +97,8 @@ EVERY: tuple[Setting, ...] = (
     ),
     Setting(
         key="view/traffic_band",
-        label="Show the traffic band",
-        note="Draw where the case's traffic sits, above the date fields.",
+        label="Show timeline",
+        note="Show the traffic timeline above the date fields; also available under View.",
         default=True,
         group="Graph",
     ),

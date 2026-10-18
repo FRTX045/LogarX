@@ -67,7 +67,7 @@ def _everywhere(window: MainWindow) -> list[QAction]:
 
 
 def test_the_view_menu_holds_only_what_is_shown(qt_app: QApplication) -> None:
-    """Four entries answering one question. It held eleven answering four.
+    """View controls what is shown, including a quick timeline toggle.
 
     `Full screen` belongs here on the same test every other entry passes: it
     decides what is on screen and nothing else. It is not a preference — it is
@@ -79,15 +79,15 @@ def test_the_view_menu_holds_only_what_is_shown(qt_app: QApplication) -> None:
     assert _entries(_menu(window, "View")) == [
         "Trace (chronological)",
         "Behaviour map",
+        "Timeline",
         "Fit to window",
         "Full screen",
     ]
     window.close()
 
 
-def test_no_preference_is_left_in_a_menu(qt_app: QApplication) -> None:
-    """Every one of them lives in the dialog now. Left in both places they
-    would disagree the moment either was used."""
+def test_other_preferences_stay_in_the_dialog(qt_app: QApplication) -> None:
+    """The timeline has a quick toggle; the remaining preferences live in the dialog."""
     window = MainWindow()
     labels = {action.text().replace("&", "") for action in _everywhere(window)}
 
@@ -95,6 +95,31 @@ def test_no_preference_is_left_in_a_menu(qt_app: QApplication) -> None:
         assert setting.label not in labels, f"{setting.label} is still in a menu"
     assert "Band detail" not in labels
     window.close()
+
+
+def test_timeline_menu_choice_is_remembered_and_leaves_date_fields(qt_app: QApplication) -> None:
+    first = MainWindow()
+    first.show()
+    qt_app.processEvents()
+    assert first._timeline_action.isChecked()
+    first._timeline_action.trigger()
+    assert first._time_filter._band.isHidden()
+    assert first._time_filter._from.isVisible()
+    assert first._time_filter._to.isVisible()
+    assert first._time_filter._clear.isVisible()
+    first.close()
+
+    second = MainWindow()
+    assert not second._timeline_action.isChecked()
+    assert second._time_filter._band.isHidden()
+    second._timeline_action.trigger()
+    assert not second._time_filter._band.isHidden()
+    second.close()
+
+    third = MainWindow()
+    assert third._timeline_action.isChecked()
+    assert not third._time_filter._band.isHidden()
+    third.close()
 
 
 def test_the_edit_menu_holds_what_is_done_to_the_graph(qt_app: QApplication) -> None:
@@ -268,6 +293,29 @@ def test_the_dialog_opens_showing_what_is_in_force(
     window._show_preferences()
 
     assert seen == [False]
+    window.close()
+
+
+def test_timeline_menu_and_preferences_use_the_same_choice(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    window = MainWindow()
+    window._timeline_action.trigger()
+
+    def look(dialog: PreferencesDialog) -> int:
+        assert not dialog._controls["view/traffic_band"].isChecked()
+        dialog._controls["view/traffic_band"].setChecked(True)
+        return int(QDialog.DialogCode.Accepted.value)
+
+    monkeypatch.setattr(PreferencesDialog, "exec", look)
+    window._show_preferences()
+    assert window._timeline_action.isChecked()
+    assert not window._time_filter._band.isHidden()
+
+    _answer(monkeypatch, QDialog.DialogCode.Accepted, **{"view/traffic_band": False})
+    window._show_preferences()
+    assert not window._timeline_action.isChecked()
+    assert window._time_filter._band.isHidden()
     window.close()
 
 

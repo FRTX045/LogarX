@@ -61,10 +61,14 @@ class PreferencesDialog(QDialog):
         self.setWindowTitle("Preferences")
         self.setMinimumWidth(_WIDTH)
         self._controls: dict[str, QCheckBox | QComboBox] = {}
+        self._notes: list[QLabel] = []
 
         column = QVBoxLayout(self)
         column.setContentsMargins(ROOM, ROOM, ROOM, ROOM)
         column.setSpacing(ROOM)
+        self.explanations = QCheckBox("Show explanations")
+        self.explanations.toggled.connect(self._show_explanations)
+        column.addWidget(self.explanations)
 
         body = QWidget()
         settings = QVBoxLayout(body)
@@ -125,7 +129,16 @@ class PreferencesDialog(QDialog):
         note.setFont(caption_font(note.font()))
         note.setStyleSheet(f"color:{THEME.faint};")
         column.addWidget(note)
+        self._notes.append(note)
+        note.hide()
+        control = self._controls[setting.key]
+        control.setToolTip(setting.note)
+        control.setAccessibleDescription(setting.note)
         return holder
+
+    def _show_explanations(self, showing: bool) -> None:
+        for note in self._notes:
+            note.setVisible(showing)
 
     def _control(self, setting: Setting, value: bool | Density) -> QWidget:
         if setting.choices is None:
