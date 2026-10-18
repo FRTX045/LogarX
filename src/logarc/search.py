@@ -41,6 +41,7 @@ __all__ = [
     "Suggestion",
     "decoded_path",
     "decoded_target",
+    "fold",
     "is_whole_address",
     "parse",
     "suggestions",
@@ -232,10 +233,10 @@ class Query:
             return False
         if self.paths:
             path = event.path or ""
-            found = (path.lower(), decoded_path(path).lower())
+            found = (fold(path), fold(decoded_path(path)))
             if not any(wanted in side for wanted in self.paths for side in found):
                 return False
-        if self.methods and (event.method or "").upper() not in self.methods:
+        if self.methods and not _method_in(event.method, self.methods):
             return False
         if self.after is not None and event.timestamp < self.after:
             return False
@@ -244,11 +245,35 @@ class Query:
         if self.ips and not any(_address_matches(event.client_ip, ip) for ip in self.ips):
             return False
         if self.words:
-            raw = event.target.lower()
-            shown = decoded_target(event.path or "", event.query).lower()
+            raw = fold(event.target)
+            shown = fold(decoded_target(event.path or "", event.query))
             if not all(word in raw or word in shown for word in self.words):
                 return False
         return True
+
+
+def fold(text: str) -> str:
+    """Lower case, the same way the event store's SQL does.
+
+    The case box asks DuckDB and the evidence box asks Python, so the two must
+    agree on every request. Over all of Unicode their `lower` differs in exactly
+    two places (measured: Python 3.12, DuckDB 1.5.5): Python writes a dotted
+    capital I as `i` plus a combining dot, and a capital sigma ending a word as
+    the final form. Both are folded here to plain `i` and the ordinary sigma,
+    which is also what a reader typing would expect to match. The store applies
+    the same final step to DuckDB's `lower`.
+    """
+    return text.replace("\u0130", "i").lower().replace("\u03c2", "\u03c3")
+
+
+def _method_in(method: str | None, wanted: tuple[str, ...]) -> bool:
+    """Whether `method` is one of `wanted`, compared in ASCII.
+
+    A method filter can only be typed in letters a to z. Python's `upper` turns
+    some letters outside ASCII into ASCII (a dotless i into `I`) and DuckDB's does
+    not, so a method outside ASCII matches nothing, in both.
+    """
+    return method is not None and method.isascii() and method.upper() in wanted
 
 
 def _address_matches(client_ip: str, wanted: str) -> bool:
@@ -279,7 +304,7 @@ def parse(text: str, scope: Scope, *, day: date | None = None) -> Query:
             if scope is Scope.CASE and _looks_like_address(token):
                 ips.append(token)
             else:
-                words.append(_unquoted(token).lower())
+                words.append(fold(_unquoted(token)))
             continue
         assert split is not None
         key, value = split
@@ -289,7 +314,7 @@ def parse(text: str, scope: Scope, *, day: date | None = None) -> Query:
             else:
                 statuses.append(int(value))
         elif key == "path":
-            paths.append(value.lower())
+            paths.append(fold(value))
         elif key == "method":
             methods.append(value.upper())
         elif key == "after":
@@ -409,9 +434,11 @@ def value_counts(events: Iterable[NormalizedEvent], key: str) -> list[tuple[str,
     """
     counts: Counter[str] = Counter()
     for event in events:
-        if key == "status" and event.status is not None:
+        # Only what the box can make a filter of: offering `status:999` or
+        # `method:M-SEARCH` would complete to text that finds nothing.
+        if key == "status" and event.status is not None and 100 <= event.status <= 599:
             counts[str(event.status)] += 1
-        elif key == "method" and event.method:
+        elif key == "method" and event.method and _METHOD.fullmatch(event.method):
             counts[event.method.upper()] += 1
     ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
     if key != "status":

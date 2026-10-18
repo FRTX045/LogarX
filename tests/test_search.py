@@ -18,6 +18,7 @@ from logarc.search import (
     Suggestion,
     decoded_path,
     decoded_target,
+    fold,
     is_whole_address,
     parse,
     suggestions,
@@ -242,6 +243,40 @@ def test_a_target_without_a_path_is_empty_as_the_event_has_it() -> None:
     assert decoded_target("/p", "") == "/p"
 
 
+# -- the store must agree with every one of these ---------------------------------------
+#
+# The case box asks DuckDB and the evidence box asks Python, and the two must
+# keep the same lines. Over all of Unicode their lower-casing differs in exactly
+# two places (measured: Python 3.12, DuckDB 1.5.5), and their upper-casing in a
+# hundred, so the language settles each one rather than leaving it to whichever
+# side happens to run.
+
+
+def test_a_dotted_capital_i_is_found_by_a_plain_i() -> None:
+    """Python lower-cases it to `i` and a combining dot, which a reader typing
+    `iletisim` with an ordinary i would never match; DuckDB to `i`."""
+    assert parse("\u0130let", Scope.EVIDENCE).matches(event("/\u0130letisim"))
+    assert parse("ilet", Scope.EVIDENCE).matches(event("/\u0130letisim"))
+    assert parse("path:/ilet", Scope.EVIDENCE).matches(event("/\u0130letisim"))
+
+
+def test_a_final_sigma_is_any_sigma() -> None:
+    """Python writes a capital sigma at a word's end as the final form, DuckDB as
+    the ordinary one; both are read as one letter."""
+    word = "\u03bf\u03b4\u03bf\u03c3"
+    assert parse(word, Scope.EVIDENCE).matches(event("/\u039f\u0394\u039f\u03a3"))
+    assert parse(word, Scope.EVIDENCE).matches(event("/\u03bf\u03b4\u03bf\u03c2"))
+    assert fold("\u039f\u0394\u039f\u03a3") == fold("\u03bf\u03b4\u03bf\u03c3")
+
+
+def test_a_method_outside_ascii_never_matches() -> None:
+    """A method can only be typed in letters a to z. Upper-cased by Python, a
+    dotless i turns `P\u0131NG` into `PING`; DuckDB leaves it alone. Neither is
+    a method anybody asked for."""
+    assert not parse("method:PING", Scope.EVIDENCE).matches(event(method="P\u0131NG"))
+    assert parse("method:ping", Scope.EVIDENCE).matches(event(method="PING"))
+
+
 # -- what the suggestion list offers --------------------------------------------------
 
 
@@ -262,6 +297,20 @@ def test_methods_are_counted_as_written_upper_case() -> None:
     events = [event(method="get"), event(method="GET"), event(method="POST"), event(method=None)]
 
     assert value_counts(events, "method") == [("GET", 2), ("POST", 1)]
+
+
+def test_a_status_the_box_cannot_take_is_not_offered() -> None:
+    events = [event(status=999), event(status=0), event(status=301)]
+
+    assert value_counts(events, "status") == [("301", 1), ("3xx", 1)]
+
+
+def test_a_method_the_box_cannot_take_is_not_offered() -> None:
+    """`method:M-SEARCH` is not a filter the box understands, so offering it
+    would complete to text that finds nothing."""
+    events = [event(method="M-SEARCH"), event(method="P\u0131NG"), event(method="GET")]
+
+    assert value_counts(events, "method") == [("GET", 1)]
 
 
 def completions(rows: tuple[Suggestion, ...]) -> list[str]:
