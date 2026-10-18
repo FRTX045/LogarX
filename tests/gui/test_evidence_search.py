@@ -103,7 +103,9 @@ def test_a_filtered_view_says_so_in_place_of_the_line_count(panel: EvidencePanel
 
     assert not panel.strip.isHidden()
     assert "Filtered \N{MIDDLE DOT} 2 of 33 lines match status:200" in panel.strip.text()
-    assert "Clear filter" in panel.strip.text()
+    # Kept on one line: a link broken across two reads as two words, one of
+    # them a stray "filter" at the start of a line.
+    assert ">Clear&nbsp;filter</a>" in panel.strip.text()
     assert "Showing" not in panel._heading.text()
     assert "33 requests" in panel._heading.text(), "the activity is still described whole"
     assert rows(panel) == 2
@@ -124,7 +126,7 @@ def test_no_match_says_no_results_found_in_the_table(panel: EvidencePanel) -> No
     assert "No results found" in words
     assert "None of the 33 lines in this activity match status:401." in words
     assert panel.no_results.findChild(QPushButton).text() == "Clear filter"
-    assert "Clear filter" not in panel.strip.text(), "one way to clear, not two"
+    assert "</a>" not in panel.strip.text(), "one way to clear, not two"
     assert panel.no_results.geometry() == panel._table.viewport().rect()
 
 

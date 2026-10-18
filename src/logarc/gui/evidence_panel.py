@@ -340,7 +340,9 @@ class EvidencePanel(QWidget):
             return
         empty = filtered.matched == 0
         clear = (
-            "" if empty else f' &nbsp;<a href="clear" style="color:{THEME.accent}">Clear filter</a>'
+            ""
+            if empty
+            else f' &nbsp;<a href="clear" style="color:{THEME.accent}">Clear&nbsp;filter</a>'
         )
         self.strip.setText(html.escape(filter_strip(filtered, shown=shown)) + clear)
         self.strip.show()
