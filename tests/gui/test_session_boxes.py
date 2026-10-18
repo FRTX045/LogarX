@@ -8,7 +8,8 @@ on them.
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from itertools import combinations, pairwise
 from pathlib import Path
@@ -36,7 +37,7 @@ from logarc.case import Case
 from logarc.core.activity import ActivityCategory, Outcome, Severity
 from logarc.core.evidence import EvidenceRef
 from logarc.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
-from logarc.gui.canvas import ActivityCanvas
+from logarc.gui.canvas import _SESSION_EDGE_WIDTH, _SESSION_PAD, ActivityCanvas
 from logarc.style import PAPER, SESSION_GROUND
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
@@ -69,17 +70,38 @@ def activity(
 def trace(*sizes: int, requests: int = 5, label: str = "directory enumeration") -> ActivityGraph:
     """One session per size, that many activities long, chained within a session
     and never across one, as `build_trace_graph` does."""
-    nodes = tuple(
+    return chained(
         activity(session, index, requests=requests, label=label)
         for session, size in enumerate(sizes, start=1)
         for index in range(1, size + 1)
     )
+
+
+def chained(activities: Iterable[GraphNode]) -> ActivityGraph:
+    """A trace of these activities, each linked to the next in its own session."""
+    nodes = tuple(activities)
     edges = tuple(
         GraphEdge(first.node_id, second.node_id, gap_seconds=30.0)
         for first, second in pairwise(nodes)
         if first.node_id.split("/")[0] == second.node_id.split("/")[0]
     )
     return ActivityGraph(kind=GraphKind.TRACE, client_ip="1.2.3.4", nodes=nodes, edges=edges)
+
+
+def mixed() -> ActivityGraph:
+    """Sessions whose activities differ in everything that sizes them: a caption
+    of one word and one of two lines, the smallest circle and the largest. Then
+    two three-activity sessions, one of small circles and one of large."""
+    long_name = "an activity whose name is long enough to need a second line"
+    return chained(
+        (
+            activity(1, 1, requests=1, label="probe"),
+            activity(2, 1, requests=10_000, label=long_name),
+            activity(3, 1, requests=40, label="directory enumeration"),
+            *(activity(4, index, requests=1, label="probe") for index in (1, 2, 3)),
+            *(activity(5, index, requests=10_000, label=long_name) for index in (1, 2, 3)),
+        )
+    )
 
 
 def behaviour_map() -> ActivityGraph:
@@ -204,6 +226,115 @@ def test_no_two_boxes_overlap(qt_app: QApplication, wrap: bool, requests: int) -
     assert len(outlines) == 6
     for one, other in combinations(outlines, 2):
         assert not one.intersects(other)
+
+
+@pytest.mark.parametrize("wrap", [True, False])
+def test_boxes_in_a_column_share_their_left_edge(qt_app: QApplication, wrap: bool) -> None:
+    """Each box used to start where its own widest caption did, so a column of
+    boxes was ragged by the difference in caption widths: 16 pixels across the
+    README's three sessions."""
+    canvas = ActivityCanvas()
+    canvas.set_wrap(wrap)
+    canvas.show_graph(mixed())
+
+    lefts = {round(box.shape.sceneBoundingRect().left(), 3) for box in session_boxes(canvas)}
+
+    assert len(lefts) == 1, lefts
+
+
+def test_one_activity_boxes_are_all_one_width(qt_app: QApplication) -> None:
+    """A one-activity box was as wide as its own label or caption, so a column
+    of them was ragged on the right."""
+    canvas = drawn(mixed())
+
+    single = [box.shape.sceneBoundingRect() for box in session_boxes(canvas)[:3]]
+    widths = {round(rect.width(), 3) for rect in single}
+
+    assert len(widths) == 1, widths
+
+
+def test_a_small_activity_is_not_given_a_large_ones_height(qt_app: QApplication) -> None:
+    """Width is shared so that a column lines up. Height is not: given the
+    largest activity's height, a one-request activity with a one-line caption
+    sat in a box as tall as a 46-request one with three lines, with empty
+    ground above and below it (192.0.2.31, measured)."""
+    canvas = drawn(mixed())
+    small, large = (box.shape.sceneBoundingRect() for box in session_boxes(canvas)[:2])
+
+    assert small.height() < large.height()
+    content = held(node_item(canvas, "1.2.3.4#1/1"))
+    head = session_boxes(canvas)[0].label.rect().height()
+    assert small.height() == pytest.approx(
+        content.height() + 2 * _SESSION_PAD + head + _SESSION_EDGE_WIDTH, abs=0.01
+    )
+
+
+def test_one_activity_boxes_are_one_width_whatever_their_dates_say(
+    qt_app: QApplication,
+) -> None:
+    """The label is wider than a one-activity session's activity, so it sets
+    the box's width, and a label carrying a time range is longer than one
+    carrying a single time. Sized each by its own label, a column of them was
+    ragged on the right."""
+    spread = activity(2, 1, requests=1, label="probe")
+    canvas = drawn(
+        chained(
+            (
+                activity(1, 1, requests=1, label="probe"),
+                replace(spread, end=spread.start + timedelta(hours=2)),
+                activity(3, 1, requests=1, label="probe"),
+            )
+        )
+    )
+    labels = {round(box.label.rect().width(), 3) for box in session_boxes(canvas)}
+    assert len(labels) == 2, "premise: the labels are two widths"
+
+    widths = {round(box.shape.sceneBoundingRect().width(), 3) for box in session_boxes(canvas)}
+
+    assert len(widths) == 1, widths
+
+
+def test_a_longer_label_on_a_wider_box_does_not_widen_the_rest(qt_app: QApplication) -> None:
+    """A three-activity session's label is the longest here, and its box is
+    wider than that label anyway. Taken as everyone's floor, it widened every
+    one-activity box past what any of their own labels asked for: 19 units on
+    192.0.2.231, measured."""
+    canvas = drawn(trace(1, 1, 3, label="probe"))
+    *single, wide = session_boxes(canvas)
+    assert wide.label.rect().width() > max(box.label.rect().width() for box in single), "premise"
+    assert canvas._session_content(wide).width() > wide.label.rect().width(), "premise"
+
+    needed = max(box.label.rect().width() for box in single)
+
+    for box in single:
+        assert box.shape.sceneBoundingRect().width() == pytest.approx(
+            needed + 2 * _SESSION_PAD + _SESSION_EDGE_WIDTH, abs=0.01
+        )
+
+
+def test_a_box_drawn_together_still_holds_its_own_label(qt_app: QApplication) -> None:
+    """The floor leaves out labels their boxes were wide enough for. Drag that
+    box's activities on top of one another and it is not wide enough any more,
+    and its label must not run out over the edge."""
+    canvas = drawn(trace(1, 1, 3, label="probe"))
+    wide = session_boxes(canvas)[2]
+    first = node_item(canvas, "1.2.3.4#3/1").pos()
+
+    for index in (2, 3):
+        node_item(canvas, f"1.2.3.4#3/{index}").setPos(first)
+
+    assert wide.shape.sceneBoundingRect().contains(wide.label.sceneBoundingRect())
+
+
+def test_boxes_holding_the_same_columns_are_the_same_width(qt_app: QApplication) -> None:
+    """Three small circles and three large ones are the same three columns of
+    the layout, and their boxes line up on both sides."""
+    canvas = drawn(mixed())
+
+    small, large = (box.shape.sceneBoundingRect() for box in session_boxes(canvas)[3:])
+
+    assert round(small.left(), 3) == round(large.left(), 3)
+    assert round(small.right(), 3) == round(large.right(), 3)
 
 
 # -- how it is drawn ------------------------------------------------------
@@ -352,9 +483,9 @@ def test_a_drag_reshapes_only_the_box_it_moved_in(qt_app: QApplication) -> None:
     seen: list[tuple[str, ...]] = []
     original = _SessionBox.reshape
 
-    def counting(box: _SessionBox, around: QRectF) -> None:
+    def counting(box: _SessionBox, around: QRectF, *, at_least: float) -> None:
         seen.append(box.node_ids)
-        original(box, around)
+        original(box, around, at_least=at_least)
 
     with patch.object(_SessionBox, "reshape", counting):
         node_item(canvas, "1.2.3.4#75/1").setPos(9_000.0, 9_000.0)
@@ -450,8 +581,9 @@ def test_the_busiest_shopfront_clients_boxes_stand_apart(
     qt_app: QApplication, shopfront: Case, client: str
 ) -> None:
     """The two clients the mockups were judged on: 69 sessions of up to seven
-    activities, and 150 sessions of one. Measured by hand on 2026-10-17 with
-    no overlap and 91 units at the closest; this holds it there."""
+    activities, and 150 sessions of one. Measured by hand with no overlap: 91
+    units at the closest on 2026-10-17, 90 once every activity was given the
+    widest one's room across on 2026-10-18. This holds it there."""
     result = analyse_ip(shopfront.store, client)
     canvas = ActivityCanvas()
     canvas.show_graph(result.trace)
