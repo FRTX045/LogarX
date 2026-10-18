@@ -244,13 +244,22 @@ class MainWindow(QMainWindow):
         colour_text(self._status, THEME.muted)
         self._progress = QProgressBar()
         self._progress.setRange(0, 0)
+        self._progress.setTextVisible(False)
+        self._progress.setFixedSize(320, 16)
+        self._progress.setAccessibleName("Loading progress")
+        self._progress.setStyleSheet(
+            f"QProgressBar {{ background: {THEME.stripe};"
+            f" border: 1px solid {THEME.faint}; border-radius: 3px; }}"
+            f"QProgressBar::chunk {{ background: {THEME.accent};"
+            " width: 64px; }"
+        )
         self._progress.hide()
         self._cancel = QPushButton("Cancel")
         self._cancel.hide()
         self._cancel.clicked.connect(self._request_cancel)
         status_bar = required(self.statusBar())
+        status_bar.addWidget(self._progress)
         status_bar.addWidget(self._status, 1)
-        status_bar.addPermanentWidget(self._progress)
         status_bar.addPermanentWidget(self._cancel)
 
     # -- construction ------------------------------------------------------
