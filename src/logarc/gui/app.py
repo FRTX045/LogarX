@@ -56,6 +56,7 @@ from logarc.gui.client_filter import is_whole_address
 from logarc.gui.crs import CrsCard, CrsUnavailable
 from logarc.gui.crs_notice import stale_crs_notice
 from logarc.gui.density import Density, buckets_for
+from logarc.gui.disclosure import Disclosure
 from logarc.gui.display import configure_display
 from logarc.gui.evidence_panel import EvidencePanel
 from logarc.gui.evidence_view import Filtered, RequestFilter
@@ -312,7 +313,8 @@ class MainWindow(QMainWindow):
         column.addWidget(self._heading)
         column.addWidget(self._canvas)
         column.addWidget(self._arrangement_bar)
-        column.addWidget(self._legend)
+        self._graph_key = Disclosure("Graph key", self._legend)
+        column.addWidget(self._graph_key)
 
         self._workspace = QTabWidget()
         self._workspace.addTab(self._triage, "Where to start")
@@ -1542,7 +1544,7 @@ class MainWindow(QMainWindow):
             self._older_crs,
             self._tabs,
             self._heading,
-            self._legend,
+            self._graph_key,
             self.menuBar(),
             self.statusBar(),
         ]
