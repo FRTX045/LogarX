@@ -514,7 +514,10 @@ class FilterBox(QFrame):
     # -- keys and focus ----------------------------------------------------------
 
     def eventFilter(self, watched: QObject | None, event: QEvent | None) -> bool:  # noqa: N802
-        if watched is not self.edit or event is None:
+        # Looked up, not assumed: at exit Python can let go of `edit` while Qt is
+        # still delivering its last events, and an exception raised in here is
+        # one PyQt answers by ending the process.
+        if event is None or watched is not getattr(self, "edit", None):
             return False
         kind = event.type()
         if kind == QEvent.Type.FocusIn:

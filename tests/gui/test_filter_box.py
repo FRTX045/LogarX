@@ -8,6 +8,7 @@ keeps everything inside it.
 from __future__ import annotations
 
 import os
+import sys
 
 import pytest
 
@@ -248,6 +249,28 @@ def test_the_list_sits_under_the_box_and_inside_the_window(window: QWidget) -> N
     assert under.top() >= top.y()
     assert window.rect().contains(under.topLeft())
     assert under.right() <= window.width()
+
+
+def test_an_event_after_the_box_lets_go_of_its_field_is_ignored(
+    window: QWidget, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Python can clear a box's attributes while Qt is still delivering its
+    field's last events: at exit, or when a failed test is torn down. The filter
+    assumed `edit` was there and raised inside Qt, which PyQt answers by ending
+    the process; found when two failing tests took the whole run down with them."""
+    raised: list[object] = []
+    monkeypatch.setattr(sys, "excepthook", lambda *exc: raised.append(exc))
+    box = boxed(window)
+    edit = box.edit
+    del box.edit
+    try:
+        QApplication.sendEvent(
+            edit, QFocusEvent(QEvent.Type.FocusOut, Qt.FocusReason.OtherFocusReason)
+        )
+    finally:
+        box.edit = edit
+
+    assert raised == []
 
 
 # -- in a narrow panel ----------------------------------------------------------------
