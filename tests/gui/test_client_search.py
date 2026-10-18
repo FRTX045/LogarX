@@ -514,3 +514,51 @@ def test_an_address_answer_after_a_failure_replaces_it(partial: ClientTable) -> 
     partial.show_page(IpSummaryPage((summary("10.0.9.9", 2, position=701),), 1, 0), "10.0.9.9")
 
     assert partial._caption.text() == "1 of 900 clients matches 10.0.9.9"
+
+
+# -- column widths -------------------------------------------------------------------
+
+
+def visible_widths(table: ClientTable) -> int:
+    grid = table._table
+    header = grid.horizontalHeader()
+    assert header is not None
+    return sum(header.sectionSize(c) for c in range(header.count()) if not grid.isColumnHidden(c))
+
+
+def test_the_spare_width_goes_to_the_last_column_not_the_hidden_match(qt_app: QApplication) -> None:
+    """Match is hidden until a search counts requests. Given the spare width while
+    hidden, it left a blank band at the right of every list without a search."""
+    table = ClientTable()
+    table.resize(1400, 400)
+    table.show()
+    table.show_clients([summary("10.0.0.1", 9)], total=1)
+    QApplication.processEvents()
+
+    assert visible_widths(table) == table._table.viewport().width()
+    table.close()
+
+
+def test_an_answer_is_measured_on_its_own_rows(qt_app: QApplication) -> None:
+    """Every row is hidden while a search runs; measured then, each column was as
+    wide as its heading, and a long address or count was cut short."""
+    table = ClientTable()
+    table.resize(1400, 400)
+    table.show()
+    table.show_clients([summary("10.0.0.1", 9)], total=900)
+    table._filter.setText("status:200")
+
+    table.show_matches(
+        matched(("2001:db8:85a3::8a2e:370:7334", 1_234_567), ("10.0.5.5", 2)), "status:200"
+    )
+    QApplication.processEvents()
+
+    grid = table._table
+    header = grid.horizontalHeader()
+    assert header is not None
+    for name in ("Client", "Match"):
+        column = column_of(grid, name)
+        fitted = max(grid.sizeHintForColumn(column), header.sectionSizeHint(column))
+        assert header.sectionSize(column) == fitted, name
+    assert visible_widths(table) == grid.viewport().width()
+    table.close()

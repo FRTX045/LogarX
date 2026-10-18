@@ -226,7 +226,11 @@ class ClientTable(QWidget):
         # they label. This is the treatment the exported report already gives its
         # own table headings.
         header.setFont(caption_font(self._table.font()))
-        self._column_sizes = ColumnWidths(self._table, fill=len(_COLUMNS) - 1)
+        # The spare width goes to Last, the rightmost column on screen. Match is
+        # the last column by index but sits beside the address, and is hidden
+        # until a search counts requests: given the spare width, it left a
+        # blank band at the right of every list without one.
+        self._column_sizes = ColumnWidths(self._table, fill=_COLUMNS.index("Last"))
         # Room for the sort chevron, which is drawn above the label. The header
         # came out 16px tall for 12px of text, and the top edge cut the indicator
         # in half — leaving the one thing this header says beyond its six words,
@@ -322,6 +326,21 @@ class ClientTable(QWidget):
         blocked = self._table.blockSignals(True)
         self._table.setSortingEnabled(False)
         self._table.setRowCount(len(summaries))
+        # Every row shown before the columns are measured: Qt measures the rows
+        # it can see, and a search hides them all while it runs, so the answer
+        # was measured as though it were empty and a long address cut short.
+        for row in range(self._table.rowCount()):
+            self._table.setRowHidden(row, False)
+        # Shown or hidden before the columns are measured, so a Match column
+        # that appears is sized to its counts with the rest.
+        self._table.setColumnHidden(_MATCH, not self._counted)
+        # The indicator before sorting is turned back on, which sorts by it at
+        # once, and ties keep whatever order that leaves. Left on the reader's
+        # last column, ties came out in that column's order rather than the
+        # page's own.
+        required(self._table.horizontalHeader(), "column header").setSortIndicator(
+            self._natural_order(), Qt.SortOrder.DescendingOrder
+        )
         with self._sized_once():
             for row, summary in enumerate(summaries):
                 self._set(row, 0, summary.client_ip)
@@ -334,19 +353,10 @@ class ClientTable(QWidget):
                 self._set(row, 5, format_seen(summary.last_seen))
                 found = hits[row] if row < len(hits) else 0
                 self._set(row, _MATCH, f"{found:,}", sort_key=found)
-        # The indicator first: turned back on, sorting sorts by it at once, and
-        # ties keep whatever order that leaves. Left on the reader's last column,
-        # ties came out in that column's order rather than the page's own.
-        required(self._table.horizontalHeader(), "column header").setSortIndicator(
-            self._natural_order(), Qt.SortOrder.DescendingOrder
-        )
         self._table.setSortingEnabled(True)
-        self._table.setColumnHidden(_MATCH, not self._counted)
         # Busiest first, the order pages are cut in, so a later page visibly
         # continues the one before it; most matches first for a search.
         self._table.sortItems(self._natural_order(), Qt.SortOrder.DescendingOrder)
-        for row in range(self._table.rowCount()):
-            self._table.setRowHidden(row, False)
         self._mark_open()
         self._table.blockSignals(blocked)
         self._hide_unmatched()
