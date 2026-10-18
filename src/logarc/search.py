@@ -43,6 +43,7 @@ __all__ = [
     "decoded_target",
     "fold",
     "is_whole_address",
+    "labels_for_activity",
     "parse",
     "suggestions",
     "tokens",
@@ -274,6 +275,24 @@ def _method_in(method: str | None, wanted: tuple[str, ...]) -> bool:
     not, so a method outside ASCII matches nothing, in both.
     """
     return method is not None and method.isascii() and method.upper() in wanted
+
+
+def labels_for_activity(labels: Iterable[tuple[str, str, str]], value: str) -> frozenset[str]:
+    """The rules an `activity:` value names: a category, or part of a rule's name.
+
+    `labels` is what the Where to start scan saw, `(rule id, name, category)`.
+    Read from there rather than from the rule packs, a detection only CRS made
+    is named by the category CRS gave it, and a request nothing matched by the
+    fallback that named it. A category may be typed with a space for its
+    underscore: `path traversal`.
+    """
+    wanted = fold(value.strip())
+    if not wanted:
+        return frozenset()
+    category = wanted.replace(" ", "_")
+    return frozenset(
+        rule for rule, name, kind in labels if kind == category or wanted in fold(name)
+    )
 
 
 def _address_matches(client_ip: str, wanted: str) -> bool:

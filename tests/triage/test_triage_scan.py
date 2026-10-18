@@ -326,3 +326,102 @@ def test_an_index_written_in_layout_nine_is_rebuilt(tmp_path, monkeypatch):
     current = scan.scan_case(case.root)
     assert not current.cached
     assert current.path != old.path
+
+
+def crs_line(line_no, rule_id=942100, family="attack-sqli"):
+    import json
+
+    return json.dumps(
+        {
+            "source_file_id": "source",
+            "line_no": line_no,
+            "rule_id": rule_id,
+            "severity": "critical",
+            "msg": "SQL Injection Attack Detected via libinjection",
+            "matched_var": "ARGS:id",
+            "transformed_value": "1 union select",
+            "attack_family": family,
+        }
+    )
+
+
+def activity_case(tmp_path):
+    """A scanner, somebody browsing, and a client only CRS flagged, for SQL injection."""
+    from dataclasses import replace
+
+    with Case.create(tmp_path / "case") as case:
+        case.store.write(scanned("192.0.2.31"))
+        case.store.write(events("192.0.2.1", 5))
+        quiet = events("192.0.2.77", 6)
+        quiet = [replace(event, evidence=replace(event.evidence, line_no=500 + n))
+                 for n, event in enumerate(quiet)]  # fmt: skip
+        case.store.write(quiet)
+        case.store.finalize()
+    (case.root / "crs.jsonl").write_text(crs_line(502) + "\n", encoding="utf-8")
+    return case.root
+
+
+def test_an_activity_finds_the_clients_the_scan_saw_it_on(tmp_path):
+    """By category, by part of a rule's name, and for a detection only CRS made,
+    whose category no rule pack knows: the index records the labels it saw."""
+    from logarc.search import labels_for_activity
+    from logarc.triage.scan import read_activity_clients, read_labels, scan_case
+
+    result = scan_case(activity_case(tmp_path))
+    labels = read_labels(result.path)
+
+    def who(value):
+        return read_activity_clients(result.path, labels_for_activity(labels, value))
+
+    assert who("enumeration") == {"192.0.2.31"}
+    assert who("content discovery") == {"192.0.2.31"}
+    # Matched, though the content-discovery label is the one kept.
+    assert who("directory enumeration") == {"192.0.2.31"}
+    assert who("injection") == {"192.0.2.77"}, "CRS alone flagged it"
+    assert "192.0.2.1" in who("browsing")
+    assert who("ransomware") == frozenset()
+
+
+def test_the_activities_in_a_scan_with_how_many_clients(tmp_path):
+    from logarc.triage.scan import read_activity_counts, scan_case
+
+    result = scan_case(activity_case(tmp_path))
+    counts = dict(read_activity_counts(result.path))
+
+    assert counts["enumeration"] == 1
+    assert counts["injection"] == 1
+    assert counts["browsing"] >= 1
+    listed = read_activity_counts(result.path)
+    assert listed == sorted(listed, key=lambda item: (-item[1], item[0])), "most clients first"
+
+
+def test_an_index_without_labels_is_rebuilt(tmp_path):
+    """Read as empty, a missing table would answer that no client did anything."""
+    import sqlite3
+    from contextlib import closing
+
+    from logarc.triage.scan import scan_case
+
+    with Case.create(tmp_path / "case") as case:
+        case.store.write(events())
+        case.store.finalize()
+    result = scan_case(case.root)
+    with closing(sqlite3.connect(result.path)) as connection:
+        connection.execute("DROP TABLE labels")
+        connection.commit()
+    assert not scan_case(case.root).cached
+
+
+def test_an_index_written_in_layout_ten_is_rebuilt(tmp_path, monkeypatch):
+    """It has no table of labels, so `activity:` could not be answered from it."""
+    from logarc.triage import scan
+
+    with Case.create(tmp_path / "case") as case:
+        case.store.write(events())
+        case.store.finalize()
+    monkeypatch.setattr(scan, "_LAYOUT", 10)
+    old = scan.scan_case(case.root)
+    monkeypatch.undo()
+    current = scan.scan_case(case.root)
+    assert not current.cached
+    assert current.path != old.path

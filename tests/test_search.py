@@ -20,6 +20,7 @@ from logarc.search import (
     decoded_target,
     fold,
     is_whole_address,
+    labels_for_activity,
     parse,
     suggestions,
     tokens,
@@ -275,6 +276,39 @@ def test_a_method_outside_ascii_never_matches() -> None:
     a method anybody asked for."""
     assert not parse("method:PING", Scope.EVIDENCE).matches(event(method="P\u0131NG"))
     assert parse("method:ping", Scope.EVIDENCE).matches(event(method="PING"))
+
+
+# -- activity: names what the scan saw ------------------------------------------------
+
+LABELS = (
+    ("directory_enumeration", "Directory Enumeration", "enumeration"),
+    ("content_discovery_user_agent", "Content Discovery Tool", "enumeration"),
+    ("crs:942100", "SQL Injection Attack Detected via libinjection", "injection"),
+    ("benign:browsing", "Browsing", "browsing"),
+    ("dot_dot_segment", "Dot-dot Segment", "path_traversal"),
+)
+
+
+def test_an_activity_is_a_category() -> None:
+    assert labels_for_activity(LABELS, "enumeration") == {
+        "directory_enumeration",
+        "content_discovery_user_agent",
+    }
+    assert labels_for_activity(LABELS, "INJECTION") == {"crs:942100"}
+
+
+def test_a_category_can_be_typed_with_a_space() -> None:
+    assert labels_for_activity(LABELS, "path traversal") == {"dot_dot_segment"}
+
+
+def test_an_activity_is_also_part_of_a_rule_name() -> None:
+    assert labels_for_activity(LABELS, "discovery") == {"content_discovery_user_agent"}
+    assert labels_for_activity(LABELS, "libinjection") == {"crs:942100"}
+
+
+def test_an_activity_nothing_was_called_finds_nothing() -> None:
+    assert labels_for_activity(LABELS, "ransomware") == frozenset()
+    assert labels_for_activity(LABELS, "") == frozenset()
 
 
 # -- what the suggestion list offers --------------------------------------------------

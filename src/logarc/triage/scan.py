@@ -67,7 +67,8 @@ class TriageProgress:
 #: Raised too when what counts as evidence changes and the rules fingerprint
 #: cannot see it: 9 is an ad click ID no longer counting as level 1 evidence,
 #: 10 a file-list match inside a client's `name/version` no longer counting.
-_LAYOUT = 10
+#: 11 added the table of labels `activity:` searches by.
+_LAYOUT = 11
 
 
 @dataclass(frozen=True)
@@ -131,6 +132,7 @@ def _profile(data: dict[str, Any]) -> ClientProfile:
                 )
             },
             "exploit_rules": tuple(data.get("exploit_rules", ())),
+            "rule_labels": tuple(tuple(item) for item in data.get("rule_labels", ())),
             "evidence": {
                 key: tuple(EvidenceRef(**ref) for ref in refs)
                 for key, refs in data["evidence"].items()
@@ -195,6 +197,41 @@ def read_rule_matches(path: Path, rule_id: str) -> tuple[RuleMatch, ...]:
             (rule_id,),
         ).fetchall()
     return tuple(RuleMatch(ip, matched, won, requests) for ip, matched, won, requests in rows)
+
+
+def read_labels(path: Path) -> tuple[tuple[str, str, str], ...]:
+    """Every `(rule id, name, category)` the scan saw, for `labels_for_activity`."""
+    with closing(sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)) as connection:
+        rows = connection.execute(
+            "SELECT rule, name, category FROM labels ORDER BY rule, name, category"
+        ).fetchall()
+    return tuple((rule, name, category) for rule, name, category in rows)
+
+
+def read_activity_clients(path: Path, rule_ids: frozenset[str]) -> frozenset[str]:
+    """The clients any of `rule_ids` matched, whether or not its label was kept."""
+    if not rule_ids:
+        return frozenset()
+    with closing(sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)) as connection:
+        rows = connection.execute(
+            "SELECT DISTINCT ip FROM rules WHERE rule IN (SELECT value FROM json_each(?))",
+            (json.dumps(sorted(rule_ids)),),
+        ).fetchall()
+    return frozenset(row[0] for row in rows)
+
+
+def read_activity_counts(path: Path) -> list[tuple[str, int]]:
+    """Each activity the scan saw, with how many clients; most clients first."""
+    with closing(sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)) as connection:
+        rows = connection.execute(
+            """
+            SELECT kind.category, count(DISTINCT rules.ip)
+            FROM rules JOIN (SELECT DISTINCT rule, category FROM labels) kind USING (rule)
+            GROUP BY kind.category
+            ORDER BY count(DISTINCT rules.ip) DESC, kind.category
+            """
+        ).fetchall()
+    return [(category, int(clients)) for category, clients in rows]
 
 
 def read_profiles(path: Path) -> tuple[ClientProfile, ...]:
@@ -293,6 +330,7 @@ def scan_case(
                     # Asked only so a missing table raises: every client
                     # matches some rule, even if only the benign fallback.
                     cached.execute("SELECT count(*) FROM rules").fetchone()
+                    cached.execute("SELECT count(*) FROM labels").fetchone()
                     if count != data["clients"] or ranked != count:
                         raise ValueError("incomplete prioritization cache")
                 return TriageResult(
@@ -352,6 +390,9 @@ def scan_case(
                     # who else a rule matched would otherwise parse every
                     # profile in the case to answer for a handful of them.
                     "CREATE TABLE rules(rule TEXT, ip TEXT, matched INTEGER, won INTEGER, requests INTEGER, PRIMARY KEY(rule, ip));"
+                    # What each rule id was called, and which activity it named,
+                    # as the labels themselves said: `activity:` searches by it.
+                    "CREATE TABLE labels(rule TEXT, name TEXT, category TEXT, PRIMARY KEY(rule, name, category));"
                 )
                 output.execute("INSERT INTO metadata VALUES (?)", (json.dumps(data, default=str),))
                 output.executemany(
@@ -365,6 +406,10 @@ def scan_case(
                         for p in profiles
                         for rule, matched in p.rules_matched.items()
                     ),
+                )
+                output.executemany(
+                    "INSERT OR IGNORE INTO labels VALUES (?, ?, ?)",
+                    (label for p in profiles for label in p.rule_labels),
                 )
                 for queue in ("suspicious", "unusual", "all"):
                     check()
