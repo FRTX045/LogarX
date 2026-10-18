@@ -293,6 +293,12 @@ def test_the_list_is_as_wide_as_its_longest_row(window: QWidget) -> None:
     focus(box)
     shown = box.suggestion_list
     rows = shown._list
+    # A window with room for the rows, whatever the font. A fixed width failed
+    # once text grew a point: offscreen Qt on Windows measures the rows far wider
+    # than a screen does (1,021 pixels), and a list may not outgrow its window.
+    window.resize(300 + rows.sizeHintForColumn(0) * 2, 360)
+    QApplication.processEvents()
+    focus(box)
 
     # With a character to spare: at 125% a row that fitted to the pixel was drawn
     # a pixel wider and lost its last characters to an ellipsis.
