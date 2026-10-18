@@ -11,9 +11,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `69 sessions` and nothing on the canvas answered to the number. Now every
   visit is a faint blue box labelled with its number, how many activities it
   holds and when it ran: `Session 2 of 69 · 2 activities · 09 Mar 01:55–02:26`.
-  A box follows its activities when one is dragged, undone or reset, and a
-  press inside one off an activity still pans the view. The behaviour map has
-  none, because one circle there folds many sessions together. **Edit →
+  Resting the pointer on a label says what a session is, in the thresholds
+  that cut it. A box follows its activities when one is dragged, undone or
+  reset, and a press inside one off an activity still pans the view. The
+  behaviour map has none, because one circle there folds many sessions
+  together. **Edit →
   Preferences → Outline each session** turns them off without moving anything.
   Chosen from screenshots of the real window over a ring around each session
   and a divider between them.

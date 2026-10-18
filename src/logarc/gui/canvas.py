@@ -57,6 +57,7 @@ from logarc.style import (
     THEME,
     edge_label,
     session_caption,
+    session_rule,
     style_for,
     summarise,
 )
@@ -67,6 +68,7 @@ if TYPE_CHECKING:
     from PyQt6.QtGui import QMouseEvent, QResizeEvent
 
     from logarc.core.graph import ActivityGraph, GraphNode
+    from logarc.sessionize.segmenter import SessionPolicy
 
 __all__ = ["MIN_FIT_SCALE", "STARTUP_MESSAGE", "WAITING_MESSAGE", "ActivityCanvas"]
 
@@ -683,6 +685,10 @@ class ActivityCanvas(QGraphicsView):
         # trace when the boxes are drawn, so a column of boxes shares its edges.
         self._reach = (0.0, 0.0)
         self._box_floor = 0.0
+        # The thresholds the trace was cut into sessions with, which each box's
+        # label explains. None when whoever drew it did not say, and the label
+        # then explains nothing rather than quote rules it was not given.
+        self._session_policy: SessionPolicy | None = None
         # Nodes are placed with `setPos` while a graph is being drawn, and every
         # one of those is a position change. Without this the first node placed
         # would ask for arrows that are not on the canvas yet, and the scene
@@ -829,7 +835,7 @@ class ActivityCanvas(QGraphicsView):
         if self._graph is None:
             return
         selected = self._selected
-        self.show_graph(self._graph, positions=positions)
+        self.show_graph(self._graph, positions=positions, session_policy=self._session_policy)
         if selected is not None:
             self.highlight(selected)
 
@@ -1111,7 +1117,13 @@ class ActivityCanvas(QGraphicsView):
         self._scene.addItem(halo)
         self._halo = halo
 
-    def show_graph(self, graph: ActivityGraph, positions: Positions | None = None) -> None:
+    def show_graph(
+        self,
+        graph: ActivityGraph,
+        positions: Positions | None = None,
+        *,
+        session_policy: SessionPolicy | None = None,
+    ) -> None:
         """Replace whatever is on the canvas with `graph`.
 
         `positions` overrides the layout for the nodes it names, and is how a
@@ -1124,8 +1136,12 @@ class ActivityCanvas(QGraphicsView):
         not a corner case — a case re-ingested with a different rule pack has
         different activities in it, and an arrangement saved against the old
         ones must not leave the new ones stacked on the origin.
+
+        `session_policy` is what the trace was cut into sessions with, handed
+        over with it so that what a box's label explains is what made the box.
         """
         self._graph = graph
+        self._session_policy = session_policy
         self._forget_drawing()
 
         laid_out = _spread(layout_graph(graph, wrap=self._wrap), graph)
@@ -1195,6 +1211,8 @@ class ActivityCanvas(QGraphicsView):
         self._reach = self._widest_reach()
         pen = QPen(QColor(_SESSION_EDGE))
         pen.setWidthF(_SESSION_EDGE_WIDTH)
+        policy = self._session_policy
+        tip = session_rule(policy) if policy is not None else ""
         drawn: list[_SessionBox] = []
         for index, nodes in enumerate(groups, start=1):
             shape = QGraphicsPathItem()
@@ -1217,6 +1235,9 @@ class ActivityCanvas(QGraphicsView):
             )
             for part in (label, *label.childItems()):
                 part.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+            # On the label, not the box: the boxes cover most of a trace, and a
+            # tip on the whole of one would chase the pointer wherever it went.
+            label.setToolTip(tip)
             drawn.append(
                 _SessionBox(
                     shape=shape, label=label, node_ids=tuple(node.node_id for node in nodes)
