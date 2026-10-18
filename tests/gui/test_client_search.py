@@ -561,10 +561,14 @@ def test_an_answer_is_measured_on_its_own_rows(qt_app: QApplication) -> None:
     grid = table._table
     header = grid.horizontalHeader()
     assert header is not None
-    for name in ("Client", "Match"):
-        column = column_of(grid, name)
-        fitted = max(grid.sizeHintForColumn(column), header.sectionSizeHint(column))
-        assert header.sectionSize(column) == fitted, name
+    client = column_of(grid, "Client")
+    assert header.sectionSize(client) == max(
+        grid.sizeHintForColumn(client), heading_without_arrow(table, client)
+    )
+    match = column_of(grid, "Match")  # the sorted one: its heading draws the arrow
+    assert header.sectionSize(match) == max(
+        grid.sizeHintForColumn(match), header.sectionSizeHint(match)
+    )
     assert visible_widths(table) == grid.viewport().width()
     table.close()
 
