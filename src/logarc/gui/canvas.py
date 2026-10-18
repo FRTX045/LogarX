@@ -512,6 +512,12 @@ class _SessionBox:
         self.label.setPos(box.left() + _SESSION_PAD / 2, box.top() + _SESSION_PAD / 2)
 
 
+def _words(patch: QGraphicsItem) -> QGraphicsItem:
+    """The words written on a patch of ground by `ActivityCanvas._canvas_text`."""
+    (words,) = patch.childItems()
+    return words
+
+
 class _NodeItem(QGraphicsEllipseItem):
     """One activity. Carries its node id so a click can be traced back.
 
@@ -893,15 +899,25 @@ class ActivityCanvas(QGraphicsView):
 
         An arrow stays full only between two that match: one into a faded
         activity is part of what the filter set aside.
+
+        Only ink fades. The patch of ground under a caption or an arrow's number
+        stays solid, because it is what hides an arrow's number passing under a
+        caption; faded with its words it let the number through, and two faint
+        words drawn through each other read as a smudge.
         """
         wanted = self._matching
         for node_id, item in self._nodes.items():
-            item.setOpacity(1.0 if wanted is None or node_id in wanted else FADED)
+            level = 1.0 if wanted is None or node_id in wanted else FADED
+            item.setOpacity(level)
+            for caption in item.childItems():
+                _words(caption).setOpacity(level)
         for art in self._edge_art:
             full = wanted is None or (art.source_id in wanted and art.target_id in wanted)
-            for part in (art.line, art.head, art.label):
-                if part is not None:
-                    part.setOpacity(1.0 if full else FADED)
+            level = 1.0 if full else FADED
+            art.line.setOpacity(level)
+            art.head.setOpacity(level)
+            if art.label is not None:
+                _words(art.label).setOpacity(level)
 
     def _forget_sessions(self) -> None:
         """Take every box off the scene, and every reference to one with it."""
@@ -1475,6 +1491,8 @@ class ActivityCanvas(QGraphicsView):
         # Above the edges, below the nodes: the words survive an arrow passing
         # behind them without hiding the circle they describe.
         backdrop.setZValue(0.6)
+        # Solid even when what it belongs to is faded: see `_fade`.
+        backdrop.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresParentOpacity, True)
         backdrop.setPos(anchor)
         if parent is None:
             self._scene.addItem(backdrop)

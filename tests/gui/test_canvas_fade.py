@@ -14,7 +14,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from on_canvas import node_item
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QGraphicsItem
 from test_session_boxes import trace
 
 from logarc.gui.canvas import FADED, ActivityCanvas
@@ -33,10 +33,16 @@ def opacity(canvas: ActivityCanvas, node_id: str) -> float:
     return node_item(canvas, node_id).opacity()
 
 
+def ink(patch: QGraphicsItem) -> QGraphicsItem:
+    """The words on a patch of ground: a caption's, or an arrow's number."""
+    (words,) = patch.childItems()
+    return words
+
+
 def arrow(canvas: ActivityCanvas, source: str, target: str) -> float:
     (art,) = [a for a in canvas._edge_art if (a.source_id, a.target_id) == (source, target)]
-    parts = [art.line, art.head, *([art.label] if art.label is not None else [])]
-    (seen,) = {part.opacity() for part in parts}
+    parts = [art.line, art.head, *([ink(art.label)] if art.label is not None else [])]
+    (seen,) = {part.effectiveOpacity() for part in parts}
     return seen
 
 
@@ -92,6 +98,20 @@ def test_a_new_graph_starts_unfaded(qt_app: QApplication) -> None:
     canvas.show_graph(trace(3))
 
     assert {opacity(canvas, node) for node in (FIRST, SECOND, THIRD)} == {1.0}
+
+
+def test_only_the_ink_fades_not_the_ground_under_it(qt_app: QApplication) -> None:
+    """A caption's patch of ground hides an arrow's number that passes under
+    it. Faded with its words, the patch let the number through, and two faint
+    words drawn through each other read as a smudge. The words fade; the
+    ground under them stays solid, so what covers what does not change."""
+    canvas = drawn(matching=frozenset())
+    patches = [patch for patch in canvas._patches if patch.scene() is not None]
+    assert patches, "premise: captions to look at"
+
+    for patch in patches:
+        assert patch.effectiveOpacity() == 1.0
+        assert ink(patch).effectiveOpacity() == pytest.approx(FADED)
 
 
 def test_the_ring_on_a_faded_activity_stays_bright(qt_app: QApplication) -> None:
