@@ -18,7 +18,7 @@ from __future__ import annotations
 from logarc.search import is_whole_address
 from logarc.style import plural
 
-__all__ = ["caption", "is_whole_address", "matches"]
+__all__ = ["caption", "is_whole_address", "match_caption", "matches"]
 
 
 def matches(client_ip: str, query: str) -> bool:
@@ -82,6 +82,46 @@ def caption(
         searching=searching,
         reordered=reordered,
     )
+    if missing_open:
+        text += f" {missing_open}, open now, is not in this list; filter by its address to show it."
+    return text
+
+
+def match_caption(
+    *,
+    shown: int,
+    total: int,
+    query: str,
+    first: int,
+    matching: int,
+    requests: int,
+    counted: bool = True,
+    reordered: bool = False,
+    missing_open: str | None = None,
+) -> str:
+    """What to write above the clients a search of their requests found.
+
+    Both numbers again: how many clients matched, of how many in the case, and
+    how many requests that is. `counted` is false for a search the Where to
+    start scan answered on its own, which knows which clients an activity
+    reached but not in how many of their requests.
+    """
+    wanted = query.strip()
+    if not counted:
+        text = f"{matching:,} of {total:,} clients match {wanted} in the Where to start scan"
+    elif matching == 0:
+        text = f"No client sent a request matching {wanted}. {total:,} in the case."
+    else:
+        found = f" \u00b7 {plural(requests, 'request')}"
+        if shown < matching:
+            last = first + shown - 1
+            order = ", sorted within this page" if reordered else ""
+            text = (
+                f"Clients {first:,}\u2013{last:,} of {matching:,} that sent a request"
+                f" matching {wanted}{found}{order}"
+            )
+        else:
+            text = f"{matching:,} of {total:,} clients sent a request matching {wanted}{found}"
     if missing_open:
         text += f" {missing_open}, open now, is not in this list; filter by its address to show it."
     return text

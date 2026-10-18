@@ -19,7 +19,6 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLayout,
     QLayoutItem,
-    QLineEdit,
     QPushButton,
     QTableWidget,
     QVBoxLayout,
@@ -29,8 +28,10 @@ from PyQt6.QtWidgets import (
 from logarc.caseview import CLIENT_LIMIT
 from logarc.gui._qt import SORT_KEY, SortableItem, required
 from logarc.gui.client_filter import caption as filter_caption
-from logarc.gui.client_filter import matches
+from logarc.gui.client_filter import match_caption, matches
+from logarc.gui.filter_box import FilterBox
 from logarc.gui.theme import PAD, TIGHT, caption_font, colour_text, mono_font
+from logarc.search import Scope, parse
 from logarc.style import (
     SIZE_NOTE,
     THEME,
@@ -39,30 +40,44 @@ from logarc.style import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
+    from collections.abc import Iterator, Mapping, Sequence
     from datetime import datetime
 
     from PyQt6.QtGui import QMouseEvent
 
-    from logarc.storage.base import IpSummary, IpSummaryPage
+    from logarc.storage.base import ClientMatchPage, IpSummary, IpSummaryPage
 
 __all__ = ["ClientTable", "LegendBar"]
 
 #: Headers kept short because a header wider than its values sets the column
 #: width, and six columns of prose did not fit the panel however the values
 #: were sized. "Requests" alone was wider than any count it ever holds.
-_COLUMNS = ("Client", "Reqs", "Paths", "4xx", "First", "Last")
+_COLUMNS = ("Client", "Reqs", "Paths", "4xx", "First", "Last", "Match")
 
 #: The columns holding numbers. Right-aligned so their digits line up under a
 #: heading wider than any of them — the evidence table beside this one has done
 #: that for `Status` and `Size` since it was written, while these three, in the
 #: table whose whole purpose is being sorted by `4xx`, stayed ragged left.
-_NUMERIC = (_COLUMNS.index("Reqs"), _COLUMNS.index("Paths"), _COLUMNS.index("4xx"))
+_NUMERIC = (
+    _COLUMNS.index("Reqs"),
+    _COLUMNS.index("Paths"),
+    _COLUMNS.index("4xx"),
+    _COLUMNS.index("Match"),
+)
 
 #: The address column. Monospace, because an address is a column of numbers
 #: pretending to be a word: `100.66.1.152` and `100.66.2.9` only sit under each
 #: other if the digits are the same width, and this list is read by scanning it.
 _ADDRESS = _COLUMNS.index("Client")
+
+#: How many of a client's requests a search of the case found. Last among the
+#: columns, so none of the others moves, and shown beside the address: it is
+#: what the list is ordered by while a search is on.
+_MATCH = _COLUMNS.index("Match")
+
+#: What the client box says before anything is typed: that it searches the
+#: case, and the filters it takes.
+CASE_HINT = "Search the case\u2026   ip:   status:   path:   activity:"
 
 
 def format_seen(when: datetime) -> str:
@@ -177,6 +192,11 @@ class ClientTable(QWidget):
         # The busiest page, as the case or range opened with it: where a cleared
         # search goes back to, whichever page was on screen before it.
         self._busiest: list[IpSummary] = []
+        # What the rows on screen are, when a search of requests chose them:
+        # counted (a Match column) or not (an activity the scan answered),
+        # and how many requests the whole search found. None otherwise.
+        self._counted: bool | None = None
+        self._requests = 0
         self._open: str | None = None
         self._table = _Rows(0, len(_COLUMNS))
         self._table.setHorizontalHeaderLabels(_COLUMNS)
@@ -213,17 +233,18 @@ class ClientTable(QWidget):
         # which column the table is ordered by, half drawn.
         header.setMinimumHeight(header.fontMetrics().height() + 14)
         header.sortIndicatorChanged.connect(lambda *_: self._refresh_caption())
+        header.moveSection(_MATCH, _ADDRESS + 1)
+        self._table.setColumnHidden(_MATCH, True)
         self._table.itemSelectionChanged.connect(self._emit_choice)
 
-        self._filter = QLineEdit()
-        self._filter.setPlaceholderText("Filter clients…")
-        self._filter.setClearButtonEnabled(True)
-        # Monospace to match the column it searches: an address is a column of
-        # digits pretending to be a word, and what is typed should look like
-        # what it is being compared against.
-        self._filter.setFont(mono_font(self._filter.font().pointSizeF()))
-        self._filter.setAccessibleName("Filter clients by address")
-        self._filter.textChanged.connect(self._filter_changed)
+        # Addresses as before, typed and found at once on the page; filters on
+        # what clients sent, as chips, answered from the whole case. Monospace,
+        # as the box sets it: an address is a column of digits pretending to be
+        # a word, and what is typed should look like what it is compared with.
+        self._filter = FilterBox(
+            scope=Scope.CASE, placeholder=CASE_HINT, accessible_name="Search the case"
+        )
+        self._filter.textChanged.connect(lambda _text: self._filter_changed())
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(self.SEARCH_DELAY_MS)
@@ -273,6 +294,7 @@ class ClientTable(QWidget):
         self._total = len(summaries) if total is None else total
         self._busiest = list(summaries)
         self._searching = False
+        self._counted = None
         self._show_rows(summaries, first=1, query="", matching=None, page_total=self._total)
 
     def _show_rows(
@@ -283,8 +305,13 @@ class ClientTable(QWidget):
         query: str,
         matching: int | None,
         page_total: int,
+        hits: Sequence[int] = (),
     ) -> None:
-        """Replace the rows with one page, busiest first, and describe it."""
+        """Replace the rows with one page, busiest first, and describe it.
+
+        `hits` fills the Match column, row for row, when a search of requests
+        chose the page; it is then ordered by that, most first.
+        """
         self._first, self._query, self._matching = first, query, matching
         self._page_total = page_total
         # Silent for the whole rebuild. A refill is the window replacing its own
@@ -305,10 +332,13 @@ class ClientTable(QWidget):
                 )
                 self._set(row, 4, format_seen(summary.first_seen))
                 self._set(row, 5, format_seen(summary.last_seen))
+                found = hits[row] if row < len(hits) else 0
+                self._set(row, _MATCH, f"{found:,}", sort_key=found)
         self._table.setSortingEnabled(True)
+        self._table.setColumnHidden(_MATCH, not self._counted)
         # Busiest first, the order pages are cut in, so a later page visibly
-        # continues the one before it.
-        self._table.sortItems(_COLUMNS.index("Reqs"), Qt.SortOrder.DescendingOrder)
+        # continues the one before it; most matches first for a search.
+        self._table.sortItems(self._natural_order(), Qt.SortOrder.DescendingOrder)
         for row in range(self._table.rowCount()):
             self._table.setRowHidden(row, False)
         self._mark_open()
@@ -328,6 +358,7 @@ class ClientTable(QWidget):
             return False
         self._search_timer.stop()
         self._searching = False
+        self._counted = None
         self._show_rows(
             page.rows,
             first=page.offset + 1,
@@ -336,6 +367,40 @@ class ClientTable(QWidget):
             page_total=page.total,
         )
         return True
+
+    def show_matches(self, page: ClientMatchPage, query: str, *, counted: bool = True) -> bool:
+        """Show the clients a search of requests found; False if it is stale.
+
+        `counted` is false when the Where to start scan answered on its own: it
+        says which clients an activity reached, not in how many requests, so
+        there is no Match number to show.
+        """
+        wanted = query.strip()
+        if wanted != self._filter.text().strip():
+            return False
+        self._search_timer.stop()
+        self._searching = False
+        self._counted = counted
+        self._requests = page.requests
+        self._show_rows(
+            page.rows,
+            first=page.offset + 1,
+            query=wanted,
+            matching=page.total,
+            page_total=page.total,
+            hits=page.hits,
+        )
+        return True
+
+    def query_text(self) -> str:
+        """What the box holds: its filters, then whatever is typed."""
+        return self._filter.text()
+
+    def set_suggestion_values(
+        self, values: Mapping[str, Sequence[tuple[str, str]]], title: str
+    ) -> None:
+        """The values the box offers after `status:`, `method:` or `activity:`."""
+        self._filter.set_values(values, title)
 
     def show_failure(self, query: str, message: str) -> None:
         """Say that a search could not be answered, if it is still the one on screen."""
@@ -405,9 +470,12 @@ class ClientTable(QWidget):
         """
         self.filter_edited.emit()
         self._search_timer.stop()
-        wanted = self._filter.text().strip()
-        if not wanted:
+        query = parse(self._filter.text(), Scope.CASE)
+        if query.is_empty:
+            # Nothing to search for yet: an empty box, or `status:` waiting for
+            # its value. The busiest page, as the case opened with it.
             self._searching = False
+            self._counted = None
             if self._query or self._first != 1:
                 self._show_rows(
                     self._busiest, first=1, query="", matching=None, page_total=self._total
@@ -417,7 +485,9 @@ class ClientTable(QWidget):
                 self._refresh_caption()
             return
         self._hide_unmatched()
-        complete = len(self._busiest) >= self._total
+        # A page holds clients, not their requests, so only an address can be
+        # answered from it; anything else asks the whole case, however small.
+        complete = query.is_address_only and len(self._busiest) >= self._total
         self._searching = not complete
         if not complete:
             # The page on screen belongs to the previous text, so stepping from it
@@ -428,10 +498,24 @@ class ClientTable(QWidget):
         self._refresh_caption()
 
     def _hide_unmatched(self) -> None:
-        query = self._filter.text()
+        """Hide what the box rules out, as far as this page can tell.
+
+        Addresses are matched here, each as the old box matched one, and any of
+        them will do. Rows a search of requests chose stay; while one is still
+        being answered nothing is shown, so no row can be read as its answer.
+        """
+        query = parse(self._filter.text(), Scope.CASE)
+        answered = self._counted is not None and self._query == self._filter.text().strip()
+        waiting = not (query.is_empty or query.is_address_only or answered)
         for row in range(self._table.rowCount()):
             cell = self._table.item(row, _ADDRESS)
-            self._table.setRowHidden(row, not (cell is not None and matches(cell.text(), query)))
+            if query.is_empty or answered:
+                hidden = False
+            elif waiting or cell is None:
+                hidden = True
+            else:
+                hidden = not any(matches(cell.text(), address) for address in query.ips)
+            self._table.setRowHidden(row, hidden)
 
     def _step(self, direction: int) -> None:
         """Ask for the page before or after this one, of what this page was asked for."""
@@ -453,18 +537,37 @@ class ClientTable(QWidget):
         """Select the open client's row, quietly, if it is listed; whether it is."""
         return self._open is None or self.select_quietly(self._open)
 
+    def _natural_order(self) -> int:
+        """The column a page is cut by: matches for a counted search, requests otherwise."""
+        return _MATCH if self._counted else _COLUMNS.index("Reqs")
+
     def _refresh_caption(self) -> None:
         colour_text(self._caption, THEME.muted)
         shown = sum(not self._table.isRowHidden(row) for row in range(self._table.rowCount()))
         header = required(self._table.horizontalHeader(), "column header")
         reordered = (
-            header.sortIndicatorSection() != _COLUMNS.index("Reqs")
+            header.sortIndicatorSection() != self._natural_order()
             or header.sortIndicatorOrder() != Qt.SortOrder.DescendingOrder
         )
         listed = self._open is None or any(
             (cell := self._table.item(row, _ADDRESS)) is not None and cell.text() == self._open
             for row in range(self._table.rowCount())
         )
+        if self._counted is not None and not self._searching and self._matching is not None:
+            self._caption.setText(
+                match_caption(
+                    shown=shown,
+                    total=self._total,
+                    query=self._query,
+                    first=self._first,
+                    matching=self._matching,
+                    requests=self._requests,
+                    counted=self._counted,
+                    reordered=reordered,
+                    missing_open=None if listed else self._open,
+                )
+            )
+            return
         self._caption.setText(
             filter_caption(
                 shown=shown,

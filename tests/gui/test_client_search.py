@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import QApplication
 from tables import column_of
 
 from logarc.gui.panels import ClientTable
-from logarc.storage.base import IpSummary, IpSummaryPage
+from logarc.storage.base import ClientMatchPage, IpSummary, IpSummaryPage
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 DASH = "\N{EN DASH}"
@@ -206,3 +206,159 @@ def test_clearing_a_search_returns_to_the_busiest_page(partial: ClientTable) -> 
     partial._filter.clear()
     assert on_screen(partial) == ["10.0.0.1", "10.0.0.2", "172.16.0.9"]
     assert partial._caption.text().startswith(f"Clients 1{DASH}3 of 900, busiest first")
+
+
+# -- the box searches requests too ---------------------------------------------------
+
+
+def matched(*rows: tuple[str, int], total: int | None = None, requests: int = 0) -> ClientMatchPage:
+    return ClientMatchPage(
+        # The client with most matches has the fewest requests, so an order by
+        # requests and an order by matches cannot be mistaken for each other.
+        tuple(summary(ip, 10 + n, position=n + 1) for n, (ip, _hits) in enumerate(rows)),
+        tuple(hits for _ip, hits in rows),
+        len(rows) if total is None else total,
+        requests or sum(hits for _ip, hits in rows),
+        0,
+    )
+
+
+def match_column(table: ClientTable) -> list[str]:
+    column = column_of(table._table, "Match")
+    return [
+        item.text()
+        for row in range(table._table.rowCount())
+        if (item := table._table.item(row, column)) is not None
+        and not table._table.isRowHidden(row)
+    ]
+
+
+def test_the_box_takes_filters_as_chips_and_keeps_addresses_as_typed(partial: ClientTable) -> None:
+    partial._filter.setText("status:404 10.0 activity:injection")
+
+    assert partial._filter.chips() == ("status:404", "activity:injection")
+    assert partial._filter.typed() == "10.0"
+    assert partial.query_text() == "status:404 activity:injection 10.0"
+
+
+def test_a_request_search_always_asks_the_whole_case(qt_app: QApplication) -> None:
+    """A page holds clients, not their requests: even a complete list cannot answer it."""
+    table = ClientTable()
+    table.show_clients([summary("10.0.0.1", 9), summary("10.0.0.2", 8)], total=2)
+    asked = []
+    table.page_requested.connect(lambda query, offset: asked.append((query, offset)))
+
+    # Both rows hold the address; neither is known to hold the request yet.
+    table._filter.setText("status:200 10.0")
+
+    assert table._caption.text() == f"Searching the whole case for status:200 10.0{ELLIPSIS}"
+    assert on_screen(table) == [], "no rows that might be read as the answer"
+    settle_search()
+    assert asked == [("status:200 10.0", 0)]
+
+
+def test_matches_are_listed_most_first_with_how_many(partial: ClientTable) -> None:
+    partial._filter.setText("status:200 path:/admin")
+
+    assert partial.show_matches(
+        matched(("10.0.5.5", 7), ("10.0.0.2", 3), requests=10), "status:200 path:/admin"
+    )
+
+    assert on_screen(partial) == ["10.0.5.5", "10.0.0.2"]
+    assert match_column(partial) == ["7", "3"]
+    assert partial._caption.text() == (
+        "2 of 900 clients sent a request matching status:200 path:/admin \N{MIDDLE DOT} 10 requests"
+    )
+
+
+def test_the_match_column_sits_beside_the_address(partial: ClientTable) -> None:
+    partial._filter.setText("status:200")
+    partial.show_matches(matched(("10.0.5.5", 7)), "status:200")
+
+    header = partial._table.horizontalHeader()
+    assert header.visualIndex(column_of(partial._table, "Match")) == 1
+
+
+def test_more_matches_than_a_page_say_which_these_are(partial: ClientTable) -> None:
+    partial._filter.setText("status:4xx")
+    partial.show_matches(
+        matched(("10.0.5.5", 9), ("10.0.0.2", 4), total=1_234, requests=70_312), "status:4xx"
+    )
+
+    assert partial._caption.text() == (
+        f"Clients 1{DASH}2 of 1,234 that sent a request matching status:4xx"
+        " \N{MIDDLE DOT} 70,312 requests"
+    )
+    assert partial._next.isEnabled()
+    asked = []
+    partial.page_requested.connect(lambda query, offset: asked.append((query, offset)))
+    partial._next.click()
+    assert asked == [("status:4xx", ClientTable.PAGE_SIZE)]
+
+
+def test_nothing_matching_says_so_and_how_large_the_case_is(partial: ClientTable) -> None:
+    partial._filter.setText("status:418")
+    partial.show_matches(matched(), "status:418")
+
+    assert on_screen(partial) == []
+    assert (
+        partial._caption.text() == "No client sent a request matching status:418. 900 in the case."
+    )
+
+
+def test_an_activity_alone_lists_clients_without_counting_requests(partial: ClientTable) -> None:
+    """The scan says which clients an activity reached, not how many of their
+    requests: a count summed over its rules could count a request twice."""
+    partial._filter.setText("activity:injection")
+    partial.show_matches(
+        matched(("10.0.5.5", 0), ("10.0.0.2", 0)), "activity:injection", counted=False
+    )
+
+    assert on_screen(partial) == ["10.0.0.2", "10.0.5.5"], "busiest first: nothing was counted"
+    assert partial._table.isColumnHidden(column_of(partial._table, "Match"))
+    assert partial._caption.text() == (
+        "2 of 900 clients match activity:injection in the Where to start scan"
+    )
+
+
+def test_an_answer_for_other_text_is_dropped(partial: ClientTable) -> None:
+    partial._filter.setText("status:200")
+    partial._filter.setText("status:500")
+
+    assert not partial.show_matches(matched(("10.0.5.5", 7)), "status:200")
+    assert "10.0.5.5" not in on_screen(partial)
+
+
+def test_an_address_search_after_a_request_search_has_no_match_column(
+    partial: ClientTable,
+) -> None:
+    partial._filter.setText("status:200")
+    partial.show_matches(matched(("10.0.5.5", 7)), "status:200")
+
+    partial._filter.setText("10.0.9.9")
+    partial.show_page(IpSummaryPage((summary("10.0.9.9", 2, position=701),), 1, 0), "10.0.9.9")
+
+    assert partial._table.isColumnHidden(column_of(partial._table, "Match"))
+    assert partial._caption.text() == "1 of 900 clients matches 10.0.9.9"
+
+
+def test_clearing_a_request_search_returns_to_the_busiest_page(partial: ClientTable) -> None:
+    partial._filter.setText("status:200")
+    partial.show_matches(matched(("10.0.5.5", 7)), "status:200")
+
+    partial._filter.clear()
+
+    assert on_screen(partial) == ["10.0.0.1", "10.0.0.2", "172.16.0.9"]
+    assert partial._table.isColumnHidden(column_of(partial._table, "Match"))
+
+
+def test_two_addresses_list_either(qt_app: QApplication) -> None:
+    """Several addresses are several clients, as the store answers them."""
+    table = ClientTable()
+    table.show_clients(
+        [summary("10.0.0.1", 9), summary("10.0.0.2", 8), summary("10.9.9.9", 7)], total=3
+    )
+
+    table._filter.setText("10.0.0.1 ip:10.9")
+
+    assert on_screen(table) == ["10.0.0.1", "10.9.9.9"]
