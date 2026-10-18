@@ -759,7 +759,7 @@ Apache's own internal dummy connection. Both are the next two passes.
 
 ### 2026-10-05 — php: a `${name}` placeholder is not PHP
 
-The false alarm TODO.md had been holding since 2026-09-22, now with evidence.
+A false alarm suspected since 2026-09-22, now with evidence.
 `php_superglobal` matched a bare `\$\s*\{`, and no corpus this project held
 contained a single `${`, so it could not be shown wrong. The dataset's rebuilt
 tiers now carry a real shop front end sending its placeholder unfilled, from a
@@ -1031,7 +1031,7 @@ sqlmap client's exploit example is its sensitive-file read, and the one change
 of order is on medium, where the verb-tampering client moves up one place with
 four more flagged requests. One harmless client sits in small's first group on
 both sides, `203.0.113.233`, placed by CRS 942100 reading a Google Ads click ID
-as SQL; that comes from PR #36, not from this pass, and is in `TODO.md`.
+as SQL; that comes from PR #36, not from this pass, and is still open.
 
 **Where activity naming stops on medium**, after this pass. The large
 confusions are the campaign-level ones already recorded — `enumeration` read
@@ -1045,7 +1045,7 @@ the macro average, by kind:
   ordinary sign-in. One on every tier (28 of 29 small, 44 of 45 large). It is
   the most valuable request in that client's history and the next thing to
   name; it needs a rule that can count the refusals before a redirect, which
-  neither a sequence rule nor `success_ratio` (2xx only) can. In `TODO.md`.
+  neither a sequence rule nor `success_ratio` (2xx only) can. Not yet written.
 - `access_control` 28 of 31: 3 bounces from `/account/` and `/admin/` with
   nothing succeeding. A signed-out visitor does exactly this; only the
   campaign around it says otherwise.
@@ -1175,7 +1175,7 @@ has run out on the third day, and the rule fires on that `/admin` and nowhere
 else (106 of 106 rules, 25 of 25 attackers, 0 false alarms).
 
 **Still getting through, on medium:** 702 `enumeration` read as
-`reconnaissance` (TODO.md has the shape: 68 of small's 156 carry an enumeration
+`reconnaissance` (the shape: 68 of small's 156 carry an enumeration
 window label, which by ADR-0005 is a different argument from the
 User-Agent convention left alone on 2026-10-05), 75 `unknown` read as
 `static_asset` (the shop's importer, left alone), and 53 `reconnaissance` read
