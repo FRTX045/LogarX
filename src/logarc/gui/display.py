@@ -12,7 +12,7 @@ def is_wsl() -> bool:
 
 
 def configure_display() -> None:
-    """Use a larger WSL cursor, keeping explicit overrides.
+    """Use a readable WSL cursor, preserving Qt's backend selection.
 
     Window buttons are drawn by `window_controls`; no decoration plugin is
     forced, since plugins can hide buttons according to desktop settings.

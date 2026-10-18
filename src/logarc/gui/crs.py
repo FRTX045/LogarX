@@ -28,7 +28,7 @@ from PyQt6.QtWidgets import (
 )
 
 from logarc.gui._qt import required
-from logarc.gui.theme import GAP, PAD, ROOM, caption_font, heading_font, mono_font
+from logarc.gui.theme import GAP, PAD, ROOM, caption_font, colour_text, heading_font, mono_font
 from logarc.style import THEME
 
 if TYPE_CHECKING:
@@ -59,9 +59,10 @@ def _quiet(text: str) -> QLabel:
     return label
 
 
-def _titled(text: str) -> QLabel:
+def _titled(text: str, colour: str = THEME.ink) -> QLabel:
     label = QLabel(text)
     label.setFont(heading_font(label.font()))
+    colour_text(label, colour)
     return label
 
 
@@ -132,7 +133,7 @@ class CrsUnavailable(_Spoken):
         stack = QVBoxLayout(self)
         stack.setContentsMargins(ROOM, ROOM, ROOM, ROOM)
         stack.setSpacing(GAP)
-        stack.addWidget(_titled("CRS is not installed"))
+        stack.addWidget(_titled("CRS is not installed", THEME.warning))
         stack.addWidget(
             _wrapped(
                 "The case is complete without it — CRS is an optional second ruleset "
@@ -188,7 +189,7 @@ class CrsCard(_Spoken):
         stack = QVBoxLayout(self)
         stack.setContentsMargins(ROOM, ROOM, ROOM, ROOM)
         stack.setSpacing(GAP)
-        stack.addWidget(_titled("Running OWASP CRS"))
+        stack.addWidget(_titled("Running OWASP CRS", THEME.accent))
         stack.addWidget(self._bar)
         stack.addWidget(self._counts)
         stack.addWidget(_quiet("Stopping keeps everything found so far."))

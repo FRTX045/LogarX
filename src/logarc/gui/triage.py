@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal
-from PyQt6.QtGui import QFontMetrics, QTextOption
+from PyQt6.QtGui import QColor, QFontMetrics, QTextOption
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
@@ -33,9 +33,9 @@ from logarc.gui.recommendation import (
     summary_for,
 )
 from logarc.gui.splitter import PanelSplitter
-from logarc.gui.theme import GAP, PAD, ROOM, TIGHT
+from logarc.gui.theme import GAP, PAD, ROOM, TIGHT, colour_text
 from logarc.gui.workers import run_job
-from logarc.style import plural
+from logarc.style import THEME, plural
 from logarc.triage.process import run_scan
 from logarc.triage.profile import DEFAULT_POLICY, QueueName, RankedClient
 from logarc.triage.scan import ScanCancelled, TriagePage, TriageProgress, TriageResult, read_page
@@ -89,6 +89,7 @@ class TriagePanel(QWidget):
         self.notice = QLabel("Open a case to find where to start.")
         self.notice.setWordWrap(True)
         self.notice.setTextFormat(Qt.TextFormat.PlainText)
+        colour_text(self.notice, THEME.muted)
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search IP addresses in this tab…")
         self.search.setClearButtonEnabled(True)
@@ -100,6 +101,7 @@ class TriagePanel(QWidget):
         self.caption = QLabel()
         self.caption.setWordWrap(True)
         self.caption.setTextFormat(Qt.TextFormat.PlainText)
+        colour_text(self.caption, THEME.muted)
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(("Rank", "IP address", "Key observation", "Requests"))
         row_header = self.table.verticalHeader()
@@ -181,6 +183,7 @@ class TriagePanel(QWidget):
             "Examining every IP in this time range. Findings are provisional. "
             "Use the client list to find any IP now."
         )
+        colour_text(self.notice, THEME.warning)
         self.caption.setText("Preparing the scan…")
         self.cancel.show()
         self.cancel.setEnabled(True)
@@ -226,6 +229,7 @@ class TriagePanel(QWidget):
                 self.notice.setText(
                     f"Prioritization unavailable: {message}. You can still select clients to reconstruct."
                 )
+                colour_text(self.notice, THEME.alert)
 
         run_job(work, on_done=done, on_error=failed, on_advance=advanced)
 
@@ -281,6 +285,7 @@ class TriagePanel(QWidget):
             f"Examined all {result.clients:,} IPs. {crs}. "
             "Indicators do not establish intent or compromise. An IP may represent several clients."
         )
+        colour_text(self.notice, THEME.muted)
         self._reset_page()
 
     def _reset_page(self) -> None:
@@ -299,6 +304,7 @@ class TriagePanel(QWidget):
         self._load_page()
 
     def _load_page(self) -> None:
+        colour_text(self.caption, THEME.muted)
         self._page_generation += 1
         generation = self._page_generation
         self._display(())
@@ -342,6 +348,7 @@ class TriagePanel(QWidget):
         def failed(message: str, detail: str) -> None:
             if generation == self._page_generation:
                 self.caption.setText(f"Could not read priorities: {message}")
+                colour_text(self.caption, THEME.alert)
 
         run_job(
             lambda report: read_page(
@@ -369,6 +376,10 @@ class TriagePanel(QWidget):
             )
             for column, value in enumerate(values):
                 item = QTableWidgetItem(value)
+                if column == 1:
+                    item.setForeground(QColor(THEME.identity))
+                elif column == 0:
+                    item.setForeground(QColor(THEME.muted))
                 item.setToolTip(value)
                 self.table.setItem(index, column, item)
 
@@ -406,7 +417,8 @@ class TriagePanel(QWidget):
         )
         if self._source_error:
             html = (
-                f"<p>Sources could not be checked: {escape(self._source_error)}. Examples "
+                f'<p style="color:{THEME.alert}">Sources could not be checked: '
+                f"{escape(self._source_error)}. Examples "
                 "still open; reconstruction reports any line it cannot read.</p>" + html
             )
         # Redrawing replaces the document, which would otherwise return the reader

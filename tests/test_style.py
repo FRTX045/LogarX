@@ -15,6 +15,7 @@ from logarc.core.graph import GraphKind, GraphNode
 from logarc.sessionize.segmenter import SessionPolicy
 from logarc.style import (
     CAPTION_COLOUR,
+    DARK,
     EVIDENCE_INK,
     EVIDENCE_MUTED,
     LIGHT,
@@ -40,11 +41,23 @@ from logarc.style import (
     session_rule,
     severity_colour,
     severity_legend,
+    severity_text_colour,
     shorten_agent,
     status_colour,
     style_for,
     summarise,
 )
+
+
+@pytest.mark.parametrize("theme", [DARK, LIGHT])
+@pytest.mark.parametrize("surface", ["surface", "raised", "stripe", "tint"])
+def test_semantic_text_stays_readable_on_normal_and_selected_surfaces(theme, surface):
+    ground = getattr(theme, surface)
+    for colour in (theme.identity, theme.timestamp, theme.warning, theme.alert):
+        assert contrast(colour, ground) >= 4.5
+    for severity in Severity:
+        assert contrast(severity_text_colour(severity, theme=theme), ground) >= 4.5
+
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 

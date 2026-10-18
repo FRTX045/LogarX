@@ -47,7 +47,7 @@ _BELOW = 26
 #: empty the window, which reads as the band having broken.
 _ENOUGH = 4
 
-_CAPTION_POINTS = 11.0
+_CAPTION_POINTS = 12.0
 
 
 class Timeline(QWidget):
@@ -217,7 +217,7 @@ class Timeline(QWidget):
         font = QFont()
         font.setPointSizeF(_CAPTION_POINTS)
         painter.setFont(font)
-        painter.setPen(QPen(QColor(THEME.faint)))
+        painter.setPen(QPen(QColor(THEME.timestamp)))
         below = QRect(track.left(), track.bottom() + 2, track.width(), _BELOW - 2)
         painter.drawText(below, int(Qt.AlignmentFlag.AlignLeft), _stamp(self._first))
         painter.drawText(below, int(Qt.AlignmentFlag.AlignRight), _stamp(self._last))

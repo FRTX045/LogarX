@@ -192,7 +192,7 @@ def test_example_separates_request_rule_and_utc_source_metadata():
     assert "2026-03-11 04:00:33 UTC" in html
     assert "2026-03-11T11:00:33+07:00" not in html
     assert re.search(r"GET /login</a><br><span[^>]*>Rule A</span><br>", html)
-    assert "2026-03-11 04:00:33 UTC · access.log:3" in html
+    assert "2026-03-11 04:00:33 UTC · access.log:3" in re.sub(r"<[^>]+>", "", html)
 
 
 def test_a_long_path_is_cut_to_fit_and_can_be_expanded():

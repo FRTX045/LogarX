@@ -125,7 +125,7 @@ _EXPAND_ARM: Final = 4
 _EXPAND_PEN: Final = 2.0
 
 #: Reference scale for scene typography. Keep geometry stable while raising
-#: the minimum viewing scale: a 7.5pt caption now opens at about 11pt or larger.
+#: the minimum viewing scale: an 8pt caption now opens at about 11.6pt or larger.
 _LEGIBLE_AT: Final = 0.55
 
 #: How much clear ground a caption keeps around it, in scene units. Small: the
@@ -135,7 +135,7 @@ _CAPTION_MARGIN: Final = 12.0
 #: The size an activity's caption is written at, before `_LEGIBLE_AT` turns it
 #: into scene units. Named because the layout has to measure the same text at
 #: the same size the canvas will draw it, and two literals would drift.
-_CAPTION_POINTS: Final = 7.5
+_CAPTION_POINTS: Final = 8.0
 
 
 def _spread(positions: dict[str, Point], graph: ActivityGraph) -> dict[str, Point]:
@@ -204,7 +204,7 @@ _BOW: Final = 34.0
 #: caption's ink. Still a step below a caption, which is right: the activity is
 #: the subject and the transition is the detail.
 _LABEL_COLOUR: Final = THEME.muted
-_LABEL_SIZE: Final = 7.5
+_LABEL_SIZE: Final = 8.0
 
 #: Both written as pixels at `_LEGIBLE_AT`, and divided by it alongside the
 #: point size — the space around a caption has to scale with the caption, or it

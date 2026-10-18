@@ -16,6 +16,13 @@ serialisation of the reconstruction, and narrowing a reconstruction to a
 Window state — preferences, saved arrangements, the recent-case list — is the
 window's own and has no command-line equivalent by nature.
 
+Interface text starts at 14 pt, evidence text at 13 pt, and small interface
+captions at 12 pt. Larger system font choices are preserved. Graph captions and
+transition labels are slightly larger too, opening at about 11.6 pt or more at
+the default minimum zoom; zooming scales the graph and its text together.
+Preferences uses a scrolling page when its explanations need more room, with
+the confirmation buttons always visible below it.
+
 Scrollbars have 20 px tracks, brighter handles, and a minimum handle length of
 42 px. The dividers between panels use 5 px lines with a 1 px margin on each
 side and highlight blue when hovered.
@@ -25,6 +32,14 @@ buttons with 15 px symbols. Drag its empty space to move the window,
 double-click to maximize or restore, and drag an edge or corner to resize.
 Graph fullscreen hides the strip and restores the previous window state when
 leaving fullscreen.
+
+On WSL, Qt keeps its normal display-backend selection. Returning from graph
+fullscreen to a maximized Wayland window briefly hides and shows that same
+window, giving it a fresh display surface. This avoids the fatal `0 × 0`
+configuration reported in [WSLg issue #1428](https://github.com/microsoft/wslg/issues/1428).
+Forcing X11 introduced incorrect borderless-window bounds and cursor hit positions
+([WSLg issue #1015](https://github.com/microsoft/wslg/issues/1015)), so the launcher
+does not force that backend. Explicit `QT_QPA_PLATFORM` settings remain respected.
 
 The WSL launcher requests a 32 px cursor. This default applies to this application
 and respects existing environment settings. For a larger cursor, launch with

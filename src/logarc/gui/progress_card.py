@@ -37,7 +37,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from logarc.gui.theme import MONO_FAMILIES, PAD, ROOM, TIGHT, ui_font
+from logarc.gui.theme import MONO_FAMILIES, PAD, ROOM, TIGHT, colour_text, ui_font
 from logarc.style import THEME
 
 if TYPE_CHECKING:
@@ -73,7 +73,8 @@ def _mono(step: float = 0.0, *, bold: bool = False) -> QFont:
 def _label(text: str, font: QFont, colour: str) -> QLabel:
     item = QLabel(text)
     item.setFont(font)
-    item.setStyleSheet(f"color: {colour}; background: transparent;")
+    item.setStyleSheet("background: transparent;")
+    colour_text(item, colour)
     return item
 
 
@@ -124,7 +125,7 @@ class IngestCard(QDialog):
         head.setStyleSheet(f"background: {THEME.surface};")
         row = QHBoxLayout(head)
         row.setContentsMargins(ROOM, PAD + 2, ROOM, PAD + 2)
-        self._state = _label("READING", _mono(-0.5, bold=True), THEME.faint)
+        self._state = _label("READING", _mono(-0.5, bold=True), THEME.accent)
         row.addWidget(self._state)
         row.addStretch(1)
         self._which = _label("", _mono(-0.5), THEME.faint)
@@ -144,7 +145,8 @@ class IngestCard(QDialog):
             grid.addWidget(_label(key, _mono(-0.5), THEME.faint), index, 0)
             # `read` carries the weight: it is the one figure the whole panel
             # exists to report, and the others explain it.
-            value = _label(UNKNOWN, _mono(bold=key == "read"), THEME.ink)
+            colour = THEME.timestamp if key == "remaining" else THEME.ink
+            value = _label(UNKNOWN, _mono(bold=key == "read"), colour)
             grid.addWidget(value, index, 1)
             self._values[key] = value
         grid.setColumnStretch(1, 1)
@@ -253,6 +255,7 @@ class IngestCard(QDialog):
         """Say the cancel has been heard and is being waited on."""
         self._cancel.setEnabled(False)
         self._state.setText("STOPPING")
+        colour_text(self._state, THEME.warning)
 
     def _cancelled(self) -> None:
         self.stopping()

@@ -37,6 +37,7 @@ from logarc.style import (
     EVIDENCE_MUTED,
     PIN_COLOUR,
     PIN_MARK,
+    THEME,
     display_safe,
     format_requests,
 )
@@ -151,6 +152,8 @@ class CaseChooser(QDialog):
                     # The pin mark, coloured by the palette rather than by
                     # whatever the font decides a glyph should look like.
                     item.setForeground(QColor(PIN_COLOUR))
+                elif index == COLUMNS.index("Opened"):
+                    item.setForeground(QColor(THEME.timestamp))
                 table.setItem(row, index, item)
         # Not `resizeRowsToContents()`. Every row here is one line, so sizing
         # to the text bought nothing and made the table come back tighter on

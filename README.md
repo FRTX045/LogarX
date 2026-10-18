@@ -329,7 +329,14 @@ sudo apt install libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 \
   libxcb-keysyms1 libxcb-render-util0 libxcb-shape0 libxcb-xkb1 libxcb-util1
 ```
 
-Wayland needed nothing beyond what the system already had.
+Wayland needed nothing beyond what the system already had. That smoke test did
+not cover leaving graph fullscreen from a maximized window. On 2026-10-17, that
+transition reproduced a fatal WSLg Wayland protocol error (configured size
+`0 × 0`). An X11 workaround survived the transition but introduced incorrect
+borderless-window bounds and cursor hit positions. The application now keeps
+Qt's normal backend selection and briefly unmaps the WSL Wayland window before
+restoring it maximized, avoiding the failing transition with a fresh surface. See
+[WSL display behavior](docs/desktop-app.md).
 
 ```bash
 pip install -e ".[gui]"      # the tool and the desktop application

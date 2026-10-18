@@ -1,9 +1,8 @@
 """Where the reader changes how the window behaves.
 
-One page, the settings grouped and all of them in sight. Chosen over a category
-list down the side and over tabs across the top, after drawing all three: with
-five settings, both of those add a click to reach something that fits on one
-screen, and hide two thirds of it in the meantime.
+One page, the settings grouped without categories or tabs to switch between.
+The page scrolls when larger text or a shorter screen needs more room; the
+confirmation buttons stay visible below it.
 
 Drawn from `gui.prefs` rather than written out, so a setting cannot be added to
 the catalogue and left undrawn — it would then be reachable only by editing the
@@ -19,14 +18,18 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -63,9 +66,19 @@ class PreferencesDialog(QDialog):
         column.setContentsMargins(ROOM, ROOM, ROOM, ROOM)
         column.setSpacing(ROOM)
 
+        body = QWidget()
+        settings = QVBoxLayout(body)
+        settings.setContentsMargins(0, 0, 0, 0)
+        settings.setSpacing(ROOM)
         for group in prefs.GROUPS:
-            column.addWidget(self._box(group, values))
-        column.addStretch(1)
+            settings.addWidget(self._box(group, values))
+        settings.addStretch(1)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setWidget(body)
+        column.addWidget(scroll, 1)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok
@@ -83,6 +96,9 @@ class PreferencesDialog(QDialog):
 
     def _box(self, group: str, values: dict[str, bool | Density]) -> QGroupBox:
         box = QGroupBox(group)
+        # Wrapped explanations must keep their requested height. The page can
+        # scroll instead of compressing the first group until its notes clip.
+        box.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         inner = QVBoxLayout(box)
         inner.setContentsMargins(GAP, GAP, GAP, GAP)
         inner.setSpacing(GAP)
