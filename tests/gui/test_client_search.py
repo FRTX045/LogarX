@@ -8,15 +8,20 @@ return.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
 import pytest
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QEvent, Qt
+from PyQt6.QtGui import QFocusEvent
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication
 from tables import column_of
 
 from logarc.gui.panels import ClientTable
 from logarc.storage.base import ClientMatchPage, IpSummary, IpSummaryPage
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 DASH = "\N{EN DASH}"
@@ -562,3 +567,127 @@ def test_an_answer_is_measured_on_its_own_rows(qt_app: QApplication) -> None:
         assert header.sectionSize(column) == fitted, name
     assert visible_widths(table) == grid.viewport().width()
     table.close()
+
+
+# -- the list of filters and the answer ----------------------------------------------
+
+
+@pytest.fixture
+def focused(qt_app: QApplication) -> Iterator[ClientTable]:
+    """A list a reader is typing into, in a window, its box focused."""
+    table = ClientTable()
+    table.resize(900, 600)
+    table.show()
+    table.show_clients([summary("10.0.0.1", 9), summary("10.0.0.2", 8)], total=900)
+    QApplication.sendEvent(
+        table._filter.edit, QFocusEvent(QEvent.Type.FocusIn, Qt.FocusReason.OtherFocusReason)
+    )
+    QApplication.processEvents()
+    yield table
+    table.close()
+
+
+def suggesting(table: ClientTable) -> bool:
+    shown = table._filter._list
+    return shown is not None and shown.isVisible()
+
+
+def test_an_answer_takes_the_place_of_the_list_of_filters(focused: ClientTable) -> None:
+    """Between filters the box offers the next one, over the list: the answer the
+    reader stopped typing for was underneath it."""
+    QTest.keyClicks(focused._filter.edit, "status:200 ")
+    assert suggesting(focused), "premise: the list offers the next filter"
+
+    focused.show_matches(matched(("10.0.5.5", 7)), "status:200")
+
+    assert not suggesting(focused)
+    QTest.keyClick(focused._filter.edit, Qt.Key.Key_Down)
+    assert suggesting(focused), "and Down brings it back"
+
+
+def test_a_value_being_chosen_keeps_the_list(focused: ClientTable) -> None:
+    focused._filter.set_values({"status": [("404", "3 clients")]}, "VALUES IN THE CASE")
+    QTest.keyClicks(focused._filter.edit, "status:4")
+    assert suggesting(focused), "premise: the list offers values"
+
+    focused.show_matches(matched(("10.0.5.5", 7)), "status:4")
+
+    assert suggesting(focused)
+
+
+def test_a_heading_wider_than_its_values_keeps_room_for_its_sort_arrow(
+    qt_app: QApplication,
+) -> None:
+    """Measured while sorting was off, a heading had no room for the arrow sorting
+    then drew over it: `Match` above a count of 55 read `atc`."""
+    table = ClientTable()
+    table.resize(540, 600)
+    table.show()
+    table.show_clients([summary("10.0.0.1", 9)], total=900)
+    table._filter.setText("status:200")
+
+    table.show_matches(matched(("10.0.5.5", 55)), "status:200")
+    QApplication.processEvents()
+
+    header = table._table.horizontalHeader()
+    assert header is not None
+    match = column_of(table._table, "Match")
+    assert header.sectionSize(match) >= header.sectionSizeHint(match)
+    table.close()
+
+
+def heading_without_arrow(table: ClientTable, column: int) -> int:
+    """What a heading needs with no sort arrow drawn in it."""
+    header = table._table.horizontalHeader()
+    assert header is not None
+    shown = header.isSortIndicatorShown()
+    header.setSortIndicatorShown(False)
+    try:
+        return header.sectionSizeHint(column)
+    finally:
+        header.setSortIndicatorShown(shown)
+
+
+def test_only_the_sorted_column_makes_room_for_the_arrow(qt_app: QApplication) -> None:
+    """Room for an arrow in every heading pushed the list past its panel, behind a
+    scroll bar; only one heading draws it."""
+    table = ClientTable()
+    table.resize(540, 600)
+    table.show()
+    table.show_clients([summary("10.0.0.1", 9), summary("10.0.0.2", 8)], total=900)
+    QApplication.processEvents()
+
+    grid = table._table
+    header = grid.horizontalHeader()
+    assert header is not None
+    for name in ("Paths", "4xx"):
+        column = column_of(grid, name)
+        assert header.sectionSize(column) == max(
+            grid.sizeHintForColumn(column), heading_without_arrow(table, column)
+        ), name
+    reqs = column_of(grid, "Reqs")
+    assert header.sectionSize(reqs) >= header.sectionSizeHint(reqs), "the sorted one"
+    table.close()
+
+
+def test_a_column_the_reader_sorts_by_makes_room_for_the_arrow(qt_app: QApplication) -> None:
+    table = ClientTable()
+    table.resize(540, 600)
+    table.show()
+    table.show_clients([summary("10.0.0.1", 9), summary("10.0.0.2", 8)], total=900)
+    grid = table._table
+
+    grid.sortItems(column_of(grid, "Paths"), Qt.SortOrder.DescendingOrder)
+    QApplication.processEvents()
+
+    header = grid.horizontalHeader()
+    assert header is not None
+    paths = column_of(grid, "Paths")
+    assert header.sectionSize(paths) >= header.sectionSizeHint(paths)
+    table.close()
+
+
+def test_the_caption_wraps_rather_than_running_off_the_panel(partial: ClientTable) -> None:
+    """`8 of 52 clients sent a request matching path:/admin · 123` stopped there,
+    at the edge of a panel of the width the window opens with."""
+    assert partial._caption.wordWrap()

@@ -432,6 +432,16 @@ class FilterBox(QFrame):
         if self._list is not None and self._list.isVisible():
             self._suggest()
 
+    def give_way(self) -> None:
+        """An answer for what the box holds has arrived: let it be seen.
+
+        Between filters the list offers the next one, and it lies over whatever
+        answered the last. While a token is being typed the reader is still
+        choosing from it, so it stays. Typing, or Down, brings it back.
+        """
+        if self._list is not None and self._list.isVisible() and not self._fragment():
+            self._list.hide()
+
     @property
     def suggestion_list(self) -> SuggestionList:
         if self._list is None:

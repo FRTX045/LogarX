@@ -74,6 +74,30 @@ class ColumnWidths(QObject):
         finally:
             self._sizing = False
 
+    def fit_heading(self, column: int) -> None:
+        """Give `column` room for its heading as drawn now, sort arrow included.
+
+        Content sizing leaves the arrow out when the table measures with sorting
+        off, and the arrow then covers the words of the one heading that draws
+        it. Only widens, and never a column the reader sized.
+        """
+        if (
+            column < 0
+            or column == self._fill
+            or column in self._manual
+            or self._table.isColumnHidden(column)
+        ):
+            return
+        needed = self._header.sectionSizeHint(column)
+        if self._header.sectionSize(column) >= needed:
+            return
+        self._sizing = True
+        try:
+            self._header.resizeSection(column, needed)
+            self._fill_remaining()
+        finally:
+            self._sizing = False
+
     def reset(self) -> None:
         """Return every column to content sizing and the default fill column."""
         self._manual.clear()

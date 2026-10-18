@@ -7,7 +7,6 @@ no analysis of their own.
 
 from __future__ import annotations
 
-from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import QPoint, QRect, QRectF, QSize, Qt, QTimer, pyqtSignal
@@ -40,7 +39,7 @@ from logarc.style import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping, Sequence
+    from collections.abc import Mapping, Sequence
     from datetime import datetime
 
     from PyQt6.QtGui import QMouseEvent
@@ -237,6 +236,9 @@ class ClientTable(QWidget):
         # which column the table is ordered by, half drawn.
         header.setMinimumHeight(header.fontMetrics().height() + 14)
         header.sortIndicatorChanged.connect(lambda *_: self._refresh_caption())
+        header.sortIndicatorChanged.connect(
+            lambda section, _order: self._column_sizes.fit_heading(section)
+        )
         header.moveSection(_MATCH, _ADDRESS + 1)
         self._table.setColumnHidden(_MATCH, True)
         self._table.itemSelectionChanged.connect(self._emit_choice)
@@ -260,6 +262,8 @@ class ClientTable(QWidget):
         self._next.clicked.connect(lambda: self._step(1))
 
         self._caption = QLabel("No case open.")
+        # A search's caption is a sentence, and was cut at the panel's edge.
+        self._caption.setWordWrap(True)
         self._caption.setFont(caption_font(self._caption.font()))
         colour_text(self._caption, THEME.muted)
         layout = QVBoxLayout(self)
@@ -341,22 +345,27 @@ class ClientTable(QWidget):
         required(self._table.horizontalHeader(), "column header").setSortIndicator(
             self._natural_order(), Qt.SortOrder.DescendingOrder
         )
-        with self._sized_once():
-            for row, summary in enumerate(summaries):
-                self._set(row, 0, summary.client_ip)
-                self._set(row, 1, f"{summary.request_count:,}", sort_key=summary.request_count)
-                self._set(row, 2, f"{summary.distinct_paths:,}", sort_key=summary.distinct_paths)
-                self._set(
-                    row, 3, f"{summary.client_error_ratio:.0%}", sort_key=summary.client_error_ratio
-                )
-                self._set(row, 4, format_seen(summary.first_seen))
-                self._set(row, 5, format_seen(summary.last_seen))
-                found = hits[row] if row < len(hits) else 0
-                self._set(row, _MATCH, f"{found:,}", sort_key=found)
+        for row, summary in enumerate(summaries):
+            self._set(row, 0, summary.client_ip)
+            self._set(row, 1, f"{summary.request_count:,}", sort_key=summary.request_count)
+            self._set(row, 2, f"{summary.distinct_paths:,}", sort_key=summary.distinct_paths)
+            self._set(
+                row, 3, f"{summary.client_error_ratio:.0%}", sort_key=summary.client_error_ratio
+            )
+            self._set(row, 4, format_seen(summary.first_seen))
+            self._set(row, 5, format_seen(summary.last_seen))
+            found = hits[row] if row < len(hits) else 0
+            self._set(row, _MATCH, f"{found:,}", sort_key=found)
+        # Measured once, with sorting off: Qt then leaves the sort arrow's room
+        # out of every heading, which keeps the list inside its panel.
+        self._column_sizes.fit_unset()
         self._table.setSortingEnabled(True)
         # Busiest first, the order pages are cut in, so a later page visibly
         # continues the one before it; most matches first for a search.
         self._table.sortItems(self._natural_order(), Qt.SortOrder.DescendingOrder)
+        # The one heading that draws the arrow gets its room back: without it,
+        # `Match` above a count of 55 read `atc`.
+        self._column_sizes.fit_heading(self._natural_order())
         self._mark_open()
         self._table.blockSignals(blocked)
         self._hide_unmatched()
@@ -376,6 +385,7 @@ class ClientTable(QWidget):
         self._searching = False
         self._counted = None
         self._message = None
+        self._filter.give_way()
         self._show_rows(
             page.rows,
             first=page.offset + 1,
@@ -399,6 +409,7 @@ class ClientTable(QWidget):
         self._searching = False
         self._counted = counted
         self._message = None
+        self._filter.give_way()
         self._requests = page.requests
         self._show_rows(
             page.rows,
@@ -451,6 +462,7 @@ class ClientTable(QWidget):
             return
         self._searching = False
         self._message = (f"Could not search the whole case for {wanted}: {message}", THEME.alert)
+        self._filter.give_way()
         self._refresh_caption()
 
     def show_pending(self, query: str, message: str) -> None:
@@ -464,6 +476,7 @@ class ClientTable(QWidget):
         self._search_timer.stop()
         self._searching = False
         self._message = (message, THEME.muted)
+        self._filter.give_way()
         self._hide_unmatched()
         self._refresh_caption()
 
@@ -472,14 +485,6 @@ class ClientTable(QWidget):
         self._open = client_ip
         self._mark_open()
         self._refresh_caption()
-
-    @contextmanager
-    def _sized_once(self) -> Iterator[None]:
-        """Measure untouched columns once after filling, retaining manual widths."""
-        try:
-            yield
-        finally:
-            self._column_sizes.fit_unset()
 
     def select_quietly(self, client_ip: str) -> bool:
         """Put the table back on `client_ip` without emitting a choice.
