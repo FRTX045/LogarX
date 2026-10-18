@@ -15,12 +15,15 @@ from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
 from logarc.search import (
     Scope,
+    Suggestion,
     decoded_path,
     decoded_target,
     is_whole_address,
     parse,
+    suggestions,
     tokens,
     understood,
+    value_counts,
 )
 
 NOON = datetime(2026, 3, 11, 12, 0, tzinfo=UTC)
@@ -237,3 +240,68 @@ def test_decoding_is_one_pass_and_leaves_broken_escapes_alone() -> None:
 def test_a_target_without_a_path_is_empty_as_the_event_has_it() -> None:
     assert decoded_target("", "q=1") == ""
     assert decoded_target("/p", "") == "/p"
+
+
+# -- what the suggestion list offers --------------------------------------------------
+
+
+def test_values_are_counted_most_common_first_then_the_classes() -> None:
+    events = [event(status=404)] * 3 + [event(status=200), event(status=500), event(status=None)]
+
+    assert value_counts(events, "status") == [
+        ("404", 3),
+        ("200", 1),
+        ("500", 1),
+        ("2xx", 1),
+        ("4xx", 3),
+        ("5xx", 1),
+    ]
+
+
+def test_methods_are_counted_as_written_upper_case() -> None:
+    events = [event(method="get"), event(method="GET"), event(method="POST"), event(method=None)]
+
+    assert value_counts(events, "method") == [("GET", 2), ("POST", 1)]
+
+
+def completions(rows: tuple[Suggestion, ...]) -> list[str]:
+    return [row.completion for row in rows]
+
+
+def test_an_empty_box_offers_every_filter_and_says_text_works_too() -> None:
+    title, rows = suggestions("", Scope.EVIDENCE, {})
+
+    assert title == "FILTER BY"
+    assert completions(rows) == ["status:", "path:", "method:", "after:", "before:", "any text"]
+    assert [row.selectable for row in rows] == [True] * 5 + [False]
+
+
+def test_the_case_box_offers_addresses_and_activities_as_well() -> None:
+    _, rows = suggestions("", Scope.CASE, {})
+
+    assert "ip:" in completions(rows)
+    assert "activity:" in completions(rows)
+
+
+def test_a_partial_key_narrows_the_filters() -> None:
+    assert completions(suggestions("st", Scope.EVIDENCE, {})[1]) == ["status:"]
+    assert completions(suggestions("IP", Scope.CASE, {})[1]) == ["ip:"]
+    assert suggestions("ip", Scope.EVIDENCE, {}) == ("", ())
+    assert suggestions("xyz", Scope.EVIDENCE, {}) == ("", ())
+
+
+def test_after_a_key_it_offers_the_values_there_are() -> None:
+    values = {"status": [("404", "3,555 lines"), ("200", "9 lines")]}
+
+    title, rows = suggestions(
+        "status:", Scope.EVIDENCE, values, values_title="VALUES IN THIS ACTIVITY"
+    )
+
+    assert title == "VALUES IN THIS ACTIVITY"
+    assert completions(rows) == ["status:404", "status:200"]
+    assert rows[0].note == "3,555 lines"
+    assert completions(suggestions("Status:2", Scope.EVIDENCE, values)[1]) == ["status:200"]
+
+
+def test_a_key_with_no_values_to_offer_offers_nothing() -> None:
+    assert suggestions("path:", Scope.EVIDENCE, {"status": [("404", "1 line")]}) == ("", ())

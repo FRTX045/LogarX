@@ -23,6 +23,7 @@ No Qt here, so every rule is checked without a display.
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
 from enum import Enum
@@ -30,17 +31,22 @@ from typing import TYPE_CHECKING, Final
 from urllib.parse import unquote, unquote_plus
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping, Sequence
+
     from logarc.core.event import NormalizedEvent
 
 __all__ = [
     "Query",
     "Scope",
+    "Suggestion",
     "decoded_path",
     "decoded_target",
     "is_whole_address",
     "parse",
+    "suggestions",
     "tokens",
     "understood",
+    "value_counts",
 ]
 
 
@@ -328,3 +334,89 @@ def decoded_target(path: str, query: str | None) -> str:
     if not path:
         return ""
     return decoded_path(path) + (f"?{_decoded_query(query)}" if query else "")
+
+
+# -- what the suggestion list offers ----------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class Suggestion:
+    """One row of the list under a search box."""
+
+    completion: str
+    """What choosing it puts in the box."""
+    note: str
+    """What it means, or how much of it there is."""
+    selectable: bool = True
+    """False for a row that only explains, such as "any text"."""
+
+
+#: Every filter with a line saying what it takes, in the order a reader reaches for
+#: them. The examples are values the reader could type as they stand.
+_NOTES: Final[dict[str, str]] = {
+    "ip": "an address, or part of one \u2014 198.51.100",
+    "status": "response code \u2014 404, 2xx",
+    "path": "part of the path \u2014 /admin, .env",
+    "method": "GET, POST, HEAD",
+    "activity": "what the rules named it \u2014 injection (per client, from Where to start)",
+    "after": "at or after a time \u2014 after:14:05, after:2026-03-09",
+    "before": "before a time \u2014 before:14:30, before:2026-03-10",
+}
+_ORDER: Final = ("ip", "status", "path", "method", "activity", "after", "before")
+_ANY_TEXT: Final = Suggestion("any text", "searches the request itself \u2014 union select", False)
+_TITLES: Final = {Scope.EVIDENCE: "FILTER BY", Scope.CASE: "SEARCH THE CASE BY"}
+
+
+def suggestions(
+    fragment: str,
+    scope: Scope,
+    values: Mapping[str, Sequence[tuple[str, str]]],
+    *,
+    values_title: str = "VALUES",
+) -> tuple[str, tuple[Suggestion, ...]]:
+    """`(title, rows)` for the list under a box, given the token being typed.
+
+    Nothing typed: every filter, and a reminder that plain text works. Part of a
+    key: the filters it begins. A key and its colon: the values `values` holds for
+    it, narrowed by whatever follows the colon. Anything else: nothing, and the
+    list closes.
+    """
+    keys = [key for key in _ORDER if key in scope.keys]
+    if not fragment:
+        rows = tuple(Suggestion(f"{key}:", _NOTES[key]) for key in keys)
+        return _TITLES[scope], (*rows, _ANY_TEXT)
+    key, colon, partial = fragment.partition(":")
+    key = key.lower()
+    if not colon:
+        rows = tuple(Suggestion(f"{k}:", _NOTES[k]) for k in keys if k.startswith(key))
+        return (_TITLES[scope], rows) if rows else ("", ())
+    if key not in scope.keys or not values.get(key):
+        return "", ()
+    wanted = partial.lower()
+    rows = tuple(
+        Suggestion(f"{key}:{value}", note)
+        for value, note in values[key]
+        if value.lower().startswith(wanted)
+    )
+    return (values_title, rows) if rows else ("", ())
+
+
+def value_counts(events: Iterable[NormalizedEvent], key: str) -> list[tuple[str, int]]:
+    """How often each value of `key` occurs: most common first, then by value.
+
+    For `status`, the classes follow the codes: `4xx` is often the useful one, and
+    a reader can see what it adds up to.
+    """
+    counts: Counter[str] = Counter()
+    for event in events:
+        if key == "status" and event.status is not None:
+            counts[str(event.status)] += 1
+        elif key == "method" and event.method:
+            counts[event.method.upper()] += 1
+    ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    if key != "status":
+        return ranked
+    classes: Counter[str] = Counter()
+    for code, count in counts.items():
+        classes[f"{code[0]}xx"] += count
+    return ranked + sorted(classes.items())
