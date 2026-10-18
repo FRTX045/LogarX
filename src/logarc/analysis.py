@@ -160,6 +160,17 @@ class AnalysisResult:
         )
         return refs if limit is None else refs[:limit]
 
+    def requests_for(self, node: GraphNode) -> tuple[RequestAssignment, ...]:
+        """Every request of one activity, in the order the client made them.
+
+        All of them, where `evidence_for` stops at the episodes' sample: this is
+        what a filter on the evidence searches, and a match past the sample is
+        still a match. Built from the assignments, which hold every request once,
+        so it costs a pass over the client's requests rather than a read of the log.
+        """
+        named = set(node.episode_ids)
+        return tuple(item for item in self.assignments if item.episode_id in named)
+
     def to_dict(self) -> dict[str, Any]:
         """The machine-readable form, for export and for other tools."""
         return {

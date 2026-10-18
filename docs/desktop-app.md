@@ -165,6 +165,37 @@ Payloads are decoded, so `' OR '1'='1` reads as the tautology it is instead of
 including the source line exactly as the log holds it — every finding traces back
 to a line.
 
+### Filtering the lines
+
+The box above the table keeps the lines of the selected activity that match what
+you type. A word keeps the lines whose request, path and query, holds it, as
+logged or decoded. A filter narrows by one field:
+
+| Filter | Keeps |
+|---|---|
+| `status:404` | that response code; `status:4xx` keeps the whole class |
+| `path:/admin` | paths containing it; quote a value with a space, `path:"/my files"` |
+| `method:POST` | that method |
+| `after:02:58`, `before:2026-03-09T03:00` | requests at or after, or before, that time. A time of day is read on the activity's own day |
+
+Two of the same filter keep either one. Different filters and words must all
+hold. A finished filter becomes a chip, and Backspace or its × takes it off.
+Anything the box cannot read as a filter is searched as text, so a typo narrows
+the table rather than being quietly ignored.
+
+Click the box to see what it filters by. Type `status:` or `method:` to see the
+values this activity holds, with how many lines carry each.
+
+The filter searches every line of the activity, not only the 2,000 the table
+loads, and the line above the table says what it did:
+`Filtered · 31 of 106 lines match status:304`. When nothing matches, the table
+says *No results found* and offers to clear the filter.
+
+The canvas fades every activity with no matching line, so the box also answers
+"which of these had a 500?" before you pick one. The filter stays while you
+move between activities and between the two views. Opening another client
+starts without one.
+
 ---
 
 ## Moving things about

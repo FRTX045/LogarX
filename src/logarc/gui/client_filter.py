@@ -15,17 +15,10 @@ captioned "119,880 clients": the reader cannot select 119,380 of them.
 
 from __future__ import annotations
 
+from logarc.search import is_whole_address
 from logarc.style import plural
 
 __all__ = ["caption", "is_whole_address", "matches"]
-
-
-def is_whole_address(text: str) -> bool:
-    """Whether `text` is a complete IPv4 address rather than part of one."""
-    parts = text.split(".")
-    return len(parts) == 4 and all(
-        part.isdigit() and len(part) <= 3 and int(part) <= 255 for part in parts
-    )
 
 
 def matches(client_ip: str, query: str) -> bool:

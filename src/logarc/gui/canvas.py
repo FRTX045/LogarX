@@ -70,7 +70,7 @@ if TYPE_CHECKING:
     from logarc.core.graph import ActivityGraph, GraphNode
     from logarc.sessionize.segmenter import SessionPolicy
 
-__all__ = ["MIN_FIT_SCALE", "STARTUP_MESSAGE", "WAITING_MESSAGE", "ActivityCanvas"]
+__all__ = ["FADED", "MIN_FIT_SCALE", "STARTUP_MESSAGE", "WAITING_MESSAGE", "ActivityCanvas"]
 
 #: What the canvas says while it has no graph. Two waits, two questions: before
 #: a case is open there is no client to pick yet, and telling the reader to pick
@@ -264,6 +264,12 @@ _SESSION_EDGE_WIDTH: Final = 1.4
 _SESSION_INK: Final = THEME.muted
 #: A heading for the box, a point above the captions inside it.
 _SESSION_POINTS: Final = 8.5
+
+#: How much of an activity shows when a filter on the evidence reaches none of
+#: its lines. Faint enough that the ones it does reach stand out, and not so
+#: faint the story they belong to disappears: the faded are still read as
+#: what happened in between.
+FADED: Final = 0.28
 
 
 def _steps(start: float, stop: float, pitch: float) -> list[float]:
@@ -506,6 +512,12 @@ class _SessionBox:
         self.label.setPos(box.left() + _SESSION_PAD / 2, box.top() + _SESSION_PAD / 2)
 
 
+def _words(patch: QGraphicsItem) -> QGraphicsItem:
+    """The words written on a patch of ground by `ActivityCanvas._canvas_text`."""
+    (words,) = patch.childItems()
+    return words
+
+
 class _NodeItem(QGraphicsEllipseItem):
     """One activity. Carries its node id so a click can be traced back.
 
@@ -689,6 +701,9 @@ class ActivityCanvas(QGraphicsView):
         # label explains. None when whoever drew it did not say, and the label
         # then explains nothing rather than quote rules it was not given.
         self._session_policy: SessionPolicy | None = None
+        # The activities a filter on the evidence reaches, or None when there is
+        # no filter. Every other activity is drawn faded.
+        self._matching: frozenset[str] | None = None
         # Nodes are placed with `setPos` while a graph is being drawn, and every
         # one of those is a position change. Without this the first node placed
         # would ask for arrows that are not on the canvas yet, and the scene
@@ -835,7 +850,12 @@ class ActivityCanvas(QGraphicsView):
         if self._graph is None:
             return
         selected = self._selected
-        self.show_graph(self._graph, positions=positions, session_policy=self._session_policy)
+        self.show_graph(
+            self._graph,
+            positions=positions,
+            session_policy=self._session_policy,
+            matching=self._matching,
+        )
         if selected is not None:
             self.highlight(selected)
 
@@ -864,6 +884,40 @@ class ActivityCanvas(QGraphicsView):
         else:
             self._forget_sessions()
         self._spread_paper()
+
+    def set_matching(self, node_ids: frozenset[str] | None) -> None:
+        """Fade every activity not in `node_ids`; `None` fades nothing.
+
+        Moves and redraws nothing, so the reader's place, zoom and selection
+        stay as they were while a filter is typed.
+        """
+        self._matching = node_ids
+        self._fade()
+
+    def _fade(self) -> None:
+        """Draw the activities a filter reaches at full strength and the rest faded.
+
+        An arrow stays full only between two that match: one into a faded
+        activity is part of what the filter set aside.
+
+        Only ink fades. The patch of ground under a caption or an arrow's number
+        stays solid, because it is what hides an arrow's number passing under a
+        caption; faded with its words it let the number through, and two faint
+        words drawn through each other read as a smudge.
+        """
+        wanted = self._matching
+        for node_id, item in self._nodes.items():
+            level = 1.0 if wanted is None or node_id in wanted else FADED
+            item.setOpacity(level)
+            for caption in item.childItems():
+                _words(caption).setOpacity(level)
+        for art in self._edge_art:
+            full = wanted is None or (art.source_id in wanted and art.target_id in wanted)
+            level = 1.0 if full else FADED
+            art.line.setOpacity(level)
+            art.head.setOpacity(level)
+            if art.label is not None:
+                _words(art.label).setOpacity(level)
 
     def _forget_sessions(self) -> None:
         """Take every box off the scene, and every reference to one with it."""
@@ -1123,6 +1177,7 @@ class ActivityCanvas(QGraphicsView):
         positions: Positions | None = None,
         *,
         session_policy: SessionPolicy | None = None,
+        matching: frozenset[str] | None = None,
     ) -> None:
         """Replace whatever is on the canvas with `graph`.
 
@@ -1139,9 +1194,14 @@ class ActivityCanvas(QGraphicsView):
 
         `session_policy` is what the trace was cut into sessions with, handed
         over with it so that what a box's label explains is what made the box.
+
+        `matching` names the activities a filter on the evidence reaches; the
+        rest are drawn faded. Not carried from one graph to the next: ids from
+        the last client name nothing in this one, and kept they would fade it all.
         """
         self._graph = graph
         self._session_policy = session_policy
+        self._matching = matching
         self._forget_drawing()
 
         laid_out = _spread(layout_graph(graph, wrap=self._wrap), graph)
@@ -1194,6 +1254,7 @@ class ActivityCanvas(QGraphicsView):
             self._draw_node(node, positions[node.node_id])
         if boxed:
             self._draw_sessions(graph)
+        self._fade()
 
         self.fit()
 
@@ -1430,6 +1491,8 @@ class ActivityCanvas(QGraphicsView):
         # Above the edges, below the nodes: the words survive an arrow passing
         # behind them without hiding the circle they describe.
         backdrop.setZValue(0.6)
+        # Solid even when what it belongs to is faded: see `_fade`.
+        backdrop.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresParentOpacity, True)
         backdrop.setPos(anchor)
         if parent is None:
             self._scene.addItem(backdrop)

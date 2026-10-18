@@ -58,6 +58,7 @@ from logarc.gui.crs_notice import stale_crs_notice
 from logarc.gui.density import Density, buckets_for
 from logarc.gui.display import configure_display
 from logarc.gui.evidence_panel import EvidencePanel
+from logarc.gui.evidence_view import Filtered, RequestFilter
 from logarc.gui.format_editor import FormatChoice, FormatEditor
 from logarc.gui.format_notice import drift_notice
 from logarc.gui.full_screen import FullScreen
@@ -79,6 +80,7 @@ from logarc.gui.workers import run_job
 from logarc.ingest.pipeline import IngestCancelled
 from logarc.ingest.quarantine import DIRECTORY_NAME as QUARANTINE_DIR
 from logarc.report import export
+from logarc.search import value_counts
 from logarc.storage.case import CaseManifest
 from logarc.style import THEME, format_requests, plural
 from logarc.timerange import nobody_here, summary
@@ -188,6 +190,11 @@ class MainWindow(QMainWindow):
         self._awaiting: tuple[str, TimeWindow] | None = None
         self._reconstruction_request = object()
         self._evidence_request = object()
+        # The evidence filter's answer for the canvas: which episodes hold a line
+        # it keeps, for which reconstruction and which text. Kept so that a
+        # switch between Trace and Behaviour fades the new graph without asking.
+        self._fade_request = object()
+        self._filter_hits: tuple[AnalysisResult, str, frozenset[str]] | None = None
         # What CRS contributed to the open case. Empty until one is opened, so
         # a reconstruction before then applies nothing rather than failing.
         self._crs = CrsEvidence(index=None, fingerprint=None)
@@ -223,6 +230,7 @@ class MainWindow(QMainWindow):
         self._canvas = ActivityCanvas()
         self._legend = LegendBar()
         self._evidence = EvidencePanel()
+        self._evidence.filter_changed.connect(self._filter_changed)
         self._clients.client_chosen.connect(self._reconstruct)
         self._clients.client_released.connect(self._release_requested)
         # Counts client-list searches, so an answer for an earlier text, case or
@@ -1066,6 +1074,7 @@ class MainWindow(QMainWindow):
                 else None
             )
             self._result = None
+            self._forget_filter()
             self._selected = None
             self._canvas.show_graph_placeholder()
             # The canvas already says "Select an IP". Repeating it above the
@@ -1164,6 +1173,7 @@ class MainWindow(QMainWindow):
             if not summaries:
                 # An answer, not a failure, and often the one being looked for.
                 self._result = None
+                self._forget_filter()
                 self._selected = None
                 self._evidence.clear(prompt=False)
                 self._tabs.setVisible(False)
@@ -1265,6 +1275,7 @@ class MainWindow(QMainWindow):
         so they say it once here rather than agreeing with each other by hand.
         """
         self._result = None
+        self._forget_filter()
         self._clients.set_open_client(None)
         # Nobody is wanted, so nothing may arrive. Without this the answer to a
         # question asked a moment ago comes back and puts the client, the band
@@ -1386,6 +1397,8 @@ class MainWindow(QMainWindow):
             # the stale job was started, which is what makes it worth having.
             if not current() or (result.client_ip, result.window) != (client_ip, window):
                 return
+            if self._result is None or self._result.client_ip != result.client_ip:
+                self._forget_filter()
             self._result = result
             # The band becomes this client's own history: when it worked, when
             # it went quiet, across its own life rather than the case's.
@@ -1455,6 +1468,7 @@ class MainWindow(QMainWindow):
             session_policy=self._result.policy.session,
         )
         self._arrangements_kept.refresh()
+        self._refade()
         if was_reading is None:
             return
         # Found by episode, not by node id: the two graphs number their nodes
@@ -1749,28 +1763,42 @@ class MainWindow(QMainWindow):
         # a display, and getting it wrong shows the reader the wrong evidence.
         # What stays here is the ceiling, which is a question about how long
         # somebody will sit watching a panel fill.
+        text = self._evidence.filter_text()
+        kept = RequestFilter.read(text, result)
+        limit = EVIDENCE_LIMIT
         wanted = set(evidence)
         supporting = (
             {
                 assignment.evidence
                 for assignment in result.assignments
-                if assignment.evidence in wanted and assignment.episode_id in node.episode_ids
+                if assignment.evidence in wanted
+                and assignment.episode_id in node.episode_ids
+                and (kept is None or kept.keeps(assignment))
             }
             if wanted
             else set()
         )
-        refs = tuple(
-            dict.fromkeys(
-                (
-                    *[ref for ref in evidence if ref in supporting],
-                    *result.evidence_for(node, limit=EVIDENCE_LIMIT),
-                )
-            )
-        )[:EVIDENCE_LIMIT]
 
         def work(_: Callable[[str], None]) -> Any:
+            # Off the interface thread: a filter reads every request the activity
+            # holds, not the sample, and an activity can hold a great many.
+            held = result.requests_for(node)
+            values = {
+                key: [
+                    (value, plural(count, "line"))
+                    for value, count in value_counts((item.labelled.event for item in held), key)
+                ]
+                for key in ("status", "method")
+            }
+            filtered: Filtered | None = None
+            if kept is None:
+                pool = result.evidence_for(node, limit=limit)
+            else:
+                pool = tuple(item.evidence for item in held if kept.keeps(item))
+                filtered = Filtered(text, len(pool), len(held))
+            refs = tuple(dict.fromkeys((*[ref for ref in evidence if ref in supporting], *pool)))
             with Case.open(path) as case:
-                return case.read_evidence(refs)
+                return case.read_evidence(refs[:limit]), values, filtered
 
         def current() -> bool:
             return (
@@ -1780,9 +1808,12 @@ class MainWindow(QMainWindow):
                 and node is self._selected
             )
 
-        def done(lines: Any) -> None:
-            if current():
-                self._evidence.show_evidence(node, lines)
+        def done(answer: Any) -> None:
+            if not current():
+                return
+            lines, values, filtered = answer
+            self._evidence.set_suggestion_values(values)
+            self._evidence.show_evidence(node, lines, filtered=filtered)
 
         run_job(
             work,
@@ -1790,6 +1821,71 @@ class MainWindow(QMainWindow):
             on_error=lambda message, detail: (
                 self.report_error(message, detail) if current() else None
             ),
+        )
+
+    # -- the evidence filter -------------------------------------------------
+
+    def _filter_changed(self, _text: str) -> None:
+        """The reader changed the evidence filter: fade the canvas again, refill the panel."""
+        self._refade()
+        if self._selected is not None:
+            self._show_evidence(self._selected.node_id)
+
+    def _forget_filter(self) -> None:
+        """Start without a filter. It belongs to the client it was typed on."""
+        self._evidence.set_filter_text("")
+        self._filter_hits = None
+        self._fade_request = object()
+
+    def _refade(self) -> None:
+        """Fade the activities on the canvas that hold no line the filter keeps.
+
+        Worked out off the interface thread, because it reads every request the
+        client made; remembered for the reconstruction and the text, so a switch
+        between Trace and Behaviour fades the new graph at once.
+        """
+        result = self._result
+        text = self._evidence.filter_text()
+        self._fade_request = request = object()
+        if result is None:
+            return
+        hits = self._filter_hits
+        if hits is not None and hits[0] is result and hits[1] == text:
+            self._canvas.set_matching(self._holding(hits[2]))
+            return
+        self._filter_hits = None
+        kept = RequestFilter.read(text, result)
+        if kept is None:
+            self._canvas.set_matching(None)
+            return
+
+        def work(_: Callable[[str], None]) -> frozenset[str]:
+            return kept.episodes(result.assignments)
+
+        def current() -> bool:
+            return request is self._fade_request and result is self._result
+
+        def done(episodes: frozenset[str]) -> None:
+            if current():
+                self._filter_hits = (result, text, episodes)
+                self._canvas.set_matching(self._holding(episodes))
+
+        run_job(
+            work,
+            on_done=done,
+            on_error=lambda message, detail: (
+                self.report_error(message, detail) if current() else None
+            ),
+        )
+
+    def _holding(self, episodes: frozenset[str]) -> frozenset[str]:
+        """The activities on screen made of any of `episodes`."""
+        result = self._result
+        if result is None:
+            return frozenset()
+        graph = result.trace if self._kind is GraphKind.TRACE else result.behaviour
+        return frozenset(
+            node.node_id for node in graph.nodes if episodes.intersection(node.episode_ids)
         )
 
     # -- export ------------------------------------------------------------

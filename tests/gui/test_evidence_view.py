@@ -8,15 +8,29 @@ sorts as a number — and they should be checkable without starting a window.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
 import pytest
 
+from logarc.analysis import AnalysisResult, analyse_ip
+from logarc.case import Case
 from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
 from logarc.evidence import EvidenceLine
-from logarc.gui.evidence_view import COLUMNS, Cell, cells_for
+from logarc.gui.evidence_view import (
+    COLUMNS,
+    Cell,
+    Filtered,
+    RequestFilter,
+    cells_for,
+    filter_strip,
+    no_results,
+)
 from logarc.style import EVIDENCE_INK, EVIDENCE_MUTED
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 WHEN = datetime(2026, 8, 3, 22, 35, 18, tzinfo=UTC)
 
@@ -269,3 +283,113 @@ def test_an_integrity_warning_reaches_the_detail() -> None:
     )
 
     assert "changed size" in (detail_for(evidence, decode=True).note or "")
+
+
+# -- a filtered view says so ------------------------------------------------------
+
+
+def test_a_filtered_view_says_how_much_of_the_activity_it_shows() -> None:
+    assert filter_strip(Filtered("status:200", 9, 3574), shown=9) == (
+        "Filtered \N{MIDDLE DOT} 9 of 3,574 lines match status:200"
+    )
+
+
+def test_one_match_is_one_line_that_matches() -> None:
+    assert filter_strip(Filtered("status:500", 1, 3574), shown=1) == (
+        "Filtered \N{MIDDLE DOT} 1 of 3,574 lines matches status:500"
+    )
+
+
+def test_more_matches_than_the_panel_loads_says_which_are_shown() -> None:
+    assert filter_strip(Filtered("status:404", 3555, 3574), shown=2000) == (
+        "Filtered \N{MIDDLE DOT} 3,555 of 3,574 lines match status:404"
+        " \N{MIDDLE DOT} showing the first 2,000"
+    )
+
+
+def test_nothing_found_says_what_was_searched() -> None:
+    assert no_results(Filtered("status:401", 0, 3574)) == (
+        "None of the 3,574 lines in this activity match status:401."
+    )
+    assert no_results(Filtered("status:401", 0, 1)) == (
+        "The one line in this activity does not match status:401."
+    )
+
+
+# -- which requests a filter keeps -------------------------------------------------
+
+
+def _visits(when: datetime, first_line: int, statuses: list[int]) -> list[NormalizedEvent]:
+    return [
+        NormalizedEvent(
+            timestamp=when + timedelta(seconds=index),
+            client_ip="203.0.113.9",
+            evidence=EvidenceRef("access.log", first_line + index),
+            method="GET",
+            path=f"/page/{first_line + index}",
+            status=status,
+            user_agent="Mozilla/5.0",
+        )
+        for index, status in enumerate(statuses)
+    ]
+
+
+@pytest.fixture
+def two_days(tmp_path: Path) -> AnalysisResult:
+    """One visit late on the 11th and one early on the 12th: two activities."""
+    with Case.create(tmp_path / "case") as case:
+        case.store.write(_visits(datetime(2026, 3, 11, 11, 0, tzinfo=UTC), 1, [200, 200, 404]))
+        case.store.write(_visits(datetime(2026, 3, 12, 9, 0, tzinfo=UTC), 10, [200, 500]))
+        case.store.finalize()
+        return analyse_ip(case.store, "203.0.113.9")
+
+
+def test_a_filter_that_narrows_nothing_is_no_filter(two_days: AnalysisResult) -> None:
+    for text in ("", "   ", "status:", "after:"):
+        assert RequestFilter.read(text, two_days) is None, text
+    assert RequestFilter.read("status:200", two_days) is not None
+    assert RequestFilter.read("after:10:00", two_days) is not None, "a time of day is a filter"
+
+
+def test_no_filter_reads_nothing_of_the_reconstruction() -> None:
+    """Asked on every selection, filter or not: with nothing to filter by, it
+    must not walk the client's activities to find that out."""
+    untouchable = object()
+
+    assert RequestFilter.read("", untouchable) is None  # type: ignore[arg-type]
+    assert RequestFilter.read("status:", untouchable) is None  # type: ignore[arg-type]
+
+
+def test_a_filter_keeps_the_requests_that_match(two_days: AnalysisResult) -> None:
+    kept = RequestFilter.read("status:200", two_days)
+    assert kept is not None
+
+    lines = [item.evidence.line_no for item in two_days.assignments if kept.keeps(item)]
+
+    assert lines == [1, 2, 10]
+
+
+def test_a_time_of_day_is_read_on_each_activitys_own_day(two_days: AnalysisResult) -> None:
+    """`after:10:00` on the 11th's visit is ten on the 11th, and on the 12th's,
+    ten on the 12th. One day for both would keep the 12th's nine o'clock visit
+    (read on the 11th) or drop the 11th's eleven o'clock one (read on the 12th)."""
+    assert len(two_days.episodes) == 2, "premise: two activities, a day apart"
+    kept = RequestFilter.read("after:10:00", two_days)
+    assert kept is not None
+
+    lines = [item.evidence.line_no for item in two_days.assignments if kept.keeps(item)]
+
+    assert lines == [1, 2, 3]
+
+
+def test_the_activities_a_filter_reaches(two_days: AnalysisResult) -> None:
+    late, early = sorted(two_days.episodes, key=lambda episode: episode.start)
+
+    def reached(text: str) -> frozenset[str]:
+        kept = RequestFilter.read(text, two_days)
+        assert kept is not None
+        return kept.episodes(two_days.assignments)
+
+    assert reached("status:500") == {early.episode_id}
+    assert reached("status:200") == {late.episode_id, early.episode_id}
+    assert reached("status:401") == frozenset()

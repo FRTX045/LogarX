@@ -404,6 +404,34 @@ def test_an_activity_whose_episodes_are_gone_answers_with_nothing(
     stranger = replace(result.trace.nodes[0], episode_ids=("nobody/0",))
 
     assert result.evidence_for(stranger) == ()
+    assert result.requests_for(stranger) == ()
+
+
+def test_a_node_answers_with_every_request_however_small_its_sample(campaign: Case) -> None:
+    """What the evidence filter searches. The sample stops at a ceiling; a match
+    past it is still a match, and a filter that missed it would hide evidence."""
+    result = analyse_ip(
+        campaign.store, ATTACKER, policy=AnalysisPolicy(episode=EpisodePolicy(evidence_sample=5))
+    )
+    sweep = max(result.trace.nodes, key=lambda node: node.request_count)
+
+    held = result.requests_for(sweep)
+
+    assert len(result.evidence_for(sweep)) == 5, "premise: the sample is cut"
+    assert len(held) == sweep.request_count
+    times = [item.labelled.event.timestamp for item in held]
+    assert times == sorted(times), "in the order the client made them"
+    assert {item.episode_id for item in held} <= set(sweep.episode_ids)
+
+
+def test_every_request_belongs_to_exactly_one_behaviour_node(campaign: Case) -> None:
+    result = analyse_ip(campaign.store, ATTACKER)
+
+    held = [item for node in result.behaviour.nodes for item in result.requests_for(node)]
+
+    assert sorted(item.evidence.line_no for item in held) == sorted(
+        item.evidence.line_no for item in result.assignments
+    )
 
 
 @pytest.fixture

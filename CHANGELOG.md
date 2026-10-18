@@ -7,6 +7,18 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **The evidence panel can be filtered.** A box above the table keeps the
+  selected activity's lines that match `status:404`, `status:4xx`,
+  `path:/admin`, `method:POST`, `after:` or `before:` a time, or any text, and
+  the line above the table says how much of the activity that is:
+  `Filtered · 31 of 106 lines match status:304`. It searches every line, not
+  only the 2,000 the table loads. Clicking the box lists what it filters by,
+  and `status:` or `method:` lists the values the activity holds with their
+  counts. When nothing matches, the table says *No results found* and offers
+  to clear the filter. The canvas fades every activity with no matching line.
+  The filter stays across activities and views, and resets for each client.
+  Chosen from screenshots of the real window.
+
 - **Each session on the trace sits in a box of its own.** The header said
   `69 sessions` and nothing on the canvas answered to the number. Now every
   visit is a faint blue box labelled with its number, how many activities it
