@@ -906,6 +906,62 @@ back the drag from step 3.
 
 ---
 
+## 23. The evidence can be filtered, and says when it is
+
+1. Reconstruct `100.73.237.18` from the shopfront excerpt. Select the first
+   **API Call**, the one with 106 requests.
+
+2. Click the filter box above the evidence table.
+
+**Pass:** a list opens under the box, headed `FILTER BY`: status, path, method,
+after and before, each with an example, then `any text`. Every row is whole: the
+list grows leftwards over the canvas rather than cutting a row short or
+scrolling sideways.
+
+3. Type `status:`.
+
+**Pass:** the list becomes `VALUES IN THIS ACTIVITY`: `status:200` 75 lines,
+`status:304` 31 lines, `status:2xx` 75 lines, `status:3xx` 31 lines.
+
+4. Choose `status:304`.
+
+**Pass:** it becomes a chip. The table holds 31 rows, every one a 304. Above it:
+`Filtered · 31 of 106 lines match status:304`, then *Clear filter*. All three
+activities on the canvas stay at full strength, since each holds a 304.
+
+5. Take the chip off with Backspace and type `method:POST`.
+
+**Pass:** the table says *No results found* and `None of the 106 lines in this
+activity match method:POST.`, with a *Clear filter* button. On the canvas only
+the second **API Call**, the last activity, stays bright. The other two fade.
+
+6. Click that bright activity.
+
+**Pass:** the filter is still in the box, and the line reads
+`Filtered · 2 of 5 lines match method:POST`.
+
+7. Switch to **Behaviour**.
+
+**Pass:** the filter stays. **API Call** is bright and **Search** is faded. With
+API Call selected the line reads `2 of 111 lines`.
+
+8. Back on **Trace**, select the first API Call and replace the filter with
+   `after:02:58`.
+
+**Pass:** `Filtered · 54 of 106 lines match after:02:58`. The time is read on the
+activity's own day, 9 March.
+
+9. Press *Clear filter*.
+
+**Pass:** all 106 lines are back, the line above the table goes, and nothing on
+the canvas is faded.
+
+10. Type `status:304` again, then choose another client.
+
+**Pass:** the box is empty for the new client and nothing is faded.
+
+---
+
 ## Recording a run
 
 | # | Check | Result | Notes |
@@ -932,5 +988,6 @@ back the drag from step 3.
 | 20 | A pattern reads a syslog-wrapped log; a year-less time format is refused | | |
 | 21 | The fourteen shipped formats read as a list you can choose from | | |
 | 22 | Sessions are boxed and explained; the boxes follow a drag and can be turned off | | |
+| 23 | The evidence filters, says how much it kept, fades the canvas, and resets per client | | |
 
 Version tested: ______  ·  Date: ______  ·  Machine: ______
