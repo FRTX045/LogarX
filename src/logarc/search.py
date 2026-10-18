@@ -36,12 +36,15 @@ if TYPE_CHECKING:
     from logarc.core.event import NormalizedEvent
 
 __all__ = [
+    "ANY_DAY",
     "Query",
     "Scope",
     "Suggestion",
     "decoded_path",
     "decoded_target",
+    "evidence_part",
     "fold",
+    "is_time",
     "is_whole_address",
     "labels_for_activity",
     "parse",
@@ -49,6 +52,7 @@ __all__ = [
     "tokens",
     "understood",
     "value_counts",
+    "without_time",
 ]
 
 
@@ -74,6 +78,11 @@ _STATUS: Final = re.compile(r"[1-5]\d\d")
 _CLASS: Final = re.compile(r"[1-5]xx", re.IGNORECASE)
 _METHOD: Final = re.compile(r"[A-Za-z]+")
 _ADDRESS: Final = re.compile(r"[0-9A-Fa-f.:]+")
+
+#: A stand-in date for asking whether a query filters anything at all. A time
+#: of day is a filter on every day, so any real date answers that; it is
+#: never the date a time is read on.
+ANY_DAY: Final = date(2000, 1, 1)
 _DAY: Final = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
 _STAMP: Final = re.compile(r"(\d{4})-(\d{2})-(\d{2})T(\d{1,2}):(\d{2})(?::(\d{2}))?")
 _CLOCK: Final = re.compile(r"(\d{1,2}):(\d{2})(?::(\d{2}))?")
@@ -356,6 +365,42 @@ def parse(text: str, scope: Scope, *, day: date | None = None) -> Query:
         ips=tuple(ips),
         activities=tuple(activities),
     )
+
+
+def evidence_part(text: str) -> str:
+    """What of a case search the evidence box can take: its filters on requests.
+
+    Addresses and activities chose the client, and a time chose the range;
+    inside one client they have nothing left to say. A key still waiting for its
+    value goes too.
+    """
+    kept: list[str] = []
+    for token in tokens(text):
+        split = _split(token)
+        if split is not None and split[0] in Scope.CASE.keys:
+            if not split[1]:
+                continue
+            if split[0] in _CLIENT_KEYS and understood(token, Scope.CASE):
+                continue
+        elif _looks_like_address(token):
+            continue
+        kept.append(token)
+    return " ".join(kept)
+
+
+def without_time(text: str) -> str:
+    """`text` without its `after:` and `before:`, which the case box makes the range."""
+    return " ".join(token for token in tokens(text) if not is_time(token))
+
+
+def is_time(token: str) -> bool:
+    """Whether `token` is a whole `after:` or `before:` filter."""
+    split = _split(token)
+    return split is not None and split[0] in ("after", "before") and understood(token, Scope.CASE)
+
+
+#: The case box's filters that choose clients or the range, not requests.
+_CLIENT_KEYS: Final = frozenset({"ip", "activity", "after", "before"})
 
 
 def decoded_path(path: str) -> str:

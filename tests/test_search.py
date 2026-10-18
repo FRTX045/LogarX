@@ -14,10 +14,12 @@ import pytest
 from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
 from logarc.search import (
+    ANY_DAY,
     Scope,
     Suggestion,
     decoded_path,
     decoded_target,
+    evidence_part,
     fold,
     is_whole_address,
     labels_for_activity,
@@ -26,6 +28,7 @@ from logarc.search import (
     tokens,
     understood,
     value_counts,
+    without_time,
 )
 
 NOON = datetime(2026, 3, 11, 12, 0, tzinfo=UTC)
@@ -309,6 +312,37 @@ def test_an_activity_is_also_part_of_a_rule_name() -> None:
 def test_an_activity_nothing_was_called_finds_nothing() -> None:
     assert labels_for_activity(LABELS, "ransomware") == frozenset()
     assert labels_for_activity(LABELS, "") == frozenset()
+
+
+# -- a case search, taken apart -------------------------------------------------------
+
+
+def test_what_a_case_search_hands_the_evidence_box() -> None:
+    """Opened from a case search, a client's evidence is filtered by the same
+    request filters; who sent them and when are the case's to answer."""
+    text = (
+        "status:200 10.0.0.1 ip:10.9 activity:injection path:/admin "
+        '"union select" after:2026-03-09 method: method:GET'
+    )
+
+    assert evidence_part(text) == 'status:200 path:/admin "union select" method:GET'
+
+
+def test_a_case_search_of_only_clients_hands_the_evidence_box_nothing() -> None:
+    assert evidence_part("10.0.0.1 ip:10.9 activity:injection") == ""
+    assert evidence_part("") == ""
+
+
+def test_a_time_in_the_case_box_is_taken_out_to_move_the_range() -> None:
+    assert without_time("after:2026-03-09 status:404 before:14:30 10.0") == "status:404 10.0"
+    assert without_time("status:404") == "status:404"
+    assert without_time("after:soon status:404") == "after:soon status:404", "a word, not a time"
+
+
+def test_any_day_makes_a_time_of_day_a_filter() -> None:
+    """Asked without a day, a time of day is no filter; with any day at all, it is."""
+    assert parse("after:14:05", Scope.CASE).is_empty
+    assert not parse("after:14:05", Scope.CASE, day=ANY_DAY).is_empty
 
 
 # -- what the suggestion list offers --------------------------------------------------

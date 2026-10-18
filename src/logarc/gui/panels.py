@@ -31,7 +31,7 @@ from logarc.gui.client_filter import caption as filter_caption
 from logarc.gui.client_filter import match_caption, matches
 from logarc.gui.filter_box import FilterBox
 from logarc.gui.theme import PAD, TIGHT, caption_font, colour_text, mono_font
-from logarc.search import Scope, parse
+from logarc.search import ANY_DAY, Scope, is_time, parse
 from logarc.style import (
     SIZE_NOTE,
     THEME,
@@ -168,6 +168,11 @@ class ClientTable(QWidget):
     """A page is wanted: the filter text (empty for the whole case) and its offset
     by request count. Answer with `show_page` or `show_failure`."""
 
+    range_typed = pyqtSignal(str)
+    """`after:` or `before:` was finished in the box: the range's to take. Carries
+    those filters. Once the range has moved, the window puts `query_without_times`
+    back with `set_query`, read then rather than now: typing goes on meanwhile."""
+
     client_released = pyqtSignal()
     """The reader pressed the row they were already on.
 
@@ -197,6 +202,10 @@ class ClientTable(QWidget):
         # and how many requests the whole search found. None otherwise.
         self._counted: bool | None = None
         self._requests = 0
+        # Why the search on screen has no answer, and in what colour, until
+        # the text changes or an answer arrives. Kept, not only drawn, so a
+        # redraw of the caption cannot replace it with a count of nothing.
+        self._message: tuple[str, str] | None = None
         self._open: str | None = None
         self._table = _Rows(0, len(_COLUMNS))
         self._table.setHorizontalHeaderLabels(_COLUMNS)
@@ -245,12 +254,11 @@ class ClientTable(QWidget):
             scope=Scope.CASE, placeholder=CASE_HINT, accessible_name="Search the case"
         )
         self._filter.textChanged.connect(lambda _text: self._filter_changed())
+        self._filter.committed.connect(self._committed)
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(self.SEARCH_DELAY_MS)
-        self._search_timer.timeout.connect(
-            lambda: self.page_requested.emit(self._filter.text().strip(), 0)
-        )
+        self._search_timer.timeout.connect(self._ask)
         self._previous = QPushButton("Previous")
         self._next = QPushButton("Next")
         self._previous.clicked.connect(lambda: self._step(-1))
@@ -294,6 +302,7 @@ class ClientTable(QWidget):
         self._total = len(summaries) if total is None else total
         self._busiest = list(summaries)
         self._searching = False
+        self._message = None
         self._counted = None
         self._show_rows(summaries, first=1, query="", matching=None, page_total=self._total)
 
@@ -334,6 +343,12 @@ class ClientTable(QWidget):
                 self._set(row, 5, format_seen(summary.last_seen))
                 found = hits[row] if row < len(hits) else 0
                 self._set(row, _MATCH, f"{found:,}", sort_key=found)
+        # The indicator first: turned back on, sorting sorts by it at once, and
+        # ties keep whatever order that leaves. Left on the reader's last column,
+        # ties came out in that column's order rather than the page's own.
+        required(self._table.horizontalHeader(), "column header").setSortIndicator(
+            self._natural_order(), Qt.SortOrder.DescendingOrder
+        )
         self._table.setSortingEnabled(True)
         self._table.setColumnHidden(_MATCH, not self._counted)
         # Busiest first, the order pages are cut in, so a later page visibly
@@ -359,6 +374,7 @@ class ClientTable(QWidget):
         self._search_timer.stop()
         self._searching = False
         self._counted = None
+        self._message = None
         self._show_rows(
             page.rows,
             first=page.offset + 1,
@@ -381,6 +397,7 @@ class ClientTable(QWidget):
         self._search_timer.stop()
         self._searching = False
         self._counted = counted
+        self._message = None
         self._requests = page.requests
         self._show_rows(
             page.rows,
@@ -396,6 +413,30 @@ class ClientTable(QWidget):
         """What the box holds: its filters, then whatever is typed."""
         return self._filter.text()
 
+    def query_without_times(self) -> str:
+        """The box without the times it has finished: what is searched once they
+        have moved the range. A time still being typed stays."""
+        typed = self._filter.typed().strip()
+        kept = [chip for chip in self._filter.chips() if not is_time(chip)]
+        return " ".join(kept + ([typed] if typed else []))
+
+    def set_query(self, text: str) -> None:
+        """Put `text` in the box and search for it at once: nothing was typed, so
+        there is no typing to wait out."""
+        self._filter.setText(text)
+        self._ask_now()
+
+    def search_again(self) -> None:
+        """Ask for what the box holds once more, at once: the answer it had has changed."""
+        self._filter_changed()
+        self._ask_now()
+
+    def _ask_now(self) -> None:
+        """Ask for a search waiting on the typing to rest without waiting for it."""
+        if self._search_timer.isActive():
+            self._search_timer.stop()
+            self._ask()
+
     def set_suggestion_values(
         self, values: Mapping[str, Sequence[tuple[str, str]]], title: str
     ) -> None:
@@ -408,8 +449,22 @@ class ClientTable(QWidget):
         if wanted != self._filter.text().strip():
             return
         self._searching = False
-        self._caption.setText(f"Could not search the whole case for {wanted}: {message}")
-        colour_text(self._caption, THEME.alert)
+        self._message = (f"Could not search the whole case for {wanted}: {message}", THEME.alert)
+        self._refresh_caption()
+
+    def show_pending(self, query: str, message: str) -> None:
+        """Say why a search cannot be answered yet, if it is still the one on screen.
+
+        No rows are shown meanwhile: none of them is known to be the answer.
+        """
+        wanted = query.strip()
+        if wanted != self._filter.text().strip():
+            return
+        self._search_timer.stop()
+        self._searching = False
+        self._message = (message, THEME.muted)
+        self._hide_unmatched()
+        self._refresh_caption()
 
     def set_open_client(self, client_ip: str | None) -> None:
         """Say which client is being read, so the list can mark it or say it is absent."""
@@ -470,7 +525,10 @@ class ClientTable(QWidget):
         """
         self.filter_edited.emit()
         self._search_timer.stop()
-        query = parse(self._filter.text(), Scope.CASE)
+        self._message = None
+        # Any day will do: a time of day is a filter, whichever day the
+        # window reads it on.
+        query = parse(self._filter.text(), Scope.CASE, day=ANY_DAY)
         if query.is_empty:
             # Nothing to search for yet: an empty box, or `status:` waiting for
             # its value. The busiest page, as the case opened with it.
@@ -504,7 +562,7 @@ class ClientTable(QWidget):
         them will do. Rows a search of requests chose stay; while one is still
         being answered nothing is shown, so no row can be read as its answer.
         """
-        query = parse(self._filter.text(), Scope.CASE)
+        query = parse(self._filter.text(), Scope.CASE, day=ANY_DAY)
         answered = self._counted is not None and self._query == self._filter.text().strip()
         waiting = not (query.is_empty or query.is_address_only or answered)
         for row in range(self._table.rowCount()):
@@ -516,6 +574,24 @@ class ClientTable(QWidget):
             else:
                 hidden = not any(matches(cell.text(), address) for address in query.ips)
             self._table.setRowHidden(row, hidden)
+
+    def _ask(self) -> None:
+        """The box has rested: hand over its finished times, or ask for its search.
+
+        Only a time made a chip moves the range. One still being typed may be the
+        start of a longer one, `after:2024-05-01` on its way to a time on that
+        day, and is searched meanwhile like any other filter.
+        """
+        times = [chip for chip in self._filter.chips() if is_time(chip)]
+        if times:
+            self.range_typed.emit(" ".join(times))
+        else:
+            self.page_requested.emit(self._filter.text().strip(), 0)
+
+    def _committed(self) -> None:
+        """A filter was finished without the text changing; a time is acted on now."""
+        if any(is_time(chip) for chip in self._filter.chips()):
+            self._filter_changed()
 
     def _step(self, direction: int) -> None:
         """Ask for the page before or after this one, of what this page was asked for."""
@@ -542,6 +618,11 @@ class ClientTable(QWidget):
         return _MATCH if self._counted else _COLUMNS.index("Reqs")
 
     def _refresh_caption(self) -> None:
+        if self._message is not None:
+            text, colour = self._message
+            self._caption.setText(text)
+            colour_text(self._caption, colour)
+            return
         colour_text(self._caption, THEME.muted)
         shown = sum(not self._table.isRowHidden(row) for row in range(self._table.rowCount()))
         header = required(self._table.horizontalHeader(), "column header")

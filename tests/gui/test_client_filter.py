@@ -1,6 +1,7 @@
 """Tests for the client filter's judgements, which need no display."""
 
-from logarc.gui.client_filter import caption, matches
+from logarc.gui.client_filter import awaiting_scan, caption, matches
+from logarc.triage.scan import TriageProgress
 
 
 def test_an_address_matches_itself() -> None:
@@ -154,4 +155,23 @@ def test_an_open_client_outside_the_list_is_named() -> None:
     text = caption(shown=500, total=931, query="", missing_open="100.99.203.115")
     assert text.endswith(
         " 100.99.203.115, open now, is not in this list; filter by its address to show it."
+    )
+
+
+def test_an_activity_search_waits_for_the_scan_and_says_how_far_it_has_got() -> None:
+    """Asked again by itself when the scan finishes, so it never says "ask again"."""
+    assert awaiting_scan(TriageProgress(40, 1_200, ()), scanning=True) == (
+        "Activities come from the Where to start scan, which is still checking IPs:"
+        " 40 of 1,200 so far. The list fills in when it finishes."
+    )
+    assert awaiting_scan(None, scanning=True) == (
+        "Activities come from the Where to start scan, which is still checking IPs."
+        " The list fills in when it finishes."
+    )
+
+
+def test_an_activity_search_with_no_scan_running_says_where_to_start_one() -> None:
+    assert awaiting_scan(None, scanning=False) == (
+        "Activities come from the Where to start scan, which has not finished."
+        " Run it from Where to start."
     )

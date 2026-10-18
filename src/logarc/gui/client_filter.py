@@ -15,8 +15,13 @@ captioned "119,880 clients": the reader cannot select 119,380 of them.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from logarc.search import is_whole_address
 from logarc.style import plural
+
+if TYPE_CHECKING:
+    from logarc.triage.scan import TriageProgress
 
 __all__ = ["caption", "is_whole_address", "match_caption", "matches"]
 
@@ -125,6 +130,21 @@ def match_caption(
     if missing_open:
         text += f" {missing_open}, open now, is not in this list; filter by its address to show it."
     return text
+
+
+def awaiting_scan(progress: TriageProgress | None, *, scanning: bool) -> str:
+    """Why a search naming an activity has no answer yet.
+
+    The list asks again by itself when the scan finishes, so this never tells the
+    reader to; only a scan that is not running needs them to do anything.
+    """
+    opening = "Activities come from the Where to start scan, which"
+    if not scanning:
+        return f"{opening} has not finished. Run it from Where to start."
+    so_far = (
+        f": {progress.processed:,} of {progress.total:,} so far" if progress is not None else ""
+    )
+    return f"{opening} is still checking IPs{so_far}. The list fills in when it finishes."
 
 
 def _counts(

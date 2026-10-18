@@ -362,3 +362,157 @@ def test_two_addresses_list_either(qt_app: QApplication) -> None:
     table._filter.setText("10.0.0.1 ip:10.9")
 
     assert on_screen(table) == ["10.0.0.1", "10.9.9.9"]
+
+
+# -- a time is the range's -----------------------------------------------------------
+
+
+def test_a_finished_time_asks_for_the_range_and_hands_back_the_rest(
+    partial: ClientTable,
+) -> None:
+    """`after:` and `before:` move the range, so the window is handed them apart."""
+    asked: list[tuple[str, int]] = []
+    moved: list[str] = []
+    partial.page_requested.connect(lambda query, offset: asked.append((query, offset)))
+    partial.range_typed.connect(moved.append)
+
+    partial._filter.setText("after:12:00 status:404 before:2024-05-01T13:00 10.0")
+    settle_search()
+
+    assert moved == ["after:12:00 before:2024-05-01T13:00"]
+    assert partial.query_without_times() == "status:404 10.0"
+    assert asked == []
+
+
+def test_a_time_still_being_typed_is_searched_and_moves_the_range_once_finished(
+    partial: ClientTable,
+) -> None:
+    """`after:2024-05-01` is whole, and may yet become `after:2024-05-01T12:30`; a
+    pause while typing must not move the range to midnight."""
+    asked: list[tuple[str, int]] = []
+    moved: list[str] = []
+    partial.page_requested.connect(lambda query, offset: asked.append((query, offset)))
+    partial.range_typed.connect(moved.append)
+
+    QTest.keyClicks(partial._filter.edit, "after:12:00")
+    assert on_screen(partial) == [], "waiting for the case, as for any filter"
+    settle_search()
+
+    assert asked == [("after:12:00", 0)], "a time of day alone is still a filter"
+    assert moved == []
+
+    QTest.keyClicks(partial._filter.edit, " ")
+    settle_search()
+
+    assert moved == ["after:12:00"]
+
+
+def test_the_box_can_be_given_a_search(partial: ClientTable) -> None:
+    asked: list[tuple[str, int]] = []
+    partial.page_requested.connect(lambda query, offset: asked.append((query, offset)))
+
+    partial.set_query("status:404 10.0")
+
+    assert partial._filter.chips() == ("status:404",)
+    assert asked == [("status:404 10.0", 0)], "at once: it was not typed"
+
+
+# -- what the caption keeps saying ---------------------------------------------------
+
+
+def test_a_search_waiting_for_the_scan_says_so_and_keeps_saying_it(
+    partial: ClientTable,
+) -> None:
+    partial._filter.setText("activity:injection")
+    partial.show_pending("activity:injection", "Waiting for the scan.")
+
+    assert partial._caption.text() == "Waiting for the scan."
+    assert on_screen(partial) == [], "no rows that might be read as the answer"
+
+    partial.set_open_client("10.0.0.1")
+    assert partial._caption.text() == "Waiting for the scan.", "not replaced by a count"
+
+
+def test_a_failed_search_keeps_saying_so(partial: ClientTable) -> None:
+    partial._filter.setText("10.0.9")
+    partial.show_failure("10.0.9", "the case could not be read")
+
+    partial.set_open_client("10.0.0.1")
+
+    assert partial._caption.text() == (
+        "Could not search the whole case for 10.0.9: the case could not be read"
+    )
+
+
+def test_a_message_for_other_text_is_dropped(partial: ClientTable) -> None:
+    partial._filter.setText("activity:injection")
+    partial.show_pending("activity:sweep", "Waiting for the scan.")
+
+    assert partial._caption.text() != "Waiting for the scan."
+
+
+def test_new_text_replaces_the_message(partial: ClientTable) -> None:
+    partial._filter.setText("activity:injection")
+    partial.show_pending("activity:injection", "Waiting for the scan.")
+
+    partial._filter.setText("10.0.0")
+
+    assert partial._caption.text() != "Waiting for the scan."
+
+
+def test_ties_keep_the_order_the_page_was_cut_in(partial: ClientTable) -> None:
+    """However the reader last sorted, ties stay as the case ordered them, so the
+    next page visibly continues this one."""
+    partial._table.sortItems(column_of(partial._table, "Client"), Qt.SortOrder.DescendingOrder)
+    partial._filter.setText("status:200")
+
+    partial.show_matches(matched(("10.0.0.1", 2), ("10.0.0.2", 2), ("10.0.0.3", 2)), "status:200")
+
+    assert on_screen(partial) == ["10.0.0.1", "10.0.0.2", "10.0.0.3"]
+
+
+def test_searching_again_asks_at_once(partial: ClientTable) -> None:
+    """Nothing was typed, so there is no typing to wait out."""
+    partial._filter.setText("activity:injection")
+    settle_search()
+    asked: list[tuple[str, int]] = []
+    partial.page_requested.connect(lambda query, offset: asked.append((query, offset)))
+
+    partial.search_again()
+
+    assert asked == [("activity:injection", 0)]
+
+
+def test_finishing_a_filter_that_is_not_a_time_asks_nothing_more(partial: ClientTable) -> None:
+    """The search for `status:404` already ran while it was typed."""
+    QTest.keyClicks(partial._filter.edit, "status:404")
+    settle_search()
+    asked: list[tuple[str, int]] = []
+    partial.page_requested.connect(lambda query, offset: asked.append((query, offset)))
+
+    QTest.keyClicks(partial._filter.edit, " ")
+    settle_search()
+
+    assert partial._filter.chips() == ("status:404",)
+    assert asked == []
+
+
+def test_an_answer_after_a_failure_replaces_it(partial: ClientTable) -> None:
+    """Next failed, then Previous answered: the caption is the answer's."""
+    partial._filter.setText("status:200")
+    partial.show_failure("status:200", "the case could not be read")
+
+    partial.show_matches(matched(("10.0.5.5", 7)), "status:200")
+
+    assert partial._caption.text() == (
+        "1 of 900 clients sent a request matching status:200 \N{MIDDLE DOT} 7 requests"
+    )
+
+
+def test_an_address_answer_after_a_failure_replaces_it(partial: ClientTable) -> None:
+    partial._filter.setText("10.0.9.9")
+    partial.show_failure("10.0.9.9", "the case could not be read")
+
+    partial.show_page(IpSummaryPage((summary("10.0.9.9", 2, position=701),), 1, 0), "10.0.9.9")
+
+    assert partial._caption.text() == "1 of 900 clients matches 10.0.9.9"

@@ -352,6 +352,11 @@ class FilterBox(QFrame):
     textChanged = pyqtSignal(str)  # noqa: N815 - named as QLineEdit's, which it replaces
     """The whole query, once per change."""
 
+    committed = pyqtSignal()
+    """The chips changed, even where the text reads the same: `status:404`
+    typed and `status:404` made a chip are one text, but only the chip is
+    finished."""
+
     def __init__(self, *, scope: Scope, placeholder: str, accessible_name: str) -> None:
         super().__init__()
         self._scope = scope
@@ -360,6 +365,7 @@ class FilterBox(QFrame):
         self._values: Mapping[str, Sequence[tuple[str, str]]] = {}
         self._values_title = "VALUES"
         self._last = ""
+        self._last_chips: tuple[str, ...] = ()
         self._list: SuggestionList | None = None
         self.setObjectName("filterBox")
         self.setProperty("focused", False)
@@ -463,6 +469,10 @@ class FilterBox(QFrame):
         if now != self._last:
             self._last = now
             self.textChanged.emit(now)
+        chips = self.chips()
+        if chips != self._last_chips:
+            self._last_chips = chips
+            self.committed.emit()
 
     # -- typing ------------------------------------------------------------------
 

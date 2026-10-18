@@ -20,11 +20,10 @@ beneath it, and a right-to-left override would reverse how a hostile path reads.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
 from http import HTTPStatus
 from typing import TYPE_CHECKING, Final
 
-from logarc.search import Scope, parse
+from logarc.search import ANY_DAY, Scope, parse
 from logarc.style import (
     EVIDENCE_INK,
     EVIDENCE_MUTED,
@@ -37,6 +36,7 @@ from logarc.style import (
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+    from datetime import date
 
     from logarc.analysis import AnalysisResult, RequestAssignment
     from logarc.evidence import EvidenceLine
@@ -237,10 +237,6 @@ class Filtered:
     """Every line of the activity, not the ones the panel loaded: the filter reads all."""
 
 
-#: A stand-in date for deciding whether a filter narrows anything at all.
-_ANY_DAY: Final = date(2000, 1, 1)
-
-
 class RequestFilter:
     """A filter on the evidence, read against one client's reconstruction.
 
@@ -265,7 +261,7 @@ class RequestFilter:
         # Any day will do to ask whether there is a filter at all: a time of day
         # is one on every day. So nothing typed costs nothing, which matters
         # because this is asked on every selection.
-        if parse(text, Scope.EVIDENCE, day=_ANY_DAY).is_empty:
+        if parse(text, Scope.EVIDENCE, day=ANY_DAY).is_empty:
             return None
         return cls(text, result)
 
