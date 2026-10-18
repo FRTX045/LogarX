@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
@@ -502,10 +503,21 @@ class ParquetEventStore:
         source, source_bounds = self._summary_source(window)
         clause, bounds = _window_sql(window)
         matches, values = _request_sql(query)
-        who, whose = _client_sql(query, clients)
-        rows = (
-            self._connect()
-            .execute(
+        who, whose = _client_sql(query)
+        connection = self._connect()
+        # The clients `activity:` chose, joined while the events are read. As a
+        # table rather than a bound list: DuckDB took 2.2s to take 4,916
+        # addresses as one parameter on the large tier, and 0.002s as a table.
+        chosen = ""
+        table: str | None = None
+        if clients is not None:
+            table = f"chosen_{uuid.uuid4().hex}"
+            connection.register(
+                table, pa.table({"client_ip": pa.array(sorted(clients), pa.string())})
+            )
+            chosen = f" AND client_ip IN (SELECT client_ip FROM {table})"
+        try:
+            rows = connection.execute(
                 f"""
             WITH ranked AS (
                 SELECT client_ip, request_count, first_seen, last_seen, distinct_paths,
@@ -515,7 +527,7 @@ class ParquetEventStore:
             ), hits AS (
                 SELECT client_ip, count(*) AS hits
                 FROM read_parquet({self._sql_path(self._events_glob)}, hive_partitioning = true)
-                WHERE TRUE{clause} AND {matches}
+                WHERE TRUE{clause} AND {matches}{chosen}
                 GROUP BY client_ip
             ), matching AS (
                 SELECT ranked.*, hits.hits
@@ -530,9 +542,10 @@ class ParquetEventStore:
             ORDER BY page.hits DESC, page.client_ip
             """,
                 [*source_bounds, *bounds, *values, *whose, limit, offset],
-            )
-            .fetchall()
-        )
+            ).fetchall()
+        finally:
+            if table is not None:
+                connection.unregister(table)
         found = [row for row in rows if row[0] is not None]
         return ClientMatchPage(
             tuple(_to_summary(row, position=int(row[7])) for row in found),
@@ -857,8 +870,8 @@ def _request_sql(query: Query) -> tuple[str, list[object]]:
     return " AND ".join(clauses), values
 
 
-def _client_sql(query: Query, clients: frozenset[str] | None) -> tuple[str, list[object]]:
-    """Which clients a search may name: its addresses, and `clients` when given."""
+def _client_sql(query: Query) -> tuple[str, list[object]]:
+    """Which clients a search's addresses name."""
     clauses: list[str] = ["TRUE"]
     values: list[object] = []
     if query.ips:
@@ -871,9 +884,6 @@ def _client_sql(query: Query, clients: frozenset[str] | None) -> tuple[str, list
             + ")"
         )
         values.extend(query.ips)
-    if clients is not None:
-        clauses.append("list_contains(?, client_ip)")
-        values.append(sorted(clients))
     return " AND ".join(clauses), values
 
 

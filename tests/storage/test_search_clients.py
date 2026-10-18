@@ -252,6 +252,25 @@ def test_a_search_can_be_held_to_some_clients(awkward: ParquetEventStore) -> Non
     assert store_hits(awkward, "status:200", clients=frozenset()) == {}
 
 
+def test_the_clients_handed_over_are_not_left_behind(awkward: ParquetEventStore) -> None:
+    """Held as a table for the search, and gone once it has answered."""
+    for _ in range(2):
+        store_hits(awkward, "status:200", clients=frozenset({"10.0.0.0", "10.0.0.7"}))
+
+    left = (
+        awkward._connect()
+        .execute("SELECT count(*) FROM duckdb_views() WHERE view_name LIKE 'chosen_%'")
+        .fetchone()
+    )
+    assert left == (0,)
+
+
+def test_the_scans_clients_and_an_address_both_narrow(awkward: ParquetEventStore) -> None:
+    held = store_hits(awkward, "status:200 10.0.0.7", clients=frozenset({"10.0.0.0", "10.0.0.7"}))
+
+    assert held == {"10.0.0.7": 1}
+
+
 def test_an_address_narrows_the_clients_whole_or_in_part(awkward: ParquetEventStore) -> None:
     """A whole address is that client and no other; part of one, any containing it."""
     assert set(store_hits(awkward, "10.0.0.1 status:200")) == {"10.0.0.1"}
