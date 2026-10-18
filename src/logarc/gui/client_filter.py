@@ -88,7 +88,7 @@ def caption(
         reordered=reordered,
     )
     if missing_open:
-        text += f" Current IP: {missing_open} (outside this list)."
+        text += _outside(missing_open)
     return text
 
 
@@ -128,8 +128,13 @@ def match_caption(
         else:
             text = f"{matching:,} of {total:,} clients sent a request matching {wanted}{found}"
     if missing_open:
-        text += f" {missing_open}, open now, is not in this list; filter by its address to show it."
+        text += _outside(missing_open)
     return text
+
+
+def _outside(client_ip: str) -> str:
+    """Said after either caption when the client being read is not in the list."""
+    return f" Current IP: {client_ip} (outside this list)."
 
 
 def awaiting_scan(progress: TriageProgress | None, *, scanning: bool) -> str:

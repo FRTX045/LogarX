@@ -173,3 +173,15 @@ def test_an_activity_search_with_no_scan_running_says_where_to_start_one() -> No
         "Activities come from the Where to start scan, which has not finished."
         " Run it from Where to start."
     )
+
+
+def test_an_open_client_outside_a_search_is_named_as_outside_any_list() -> None:
+    """In the words the list uses without a search, so the two read alike."""
+    from logarc.gui.client_filter import match_caption
+
+    text = match_caption(
+        shown=2, total=52, query="status:404", first=1, matching=2, requests=9,
+        missing_open="100.99.203.115",
+    )  # fmt: skip
+
+    assert text.endswith(" Current IP: 100.99.203.115 (outside this list).")
