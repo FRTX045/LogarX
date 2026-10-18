@@ -36,7 +36,17 @@ from logarc.style import (
 if TYPE_CHECKING:
     from logarc.evidence import EvidenceLine
 
-__all__ = ["ALERT_COLOUR", "COLUMNS", "Cell", "Detail", "cells_for", "detail_for"]
+__all__ = [
+    "ALERT_COLOUR",
+    "COLUMNS",
+    "Cell",
+    "Detail",
+    "Filtered",
+    "cells_for",
+    "detail_for",
+    "filter_strip",
+    "no_results",
+]
 
 #: Something is wrong with this piece of evidence, and the reader has to see
 #: that rather than an empty row. From the theme, because a red chosen against
@@ -208,3 +218,37 @@ def _request_cell(line: EvidenceLine, *, decode: bool) -> Cell:
     method = display_safe(line.event.method or "")
     written = f"{method} {shown}".strip()
     return Cell(text=written, tooltip=written, bold=True)
+
+
+@dataclass(frozen=True, slots=True)
+class Filtered:
+    """What a filter did to one activity: what was asked, found, and searched."""
+
+    query: str
+    matched: int
+    searched: int
+    """Every line of the activity, not the ones the panel loaded: the filter reads all."""
+
+
+def filter_strip(filtered: Filtered, *, shown: int) -> str:
+    """The line above a filtered table, which stops it being read as the whole.
+
+    A reader who forgets a filter is on, and reports the filtered count as the
+    activity, is the mistake this sentence exists to prevent; so it names both.
+    """
+    noun = "line" if filtered.searched == 1 else "lines"
+    verb = "matches" if filtered.matched == 1 else "match"
+    text = (
+        f"Filtered \u00b7 {filtered.matched:,} of {filtered.searched:,} {noun} "
+        f"{verb} {filtered.query}"
+    )
+    if filtered.matched > shown:
+        text += f" \u00b7 showing the first {shown:,}"
+    return text
+
+
+def no_results(filtered: Filtered) -> str:
+    """What an empty filtered table says, so it does not read as a panel that failed."""
+    if filtered.searched == 1:
+        return f"The one line in this activity does not match {filtered.query}."
+    return f"None of the {filtered.searched:,} lines in this activity match {filtered.query}."

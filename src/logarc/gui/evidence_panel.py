@@ -15,12 +15,13 @@ from __future__ import annotations
 import html
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QEvent, QObject, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QPalette
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QHeaderView,
     QLabel,
+    QPushButton,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -29,9 +30,20 @@ from PyQt6.QtWidgets import (
 
 from logarc.gui._qt import SORT_KEY, SortableItem, required
 from logarc.gui.evidence_details import EvidenceDetails
-from logarc.gui.evidence_view import COLUMNS, Cell, Detail, cells_for, detail_for
+from logarc.gui.evidence_view import (
+    COLUMNS,
+    Cell,
+    Detail,
+    Filtered,
+    cells_for,
+    detail_for,
+    filter_strip,
+    no_results,
+)
+from logarc.gui.filter_box import FilterBox
 from logarc.gui.splitter import PanelSplitter
 from logarc.gui.theme import PAD, TIGHT, caption_font, mono_font
+from logarc.search import Scope
 from logarc.style import (
     EVIDENCE_INK,
     EVIDENCE_MUTED,
@@ -45,7 +57,7 @@ from logarc.style import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
     from logarc.core.graph import GraphNode
     from logarc.evidence import EvidenceLine
@@ -59,13 +71,47 @@ _STATUS = COLUMNS.index("Status")
 _SIZE = COLUMNS.index("Size")
 
 
+#: What the box says before anything is typed: what it filters, and two examples.
+EVIDENCE_HINT = "Filter these lines\u2026   status:404   path:/admin   or any text"
+
+
 class EvidencePanel(QWidget):
     """What the selected activity is made of, one row per request."""
+
+    filter_changed = pyqtSignal(str)
+    """The filter text, once the reader stops typing; at once when it is cleared."""
+
+    #: How long typing must rest before the filter is applied.
+    FILTER_DELAY_MS = 150
 
     def __init__(self) -> None:
         super().__init__()
         self._decode = True
-        self._shown: tuple[GraphNode, Sequence[EvidenceLine]] | None = None
+        self._shown: tuple[GraphNode, Sequence[EvidenceLine], Filtered | None] | None = None
+
+        # Above the table, the filter: every line of the activity it reads, not
+        # only the ones loaded. What matches is the window's to work out; this
+        # only takes the words in and says what came of them.
+        self.filter_box = FilterBox(
+            scope=Scope.EVIDENCE, placeholder=EVIDENCE_HINT, accessible_name="Filter these lines"
+        )
+        self.filter_box.textChanged.connect(lambda _: self._rest.start())
+        self._rest = QTimer(self)
+        self._rest.setSingleShot(True)
+        self._rest.setInterval(self.FILTER_DELAY_MS)
+        self._rest.timeout.connect(lambda: self.filter_changed.emit(self.filter_box.text()))
+        # In place of the line count while a filter is on. A reader who forgot a
+        # filter was on and reported its count as the activity's is the mistake
+        # this strip is here to stop.
+        self.strip = QLabel()
+        self.strip.setWordWrap(True)
+        self.strip.setTextFormat(Qt.TextFormat.RichText)
+        self.strip.setStyleSheet(
+            f"background:{THEME.tint}; color:{THEME.ink}; border-left:3px solid {THEME.accent};"
+            " padding:4px 8px;"
+        )
+        self.strip.linkActivated.connect(lambda _: self._clear_filter())
+        self.strip.hide()
 
         # Empty, not inviting. At startup there is no case, no client and so no
         # activity to select; the canvas is asking for a case and this panel
@@ -77,6 +123,7 @@ class EvidencePanel(QWidget):
 
         self._table = _build_table(font)
         self._table.itemSelectionChanged.connect(self._selection_changed)
+        self.no_results = self._build_no_results()
         self._detail = EvidenceDetails(font)
 
         # Split, so the reader decides how much of each they want: a wide
@@ -96,6 +143,8 @@ class EvidencePanel(QWidget):
         layout.setContentsMargins(PAD, TIGHT, PAD, TIGHT)
         layout.setSpacing(PAD)
         layout.addWidget(self._heading)
+        layout.addWidget(self.filter_box)
+        layout.addWidget(self.strip)
         layout.addWidget(split)
 
     # -- what is on show -----------------------------------------------------
@@ -121,16 +170,28 @@ class EvidencePanel(QWidget):
         self._heading.setText("Select an activity to see the lines behind it." if prompt else "")
         self._table.setRowCount(0)
         self._detail.clear()
+        self.strip.hide()
+        self.no_results.hide()
 
     def set_decode(self, decode: bool) -> None:
         """Show targets decoded, or exactly as the log holds them."""
         if decode != self._decode:
             self._decode = decode
             if self._shown is not None:
-                self.show_evidence(*self._shown)
+                node, lines, filtered = self._shown
+                self.show_evidence(node, lines, filtered=filtered)
 
-    def show_evidence(self, node: GraphNode, lines: Sequence[EvidenceLine]) -> None:
+    def show_evidence(
+        self,
+        node: GraphNode,
+        lines: Sequence[EvidenceLine],
+        *,
+        filtered: Filtered | None = None,
+    ) -> None:
         """Describe one activity on the canvas, and list what it is made of.
+
+        `filtered` says the lines are what a filter kept, and how many of the
+        activity's it searched. The heading still describes the whole activity.
 
         The node, not an episode of it. The rows below have always come from
         `node.evidence`, while this heading was built from the first episode the
@@ -140,7 +201,7 @@ class EvidencePanel(QWidget):
         that understates the evidence beneath it is worse than no summary, and
         this panel is what gets read into a case file.
         """
-        self._shown = (node, lines)
+        self._shown = (node, lines, filtered)
         colour = severity_colour(node.severity)
         # A behaviour node is several visits to one activity; a trace node is
         # always one, and saying "across 1 activities" on every node of the view
@@ -190,9 +251,14 @@ class EvidencePanel(QWidget):
             f"{format_requests(node.request_count)}{visits} · "
             f"{node.start:%Y-%m-%d %H:%M:%S} → {node.end:%H:%M:%S}</div>"
             f'<div style="font-size:{max(base - 1.0, 7.5):.1f}pt">{" ".join(chips)}</div>'
-            f'<div style="font-size:{max(base - 1.0, 7.5):.1f}pt;color:{THEME.faint}">'
-            f"Showing {shown} {noun}</div>"
+            + (
+                f'<div style="font-size:{max(base - 1.0, 7.5):.1f}pt;color:{THEME.faint}">'
+                f"Showing {shown} {noun}</div>"
+                if filtered is None
+                else ""
+            )
         )
+        self._say_filtered(filtered, shown=len(lines))
 
         # Sorting off while filling. With it on, each row is re-sorted against
         # the rows already placed and the remaining values land in other rows.
@@ -245,6 +311,76 @@ class EvidencePanel(QWidget):
         else:
             self._detail.clear()
 
+    # -- the filter ------------------------------------------------------------
+
+    def filter_text(self) -> str:
+        return self.filter_box.text()
+
+    def set_filter_text(self, text: str) -> None:
+        """Put `text` in the box without reporting it: whoever set it draws next."""
+        self.filter_box.setText(text)
+        self._rest.stop()
+
+    def set_suggestion_values(self, values: Mapping[str, Sequence[tuple[str, str]]]) -> None:
+        """The values the activity on show holds, for the box's list."""
+        self.filter_box.set_values(values, "VALUES IN THIS ACTIVITY")
+
+    def _clear_filter(self) -> None:
+        """Clear, as a decision rather than as typing: heard at once."""
+        self.set_filter_text("")
+        self.filter_changed.emit("")
+
+    def _say_filtered(self, filtered: Filtered | None, *, shown: int) -> None:
+        if filtered is None:
+            self.strip.hide()
+            self.no_results.hide()
+            return
+        empty = filtered.matched == 0
+        clear = (
+            "" if empty else f' &nbsp;<a href="clear" style="color:{THEME.accent}">Clear filter</a>'
+        )
+        self.strip.setText(html.escape(filter_strip(filtered, shown=shown)) + clear)
+        self.strip.show()
+        self._no_results_detail.setText(no_results(filtered))
+        self.no_results.setGeometry(required(self._table.viewport(), "viewport").rect())
+        self.no_results.setVisible(empty)
+
+    def _build_no_results(self) -> QWidget:
+        """What the table says when a filter leaves nothing in it.
+
+        An empty table under its headings reads as a panel that failed to fill.
+        This says what was searched for and offers the way back.
+        """
+        port = required(self._table.viewport(), "viewport")
+        holder = QWidget(port)
+        title = QLabel("No results found")
+        title.setTextFormat(Qt.TextFormat.PlainText)
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setStyleSheet(f"color:{EVIDENCE_INK}; font-size:13pt; font-weight:600;")
+        self._no_results_detail = QLabel()
+        self._no_results_detail.setTextFormat(Qt.TextFormat.PlainText)
+        self._no_results_detail.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._no_results_detail.setWordWrap(True)
+        self._no_results_detail.setStyleSheet(f"color:{EVIDENCE_MUTED};")
+        button = QPushButton("Clear filter")
+        button.clicked.connect(self._clear_filter)
+        layout = QVBoxLayout(holder)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.setSpacing(PAD)
+        layout.addWidget(title)
+        layout.addWidget(self._no_results_detail)
+        layout.addWidget(button, 0, Qt.AlignmentFlag.AlignCenter)
+        holder.hide()
+        port.installEventFilter(self)
+        return holder
+
+    def eventFilter(self, watched: QObject | None, event: QEvent | None) -> bool:  # noqa: N802
+        """Keep the message the size of the table it stands in for."""
+        port = self._table.viewport()
+        if watched is port and event is not None and event.type() == QEvent.Type.Resize:
+            self.no_results.setGeometry(required(port, "viewport").rect())
+        return False
+
     def select_row(self, row: int) -> None:
         """Select a table row and show its evidence in full."""
         self._table.selectRow(row)
@@ -264,7 +400,7 @@ class EvidencePanel(QWidget):
         # described a different request from the highlighted one would be worse
         # than showing nothing at all.
         index = marker.data(_INDEX)
-        _episode, lines = self._shown
+        _episode, lines, _filtered = self._shown
         # The index came from this panel, over the lines it is still holding, so
         # it cannot be out of step with them while the two are in step.
         if not isinstance(index, int) or not 0 <= index < len(lines):  # pragma: no cover - guarded

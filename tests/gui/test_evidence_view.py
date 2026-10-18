@@ -15,7 +15,7 @@ import pytest
 from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
 from logarc.evidence import EvidenceLine
-from logarc.gui.evidence_view import COLUMNS, Cell, cells_for
+from logarc.gui.evidence_view import COLUMNS, Cell, Filtered, cells_for, filter_strip, no_results
 from logarc.style import EVIDENCE_INK, EVIDENCE_MUTED
 
 WHEN = datetime(2026, 8, 3, 22, 35, 18, tzinfo=UTC)
@@ -269,3 +269,34 @@ def test_an_integrity_warning_reaches_the_detail() -> None:
     )
 
     assert "changed size" in (detail_for(evidence, decode=True).note or "")
+
+
+# -- a filtered view says so ------------------------------------------------------
+
+
+def test_a_filtered_view_says_how_much_of_the_activity_it_shows() -> None:
+    assert filter_strip(Filtered("status:200", 9, 3574), shown=9) == (
+        "Filtered \N{MIDDLE DOT} 9 of 3,574 lines match status:200"
+    )
+
+
+def test_one_match_is_one_line_that_matches() -> None:
+    assert filter_strip(Filtered("status:500", 1, 3574), shown=1) == (
+        "Filtered \N{MIDDLE DOT} 1 of 3,574 lines matches status:500"
+    )
+
+
+def test_more_matches_than_the_panel_loads_says_which_are_shown() -> None:
+    assert filter_strip(Filtered("status:404", 3555, 3574), shown=2000) == (
+        "Filtered \N{MIDDLE DOT} 3,555 of 3,574 lines match status:404"
+        " \N{MIDDLE DOT} showing the first 2,000"
+    )
+
+
+def test_nothing_found_says_what_was_searched() -> None:
+    assert no_results(Filtered("status:401", 0, 3574)) == (
+        "None of the 3,574 lines in this activity match status:401."
+    )
+    assert no_results(Filtered("status:401", 0, 1)) == (
+        "The one line in this activity does not match status:401."
+    )
