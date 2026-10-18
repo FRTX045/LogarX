@@ -20,9 +20,11 @@ beneath it, and a right-to-left override would reverse how a hostile path reads.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from http import HTTPStatus
 from typing import TYPE_CHECKING, Final
 
+from logarc.search import Scope, parse
 from logarc.style import (
     EVIDENCE_INK,
     EVIDENCE_MUTED,
@@ -34,7 +36,11 @@ from logarc.style import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from logarc.analysis import AnalysisResult, RequestAssignment
     from logarc.evidence import EvidenceLine
+    from logarc.search import Query
 
 __all__ = [
     "ALERT_COLOUR",
@@ -42,6 +48,7 @@ __all__ = [
     "Cell",
     "Detail",
     "Filtered",
+    "RequestFilter",
     "cells_for",
     "detail_for",
     "filter_strip",
@@ -228,6 +235,56 @@ class Filtered:
     matched: int
     searched: int
     """Every line of the activity, not the ones the panel loaded: the filter reads all."""
+
+
+#: A stand-in date for deciding whether a filter narrows anything at all.
+_ANY_DAY: Final = date(2000, 1, 1)
+
+
+class RequestFilter:
+    """A filter on the evidence, read against one client's reconstruction.
+
+    A time of day is read on the day of the activity its request belongs to:
+    `after:10:00` on a visit from the 11th means ten o'clock on the 11th, and on
+    one from the 12th, ten on the 12th. The canvas and the panel both ask here,
+    so an activity the canvas leaves bright is one the panel finds lines in.
+    """
+
+    def __init__(self, text: str, result: AnalysisResult) -> None:
+        self.text = text
+        self._days = {episode.episode_id: episode.start.date() for episode in result.episodes}
+        self._queries: dict[date | None, Query] = {}
+
+    @classmethod
+    def read(cls, text: str, result: AnalysisResult) -> RequestFilter | None:
+        """The filter `text` asks for, or `None` when it narrows nothing yet.
+
+        Nothing yet: empty, or a key still waiting for its value. Either is the
+        whole activity, and a strip saying "33 of 33 lines match" would be noise.
+        """
+        # Any day will do to ask whether there is a filter at all: a time of day
+        # is one on every day. So nothing typed costs nothing, which matters
+        # because this is asked on every selection.
+        if parse(text, Scope.EVIDENCE, day=_ANY_DAY).is_empty:
+            return None
+        return cls(text, result)
+
+    def keeps(self, request: RequestAssignment) -> bool:
+        return self._query(self._days.get(request.episode_id)).matches(request.labelled.event)
+
+    def episodes(self, requests: Iterable[RequestAssignment]) -> frozenset[str]:
+        """The episodes holding at least one request this filter keeps."""
+        found: set[str] = set()
+        for request in requests:
+            if request.episode_id not in found and self.keeps(request):
+                found.add(request.episode_id)
+        return frozenset(found)
+
+    def _query(self, day: date | None) -> Query:
+        query = self._queries.get(day)
+        if query is None:
+            query = self._queries[day] = parse(self.text, Scope.EVIDENCE, day=day)
+        return query
 
 
 def filter_strip(filtered: Filtered, *, shown: int) -> str:

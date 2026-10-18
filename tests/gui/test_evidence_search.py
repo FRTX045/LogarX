@@ -202,3 +202,12 @@ def test_the_box_offers_this_activitys_values(panel: EvidencePanel) -> None:
 
     assert panel.filter_box._values_title == "VALUES IN THIS ACTIVITY"
     assert panel.filter_box._values == {"status": [("404", "31 lines")]}
+
+
+def test_an_empty_panel_offers_no_values(panel: EvidencePanel) -> None:
+    """With no activity on show there is nothing for "values in this activity" to be."""
+    panel.set_suggestion_values({"status": [("404", "31 lines")]})
+
+    panel.clear()
+
+    assert panel.filter_box._values == {}

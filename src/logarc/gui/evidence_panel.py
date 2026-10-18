@@ -172,6 +172,9 @@ class EvidencePanel(QWidget):
         self._detail.clear()
         self.strip.hide()
         self.no_results.hide()
+        # The filter itself stays: it is the reader's, and outlives the activity.
+        # What it was offering does not: those were the last activity's values.
+        self.set_suggestion_values({})
 
     def set_decode(self, decode: bool) -> None:
         """Show targets decoded, or exactly as the log holds them."""
