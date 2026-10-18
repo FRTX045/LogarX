@@ -8,6 +8,7 @@ on them.
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Iterable, Iterator
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -23,22 +24,26 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from dragging import drag, mouse
 from on_canvas import box_text, node_item, node_items, session_boxes
-from PyQt6.QtCore import QEvent, QPoint, QRectF
-from PyQt6.QtGui import QColor, QImage, QPainter
+from PyQt6.QtCore import QEvent, QPoint, QPointF, QRectF
+from PyQt6.QtGui import QColor, QHelpEvent, QImage, QPainter
 from PyQt6.QtWidgets import (
     QApplication,
     QGraphicsItem,
     QGraphicsRectItem,
     QGraphicsSimpleTextItem,
+    QToolTip,
 )
 
+from conftest import settled
 from logarc.analysis import analyse_ip
 from logarc.case import Case
 from logarc.core.activity import ActivityCategory, Outcome, Severity
 from logarc.core.evidence import EvidenceRef
 from logarc.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
+from logarc.gui.app import MainWindow
 from logarc.gui.canvas import _SESSION_EDGE_WIDTH, _SESSION_PAD, ActivityCanvas
-from logarc.style import PAPER, SESSION_GROUND
+from logarc.sessionize.segmenter import SessionPolicy
+from logarc.style import PAPER, SESSION_GROUND, session_rule
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 
@@ -413,6 +418,135 @@ def test_a_press_inside_a_box_off_an_activity_pans(qt_app: QApplication) -> None
 
     assert canvas.horizontalScrollBar().value() != before
     canvas.close()
+
+
+# -- what a label explains ------------------------------------------------
+
+
+def hover(canvas: ActivityCanvas, spot: QPointF) -> str:
+    """What the reader is shown on resting the pointer at `spot`, in scene units."""
+    no_tip_showing()
+    at = canvas.mapFromScene(spot)
+    QApplication.sendEvent(
+        canvas.viewport(), QHelpEvent(QEvent.Type.ToolTip, at, canvas.viewport().mapToGlobal(at))
+    )
+    shown = QToolTip.text() if QToolTip.isVisible() else ""
+    no_tip_showing()
+    return shown
+
+
+def no_tip_showing() -> None:
+    """Wait for any tip on screen to go.
+
+    `hideText` only starts a timer, and so does a hover over nothing with a tip
+    still up: an earlier test's tip lingers into the next for a moment, and read
+    then it looks like one the hover raised.
+    """
+    QToolTip.hideText()
+    deadline = time.monotonic() + 5.0
+    while QToolTip.isVisible():
+        assert time.monotonic() < deadline, "a tip that would not go"
+        QApplication.processEvents()
+        time.sleep(0.01)
+
+
+def tips(canvas: ActivityCanvas) -> set[str]:
+    return {box.label.toolTip() for box in session_boxes(canvas)}
+
+
+def test_hovering_a_box_label_says_what_a_session_is(qt_app: QApplication) -> None:
+    canvas = ActivityCanvas()
+    canvas.resize(600, 480)
+    canvas.show()
+    canvas.show_graph(trace(2, 2), session_policy=SessionPolicy())
+
+    for box in session_boxes(canvas):
+        canvas.centerOn(box.label)
+        spot = box.label.sceneBoundingRect().center()
+        assert hover(canvas, spot) == session_rule(SessionPolicy())
+    canvas.close()
+
+
+def test_the_explanation_is_of_the_rules_the_trace_was_cut_with(qt_app: QApplication) -> None:
+    """Not the engine's defaults: whatever the trace was handed over with."""
+    policy = SessionPolicy(idle_timeout=timedelta(minutes=5), max_duration=timedelta(hours=2))
+    canvas = ActivityCanvas()
+
+    canvas.show_graph(trace(1, 3), session_policy=policy)
+
+    assert tips(canvas) == {session_rule(policy)}
+
+
+def test_a_canvas_not_told_the_rules_does_not_guess_them(qt_app: QApplication) -> None:
+    canvas = drawn(trace(1, 3))
+
+    assert tips(canvas) == {""}
+
+
+def test_hovering_the_paper_inside_a_box_says_nothing(qt_app: QApplication) -> None:
+    """The boxes cover most of a trace. A tip over the whole of one would chase
+    the pointer wherever the reader moved it."""
+    canvas = ActivityCanvas()
+    canvas.resize(420, 320)
+    canvas.show()
+    canvas.set_wrap(False)
+    canvas.show_graph(trace(14), session_policy=SessionPolicy())
+    (box,) = session_boxes(canvas)
+    label = box.label.sceneBoundingRect()
+    spot = QRectF(label.right() + 200, label.top(), 2, 2).center()
+    canvas.centerOn(spot)
+    assert canvas.itemAt(canvas.mapFromScene(spot)) is box.shape, "premise: it rests on the box"
+
+    assert hover(canvas, spot) == ""
+    canvas.close()
+
+
+def test_the_explanation_survives_a_wrap_toggle(qt_app: QApplication) -> None:
+    policy = SessionPolicy(idle_timeout=timedelta(minutes=5))
+    canvas = ActivityCanvas()
+    canvas.show_graph(trace(7, 2), session_policy=policy)
+
+    canvas.set_wrap(False)
+
+    assert tips(canvas) == {session_rule(policy)}
+
+
+def test_the_explanation_survives_the_boxes_going_off_and_on(qt_app: QApplication) -> None:
+    policy = SessionPolicy(idle_timeout=timedelta(minutes=5))
+    canvas = ActivityCanvas()
+    canvas.show_graph(trace(7, 2), session_policy=policy)
+
+    canvas.set_sessions(False)
+    canvas.set_sessions(True)
+
+    assert tips(canvas) == {session_rule(policy)}
+
+
+def test_the_window_explains_the_rules_its_reconstruction_used(
+    qt_app: QApplication, tmp_path: Path
+) -> None:
+    """Two visits two hours apart, opened the way a reader opens them."""
+    agent = "Mozilla/5.0 (X11; Linux x86_64)"
+    lines = [
+        f"10.0.0.9 - - [{(START + timedelta(seconds=at)):%d/%b/%Y:%H:%M:%S +0000}]"
+        f' "GET /page/{at} HTTP/1.1" 200 512 "-" "{agent}"'
+        for at in (0, 20, 40, 7_200, 7_220)
+    ]
+    log = tmp_path / "access.log"
+    log.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    with Case.create(tmp_path / "case") as case:
+        case.ingest([log])
+    window = MainWindow()
+    window.show()
+    window._load_case(tmp_path / "case")
+    settled(qt_app)
+    window._clients._table.selectRow(0)
+    settled(qt_app)
+    assert window._result is not None, "premise: the client is being read"
+    assert len(session_boxes(window._canvas)) == 2, "premise: two visits, two boxes"
+
+    assert tips(window._canvas) == {session_rule(window._result.policy.session)}
+    window.close()
 
 
 # -- a box follows its activities -----------------------------------------

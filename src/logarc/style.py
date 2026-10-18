@@ -41,9 +41,10 @@ from logarc.core.graph import GraphKind
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
-    from datetime import datetime
+    from datetime import datetime, timedelta
 
     from logarc.core.graph import GraphNode
+    from logarc.sessionize.segmenter import SessionPolicy
 
 __all__ = [
     "CAPTION_COLOUR",
@@ -80,6 +81,7 @@ __all__ = [
     "outcome_legend",
     "plural",
     "session_caption",
+    "session_rule",
     "severity_colour",
     "severity_legend",
     "shorten_agent",
@@ -723,3 +725,37 @@ def _session_span(start: datetime, end: datetime) -> str:
     if (start.hour, start.minute) == (end.hour, end.minute):
         return f"{start:%d %b %H:%M}"
     return f"{start:%d %b %H:%M}\u2013{end:%H:%M}"
+
+
+def session_rule(policy: SessionPolicy) -> str:
+    """What a session is, in the thresholds it was cut with: the tip on a
+    session box's label.
+
+    Written as what every session holds to, not as what ends one. A time filter
+    also cuts a visit at its edges, so "it ends after thirty minutes" would be
+    wrong about the boxes at either end of a filtered trace, while "no pause
+    inside it is longer" is true of all of them.
+    """
+    lines = [
+        "A session is one visit from this address.",
+        f"No pause inside it is longer than {_threshold(policy.idle_timeout)},",
+    ]
+    if policy.split_on_user_agent_change:
+        lines.append("every request in it has the same user agent,")
+    lines.append(f"and it lasts {_threshold(policy.max_duration)} at most.")
+    return "\n".join(lines)
+
+
+def _threshold(span: timedelta) -> str:
+    """A threshold in the largest whole unit that states it exactly.
+
+    Exactly, because it is quoted for a reader to check gaps against: ninety
+    seconds rounded to two minutes would leave a gap of a hundred seconds
+    looking as though it broke the rule that cut it.
+    """
+    seconds = int(span.total_seconds())
+    if seconds % 3600 == 0:
+        return plural(seconds // 3600, "hour")
+    if seconds % 60 == 0:
+        return plural(seconds // 60, "minute")
+    return plural(seconds, "second")

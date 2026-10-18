@@ -115,7 +115,9 @@ panned rather than fitted, opening on its first activity.
 Each session sits in a box of its own, labelled with its number, how many
 activities it holds and when it ran, such as `Session 2 of 69 · 2 activities ·
 09 Mar 01:55–02:26`. That gives the session count in the header something on the
-canvas to point to. A box follows its activities when they are dragged. The
+canvas to point to. Rest the pointer on a label to see what makes a session:
+no pause inside it longer than 30 minutes, the same user agent throughout, and
+8 hours at most. A box follows its activities when they are dragged. The
 *Outline each session* preference turns the boxes off, and nothing moves when
 it does.
 

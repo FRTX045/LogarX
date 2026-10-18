@@ -12,6 +12,7 @@ from colours import apart, chroma, contrast, hue_apart
 from logarc.core.activity import ActivityCategory, Outcome, Severity
 from logarc.core.evidence import EvidenceRef
 from logarc.core.graph import GraphKind, GraphNode
+from logarc.sessionize.segmenter import SessionPolicy
 from logarc.style import (
     CAPTION_COLOUR,
     EVIDENCE_INK,
@@ -36,6 +37,7 @@ from logarc.style import (
     outcome_legend,
     plural,
     session_caption,
+    session_rule,
     severity_colour,
     severity_legend,
     shorten_agent,
@@ -630,6 +632,41 @@ def test_a_session_across_midnight_says_both_days() -> None:
     caption = session_caption(3, 3, nodes)
 
     assert caption == "Session 3 of 3 · 2 activities · 09 Mar 23:50 \u2013 10 Mar 00:20"
+
+
+def test_a_session_is_explained_in_the_thresholds_that_cut_it() -> None:
+    """What hovering a box's label says. Each line is something every session
+    holds to, a time filter's clipped ones included, so it is true of whichever
+    box the reader is pointing at."""
+    assert session_rule(SessionPolicy()) == (
+        "A session is one visit from this address.\n"
+        "No pause inside it is longer than 30 minutes,\n"
+        "every request in it has the same user agent,\n"
+        "and it lasts 8 hours at most."
+    )
+
+
+def test_the_explanation_follows_the_thresholds_it_is_given() -> None:
+    policy = SessionPolicy(
+        idle_timeout=timedelta(minutes=1),
+        max_duration=timedelta(hours=1),
+        split_on_user_agent_change=False,
+    )
+
+    assert session_rule(policy) == (
+        "A session is one visit from this address.\n"
+        "No pause inside it is longer than 1 minute,\n"
+        "and it lasts 1 hour at most."
+    )
+
+
+def test_a_threshold_of_odd_seconds_is_given_in_seconds() -> None:
+    """Rounded to minutes, ninety seconds would be quoted as one or two minutes,
+    and a gap of a minute and a half would then seem to break its own rule."""
+    policy = SessionPolicy(idle_timeout=timedelta(seconds=90), max_duration=timedelta(minutes=90))
+
+    assert "longer than 90 seconds,\n" in session_rule(policy)
+    assert session_rule(policy).endswith("lasts 90 minutes at most.")
 
 
 def test_a_box_ground_is_the_paper_with_a_breath_of_the_accent() -> None:

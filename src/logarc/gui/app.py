@@ -1438,7 +1438,11 @@ class MainWindow(QMainWindow):
             return
         graph = self._result.trace if self._kind is GraphKind.TRACE else self._result.behaviour
         was_reading = self._selected
-        self._canvas.show_graph(graph, positions=self._arrangements_kept.saved_positions())
+        self._canvas.show_graph(
+            graph,
+            positions=self._arrangements_kept.saved_positions(),
+            session_policy=self._result.policy.session,
+        )
         self._arrangements_kept.refresh()
         if was_reading is None:
             return
