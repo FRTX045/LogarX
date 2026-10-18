@@ -15,7 +15,6 @@ from PyQt6.QtGui import QColor, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
     QLayout,
     QLayoutItem,
@@ -30,6 +29,7 @@ from logarc.caseview import CLIENT_LIMIT
 from logarc.gui._qt import SORT_KEY, SortableItem, required
 from logarc.gui.client_filter import caption as filter_caption
 from logarc.gui.client_filter import matches
+from logarc.gui.columns import ColumnWidths
 from logarc.gui.theme import PAD, TIGHT, caption_font, colour_text, mono_font
 from logarc.style import (
     SIZE_NOTE,
@@ -197,16 +197,7 @@ class ClientTable(QWidget):
         # they label. This is the treatment the exported report already gives its
         # own table headings.
         header.setFont(caption_font(self._table.font()))
-        # Every column sized to what it holds, and none of them stretched.
-        #
-        # Stretching the address column was what hid the rest: it claims the
-        # space left over, and with five other columns at a default width the
-        # panel could not afford, three of the six sat behind a scrollbar —
-        # including the 4xx ratio, which is the column the table is sorted by
-        # when looking for something worth opening. Sizing every column to its
-        # content and shortening the timestamps fits all six instead.
-        header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        header.setStretchLastSection(True)
+        self._column_sizes = ColumnWidths(self._table, fill=len(_COLUMNS) - 1)
         # Room for the sort chevron, which is drawn above the label. The header
         # came out 16px tall for 12px of text, and the top edge cut the indicator
         # in half — leaving the one thing this header says beyond its six words,
@@ -354,25 +345,11 @@ class ClientTable(QWidget):
 
     @contextmanager
     def _sized_once(self) -> Iterator[None]:
-        """Fill the table without the header re-measuring on every cell.
-
-        `ResizeToContents` walks the whole column each time a cell changes. Into
-        an *empty* table Qt takes a fast path and 3,000 cells cost 0.2s; once the
-        rows already hold items it does not, and the same 3,000 cost 66 seconds
-        — on the interface thread, which is what made opening a case the window
-        already had open freeze it for over a minute.
-
-        So the mode is dropped for the duration and restored afterwards, which
-        measures once instead of three thousand times. The columns come out the
-        same width they always did; what goes is the repetition. Measured at
-        66.54s before and 0.08s after.
-        """
-        header = required(self._table.horizontalHeader(), "column header")
-        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        """Measure untouched columns once after filling, retaining manual widths."""
         try:
             yield
         finally:
-            header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+            self._column_sizes.fit_unset()
 
     def select_quietly(self, client_ip: str) -> bool:
         """Put the table back on `client_ip` without emitting a choice.

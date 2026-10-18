@@ -21,7 +21,6 @@ from PyQt6.QtWidgets import (
     QAbstractItemView,
     QDialog,
     QDialogButtonBox,
-    QHeaderView,
     QLabel,
     QTableWidget,
     QTableWidgetItem,
@@ -29,6 +28,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from logarc.gui.columns import ColumnWidths
 from logarc.gui.theme import PAD
 from logarc.style import THEME
 
@@ -82,10 +82,7 @@ class WhoElseDialog(QDialog):
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        header = self.table.horizontalHeader()
-        if header is not None:
-            header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self._column_sizes = ColumnWidths(self.table, fill=0)
         self.table.cellDoubleClicked.connect(self._opened)
         # Says what the two counts mean, because the difference between them is
         # the reason a client is on this list at all when its own activity is
@@ -120,6 +117,7 @@ class WhoElseDialog(QDialog):
                     item.setForeground(QColor(THEME.identity))
                 self.table.setItem(index, column, item)
         self.table.setVisible(bool(rows))
+        self._column_sizes.fit_unset()
         self.note.setVisible(bool(rows))
 
     def show_unavailable(self, rule_id: str, text: str) -> None:

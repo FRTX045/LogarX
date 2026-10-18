@@ -34,7 +34,6 @@ from PyQt6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -48,6 +47,7 @@ from PyQt6.QtWidgets import (
 )
 
 from logarc.gui._qt import required
+from logarc.gui.columns import ColumnWidths
 from logarc.gui.format_preview import (
     preview,
     preview_columns,
@@ -230,18 +230,18 @@ class FormatEditor(QDialog):
         # decision they are making, and a list they have to populate hides the
         # ones they have not thought of.
         self._mapping = QTableWidget(len(MAPPABLE), 2)
+        self._mapping_edit_triggers = self._mapping.editTriggers()
         self._mapping.setHorizontalHeaderLabels(["logarc calls it", "your log calls it"])
         required(self._mapping.verticalHeader()).setVisible(False)
         required(self._mapping.verticalHeader()).setDefaultSectionSize(_ROW)
-        heads = required(self._mapping.horizontalHeader())
-        heads.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        heads.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self._mapping_columns = ColumnWidths(self._mapping, fill=1)
         for row, ours in enumerate(MAPPABLE):
             label = QTableWidgetItem(ours)
             label.setFlags(Qt.ItemFlag.ItemIsEnabled)
             self._mapping.setItem(row, 0, label)
             self._mapping.setItem(row, 1, QTableWidgetItem(""))
         self._mapping.itemChanged.connect(self._refresh_preview)
+        self._mapping_columns.fit_unset()
 
         self._time_format = QLineEdit()
         self._time_format.setPlaceholderText(
@@ -277,9 +277,7 @@ class FormatEditor(QDialog):
         # The value column takes the rest of the width. Left at its content
         # width it stopped after the longest short value, leaving half the
         # table empty and a long user agent clipped in the same picture.
-        heads = required(self._fields.horizontalHeader())
-        heads.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        heads.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self._field_columns = ColumnWidths(self._fields, fill=1)
         # Tight rows so all eleven fields are in sight at the opening size.
         # At Qt's default only seven were, and the four out of view are the
         # ones a custom format most often gets wrong — referer, user agent,
@@ -423,6 +421,7 @@ class FormatEditor(QDialog):
         for row, ours in enumerate(MAPPABLE):
             self._mapping.setItem(row, 1, QTableWidgetItem(by_ours.get(ours, "")))
         self._mapping.blockSignals(False)
+        self._mapping_columns.fit_unset()
         self._refresh_preview()
 
     def guess(self) -> None:
@@ -618,7 +617,11 @@ class FormatEditor(QDialog):
     def _set_editable(self, editable: bool) -> None:
         for field in (self._name, self._rule, self._note, self._time_format, self._columns):
             field.setEnabled(editable)
-        self._mapping.setEnabled(editable)
+        # Keep its header usable for resizing while built-in mappings remain
+        # read-only, rather than disabling the entire table.
+        self._mapping.setEditTriggers(
+            self._mapping_edit_triggers if editable else QTableWidget.EditTrigger.NoEditTriggers
+        )
         self._guess.setEnabled(editable)
         self._separator.setEnabled(editable)
         self._save.setEnabled(editable)
@@ -793,6 +796,7 @@ class FormatEditor(QDialog):
                 item.setForeground(QColor(THEME.timestamp))
             self._fields.setItem(row, 0, label)
             self._fields.setItem(row, 1, item)
+        self._field_columns.fit_unset()
 
 
 class FormatChoice(QDialog):

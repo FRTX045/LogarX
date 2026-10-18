@@ -20,7 +20,6 @@ from PyQt6.QtWidgets import (
     QAbstractItemView,
     QDialog,
     QHBoxLayout,
-    QHeaderView,
     QInputDialog,
     QLabel,
     QMenu,
@@ -32,6 +31,7 @@ from PyQt6.QtWidgets import (
 
 from logarc.gui import recent
 from logarc.gui._qt import required
+from logarc.gui.columns import ColumnWidths
 from logarc.gui.theme import GAP, PAD, caption_font, heading_font, ui_font
 from logarc.style import (
     EVIDENCE_MUTED,
@@ -119,11 +119,7 @@ class CaseChooser(QDialog):
         table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         required(table.verticalHeader(), "row header").setVisible(False)
-        header = required(table.horizontalHeader(), "column header")
-        header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        # The folder takes what is left. It is the one value with no bound and
-        # the one that finally tells two identically named cases apart.
-        header.setSectionResizeMode(COLUMNS.index("Folder"), QHeaderView.ResizeMode.Stretch)
+        self._column_sizes = ColumnWidths(table, fill=COLUMNS.index("Folder"))
         # Sized to what it holds rather than to a guessed height: five entries in
         # a fixed-height table left two thirds of it empty, which is what the
         # drawn demo of this showed and the one thing it needed fixing.
@@ -155,6 +151,7 @@ class CaseChooser(QDialog):
                 elif index == COLUMNS.index("Opened"):
                     item.setForeground(QColor(THEME.timestamp))
                 table.setItem(row, index, item)
+        self._column_sizes.fit_unset()
         # Not `resizeRowsToContents()`. Every row here is one line, so sizing
         # to the text bought nothing and made the table come back tighter on
         # every redraw — 33px rows becoming 20px on a redraw that removed

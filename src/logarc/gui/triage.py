@@ -12,7 +12,6 @@ from PyQt6.QtGui import QColor, QFontMetrics, QTextOption
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -26,6 +25,7 @@ from PyQt6.QtWidgets import (
 
 from logarc.case import Case
 from logarc.core.window import EVERYTHING, TimeWindow
+from logarc.gui.columns import ColumnWidths
 from logarc.gui.disclosure import Disclosure
 from logarc.gui.recommendation import (
     SourceStatus,
@@ -126,10 +126,7 @@ class TriagePanel(QWidget):
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setWordWrap(False)
-        header = self.table.horizontalHeader()
-        if header is not None:
-            header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self._column_sizes = ColumnWidths(self.table, fill=2)
         self.table.itemSelectionChanged.connect(self._show_details)
         # A single click selects a row so its reasons can be read; opening the client
         # is a deliberate act: double-click, or Inspect supporting requests.
@@ -386,6 +383,7 @@ class TriagePanel(QWidget):
                     item.setForeground(QColor(THEME.muted))
                 item.setToolTip(value)
                 self.table.setItem(index, column, item)
+        self._column_sizes.fit_unset()
 
     def _show_details(self) -> None:
         index = self.table.currentRow()

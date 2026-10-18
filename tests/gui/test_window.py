@@ -2862,6 +2862,36 @@ def test_the_columns_are_still_sized_to_what_they_hold(qt_app: QApplication) -> 
     table.close()
 
 
+def test_client_column_widths_survive_refilling_and_filtering(qt_app: QApplication) -> None:
+    panel = ClientTable()
+    panel.show_clients(_client_summaries(20))
+    panel._table.setColumnWidth(0, 240)
+    panel._table.setColumnWidth(5, 180)
+    panel.show_clients(_client_summaries(30))
+    panel._filter.setText("203.0.113.1")
+    assert panel._table.columnWidth(0) == 240
+    assert panel._table.columnWidth(5) == 180
+    panel.close()
+
+
+def test_request_column_widths_survive_selection_and_decode_changes(
+    qt_app: QApplication, campaign: Path
+) -> None:
+    with Case.open(campaign) as case:
+        node = analyse_ip(case.store, CLIENT).trace.nodes[0]
+        lines = case.read_evidence(node.evidence[:5])
+    panel = EvidencePanel()
+    panel.show_evidence(node, lines)
+    request = column_of(panel._table, "Request")
+    panel._table.setColumnWidth(request, 500)
+    panel._table.setColumnWidth(0, 220)
+    panel.show_evidence(node, lines[:2])
+    panel.set_decode(False)
+    assert panel._table.columnWidth(request) == 500
+    assert panel._table.columnWidth(0) == 220
+    panel.close()
+
+
 def test_choosing_the_case_already_open_does_not_read_it_again(
     qt_app: QApplication, campaign: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

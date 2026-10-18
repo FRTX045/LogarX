@@ -30,6 +30,12 @@ sizes. Each can be opened and closed independently. Counts, active filters,
 provisional scan state and source warnings remain visible. Preferences offers
 **Show explanations**; individual controls also explain themselves on hover.
 
+Every table supports resizing columns by dragging the edge between headings,
+including the client list, requests, investigation queues and dialog tables.
+Double-click an edge to fit that column to its contents, or right-click a heading
+for **Fit this column to contents** and **Reset column widths**. Manual widths
+stay in place when rows refresh or filters change, for the life of that window.
+
 Scrollbars have 20 px tracks, brighter handles, and a minimum handle length of
 42 px. The dividers between panels use 5 px lines with a 1 px margin on each
 side and highlight blue when hovered.
