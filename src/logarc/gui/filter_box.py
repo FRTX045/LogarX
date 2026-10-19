@@ -19,7 +19,7 @@ import html
 from typing import TYPE_CHECKING, Final
 
 from PyQt6.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QFontMetrics
+from PyQt6.QtGui import QFocusEvent, QFontMetrics
 from PyQt6.QtWidgets import (
     QFrame,
     QLabel,
@@ -52,6 +52,13 @@ _KEYS_HINT: Final = "↑↓ to choose · Tab to complete · Esc to close"
 
 #: Rows before the list scrolls rather than growing past the window.
 _ROWS_SHOWN: Final = 10
+
+#: Focus Qt hands back rather than the reader giving it: coming back to the
+#: window, or out of a menu. The list closes when the box loses the keyboard, so
+#: opening it for these put it back over the client list on every return.
+_HANDED_BACK: Final = frozenset(
+    {Qt.FocusReason.ActiveWindowFocusReason, Qt.FocusReason.PopupFocusReason}
+)
 
 
 class _Chip(QFrame):
@@ -558,7 +565,13 @@ class FilterBox(QFrame):
         kind = event.type()
         if kind == QEvent.Type.FocusIn:
             self._focus(True)
-            self._suggest()
+            if not (isinstance(event, QFocusEvent) and event.reason() in _HANDED_BACK):
+                self._suggest()
+        elif kind == QEvent.Type.MouseButtonPress:
+            # A click asks for the list even in a box that had the keyboard
+            # already, as it has once the window comes back to it.
+            if self._list is None or not self._list.isVisible():
+                self._suggest()
         elif kind == QEvent.Type.FocusOut:
             self._focus(False)
             if self._list is not None:
