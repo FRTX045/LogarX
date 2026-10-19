@@ -10,13 +10,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import QPoint, QRect, QRectF, QSize, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QPainter, QPen, QPixmap
+from PyQt6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
     QLabel,
     QLayout,
     QLayoutItem,
+    QMenu,
     QPushButton,
     QTableWidget,
     QVBoxLayout,
@@ -29,6 +30,7 @@ from logarc.gui.client_filter import caption as filter_caption
 from logarc.gui.client_filter import match_caption, matches
 from logarc.gui.columns import ColumnWidths
 from logarc.gui.filter_box import FilterBox
+from logarc.gui.ribbon import Mark, ribbon_icon
 from logarc.gui.theme import PAD, TIGHT, caption_font, colour_text, mono_font
 from logarc.search import ANY_DAY, Scope, is_time, parse
 from logarc.style import (
@@ -180,6 +182,12 @@ class ClientTable(QWidget):
     putting the case back rather than by reconstructing anything.
     """
 
+    bookmark_requested = pyqtSignal(str)
+    """A client's row asked to be bookmarked, from its right-click menu."""
+
+    bookmark_search_requested = pyqtSignal()
+    """The search answered on screen asked to be bookmarked."""
+
     def __init__(self) -> None:
         super().__init__()
         # How large the case is, which is not how many rows were drawn from
@@ -206,6 +214,8 @@ class ClientTable(QWidget):
         # redraw of the caption cannot replace it with a count of nothing.
         self._message: tuple[str, str] | None = None
         self._open: str | None = None
+        # Which clients carry a bookmark, kept so every refill can mark them again.
+        self._marks: dict[str, Mark] = {}
         self._table = _Rows(0, len(_COLUMNS))
         self._table.setHorizontalHeaderLabels(_COLUMNS)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -242,6 +252,8 @@ class ClientTable(QWidget):
         header.moveSection(_MATCH, _ADDRESS + 1)
         self._table.setColumnHidden(_MATCH, True)
         self._table.itemSelectionChanged.connect(self._emit_choice)
+        self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._table.customContextMenuRequested.connect(self._show_menu)
 
         # Addresses as before, typed and found at once on the page; filters on
         # what clients sent, as chips, answered from the whole case. Monospace,
@@ -266,6 +278,15 @@ class ClientTable(QWidget):
         self._caption.setWordWrap(True)
         self._caption.setFont(caption_font(self._caption.font()))
         colour_text(self._caption, THEME.muted)
+        # Beside the caption of a search's answer, and only then: a search is
+        # worth keeping once it has found something to keep.
+        self.search_bookmark = QPushButton("Bookmark this search")
+        self.search_bookmark.setIcon(ribbon_icon(THEME.accent, hollow=True))
+        self.search_bookmark.setFlat(True)
+        self.search_bookmark.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.search_bookmark.setStyleSheet(f"color:{THEME.accent}; padding:0 4px;")
+        self.search_bookmark.clicked.connect(self.bookmark_search_requested.emit)
+        self.search_bookmark.hide()
         layout = QVBoxLayout(self)
         # Not flush against the frame. At zero the caption and the first column
         # both start at x=0, and the window edge cut the leading character off
@@ -274,6 +295,7 @@ class ClientTable(QWidget):
         layout.setSpacing(TIGHT)
         layout.addWidget(self._filter)
         layout.addWidget(self._caption)
+        layout.addWidget(self.search_bookmark, 0, Qt.AlignmentFlag.AlignLeft)
         layout.addWidget(self._table)
         paging = QHBoxLayout()
         paging.addWidget(self._previous)
@@ -356,6 +378,9 @@ class ClientTable(QWidget):
             self._set(row, 5, format_seen(summary.last_seen))
             found = hits[row] if row < len(hits) else 0
             self._set(row, _MATCH, f"{found:,}", sort_key=found)
+        # Marked before the columns are measured, so a ribbon's width is counted
+        # and never cuts the address beside it.
+        self._apply_marks()
         # Measured once, with sorting off: Qt then leaves the sort arrow's room
         # out of every heading, which keeps the list inside its panel.
         self._column_sizes.fit_unset()
@@ -507,6 +532,62 @@ class ClientTable(QWidget):
                 return True
         return False
 
+    # -- bookmarks -------------------------------------------------------------
+
+    def set_marks(self, marks: Mapping[str, Mark]) -> None:
+        """Ribbon the clients in `marks`, and keep doing so through every refill."""
+        self._marks = dict(marks)
+        blocked = self._table.blockSignals(True)
+        self._table.setSortingEnabled(False)
+        self._apply_marks()
+        self._column_sizes.fit_unset()
+        self._table.setSortingEnabled(True)
+        header = required(self._table.horizontalHeader(), "column header")
+        self._column_sizes.fit_heading(header.sortIndicatorSection())
+        self._table.blockSignals(blocked)
+
+    def _apply_marks(self) -> None:
+        for row in range(self._table.rowCount()):
+            cell = self._table.item(row, _ADDRESS)
+            if cell is None:
+                continue
+            mark = self._marks.get(cell.text())
+            cell.setIcon(ribbon_icon(mark[0]) if mark is not None else QIcon())
+            cell.setToolTip(mark[1] if mark is not None else "")
+
+    def selected_client(self) -> str | None:
+        rows = required(self._table.selectionModel(), "selection model").selectedRows()
+        cell = self._table.item(rows[0].row(), _ADDRESS) if rows else None
+        return cell.text() if cell is not None else None
+
+    def answered_search(self) -> tuple[str, int, int | None] | None:
+        """The search whose answer is on screen: its text, clients, and requests if counted."""
+        if (
+            self._counted is None
+            or self._searching
+            or self._matching is None
+            or self._message is not None
+            or self._query != self._filter.text().strip()
+        ):
+            return None
+        return self._query, self._matching, self._requests if self._counted else None
+
+    def _menu_at(self, point: QPoint) -> QMenu | None:
+        """The menu a right-click at `point` opens, or None off the rows."""
+        index = self._table.indexAt(point)
+        cell = self._table.item(index.row(), _ADDRESS) if index.isValid() else None
+        if cell is None:
+            return None
+        address = cell.text()
+        menu = QMenu(self)
+        menu.addAction("Bookmark this client\u2026", lambda: self.bookmark_requested.emit(address))
+        return menu
+
+    def _show_menu(self, point: QPoint) -> None:
+        menu = self._menu_at(point)
+        if menu is not None:
+            menu.popup(required(self._table.viewport(), "viewport").mapToGlobal(point))
+
     def _filter_changed(self) -> None:
         """Narrow the page at once, then search the whole case if the page is not all of it.
 
@@ -610,6 +691,7 @@ class ClientTable(QWidget):
         return _MATCH if self._counted else _COLUMNS.index("Reqs")
 
     def _refresh_caption(self) -> None:
+        self.search_bookmark.setVisible(self.answered_search() is not None)
         if self._message is not None:
             text, colour = self._message
             self._caption.setText(text)
