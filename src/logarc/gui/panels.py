@@ -9,15 +9,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import QPoint, QRect, QRectF, QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QPoint, QRectF, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QHBoxLayout,
     QLabel,
-    QLayout,
-    QLayoutItem,
     QMenu,
     QPushButton,
     QTableWidget,
@@ -31,6 +29,7 @@ from logarc.gui.client_filter import caption as filter_caption
 from logarc.gui.client_filter import match_caption, matches
 from logarc.gui.columns import ColumnWidths
 from logarc.gui.filter_box import FilterBox
+from logarc.gui.flow import FlowLayout
 from logarc.gui.ribbon import Mark, ribbon_icon, ribbon_tip
 from logarc.gui.theme import PAD, TIGHT, caption_font, colour_text, mono_font
 from logarc.search import ANY_DAY, Scope, is_time, parse
@@ -811,7 +810,7 @@ _SOLID_RANGE = (1.5, 4.0)
 #: whose contents are fixed and whose width is not: growing the outcome samples
 #: enough to be legible took it to 634px in a 620px column, and it wrapped —
 #: putting `Unknown` alone on a second row, which is precisely the fault
-#: `_FlowLayout` was written to fix. Six and three buy the width back while
+#: `FlowLayout` was written to fix. Six and three buy the width back while
 #: keeping the ratio that groups a swatch with its label rather than with its
 #: neighbour, which four and four would not.
 _ENTRY_GAP = 6
@@ -854,87 +853,6 @@ def _outline_sample(colour: str, style: str, width: float) -> QPixmap:
     return pixmap
 
 
-class _FlowLayout(QLayout):
-    """Items in a row that wraps onto further rows when the width runs out.
-
-    Qt ships nothing like it, and the legend needs one. Laid out as a single
-    horizontal row the key reported a minimum width of **1,729px** — wider than
-    the window it sits in — and a minimum is a demand, not a preference. The
-    centre column inherited it, both side panels were pinned at their own
-    minimums to pay for it, and with no slack left anywhere the splitter handles
-    stopped moving: the client panel could be its minimum or collapsed, and
-    nothing in between.
-
-    A key is a set of small independent items. It should take as many rows as it
-    needs and ask for no more width than its widest single entry.
-    """
-
-    def __init__(self, parent: QWidget | None = None, spacing: int = 10) -> None:
-        super().__init__(parent)
-        self._items: list[QLayoutItem] = []
-        self.setSpacing(spacing)
-
-    # -- the five methods QLayout requires a subclass to provide -------------
-
-    def addItem(self, item: QLayoutItem | None) -> None:  # noqa: N802 - Qt's naming
-        if item is not None:
-            self._items.append(item)
-
-    def count(self) -> int:
-        return len(self._items)
-
-    def itemAt(self, index: int) -> QLayoutItem | None:  # noqa: N802 - Qt's naming
-        return self._items[index] if 0 <= index < len(self._items) else None
-
-    def takeAt(self, index: int) -> QLayoutItem | None:  # noqa: N802 - Qt's naming
-        return self._items.pop(index) if 0 <= index < len(self._items) else None
-
-    # -- how it sizes --------------------------------------------------------
-
-    def expandingDirections(self) -> Qt.Orientation:  # noqa: N802 - Qt's naming
-        return Qt.Orientation(0)
-
-    def hasHeightForWidth(self) -> bool:  # noqa: N802 - Qt's naming
-        return True
-
-    def heightForWidth(self, width: int) -> int:  # noqa: N802 - Qt's naming
-        return self._lay_out(QRect(0, 0, width, 0), place=False)
-
-    def setGeometry(self, rect: QRect) -> None:  # noqa: N802 - Qt's naming
-        super().setGeometry(rect)
-        self._lay_out(rect, place=True)
-
-    def sizeHint(self) -> QSize:  # noqa: N802 - Qt's naming
-        return self.minimumSize()
-
-    def minimumSize(self) -> QSize:  # noqa: N802 - Qt's naming
-        """One item wide. This is the number the whole window was hostage to."""
-        size = QSize()
-        for item in self._items:
-            size = size.expandedTo(item.minimumSize())
-        margins = self.contentsMargins()
-        return size + QSize(margins.left() + margins.right(), margins.top() + margins.bottom())
-
-    def _lay_out(self, rect: QRect, *, place: bool) -> int:
-        """Place each item, wrapping at the edge; returns the height used."""
-        margins = self.contentsMargins()
-        left = rect.x() + margins.left()
-        right = rect.right() - margins.right()
-        x, y, row_height = left, rect.y() + margins.top(), 0
-
-        for item in self._items:
-            hint = item.sizeHint()
-            if x > left and x + hint.width() > right:
-                x, y = left, y + row_height + self.spacing()
-                row_height = 0
-            if place:
-                item.setGeometry(QRect(QPoint(x, y), hint))
-            x += hint.width() + self.spacing()
-            row_height = max(row_height, hint.height())
-
-        return y + row_height + margins.bottom() - rect.y()
-
-
 class LegendBar(QWidget):
     """The key to the canvas: what colour, outline and size each mean.
 
@@ -957,7 +875,7 @@ class LegendBar(QWidget):
         # between them — at 1500px it did, leaving `Unknown` on a row of its own.
         # A colour on one line and its meaning on another is the one thing a key
         # cannot do, so the pair is a single widget and wraps whole.
-        self.flow = _FlowLayout(spacing=_ENTRY_GAP)
+        self.flow = FlowLayout(spacing=_ENTRY_GAP)
         self.flow.addWidget(self._label("Severity"))
         for item in severity_legend():
             self.flow.addWidget(self._entry(self._swatch(item.colour, filled=True), item.label))
