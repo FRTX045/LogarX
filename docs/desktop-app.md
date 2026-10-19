@@ -299,9 +299,10 @@ bookmark whose client or log file is no longer in the case says *Not found in
 this case any more.* It can still be edited and removed, but not opened.
 
 **Bookmarks are kept with the case**, in `bookmarks.json` in its folder, so a
-case copied to a colleague takes them along. A file that cannot be read is left
-as it is, and the tab says so; the next bookmark saved moves it aside as
-`bookmarks.unreadable.json`.
+case copied to a colleague takes them along. Two windows can have the same case
+open: each keeps what the other saved, and shows it when you come back to it. A
+file that cannot be read is left as it is, and the tab says so; the next change
+saved moves it aside as `bookmarks.unreadable.json`.
 
 The HTML report lists the exported client's bookmarks, with their notes and,
 for a log line, the line itself. **Export → Bookmarks…** writes every bookmark

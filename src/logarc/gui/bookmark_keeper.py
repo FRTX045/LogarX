@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from dataclasses import replace as changed
 from typing import TYPE_CHECKING, Protocol
 
-from PyQt6.QtCore import QObject, QPoint, pyqtSignal
+from PyQt6.QtCore import QObject, QPoint, Qt, pyqtSignal
 from PyQt6.QtWidgets import QMessageBox, QWidget
 
 from logarc import bookmarks
@@ -105,6 +105,20 @@ def _write_failed(error: BookmarkWriteError) -> str:
     return f"Could not save the bookmark: {error.strerror or error}."
 
 
+def _ask(parent: QWidget, title: str, text: str) -> bool:
+    """Yes or no, No by default; `text` shown as written, since it may hold a category's name."""
+    box = QMessageBox(
+        QMessageBox.Icon.Question,
+        title,
+        text,
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        parent,
+    )
+    box.setTextFormat(Qt.TextFormat.PlainText)
+    box.setDefaultButton(QMessageBox.StandardButton.No)
+    return box.exec() == QMessageBox.StandardButton.Yes
+
+
 def _tip(bookmark: Bookmark) -> str:
     return f"{bookmark.category}: {bookmark.note or bookmark.said}"
 
@@ -125,6 +139,8 @@ class BookmarkKeeper(QObject):
         self._say = say
         self._case: Path | None = None
         self._shelf = EMPTY
+        #: Why the file could not be read, while that is what the tab says.
+        self._problem: str | None = None
         self._last = DEFAULT
         # Unknown until the window has looked: nothing is gone before then.
         self._present: frozenset[str] | None = None
@@ -149,32 +165,63 @@ class BookmarkKeeper(QObject):
         if self.categories_dialog is not None:
             self.categories_dialog.close()
             self.categories_dialog = None
-        self._generation += 1
-        generation = self._generation
         self._case = case_dir
-        self._present = self._sources = None
         if case_dir is None:
+            self._generation += 1
+            self._present = self._sources = None
             self._shelf = EMPTY
-            self._tab.set_notice(None)
+            self._set_problem(None)
         else:
-            loaded = bookmarks.load(case_dir)
-            self._shelf = loaded.shelf
-            self._tab.set_notice(
-                None
-                if loaded.problem is None
-                else _UNREADABLE.format(problem=loaded.problem, aside=UNREADABLE_NAME)
-            )
-
-            def checked(present: frozenset[str], sources: frozenset[str]) -> None:
-                if generation != self._generation:
-                    return
-                self._present, self._sources = present, sources
-                self._show()
-
-            clients = frozenset(b.client for b in self._shelf.bookmarks if b.client is not None)
-            self._opener.check_targets(clients, checked)
+            self._read(bookmarks.load(case_dir))
         self._last = self._shelf.categories[0].name
         self._show()
+
+    def refresh(self) -> None:
+        """Read the file again, and show it if another window on the case has changed it.
+
+        Leaves a save box or the categories dialog open: what the reader was
+        typing is theirs, and saving it reads the file again anyway.
+        """
+        if self._case is None:
+            return
+        loaded = bookmarks.load(self._case)
+        if loaded.shelf == self._shelf and loaded.problem == self._problem:
+            return
+        self._read(loaded)
+        if self._shelf.category(self._last) is None:
+            self._last = self._shelf.categories[0].name
+        if self.categories_dialog is not None:
+            self.categories_dialog.show_shelf(self._shelf)
+        self._show()
+
+    def _read(self, loaded: bookmarks.Loaded) -> None:
+        """Take `loaded` as the shelf, and ask the window which of its targets are there."""
+        self._generation += 1
+        generation = self._generation
+        self._present = self._sources = None
+        self._shelf = loaded.shelf
+        self._set_problem(loaded.problem)
+
+        def checked(present: frozenset[str], sources: frozenset[str]) -> None:
+            if generation != self._generation:
+                return
+            self._present, self._sources = present, sources
+            self._show()
+
+        clients = frozenset(b.client for b in self._shelf.bookmarks if b.client is not None)
+        self._opener.check_targets(clients, checked)
+
+    def _set_problem(self, problem: str | None) -> None:
+        self._problem = problem
+        self._tab.set_notice(
+            None if problem is None else _UNREADABLE.format(problem=problem, aside=UNREADABLE_NAME)
+        )
+
+    def _apply(self, change: Callable[[Shelf], Shelf]) -> None:
+        """Make one change to the file; one that could not be read has been set aside."""
+        assert self._case is not None
+        self._shelf = bookmarks.apply(self._case, change)
+        self._set_problem(None)
 
     def is_gone(self, bookmark: Bookmark) -> bool:
         """Whether what `bookmark` points at is no longer in the case, as far as is known."""
@@ -288,7 +335,7 @@ class BookmarkKeeper(QObject):
         if self._case is None:
             return
         try:
-            self._shelf = bookmarks.apply(self._case, change)
+            self._apply(change)
         except BookmarkWriteError as error:
             box.show_error(_write_failed(error))
             return
@@ -297,8 +344,6 @@ class BookmarkKeeper(QObject):
             return
         found = self._shelf.category(category)
         self._last = found.name if found is not None else self._shelf.categories[0].name
-        # A file that could not be read has just been set aside.
-        self._tab.set_notice(None)
         if self._present is not None and bookmark.client is not None:
             self._present = self._present | {bookmark.client}
         self.box = None
@@ -321,17 +366,10 @@ class BookmarkKeeper(QObject):
         bookmark = self._shelf.by_id(ident)
         if bookmark is None or self._case is None:
             return
-        answer = QMessageBox.question(
-            self._window,
-            "Remove bookmark",
-            "Remove this bookmark?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if answer != QMessageBox.StandardButton.Yes:
+        if not _ask(self._window, "Remove bookmark", "Remove this bookmark?"):
             return
         try:
-            self._shelf = bookmarks.apply(self._case, lambda shelf: bookmarks.remove(shelf, ident))
+            self._apply(lambda shelf: bookmarks.remove(shelf, ident))
         except BookmarkWriteError as error:
             self._say(_write_failed(error).replace("save", "remove", 1))
             return
@@ -375,7 +413,7 @@ class BookmarkKeeper(QObject):
         if self._case is None:
             return False
         try:
-            self._shelf = bookmarks.apply(self._case, change)
+            self._apply(change)
         except (CategoryError, BookmarkWriteError) as error:
             text = _write_failed(error) if isinstance(error, BookmarkWriteError) else str(error)
             if dialog is not None:
@@ -405,14 +443,8 @@ class BookmarkKeeper(QObject):
         held = sum(b.category == found.name for b in self._shelf.bookmarks)
         if held:
             first = self._shelf.categories[0].name
-            answer = QMessageBox.question(
-                self._window,
-                "Delete category",
-                f"Move its {plural(held, 'bookmark')} to {first}?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            if answer != QMessageBox.StandardButton.Yes:
+            question = f"Move its {plural(held, 'bookmark')} to {first}?"
+            if not _ask(self._window, "Delete category", question):
                 return
         self._change_categories(lambda shelf: bookmarks.delete_category(shelf, name))
 

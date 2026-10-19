@@ -20,6 +20,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
+from PyQt6.QtCore import QEvent, Qt
 from PyQt6.QtWidgets import QApplication, QFileDialog, QTableWidget
 from test_case_search_window import BROWSER, PROBER, START, SWEEPER, opened, search
 
@@ -580,6 +581,44 @@ def test_the_tab_counts_and_another_case_shows_none_of_these(
     assert window._workspace.tabText(2) == "Bookmarks"
     assert window._bookmarks.shelf.bookmarks == ()
     assert ribboned_rows(window._clients._table) == set()
+
+
+def test_coming_back_to_the_window_shows_what_another_window_saved(
+    qt_app: QApplication, window: MainWindow, tmp_path: Path
+) -> None:
+    bookmarks.apply(
+        tmp_path / "case",
+        lambda shelf: bookmarks.add(
+            shelf,
+            bookmarks.Bookmark(
+                id="elsewhere",
+                kind=Kind.CLIENT,
+                category="Bookmarked",
+                said=PROBER,
+                note="saved in the other window",
+                saved=START,
+                client=PROBER,
+            ),
+        ),
+    )
+    assert window._workspace.tabText(2) == "Bookmarks"
+
+    QApplication.sendEvent(window, QEvent(QEvent.Type.ActivationChange))
+    settled(qt_app)
+
+    assert window._workspace.tabText(2) == "Bookmarks (1)"
+    assert ribboned_rows(window._clients._table) == {PROBER}
+
+
+def test_the_status_line_shows_a_category_name_as_typed(
+    qt_app: QApplication, window: MainWindow
+) -> None:
+    window._clients.bookmark_requested.emit(PROBER)
+    settled(qt_app)
+    save(qt_app, window, category="<b>Bold</b> & co")
+
+    assert window._status.text() == "Bookmarked in <b>Bold</b> & co."
+    assert window._status.textFormat() == Qt.TextFormat.PlainText
 
 
 def test_the_bookmarks_tab_does_not_widen_the_middle_of_the_window(
