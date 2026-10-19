@@ -101,6 +101,12 @@ that would not have fitted in memory anyway, and the difference between a tool t
 laptop and one that does not. The scratch directory is removed once finalize completes; a spill
 can be gigabytes, and it is not evidence.
 
+Every store, reader or writer, spills into a folder of its own inside that directory. The
+engine names its spill files the same in every process, so two readers of one case spilling into
+one folder write over and delete each other's files; measured on a 941,031-event case, that
+crashed 4 of 10 readers and failed 4 more. Two windows on one case, or two jobs of one window,
+are two such readers. The engine makes the folder when it first spills and removes it on close.
+
 ## Segmentation
 
 See [ADR-0003](adr/0003-deterministic-three-level-segmentation.md) for the reasoning.

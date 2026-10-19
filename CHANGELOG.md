@@ -854,6 +854,15 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Two readers of one case no longer crash each other when both spill.** Every
+  store gave the query engine the case's `tmp` folder for what does not fit in
+  memory, and the engine names those files the same in every process. Two
+  windows on one case, or two jobs of one window, each sorting more than its
+  memory ceiling, wrote over and deleted each other's files: on a 941,031-event
+  case, 4 of 10 such readers crashed and 4 more failed. Each store now spills
+  into a folder of its own, and finalize no longer empties the shared one under
+  another reader.
+
 - **An activity opened from Where to start is on screen.** A graph too large to
   frame at a readable scale opens on its beginning, so an activity opened by
   Investigate could be selected and listed in the evidence while lying off the

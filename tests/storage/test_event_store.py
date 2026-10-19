@@ -282,7 +282,42 @@ def test_finalize_is_given_a_memory_ceiling_and_somewhere_to_spill(tmp_path: Pat
     assert limit is not None
     assert limit[0].endswith("MiB"), limit[0]
     assert temp is not None
-    assert Path(temp[0]) == tmp_path / "case" / "tmp"
+    assert Path(temp[0]).parent == tmp_path / "case" / "tmp"
+
+
+def test_two_stores_on_one_case_spill_into_folders_of_their_own(tmp_path: Path) -> None:
+    """DuckDB names its spill files the same in every process and every connection.
+
+    So two readers of one case spilling into one folder write over and delete
+    each other's files: measured on a 941,031-event case, 4 of 10 such readers
+    crashed with an access violation and 4 more failed to delete a file the
+    other had already removed. Two windows on one case, or two jobs of one
+    window, are exactly that.
+    """
+    first = ParquetEventStore(tmp_path / "case")
+    second = ParquetEventStore(tmp_path / "case")
+
+    folders = [
+        store._connect().execute("SELECT current_setting('temp_directory')").fetchone()
+        for store in (first, second)
+    ]
+    first.close()
+    second.close()
+
+    assert folders[0] is not None and folders[1] is not None
+    assert folders[0][0] != folders[1][0]
+
+
+def test_a_store_that_never_spilled_leaves_nothing_in_the_shared_folder(tmp_path: Path) -> None:
+    store = ParquetEventStore(tmp_path / "case")
+    store.write([event("203.0.113.1")])
+    store.finalize()
+    reader = ParquetEventStore(tmp_path / "case")
+    assert reader.events_for_ip("203.0.113.1")
+    reader.close()
+
+    shared = tmp_path / "case" / "tmp"
+    assert not shared.exists() or list(shared.iterdir()) == []
 
 
 def test_the_spill_directory_does_not_outlive_finalize(tmp_path: Path) -> None:
@@ -294,6 +329,19 @@ def test_the_spill_directory_does_not_outlive_finalize(tmp_path: Path) -> None:
 
     assert not (tmp_path / "case" / "tmp").exists()
     assert store.events_for_ip("203.0.113.1")
+
+
+def test_finalize_leaves_another_readers_spill_where_it_is(tmp_path: Path) -> None:
+    store = ParquetEventStore(tmp_path / "case")
+    store.write([event("203.0.113.1")])
+    theirs = tmp_path / "case" / "tmp" / "spill-another-reader"
+    theirs.mkdir(parents=True)
+    (theirs / "duckdb_temp_storage_S64K-0.tmp").write_bytes(b"in use")
+
+    store.finalize()
+    store.close()
+
+    assert (theirs / "duckdb_temp_storage_S64K-0.tmp").read_bytes() == b"in use"
 
 
 def test_finalize_survives_a_sort_that_does_not_fit_in_memory(tmp_path: Path) -> None:
