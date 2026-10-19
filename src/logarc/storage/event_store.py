@@ -36,7 +36,7 @@ from logarc.storage.base import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator
+    from collections.abc import Collection, Iterable, Iterator
 
     from logarc.search import Query
 
@@ -554,6 +554,30 @@ class ParquetEventStore:
             int(rows[0][10]),
             offset,
         )
+
+    def clients_present(self, clients: Collection[str]) -> frozenset[str]:
+        """Which of `clients` the case holds, whole addresses only, in one query.
+
+        Read from the per-client table ingest built, not the events: one small
+        file. The addresses go over as a registered table, as `search_clients`
+        hands over its own, and are unregistered once answered.
+        """
+        self._require_finalized()
+        if not clients:
+            return frozenset()
+        connection = self._connect()
+        table = f"chosen_{uuid.uuid4().hex}"
+        connection.register(
+            table, pa.table({"client_ip": pa.array(sorted(set(clients)), pa.string())})
+        )
+        try:
+            rows = connection.execute(
+                f"SELECT client_ip FROM read_parquet({self._sql_path(self._ip_index)})"
+                f" WHERE client_ip IN (SELECT client_ip FROM {table})"
+            ).fetchall()
+        finally:
+            connection.unregister(table)
+        return frozenset(row[0] for row in rows)
 
     def value_counts(
         self, *, window: TimeWindow | None = None
