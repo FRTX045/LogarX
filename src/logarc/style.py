@@ -386,6 +386,25 @@ PIN_MARK: Final = "★"
 #: ring around a selected node says elsewhere.
 PIN_COLOUR: Final = THEME.accent
 
+#: A bookmark category's ribbon, handed out in this order and kept by the
+#: category, so a colour never moves when another category is deleted.
+#:
+#: The accent first, because the first category is the one a bookmark lands in
+#: when the reader chose nothing. No red: `THEME.alert` means something is wrong
+#: with the evidence, and a reader's own label is not that. Picked by measuring:
+#: every pair at least 0.109 apart in OKLab, every one at least 0.127 from the
+#: alert, and every one above 6:1 against each surface a ribbon is drawn on.
+CATEGORY_COLOURS: Final = (
+    THEME.accent,
+    "#d0a144",
+    "#79c9c0",
+    "#b9ade3",
+    "#8cc66a",
+    "#e8e06a",
+    "#ff9df0",
+    "#a0e8ff",
+)
+
 
 def _blend(under: str, over: str, share: float) -> str:
     """`over` laid on `under` at `share` opacity, as the one opaque colour that

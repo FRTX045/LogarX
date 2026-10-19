@@ -129,8 +129,21 @@ def test_the_edit_menu_holds_what_is_done_to_the_graph(qt_app: QApplication) -> 
         "Undo node move",
         "Save this arrangement",
         "Reset layout",
+        "Bookmark…",
         "Preferences…",
     ]
+    window.close()
+
+
+def test_bookmarking_is_ctrl_d_and_is_offered_where_it_is_used(qt_app: QApplication) -> None:
+    """Ctrl+D on the window itself, so it answers in full screen with no menu bar."""
+    window = MainWindow()
+
+    assert window._bookmark_action.shortcut().toString() == "Ctrl+D"
+    assert window._bookmark_action in window.actions()
+    assert window._canvas.actions()[0].text() == "Bookmark this activity…"
+    assert window._canvas.actions()[0].shortcut().isEmpty(), "Ctrl+D is the Edit menu's"
+    assert _entries(_menu(window, "Export"))[-1] == "Bookmarks…"
     window.close()
 
 

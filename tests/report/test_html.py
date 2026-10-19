@@ -8,6 +8,7 @@ offering it as an export, which is a thin place for a deliverable to be.
 
 from __future__ import annotations
 
+import html
 import json
 import re
 from datetime import UTC, datetime, timedelta
@@ -18,8 +19,10 @@ import pytest
 
 from colours import contrast
 from logarc.analysis import analyse_ip
+from logarc.bookmarks import EMPTY, Bookmark, Kind, Shelf, add, remove
 from logarc.case import Case
 from logarc.core.activity import ActivityCategory, Outcome, Severity
+from logarc.core.evidence import EvidenceRef
 from logarc.core.window import TimeWindow
 from logarc.graphbuild.layout import Point
 from logarc.report.html import render_report
@@ -419,3 +422,87 @@ def test_the_range_travels_in_the_machine_readable_payload_too(campaign: Case) -
 
     assert narrowed.to_dict()["window"] == window.tag
     assert analyse_ip(campaign.store, ATTACKER).to_dict()["window"] == ""
+
+
+# -- the reader's bookmarks -------------------------------------------------------------
+
+
+def _marks() -> Shelf:
+    saved = datetime(2026, 10, 19, 14, 2, tzinfo=UTC)
+    shelf = add(
+        EMPTY,
+        Bookmark(
+            id="c",
+            kind=Kind.CLIENT,
+            category="Bookmarked",
+            said="28 requests",
+            note="Came back after the 404s <script>alert(1)</script>",
+            saved=saved,
+            client=ATTACKER,
+        ),
+    )
+    shelf = add(
+        shelf,
+        Bookmark(
+            id="r",
+            kind=Kind.REQUEST,
+            category="Injection",
+            said="GET /p?id=1 UNION SELECT",
+            note="The one that worked",
+            saved=saved,
+            client=ATTACKER,
+            line=EvidenceRef("access.log", 28),
+        ),
+    )
+    return add(
+        shelf,
+        Bookmark(
+            id="o",
+            kind=Kind.CLIENT,
+            category="Bookmarked",
+            said="",
+            note="Someone else entirely",
+            saved=saved,
+            client="198.51.100.7",
+        ),
+    )
+
+
+def test_the_report_lists_the_clients_bookmarks_before_provenance(campaign: Case) -> None:
+    result = analyse_ip(campaign.store, ATTACKER)
+    raw = 'a "GET /p?id=1%20UNION" 200'
+
+    page = render_report(
+        result, campaign.manifest, shelf=_marks(), lines={EvidenceRef("access.log", 28): raw}
+    )
+
+    assert page.index("<h2>Bookmarks</h2>") < page.index("<h2>Provenance</h2>")
+    assert "The one that worked" in page
+    assert "Injection" in page
+    assert html.escape(raw) in page
+    assert "Someone else entirely" not in page
+
+
+def test_bookmarks_saved_in_the_same_second_list_the_later_first(campaign: Case) -> None:
+    result = analyse_ip(campaign.store, ATTACKER)
+
+    page = render_report(result, campaign.manifest, shelf=_marks())
+
+    assert page.index("The one that worked") < page.index("Came back after the 404s")
+
+
+def test_a_note_is_shown_as_text_never_run(campaign: Case) -> None:
+    result = analyse_ip(campaign.store, ATTACKER)
+
+    page = render_report(result, campaign.manifest, shelf=_marks())
+
+    assert "<script>alert(1)</script>" not in page
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page
+
+
+def test_no_bookmarks_for_this_client_means_no_section(campaign: Case) -> None:
+    result = analyse_ip(campaign.store, ATTACKER)
+    only_another = remove(remove(_marks(), "c"), "r")
+
+    assert "<h2>Bookmarks</h2>" not in render_report(result, campaign.manifest)
+    assert "<h2>Bookmarks</h2>" not in render_report(result, campaign.manifest, shelf=only_another)

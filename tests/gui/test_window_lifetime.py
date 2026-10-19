@@ -76,6 +76,27 @@ def test_a_window_is_collectable_once_nothing_holds_it(qt_app: QApplication) -> 
     assert watch() is None, "a freshly built MainWindow is being held by something"
 
 
+@pytest.mark.parametrize("panel", ["ClientTable", "BookmarksTab"])
+def test_a_panel_is_collectable_once_nothing_holds_it(qt_app: QApplication, panel: str) -> None:
+    """A lambda on a header Qt made for itself is held where the collector cannot see.
+
+    Found 2026-10-19: the header's wrapper belongs to nobody in Python, so the
+    collector never reaches the lambda through it, and a lambda that closes over
+    the panel keeps the panel, its rows and whatever its other signals hold.
+    Bound methods on the same signals let go.
+    """
+    from logarc.gui.bookmarks_tab import BookmarksTab
+    from logarc.gui.panels import ClientTable
+
+    built = {"ClientTable": ClientTable, "BookmarksTab": BookmarksTab}[panel]()
+    watch = weakref.ref(built)
+
+    del built
+    gc.collect()
+
+    assert watch() is None, f"a dropped {panel} is still alive"
+
+
 def test_ten_built_windows_do_not_pile_up(qt_app: QApplication) -> None:
     window_refs = []
     for _ in range(10):
@@ -114,3 +135,46 @@ def test_a_window_that_loaded_a_case_is_collectable(qt_app: QApplication, tmp_pa
     gc.collect()
 
     assert watch() is None, "a window that loaded a case is still alive"
+
+
+def test_a_window_whose_bookmarks_were_used_is_collectable(
+    qt_app: QApplication, tmp_path: Path
+) -> None:
+    """Saving, editing, sorting and opening bookmarks must not root the window either.
+
+    Found 2026-10-19, before bookmarks shipped. Some of the window's panels are
+    themselves held from C for good, and PyQt holds a lambda connected to one
+    of their signals strongly — so a lambda there that closes over the window,
+    or over the keeper that holds it, keeps the window as long as the process
+    runs. A bound method in the same place is held weakly and lets go. So
+    bookmarks connect bound methods to the panels, and the tab keeps which
+    bookmarks are gone as a set of ids rather than as the keeper's own method.
+    """
+    window = MainWindow()
+    window.show()
+    window._load_case(a_case(tmp_path))
+    settled(qt_app)
+    window._bookmark_client("203.0.113.5")
+    settled(qt_app)
+    keeper = window._bookmarks
+    assert keeper.box is not None, "premise: the save box opened"
+    keeper.box.saving.emit("Bookmarked", "a note")
+    settled(qt_app)
+    (ident,) = [b.id for b in keeper.shelf.bookmarks]
+    keeper.edit(ident)
+    assert keeper.box is not None, "premise: the edit box opened"
+    keeper.box.reject()
+    keeper.manage_categories()
+    assert keeper.categories_dialog is not None, "premise: the categories opened"
+    keeper.categories_dialog.reject()
+    keeper.open(ident)
+    settled(qt_app)
+    window._clients.search_bookmark.click()
+    window._evidence.bookmark_button.click()
+    settled(qt_app)
+
+    watch = weakref.ref(window)
+    del window, keeper
+    gc.collect()
+
+    assert watch() is None, "a window whose bookmarks were used is still alive"

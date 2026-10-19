@@ -15,11 +15,12 @@ from __future__ import annotations
 import html
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import QEvent, QObject, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QPalette
+from PyQt6.QtCore import QEvent, QObject, QPoint, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QColor, QFont, QIcon, QPalette
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QLabel,
+    QMenu,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -42,6 +43,7 @@ from logarc.gui.evidence_view import (
     no_results,
 )
 from logarc.gui.filter_box import FilterBox
+from logarc.gui.ribbon import Mark, ribbon_icon, ribbon_tip
 from logarc.gui.splitter import PanelSplitter
 from logarc.gui.theme import PAD, TIGHT, caption_font, mono_font
 from logarc.search import Scope
@@ -60,6 +62,7 @@ from logarc.style import (
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
+    from logarc.core.evidence import EvidenceRef
     from logarc.core.graph import GraphNode
     from logarc.evidence import EvidenceLine
 
@@ -82,6 +85,12 @@ class EvidencePanel(QWidget):
     filter_changed = pyqtSignal(str)
     """The filter text, once the reader stops typing; at once when it is cleared."""
 
+    bookmark_requested = pyqtSignal()
+    """The activity on show asked to be bookmarked, from the button under its heading."""
+
+    bookmark_line_requested = pyqtSignal(object)
+    """A line asked to be bookmarked, from its right-click menu; carries the `EvidenceLine`."""
+
     #: How long typing must rest before the filter is applied.
     FILTER_DELAY_MS = 150
 
@@ -89,6 +98,8 @@ class EvidencePanel(QWidget):
         super().__init__()
         self._decode = True
         self._shown: tuple[GraphNode, Sequence[EvidenceLine], Filtered | None] | None = None
+        # Which lines carry a bookmark, kept so every refill can mark them again.
+        self._marks: dict[EvidenceRef, Mark] = {}
 
         # Above the table, the filter: every line of the activity it reads, not
         # only the ones loaded. What matches is the window's to work out; this
@@ -132,6 +143,17 @@ class EvidencePanel(QWidget):
         self._table = _build_table(font)
         self._column_sizes = ColumnWidths(self._table, fill=COLUMNS.index("Request"))
         self._table.itemSelectionChanged.connect(self._selection_changed)
+        self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._table.customContextMenuRequested.connect(self._show_menu)
+        # Under the heading, while there is an activity to keep.
+        self.bookmark_button = QPushButton("Bookmark")
+        self.bookmark_button.setIcon(ribbon_icon(THEME.accent, hollow=True))
+        self.bookmark_button.setToolTip("Bookmark this activity (Ctrl+D)")
+        self.bookmark_button.setFlat(True)
+        self.bookmark_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.bookmark_button.setStyleSheet(f"color:{THEME.accent}; padding:0 4px;")
+        self.bookmark_button.clicked.connect(self.bookmark_requested.emit)
+        self.bookmark_button.hide()
         self.no_results = self._build_no_results()
         self._detail = EvidenceDetails(font)
 
@@ -152,6 +174,7 @@ class EvidencePanel(QWidget):
         layout.setContentsMargins(PAD, TIGHT, PAD, TIGHT)
         layout.setSpacing(PAD)
         layout.addWidget(self._heading)
+        layout.addWidget(self.bookmark_button, 0, Qt.AlignmentFlag.AlignLeft)
         layout.addWidget(self.activity_details)
         layout.addWidget(self.filter_box)
         layout.addWidget(self.strip)
@@ -180,6 +203,7 @@ class EvidencePanel(QWidget):
         self._heading.setText("Select an activity." if prompt else "")
         self._metadata.clear()
         self.activity_details.hide()
+        self.bookmark_button.hide()
         self._table.setRowCount(0)
         self._detail.clear()
         self.strip.hide()
@@ -265,6 +289,7 @@ class EvidencePanel(QWidget):
             f'<span style="color:{EVIDENCE_MUTED}">' + "<br>".join(metadata) + "</span>"
         )
         self.activity_details.show()
+        self.bookmark_button.show()
 
         base = self._heading.font().pointSizeF()
         self._heading.setText(
@@ -293,6 +318,7 @@ class EvidencePanel(QWidget):
             for column, cell in enumerate(cells_for(line, decode=self._decode)):
                 self._table.setItem(row, column, _item(cell, index=row, column=column))
                 sizes = sizes or (column == _SIZE and bool(cell.text))
+        self._apply_marks()
         self._table.setSortingEnabled(True)
         # A column costs its heading's width whatever it holds, and several log
         # formats carry no response size at all. Empty on every row it was taking
@@ -404,6 +430,64 @@ class EvidencePanel(QWidget):
     def select_row(self, row: int) -> None:
         """Select a table row and show its evidence in full."""
         self._table.selectRow(row)
+
+    # -- bookmarks -------------------------------------------------------------
+
+    def set_marks(self, marks: Mapping[EvidenceRef, Mark]) -> None:
+        """Ribbon the lines in `marks`, and keep doing so through every refill."""
+        self._marks = dict(marks)
+        self._apply_marks()
+        self._column_sizes.fit_unset()
+
+    def _apply_marks(self) -> None:
+        lines = self._shown[1] if self._shown is not None else ()
+        for row in range(self._table.rowCount()):
+            marker = self._table.item(row, 0)
+            index = marker.data(_INDEX) if marker is not None else None
+            if marker is None or not isinstance(index, int) or not 0 <= index < len(lines):
+                continue
+            mark = self._marks.get(lines[index].ref)
+            marker.setIcon(ribbon_icon(mark[0]) if mark is not None else QIcon())
+            marker.setToolTip(ribbon_tip(mark[1]) if mark is not None else "")
+
+    def shown_node(self) -> GraphNode | None:
+        return self._shown[0] if self._shown is not None else None
+
+    def _line_at(self, row: int) -> EvidenceLine | None:
+        marker = self._table.item(row, 0)
+        index = marker.data(_INDEX) if marker is not None else None
+        if self._shown is None or not isinstance(index, int):
+            return None
+        lines = self._shown[1]
+        return lines[index] if 0 <= index < len(lines) else None
+
+    def selected_line(self) -> EvidenceLine | None:
+        rows = required(self._table.selectionModel(), "selection model").selectedRows()
+        return self._line_at(rows[0].row()) if rows else None
+
+    def select_line(self, ref: EvidenceRef) -> bool:
+        """Select the row holding `ref`; False when it is not on show."""
+        for row in range(self._table.rowCount()):
+            line = self._line_at(row)
+            if line is not None and line.ref == ref:
+                self.select_row(row)
+                return True
+        return False
+
+    def _menu_at(self, point: QPoint) -> QMenu | None:
+        """The menu a right-click at `point` opens, or None off the rows."""
+        index = self._table.indexAt(point)
+        line = self._line_at(index.row()) if index.isValid() else None
+        if line is None:
+            return None
+        menu = QMenu(self)
+        menu.addAction("Bookmark this line\u2026", lambda: self.bookmark_line_requested.emit(line))
+        return menu
+
+    def _show_menu(self, point: QPoint) -> None:
+        menu = self._menu_at(point)
+        if menu is not None:
+            menu.popup(required(self._table.viewport(), "viewport").mapToGlobal(point))
 
     # -- the detail ----------------------------------------------------------
 

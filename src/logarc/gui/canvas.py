@@ -47,6 +47,7 @@ from PyQt6.QtWidgets import (
 from logarc.core.graph import GraphKind, reciprocal_pairs
 from logarc.graphbuild.layout import COLUMN, ROW, Point, layout_graph, sessions_in
 from logarc.gui.arrangement import Move, MoveHistory, Positions
+from logarc.gui.ribbon import Mark, ribbon_polygon, ribbon_tip
 from logarc.style import (
     CAPTION_COLOUR,
     PAPER,
@@ -63,7 +64,7 @@ from logarc.style import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping
 
     from PyQt6.QtGui import QMouseEvent, QResizeEvent
 
@@ -92,6 +93,10 @@ _IP_PROMPT_SCALE: Final = _PLACEHOLDER_SCALE * 0.4
 #: investigator pan instead. Requiring a pan is a smaller failure than
 #: presenting a picture nobody can read.
 MIN_FIT_SCALE: Final = 0.8
+
+#: The room left around an activity brought into view, in pixels, so it does
+#: not land hard against the canvas edge.
+_BRING_MARGIN: Final = 40
 
 #: How far the corner button sits from the canvas edge. Small, because the
 #: patch it covers is a patch of graph given up.
@@ -675,6 +680,10 @@ class ActivityCanvas(QGraphicsView):
         self._edges_by_node: dict[str, list[_EdgeArt]] = {}
         self._halo: QGraphicsEllipseItem | None = None
         self._selected: str | None = None
+        # Which activities carry a bookmark, by node id, and the ribbons drawn for
+        # them: kept so a redraw of the same graph puts them back.
+        self._marks: dict[str, Mark] = {}
+        self._ribbons: list[QGraphicsPolygonItem] = []
         self._lit: str | None = None
         self._history = MoveHistory()
         # Where the layout put each node, before any saved arrangement was
@@ -910,7 +919,10 @@ class ActivityCanvas(QGraphicsView):
             level = 1.0 if wanted is None or node_id in wanted else FADED
             item.setOpacity(level)
             for caption in item.childItems():
-                _words(caption).setOpacity(level)
+                # A bookmark's ribbon is a child too, with no words on it; it
+                # takes its node's opacity as every child does.
+                if caption.data(0) != "bookmark":
+                    _words(caption).setOpacity(level)
         for art in self._edge_art:
             full = wanted is None or (art.source_id in wanted and art.target_id in wanted)
             level = 1.0 if full else FADED
@@ -1171,6 +1183,60 @@ class ActivityCanvas(QGraphicsView):
         self._scene.addItem(halo)
         self._halo = halo
 
+    def set_marks(self, marks: Mapping[str, Mark]) -> None:
+        """Ribbon the activities in `marks`, by node id, replacing any ribbons drawn."""
+        self._marks = dict(marks)
+        self._draw_ribbons()
+
+    def selected_node_id(self) -> str | None:
+        """The activity whose evidence is being read, as `highlight` last ringed it."""
+        return self._selected
+
+    def bring_into_view(self, node_id: str) -> None:
+        """Move the view just far enough to show an activity and its caption.
+
+        Nothing moves when it is on screen already. Needed because a graph too
+        large to frame at a readable scale opens on its beginning, and an
+        activity opened from elsewhere (a bookmark, Where to start) can lie
+        anywhere in it.
+        """
+        item = self._nodes.get(node_id)
+        if item is None:
+            return
+        drawn = item.sceneBoundingRect().united(item.mapRectToScene(item.childrenBoundingRect()))
+        viewport = self.viewport()
+        if viewport is not None and viewport.rect().contains(
+            self.mapFromScene(drawn).boundingRect()
+        ):
+            return
+        self.ensureVisible(drawn, _BRING_MARGIN, _BRING_MARGIN)
+
+    def _draw_ribbons(self) -> None:
+        for ribbon in self._ribbons:
+            if ribbon.scene() is not None:
+                self._scene.removeItem(ribbon)
+        self._ribbons = []
+        for node_id, (colour, tip) in self._marks.items():
+            item = self._nodes.get(node_id)
+            if item is None:
+                continue
+            bounds = item.rect()
+            width, height = max(9.0, bounds.width() * 0.2), max(14.0, bounds.width() * 0.32)
+            # A child of the node, so a drag carries it and a fade dims it too.
+            ribbon = QGraphicsPolygonItem(
+                ribbon_polygon(bounds.right() - width * 1.6, bounds.top() - 3.0, width, height),
+                item,
+            )
+            ribbon.setBrush(QBrush(QColor(colour)))
+            pen = QPen(QColor(PAPER))
+            pen.setWidthF(1.2)
+            ribbon.setPen(pen)
+            ribbon.setToolTip(ribbon_tip(tip))
+            ribbon.setData(0, "bookmark")
+            # A press on the ribbon is a press on its activity.
+            ribbon.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+            self._ribbons.append(ribbon)
+
     def show_graph(
         self,
         graph: ActivityGraph,
@@ -1199,6 +1265,9 @@ class ActivityCanvas(QGraphicsView):
         rest are drawn faded. Not carried from one graph to the next: ids from
         the last client name nothing in this one, and kept they would fade it all.
         """
+        if graph is not self._graph:
+            # Ids from the last graph name nothing in this one.
+            self._marks = {}
         self._graph = graph
         self._session_policy = session_policy
         self._matching = matching
@@ -1222,6 +1291,7 @@ class ActivityCanvas(QGraphicsView):
             self._draw(graph, placed)
         finally:
             self._drawing = False
+        self._draw_ribbons()
 
     def _draw(self, graph: ActivityGraph, positions: dict[str, Point]) -> None:
         """Put the arrows down, then the activities on top of them, then a box
@@ -1382,6 +1452,7 @@ class ActivityCanvas(QGraphicsView):
         onto their replacements would move whichever activity inherited the id.
         """
         self._scene.clear()
+        self._ribbons = []
         self._nodes.clear()
         self._edge_art.clear()
         self._edges_by_node.clear()

@@ -7,13 +7,14 @@ from html import escape
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal
+from PyQt6.QtCore import QPoint, Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QColor, QFontMetrics, QTextOption
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QPushButton,
     QTabBar,
     QTableWidget,
@@ -56,6 +57,8 @@ class TriagePanel(QWidget):
     """Show reasons and source links; the worker owns every analysis decision."""
 
     investigate = pyqtSignal(str, object)
+    bookmark_requested = pyqtSignal(str)
+    """A queued client asked to be bookmarked, from its right-click menu."""
 
     finished = pyqtSignal()
     """A scan finished, and `result` now answers for the case and range."""
@@ -134,6 +137,8 @@ class TriagePanel(QWidget):
         # A single click selects a row so its reasons can be read; opening the client
         # is a deliberate act: double-click, or Inspect supporting requests.
         self.table.cellDoubleClicked.connect(lambda row, column: self._investigate())
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_menu)
         self.details = QTextBrowser()
         document = self.details.document()
         if document is not None:
@@ -500,6 +505,27 @@ class TriagePanel(QWidget):
                 self._render()
             elif self._sources.get(example.evidence, SourceStatus("", True)).can_open:
                 self.investigate.emit(row.profile.client_ip, (example.evidence,))
+
+    def selected_client(self) -> str | None:
+        """The queued client on the current row, if there is one."""
+        index = self.table.currentRow()
+        return self._rows[index].profile.client_ip if 0 <= index < len(self._rows) else None
+
+    def _menu_at(self, point: QPoint) -> QMenu | None:
+        """The menu a right-click at `point` opens, or None off the rows."""
+        index = self.table.indexAt(point)
+        if not index.isValid() or not 0 <= index.row() < len(self._rows):
+            return None
+        address = self._rows[index.row()].profile.client_ip
+        menu = QMenu(self)
+        menu.addAction("Bookmark this client\u2026", lambda: self.bookmark_requested.emit(address))
+        return menu
+
+    def _show_menu(self, point: QPoint) -> None:
+        menu = self._menu_at(point)
+        viewport = self.table.viewport()
+        if menu is not None and viewport is not None:
+            menu.popup(viewport.mapToGlobal(point))
 
     def _investigate(self) -> None:
         index = self.table.currentRow()

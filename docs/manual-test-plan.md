@@ -1026,6 +1026,78 @@ end before it starts`.
 
 ---
 
+## 25. Bookmarks keep what was found, and go back to it
+
+1. Open a case made from the shopfront excerpt: 52 clients, 9 to 15 March 2026.
+   Open the **Bookmarks** tab.
+
+**Pass:** the tab is named `Bookmarks` and says *No bookmarks yet. Press Ctrl+D
+on a client, an activity or a log line to save it here.*
+
+2. Open `192.0.2.23`, select its first **Credential Attack**, on 10 March at
+   19:12, and press **Bookmark** under its heading.
+
+**Pass:** a box opens under the button, inside the window:
+`Bookmark this activity`, `Credential Attack · 6 requests · 10 Mar 19:12–19:13`,
+`192.0.2.23`, and the category `Bookmarked`.
+
+3. Type `Login attacks` as the category and
+   `Six failed sign-ins in a minute; the lockout held.` as the note. Press Enter.
+
+**Pass:** the box closes and the status line says `Bookmarked in Login attacks.`
+The tab reads `Bookmarks (1)`. The activity wears a ribbon on the canvas, and so
+does `192.0.2.23` in the client list.
+
+4. Click `excerpt.log:2019` in the evidence table and press **Ctrl+D**.
+
+**Pass:** `Bookmark this line`,
+`POST /login · 429 · 10 Mar 19:13:36 · excerpt.log:2019`, with the category at
+`Login attacks`. Save it: the line wears a ribbon.
+
+5. Type `path:/admin` and a space in the client box, then press **Bookmark this
+   search** under the caption.
+
+**Pass:** `Bookmark this search`, `path:/admin · 8 clients · 123 requests`,
+`whole case`. Type `Recon` as the category and save.
+
+6. Open the **Bookmarks** tab.
+
+**Pass:** `Bookmarks (3)` and `3 bookmarks in 2 categories`. Under **Login
+attacks**, the line first and then the activity, each with its note in italics.
+Under **Recon**, the search, with `whole case` in the Client column.
+
+7. Go back to the first Credential Attack and press **Bookmark** again.
+
+**Pass:** the status line says `Already bookmarked: edit it here.` and the box
+is `Edit bookmark`, holding the note. Press Esc.
+
+8. Set the range to start at `2026-03-14 00:00`: the line beside it says
+   `16 of 52 clients`. Double-click the Credential Attack in the Bookmarks tab.
+
+**Pass:** the range becomes the whole case. `192.0.2.23` is shown with the
+Credential Attack selected, ringed and in view, and the status line says
+`192.0.2.23: 8 activities. The range is now the whole case: the bookmark is
+outside the one that was set.`
+
+9. **Export → HTML report…**, then **Export → Bookmarks…**.
+
+**Pass:** the report has a **Bookmarks** section before Provenance, with both
+notes and line 2019 as the log holds it; the search, which belongs to no client,
+is not in it. The CSV has three rows under
+`category,kind,client,what,note,saved,line,log line`, the line first; the
+activity's row names `excerpt.log:2014`, its first line.
+
+10. Close the window. In a copy of the case, replace `bookmarks.json` with
+    `{ not json`, and open the copy.
+
+**Pass:** the tab is named `Bookmarks`, lists nothing, and says above the list:
+*The bookmarks file in this case could not be read (Expecting property name
+enclosed in double quotes: line 1 column 3 (char 2)), so none are shown. It is
+kept as it is; the next bookmark saved sets it aside as
+bookmarks.unreadable.json.*
+
+---
+
 ## Recording a run
 
 | # | Check | Result | Notes |
@@ -1054,5 +1126,6 @@ end before it starts`.
 | 22 | Sessions are boxed and explained; the boxes follow a drag and can be turned off | | |
 | 23 | The evidence filters, says how much it kept, fades the canvas, and resets per client | | |
 | 24 | The client box finds clients by their requests, moves the range for a time, and opens a client filtered | | |
+| 25 | Bookmarks save from each place, wear ribbons, list by category, reopen past the range, export, and survive an unreadable file | | |
 
 Version tested: ______  ·  Date: ______  ·  Machine: ______

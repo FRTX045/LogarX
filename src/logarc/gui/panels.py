@@ -9,14 +9,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import QPoint, QRect, QRectF, QSize, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QPainter, QPen, QPixmap
+from PyQt6.QtCore import QPoint, QRectF, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QHBoxLayout,
     QLabel,
-    QLayout,
-    QLayoutItem,
+    QMenu,
     QPushButton,
     QTableWidget,
     QVBoxLayout,
@@ -29,6 +29,8 @@ from logarc.gui.client_filter import caption as filter_caption
 from logarc.gui.client_filter import match_caption, matches
 from logarc.gui.columns import ColumnWidths
 from logarc.gui.filter_box import FilterBox
+from logarc.gui.flow import FlowLayout
+from logarc.gui.ribbon import Mark, ribbon_icon, ribbon_tip
 from logarc.gui.theme import PAD, TIGHT, caption_font, colour_text, mono_font
 from logarc.search import ANY_DAY, Scope, is_time, parse
 from logarc.style import (
@@ -180,6 +182,12 @@ class ClientTable(QWidget):
     putting the case back rather than by reconstructing anything.
     """
 
+    bookmark_requested = pyqtSignal(str)
+    """A client's row asked to be bookmarked, from its right-click menu."""
+
+    bookmark_search_requested = pyqtSignal()
+    """The search answered on screen asked to be bookmarked."""
+
     def __init__(self) -> None:
         super().__init__()
         # How large the case is, which is not how many rows were drawn from
@@ -206,6 +214,8 @@ class ClientTable(QWidget):
         # redraw of the caption cannot replace it with a count of nothing.
         self._message: tuple[str, str] | None = None
         self._open: str | None = None
+        # Which clients carry a bookmark, kept so every refill can mark them again.
+        self._marks: dict[str, Mark] = {}
         self._table = _Rows(0, len(_COLUMNS))
         self._table.setHorizontalHeaderLabels(_COLUMNS)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -235,13 +245,15 @@ class ClientTable(QWidget):
         # in half — leaving the one thing this header says beyond its six words,
         # which column the table is ordered by, half drawn.
         header.setMinimumHeight(header.fontMetrics().height() + 14)
-        header.sortIndicatorChanged.connect(lambda *_: self._refresh_caption())
-        header.sortIndicatorChanged.connect(
-            lambda section, _order: self._column_sizes.fit_heading(section)
-        )
+        # A bound method, not a lambda: Qt made this header, so the collector
+        # cannot reach a lambda through it, and one closing over the table kept
+        # the table alive for good (test_window_lifetime).
+        header.sortIndicatorChanged.connect(self._sort_changed)
         header.moveSection(_MATCH, _ADDRESS + 1)
         self._table.setColumnHidden(_MATCH, True)
         self._table.itemSelectionChanged.connect(self._emit_choice)
+        self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._table.customContextMenuRequested.connect(self._show_menu)
 
         # Addresses as before, typed and found at once on the page; filters on
         # what clients sent, as chips, answered from the whole case. Monospace,
@@ -266,6 +278,15 @@ class ClientTable(QWidget):
         self._caption.setWordWrap(True)
         self._caption.setFont(caption_font(self._caption.font()))
         colour_text(self._caption, THEME.muted)
+        # Beside the caption of a search's answer, and only then: a search is
+        # worth keeping once it has found something to keep.
+        self.search_bookmark = QPushButton("Bookmark this search")
+        self.search_bookmark.setIcon(ribbon_icon(THEME.accent, hollow=True))
+        self.search_bookmark.setFlat(True)
+        self.search_bookmark.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.search_bookmark.setStyleSheet(f"color:{THEME.accent}; padding:0 4px;")
+        self.search_bookmark.clicked.connect(self.bookmark_search_requested.emit)
+        self.search_bookmark.hide()
         layout = QVBoxLayout(self)
         # Not flush against the frame. At zero the caption and the first column
         # both start at x=0, and the window edge cut the leading character off
@@ -274,6 +295,7 @@ class ClientTable(QWidget):
         layout.setSpacing(TIGHT)
         layout.addWidget(self._filter)
         layout.addWidget(self._caption)
+        layout.addWidget(self.search_bookmark, 0, Qt.AlignmentFlag.AlignLeft)
         layout.addWidget(self._table)
         paging = QHBoxLayout()
         paging.addWidget(self._previous)
@@ -356,6 +378,9 @@ class ClientTable(QWidget):
             self._set(row, 5, format_seen(summary.last_seen))
             found = hits[row] if row < len(hits) else 0
             self._set(row, _MATCH, f"{found:,}", sort_key=found)
+        # Marked before the columns are measured, so a ribbon's width is counted
+        # and never cuts the address beside it.
+        self._apply_marks()
         # Measured once, with sorting off: Qt then leaves the sort arrow's room
         # out of every heading, which keeps the list inside its panel.
         self._column_sizes.fit_unset()
@@ -507,6 +532,72 @@ class ClientTable(QWidget):
                 return True
         return False
 
+    # -- bookmarks -------------------------------------------------------------
+
+    def set_marks(self, marks: Mapping[str, Mark]) -> None:
+        """Ribbon the clients in `marks`, and keep doing so through every refill."""
+        self._marks = dict(marks)
+        blocked = self._table.blockSignals(True)
+        self._table.setSortingEnabled(False)
+        self._apply_marks()
+        self._column_sizes.fit_unset()
+        self._table.setSortingEnabled(True)
+        header = required(self._table.horizontalHeader(), "column header")
+        self._column_sizes.fit_heading(header.sortIndicatorSection())
+        self._table.blockSignals(blocked)
+
+    def _apply_marks(self) -> None:
+        for row in range(self._table.rowCount()):
+            cell = self._table.item(row, _ADDRESS)
+            if cell is None:
+                continue
+            mark = self._marks.get(cell.text())
+            cell.setIcon(ribbon_icon(mark[0]) if mark is not None else QIcon())
+            cell.setToolTip(ribbon_tip(mark[1]) if mark is not None else "")
+
+    def _sort_changed(self, section: int, _order: Qt.SortOrder) -> None:
+        """Ordered by another column: the caption says so, and its heading fits."""
+        self._refresh_caption()
+        self._column_sizes.fit_heading(section)
+
+    def box_has_focus(self) -> bool:
+        """Whether the keyboard is in the client box rather than the list."""
+        focus = QApplication.focusWidget()
+        return focus is not None and (focus is self._filter or self._filter.isAncestorOf(focus))
+
+    def selected_client(self) -> str | None:
+        rows = required(self._table.selectionModel(), "selection model").selectedRows()
+        cell = self._table.item(rows[0].row(), _ADDRESS) if rows else None
+        return cell.text() if cell is not None else None
+
+    def answered_search(self) -> tuple[str, int, int | None] | None:
+        """The search whose answer is on screen: its text, clients, and requests if counted."""
+        if (
+            self._counted is None
+            or self._searching
+            or self._matching is None
+            or self._message is not None
+            or self._query != self._filter.text().strip()
+        ):
+            return None
+        return self._query, self._matching, self._requests if self._counted else None
+
+    def _menu_at(self, point: QPoint) -> QMenu | None:
+        """The menu a right-click at `point` opens, or None off the rows."""
+        index = self._table.indexAt(point)
+        cell = self._table.item(index.row(), _ADDRESS) if index.isValid() else None
+        if cell is None:
+            return None
+        address = cell.text()
+        menu = QMenu(self)
+        menu.addAction("Bookmark this client\u2026", lambda: self.bookmark_requested.emit(address))
+        return menu
+
+    def _show_menu(self, point: QPoint) -> None:
+        menu = self._menu_at(point)
+        if menu is not None:
+            menu.popup(required(self._table.viewport(), "viewport").mapToGlobal(point))
+
     def _filter_changed(self) -> None:
         """Narrow the page at once, then search the whole case if the page is not all of it.
 
@@ -610,6 +701,7 @@ class ClientTable(QWidget):
         return _MATCH if self._counted else _COLUMNS.index("Reqs")
 
     def _refresh_caption(self) -> None:
+        self.search_bookmark.setVisible(self.answered_search() is not None)
         if self._message is not None:
             text, colour = self._message
             self._caption.setText(text)
@@ -718,7 +810,7 @@ _SOLID_RANGE = (1.5, 4.0)
 #: whose contents are fixed and whose width is not: growing the outcome samples
 #: enough to be legible took it to 634px in a 620px column, and it wrapped —
 #: putting `Unknown` alone on a second row, which is precisely the fault
-#: `_FlowLayout` was written to fix. Six and three buy the width back while
+#: `FlowLayout` was written to fix. Six and three buy the width back while
 #: keeping the ratio that groups a swatch with its label rather than with its
 #: neighbour, which four and four would not.
 _ENTRY_GAP = 6
@@ -761,87 +853,6 @@ def _outline_sample(colour: str, style: str, width: float) -> QPixmap:
     return pixmap
 
 
-class _FlowLayout(QLayout):
-    """Items in a row that wraps onto further rows when the width runs out.
-
-    Qt ships nothing like it, and the legend needs one. Laid out as a single
-    horizontal row the key reported a minimum width of **1,729px** — wider than
-    the window it sits in — and a minimum is a demand, not a preference. The
-    centre column inherited it, both side panels were pinned at their own
-    minimums to pay for it, and with no slack left anywhere the splitter handles
-    stopped moving: the client panel could be its minimum or collapsed, and
-    nothing in between.
-
-    A key is a set of small independent items. It should take as many rows as it
-    needs and ask for no more width than its widest single entry.
-    """
-
-    def __init__(self, parent: QWidget | None = None, spacing: int = 10) -> None:
-        super().__init__(parent)
-        self._items: list[QLayoutItem] = []
-        self.setSpacing(spacing)
-
-    # -- the five methods QLayout requires a subclass to provide -------------
-
-    def addItem(self, item: QLayoutItem | None) -> None:  # noqa: N802 - Qt's naming
-        if item is not None:
-            self._items.append(item)
-
-    def count(self) -> int:
-        return len(self._items)
-
-    def itemAt(self, index: int) -> QLayoutItem | None:  # noqa: N802 - Qt's naming
-        return self._items[index] if 0 <= index < len(self._items) else None
-
-    def takeAt(self, index: int) -> QLayoutItem | None:  # noqa: N802 - Qt's naming
-        return self._items.pop(index) if 0 <= index < len(self._items) else None
-
-    # -- how it sizes --------------------------------------------------------
-
-    def expandingDirections(self) -> Qt.Orientation:  # noqa: N802 - Qt's naming
-        return Qt.Orientation(0)
-
-    def hasHeightForWidth(self) -> bool:  # noqa: N802 - Qt's naming
-        return True
-
-    def heightForWidth(self, width: int) -> int:  # noqa: N802 - Qt's naming
-        return self._lay_out(QRect(0, 0, width, 0), place=False)
-
-    def setGeometry(self, rect: QRect) -> None:  # noqa: N802 - Qt's naming
-        super().setGeometry(rect)
-        self._lay_out(rect, place=True)
-
-    def sizeHint(self) -> QSize:  # noqa: N802 - Qt's naming
-        return self.minimumSize()
-
-    def minimumSize(self) -> QSize:  # noqa: N802 - Qt's naming
-        """One item wide. This is the number the whole window was hostage to."""
-        size = QSize()
-        for item in self._items:
-            size = size.expandedTo(item.minimumSize())
-        margins = self.contentsMargins()
-        return size + QSize(margins.left() + margins.right(), margins.top() + margins.bottom())
-
-    def _lay_out(self, rect: QRect, *, place: bool) -> int:
-        """Place each item, wrapping at the edge; returns the height used."""
-        margins = self.contentsMargins()
-        left = rect.x() + margins.left()
-        right = rect.right() - margins.right()
-        x, y, row_height = left, rect.y() + margins.top(), 0
-
-        for item in self._items:
-            hint = item.sizeHint()
-            if x > left and x + hint.width() > right:
-                x, y = left, y + row_height + self.spacing()
-                row_height = 0
-            if place:
-                item.setGeometry(QRect(QPoint(x, y), hint))
-            x += hint.width() + self.spacing()
-            row_height = max(row_height, hint.height())
-
-        return y + row_height + margins.bottom() - rect.y()
-
-
 class LegendBar(QWidget):
     """The key to the canvas: what colour, outline and size each mean.
 
@@ -864,7 +875,7 @@ class LegendBar(QWidget):
         # between them — at 1500px it did, leaving `Unknown` on a row of its own.
         # A colour on one line and its meaning on another is the one thing a key
         # cannot do, so the pair is a single widget and wraps whole.
-        self.flow = _FlowLayout(spacing=_ENTRY_GAP)
+        self.flow = FlowLayout(spacing=_ENTRY_GAP)
         self.flow.addWidget(self._label("Severity"))
         for item in severity_legend():
             self.flow.addWidget(self._entry(self._swatch(item.colour, filled=True), item.label))

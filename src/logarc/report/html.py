@@ -15,6 +15,7 @@ import html
 import json
 from typing import TYPE_CHECKING, Final
 
+from logarc.bookmarks import newest_first
 from logarc.core.activity import Outcome, Severity
 from logarc.core.graph import GraphKind, reciprocal_pairs
 from logarc.graphbuild.layout import layout_graph
@@ -22,7 +23,11 @@ from logarc.style import edge_label, severity_colour, severity_legend
 from logarc.timerange import spoken
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from logarc.analysis import AnalysisResult
+    from logarc.bookmarks import Shelf
+    from logarc.core.evidence import EvidenceRef
     from logarc.core.graph import ActivityGraph, GraphEdge
     from logarc.storage.case import CaseManifest
 
@@ -53,8 +58,18 @@ _MARGIN: Final = 60.0
 _PAIR_BOW: Final = 40.0
 
 
-def render_report(result: AnalysisResult, manifest: CaseManifest | None = None) -> str:
-    """Render a complete report for one client as a single HTML document."""
+def render_report(
+    result: AnalysisResult,
+    manifest: CaseManifest | None = None,
+    *,
+    shelf: Shelf | None = None,
+    lines: Mapping[EvidenceRef, str] | None = None,
+) -> str:
+    """Render a complete report for one client as a single HTML document.
+
+    `shelf` is the case's bookmarks; the ones on this client are listed, with
+    the raw log line from `lines` under each request.
+    """
     return _DOCUMENT.format(
         ip=html.escape(result.client_ip),
         style=_STYLE,
@@ -63,6 +78,7 @@ def render_report(result: AnalysisResult, manifest: CaseManifest | None = None) 
         trace=_svg(result.trace),
         behaviour=_svg(result.behaviour),
         episodes=_episode_table(result),
+        bookmarks=_bookmarks(result, shelf, lines or {}),
         provenance=_provenance(result, manifest),
         payload=html.escape(json.dumps(result.to_dict(), indent=2)),
     )
@@ -262,6 +278,46 @@ def _episode_table(result: AnalysisResult) -> str:
     return "".join(rows)
 
 
+def _bookmarks(
+    result: AnalysisResult, shelf: Shelf | None, lines: Mapping[EvidenceRef, str]
+) -> str:
+    """The reader's own marks on this client, newest first; nothing when there are none.
+
+    Everything here was typed by a reader or written by the client being
+    investigated, so all of it is escaped. A category's colour was picked for the
+    window's dark ground and can be pale on this page, so its swatch is outlined
+    and the category is named beside it: the colour never carries the meaning
+    alone.
+    """
+    if shelf is None:
+        return ""
+    theirs = newest_first(mark for mark in shelf.bookmarks if mark.client == result.client_ip)
+    if not theirs:
+        return ""
+    rows = []
+    for mark in theirs:
+        raw = lines.get(mark.line) if mark.line is not None else None
+        what = (
+            html.escape(mark.said) or f'<span class="muted">{html.escape(mark.kind.value)}</span>'
+        )
+        if raw is not None:
+            what += f"<pre>{html.escape(raw)}</pre>"
+        rows.append(
+            "<tr>"
+            f'<td><span class="pill"><i class="swatch" style="background:'
+            f'{shelf.colour_of(mark.category)}"></i>{html.escape(mark.category)}</span></td>'
+            f"<td>{html.escape(mark.kind.value.title())}</td>"
+            f"<td>{what}</td>"
+            f"<td>{html.escape(mark.note)}</td>"
+            f'<td class="mono small">{mark.saved:%Y-%m-%d %H:%M} UTC</td>'
+            "</tr>"
+        )
+    return (
+        "<h2>Bookmarks</h2><table><thead><tr><th>Category</th><th>Kind</th><th>What</th>"
+        "<th>Note</th><th>Saved</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
+    )
+
+
 def _provenance(result: AnalysisResult, manifest: CaseManifest | None) -> str:
     rows = [("Ruleset fingerprint", result.ruleset_fingerprint)]
     if manifest is not None:
@@ -324,6 +380,8 @@ tr:last-child td { border-bottom: none; }
   padding: .1rem .55rem; font-size: .78rem; background: #f1f5f9; color: #0f172a; }
 .pill i { width: 10px; height: 10px; border-radius: 999px; display: inline-block; }
 .empty { color: #64748b; font-style: italic; }
+.pill i.swatch { border: 1px solid #64748b; }
+td pre { margin: .4rem 0 0; padding: .5rem .7rem; white-space: pre-wrap; word-break: break-all; }
 .node-title { font: 600 14px system-ui, sans-serif; fill: #0f172a; }
 .node-meta { font: 12px system-ui, sans-serif; fill: #64748b; }
 .legend{font-size:12px;color:#475569;margin:0 0 10px}
@@ -363,7 +421,7 @@ links back to the log lines that produced it.</p>
 <th>Requests</th><th>Outcome</th><th>Top targets</th><th>Evidence</th>
 </tr></thead><tbody>{episodes}</tbody></table>
 
-<h2>Provenance</h2>
+{bookmarks}<h2>Provenance</h2>
 <table><thead><tr><th>Item</th><th>Value</th></tr></thead>
 <tbody>{provenance}</tbody></table>
 

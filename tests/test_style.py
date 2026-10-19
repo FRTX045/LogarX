@@ -15,6 +15,7 @@ from logarc.core.graph import GraphKind, GraphNode
 from logarc.sessionize.segmenter import SessionPolicy
 from logarc.style import (
     CAPTION_COLOUR,
+    CATEGORY_COLOURS,
     DARK,
     EVIDENCE_INK,
     EVIDENCE_MUTED,
@@ -699,3 +700,18 @@ def test_everything_drawn_inside_a_box_still_reads_against_it() -> None:
         assert contrast(severity_colour(level), SESSION_GROUND) >= 3.0, level
     for outcome in Outcome:
         assert contrast(outcome_border(outcome).colour, SESSION_GROUND) >= 3.0, outcome
+
+
+def test_bookmark_categories_read_on_every_surface_and_apart_from_each_other() -> None:
+    """A ribbon says which category; eight that look alike would say nothing.
+
+    And none may be mistaken for the alert, which means trouble with the evidence.
+    """
+    assert len(CATEGORY_COLOURS) == 8
+    assert CATEGORY_COLOURS[0] == THEME.accent
+    for colour in CATEGORY_COLOURS:
+        for ground in (THEME.surface, THEME.raised, THEME.stripe):
+            assert contrast(colour, ground) >= 3.0, (colour, ground)
+        assert apart(colour, THEME.alert) >= 0.1, colour
+    for one, other in combinations(CATEGORY_COLOURS, 2):
+        assert apart(one, other) >= 0.1, (one, other)

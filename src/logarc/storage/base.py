@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator
+    from collections.abc import Collection, Iterable, Iterator
 
     from logarc.core.event import NormalizedEvent
     from logarc.core.window import TimeWindow
@@ -184,6 +184,10 @@ class EventStore(Protocol):
         addresses narrow the clients; `clients`, when given, holds the search to
         those (what `activity:` hands over). Ties go to the lower address.
         """
+        ...
+
+    def clients_present(self, clients: Collection[str]) -> frozenset[str]:
+        """Which of `clients`, as whole addresses, the case holds."""
         ...
 
     def value_counts(

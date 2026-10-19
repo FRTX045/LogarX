@@ -14,7 +14,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from PyQt6.QtCore import QSettings, Qt
+from PyQt6.QtCore import QPoint, QSettings, Qt
 from PyQt6.QtGui import QAction, QCloseEvent, QColor, QImage, QKeyEvent, QKeySequence, QPainter
 from PyQt6.QtWidgets import (
     QApplication,
@@ -34,6 +34,14 @@ from PyQt6.QtWidgets import (
 )
 
 from logarc import __version__
+from logarc.bookmarks import (
+    Kind,
+    said_for_activity,
+    said_for_client,
+    said_for_request,
+    said_for_search,
+    to_csv,
+)
 from logarc.case import Case, CaseError
 from logarc.caseview import (
     EVIDENCE_LIMIT,
@@ -51,6 +59,8 @@ from logarc.gui import crash, prefs, recent
 from logarc.gui._qt import required
 from logarc.gui.arrangement_bar import ArrangementBar
 from logarc.gui.arrangement_keeper import ArrangementKeeper, Showing
+from logarc.gui.bookmark_keeper import BookmarkKeeper, Draft
+from logarc.gui.bookmarks_tab import BookmarksTab
 from logarc.gui.canvas import ActivityCanvas
 from logarc.gui.case_chooser import CaseChooser
 from logarc.gui.client_filter import awaiting_scan, is_whole_address
@@ -96,11 +106,12 @@ from logarc.triage.scan import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
-    from datetime import date
+    from datetime import date, datetime
 
     from logarc.analysis import AnalysisResult
     from logarc.core.evidence import EvidenceRef
     from logarc.core.graph import GraphNode
+    from logarc.evidence import EvidenceLine
     from logarc.storage.base import TimeSlot
 
 __all__ = ["MainWindow", "main"]
@@ -145,6 +156,15 @@ _MONO_CSS = ",".join(f"'{family}'" for family in MONO_FAMILIES)
 #: counts both its ends and `before:` counts neither, so the range keeps every
 #: moment up to the one it names.
 _JUST_BEFORE = timedelta(microseconds=1)
+
+#: Said when opening a bookmark moved the range: what it points at is outside
+#: the stretch that was set, and the time bar puts that back in one step.
+_WIDENED = "The range is now the whole case: the bookmark is outside the one that was set."
+
+
+def _raw_lines(case: Case, refs: Sequence[EvidenceRef]) -> dict[EvidenceRef, str]:
+    """The log lines behind `refs`, as written; one that cannot be read is left out."""
+    return {line.ref: line.text for line in case.read_evidence(refs) if line.text is not None}
 
 
 def _crs_config_now(site_hosts: Sequence[str]) -> SidecarConfig | None:
@@ -263,6 +283,22 @@ class MainWindow(QMainWindow):
         self._clients.page_requested.connect(self._search_clients)
         self._clients.range_typed.connect(self._move_range)
         self._canvas.node_selected.connect(self._show_evidence)
+        # The open case's bookmarks. The keeper owns the file, the save box and
+        # the tab's list; the window is handed to it as the one that knows how
+        # to open a client, a line or a search, and checks what is still there.
+        #
+        # Bound methods, never lambdas. PyQt holds a lambda strongly and some of
+        # these panels are themselves held from C for good, so a lambda here
+        # closing over the window would keep it alive as long as the process
+        # runs; `test_window_lifetime` is where that was found.
+        self._bookmarks_tab = BookmarksTab()
+        self._bookmarks = BookmarkKeeper(self, self._bookmarks_tab, self, say=self._idle)
+        self._bookmarks.changed.connect(self._bookmarks_changed)
+        self._clients.bookmark_requested.connect(self._bookmark_client)
+        self._clients.bookmark_search_requested.connect(self._bookmark_search_from_button)
+        self._triage.bookmark_requested.connect(self._bookmark_client)
+        self._evidence.bookmark_requested.connect(self._bookmark_activity_from_button)
+        self._evidence.bookmark_line_requested.connect(self._bookmark_line)
 
         self._build_layout()
         self._build_menu()
@@ -342,6 +378,7 @@ class MainWindow(QMainWindow):
         self._workspace = QTabWidget()
         self._workspace.addTab(self._triage, "Where to start")
         self._workspace.addTab(centre, "Reconstruction")
+        self._workspace.addTab(self._bookmarks_tab, "Bookmarks")
         self._workspace.setCurrentIndex(1)
         splitter = self._build_splitter(self._workspace)
         # Kept as an attribute for the tests that size it directly, now that
@@ -509,6 +546,17 @@ class MainWindow(QMainWindow):
         self._arrangements_kept.refresh()
         edit_menu.addSeparator()
 
+        # Whatever has the keyboard: a log line, an activity, a client or a
+        # search. On the window as well as in the menu, like full screen, so it
+        # still answers while the menu bar is hidden.
+        self._bookmark_action = self._add(edit_menu, "&Bookmark…", self._bookmark_focused)
+        self._bookmark_action.setShortcut(QKeySequence("Ctrl+D"))
+        self._bookmark_action.setStatusTip(
+            "Save what you are looking at to this case's bookmarks, with a note."
+        )
+        self.addAction(self._bookmark_action)
+        edit_menu.addSeparator()
+
         preferences = self._add(edit_menu, "&Preferences…", self._show_preferences)
         preferences.setShortcut(QKeySequence("Ctrl+,"))
         preferences.setStatusTip("Change how the graph, the evidence and the launch behave.")
@@ -562,8 +610,15 @@ class MainWindow(QMainWindow):
         self._who_else_dialog: WhoElseDialog | None = None
         about_this = QAction(self._canvas)
         about_this.setSeparator(True)
+        # Its own action rather than the Edit menu's: that one bookmarks
+        # whatever has the keyboard, and a right-click means the activity under
+        # the pointer. No shortcut, or Ctrl+D would belong to two actions and
+        # Qt would run neither.
+        self._bookmark_node_action = QAction("Bookmark this activity…", self)
+        self._bookmark_node_action.triggered.connect(self._bookmark_node)
         self._canvas.addActions(
             [
+                self._bookmark_node_action,
                 required(self._who_else_menu.menuAction(), "action"),
                 about_this,
                 self._save_layout_action,
@@ -579,6 +634,10 @@ class MainWindow(QMainWindow):
         self._add(export_menu, "&HTML report…", lambda: self._export("html"))
         self._add(export_menu, "&JSON graph…", lambda: self._export("json"))
         self._add(export_menu, "&PNG image…", lambda: self._export("png"))
+        export_menu.addSeparator()
+        self._add(export_menu, "&Bookmarks…", self._export_bookmarks).setStatusTip(
+            "Write every bookmark in this case to a CSV file, with its note and log line."
+        )
 
     def _add(
         self,
@@ -1041,6 +1100,9 @@ class MainWindow(QMainWindow):
         self._evidence_request = object()
         self._case_path = None
         self._evidence.clear(prompt=False)
+        # The last case's bookmarks go now, not when this one arrives: until
+        # then nothing on screen may carry a ribbon from another case.
+        self._bookmarks.load(None)
         # Read here, on the interface thread. The worker must not reach into a
         # widget to ask how wide it is while the window is free to resize it.
         buckets = self._buckets()
@@ -1126,6 +1188,7 @@ class MainWindow(QMainWindow):
             self._tabs.setVisible(False)
             self._clients.show_clients(summaries, total=view.whole.clients)
             self._clients.set_open_client(None)
+            self._bookmarks.load(path)
             self._activity_values = []
             self._count_values()
             self._workspace.setCurrentIndex(0)
@@ -1157,7 +1220,9 @@ class MainWindow(QMainWindow):
 
     # -- the stretch of time being read ------------------------------------
 
-    def _apply_window(self, window: TimeWindow, *, carry: bool = False) -> None:
+    def _apply_window(
+        self, window: TimeWindow, *, carry: bool = False, then: Callable[[], None] | None = None
+    ) -> None:
         """Read the case over a different stretch of time.
 
         Both halves, always. Narrowing only the graph leaves the client row
@@ -1167,8 +1232,16 @@ class MainWindow(QMainWindow):
 
         `carry` when the client box's `after:` or `before:` moved it: the rest
         of the box goes back once the new range is listed, as it stands then.
+
+        `then` runs once the new range is listed, or at once when `window` is
+        already the range. Opening a bookmark asks for a range and for something
+        to do in it, and the second must not run against the first's list.
         """
-        if self._case_path is None or window == self._window:
+        if self._case_path is None:
+            return
+        if window == self._window:
+            if then is not None:
+                then()
             return
         self._forget_client_search()
         self._load_generation += 1
@@ -1221,12 +1294,16 @@ class MainWindow(QMainWindow):
                 self._heading.setText("")
                 self._canvas.show_graph_placeholder(nobody_here(window))
                 self._idle(nobody_here(window))
-                return
-            self._idle(f"{self._listed:,} of {self._all_clients:,} clients in this range")
-            # The client the reader was on, if this range still holds them. The
-            # table has been rebuilt, so the selection has to be found again.
-            if self._result is not None:
-                self._reselect(self._result.client_ip)
+            else:
+                self._idle(f"{self._listed:,} of {self._all_clients:,} clients in this range")
+                # The client the reader was on, if this range still holds them.
+                # The table has been rebuilt, so the selection has to be found
+                # again.
+                if self._result is not None:
+                    self._reselect(self._result.client_ip)
+            # Last, so a reconstruction it asks for supersedes the one above.
+            if then is not None:
+                then()
 
         run_job(
             work,
@@ -1500,7 +1577,20 @@ class MainWindow(QMainWindow):
 
     # -- reconstruction ----------------------------------------------------
 
-    def _reconstruct(self, client_ip: str, *, evidence: tuple[EvidenceRef, ...] = ()) -> None:
+    def _reconstruct(
+        self,
+        client_ip: str,
+        *,
+        evidence: tuple[EvidenceRef, ...] = (),
+        activity_of: EvidenceRef | None = None,
+        note: str = "",
+    ) -> None:
+        """Read `client_ip` over the range in force, and draw it.
+
+        `evidence` shows the activity holding those lines with them first;
+        `activity_of` shows the activity holding that one line, as it comes.
+        `note` is said after the line that says what was read.
+        """
         if self._case_path is None:
             return
         # Only a different client is leaving this one. `_reselect` calls this
@@ -1572,7 +1662,8 @@ class MainWindow(QMainWindow):
                 if carried:
                     self._evidence.set_filter_text(carried)
                     # Lines asked for by name are shown instead, below.
-                    self._open_first_match = None if evidence else result
+                    asked = evidence or activity_of is not None
+                    self._open_first_match = None if asked else result
             self._result = result
             # The band becomes this client's own history: when it worked, when
             # it went quiet, across its own life rather than the case's.
@@ -1604,15 +1695,14 @@ class MainWindow(QMainWindow):
             )
             self._redraw()
             self._workspace.setCurrentIndex(1)
-            if evidence:
-                refs = set(evidence)
-                episodes = frozenset(a.episode_id for a in result.assignments if a.evidence in refs)
-                graph = result.trace if self._kind is GraphKind.TRACE else result.behaviour
-                node = node_for_episodes(graph, episodes)
-                if node is not None:
-                    self._show_evidence(node.node_id, evidence=evidence)
+            # This client's bookmarked lines, ribboned through every refill.
+            self._evidence.set_marks(self._bookmarks.line_marks(result.client_ip))
+            held = evidence or ((activity_of,) if activity_of is not None else ())
+            if held:
+                self._show_holding(result, held, evidence=evidence)
             self._say_what_is_left(result)
-            self._idle(f"{client_ip}: {plural(len(result.episodes), 'activity', 'activities')}")
+            read = f"{client_ip}: {plural(len(result.episodes), 'activity', 'activities')}"
+            self._idle(f"{read}. {note}" if note else read)
 
         run_job(
             work,
@@ -1641,6 +1731,7 @@ class MainWindow(QMainWindow):
             positions=self._arrangements_kept.saved_positions(),
             session_policy=self._result.policy.session,
         )
+        self._mark_graph()
         self._arrangements_kept.refresh()
         self._refade()
         if was_reading is None:
@@ -1895,6 +1986,7 @@ class MainWindow(QMainWindow):
         if self._who_else_dialog is None:
             self._who_else_dialog = WhoElseDialog(self)
             self._who_else_dialog.open_client.connect(self._reconstruct)
+            self._who_else_dialog.bookmark_requested.connect(self._bookmark_client)
         dialog = self._who_else_dialog
         index = self._triage.result
         if index is None:
@@ -1997,6 +2089,9 @@ class MainWindow(QMainWindow):
             lines, values, filtered = answer
             self._evidence.set_suggestion_values(values)
             self._evidence.show_evidence(node, lines, filtered=filtered)
+            # The line asked for by name, wherever the table's order put it.
+            if evidence:
+                self._evidence.select_line(evidence[0])
 
         run_job(
             work,
@@ -2091,6 +2186,309 @@ class MainWindow(QMainWindow):
             node.node_id for node in graph.nodes if episodes.intersection(node.episode_ids)
         )
 
+    def _show_holding(
+        self,
+        result: AnalysisResult,
+        refs: tuple[EvidenceRef, ...],
+        *,
+        evidence: tuple[EvidenceRef, ...] = (),
+    ) -> None:
+        """Show the activity holding `refs` in the graph on screen, `evidence` first.
+
+        Brought into view as well: it was asked for from elsewhere, and a graph
+        too large to frame readably opens on its beginning. The lines still obey
+        the evidence filter, as lines carried in from Where to start do.
+        """
+        wanted = set(refs)
+        episodes = frozenset(a.episode_id for a in result.assignments if a.evidence in wanted)
+        graph = result.trace if self._kind is GraphKind.TRACE else result.behaviour
+        node = node_for_episodes(graph, episodes)
+        if node is not None:
+            self._show_evidence(node.node_id, evidence=evidence)
+            self._canvas.bring_into_view(node.node_id)
+
+    # -- bookmarks -----------------------------------------------------------
+
+    def _bookmarks_changed(self) -> None:
+        """Count them on the tab and mark them everywhere, after any change."""
+        count = len(self._bookmarks.shelf.bookmarks)
+        self._workspace.setTabText(
+            self._workspace.indexOf(self._bookmarks_tab),
+            f"Bookmarks ({count})" if count else "Bookmarks",
+        )
+        self._clients.set_marks(self._bookmarks.client_marks())
+        result = self._result
+        self._evidence.set_marks(
+            self._bookmarks.line_marks(result.client_ip) if result is not None else {}
+        )
+        self._mark_graph()
+
+    def _mark_graph(self) -> None:
+        """Ribbon the activities on the canvas that hold a bookmarked activity's line."""
+        result = self._result
+        if result is None:
+            self._canvas.set_marks({})
+            return
+        graph = result.trace if self._kind is GraphKind.TRACE else result.behaviour
+        self._canvas.set_marks(self._bookmarks.node_marks(result, graph))
+
+    def _under(self, widget: QWidget) -> QPoint:
+        """Just below `widget`, in the window's coordinates: where its save box opens."""
+        return widget.mapTo(self, QPoint(0, widget.height() + 2))
+
+    def _bookmark_search_from_button(self) -> None:
+        self._bookmark_search(anchor=self._under(self._clients.search_bookmark))
+
+    def _bookmark_activity_from_button(self) -> None:
+        self._bookmark_activity(anchor=self._under(self._evidence.bookmark_button))
+
+    def _bookmark_node(self) -> None:
+        """The canvas's right-click entry: the activity under the pointer, now selected."""
+        self._bookmark_activity()
+
+    def _bookmark_focused(self) -> None:
+        """Ctrl+D: bookmark what has the keyboard.
+
+        The selected log line in the evidence, the selected client in the list
+        or the queue, the search in the client box. Anywhere else, including the
+        canvas, the activity being read; else the client being read.
+        """
+        focus = QApplication.focusWidget()
+
+        def inside(widget: QWidget) -> bool:
+            return focus is not None and (focus is widget or widget.isAncestorOf(focus))
+
+        if inside(self._evidence):
+            line = self._evidence.selected_line()
+            if line is not None:
+                self._bookmark_line(line)
+                return
+        elif inside(self._clients):
+            if self._clients.box_has_focus():
+                if self._clients.answered_search() is not None:
+                    self._bookmark_search()
+                    return
+            elif (chosen := self._clients.selected_client()) is not None:
+                self._bookmark_client(chosen)
+                return
+        elif inside(self._triage) and (queued := self._triage.selected_client()) is not None:
+            self._bookmark_client(queued)
+            return
+        if self._selected is not None:
+            self._bookmark_activity()
+        elif self._result is not None:
+            self._bookmark_client(self._result.client_ip)
+        else:
+            self._idle("Nothing to bookmark yet.")
+
+    def _bookmark_client(self, client_ip: str, anchor: QPoint | None = None) -> None:
+        """Bookmark a client, said as the list says it: its requests, and when.
+
+        Looked up rather than read off the list, which holds the busiest few
+        hundred: a client from the queue or Who else may not be on it. Over the
+        range in force, else the whole case when it has nothing there.
+        """
+        path, window = self._case_path, self._window
+
+        def draft(said: str) -> Draft:
+            return Draft(Kind.CLIENT, "Bookmark this client", said, client=client_ip)
+
+        if path is None:
+            self._bookmarks.bookmark(draft(""), anchor)
+            return
+
+        def work(_: Callable[[str], None]) -> str:
+            with Case.open(path) as case:
+                for over in dict.fromkeys((None if window.is_open else window, None)):
+                    page = case.store.ip_summary_page(
+                        query=client_ip, offset=0, limit=1, window=over, exact=True
+                    )
+                    if page.rows:
+                        row = page.rows[0]
+                        return said_for_client(row.request_count, row.first_seen, row.last_seen)
+            return ""
+
+        def done(said: str) -> None:
+            if path == self._case_path:
+                self._bookmarks.bookmark(draft(said), anchor)
+
+        # Without the figures the bookmark is still worth saving.
+        run_job(work, on_done=done, on_error=lambda _message, _detail: done(""))
+
+    def _bookmark_activity(self, anchor: QPoint | None = None) -> None:
+        """Bookmark the activity being read, anchored on its earliest log line.
+
+        A line rather than the activity's id, which is only good for this
+        reconstruction: a range or a rule change can merge or split activities,
+        and the one holding the line is then the one the bookmark means.
+        """
+        node, result = self._selected, self._result
+        if node is None or result is None:
+            self._idle("Select an activity first, then bookmark it.")
+            return
+
+        def work(_: Callable[[str], None]) -> object:
+            # Off the interface thread, as the evidence panel's own pass is:
+            # an activity can hold a great many requests.
+            held = result.requests_for(node)
+            return held[0] if held else None
+
+        def done(first: Any) -> None:
+            if node is not self._selected or result is not self._result:
+                return
+            self._bookmarks.bookmark(
+                Draft(
+                    Kind.ACTIVITY,
+                    "Bookmark this activity",
+                    said_for_activity(node),
+                    client=result.client_ip,
+                    line=first.evidence if first is not None else None,
+                    at=first.labelled.event.timestamp if first is not None else None,
+                ),
+                anchor,
+            )
+
+        run_job(work, on_done=done, on_error=self.report_error)
+
+    def _bookmark_line(self, line: EvidenceLine, anchor: QPoint | None = None) -> None:
+        """Bookmark one log line of the client being read."""
+        if self._result is None:
+            return
+        self._bookmarks.bookmark(
+            Draft(
+                Kind.REQUEST,
+                "Bookmark this line",
+                said_for_request(line.ref, line.event),
+                client=self._result.client_ip,
+                line=line.ref,
+                at=line.event.timestamp if line.event is not None else None,
+            ),
+            anchor,
+        )
+
+    def _bookmark_search(self, anchor: QPoint | None = None) -> None:
+        """Bookmark the client box's search, with the range it was answered over."""
+        answered = self._clients.answered_search()
+        if answered is None:
+            self._idle("Search the case from the client box first, then bookmark the search.")
+            return
+        query, clients, requests = answered
+        self._bookmarks.bookmark(
+            Draft(
+                Kind.SEARCH,
+                "Bookmark this search",
+                said_for_search(query, clients, requests),
+                query=query,
+                range=None if self._window.is_open else self._window,
+            ),
+            anchor,
+        )
+
+    # The window's side of `bookmark_keeper.Opener`.
+
+    def open_client(self, ip: str) -> None:
+        """Open a bookmarked client, over the whole case if it has nothing in the range."""
+        path, window = self._case_path, self._window
+        if path is None:
+            return
+        if window.is_open:
+            self._open_on(ip)
+            return
+
+        def work(_: Callable[[str], None]) -> bool:
+            with Case.open(path) as case:
+                page = case.store.ip_summary_page(
+                    query=ip, offset=0, limit=1, window=window, exact=True
+                )
+            return bool(page.rows)
+
+        def done(present: bool) -> None:
+            if (path, window) != (self._case_path, self._window):
+                return
+            if present:
+                self._open_on(ip)
+            else:
+                self._apply_window(EVERYTHING, then=lambda: self._open_on(ip, note=_WIDENED))
+
+        run_job(work, on_done=done, on_error=self.report_error)
+
+    def open_line(
+        self, ip: str, ref: EvidenceRef, *, whole_activity: bool, at: datetime | None
+    ) -> None:
+        """Open a bookmarked activity or request, over the whole case if it is outside the range.
+
+        A line with no known time is treated as outside: a range that might hide
+        it would open on nothing.
+        """
+        if self._case_path is None:
+            return
+        evidence = () if whole_activity else (ref,)
+        activity_of = ref if whole_activity else None
+        window = self._window
+        if not window.is_open and (at is None or not window.contains(at)):
+            self._apply_window(
+                EVERYTHING,
+                then=lambda: self._open_on(
+                    ip, evidence=evidence, activity_of=activity_of, note=_WIDENED
+                ),
+            )
+            return
+        self._open_on(ip, evidence=evidence, activity_of=activity_of)
+
+    def open_search(self, query: str, window: TimeWindow) -> None:
+        """Run a bookmarked search again, over the range it was answered in."""
+        if self._case_path is None:
+            return
+        self._apply_window(window, then=lambda: self._clients.set_query(query))
+
+    def check_targets(
+        self,
+        clients: frozenset[str],
+        done: Callable[[frozenset[str], frozenset[str]], None],
+    ) -> None:
+        """Which of `clients` the case holds, and its log files, for what is gone."""
+        path = self._case_path
+        if path is None:
+            return
+
+        def work(_: Callable[[str], None]) -> tuple[frozenset[str], frozenset[str]]:
+            with Case.open(path) as case:
+                present = case.store.clients_present(clients) if clients else frozenset()
+                return present, frozenset(source.file_id for source in case.manifest.sources)
+
+        # Unanswered, nothing reads as gone: the keeper only marks what it knows.
+        run_job(
+            work,
+            on_done=lambda found: done(*found),
+            on_error=lambda _message, _detail: None,
+        )
+
+    def _open_on(
+        self,
+        ip: str,
+        *,
+        evidence: tuple[EvidenceRef, ...] = (),
+        activity_of: EvidenceRef | None = None,
+        note: str = "",
+    ) -> None:
+        """Show `ip`, and the line or activity asked for, in the range now in force.
+
+        Read again only when it is not the client already on screen: the same
+        client in the same range is shown where it is.
+        """
+        self._clients.select_quietly(ip)
+        result = self._result
+        here = (ip, self._window)
+        if result is not None and (result.client_ip, result.window) == here == self._awaiting:
+            self._workspace.setCurrentIndex(1)
+            held = evidence or ((activity_of,) if activity_of is not None else ())
+            if held:
+                self._show_holding(result, held, evidence=evidence)
+            if note:
+                self._idle(note)
+            return
+        self._reconstruct(ip, evidence=evidence, activity_of=activity_of, note=note)
+
     # -- export ------------------------------------------------------------
 
     def _export(self, kind: str) -> None:
@@ -2116,6 +2514,7 @@ class MainWindow(QMainWindow):
         client_ip = self._result.client_ip
         case_path = self._case_path
         crs = self._crs
+        shelf = self._bookmarks.shelf
 
         if kind == "png":
             self._export_png(target)
@@ -2136,8 +2535,20 @@ class MainWindow(QMainWindow):
                 case_path, client_ip, crs, evidence_sample=DEFAULT_EVIDENCE_SAMPLE
             )
             with Case.open(case_path) as case:
+                # A request bookmark's own line goes in the report beside its
+                # note; an activity's is only where it starts, so it does not.
+                requests = [
+                    b.line
+                    for b in shelf.bookmarks
+                    if b.kind is Kind.REQUEST and b.client == client_ip and b.line is not None
+                ]
                 written = export.write_reconstruction(
-                    bounded, case.manifest, kind=kind, target=target
+                    bounded,
+                    case.manifest,
+                    kind=kind,
+                    target=target,
+                    shelf=shelf,
+                    lines=_raw_lines(case, requests),
                 )
             return str(written)
 
@@ -2169,6 +2580,38 @@ class MainWindow(QMainWindow):
             self._idle(f"Written to {target}")
         else:
             self.report_error(f"Could not write {target}", "")
+
+    def _export_bookmarks(self) -> None:
+        """Every bookmark in the case as a CSV, with the log line behind each one."""
+        shelf, path = self._bookmarks.shelf, self._case_path
+        if path is None or not shelf.bookmarks:
+            QMessageBox.information(
+                self,
+                "Nothing to export",
+                "Open a case first." if path is None else "This case has no bookmarks yet.",
+            )
+            return
+        chosen, _ = QFileDialog.getSaveFileName(
+            self, "Export bookmarks", "bookmarks.csv", "CSV (*.csv)"
+        )
+        if not chosen:
+            return
+        target = Path(chosen)
+
+        def work(_: Callable[[str], None]) -> str:
+            with Case.open(path) as case:
+                lines = _raw_lines(case, [b.line for b in shelf.bookmarks if b.line is not None])
+            # With a byte-order mark: without one a spreadsheet reads the file in
+            # the machine's own code page, and an address or a note in anything
+            # but plain English comes out garbled. The rows end themselves.
+            target.write_text(to_csv(shelf, lines), encoding="utf-8-sig", newline="")
+            return str(target)
+
+        run_job(
+            work,
+            on_done=lambda written: self._idle(f"Written to {written}"),
+            on_error=self.report_error,
+        )
 
     def closeEvent(self, event: QCloseEvent | None) -> None:  # noqa: N802
         self._load_generation += 1
