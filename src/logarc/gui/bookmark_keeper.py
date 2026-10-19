@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from dataclasses import replace as changed
 from typing import TYPE_CHECKING, Protocol
 
-from PyQt6.QtCore import QObject, QPoint, pyqtSignal
+from PyQt6.QtCore import QObject, QPoint, Qt, pyqtSignal
 from PyQt6.QtWidgets import QMessageBox, QWidget
 
 from logarc import bookmarks
@@ -103,6 +103,20 @@ def _write_failed(error: BookmarkWriteError) -> str:
     if refused:
         return _CANNOT_WRITE
     return f"Could not save the bookmark: {error.strerror or error}."
+
+
+def _ask(parent: QWidget, title: str, text: str) -> bool:
+    """Yes or no, No by default; `text` shown as written, since it may hold a category's name."""
+    box = QMessageBox(
+        QMessageBox.Icon.Question,
+        title,
+        text,
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        parent,
+    )
+    box.setTextFormat(Qt.TextFormat.PlainText)
+    box.setDefaultButton(QMessageBox.StandardButton.No)
+    return box.exec() == QMessageBox.StandardButton.Yes
 
 
 def _tip(bookmark: Bookmark) -> str:
@@ -321,14 +335,7 @@ class BookmarkKeeper(QObject):
         bookmark = self._shelf.by_id(ident)
         if bookmark is None or self._case is None:
             return
-        answer = QMessageBox.question(
-            self._window,
-            "Remove bookmark",
-            "Remove this bookmark?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if answer != QMessageBox.StandardButton.Yes:
+        if not _ask(self._window, "Remove bookmark", "Remove this bookmark?"):
             return
         try:
             self._shelf = bookmarks.apply(self._case, lambda shelf: bookmarks.remove(shelf, ident))
@@ -405,14 +412,8 @@ class BookmarkKeeper(QObject):
         held = sum(b.category == found.name for b in self._shelf.bookmarks)
         if held:
             first = self._shelf.categories[0].name
-            answer = QMessageBox.question(
-                self._window,
-                "Delete category",
-                f"Move its {plural(held, 'bookmark')} to {first}?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            if answer != QMessageBox.StandardButton.Yes:
+            question = f"Move its {plural(held, 'bookmark')} to {first}?"
+            if not _ask(self._window, "Delete category", question):
                 return
         self._change_categories(lambda shelf: bookmarks.delete_category(shelf, name))
 

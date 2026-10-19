@@ -309,6 +309,8 @@ class MainWindow(QMainWindow):
         self._restore_preferences()
 
         self._status = QLabel("Open a case, or ingest logs into a new one.")
+        # It repeats what the reader typed, a category's name among it.
+        self._status.setTextFormat(Qt.TextFormat.PlainText)
         colour_text(self._status, THEME.muted)
         self._progress = QProgressBar()
         self._progress.setRange(0, 0)

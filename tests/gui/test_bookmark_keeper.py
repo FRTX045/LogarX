@@ -12,7 +12,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from PyQt6.QtCore import QPoint
+from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtWidgets import QApplication, QMessageBox, QWidget
 
 from logarc import bookmarks
@@ -188,15 +188,34 @@ def test_each_kind_opens_through_the_window(parts) -> None:
     ]
 
 
+def asked_by(
+    monkeypatch: pytest.MonkeyPatch, reply: QMessageBox.StandardButton
+) -> list[tuple[str, Qt.TextFormat]]:
+    """Answer every question the keeper puts with `reply`, keeping what it said and how."""
+    asked: list[tuple[str, Qt.TextFormat]] = []
+
+    def answer(box: QMessageBox) -> QMessageBox.StandardButton:
+        asked.append((box.text(), box.textFormat()))
+        return reply
+
+    monkeypatch.setattr(bookmark_keeper.QMessageBox, "exec", answer)
+    return asked
+
+
 def test_removing_asks_first(parts, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     keeper, tab, *_ = parts
     save(keeper, client("10.0.0.1"))
     ident = keeper.shelf.bookmarks[0].id
     answers = iter([QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes])
-    monkeypatch.setattr(
-        bookmark_keeper.QMessageBox, "question", lambda *_args, **_kw: next(answers)
-    )
+    on_enter: list[QMessageBox.StandardButton] = []
+
+    def answer(box: QMessageBox) -> QMessageBox.StandardButton:
+        on_enter.append(box.standardButton(box.defaultButton()))
+        return next(answers)
+
+    monkeypatch.setattr(bookmark_keeper.QMessageBox, "exec", answer)
     keeper.remove(ident)
+    assert on_enter == [QMessageBox.StandardButton.No], "Enter keeps the bookmark"
     assert len(stored(tmp_path).bookmarks) == 1
     keeper.remove(ident)
     assert stored(tmp_path).bookmarks == ()
@@ -328,15 +347,9 @@ def test_categories_are_renamed_and_deleted_through_their_dialog(
     assert dialog.error.text() == "There is already a category called Login."
     dialog.rename_requested.emit("Scanners", "Probably scanners")
     assert [c.name for c in stored(tmp_path).categories] == [DEFAULT, "Probably scanners", "Login"]
-    asked: list[str] = []
-
-    def answer(*args: object, **_kw: object) -> QMessageBox.StandardButton:
-        asked.append(str(args[2]))
-        return QMessageBox.StandardButton.Yes
-
-    monkeypatch.setattr(bookmark_keeper.QMessageBox, "question", answer)
+    asked = asked_by(monkeypatch, QMessageBox.StandardButton.Yes)
     dialog.delete_requested.emit("Login")
-    assert asked == ["Move its 1 bookmark to Bookmarked?"]
+    assert asked == [("Move its 1 bookmark to Bookmarked?", Qt.TextFormat.PlainText)]
     assert [c.name for c in stored(tmp_path).categories] == [DEFAULT, "Probably scanners"]
     assert [dialog.names.item(i).text() for i in range(dialog.names.count())] == [
         DEFAULT,
@@ -379,3 +392,20 @@ def test_renaming_the_category_last_used_keeps_it_last_used(parts) -> None:
     keeper.bookmark(client("10.0.0.2"), QPoint(20, 20))
     assert keeper.box is not None
     assert keeper.box.category.currentText() == "Probably scanners"
+
+
+def test_a_category_name_in_a_question_is_shown_as_typed(
+    parts, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A name is the reader's, or came with a case copied from somebody else."""
+    keeper, *_ = parts
+    save(keeper, client("10.0.0.1"), category="Scanners")
+    keeper.manage_categories()
+    dialog = keeper.categories_dialog
+    assert dialog is not None
+    dialog.rename_requested.emit(DEFAULT, "<b>Bold</b> & co")
+    asked = asked_by(monkeypatch, QMessageBox.StandardButton.No)
+
+    dialog.delete_requested.emit("Scanners")
+
+    assert asked == [("Move its 1 bookmark to <b>Bold</b> & co?", Qt.TextFormat.PlainText)]

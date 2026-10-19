@@ -20,6 +20,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication, QFileDialog, QTableWidget
 from test_case_search_window import BROWSER, PROBER, START, SWEEPER, opened, search
 
@@ -580,6 +581,17 @@ def test_the_tab_counts_and_another_case_shows_none_of_these(
     assert window._workspace.tabText(2) == "Bookmarks"
     assert window._bookmarks.shelf.bookmarks == ()
     assert ribboned_rows(window._clients._table) == set()
+
+
+def test_the_status_line_shows_a_category_name_as_typed(
+    qt_app: QApplication, window: MainWindow
+) -> None:
+    window._clients.bookmark_requested.emit(PROBER)
+    settled(qt_app)
+    save(qt_app, window, category="<b>Bold</b> & co")
+
+    assert window._status.text() == "Bookmarked in <b>Bold</b> & co."
+    assert window._status.textFormat() == Qt.TextFormat.PlainText
 
 
 def test_the_bookmarks_tab_does_not_widen_the_middle_of_the_window(
