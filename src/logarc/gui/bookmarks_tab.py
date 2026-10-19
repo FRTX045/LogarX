@@ -35,7 +35,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from logarc.bookmarks import matches
+from logarc.bookmarks import matches, newest_first
 from logarc.core.window import EVERYTHING
 from logarc.gui._qt import required
 from logarc.gui.ribbon import ribbon_icon
@@ -297,10 +297,8 @@ class BookmarksTab(QWidget):
         for category in shelf.categories:
             if only not in (_ALL, "") and category.name != only:
                 continue
-            members = sorted(
-                (b for b in shelf.bookmarks if b.category == category.name and matches(b, words)),
-                key=lambda b: b.saved,
-                reverse=True,
+            members = newest_first(
+                b for b in shelf.bookmarks if b.category == category.name and matches(b, words)
             )
             if not members:
                 continue

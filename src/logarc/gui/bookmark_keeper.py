@@ -28,6 +28,7 @@ from logarc.bookmarks import (
     Kind,
     Shelf,
     new_id,
+    newest_first,
     utc_now,
 )
 from logarc.caseview import node_for_episodes
@@ -424,8 +425,8 @@ class BookmarkKeeper(QObject):
             if bookmark.client is not None:
                 theirs.setdefault(bookmark.client, []).append(bookmark)
         marks: dict[str, Mark] = {}
-        for client, held in theirs.items():
-            held.sort(key=lambda b: b.saved, reverse=True)
+        for client, unsorted in theirs.items():
+            held = newest_first(unsorted)
             lines = [_tip(b) for b in held[:_TIP_LIMIT]]
             if len(held) > _TIP_LIMIT:
                 lines.append(f"and {len(held) - _TIP_LIMIT} more")

@@ -15,6 +15,7 @@ import html
 import json
 from typing import TYPE_CHECKING, Final
 
+from logarc.bookmarks import newest_first
 from logarc.core.activity import Outcome, Severity
 from logarc.core.graph import GraphKind, reciprocal_pairs
 from logarc.graphbuild.layout import layout_graph
@@ -290,11 +291,7 @@ def _bookmarks(
     """
     if shelf is None:
         return ""
-    theirs = sorted(
-        (mark for mark in shelf.bookmarks if mark.client == result.client_ip),
-        key=lambda mark: mark.saved,
-        reverse=True,
-    )
+    theirs = newest_first(mark for mark in shelf.bookmarks if mark.client == result.client_ip)
     if not theirs:
         return ""
     rows = []

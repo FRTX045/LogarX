@@ -110,6 +110,14 @@ def test_bookmarks_are_grouped_by_category_newest_first(tab: BookmarksTab) -> No
     assert tab.caption.text() == "3 bookmarks in 2 categories"
 
 
+def test_of_two_saved_in_the_same_second_the_later_comes_first(qt_app: QApplication) -> None:
+    tab = BookmarksTab()
+    tab.show_shelf(
+        add(add(EMPTY, mark("first")), mark("second", client="10.0.0.9")), gone=lambda b: False
+    )
+    assert layout(tab) == [("Bookmarked   2", ["second", "first"])]
+
+
 def test_a_row_says_what_whose_and_when(tab: BookmarksTab) -> None:
     item = row(tab, "login")
     assert item.text(0) == "Activity"

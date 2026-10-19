@@ -483,6 +483,14 @@ def test_the_report_lists_the_clients_bookmarks_before_provenance(campaign: Case
     assert "Someone else entirely" not in page
 
 
+def test_bookmarks_saved_in_the_same_second_list_the_later_first(campaign: Case) -> None:
+    result = analyse_ip(campaign.store, ATTACKER)
+
+    page = render_report(result, campaign.manifest, shelf=_marks())
+
+    assert page.index("The one that worked") < page.index("Came back after the 404s")
+
+
 def test_a_note_is_shown_as_text_never_run(campaign: Case) -> None:
     result = analyse_ip(campaign.store, ATTACKER)
 

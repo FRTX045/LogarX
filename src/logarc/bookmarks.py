@@ -27,7 +27,7 @@ import csv
 import io
 import json
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from dataclasses import replace as changed
 from datetime import UTC, datetime
@@ -171,8 +171,18 @@ class Shelf:
 
     def newest_for(self, client: str) -> Bookmark | None:
         """The newest bookmark on `client`, of any kind, if there is one."""
-        theirs = [b for b in self.bookmarks if b.client == client]
-        return max(theirs, key=lambda b: b.saved) if theirs else None
+        theirs = newest_first(b for b in self.bookmarks if b.client == client)
+        return theirs[0] if theirs else None
+
+
+def newest_first(bookmarks: Iterable[Bookmark]) -> list[Bookmark]:
+    """`bookmarks`, in a shelf's order, newest saved first.
+
+    Saved times are whole seconds, and two bookmarks can share one: then the one
+    added later is the newer, which is why the shelf's order has to come in.
+    """
+    placed = sorted(enumerate(bookmarks), key=lambda pair: (pair[1].saved, pair[0]), reverse=True)
+    return [bookmark for _position, bookmark in placed]
 
 
 EMPTY: Final = Shelf(categories=(Category(DEFAULT, 0),), bookmarks=())
@@ -625,11 +635,7 @@ def to_csv(shelf: Shelf, lines: Mapping[EvidenceRef, str]) -> str:
     writer = csv.writer(out, lineterminator="\r\n")
     writer.writerow(_CSV_HEAD)
     for category in shelf.categories:
-        members = sorted(
-            (b for b in shelf.bookmarks if b.category == category.name),
-            key=lambda b: b.saved,
-            reverse=True,
-        )
+        members = newest_first(b for b in shelf.bookmarks if b.category == category.name)
         for b in members:
             row = (
                 b.category,

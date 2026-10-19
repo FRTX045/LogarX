@@ -33,6 +33,7 @@ from logarc.bookmarks import (
     delete_category,
     load,
     matches,
+    newest_first,
     parse_ref,
     remove,
     rename_category,
@@ -272,6 +273,26 @@ def test_the_newest_bookmark_of_a_client_names_its_mark() -> None:
     shelf = add(add(EMPTY, older), newer)
     found = shelf.newest_for("10.0.0.1")
     assert found is not None and found.id == "new"
+
+
+def test_of_two_saved_in_the_same_second_the_one_added_later_is_newer() -> None:
+    """Saved times are whole seconds, and Ctrl+D then Enter twice fits in one."""
+    first = client_mark("10.0.0.1", id="first")
+    second = client_mark("10.0.0.1", category="Login", id="second")
+    shelf = add(add(EMPTY, first), second)
+    assert first.saved == second.saved, "premise: a tie"
+
+    assert [b.id for b in newest_first(shelf.bookmarks)] == ["second", "first"]
+    found = shelf.newest_for("10.0.0.1")
+    assert found is not None and found.id == "second"
+
+
+def test_the_csv_lists_the_later_of_two_same_second_bookmarks_first() -> None:
+    shelf = add(add(EMPTY, client_mark("10.0.0.1", id="a")), client_mark("10.0.0.2", id="b"))
+
+    rows = list(csv.reader(io.StringIO(to_csv(shelf, {}))))
+
+    assert [row[2] for row in rows[1:]] == ["10.0.0.2", "10.0.0.1"]
 
 
 def test_a_filter_matches_every_word_in_any_field_ignoring_case() -> None:

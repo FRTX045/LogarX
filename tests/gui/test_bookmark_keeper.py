@@ -307,7 +307,8 @@ def test_clients_and_lines_are_marked_from_their_bookmarks(parts) -> None:
         note="that one",
     )
     colour, tip = keeper.client_marks()["192.0.2.23"]
-    newest = max(keeper.shelf.bookmarks, key=lambda b: b.saved)
+    # The last saved: all three can share a second, and then the order added decides.
+    newest = keeper.shelf.bookmarks[-1]
     assert colour == keeper.shelf.colour_of(newest.category)
     assert "older" in tip and "newer" in tip
     assert list(keeper.line_marks("192.0.2.23")) == [EvidenceRef("excerpt.log", 2015)]
