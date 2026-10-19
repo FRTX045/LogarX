@@ -2196,7 +2196,8 @@ class MainWindow(QMainWindow):
         """Show the activity holding `refs` in the graph on screen, `evidence` first.
 
         Brought into view as well: it was asked for from elsewhere, and a graph
-        too large to frame readably opens on its beginning.
+        too large to frame readably opens on its beginning. The lines still obey
+        the evidence filter, as lines carried in from Where to start do.
         """
         wanted = set(refs)
         episodes = frozenset(a.episode_id for a in result.assignments if a.evidence in wanted)

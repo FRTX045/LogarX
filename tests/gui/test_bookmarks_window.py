@@ -401,6 +401,56 @@ def test_a_request_opens_on_its_own_line(qt_app: QApplication, window: MainWindo
     assert chosen is not None and chosen.ref == line.ref
 
 
+def test_a_line_the_evidence_filter_hides_opens_its_activity_under_the_filter(
+    qt_app: QApplication, window: MainWindow
+) -> None:
+    """A search in the client box is carried into the next client's evidence, and
+    a line opened by name obeys it, as Where to start's do
+    (test_lines_carried_in_still_obey_the_filter): the reader is told nothing
+    matches, under the strip naming the filter, and one click clears it."""
+    reconstruct(qt_app, window, SWEEPER)
+    show(qt_app, window, sign_in(window))
+    window._evidence.select_row(0)
+    line = window._evidence.selected_line()
+    assert line is not None and line.event is not None and line.event.status != 403
+    window._bookmark_line(line)
+    settled(qt_app)
+    save(qt_app, window)
+    search(qt_app, window, "status:403")
+    reconstruct(qt_app, window, PROBER)
+    assert window._evidence.filter_text().strip() == "status:403", "premise: carried"
+
+    window._bookmarks.open(window._bookmarks.shelf.bookmarks[-1].id)
+    settled(qt_app)
+
+    assert window._selected is not None and "/login" in window._selected.top_targets
+    assert window._evidence.filter_text().strip() == "status:403"
+    assert not window._evidence.no_results.isHidden()
+
+
+def test_an_evidence_filter_that_keeps_the_line_is_left_alone(
+    qt_app: QApplication, window: MainWindow
+) -> None:
+    reconstruct(qt_app, window, SWEEPER)
+    show(qt_app, window, sign_in(window))
+    window._evidence.select_row(0)
+    line = window._evidence.selected_line()
+    assert line is not None and line.event is not None and line.event.path == "/login"
+    window._bookmark_line(line)
+    settled(qt_app)
+    save(qt_app, window)
+    search(qt_app, window, "path:/login")
+    reconstruct(qt_app, window, PROBER)
+
+    window._bookmarks.open(window._bookmarks.shelf.bookmarks[-1].id)
+    settled(qt_app)
+
+    chosen = window._evidence.selected_line()
+    assert chosen is not None and chosen.ref == line.ref
+    assert window._evidence.filter_text().strip() == "path:/login"
+    assert "evidence filter" not in window._status.text()
+
+
 def test_an_activity_outside_a_narrowed_range_widens_it_and_says_so(
     qt_app: QApplication, window: MainWindow
 ) -> None:

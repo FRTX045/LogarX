@@ -289,7 +289,8 @@ can be renamed but not deleted.
 Double-click a bookmark, or press Enter or **Open**, to go back to it:
 
 - a client or an activity opens in its graph, the activity selected and in view;
-- a log line opens selected in the evidence, in its activity;
+- a log line opens selected in the evidence, in its activity. An evidence
+  filter that leaves it out stays on, and the panel says nothing matches;
 - a search runs again over the range it was made in.
 
 If the range in force leaves the bookmark out, the range becomes the whole case
