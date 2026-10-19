@@ -38,6 +38,7 @@ from PyQt6.QtWidgets import (
 from logarc.bookmarks import matches, newest_first
 from logarc.core.window import EVERYTHING
 from logarc.gui._qt import required
+from logarc.gui.flow import FlowLayout
 from logarc.gui.ribbon import ribbon_icon
 from logarc.gui.theme import PAD, caption_font, colour_text, mono_font
 from logarc.style import THEME, plural
@@ -231,10 +232,10 @@ class BookmarksTab(QWidget):
         self.remove_button.clicked.connect(self._remove)
         hint = QLabel("Double-click to open \N{MIDDLE DOT} Delete removes")
         hint.setFont(caption_font(hint.font()))
-        # Wrapped, and given only the room the buttons leave, so in a narrow
-        # column the hint gives way rather than setting the width of the whole
-        # middle of the window: a tab page's minimum is every page's minimum.
-        hint.setWordWrap(True)
+        # Given only the room the buttons leave, so in a narrow column the hint
+        # gives way rather than setting the width of the whole middle of the
+        # window: a tab page's minimum is every page's minimum. Not wrapped: a
+        # hint squeezed to a few pixels and wrapped stands a word to a line.
         hint.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         colour_text(hint, THEME.faint)
 
@@ -242,10 +243,17 @@ class BookmarksTab(QWidget):
         top.addWidget(self.filter, 1)
         top.addWidget(self.category)
         top.addWidget(categories)
+        # In one row on the right while there is room, wrapping when there is
+        # not: three buttons side by side were wider than the narrowest middle
+        # column on Linux, measured 264 against 252.
+        buttons = QWidget()
+        row = FlowLayout(buttons, spacing=PAD, right=True, one_row=True)
+        row.setContentsMargins(0, 0, 0, 0)
+        for button in (self.open_button, self.edit_button, self.remove_button):
+            row.addWidget(button)
         bottom = QHBoxLayout()
         bottom.addWidget(hint, 1)
-        for button in (self.open_button, self.edit_button, self.remove_button):
-            bottom.addWidget(button)
+        bottom.addWidget(buttons)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(PAD, PAD, PAD, PAD)
         layout.setSpacing(PAD)
