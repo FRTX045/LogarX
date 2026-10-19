@@ -1087,7 +1087,13 @@ is not in it. The CSV has three rows under
 `category,kind,client,what,note,saved,line,log line`, the line first; the
 activity's row names `excerpt.log:2014`, its first line.
 
-10. Close the window. In a copy of the case, replace `bookmarks.json` with
+10. Start logarc a second time and open the same case. Bookmark `203.0.113.6`
+    from its client list, then click on the first window.
+
+**Pass:** the first window's tab reads `Bookmarks (4)`, and `203.0.113.6` wears a
+ribbon in its client list.
+
+11. Close both windows. In a copy of the case, replace `bookmarks.json` with
     `{ not json`, and open the copy.
 
 **Pass:** the tab is named `Bookmarks`, lists nothing, and says above the list:
@@ -1126,6 +1132,6 @@ bookmarks.unreadable.json.*
 | 22 | Sessions are boxed and explained; the boxes follow a drag and can be turned off | | |
 | 23 | The evidence filters, says how much it kept, fades the canvas, and resets per client | | |
 | 24 | The client box finds clients by their requests, moves the range for a time, and opens a client filtered | | |
-| 25 | Bookmarks save from each place, wear ribbons, list by category, reopen past the range, export, and survive an unreadable file | | |
+| 25 | Bookmarks save from each place, wear ribbons, list by category, reopen past the range, export, reach a second window, and survive an unreadable file | | |
 
 Version tested: ______  ·  Date: ______  ·  Machine: ______

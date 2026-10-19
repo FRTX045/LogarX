@@ -14,7 +14,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from PyQt6.QtCore import QPoint, QSettings, Qt
+from PyQt6.QtCore import QEvent, QPoint, QSettings, Qt
 from PyQt6.QtGui import QAction, QCloseEvent, QColor, QImage, QKeyEvent, QKeySequence, QPainter
 from PyQt6.QtWidgets import (
     QApplication,
@@ -1813,6 +1813,16 @@ class MainWindow(QMainWindow):
             self.menuBar(),
             self.statusBar(),
         ]
+
+    def changeEvent(self, event: QEvent | None) -> None:  # noqa: N802 - Qt's naming
+        """Coming back to the window reads the bookmarks again.
+
+        Another window on the same case may have saved some meanwhile; the keeper
+        redraws only when the file says something it is not already showing.
+        """
+        if event is not None and event.type() == QEvent.Type.ActivationChange:
+            self._bookmarks.refresh()
+        super().changeEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent | None) -> None:  # noqa: N802 - Qt's naming
         """Escape comes back, and only from full screen.

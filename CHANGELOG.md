@@ -15,8 +15,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `Bookmarks (3)`, lists them by category, newest first, with a filter; opening
   one goes back to it, the range widening to the whole case when it is outside
   and the status line saying so. Bookmarks live in `bookmarks.json` in the case
-  folder. The HTML report lists the client's bookmarks with their notes, and
-  **Export → Bookmarks…** writes them all as CSV.
+  folder, and two windows on one case each show what the other saved on coming
+  back to them. The HTML report lists the client's bookmarks with their notes,
+  and **Export → Bookmarks…** writes them all as CSV.
 
 - **The client box searches the whole case.** The box above the client list
   takes the evidence box's filters and finds the clients that sent a matching

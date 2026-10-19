@@ -371,6 +371,23 @@ def test_an_unreadable_file_is_said_and_set_aside_by_the_next_save(
     assert not tab.notice.isVisibleTo(tab)
 
 
+def test_a_category_change_sets_an_unreadable_file_aside_and_says_so(
+    window: QWidget, tmp_path: Path
+) -> None:
+    (tmp_path / FILE_NAME).write_bytes(b"{not json")
+    tab = BookmarksTab()
+    keeper = BookmarkKeeper(window, tab, Opener(), say=lambda _text: None)
+    keeper.load(tmp_path)
+    keeper.manage_categories()
+    dialog = keeper.categories_dialog
+    assert dialog is not None
+
+    dialog.rename_requested.emit(DEFAULT, "Look again")
+
+    assert (tmp_path / UNREADABLE_NAME).read_bytes() == b"{not json"
+    assert not tab.notice.isVisibleTo(tab)
+
+
 def test_no_case_means_an_empty_tab_and_nothing_to_save(window: QWidget) -> None:
     tab = BookmarksTab()
     said: list[str] = []
@@ -409,3 +426,60 @@ def test_a_category_name_in_a_question_is_shown_as_typed(
     dialog.delete_requested.emit("Scanners")
 
     assert asked == [("Move its 1 bookmark to <b>Bold</b> & co?", Qt.TextFormat.PlainText)]
+
+
+def test_a_change_another_window_made_is_read_when_asked(parts, window, tmp_path: Path) -> None:
+    keeper, tab, opener, _said = parts
+    other = BookmarkKeeper(window, BookmarksTab(), Opener(), say=lambda _text: None)
+    other.load(tmp_path)
+    save(other, client("10.0.0.1"), note="from the other window")
+    assert keeper.shelf.bookmarks == ()
+
+    keeper.refresh()
+
+    assert [b.note for b in keeper.shelf.bookmarks] == ["from the other window"]
+    assert tab.count() == 1
+    clients, _done = opener.checks[-1]
+    assert clients == frozenset({"10.0.0.1"}), "a client it has not checked is asked about"
+
+
+def test_a_refresh_keeps_a_box_that_is_open_and_its_save_keeps_both(
+    parts, window, tmp_path: Path
+) -> None:
+    keeper, *_ = parts
+    keeper.bookmark(client("10.0.0.2"), QPoint(20, 20))
+    other = BookmarkKeeper(window, BookmarksTab(), Opener(), say=lambda _text: None)
+    other.load(tmp_path)
+    save(other, client("10.0.0.1"))
+
+    keeper.refresh()
+    box = keeper.box
+    assert box is not None, "the reader's box stays open"
+    box.saving.emit(DEFAULT, "")
+
+    assert sorted(b.client for b in stored(tmp_path).bookmarks) == ["10.0.0.1", "10.0.0.2"]
+
+
+def test_refreshing_a_file_nobody_changed_redraws_nothing(parts) -> None:
+    keeper, *_ = parts
+    save(keeper, client("10.0.0.1"))
+    redrawn: list[bool] = []
+    keeper.changed.connect(lambda: redrawn.append(True))
+
+    keeper.refresh()
+
+    assert redrawn == []
+
+
+def test_a_refresh_drops_the_notice_once_the_unreadable_file_is_gone(
+    window: QWidget, tmp_path: Path
+) -> None:
+    (tmp_path / FILE_NAME).write_bytes(b"{not json")
+    tab = BookmarksTab()
+    keeper = BookmarkKeeper(window, tab, Opener(), say=lambda _text: None)
+    keeper.load(tmp_path)
+    (tmp_path / FILE_NAME).unlink()
+
+    keeper.refresh()
+
+    assert not tab.notice.isVisibleTo(tab)
