@@ -2193,13 +2193,18 @@ class MainWindow(QMainWindow):
         *,
         evidence: tuple[EvidenceRef, ...] = (),
     ) -> None:
-        """Show the activity holding `refs` in the graph on screen, `evidence` first."""
+        """Show the activity holding `refs` in the graph on screen, `evidence` first.
+
+        Brought into view as well: it was asked for from elsewhere, and a graph
+        too large to frame readably opens on its beginning.
+        """
         wanted = set(refs)
         episodes = frozenset(a.episode_id for a in result.assignments if a.evidence in wanted)
         graph = result.trace if self._kind is GraphKind.TRACE else result.behaviour
         node = node_for_episodes(graph, episodes)
         if node is not None:
             self._show_evidence(node.node_id, evidence=evidence)
+            self._canvas.bring_into_view(node.node_id)
 
     # -- bookmarks -----------------------------------------------------------
 

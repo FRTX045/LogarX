@@ -308,6 +308,25 @@ def test_an_activity_opens_on_its_client_and_is_selected(
     assert len(ribbons) == 1, "the redrawn graph wears its ribbon"
 
 
+def test_an_opened_activity_is_on_screen_in_a_graph_too_big_to_frame(
+    qt_app: QApplication, window: MainWindow
+) -> None:
+    """A graph too large to frame readably opens on its beginning; the bookmark is later."""
+    ident = saved_activity(qt_app, window)
+    window._apply_preferences({**window._prefs, "view/wrap_traces": False})
+    window.resize(760, 560)
+    reconstruct(qt_app, window, PROBER)
+
+    window._bookmarks.open(ident)
+    settled(qt_app)
+
+    canvas = window._canvas
+    assert window._selected is not None
+    item = canvas._nodes[window._selected.node_id]
+    drawn = item.sceneBoundingRect().united(item.mapRectToScene(item.childrenBoundingRect()))
+    assert canvas.viewport().rect().contains(canvas.mapFromScene(drawn).boundingRect())
+
+
 def test_a_bookmark_of_the_client_on_screen_opens_without_reading_it_again(
     qt_app: QApplication, window: MainWindow
 ) -> None:

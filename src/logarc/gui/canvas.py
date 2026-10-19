@@ -94,6 +94,10 @@ _IP_PROMPT_SCALE: Final = _PLACEHOLDER_SCALE * 0.4
 #: presenting a picture nobody can read.
 MIN_FIT_SCALE: Final = 0.8
 
+#: The room left around an activity brought into view, in pixels, so it does
+#: not land hard against the canvas edge.
+_BRING_MARGIN: Final = 40
+
 #: How far the corner button sits from the canvas edge. Small, because the
 #: patch it covers is a patch of graph given up.
 _EXPAND_INSET: Final = 12
@@ -1187,6 +1191,25 @@ class ActivityCanvas(QGraphicsView):
     def selected_node_id(self) -> str | None:
         """The activity whose evidence is being read, as `highlight` last ringed it."""
         return self._selected
+
+    def bring_into_view(self, node_id: str) -> None:
+        """Move the view just far enough to show an activity and its caption.
+
+        Nothing moves when it is on screen already. Needed because a graph too
+        large to frame at a readable scale opens on its beginning, and an
+        activity opened from elsewhere (a bookmark, Where to start) can lie
+        anywhere in it.
+        """
+        item = self._nodes.get(node_id)
+        if item is None:
+            return
+        drawn = item.sceneBoundingRect().united(item.mapRectToScene(item.childrenBoundingRect()))
+        viewport = self.viewport()
+        if viewport is not None and viewport.rect().contains(
+            self.mapFromScene(drawn).boundingRect()
+        ):
+            return
+        self.ensureVisible(drawn, _BRING_MARGIN, _BRING_MARGIN)
 
     def _draw_ribbons(self) -> None:
         for ribbon in self._ribbons:

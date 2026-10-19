@@ -354,6 +354,45 @@ def test_a_filter_fades_a_marked_activity_ribbon_and_all(qt_app: QApplication) -
     assert ribbon.effectiveOpacity() == 1.0
 
 
+def on_screen(canvas: ActivityCanvas, node_id: str) -> bool:
+    item = node_item(canvas, node_id)
+    drawn = item.sceneBoundingRect().united(item.mapRectToScene(item.childrenBoundingRect()))
+    return canvas.viewport().rect().contains(canvas.mapFromScene(drawn).boundingRect())
+
+
+def long_trace_in_a_small_view() -> ActivityCanvas:
+    """Eight sessions at the readable minimum: the view opens on the first."""
+    canvas = ActivityCanvas()
+    canvas.resize(420, 320)
+    canvas.show()
+    canvas.show_graph(trace(*[2] * 8))
+    QApplication.processEvents()
+    return canvas
+
+
+def test_an_activity_off_screen_is_brought_into_view(qt_app: QApplication) -> None:
+    canvas = long_trace_in_a_small_view()
+    last = "1.2.3.4#8/2"
+    assert not on_screen(canvas, last), "premise: a long trace opens on its beginning"
+
+    canvas.bring_into_view(last)
+
+    assert on_screen(canvas, last)
+    canvas.close()
+
+
+def test_an_activity_already_on_screen_leaves_the_view_where_it_is(qt_app: QApplication) -> None:
+    canvas = long_trace_in_a_small_view()
+    first = "1.2.3.4#1/1"
+    assert on_screen(canvas, first), "premise: the first activity is on screen"
+    where = (canvas.horizontalScrollBar().value(), canvas.verticalScrollBar().value())
+
+    canvas.bring_into_view(first)
+
+    assert (canvas.horizontalScrollBar().value(), canvas.verticalScrollBar().value()) == where
+    canvas.close()
+
+
 def test_the_canvas_says_which_activity_is_being_read(qt_app: QApplication) -> None:
     canvas = drawn_trace()
     assert canvas.selected_node_id() is None
