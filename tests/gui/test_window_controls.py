@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Iterator
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from PyQt6.QtCore import QPoint, Qt
+from PyQt6.QtCore import QPoint, QSize, Qt
+from PyQt6.QtGui import QResizeEvent
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QMainWindow
 
@@ -131,3 +133,22 @@ def test_other_desktops_keep_their_window_frame(
     assert window_controls.install_window_controls(window) is None
     assert window.windowFlags() == before
     window.close()
+
+
+def test_an_event_after_the_controls_let_go_of_the_window_is_ignored(
+    frame: tuple[QMainWindow, WindowControls], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The collector clears the controls' attributes while Qt is still delivering
+    the window's last events. The filter assumed `_window` was there and raised
+    inside Qt, which PyQt answers by ending the process."""
+    window, controls = frame
+    raised: list[object] = []
+    monkeypatch.setattr(sys, "excepthook", lambda *exc: raised.append(exc))
+    kept = dict(vars(controls))
+    vars(controls).clear()
+    try:
+        QApplication.sendEvent(window, QResizeEvent(QSize(800, 400), QSize(900, 500)))
+    finally:
+        vars(controls).update(kept)
+
+    assert raised == []
