@@ -23,6 +23,8 @@ read tolerantly and written carefully:
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import uuid
 from collections.abc import Callable, Mapping
@@ -31,11 +33,15 @@ from dataclasses import replace as changed
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from logarc.core.evidence import EvidenceRef
 from logarc.core.window import TimeWindow
-from logarc.style import CATEGORY_COLOURS
+from logarc.style import CATEGORY_COLOURS, display_safe, format_requests, plural
+
+if TYPE_CHECKING:
+    from logarc.core.event import NormalizedEvent
+    from logarc.core.graph import GraphNode
 
 __all__ = [
     "DEFAULT",
@@ -62,6 +68,11 @@ __all__ = [
     "remove",
     "rename_category",
     "replace",
+    "said_for_activity",
+    "said_for_client",
+    "said_for_request",
+    "said_for_search",
+    "to_csv",
     "utc_now",
 ]
 
@@ -530,3 +541,105 @@ def apply(case_dir: Path, change: Callable[[Shelf], Shelf]) -> Shelf:
     except OSError as error:
         raise BookmarkWriteError(error.errno, error.strerror or str(error)) from error
     return shelf
+
+
+# -- what a bookmark says ------------------------------------------------------------
+
+_DOT: Final = " \u00b7 "
+_DASH: Final = "\u2013"
+#: How much of a request target a bookmark repeats; the log line keeps the rest.
+_TARGET_LIMIT: Final = 120
+
+
+def _minute(moment: datetime) -> str:
+    return moment.astimezone(UTC).strftime("%d %b %H:%M")
+
+
+def _span(start: datetime, end: datetime) -> str:
+    """`10 Mar 19:12\u201319:13`, or across days `09 Mar 23:50 \u2013 10 Mar 00:10`."""
+    first, last = start.astimezone(UTC), end.astimezone(UTC)
+    if first.date() != last.date():
+        return f"{_minute(first)} {_DASH} {_minute(last)}"
+    if _minute(first) == _minute(last):
+        return _minute(first)
+    return f"{_minute(first)}{_DASH}{last:%H:%M}"
+
+
+def said_for_activity(node: GraphNode) -> str:
+    return _DOT.join((node.label, format_requests(node.request_count), _span(node.start, node.end)))
+
+
+def said_for_request(ref: EvidenceRef, event: NormalizedEvent | None) -> str:
+    """What was asked, its answer, when, and which line says so.
+
+    The target came from whoever is being investigated, so it goes through
+    `display_safe`: a decoded line break would otherwise let it write a second,
+    invented request into the bookmark list.
+    """
+    if event is None:
+        return str(ref)
+    target = display_safe((event.path or "") + (f"?{event.query}" if event.query else ""))
+    if len(target) > _TARGET_LIMIT:
+        target = target[: _TARGET_LIMIT - 1] + "\u2026"
+    parts = [f"{event.method or '-'} {target or '-'}"]
+    if event.status is not None:
+        parts.append(str(event.status))
+    parts.append(event.timestamp.astimezone(UTC).strftime("%d %b %H:%M:%S"))
+    parts.append(str(ref))
+    return _DOT.join(parts)
+
+
+def said_for_client(requests: int | None, first: datetime | None, last: datetime | None) -> str:
+    parts = [format_requests(requests)] if requests is not None else []
+    if first is not None and last is not None:
+        parts.append(_span(first, last))
+    elif (only := first or last) is not None:
+        parts.append(_minute(only))
+    return _DOT.join(parts)
+
+
+def said_for_search(query: str, clients: int | None, requests: int | None) -> str:
+    parts = [query]
+    if clients is not None:
+        parts.append(plural(clients, "client"))
+    if requests is not None:
+        parts.append(format_requests(requests))
+    return _DOT.join(parts)
+
+
+# -- every bookmark as a CSV ----------------------------------------------------------
+
+_CSV_HEAD: Final = ("category", "kind", "client", "what", "note", "saved", "line", "log line")
+#: What a spreadsheet reads as the start of a formula. A note or a log line is
+#: text a reader or an attacker wrote, and must stay text when the file is opened.
+_FORMULA_STARTS: Final = frozenset({"=", "+", "-", "@", "\t", "\r"})
+
+
+def _cell(text: str) -> str:
+    return f"'{text}" if text[:1] in _FORMULA_STARTS else text
+
+
+def to_csv(shelf: Shelf, lines: Mapping[EvidenceRef, str]) -> str:
+    """Every bookmark, one row each, by category and newest first within one."""
+    out = io.StringIO()
+    writer = csv.writer(out, lineterminator="\r\n")
+    writer.writerow(_CSV_HEAD)
+    for category in shelf.categories:
+        members = sorted(
+            (b for b in shelf.bookmarks if b.category == category.name),
+            key=lambda b: b.saved,
+            reverse=True,
+        )
+        for b in members:
+            row = (
+                b.category,
+                b.kind.value,
+                b.client or "",
+                b.said,
+                b.note,
+                _time_text(b.saved),
+                str(b.line) if b.line is not None else "",
+                lines.get(b.line, "") if b.line is not None else "",
+            )
+            writer.writerow([_cell(value) for value in row])
+    return out.getvalue()

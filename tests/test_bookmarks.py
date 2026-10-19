@@ -7,6 +7,8 @@ drawing.
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 from dataclasses import replace as changed
 from datetime import UTC, datetime
@@ -35,8 +37,16 @@ from logarc.bookmarks import (
     remove,
     rename_category,
     replace,
+    said_for_activity,
+    said_for_client,
+    said_for_request,
+    said_for_search,
+    to_csv,
 )
+from logarc.core.activity import ActivityCategory, Outcome, Severity
+from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
+from logarc.core.graph import GraphNode
 from logarc.core.window import TimeWindow
 
 SAVED = datetime(2026, 10, 19, 14, 2, 11, tzinfo=UTC)
@@ -335,3 +345,116 @@ def test_colours_are_kept_when_a_category_before_them_goes() -> None:
     # and the freed colour is the next one handed out
     three = add_category(shelf, "Three").category("Three")
     assert three is not None and three.colour == 1
+
+
+# -- what a bookmark says ---------------------------------------------------------------
+
+DOT = " \u00b7 "
+DASH = "\u2013"
+
+
+def graph_node(start: datetime, end: datetime, *, requests: int) -> GraphNode:
+    return GraphNode(
+        node_id="s1/1",
+        label="Credential Attack",
+        category=ActivityCategory.AUTHENTICATION,
+        severity=Severity.HIGH,
+        outcome=Outcome.BLOCKED,
+        request_count=requests,
+        distinct_paths=1,
+        bytes_total=0,
+        start=start,
+        end=end,
+        owasp=None,
+        top_targets=("/login",),
+        rule_ids=("credential",),
+        evidence=(EvidenceRef("excerpt.log", 2014),),
+        evidence_total=requests,
+        episode_ids=("s1/1",),
+    )
+
+
+def at(day: int, hour: int, minute: int, second: int = 0) -> datetime:
+    return datetime(2026, 3, day, hour, minute, second, tzinfo=UTC)
+
+
+def test_an_activity_says_its_name_size_and_span() -> None:
+    within = graph_node(at(10, 19, 12), at(10, 19, 13, 36), requests=6)
+    assert (
+        said_for_activity(within) == f"Credential Attack{DOT}6 requests{DOT}10 Mar 19:12{DASH}19:13"
+    )
+    across = graph_node(at(9, 23, 50), at(10, 0, 10), requests=1)
+    assert said_for_activity(across) == (
+        f"Credential Attack{DOT}1 request{DOT}09 Mar 23:50 {DASH} 10 Mar 00:10"
+    )
+    instant = graph_node(at(10, 19, 12, 5), at(10, 19, 12, 40), requests=2)
+    assert said_for_activity(instant).endswith(f"{DOT}10 Mar 19:12")
+
+
+def test_a_request_says_what_was_asked_its_answer_when_and_where() -> None:
+    ref = EvidenceRef("excerpt.log", 2014)
+    event = NormalizedEvent(
+        timestamp=at(10, 19, 12, 18),
+        client_ip="192.0.2.23",
+        evidence=ref,
+        method="POST",
+        path="/login",
+        query="next=%2Fcart",
+        status=401,
+    )
+    assert said_for_request(ref, event) == (
+        f"POST /login?next=%2Fcart{DOT}401{DOT}10 Mar 19:12:18{DOT}excerpt.log:2014"
+    )
+    assert said_for_request(ref, None) == "excerpt.log:2014"
+
+
+def test_a_request_cannot_forge_a_line_break_into_what_it_says() -> None:
+    ref = EvidenceRef("a.log", 1)
+    event = NormalizedEvent(
+        timestamp=at(10, 1, 0), client_ip="10.0.0.1", evidence=ref, path="/a\nGET /b"
+    )
+    said = said_for_request(ref, event)
+    assert "\n" not in said
+    assert "<U+000A>" in said
+    assert said.startswith("- /a")
+
+
+def test_a_client_says_what_is_known_of_it() -> None:
+    assert said_for_client(50, at(10, 11, 9), at(15, 8, 33)) == (
+        f"50 requests{DOT}10 Mar 11:09 {DASH} 15 Mar 08:33"
+    )
+    assert said_for_client(1, None, None) == "1 request"
+    assert said_for_client(None, None, None) == ""
+
+
+def test_a_search_says_what_it_found() -> None:
+    assert said_for_search("path:/admin", 8, 123) == f"path:/admin{DOT}8 clients{DOT}123 requests"
+    assert said_for_search("activity:injection", 1, None) == f"activity:injection{DOT}1 client"
+    assert said_for_search("status:500", None, None) == "status:500"
+
+
+# -- every bookmark as a CSV -----------------------------------------------------------
+
+
+def rows(text: str) -> list[list[str]]:
+    return list(csv.reader(io.StringIO(text)))
+
+
+def test_the_csv_has_one_row_per_bookmark_newest_first_in_each_category() -> None:
+    line = EvidenceRef("excerpt.log", 2014)
+    older = changed(client_mark("10.0.0.1", id="old"), saved=SAVED.replace(hour=9))
+    newer = activity_mark(line=line, note="lockout held", id="new")
+    other = client_mark("10.0.0.2", category="Scanners", id="scan")
+    shelf = add(add(add(EMPTY, older), other), newer)
+    table = rows(to_csv(shelf, {line: '1.2.3.4 - - "POST /login" 401'}))
+    assert table[0] == ["category", "kind", "client", "what", "note", "saved", "line", "log line"]
+    assert [row[2] for row in table[1:]] == ["192.0.2.23", "10.0.0.1", "10.0.0.2"]
+    assert table[1][6:] == ["excerpt.log:2014", '1.2.3.4 - - "POST /login" 401']
+    assert table[1][5] == "2026-10-19T14:02:11Z"
+
+
+def test_a_note_that_looks_like_a_formula_cannot_run_in_a_spreadsheet() -> None:
+    for start in ("=", "+", "-", "@"):
+        shelf = add(EMPTY, client_mark("10.0.0.1", note=f'{start}HYPERLINK("x")'))
+        row = rows(to_csv(shelf, {}))[1]
+        assert row[4] == f"'{start}HYPERLINK(" + '"x")'
