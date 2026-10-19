@@ -7,6 +7,17 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Bookmarks.** A client, an activity, a log line or a search of the case can
+  be saved into a category, with a note, from where it is: **Ctrl+D** saves
+  what has the keyboard, and a right-click or a Bookmark button offers it in
+  each panel. What is saved wears a ribbon in its category's colour in the
+  client list, on the canvas and in the evidence. A third tab,
+  `Bookmarks (3)`, lists them by category, newest first, with a filter; opening
+  one goes back to it, the range widening to the whole case when it is outside
+  and the status line saying so. Bookmarks live in `bookmarks.json` in the case
+  folder. The HTML report lists the client's bookmarks with their notes, and
+  **Export → Bookmarks…** writes them all as CSV.
+
 - **The client box searches the whole case.** The box above the client list
   takes the evidence box's filters and finds the clients that sent a matching
   request, most matches first, with a Match column:
@@ -842,6 +853,15 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   261 lines of unchanged values and buried the line that had actually moved.
 
 ### Fixed
+
+- **An activity opened from Where to start is on screen.** A graph too large to
+  frame at a readable scale opens on its beginning, so an activity opened by
+  Investigate could be selected and listed in the evidence while lying off the
+  canvas. The canvas now moves just far enough to show it.
+
+- **The client list is released with its window.** A lambda connected to the
+  table's column header was never freed, so every window closed kept its
+  client list, with its rows, until the program ended.
 
 - **When CRS fails, the window says so in words a reader can use.** A sidecar
   that crashed had its whole output shown as the dialog's message: on a newer

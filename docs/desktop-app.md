@@ -65,9 +65,9 @@ and respects existing environment settings. For a larger cursor, launch with
 | Menu | Holds |
 |---|---|
 | **Case** | Open case… (Ctrl+O) · Recently opened… (Ctrl+Shift+O) · Ingest logs into a new case… · Log formats… · Exit |
-| **Edit** | Undo node move (Ctrl+Z) · Save this arrangement (Ctrl+S) · Reset layout (Ctrl+Shift+R) · Preferences… (Ctrl+,) |
+| **Edit** | Undo node move (Ctrl+Z) · Save this arrangement (Ctrl+S) · Reset layout (Ctrl+Shift+R) · Bookmark… (Ctrl+D) · Preferences… (Ctrl+,) |
 | **View** | Trace (chronological) · Behaviour map · Timeline · Fit to window · Full screen |
-| **Export** | HTML report… · JSON graph… · PNG image… |
+| **Export** | HTML report… · JSON graph… · PNG image… · Bookmarks… |
 
 `Edit` rather than `View` for the arrangement entries, because Ctrl+Z is the
 first thing anyone looks for there.
@@ -251,6 +251,61 @@ The canvas fades every activity with no matching line, so the box also answers
 move between activities and between the two views. Opening another client
 starts without one, unless a search of the case found it by its requests: see
 *Searching the case* above.
+
+---
+
+## Bookmarks
+
+![Three bookmarks in two categories](images/screenshot-bookmarks.png)
+
+Anything worth coming back to can be saved, into a category, with a note:
+
+| What | How |
+|---|---|
+| A client | Right-click it in the client list, in Where to start, or in Who else |
+| An activity | **Bookmark** under its heading in the evidence panel, or right-click it on the canvas |
+| A log line | Right-click it in the evidence table |
+| A search of the case | **Bookmark this search**, under the client box's answer |
+
+**Ctrl+D** (**Edit → Bookmark…**) saves whatever has the keyboard: the selected
+log line, the selected client in the list or the queue, or the client box's
+search. Anywhere else it saves the activity being read, or else the client.
+
+The box that opens says what is being saved and whose it is. **Category** starts
+at the last one used; type a new name to make a new category. The note is
+optional. Enter saves and Esc cancels. Saving something already bookmarked opens
+that bookmark to edit, rather than making a second one.
+
+A bookmarked client, activity or log line wears a ribbon in its category's
+colour: beside the address in the client list, on the activity in the graph, and
+on the line in the evidence. Hover over it to read which bookmark it is.
+
+The **Bookmarks** tab lists them by category, newest first, and its name counts
+them. The box above keeps the bookmarks that hold every word you type, in the
+description, the note, the client or the category. **Categories…** renames and
+deletes them. Deleting a category moves its bookmarks to the first one, which
+can be renamed but not deleted.
+
+Double-click a bookmark, or press Enter or **Open**, to go back to it:
+
+- a client or an activity opens in its graph, the activity selected and in view;
+- a log line opens selected in the evidence, in its activity;
+- a search runs again over the range it was made in.
+
+If the range in force leaves the bookmark out, the range becomes the whole case
+and the status line says so; the fields above the panels narrow it again. A
+bookmark whose client or log file is no longer in the case says *Not found in
+this case any more.* It can still be edited and removed, but not opened.
+
+**Bookmarks are kept with the case**, in `bookmarks.json` in its folder, so a
+case copied to a colleague takes them along. A file that cannot be read is left
+as it is, and the tab says so; the next bookmark saved moves it aside as
+`bookmarks.unreadable.json`.
+
+The HTML report lists the exported client's bookmarks, with their notes and,
+for a log line, the line itself. **Export → Bookmarks…** writes every bookmark
+in the case to a CSV file: category, kind, client, what, note, when saved, and
+for a log line or an activity its file and line number and the line itself.
 
 ---
 
