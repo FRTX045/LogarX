@@ -15,13 +15,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import QPoint, Qt, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QDialog,
     QDialogButtonBox,
     QLabel,
+    QMenu,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -70,6 +71,8 @@ class WhoElseDialog(QDialog):
     """The other clients one rule matched. Double-click a row to open that client."""
 
     open_client = pyqtSignal(str)
+    bookmark_requested = pyqtSignal(str)
+    """A listed client asked to be bookmarked, from its right-click menu."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -84,6 +87,8 @@ class WhoElseDialog(QDialog):
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._column_sizes = ColumnWidths(self.table, fill=0)
         self.table.cellDoubleClicked.connect(self._opened)
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_menu)
         # Says what the two counts mean, because the difference between them is
         # the reason a client is on this list at all when its own activity is
         # called something else.
@@ -126,6 +131,23 @@ class WhoElseDialog(QDialog):
         self.table.setRowCount(0)
         self.table.hide()
         self.note.hide()
+
+    def _menu_at(self, point: QPoint) -> QMenu | None:
+        """The menu a right-click at `point` opens, or None off the rows."""
+        index = self.table.indexAt(point)
+        item = self.table.item(index.row(), 0) if index.isValid() else None
+        if item is None:
+            return None
+        address = item.text()
+        menu = QMenu(self)
+        menu.addAction("Bookmark this client\u2026", lambda: self.bookmark_requested.emit(address))
+        return menu
+
+    def _show_menu(self, point: QPoint) -> None:
+        menu = self._menu_at(point)
+        viewport = self.table.viewport()
+        if menu is not None and viewport is not None:
+            menu.popup(viewport.mapToGlobal(point))
 
     def _opened(self, row: int, _column: int) -> None:
         item = self.table.item(row, 0)

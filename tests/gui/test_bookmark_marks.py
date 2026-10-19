@@ -10,18 +10,27 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from on_canvas import node_item
 from PyQt6.QtCore import QPoint, Qt
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QGraphicsItem
+from test_session_boxes import trace
+from test_triage_panel import make_case
+from test_who_else import DIRB, GOBUSTER
 
+from conftest import settled
 from logarc.core.activity import ActivityCategory, Outcome, Severity
 from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
 from logarc.core.graph import GraphNode
 from logarc.evidence import EvidenceLine
+from logarc.gui.canvas import ActivityCanvas
 from logarc.gui.evidence_panel import EvidencePanel
 from logarc.gui.panels import ClientTable
 from logarc.gui.ribbon import ribbon_icon
+from logarc.gui.triage import TriagePanel
+from logarc.gui.who_else import WhoElseDialog
 from logarc.storage.base import ClientMatchPage, IpSummary
+from logarc.triage.scan import scan_case
 
 START = datetime(2026, 3, 10, 19, 12, tzinfo=UTC)
 BLUE = "#49a9ff"
@@ -278,3 +287,93 @@ def test_an_address_typed_after_an_answer_is_not_that_answer(qt_app: QApplicatio
 
     assert whole.answered_search() is None
     assert not whole.search_bookmark.isVisibleTo(whole)
+
+
+# -- the canvas --------------------------------------------------------------------------
+
+FIRST, SECOND = "1.2.3.4#1/1", "1.2.3.4#1/2"
+
+
+def drawn_trace() -> ActivityCanvas:
+    canvas = ActivityCanvas()
+    canvas.resize(600, 480)
+    canvas.show_graph(trace(3))
+    return canvas
+
+
+def ribbons_on(canvas: ActivityCanvas) -> dict[str, list[QGraphicsItem]]:
+    found: dict[str, list[QGraphicsItem]] = {}
+    for node_id in (FIRST, SECOND, "1.2.3.4#1/3"):
+        children = [c for c in node_item(canvas, node_id).childItems() if c.data(0) == "bookmark"]
+        if children:
+            found[node_id] = children
+    return found
+
+
+def test_a_marked_activity_wears_one_ribbon_that_says_which_bookmark(qt_app: QApplication) -> None:
+    canvas = drawn_trace()
+    canvas.set_marks({SECOND: (BLUE, "Login attacks: the lockout held")})
+    (ribbon,) = ribbons_on(canvas)[SECOND]
+    assert list(ribbons_on(canvas)) == [SECOND]
+    assert ribbon.toolTip() == "Login attacks: the lockout held"
+    assert ribbon.parentItem() is node_item(canvas, SECOND), "it moves with its activity"
+
+
+def test_new_marks_replace_the_old_ones(qt_app: QApplication) -> None:
+    canvas = drawn_trace()
+    canvas.set_marks({SECOND: (BLUE, "x")})
+    canvas.set_marks({FIRST: (BLUE, "y")})
+    assert {node: len(items) for node, items in ribbons_on(canvas).items()} == {FIRST: 1}
+    canvas.set_marks({})
+    assert ribbons_on(canvas) == {}
+
+
+def test_a_wrap_toggle_keeps_the_ribbons(qt_app: QApplication) -> None:
+    canvas = drawn_trace()
+    canvas.set_marks({FIRST: (BLUE, "x")})
+    canvas.set_wrap(False)
+    assert list(ribbons_on(canvas)) == [FIRST]
+
+
+def test_a_new_graph_starts_without_ribbons(qt_app: QApplication) -> None:
+    """Ids from the last client name nothing in the next one."""
+    canvas = drawn_trace()
+    canvas.set_marks({FIRST: (BLUE, "x")})
+    canvas.show_graph(trace(3))
+    assert ribbons_on(canvas) == {}
+
+
+def test_the_canvas_says_which_activity_is_being_read(qt_app: QApplication) -> None:
+    canvas = drawn_trace()
+    assert canvas.selected_node_id() is None
+    canvas.highlight(SECOND)
+    assert canvas.selected_node_id() == SECOND
+
+
+# -- Where to start and Who else -----------------------------------------------------------
+
+
+def test_a_right_click_in_the_queue_bookmarks_that_client(qt_app: QApplication, tmp_path) -> None:
+    panel = TriagePanel()
+    panel.show_result(scan_case(make_case(tmp_path, 3)))
+    settled(qt_app)
+    asked: list[str] = []
+    panel.bookmark_requested.connect(asked.append)
+    menu = panel._menu_at(row_point(panel.table, 1))
+    assert menu is not None
+    (action,) = menu.actions()
+    assert action.text() == "Bookmark this client\u2026"
+    action.trigger()
+    assert asked == [panel.table.item(1, 1).text()]
+
+
+def test_a_right_click_in_who_else_bookmarks_that_client(qt_app: QApplication) -> None:
+    dialog = WhoElseDialog()
+    dialog.show_matches("directory_enumeration", [GOBUSTER, DIRB], client_ip="192.0.2.30")
+    asked: list[str] = []
+    dialog.bookmark_requested.connect(asked.append)
+    menu = dialog._menu_at(row_point(dialog.table, 0))
+    assert menu is not None
+    menu.actions()[0].trigger()
+    assert asked == ["192.0.2.31"]
+    dialog.close()
