@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QSizePolicy,
     QStyle,
     QStyledItemDelegate,
     QStyleOptionViewItem,
@@ -151,7 +152,9 @@ class BookmarksTab(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self._shelf: Shelf | None = None
-        self._gone: Callable[[Bookmark], bool] = lambda _bookmark: False
+        # Which bookmarks point at nothing now, by id: kept as data rather
+        # than as the caller's function, which would tie this tab to it.
+        self._gone: frozenset[str] = frozenset()
 
         self.notice = QLabel()
         self.notice.setTextFormat(Qt.TextFormat.PlainText)
@@ -173,11 +176,17 @@ class BookmarksTab(QWidget):
             QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
         self.category.setMinimumContentsLength(14)
+        # Fourteen characters when there is room, about eight when the column
+        # is dragged narrow: the tab's minimum is the whole workspace's.
+        self.category.setMinimumWidth(self.category.fontMetrics().averageCharWidth() * 8)
         self.category.currentTextChanged.connect(lambda _text: self._fill())
         categories = QPushButton("Categories\N{HORIZONTAL ELLIPSIS}")
         categories.clicked.connect(self.categories_requested.emit)
 
         self.caption = QLabel()
+        # Wrapped, as the client list's is: unwrapped, a caption sets the
+        # narrowest the middle of the window can be.
+        self.caption.setWordWrap(True)
         self.caption.setFont(caption_font(self.caption.font()))
         colour_text(self.caption, THEME.muted)
         self.empty = QLabel()
@@ -206,8 +215,9 @@ class BookmarksTab(QWidget):
             (_SAVED, QHeaderView.ResizeMode.ResizeToContents),
         ):
             header.setSectionResizeMode(column, mode)
-        # A wrapped row's height depends on its column's width.
-        header.sectionResized.connect(lambda *_: self.tree.measure_again())
+        # A wrapped row's height depends on its column's width. A bound method:
+        # Qt made this header, and a lambda on it would keep the tab for good.
+        header.sectionResized.connect(self._column_resized)
         self.tree.itemDoubleClicked.connect(lambda item, _column: self._open(item))
         self.tree.currentItemChanged.connect(lambda *_: self._update_buttons())
         self.tree.open_key.connect(lambda: self._open(self.tree.currentItem()))
@@ -221,6 +231,11 @@ class BookmarksTab(QWidget):
         self.remove_button.clicked.connect(self._remove)
         hint = QLabel("Double-click to open \N{MIDDLE DOT} Delete removes")
         hint.setFont(caption_font(hint.font()))
+        # Wrapped, and given only the room the buttons leave, so in a narrow
+        # column the hint gives way rather than setting the width of the whole
+        # middle of the window: a tab page's minimum is every page's minimum.
+        hint.setWordWrap(True)
+        hint.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         colour_text(hint, THEME.faint)
 
         top = QHBoxLayout()
@@ -228,8 +243,7 @@ class BookmarksTab(QWidget):
         top.addWidget(self.category)
         top.addWidget(categories)
         bottom = QHBoxLayout()
-        bottom.addWidget(hint)
-        bottom.addStretch(1)
+        bottom.addWidget(hint, 1)
         for button in (self.open_button, self.edit_button, self.remove_button):
             bottom.addWidget(button)
         layout = QVBoxLayout(self)
@@ -243,12 +257,15 @@ class BookmarksTab(QWidget):
         layout.addLayout(bottom)
         self._update_buttons()
 
+    def _column_resized(self, _index: int, _old: int, _new: int) -> None:
+        self.tree.measure_again()
+
     # -- what is shown -----------------------------------------------------------
 
     def show_shelf(self, shelf: Shelf, *, gone: Callable[[Bookmark], bool]) -> None:
         """Show `shelf`; `gone` says which bookmarks point at nothing in the case now."""
         self._shelf = shelf
-        self._gone = gone
+        self._gone = frozenset(b.id for b in shelf.bookmarks if gone(b))
         chosen = self.category.currentText()
         blocked = self.category.blockSignals(True)
         self.category.clear()
@@ -295,7 +312,7 @@ class BookmarksTab(QWidget):
             heading.setFirstColumnSpanned(True)
             heading.setExpanded(True)
             for bookmark in members:
-                gone = self._gone(bookmark)
+                gone = bookmark.id in self._gone
                 window = bookmark.range if bookmark.range is not None else EVERYTHING
                 item = QTreeWidgetItem(
                     heading,
@@ -359,14 +376,14 @@ class BookmarksTab(QWidget):
 
     def _update_buttons(self) -> None:
         bookmark = self._bookmark(self._selected())
-        self.open_button.setEnabled(bookmark is not None and not self._gone(bookmark))
+        self.open_button.setEnabled(bookmark is not None and bookmark.id not in self._gone)
         self.edit_button.setEnabled(bookmark is not None)
         self.remove_button.setEnabled(bookmark is not None)
 
     def _open(self, item: QTreeWidgetItem | None) -> None:
         ident = item.data(_KIND, _ID) if item is not None else None
         bookmark = self._bookmark(ident if isinstance(ident, str) else None)
-        if bookmark is not None and not self._gone(bookmark):
+        if bookmark is not None and bookmark.id not in self._gone:
             self.open_requested.emit(bookmark.id)
 
     def _edit(self) -> None:

@@ -506,6 +506,11 @@ class TriagePanel(QWidget):
             elif self._sources.get(example.evidence, SourceStatus("", True)).can_open:
                 self.investigate.emit(row.profile.client_ip, (example.evidence,))
 
+    def selected_client(self) -> str | None:
+        """The queued client on the current row, if there is one."""
+        index = self.table.currentRow()
+        return self._rows[index].profile.client_ip if 0 <= index < len(self._rows) else None
+
     def _menu_at(self, point: QPoint) -> QMenu | None:
         """The menu a right-click at `point` opens, or None off the rows."""
         index = self.table.indexAt(point)

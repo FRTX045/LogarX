@@ -915,7 +915,10 @@ class ActivityCanvas(QGraphicsView):
             level = 1.0 if wanted is None or node_id in wanted else FADED
             item.setOpacity(level)
             for caption in item.childItems():
-                _words(caption).setOpacity(level)
+                # A bookmark's ribbon is a child too, with no words on it; it
+                # takes its node's opacity as every child does.
+                if caption.data(0) != "bookmark":
+                    _words(caption).setOpacity(level)
         for art in self._edge_art:
             full = wanted is None or (art.source_id in wanted and art.target_id in wanted)
             level = 1.0 if full else FADED

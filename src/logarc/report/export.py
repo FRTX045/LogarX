@@ -25,9 +25,12 @@ from typing import TYPE_CHECKING, Final
 from logarc.report.html import render_report
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from pathlib import Path
 
     from logarc.analysis import AnalysisResult
+    from logarc.bookmarks import Shelf
+    from logarc.core.evidence import EvidenceRef
     from logarc.storage.case import CaseManifest
 
 __all__ = ["FORMATS", "Format", "named", "write_reconstruction"]
@@ -90,16 +93,21 @@ def write_reconstruction(
     *,
     kind: str,
     target: Path,
+    shelf: Shelf | None = None,
+    lines: Mapping[EvidenceRef, str] | None = None,
 ) -> Path:
     """Write `result` to `target` in the format `kind` names, and say where.
 
     Hands the path back rather than leaving each caller to work out again what
     it passed in: both of them report where the file went, and one of them does
-    it from a worker thread.
+    it from a worker thread. `shelf` and `lines` are the case's bookmarks and
+    the log lines behind them, for the report's Bookmarks section.
     """
     fmt = named(kind)
     if fmt.kind == "json":
         target.write_text(json.dumps(result.to_dict(), indent=2), encoding="utf-8")
     else:
-        target.write_text(render_report(result, manifest), encoding="utf-8")
+        target.write_text(
+            render_report(result, manifest, shelf=shelf, lines=lines), encoding="utf-8"
+        )
     return target

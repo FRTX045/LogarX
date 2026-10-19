@@ -13,6 +13,7 @@ from PyQt6.QtCore import QPoint, QRect, QRectF, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QHBoxLayout,
     QLabel,
     QLayout,
@@ -245,10 +246,10 @@ class ClientTable(QWidget):
         # in half — leaving the one thing this header says beyond its six words,
         # which column the table is ordered by, half drawn.
         header.setMinimumHeight(header.fontMetrics().height() + 14)
-        header.sortIndicatorChanged.connect(lambda *_: self._refresh_caption())
-        header.sortIndicatorChanged.connect(
-            lambda section, _order: self._column_sizes.fit_heading(section)
-        )
+        # A bound method, not a lambda: Qt made this header, so the collector
+        # cannot reach a lambda through it, and one closing over the table kept
+        # the table alive for good (test_window_lifetime).
+        header.sortIndicatorChanged.connect(self._sort_changed)
         header.moveSection(_MATCH, _ADDRESS + 1)
         self._table.setColumnHidden(_MATCH, True)
         self._table.itemSelectionChanged.connect(self._emit_choice)
@@ -554,6 +555,16 @@ class ClientTable(QWidget):
             mark = self._marks.get(cell.text())
             cell.setIcon(ribbon_icon(mark[0]) if mark is not None else QIcon())
             cell.setToolTip(mark[1] if mark is not None else "")
+
+    def _sort_changed(self, section: int, _order: Qt.SortOrder) -> None:
+        """Ordered by another column: the caption says so, and its heading fits."""
+        self._refresh_caption()
+        self._column_sizes.fit_heading(section)
+
+    def box_has_focus(self) -> bool:
+        """Whether the keyboard is in the client box rather than the list."""
+        focus = QApplication.focusWidget()
+        return focus is not None and (focus is self._filter or self._filter.isAncestorOf(focus))
 
     def selected_client(self) -> str | None:
         rows = required(self._table.selectionModel(), "selection model").selectedRows()

@@ -132,7 +132,7 @@ class BookmarkKeeper(QObject):
         self.box: BookmarkBox | None = None
         self.categories_dialog: CategoriesDialog | None = None
         tab.open_requested.connect(self.open)
-        tab.edit_requested.connect(lambda ident: self.edit(ident))
+        tab.edit_requested.connect(self.edit)
         tab.remove_requested.connect(self.remove)
         tab.categories_requested.connect(self.manage_categories)
 

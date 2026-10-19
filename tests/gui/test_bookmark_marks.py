@@ -343,6 +343,17 @@ def test_a_new_graph_starts_without_ribbons(qt_app: QApplication) -> None:
     assert ribbons_on(canvas) == {}
 
 
+def test_a_filter_fades_a_marked_activity_ribbon_and_all(qt_app: QApplication) -> None:
+    """The fade reads a node's children as its captions; a ribbon is not one."""
+    canvas = drawn_trace()
+    canvas.set_marks({SECOND: (BLUE, "x")})
+    canvas.set_matching(frozenset({FIRST}))
+    (ribbon,) = ribbons_on(canvas)[SECOND]
+    assert ribbon.effectiveOpacity() < 1.0
+    canvas.set_matching(None)
+    assert ribbon.effectiveOpacity() == 1.0
+
+
 def test_the_canvas_says_which_activity_is_being_read(qt_app: QApplication) -> None:
     canvas = drawn_trace()
     assert canvas.selected_node_id() is None
