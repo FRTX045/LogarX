@@ -7,12 +7,13 @@ the colour here is the point — it says which category.
 
 from __future__ import annotations
 
+import html
 from typing import Final
 
 from PyQt6.QtCore import QPointF, Qt
 from PyQt6.QtGui import QBrush, QColor, QIcon, QPainter, QPen, QPixmap, QPolygonF
 
-__all__ = ["Mark", "ribbon_icon", "ribbon_polygon"]
+__all__ = ["Mark", "ribbon_icon", "ribbon_polygon", "ribbon_tip"]
 
 #: How a panel is told to mark something: the category's colour, and the words
 #: its tooltip gives (which bookmark, in which category).
@@ -20,6 +21,18 @@ Mark = tuple[str, str]
 
 #: How far up the ribbon's notch rises, as a share of its height.
 _NOTCH: Final = 0.32
+
+
+def ribbon_tip(text: str) -> str:
+    """A mark's words as a tooltip Qt shows exactly as written, line breaks kept.
+
+    A note is typed by a reader and a request's path by whoever sent it, and Qt
+    reads any tooltip that looks like markup as markup: unescaped, a path of
+    `/<h1>...` would draw a heading. Escaped as the evidence cells' tooltips are.
+    """
+    if not text:
+        return ""
+    return f"<span style='white-space:pre-wrap'>{html.escape(text)}</span>"
 
 
 def ribbon_polygon(x: float, y: float, width: float, height: float) -> QPolygonF:

@@ -43,7 +43,7 @@ from logarc.gui.evidence_view import (
     no_results,
 )
 from logarc.gui.filter_box import FilterBox
-from logarc.gui.ribbon import Mark, ribbon_icon
+from logarc.gui.ribbon import Mark, ribbon_icon, ribbon_tip
 from logarc.gui.splitter import PanelSplitter
 from logarc.gui.theme import PAD, TIGHT, caption_font, mono_font
 from logarc.search import Scope
@@ -448,7 +448,7 @@ class EvidencePanel(QWidget):
                 continue
             mark = self._marks.get(lines[index].ref)
             marker.setIcon(ribbon_icon(mark[0]) if mark is not None else QIcon())
-            marker.setToolTip(mark[1] if mark is not None else "")
+            marker.setToolTip(ribbon_tip(mark[1]) if mark is not None else "")
 
     def shown_node(self) -> GraphNode | None:
         return self._shown[0] if self._shown is not None else None

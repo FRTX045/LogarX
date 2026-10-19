@@ -31,7 +31,7 @@ from logarc.gui.client_filter import caption as filter_caption
 from logarc.gui.client_filter import match_caption, matches
 from logarc.gui.columns import ColumnWidths
 from logarc.gui.filter_box import FilterBox
-from logarc.gui.ribbon import Mark, ribbon_icon
+from logarc.gui.ribbon import Mark, ribbon_icon, ribbon_tip
 from logarc.gui.theme import PAD, TIGHT, caption_font, colour_text, mono_font
 from logarc.search import ANY_DAY, Scope, is_time, parse
 from logarc.style import (
@@ -554,7 +554,7 @@ class ClientTable(QWidget):
                 continue
             mark = self._marks.get(cell.text())
             cell.setIcon(ribbon_icon(mark[0]) if mark is not None else QIcon())
-            cell.setToolTip(mark[1] if mark is not None else "")
+            cell.setToolTip(ribbon_tip(mark[1]) if mark is not None else "")
 
     def _sort_changed(self, section: int, _order: Qt.SortOrder) -> None:
         """Ordered by another column: the caption says so, and its heading fits."""

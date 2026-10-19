@@ -47,7 +47,7 @@ from PyQt6.QtWidgets import (
 from logarc.core.graph import GraphKind, reciprocal_pairs
 from logarc.graphbuild.layout import COLUMN, ROW, Point, layout_graph, sessions_in
 from logarc.gui.arrangement import Move, MoveHistory, Positions
-from logarc.gui.ribbon import Mark, ribbon_polygon
+from logarc.gui.ribbon import Mark, ribbon_polygon, ribbon_tip
 from logarc.style import (
     CAPTION_COLOUR,
     PAPER,
@@ -1231,7 +1231,7 @@ class ActivityCanvas(QGraphicsView):
             pen = QPen(QColor(PAPER))
             pen.setWidthF(1.2)
             ribbon.setPen(pen)
-            ribbon.setToolTip(tip)
+            ribbon.setToolTip(ribbon_tip(tip))
             ribbon.setData(0, "bookmark")
             # A press on the ribbon is a press on its activity.
             ribbon.setAcceptedMouseButtons(Qt.MouseButton.NoButton)

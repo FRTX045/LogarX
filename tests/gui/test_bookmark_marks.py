@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from on_canvas import node_item
 from PyQt6.QtCore import QPoint, Qt
+from PyQt6.QtGui import QTextDocument
 from PyQt6.QtWidgets import QApplication, QGraphicsItem
 from test_session_boxes import trace
 from test_triage_panel import make_case
@@ -87,6 +88,22 @@ def test_a_marked_client_shows_a_ribbon_that_says_which_bookmark(table: ClientTa
     table.set_marks({"2001:db8::77": (BLUE, "Bookmarked: came back after the 404s")})
     assert marked(table) == {"2001:db8::77"}
     assert "came back after the 404s" in cell(table, "2001:db8::77").toolTip()
+
+
+#: A tooltip built from a note and a request path, both typed by somebody else.
+MARKUP = "Login attacks: GET /<h1>owned</h1>"
+
+
+def reads_as_text(tip: str) -> bool:
+    """Whether Qt, reading `tip` as it reads a tooltip that looks like markup, shows it verbatim."""
+    document = QTextDocument()
+    document.setHtml(tip)
+    return MARKUP in document.toPlainText()
+
+
+def test_a_client_ribbon_says_its_bookmark_as_text_not_markup(table: ClientTable) -> None:
+    table.set_marks({"172.16.0.9": (BLUE, MARKUP)})
+    assert reads_as_text(cell(table, "172.16.0.9").toolTip())
 
 
 def test_a_mark_survives_a_refill_and_a_re_sort(table: ClientTable) -> None:
@@ -227,6 +244,18 @@ def test_a_marked_line_keeps_its_ribbon_through_a_sort(panel: EvidencePanel) -> 
     assert marked_lines(panel) == {saved}
 
 
+def test_a_line_ribbon_says_its_bookmark_as_text_not_markup(panel: EvidencePanel) -> None:
+    panel.show_evidence(attack(), lines())
+    panel.set_marks({lines()[0].ref: (BLUE, MARKUP)})
+    tips = [
+        item.toolTip()
+        for row in range(panel._table.rowCount())
+        if (item := panel._table.item(row, 0)) is not None and not item.icon().isNull()
+    ]
+    assert len(tips) == 1
+    assert reads_as_text(tips[0])
+
+
 def test_marks_set_after_the_lines_are_shown_apply_at_once(panel: EvidencePanel) -> None:
     panel.show_evidence(attack(), lines())
     panel.set_marks({lines()[0].ref: (BLUE, "Bookmarked")})
@@ -315,8 +344,15 @@ def test_a_marked_activity_wears_one_ribbon_that_says_which_bookmark(qt_app: QAp
     canvas.set_marks({SECOND: (BLUE, "Login attacks: the lockout held")})
     (ribbon,) = ribbons_on(canvas)[SECOND]
     assert list(ribbons_on(canvas)) == [SECOND]
-    assert ribbon.toolTip() == "Login attacks: the lockout held"
+    assert "Login attacks: the lockout held" in ribbon.toolTip()
     assert ribbon.parentItem() is node_item(canvas, SECOND), "it moves with its activity"
+
+
+def test_an_activity_ribbon_says_its_bookmark_as_text_not_markup(qt_app: QApplication) -> None:
+    canvas = drawn_trace()
+    canvas.set_marks({SECOND: (BLUE, MARKUP)})
+    (ribbon,) = ribbons_on(canvas)[SECOND]
+    assert reads_as_text(ribbon.toolTip())
 
 
 def test_new_marks_replace_the_old_ones(qt_app: QApplication) -> None:
