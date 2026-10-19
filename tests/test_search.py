@@ -14,16 +14,21 @@ import pytest
 from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
 from logarc.search import (
+    ANY_DAY,
     Scope,
     Suggestion,
     decoded_path,
     decoded_target,
+    evidence_part,
+    fold,
     is_whole_address,
+    labels_for_activity,
     parse,
     suggestions,
     tokens,
     understood,
     value_counts,
+    without_time,
 )
 
 NOON = datetime(2026, 3, 11, 12, 0, tzinfo=UTC)
@@ -242,6 +247,104 @@ def test_a_target_without_a_path_is_empty_as_the_event_has_it() -> None:
     assert decoded_target("/p", "") == "/p"
 
 
+# -- the store must agree with every one of these ---------------------------------------
+#
+# The case box asks DuckDB and the evidence box asks Python, and the two must
+# keep the same lines. Over all of Unicode their lower-casing differs in exactly
+# two places (measured: Python 3.12, DuckDB 1.5.5), and their upper-casing in a
+# hundred, so the language settles each one rather than leaving it to whichever
+# side happens to run.
+
+
+def test_a_dotted_capital_i_is_found_by_a_plain_i() -> None:
+    """Python lower-cases it to `i` and a combining dot, which a reader typing
+    `iletisim` with an ordinary i would never match; DuckDB to `i`."""
+    assert parse("\u0130let", Scope.EVIDENCE).matches(event("/\u0130letisim"))
+    assert parse("ilet", Scope.EVIDENCE).matches(event("/\u0130letisim"))
+    assert parse("path:/ilet", Scope.EVIDENCE).matches(event("/\u0130letisim"))
+
+
+def test_a_final_sigma_is_any_sigma() -> None:
+    """Python writes a capital sigma at a word's end as the final form, DuckDB as
+    the ordinary one; both are read as one letter."""
+    word = "\u03bf\u03b4\u03bf\u03c3"
+    assert parse(word, Scope.EVIDENCE).matches(event("/\u039f\u0394\u039f\u03a3"))
+    assert parse(word, Scope.EVIDENCE).matches(event("/\u03bf\u03b4\u03bf\u03c2"))
+    assert fold("\u039f\u0394\u039f\u03a3") == fold("\u03bf\u03b4\u03bf\u03c3")
+
+
+def test_a_method_outside_ascii_never_matches() -> None:
+    """A method can only be typed in letters a to z. Upper-cased by Python, a
+    dotless i turns `P\u0131NG` into `PING`; DuckDB leaves it alone. Neither is
+    a method anybody asked for."""
+    assert not parse("method:PING", Scope.EVIDENCE).matches(event(method="P\u0131NG"))
+    assert parse("method:ping", Scope.EVIDENCE).matches(event(method="PING"))
+
+
+# -- activity: names what the scan saw ------------------------------------------------
+
+LABELS = (
+    ("directory_enumeration", "Directory Enumeration", "enumeration"),
+    ("content_discovery_user_agent", "Content Discovery Tool", "enumeration"),
+    ("crs:942100", "SQL Injection Attack Detected via libinjection", "injection"),
+    ("benign:browsing", "Browsing", "browsing"),
+    ("dot_dot_segment", "Dot-dot Segment", "path_traversal"),
+)
+
+
+def test_an_activity_is_a_category() -> None:
+    assert labels_for_activity(LABELS, "enumeration") == {
+        "directory_enumeration",
+        "content_discovery_user_agent",
+    }
+    assert labels_for_activity(LABELS, "INJECTION") == {"crs:942100"}
+
+
+def test_a_category_can_be_typed_with_a_space() -> None:
+    assert labels_for_activity(LABELS, "path traversal") == {"dot_dot_segment"}
+
+
+def test_an_activity_is_also_part_of_a_rule_name() -> None:
+    assert labels_for_activity(LABELS, "discovery") == {"content_discovery_user_agent"}
+    assert labels_for_activity(LABELS, "libinjection") == {"crs:942100"}
+
+
+def test_an_activity_nothing_was_called_finds_nothing() -> None:
+    assert labels_for_activity(LABELS, "ransomware") == frozenset()
+    assert labels_for_activity(LABELS, "") == frozenset()
+
+
+# -- a case search, taken apart -------------------------------------------------------
+
+
+def test_what_a_case_search_hands_the_evidence_box() -> None:
+    """Opened from a case search, a client's evidence is filtered by the same
+    request filters; who sent them and when are the case's to answer."""
+    text = (
+        "status:200 10.0.0.1 ip:10.9 activity:injection path:/admin "
+        '"union select" after:2026-03-09 method: method:GET'
+    )
+
+    assert evidence_part(text) == 'status:200 path:/admin "union select" method:GET'
+
+
+def test_a_case_search_of_only_clients_hands_the_evidence_box_nothing() -> None:
+    assert evidence_part("10.0.0.1 ip:10.9 activity:injection") == ""
+    assert evidence_part("") == ""
+
+
+def test_a_time_in_the_case_box_is_taken_out_to_move_the_range() -> None:
+    assert without_time("after:2026-03-09 status:404 before:14:30 10.0") == "status:404 10.0"
+    assert without_time("status:404") == "status:404"
+    assert without_time("after:soon status:404") == "after:soon status:404", "a word, not a time"
+
+
+def test_any_day_makes_a_time_of_day_a_filter() -> None:
+    """Asked without a day, a time of day is no filter; with any day at all, it is."""
+    assert parse("after:14:05", Scope.CASE).is_empty
+    assert not parse("after:14:05", Scope.CASE, day=ANY_DAY).is_empty
+
+
 # -- what the suggestion list offers --------------------------------------------------
 
 
@@ -262,6 +365,20 @@ def test_methods_are_counted_as_written_upper_case() -> None:
     events = [event(method="get"), event(method="GET"), event(method="POST"), event(method=None)]
 
     assert value_counts(events, "method") == [("GET", 2), ("POST", 1)]
+
+
+def test_a_status_the_box_cannot_take_is_not_offered() -> None:
+    events = [event(status=999), event(status=0), event(status=301)]
+
+    assert value_counts(events, "status") == [("301", 1), ("3xx", 1)]
+
+
+def test_a_method_the_box_cannot_take_is_not_offered() -> None:
+    """`method:M-SEARCH` is not a filter the box understands, so offering it
+    would complete to text that finds nothing."""
+    events = [event(method="M-SEARCH"), event(method="P\u0131NG"), event(method="GET")]
+
+    assert value_counts(events, "method") == [("GET", 1)]
 
 
 def completions(rows: tuple[Suggestion, ...]) -> list[str]:

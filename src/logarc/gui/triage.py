@@ -57,6 +57,9 @@ class TriagePanel(QWidget):
 
     investigate = pyqtSignal(str, object)
 
+    finished = pyqtSignal()
+    """A scan finished, and `result` now answers for the case and range."""
+
     #: How long a selection must stay put before its sources are read. Moving through
     #: the queue with the arrow keys would otherwise start a scan of the logs per row.
     SOURCE_CHECK_DELAY_MS = 250
@@ -288,6 +291,7 @@ class TriagePanel(QWidget):
         self.notice.setText(f"Scanned {result.clients:,} IPs · {crs}")
         colour_text(self.notice, THEME.muted)
         self._reset_page()
+        self.finished.emit()
 
     def _reset_page(self) -> None:
         self._search_timer.stop()

@@ -214,6 +214,11 @@ class TimeFilterBar(QWidget):
             field.setDateTime(_qt(when))
             field.blockSignals(False)
 
+    @property
+    def span(self) -> tuple[datetime, datetime] | None:
+        """The stretch the open case covers, or `None` when none is open."""
+        return self._span
+
     def say(self, text: str) -> None:
         """The line on the right: what is left of the case."""
         self._summary.setText(text)

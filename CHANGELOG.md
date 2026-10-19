@@ -7,6 +7,17 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **The client box searches the whole case.** The box above the client list
+  takes the evidence box's filters and finds the clients that sent a matching
+  request, most matches first, with a Match column:
+  `8 of 52 clients sent a request matching path:/admin · 123 requests`.
+  `ip:` narrows by address, `activity:` finds the clients the Where to start
+  scan saw an activity on, and `after:` and `before:` move the time range. An
+  address finds a client as before. Typing `status:`, `method:` or `activity:`
+  lists the values in the range with how many clients carry each. A client
+  opened from such a search has its evidence filtered the same way, and opens
+  at the first activity holding a match.
+
 - **The evidence panel can be filtered.** A box above the table keeps the
   selected activity's lines that match `status:404`, `status:4xx`,
   `path:/admin`, `method:POST`, `after:` or `before:` a time, or any text, and
@@ -16,7 +27,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and `status:` or `method:` lists the values the activity holds with their
   counts. When nothing matches, the table says *No results found* and offers
   to clear the filter. The canvas fades every activity with no matching line.
-  The filter stays across activities and views, and resets for each client.
+  The filter stays across activities and views, and resets for each client
+  unless a search of the case found that client by its requests.
   Chosen from screenshots of the real window.
 
 - **Each session on the trace sits in a box of its own.** The header said

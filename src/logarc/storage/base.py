@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 
     from logarc.core.event import NormalizedEvent
     from logarc.core.window import TimeWindow
+    from logarc.search import Query
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +39,25 @@ class IpSummary:
 class IpSummaryPage:
     rows: tuple[IpSummary, ...]
     total: int
+    offset: int
+
+
+@dataclass(frozen=True, slots=True)
+class ClientMatchPage:
+    """One page of the clients that sent at least one request matching a search.
+
+    Each row describes its client over the range, as the unfiltered list does;
+    `hits` says how many of that client's requests matched. The totals are of
+    the whole search, not the page, so a caption can say how much it found.
+    """
+
+    rows: tuple[IpSummary, ...]
+    hits: tuple[int, ...]
+    """Matching requests per row, in the same order."""
+    total: int
+    """Clients that sent at least one matching request."""
+    requests: int
+    """Matching requests, across all of those clients."""
     offset: int
 
 
@@ -144,6 +164,35 @@ class EventStore(Protocol):
         """Filter and page all clients, retaining their unfiltered volume positions.
 
         `exact` matches the whole address; otherwise any address containing `query`.
+        """
+        ...
+
+    def search_clients(
+        self,
+        query: Query,
+        *,
+        offset: int = 0,
+        limit: int = 100,
+        window: TimeWindow | None = None,
+        clients: frozenset[str] | None = None,
+    ) -> ClientMatchPage:
+        """The clients that sent at least one request `query` matches, most first.
+
+        A request matches exactly when `query.matches` says it does: the evidence
+        box asks that in Python of one client's lines, and a reader who opens a
+        client found here must find there the lines that were counted. Its
+        addresses narrow the clients; `clients`, when given, holds the search to
+        those (what `activity:` hands over). Ties go to the lower address.
+        """
+        ...
+
+    def value_counts(
+        self, *, window: TimeWindow | None = None
+    ) -> dict[str, list[tuple[str, int, int]]]:
+        """The statuses and methods in the range: `(value, clients, requests)` each.
+
+        Status codes most common first, then their classes; methods most common
+        first. Only values the search box can take as a filter are offered.
         """
         ...
 

@@ -202,6 +202,12 @@ class ClientProfile:
     """
     exploit_rules: tuple[str, ...] = ()
     """The rule id behind each exploit example, in the same order; `crs:<id>` for CRS."""
+    rule_labels: tuple[tuple[str, str, str], ...] = ()
+    """Every `(rule id, name, category)` a label on this client's requests carried.
+
+    What `activity:` searches by. The rule packs know their own rules, but not
+    the category CRS gave a detection or the name a fallback gave a request.
+    """
 
 
 @dataclass(frozen=True)
@@ -230,6 +236,7 @@ def profile_client(
     hostile_targets: set[str] = set()
     rules_matched: Counter[str] = Counter()
     rules_won: Counter[str] = Counter()
+    rule_labels: set[tuple[str, str, str]] = set()
     severity = hostile_requests = sessions = hostile_sessions = sequence_sessions = 0
     specific: dict[str, list[LabelledEvent]] = {}
     sequence_examples: tuple[RequestExample, ...] = ()
@@ -265,6 +272,10 @@ def profile_client(
             # because a rule listed twice is still one match on one request.
             rules_matched.update(
                 {label.rule_id for label in item.all_labels} | {item.label.rule_id}
+            )
+            rule_labels.update(
+                (label.rule_id, label.name, label.category.value)
+                for label in (*item.all_labels, item.label)
             )
             if not exploit:
                 eligible = [
@@ -413,6 +424,7 @@ def profile_client(
         dict(sorted(hostile_rule_names.items())),
         exploit_examples,
         exploit_rules,
+        tuple(sorted(rule_labels)),
     )
 
 

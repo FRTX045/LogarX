@@ -10,6 +10,7 @@ import multiprocessing
 import sys
 import threading
 import traceback
+from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -52,7 +53,7 @@ from logarc.gui.arrangement_bar import ArrangementBar
 from logarc.gui.arrangement_keeper import ArrangementKeeper, Showing
 from logarc.gui.canvas import ActivityCanvas
 from logarc.gui.case_chooser import CaseChooser
-from logarc.gui.client_filter import is_whole_address
+from logarc.gui.client_filter import awaiting_scan, is_whole_address
 from logarc.gui.crs import CrsCard, CrsUnavailable
 from logarc.gui.crs_notice import stale_crs_notice
 from logarc.gui.density import Density, buckets_for
@@ -81,19 +82,26 @@ from logarc.gui.workers import run_job
 from logarc.ingest.pipeline import IngestCancelled
 from logarc.ingest.quarantine import DIRECTORY_NAME as QUARANTINE_DIR
 from logarc.report import export
-from logarc.search import value_counts
+from logarc.search import Scope, evidence_part, labels_for_activity, parse, value_counts
+from logarc.storage.base import ClientMatchPage, IpSummaryPage
 from logarc.storage.case import CaseManifest
 from logarc.style import THEME, format_requests, plural
 from logarc.timerange import nobody_here, summary
-from logarc.triage.scan import read_rule_matches
+from logarc.triage.scan import (
+    read_activity_clients,
+    read_activity_counts,
+    read_labels,
+    read_rule_matches,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+    from datetime import date
 
     from logarc.analysis import AnalysisResult
     from logarc.core.evidence import EvidenceRef
     from logarc.core.graph import GraphNode
-    from logarc.storage.base import IpSummaryPage, TimeSlot
+    from logarc.storage.base import TimeSlot
 
 __all__ = ["MainWindow", "main"]
 
@@ -132,6 +140,11 @@ _TAB_NAMES = {GraphKind.TRACE: "Trace", GraphKind.BEHAVIOUR: "Behaviour"}
 #: The evidence face, spelled for Qt's rich text rather than for `QFont`. The
 #: heading is a `QLabel` of markup, so the family list has to travel as CSS.
 _MONO_CSS = ",".join(f"'{family}'" for family in MONO_FAMILIES)
+
+#: How far before a `before:` typed in the client box the range ends. The range
+#: counts both its ends and `before:` counts neither, so the range keeps every
+#: moment up to the one it names.
+_JUST_BEFORE = timedelta(microseconds=1)
 
 
 def _crs_config_now(site_hosts: Sequence[str]) -> SidecarConfig | None:
@@ -196,6 +209,14 @@ class MainWindow(QMainWindow):
         # switch between Trace and Behaviour fades the new graph without asking.
         self._fade_request = object()
         self._filter_hits: tuple[AnalysisResult, str, frozenset[str]] | None = None
+        # A client opened from a search of requests, to be shown at the first
+        # activity holding a match once the canvas knows which those are.
+        self._open_first_match: AnalysisResult | None = None
+        # What the client box offers after `status:`, `method:` and
+        # `activity:`: counted over the range, and named by the finished scan.
+        self._range_values: dict[str, list[tuple[str, str]]] = {}
+        self._activity_values: list[tuple[str, str]] = []
+        self._values_request = object()
         # What CRS contributed to the open case. Empty until one is opened, so
         # a reconstruction before then applies nothing rather than failing.
         self._crs = CrsEvidence(index=None, fingerprint=None)
@@ -223,6 +244,7 @@ class MainWindow(QMainWindow):
         self._clients = ClientTable()
         self._triage = TriagePanel()
         self._triage.investigate.connect(lambda ip, refs: self._reconstruct(ip, evidence=refs))
+        self._triage.finished.connect(self._scan_finished)
         self._load_generation = 0
         # Set while a CRS decision is outstanding. Enriching reloads the
         # case and restarts the scan from nothing, so a scan begun under
@@ -239,6 +261,7 @@ class MainWindow(QMainWindow):
         self._client_search = 0
         self._clients.filter_edited.connect(self._forget_client_search)
         self._clients.page_requested.connect(self._search_clients)
+        self._clients.range_typed.connect(self._move_range)
         self._canvas.node_selected.connect(self._show_evidence)
 
         self._build_layout()
@@ -1103,6 +1126,8 @@ class MainWindow(QMainWindow):
             self._tabs.setVisible(False)
             self._clients.show_clients(summaries, total=view.whole.clients)
             self._clients.set_open_client(None)
+            self._activity_values = []
+            self._count_values()
             self._workspace.setCurrentIndex(0)
             if not self._scan_held:
                 self._triage.start(path)
@@ -1132,13 +1157,16 @@ class MainWindow(QMainWindow):
 
     # -- the stretch of time being read ------------------------------------
 
-    def _apply_window(self, window: TimeWindow) -> None:
+    def _apply_window(self, window: TimeWindow, *, carry: bool = False) -> None:
         """Read the case over a different stretch of time.
 
         Both halves, always. Narrowing only the graph leaves the client row
         saying 19 requests beside a heading saying 16 — two numbers for one
         thing on one screen, which is the failure this feature was shaped
         around.
+
+        `carry` when the client box's `after:` or `before:` moved it: the rest
+        of the box goes back once the new range is listed, as it stands then.
         """
         if self._case_path is None or window == self._window:
             return
@@ -1148,7 +1176,9 @@ class MainWindow(QMainWindow):
         self._evidence_request = object()
         self._evidence.clear(prompt=False)
         self._window = window
+        self._activity_values = []
         self._triage.start(self._case_path, window)
+        self._count_values()
         # Nothing in flight describes this range: each was asked over the range
         # before it. `_reselect` asks again below if the reader is still on
         # somebody, which is what puts a fresh answer back on the way.
@@ -1176,7 +1206,10 @@ class MainWindow(QMainWindow):
             # that, because it is the one that knows when it is replacing its
             # own furniture. This used to block the signals from out here, which
             # left two mechanisms for one rule.
+            kept = self._clients.query_without_times() if carry else ""
             self._clients.show_clients(summaries, total=self._all_clients)
+            if kept:
+                self._clients.set_query(kept)
             self._say_what_is_left()
             if not summaries:
                 # An answer, not a failure, and often the one being looked for.
@@ -1310,7 +1343,9 @@ class MainWindow(QMainWindow):
         """Answer the client list's request for one page of the case or of a search.
 
         Over the range in force, so a page or a search describes the same clients
-        the unfiltered list does. A complete address is looked up exactly.
+        the unfiltered list does. One address is looked up as it always was, a
+        complete one exactly; anything else is a search of the clients' requests,
+        narrowed to the clients the scan saw an `activity:` on.
         """
         if self._case_path is None:
             return
@@ -1318,19 +1353,53 @@ class MainWindow(QMainWindow):
         generation = self._client_search
         path, window = self._case_path, self._window
         narrowed = window is not None and not window.is_open
+        wanted = parse(query, Scope.CASE, day=self._first_day())
+        index = self._triage.result
+        if wanted.activities and index is None:
+            # Asked again by `_scan_finished`, so the reader need not.
+            self._clients.show_pending(
+                query, awaiting_scan(self._triage.progress, scanning=self._triage.scanning)
+            )
+            return
+        single = wanted.is_empty or (wanted.is_address_only and len(wanted.ips) == 1)
 
-        def work(_: Callable[[str], None]) -> IpSummaryPage:
+        def work(_: Callable[[str], None]) -> IpSummaryPage | ClientMatchPage:
             with Case.open(path) as case:
-                return case.store.ip_summary_page(
-                    query=query,
+                if single:
+                    address = wanted.ips[0] if wanted.ips else ""
+                    return case.store.ip_summary_page(
+                        query=address,
+                        offset=offset,
+                        limit=ClientTable.PAGE_SIZE,
+                        window=window if narrowed else None,
+                        exact=is_whole_address(address),
+                    )
+                clients: frozenset[str] | None = None
+                if wanted.activities and index is not None:
+                    labels = read_labels(index.path)
+                    rules = frozenset().union(
+                        *(labels_for_activity(labels, value) for value in wanted.activities)
+                    )
+                    clients = read_activity_clients(index.path, rules)
+                page = case.store.search_clients(
+                    wanted,
                     offset=offset,
                     limit=ClientTable.PAGE_SIZE,
                     window=window if narrowed else None,
-                    exact=is_whole_address(query),
+                    clients=clients,
                 )
+            if wanted.is_address_only:
+                # Several addresses are still an address search, listed and
+                # captioned as one: busiest first, no Match column.
+                return IpSummaryPage(page.rows, page.total, page.offset)
+            return page
 
-        def done(page: IpSummaryPage) -> None:
-            if generation == self._client_search:
+        def done(page: IpSummaryPage | ClientMatchPage) -> None:
+            if generation != self._client_search:
+                return
+            if isinstance(page, ClientMatchPage):
+                self._clients.show_matches(page, query, counted=wanted.has_request_filters)
+            else:
                 self._clients.show_page(page, query)
 
         def failed(message: str, detail: str) -> None:
@@ -1338,6 +1407,96 @@ class MainWindow(QMainWindow):
                 self._clients.show_failure(query, message)
 
         run_job(work, on_done=done, on_error=failed)
+
+    def _first_day(self) -> date | None:
+        """The day a time of day typed in the client box is read on: the range's first."""
+        if self._window.start is not None:
+            return self._window.start.date()
+        span = self._time_filter.span
+        return span[0].date() if span is not None else None
+
+    def _move_range(self, times: str) -> None:
+        """`after:` and `before:` finished in the client box: move the range to them.
+
+        The rest of the box is searched again once the new range is listed. A
+        range that would end before it starts is refused where it was typed,
+        and the range stays as it was.
+        """
+        span = self._time_filter.span
+        if self._case_path is None or span is None:
+            return
+        asked = parse(times, Scope.CASE, day=self._first_day())
+        start = asked.after if asked.after is not None else self._window.start
+        end = asked.before - _JUST_BEFORE if asked.before is not None else self._window.end
+        try:
+            window = TimeWindow(start, end).clamped_to(*span)
+        except ValueError:
+            self._clients.show_failure(
+                self._clients.query_text(), "the range would end before it starts"
+            )
+            return
+        # The whole case is said as an open range, as the date fields say it.
+        if window == TimeWindow(*span):
+            window = EVERYTHING
+        if window == self._window:
+            self._clients.set_query(self._clients.query_without_times())
+            return
+        self._apply_window(window, carry=True)
+
+    def _count_values(self) -> None:
+        """Count what the client box offers after `status:` and `method:`, over the range."""
+        self._range_values = {}
+        self._offer_values()
+        path, window = self._case_path, self._window
+        if path is None:
+            return
+        self._values_request = request = object()
+
+        def work(_: Callable[[str], None]) -> dict[str, list[tuple[str, int, int]]]:
+            with Case.open(path) as case:
+                return case.store.value_counts(window=None if window.is_open else window)
+
+        def done(counted: dict[str, list[tuple[str, int, int]]]) -> None:
+            if request is not self._values_request or path != self._case_path:
+                return
+            self._range_values = {
+                key: [
+                    (value, f"{plural(clients, 'client')} \u00b7 {plural(requests, 'request')}")
+                    for value, clients, requests in rows
+                ]
+                for key, rows in counted.items()
+            }
+            self._offer_values()
+
+        # Without them the box still searches; it only has fewer values to offer,
+        # and a search that cannot run says so where it was typed.
+        run_job(work, on_done=done, on_error=lambda _message, _detail: None)
+
+    def _offer_values(self) -> None:
+        values = {**self._range_values, "activity": self._activity_values}
+        title = "VALUES IN THE CASE" if self._window.is_open else "VALUES IN THIS RANGE"
+        self._clients.set_suggestion_values(values, title)
+
+    def _scan_finished(self) -> None:
+        """The scan has an answer: offer its activities, and answer a search waiting on it."""
+        index = self._triage.result
+        if index is None:
+            return
+        path = index.path
+
+        def work(_: Callable[[str], None]) -> list[tuple[str, int]]:
+            return read_activity_counts(path)
+
+        def done(counts: list[tuple[str, int]]) -> None:
+            if self._triage.result is index:
+                self._activity_values = [
+                    (name, plural(clients, "client")) for name, clients in counts
+                ]
+                self._offer_values()
+
+        run_job(work, on_done=done, on_error=lambda _message, _detail: None)
+        if parse(self._clients.query_text(), Scope.CASE).activities:
+            self._clients.search_again()
 
     # -- reconstruction ----------------------------------------------------
 
@@ -1363,6 +1522,9 @@ class MainWindow(QMainWindow):
         crs = self._crs
         window = self._window
         buckets = self._buckets()
+        # The requests a search found this client by, if one did: a new
+        # client is read through the same filter.
+        carried = evidence_part(self._clients.query_text())
         self._awaiting = (client_ip, window)
         self._reconstruction_request = request = object()
 
@@ -1407,6 +1569,10 @@ class MainWindow(QMainWindow):
                 return
             if self._result is None or self._result.client_ip != result.client_ip:
                 self._forget_filter()
+                if carried:
+                    self._evidence.set_filter_text(carried)
+                    # Lines asked for by name are shown instead, below.
+                    self._open_first_match = None if evidence else result
             self._result = result
             # The band becomes this client's own history: when it worked, when
             # it went quiet, across its own life rather than the case's.
@@ -1853,6 +2019,7 @@ class MainWindow(QMainWindow):
         self._evidence.set_filter_text("")
         self._filter_hits = None
         self._fade_request = object()
+        self._open_first_match = None
 
     def _refade(self) -> None:
         """Fade the activities on the canvas that hold no line the filter keeps.
@@ -1885,7 +2052,9 @@ class MainWindow(QMainWindow):
         def done(episodes: frozenset[str]) -> None:
             if current():
                 self._filter_hits = (result, text, episodes)
-                self._canvas.set_matching(self._holding(episodes))
+                holding = self._holding(episodes)
+                self._canvas.set_matching(holding)
+                self._open_first(result, holding)
 
         run_job(
             work,
@@ -1894,6 +2063,23 @@ class MainWindow(QMainWindow):
                 self.report_error(message, detail) if current() else None
             ),
         )
+
+    def _open_first(self, result: AnalysisResult, holding: frozenset[str]) -> None:
+        """Show the earliest of `holding`, once, for a client opened from a search.
+
+        Not if the reader has already chosen an activity: theirs stands.
+        """
+        if self._open_first_match is not result:
+            return
+        self._open_first_match = None
+        if self._selected is not None or not holding:
+            return
+        graph = result.trace if self._kind is GraphKind.TRACE else result.behaviour
+        first = min(
+            (node for node in graph.nodes if node.node_id in holding),
+            key=lambda node: (node.start, node.node_id),
+        )
+        self._show_evidence(first.node_id)
 
     def _holding(self, episodes: frozenset[str]) -> frozenset[str]:
         """The activities on screen made of any of `episodes`."""

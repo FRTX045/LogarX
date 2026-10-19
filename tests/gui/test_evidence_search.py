@@ -8,6 +8,7 @@ hand it; which lines match is the window's to work out, and is tested there.
 from __future__ import annotations
 
 import os
+import sys
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -16,6 +17,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
+from PyQt6.QtCore import QSize
+from PyQt6.QtGui import QResizeEvent
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QPushButton
 
@@ -213,3 +216,23 @@ def test_an_empty_panel_offers_no_values(panel: EvidencePanel) -> None:
     panel.clear()
 
     assert panel.filter_box._values == {}
+
+
+def test_an_event_after_the_panel_lets_go_of_its_table_is_ignored(
+    panel: EvidencePanel, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The collector clears a panel's attributes while Qt is still delivering its
+    table's last events. The filter assumed `_table` was there and raised inside
+    Qt, which PyQt answers by ending the process: the window's tests aborted in a
+    teardown once garbage was collected there."""
+    raised: list[object] = []
+    monkeypatch.setattr(sys, "excepthook", lambda *exc: raised.append(exc))
+    table = panel._table
+    port = table.viewport()
+    del panel._table
+    try:
+        QApplication.sendEvent(port, QResizeEvent(QSize(10, 10), QSize(5, 5)))
+    finally:
+        panel._table = table
+
+    assert raised == []

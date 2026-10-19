@@ -129,6 +129,44 @@ never be analysed as if it were complete.
 and the band goes back to the whole case. Pressing a different row moves to that
 client as it always did.
 
+### Searching the case
+
+The box above the list searches the whole case, not only the clients the table
+holds. An address finds a client as it always did: part of one finds every
+client whose address contains it, a whole one only that client, and several
+find any of them.
+
+It also takes the evidence box's filters, and finds the clients that sent a
+matching request:
+
+| Filter | Finds |
+|---|---|
+| `status:404`, `path:/admin`, `method:POST`, any text | clients with at least one matching request, most matches first, with a **Match** column saying how many |
+| `ip:10.0` | clients whose address contains it |
+| `activity:enumeration` | clients the Where to start scan saw that activity on, by category or by part of a rule's name. Quote a value with a space in it: `activity:"path traversal"` |
+| `after:02:58`, `before:2026-03-09T03:00` | move the range above the list, and leave the box. A time of day is read on the range's first day |
+
+The line above the list gives both numbers:
+`8 of 52 clients sent a request matching path:/admin · 123 requests`. While a search
+runs, no rows are shown, so nothing on screen can be read as its answer.
+
+A time moves the range once it is a chip: after a space, after Enter, or chosen
+from the list. So a pause while typing `after:2026-03-09` on the way to a time
+on that day does not move the range to midnight. Whatever else is in the box is
+searched again over the new range.
+
+`activity:` is answered by the Where to start scan. Until the scan finishes the
+line above the list says so, and the list fills in by itself when it does.
+
+Click the box to see what it searches by. Type `status:`, `method:` or
+`activity:` to see the values in the range, with how many clients, and for a
+status or a method how many requests, carry each.
+
+**A client opened from a search of its requests is read the same way.** Its
+evidence is filtered by those filters, and the first activity holding a match
+opens. Addresses, activities and times chose the client and the range, so they
+are not carried over.
+
 ---
 
 ## The two views
@@ -211,7 +249,8 @@ says *No results found* and offers to clear the filter.
 The canvas fades every activity with no matching line, so the box also answers
 "which of these had a 500?" before you pick one. The filter stays while you
 move between activities and between the two views. Opening another client
-starts without one.
+starts without one, unless a search of the case found it by its requests: see
+*Searching the case* above.
 
 ---
 

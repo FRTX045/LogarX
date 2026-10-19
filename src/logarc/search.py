@@ -36,17 +36,23 @@ if TYPE_CHECKING:
     from logarc.core.event import NormalizedEvent
 
 __all__ = [
+    "ANY_DAY",
     "Query",
     "Scope",
     "Suggestion",
     "decoded_path",
     "decoded_target",
+    "evidence_part",
+    "fold",
+    "is_time",
     "is_whole_address",
+    "labels_for_activity",
     "parse",
     "suggestions",
     "tokens",
     "understood",
     "value_counts",
+    "without_time",
 ]
 
 
@@ -72,6 +78,11 @@ _STATUS: Final = re.compile(r"[1-5]\d\d")
 _CLASS: Final = re.compile(r"[1-5]xx", re.IGNORECASE)
 _METHOD: Final = re.compile(r"[A-Za-z]+")
 _ADDRESS: Final = re.compile(r"[0-9A-Fa-f.:]+")
+
+#: A stand-in date for asking whether a query filters anything at all. A time
+#: of day is a filter on every day, so any real date answers that; it is
+#: never the date a time is read on.
+ANY_DAY: Final = date(2000, 1, 1)
 _DAY: Final = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
 _STAMP: Final = re.compile(r"(\d{4})-(\d{2})-(\d{2})T(\d{1,2}):(\d{2})(?::(\d{2}))?")
 _CLOCK: Final = re.compile(r"(\d{1,2}):(\d{2})(?::(\d{2}))?")
@@ -232,10 +243,10 @@ class Query:
             return False
         if self.paths:
             path = event.path or ""
-            found = (path.lower(), decoded_path(path).lower())
+            found = (fold(path), fold(decoded_path(path)))
             if not any(wanted in side for wanted in self.paths for side in found):
                 return False
-        if self.methods and (event.method or "").upper() not in self.methods:
+        if self.methods and not _method_in(event.method, self.methods):
             return False
         if self.after is not None and event.timestamp < self.after:
             return False
@@ -244,11 +255,53 @@ class Query:
         if self.ips and not any(_address_matches(event.client_ip, ip) for ip in self.ips):
             return False
         if self.words:
-            raw = event.target.lower()
-            shown = decoded_target(event.path or "", event.query).lower()
+            raw = fold(event.target)
+            shown = fold(decoded_target(event.path or "", event.query))
             if not all(word in raw or word in shown for word in self.words):
                 return False
         return True
+
+
+def fold(text: str) -> str:
+    """Lower case, the same way the event store's SQL does.
+
+    The case box asks DuckDB and the evidence box asks Python, so the two must
+    agree on every request. Over all of Unicode their `lower` differs in exactly
+    two places (measured: Python 3.12, DuckDB 1.5.5): Python writes a dotted
+    capital I as `i` plus a combining dot, and a capital sigma ending a word as
+    the final form. Both are folded here to plain `i` and the ordinary sigma,
+    which is also what a reader typing would expect to match. The store applies
+    the same final step to DuckDB's `lower`.
+    """
+    return text.replace("\u0130", "i").lower().replace("\u03c2", "\u03c3")
+
+
+def _method_in(method: str | None, wanted: tuple[str, ...]) -> bool:
+    """Whether `method` is one of `wanted`, compared in ASCII.
+
+    A method filter can only be typed in letters a to z. Python's `upper` turns
+    some letters outside ASCII into ASCII (a dotless i into `I`) and DuckDB's does
+    not, so a method outside ASCII matches nothing, in both.
+    """
+    return method is not None and method.isascii() and method.upper() in wanted
+
+
+def labels_for_activity(labels: Iterable[tuple[str, str, str]], value: str) -> frozenset[str]:
+    """The rules an `activity:` value names: a category, or part of a rule's name.
+
+    `labels` is what the Where to start scan saw, `(rule id, name, category)`.
+    Read from there rather than from the rule packs, a detection only CRS made
+    is named by the category CRS gave it, and a request nothing matched by the
+    fallback that named it. A category may be typed with a space for its
+    underscore: `path traversal`.
+    """
+    wanted = fold(value.strip())
+    if not wanted:
+        return frozenset()
+    category = wanted.replace(" ", "_")
+    return frozenset(
+        rule for rule, name, kind in labels if kind == category or wanted in fold(name)
+    )
 
 
 def _address_matches(client_ip: str, wanted: str) -> bool:
@@ -279,7 +332,7 @@ def parse(text: str, scope: Scope, *, day: date | None = None) -> Query:
             if scope is Scope.CASE and _looks_like_address(token):
                 ips.append(token)
             else:
-                words.append(_unquoted(token).lower())
+                words.append(fold(_unquoted(token)))
             continue
         assert split is not None
         key, value = split
@@ -289,7 +342,7 @@ def parse(text: str, scope: Scope, *, day: date | None = None) -> Query:
             else:
                 statuses.append(int(value))
         elif key == "path":
-            paths.append(value.lower())
+            paths.append(fold(value))
         elif key == "method":
             methods.append(value.upper())
         elif key == "after":
@@ -312,6 +365,42 @@ def parse(text: str, scope: Scope, *, day: date | None = None) -> Query:
         ips=tuple(ips),
         activities=tuple(activities),
     )
+
+
+def evidence_part(text: str) -> str:
+    """What of a case search the evidence box can take: its filters on requests.
+
+    Addresses and activities chose the client, and a time chose the range;
+    inside one client they have nothing left to say. A key still waiting for its
+    value goes too.
+    """
+    kept: list[str] = []
+    for token in tokens(text):
+        split = _split(token)
+        if split is not None and split[0] in Scope.CASE.keys:
+            if not split[1]:
+                continue
+            if split[0] in _CLIENT_KEYS and understood(token, Scope.CASE):
+                continue
+        elif _looks_like_address(token):
+            continue
+        kept.append(token)
+    return " ".join(kept)
+
+
+def without_time(text: str) -> str:
+    """`text` without its `after:` and `before:`, which the case box makes the range."""
+    return " ".join(token for token in tokens(text) if not is_time(token))
+
+
+def is_time(token: str) -> bool:
+    """Whether `token` is a whole `after:` or `before:` filter."""
+    split = _split(token)
+    return split is not None and split[0] in ("after", "before") and understood(token, Scope.CASE)
+
+
+#: The case box's filters that choose clients or the range, not requests.
+_CLIENT_KEYS: Final = frozenset({"ip", "activity", "after", "before"})
 
 
 def decoded_path(path: str) -> str:
@@ -409,9 +498,11 @@ def value_counts(events: Iterable[NormalizedEvent], key: str) -> list[tuple[str,
     """
     counts: Counter[str] = Counter()
     for event in events:
-        if key == "status" and event.status is not None:
+        # Only what the box can make a filter of: offering `status:999` or
+        # `method:M-SEARCH` would complete to text that finds nothing.
+        if key == "status" and event.status is not None and 100 <= event.status <= 599:
             counts[str(event.status)] += 1
-        elif key == "method" and event.method:
+        elif key == "method" and event.method and _METHOD.fullmatch(event.method):
             counts[event.method.upper()] += 1
     ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
     if key != "status":

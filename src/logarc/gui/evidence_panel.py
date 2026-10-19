@@ -391,6 +391,11 @@ class EvidencePanel(QWidget):
 
     def eventFilter(self, watched: QObject | None, event: QEvent | None) -> bool:  # noqa: N802
         """Keep the message the size of the table it stands in for."""
+        # Looked up, not assumed: the collector can let go of `_table` while Qt
+        # is still delivering its viewport's last events, and an exception raised
+        # in here is one PyQt answers by ending the process.
+        if "_table" not in vars(self):
+            return False
         port = self._table.viewport()
         if watched is port and event is not None and event.type() == QEvent.Type.Resize:
             self.no_results.setGeometry(required(port, "viewport").rect())

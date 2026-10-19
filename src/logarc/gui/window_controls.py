@@ -171,7 +171,10 @@ class WindowControls(QObject):
             border.raise_()
 
     def eventFilter(self, watched: QObject | None, event: QEvent | None) -> bool:  # noqa: N802
-        if event is None:
+        # Looked up, not assumed: the collector can clear these attributes while
+        # Qt is still delivering the window's last events, and an exception raised
+        # in here is one PyQt answers by ending the process.
+        if event is None or "_window" not in vars(self):
             return False
         if watched is self._window and event.type() in (
             QEvent.Type.Resize,

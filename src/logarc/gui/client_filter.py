@@ -15,10 +15,15 @@ captioned "119,880 clients": the reader cannot select 119,380 of them.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from logarc.search import is_whole_address
 from logarc.style import plural
 
-__all__ = ["caption", "is_whole_address", "matches"]
+if TYPE_CHECKING:
+    from logarc.triage.scan import TriageProgress
+
+__all__ = ["caption", "is_whole_address", "match_caption", "matches"]
 
 
 def matches(client_ip: str, query: str) -> bool:
@@ -83,8 +88,73 @@ def caption(
         reordered=reordered,
     )
     if missing_open:
-        text += f" Current IP: {missing_open} (outside this list)."
+        text += _outside(missing_open)
     return text
+
+
+def match_caption(
+    *,
+    shown: int,
+    total: int,
+    query: str,
+    first: int,
+    matching: int,
+    requests: int,
+    counted: bool = True,
+    reordered: bool = False,
+    missing_open: str | None = None,
+) -> str:
+    """What to write above the clients a search of their requests found.
+
+    Both numbers again: how many clients matched, of how many in the case, and
+    how many requests that is. `counted` is false for a search the Where to
+    start scan answered on its own, which knows which clients an activity
+    reached but not in how many of their requests.
+    """
+    wanted = query.strip()
+    if not counted and shown < matching:
+        text = (
+            f"Clients {first:,}\u2013{first + shown - 1:,} of {matching:,} that match {wanted}"
+            " in the Where to start scan"
+        )
+    elif not counted:
+        text = f"{matching:,} of {total:,} clients match {wanted} in the Where to start scan"
+    elif matching == 0:
+        text = f"No client sent a request matching {wanted}. {total:,} in the case."
+    else:
+        found = f" \u00b7 {plural(requests, 'request')}"
+        if shown < matching:
+            last = first + shown - 1
+            order = ", sorted within this page" if reordered else ""
+            text = (
+                f"Clients {first:,}\u2013{last:,} of {matching:,} that sent a request"
+                f" matching {wanted}{found}{order}"
+            )
+        else:
+            text = f"{matching:,} of {total:,} clients sent a request matching {wanted}{found}"
+    if missing_open:
+        text += _outside(missing_open)
+    return text
+
+
+def _outside(client_ip: str) -> str:
+    """Said after either caption when the client being read is not in the list."""
+    return f" Current IP: {client_ip} (outside this list)."
+
+
+def awaiting_scan(progress: TriageProgress | None, *, scanning: bool) -> str:
+    """Why a search naming an activity has no answer yet.
+
+    The list asks again by itself when the scan finishes, so this never tells the
+    reader to; only a scan that is not running needs them to do anything.
+    """
+    opening = "Activities come from the Where to start scan, which"
+    if not scanning:
+        return f"{opening} has not finished. Run it from Where to start."
+    so_far = (
+        f": {progress.processed:,} of {progress.total:,} so far" if progress is not None else ""
+    )
+    return f"{opening} is still checking IPs{so_far}. The list fills in when it finishes."
 
 
 def _counts(

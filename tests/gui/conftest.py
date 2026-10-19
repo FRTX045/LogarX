@@ -11,6 +11,7 @@ so a module that set it after would be setting it for nobody.
 
 from __future__ import annotations
 
+import gc
 import os
 import time
 from collections.abc import Iterator
@@ -92,6 +93,32 @@ def settled(qt_app: QApplication, timeout: float = 30.0) -> None:
         # the window) with its own signal queued behind us.
         if pool.waitForDone(0) and not workers._in_flight:
             return
+
+
+@pytest.fixture(autouse=True)
+def collected_between_tests() -> Iterator[None]:
+    """Run the cyclic collector when a test ends, and never while one runs.
+
+    A window kept alive only by a reference cycle can be the focus window. When
+    focus moves, Qt saves it as the previous window, sends it a FocusOut, and
+    reads it again afterwards to say which window is now active. Python runs
+    during that FocusOut, and if the collector chose that moment to free the
+    window, Qt read freed memory: the segfault in
+    `QApplicationPrivate::notifyActiveWindowChange` that CI's Python 3.11 job hit
+    twice running in the first fixture of `test_evidence_search.py`, and WSL hit
+    2 times in 5 under gdb. Reproduced on its own, and every time on Linux, by
+    collecting inside the old window's FocusOut.
+
+    Collected here, a window a test left in a cycle is gone before the next test
+    shows one, so it is never anybody's previous window. Collection is about
+    when, not whether: a test that wants it sooner calls `gc.collect()`.
+    `test_collector_between_tests.py` holds this in place.
+    """
+    gc.disable()
+    try:
+        yield
+    finally:
+        gc.collect()
 
 
 @pytest.fixture(autouse=True)

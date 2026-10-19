@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
@@ -25,10 +26,19 @@ import pyarrow.parquet as pq
 from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
 from logarc.core.window import TimeWindow
-from logarc.storage.base import CaseOverview, IpSummary, IpSummaryPage, TimeSlot
+from logarc.search import is_whole_address
+from logarc.storage.base import (
+    CaseOverview,
+    ClientMatchPage,
+    IpSummary,
+    IpSummaryPage,
+    TimeSlot,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
+
+    from logarc.search import Query
 
 __all__ = ["ParquetEventStore", "StoreStateError"]
 
@@ -476,6 +486,117 @@ class ParquetEventStore:
             offset,
         )
 
+    def search_clients(
+        self,
+        query: Query,
+        *,
+        offset: int = 0,
+        limit: int = 100,
+        window: TimeWindow | None = None,
+        clients: frozenset[str] | None = None,
+    ) -> ClientMatchPage:
+        self._require_finalized()
+        if offset < 0 or limit < 1:
+            raise ValueError("offset must be nonnegative and limit must be positive")
+        if not self._has_events() or (clients is not None and not clients):
+            return ClientMatchPage((), (), 0, 0, offset)
+        source, source_bounds = self._summary_source(window)
+        clause, bounds = _window_sql(window)
+        matches, values = _request_sql(query)
+        who, whose = _client_sql(query)
+        connection = self._connect()
+        # The clients `activity:` chose, joined while the events are read. As a
+        # table rather than a bound list: DuckDB took 2.2s to take 4,916
+        # addresses as one parameter on the large tier, and 0.002s as a table.
+        chosen = ""
+        table: str | None = None
+        if clients is not None:
+            table = f"chosen_{uuid.uuid4().hex}"
+            connection.register(
+                table, pa.table({"client_ip": pa.array(sorted(clients), pa.string())})
+            )
+            chosen = f" AND client_ip IN (SELECT client_ip FROM {table})"
+        try:
+            rows = connection.execute(
+                f"""
+            WITH ranked AS (
+                SELECT client_ip, request_count, first_seen, last_seen, distinct_paths,
+                       client_error_ratio, bytes_total,
+                       row_number() OVER (ORDER BY request_count DESC, client_ip) AS position
+                FROM ({source})
+            ), hits AS (
+                SELECT client_ip, count(*) AS hits
+                FROM read_parquet({self._sql_path(self._events_glob)}, hive_partitioning = true)
+                WHERE TRUE{clause} AND {matches}{chosen}
+                GROUP BY client_ip
+            ), matching AS (
+                SELECT ranked.*, hits.hits
+                FROM ranked JOIN hits USING (client_ip)
+                WHERE {who}
+            )
+            SELECT page.*, totals.total, totals.requests
+            FROM (SELECT count(*) AS total, coalesce(sum(hits), 0) AS requests
+                  FROM matching) totals
+            LEFT JOIN (SELECT * FROM matching ORDER BY hits DESC, client_ip
+                       LIMIT ? OFFSET ?) page ON true
+            ORDER BY page.hits DESC, page.client_ip
+            """,
+                [*source_bounds, *bounds, *values, *whose, limit, offset],
+            ).fetchall()
+        finally:
+            if table is not None:
+                connection.unregister(table)
+        found = [row for row in rows if row[0] is not None]
+        return ClientMatchPage(
+            tuple(_to_summary(row, position=int(row[7])) for row in found),
+            tuple(int(row[8]) for row in found),
+            int(rows[0][9]),
+            int(rows[0][10]),
+            offset,
+        )
+
+    def value_counts(
+        self, *, window: TimeWindow | None = None
+    ) -> dict[str, list[tuple[str, int, int]]]:
+        self._require_finalized()
+        counted: dict[str, list[tuple[str, int, int]]] = {"status": [], "method": []}
+        if not self._has_events():
+            return counted
+        clause, bounds = _window_sql(window)
+        # One read of the range for all three groupings. Only what the box can
+        # make a filter of: a code from 100 to 599, a method of letters a to z.
+        rows = (
+            self._connect()
+            .execute(
+                f"""
+            WITH seen AS (
+                SELECT client_ip, status, method
+                FROM read_parquet({self._sql_path(self._events_glob)}, hive_partitioning = true)
+                WHERE TRUE{clause}
+            )
+            SELECT 'code', CAST(status AS VARCHAR), count(DISTINCT client_ip), count(*)
+            FROM seen WHERE status BETWEEN 100 AND 599 GROUP BY status
+            UNION ALL
+            SELECT 'class', CAST(status // 100 AS VARCHAR) || 'xx',
+                   count(DISTINCT client_ip), count(*)
+            FROM seen WHERE status BETWEEN 100 AND 599 GROUP BY status // 100
+            UNION ALL
+            SELECT 'method', upper(method), count(DISTINCT client_ip), count(*)
+            FROM seen WHERE regexp_full_match(coalesce(method, ''), '[A-Za-z]+')
+            GROUP BY upper(method)
+            """,
+                bounds,
+            )
+            .fetchall()
+        )
+        grouped: dict[str, list[tuple[str, int, int]]] = {"code": [], "class": [], "method": []}
+        for kind, value, clients, requests in rows:
+            grouped[kind].append((value, int(clients), int(requests)))
+        ranked = sorted(grouped["code"], key=lambda item: (-item[2], item[0]))
+        counted["status"] = ranked + sorted(grouped["class"])
+        counted["method"] = sorted(grouped["method"], key=lambda item: (-item[2], item[0]))
+        return counted
+
     # -- plumbing ----------------------------------------------------------
 
     def activity_over_time(
@@ -667,6 +788,103 @@ def _window_sql(window: TimeWindow | None) -> tuple[str, list[datetime]]:
         clauses.append("timestamp <= ?")
         bounds.append(_naive(window.end))
     return " AND " + " AND ".join(clauses), bounds
+
+
+def _folded(expression: str) -> str:
+    """DuckDB's `lower`, finished as `search.fold` finishes Python's.
+
+    DuckDB already writes a dotted capital I as a plain `i`; what is left is
+    the final sigma, `chr(962)`, read as the ordinary one, `chr(963)`.
+    """
+    return f"replace(lower({expression}), chr(962), chr(963))"
+
+
+#: The path, and the path as the panel shows it: one pass of decoding, and the
+#: path as written when the bytes it decodes to are not UTF-8. DuckDB raises
+#: there, as Python's strict `unquote` does, and `try` turns that into the
+#: fallback (measured on `%C3%28`).
+_PATH: Final = "coalesce(path, '')"
+_SHOWN_PATH: Final = f"coalesce(try(url_decode({_PATH})), {_PATH})"
+#: A query decodes as `unquote_plus` does: a plus is a space, then escapes.
+_SHOWN_QUERY: Final = "coalesce(try(url_decode(replace(query, '+', ' '))), query)"
+#: Path and query joined as `NormalizedEvent.target` joins them: nothing at all
+#: without a path, and no question mark without a query.
+_TARGET: Final = (
+    f"CASE WHEN {_PATH} = '' THEN '' WHEN coalesce(query, '') = '' THEN path "
+    "ELSE path || '?' || query END"
+)
+_SHOWN_TARGET: Final = (
+    f"CASE WHEN {_PATH} = '' THEN '' WHEN coalesce(query, '') = '' THEN {_SHOWN_PATH} "
+    f"ELSE {_SHOWN_PATH} || '?' || {_SHOWN_QUERY} END"
+)
+
+
+def _request_sql(query: Query) -> tuple[str, list[object]]:
+    """`query.matches`, as a predicate on one stored request, and its parameters.
+
+    Every typed value is bound; none is written into the statement. The
+    parity tests in `tests/storage/test_search_clients.py` hold the two to the
+    same answer, request for request.
+    """
+    clauses: list[str] = ["TRUE"]
+    values: list[object] = []
+    if query.statuses or query.classes:
+        either: list[str] = []
+        if query.statuses:
+            either.append(f"status IN ({', '.join('?' * len(query.statuses))})")
+            values.extend(query.statuses)
+        if query.classes:
+            either.append(f"status // 100 IN ({', '.join('?' * len(query.classes))})")
+            values.extend(query.classes)
+        clauses.append(f"(status IS NOT NULL AND ({' OR '.join(either)}))")
+    if query.paths:
+        clauses.append(
+            "("
+            + " OR ".join(
+                f"contains({_folded(_PATH)}, ?) OR contains({_folded(_SHOWN_PATH)}, ?)"
+                for _ in query.paths
+            )
+            + ")"
+        )
+        for wanted in query.paths:
+            values.extend((wanted, wanted))
+    if query.methods:
+        # In ASCII only, as `search._method_in` compares: `strlen` counts bytes
+        # and `length` characters, so they agree exactly when nothing is wider.
+        clauses.append(
+            "(method IS NOT NULL AND strlen(method) = length(method)"
+            f" AND upper(method) IN ({', '.join('?' * len(query.methods))}))"
+        )
+        values.extend(query.methods)
+    if query.after is not None:
+        clauses.append("timestamp >= ?")
+        values.append(_naive(query.after))
+    if query.before is not None:
+        clauses.append("timestamp < ?")
+        values.append(_naive(query.before))
+    for word in query.words:
+        clauses.append(
+            f"(contains({_folded(_TARGET)}, ?) OR contains({_folded(_SHOWN_TARGET)}, ?))"
+        )
+        values.extend((word, word))
+    return " AND ".join(clauses), values
+
+
+def _client_sql(query: Query) -> tuple[str, list[object]]:
+    """Which clients a search's addresses name."""
+    clauses: list[str] = ["TRUE"]
+    values: list[object] = []
+    if query.ips:
+        clauses.append(
+            "("
+            + " OR ".join(
+                "client_ip = ?" if is_whole_address(ip) else "contains(client_ip, ?)"
+                for ip in query.ips
+            )
+            + ")"
+        )
+        values.extend(query.ips)
+    return " AND ".join(clauses), values
 
 
 def _naive(when: datetime) -> datetime:

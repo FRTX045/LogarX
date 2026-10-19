@@ -138,6 +138,24 @@ def test_every_change_is_heard_once(window: QWidget) -> None:
     assert heard == ["status:404", "status:404 x"]
 
 
+def test_finishing_a_filter_is_heard_though_the_text_reads_the_same(window: QWidget) -> None:
+    """`status:404` typed and `status:404` made a chip read alike, but only one is
+    finished, and the client box acts on a finished time and not a half-typed one."""
+    box = boxed(window)
+    heard: list[str] = []
+    finished: list[tuple[str, ...]] = []
+    box.textChanged.connect(heard.append)
+    box.committed.connect(lambda: finished.append(box.chips()))
+
+    typed(box, "status:404")
+    assert finished == []
+    before = len(heard)
+    typed(box, " ")
+
+    assert len(heard) == before, "the text did not change"
+    assert finished == [("status:404",)]
+
+
 def test_the_placeholder_shows_only_while_there_are_no_chips(window: QWidget) -> None:
     box = boxed(window)
     assert box.edit.placeholderText() == "Filter these lines…"

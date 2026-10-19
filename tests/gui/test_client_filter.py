@@ -1,6 +1,7 @@
 """Tests for the client filter's judgements, which need no display."""
 
-from logarc.gui.client_filter import caption, matches
+from logarc.gui.client_filter import awaiting_scan, caption, matches
+from logarc.triage.scan import TriageProgress
 
 
 def test_an_address_matches_itself() -> None:
@@ -153,3 +154,54 @@ def test_more_matches_than_a_page_are_paged() -> None:
 def test_an_open_client_outside_the_list_is_named() -> None:
     text = caption(shown=500, total=931, query="", missing_open="100.99.203.115")
     assert text.endswith(" Current IP: 100.99.203.115 (outside this list).")
+
+
+def test_an_activity_search_waits_for_the_scan_and_says_how_far_it_has_got() -> None:
+    """Asked again by itself when the scan finishes, so it never says "ask again"."""
+    assert awaiting_scan(TriageProgress(40, 1_200, ()), scanning=True) == (
+        "Activities come from the Where to start scan, which is still checking IPs:"
+        " 40 of 1,200 so far. The list fills in when it finishes."
+    )
+    assert awaiting_scan(None, scanning=True) == (
+        "Activities come from the Where to start scan, which is still checking IPs."
+        " The list fills in when it finishes."
+    )
+
+
+def test_an_activity_search_with_no_scan_running_says_where_to_start_one() -> None:
+    assert awaiting_scan(None, scanning=False) == (
+        "Activities come from the Where to start scan, which has not finished."
+        " Run it from Where to start."
+    )
+
+
+def test_an_open_client_outside_a_search_is_named_as_outside_any_list() -> None:
+    """In the words the list uses without a search, so the two read alike."""
+    from logarc.gui.client_filter import match_caption
+
+    text = match_caption(
+        shown=2, total=52, query="status:404", first=1, matching=2, requests=9,
+        missing_open="100.99.203.115",
+    )  # fmt: skip
+
+    assert text.endswith(" Current IP: 100.99.203.115 (outside this list).")
+
+
+def test_an_activity_on_more_clients_than_a_page_names_the_page() -> None:
+    """On the large tier `activity:api_call` names 4,916 clients and a page holds
+    500; the caption read as though every one of them were listed."""
+    from logarc.gui.client_filter import match_caption
+
+    paged = match_caption(
+        shown=500, total=7_450, query="activity:api_call", first=501, matching=4_916,
+        requests=0, counted=False,
+    )  # fmt: skip
+    whole = match_caption(
+        shown=3, total=7_450, query="activity:injection", first=1, matching=3,
+        requests=0, counted=False,
+    )  # fmt: skip
+
+    assert paged == (
+        "Clients 501\u20131,000 of 4,916 that match activity:api_call in the Where to start scan"
+    )
+    assert whole == "3 of 7,450 clients match activity:injection in the Where to start scan"
