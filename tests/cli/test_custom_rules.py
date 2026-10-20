@@ -136,3 +136,20 @@ def test_the_evidence_command_takes_the_same_rules(case: Path, pack: Path) -> No
 
     assert result.exit_code == 0, result.output
     assert "House rule CGI probe" in result.output
+
+
+def test_a_pack_copying_a_built_in_id_is_refused(case: Path, tmp_path: Path) -> None:
+    """docs/writing-rules.md says a duplicate id is refused, and until 2026-10-21
+    it was refused only between the packs given on the command line: a pack
+    reusing a built-in id loaded, and two rules answered to one id."""
+    copied = tmp_path / "copied.yaml"
+    copied.write_text(PACK.replace("house_cgi_probe", "sqli_union_select"), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["analyze", "-c", str(case), "--ip", "203.0.113.5", "--rules", str(copied)],
+    )
+
+    assert result.exit_code != 0
+    assert "sqli_union_select" in result.output
+    assert "built-in" in result.output

@@ -718,7 +718,7 @@ preview is legible while you are typing, which is the whole reason to have it.
 printf '203.0.113.5|[10/Oct/2020:13:55:36 +0000]|"GET /.env HTTP/1.1"|404|0\n' > piped.log
 ```
 
-2. Open the application. **Case → Log formats…**
+2. Open the application. **Case → Formats and rules…**
 
 **Pass:** the list is grouped — *Built in* above, *Saved by you* below — with
 *New format…* at the top. Selecting `apache-combined` fills the fields and
@@ -743,7 +743,7 @@ empty rather than missing.
 
 **Pass:** the case opens with one client in it, not an empty one.
 
-6. Go back to **Log formats…**, select `piped`, add `|%{Referer}i` to the end
+6. Go back to **Formats and rules…**, select `piped`, add `|%{Referer}i` to the end
    of the directive, save, and open the case again.
 
 **Pass:** an amber strip appears saying the format has changed since the case
@@ -768,7 +768,7 @@ pathlib.Path("ecs.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\
 PY
 ```
 
-2. **Case → Log formats… → New JSON format…** Paste one line into *A line from
+2. **Case → Formats and rules… → New JSON format…** Paste one line into *A line from
    your log*, then press **Guess from the line above**.
 
 **Pass:** the left table fills in — `timestamp` → `@timestamp`, `client_ip` →
@@ -806,7 +806,7 @@ pathlib.Path("u_ex240501.log").write_text("\n".join(head + rows) + "\n")
 PY
 ```
 
-2. **Case → Log formats… → New table format…** Paste the four header lines and
+2. **Case → Formats and rules… → New table format…** Paste the four header lines and
    one row, then press **Guess from the line above**.
 
 **Pass:** the left table fills in with W3C names — `timestamp` → `date+time`,
@@ -834,7 +834,7 @@ log's own bookkeeping, not lines that failed. No amber strip appears.
 printf '2024 May  1 09:00:%02d gw01 proxy[1234]: client=203.0.113.77 method=GET url=/admin/%d.php status=404\n' $(seq 0 39 | sed 's/.*/& &/') > proxy.log
 ```
 
-2. **Case → Log formats… → New pattern format…** Paste one line, set *Time
+2. **Case → Formats and rules… → New pattern format…** Paste one line, set *Time
    format* to `%Y %b %d %H:%M:%S`, and write:
 
 ```
@@ -1143,6 +1143,75 @@ number just right of the arrow selects the row and nothing else.
 4. **Edit → Preferences…**, set *Fold repeated lines* to *Off*, and press OK.
 
 **Pass:** 39 rows, one per line, and no line above the table.
+
+---
+
+## 27. Your own detection rules, and one edited by hand
+
+Writing a pack, its counts, switching a built-in rule off and the strip are all
+tested. What is checked here is the part no test reaches: a pack changed in
+another program while logarc is closed.
+
+1. Open a case made from the shopfront excerpt. **Case → Formats and rules…**,
+   the *Detection rules* tab, **New rule pack…**. Name it `shopfront`, replace
+   the YAML with this, and wait half a second:
+
+   ```yaml
+   version: 1
+   note: What misuse of our own shop's API looks like
+   rules:
+     - id: shop_stock_polling
+       name: Stock levels polled by a script
+       category: crawling
+       severity: low
+       confidence: 0.7
+       member:
+         all:
+           - {field: path, regex: "^/api/stock$"}
+       window:
+         span_seconds: 300
+         min_requests: 3
+         conditions:
+           - {metric: request_count, op: ">=", value: 3}
+
+     - id: shop_cart_emptied_by_api
+       name: Cart emptied through the API
+       category: api_call
+       severity: info
+       match:
+         all:
+           - {field: method, equals: DELETE}
+           - {field: path, regex: "^/api/cart$"}
+   ```
+
+**Pass:** the line under the editor says `2 rules read: 1 about a single
+request, 1 about a run of requests.` The table under it fills in to 29 lines
+from 7 clients and 1 line from 1 client, and says every client was read.
+**Save** is on.
+
+2. Add `, contains: DEL` inside the braces of the `method` condition.
+
+**Pass:** that line is marked, the message starts `Rule
+shop_cart_emptied_by_api, first condition under match`, and **Save** is off.
+
+3. Take the addition out again and **Save**.
+
+**Pass:** a bar asks `Saved. The open case was read with the old rules.` Press
+**Later** and close the dialog: the window shows `Rules changed since this case
+was read.` Press **Read it again**: the strip goes, and in `100.70.92.188`'s
+trace an activity is now named *Stock levels polled by a script*.
+
+4. Close logarc. Open `%APPDATA%\logarc\rules\shopfront.yaml` in Notepad,
+   delete the first `name:` line, save, and start logarc with the same case.
+
+**Pass:** a strip says one of your rule packs did not load and names
+`shopfront`. In **Formats and rules…** it is listed as `shopfront (does not
+load)`, and its tooltip says what is wrong. The file is as you left it.
+
+5. Select it, put the `name:` line back in the editor, and **Save**.
+
+**Pass:** it is listed as `shopfront` again, and after **Read it again** the strip
+is gone.
 
 ---
 

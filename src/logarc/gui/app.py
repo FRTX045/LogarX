@@ -33,7 +33,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from logarc import __version__
+from logarc import __version__, rules_library
 from logarc.bookmarks import (
     Kind,
     said_for_activity,
@@ -52,6 +52,7 @@ from logarc.caseview import (
 from logarc.core.graph import GraphKind
 from logarc.core.window import EVERYTHING, TimeWindow
 from logarc.detect.crs import CrsEvidence, CrsUnavailableError, SidecarConfig, runs_by_default
+from logarc.detect.ruleset import NO_EXTRA_RULES, RuleSet
 from logarc.enrich import EnrichOutcome, EnrichProgress, crs_config, enrich_case
 from logarc.episode.builder import DEFAULT_EVIDENCE_SAMPLE
 from logarc.formats import drifted_sources
@@ -71,8 +72,9 @@ from logarc.gui.disclosure import Disclosure
 from logarc.gui.display import configure_display
 from logarc.gui.evidence_panel import EvidencePanel
 from logarc.gui.evidence_view import Filtered, RequestFilter
-from logarc.gui.format_editor import FormatChoice, FormatEditor
+from logarc.gui.format_editor import FormatChoice
 from logarc.gui.format_notice import drift_notice
+from logarc.gui.formats_and_rules import FormatsAndRules
 from logarc.gui.full_screen import FullScreen
 from logarc.gui.notice_bar import NoticeBanner, warn_about_dead_files
 from logarc.gui.panels import ClientTable, LegendBar
@@ -81,6 +83,7 @@ from logarc.gui.progress import Progress, Reading
 from logarc.gui.progress_card import IngestCard
 from logarc.gui.quarantine_notice import notice_for
 from logarc.gui.recent import RecentCase
+from logarc.gui.rules_view import packs_refused_notice, rules_changed_notice
 from logarc.gui.site_hosts import SiteHostsOffer
 from logarc.gui.splitter import PanelSplitter
 from logarc.gui.theme import GAP, MONO_FAMILIES, PAD, TIGHT, apply_theme, colour_text, heading_font
@@ -261,6 +264,15 @@ class MainWindow(QMainWindow):
         # A third, for the same reason: a case checked with an older CRS is
         # complete and intact, and says so with an offer to run CRS again.
         self._older_crs = NoticeBanner()
+        # A fourth, about the rules this case was read with: a pack of the
+        # reader's that did not load, or rules changed since the case was read.
+        self._rules_notice = NoticeBanner()
+        self._rules: RuleSet = NO_EXTRA_RULES
+        """The reader's rules as last read from their library. Every reading of
+        the open case — the client on screen, its report, Where to start — is
+        handed these, so the three agree."""
+        self._rules_refused: dict[str, str] = {}
+        self._rules_stale = False
         self._clients = ClientTable()
         self._triage = TriagePanel()
         self._triage.investigate.connect(lambda ip, refs: self._reconstruct(ip, evidence=refs))
@@ -396,6 +408,7 @@ class MainWindow(QMainWindow):
         stack.addWidget(self._notice)
         stack.addWidget(self._format_notice)
         stack.addWidget(self._older_crs)
+        stack.addWidget(self._rules_notice)
         # Beside the notice for the same reason, and it matters more here than
         # it looks: the range governs the client list as well as the graph, so
         # sitting over the graph alone it would claim to narrow one of the two
@@ -504,8 +517,9 @@ class MainWindow(QMainWindow):
         recently.setShortcut(QKeySequence("Ctrl+Shift+O"))
         recently.setStatusTip("Pick up a case that has been opened on this machine before.")
         self._add(case_menu, "Ingest logs into a &new case…", self._ingest_new_case)
-        self._add(case_menu, "Log &formats…", self._manage_formats).setStatusTip(
-            "See the log formats logarc reads, and write your own."
+        self._add(case_menu, "Formats and &rules…", self._manage_formats).setStatusTip(
+            "See the log formats logarc reads and the rules that say what a line means, "
+            "and write your own."
         )
         self._crs_action = self._add(case_menu, "Run OWASP &CRS on this case", self._run_crs_now)
         self._crs_action.setStatusTip(
@@ -734,13 +748,77 @@ class MainWindow(QMainWindow):
         )
 
     def _manage_formats(self) -> None:
-        """Open the format library.
+        """Open the formats and rules dialog on its formats tab."""
+        self._formats_and_rules(on_rules=False)
 
-        Modal, and nothing is applied on the way out: the dialog writes what
-        the reader saved as they save it, so there is no pending state for
-        closing the window to discard or apply by accident.
-        """
-        FormatEditor(self).exec()
+    def _manage_rules(self) -> None:
+        """Open the formats and rules dialog on its rules tab."""
+        self._formats_and_rules(on_rules=True)
+
+    def _formats_and_rules(self, *, on_rules: bool) -> None:
+        """Modal, and nothing is applied on the way out: each tab writes what the
+        reader saved as they save it, so there is no pending state for closing
+        the window to discard or apply by accident.
+
+        A rules change with a case open is asked about inside the dialog. One
+        the reader put off is the strip's to say."""
+        dialog = FormatsAndRules(self, case_path=self._case_path, on_rules=on_rules)
+        dialog.rules.read_again.connect(self._read_again)
+        dialog.exec()
+        if dialog.rules.stale:
+            self._rules_changed()
+
+    def _rules_changed(self) -> None:
+        """The reader's rules changed, and the open case was read with the old ones."""
+        if self._case_path is None:
+            return
+        self._rules_stale = True
+        self._say_rules()
+
+    def _say_rules(self) -> None:
+        """The rules strip: rules changed since the case was read, a pack of the
+        reader's that did not load, or nothing. The first is the one to act on."""
+        if self._case_path is None:
+            self._rules_notice.show_notice(None)
+        elif self._rules_stale:
+            self._rules_notice.show_notice(
+                rules_changed_notice(), action=("Read it again", self._read_again)
+            )
+        elif self._rules_refused:
+            self._rules_notice.show_notice(
+                packs_refused_notice(self._rules_refused),
+                action=("Formats and rules…", self._manage_rules),
+            )
+        else:
+            self._rules_notice.show_notice(None)
+
+    def _read_again(self) -> None:
+        """Read the open case again with the rules in the reader's library now:
+        the client on screen, and Where to start."""
+        path = self._case_path
+        if path is None:
+            return
+
+        def done(library: rules_library.Library) -> None:
+            if path != self._case_path:
+                return
+            self._take_rules(library)
+            self._triage.start(path, self._window, self._rules)
+            if self._result is not None:
+                self._reconstruct(self._result.client_ip)
+
+        run_job(
+            # The library is files on disk, and checking it builds every rule.
+            lambda _report: rules_library.in_force(),
+            on_done=done,
+            on_error=self.report_error,
+        )
+
+    def _take_rules(self, library: rules_library.Library) -> None:
+        self._rules = library.ruleset
+        self._rules_refused = library.refused
+        self._rules_stale = False
+        self._say_rules()
 
     def _show_ingest_progress(self, snapshot: object) -> None:
         if self._ingest_card is not None and isinstance(snapshot, Progress):
@@ -875,7 +953,7 @@ class MainWindow(QMainWindow):
         """
         held, self._scan_held = self._scan_held, False
         if held and self._case_path is not None:
-            self._triage.start(self._case_path, self._window)
+            self._triage.start(self._case_path, self._window, self._rules)
 
     def _start_crs(self, case_dir: Path) -> bool:
         """Run CRS on a case that has just been read, unless it is turned off.
@@ -1137,14 +1215,17 @@ class MainWindow(QMainWindow):
                 manifest.config if view.crs.fingerprint is not None else None,
                 _crs_config_now(manifest.config.get(Case.SITE_HOSTS_KEY) or ()),
             )
-            return view, snapshot, notice, drifted, older
+            # The reader's rules, read here for the reason the format library is:
+            # they are files on disk. Every reading of this case is handed them.
+            library = rules_library.in_force()
+            return view, snapshot, notice, drifted, older, library
 
         self._busy(f"Opening {path}…")
 
         def done(loaded: Any) -> None:
             if generation != self._load_generation:
                 return
-            view, snapshot, notice, drifted, older = loaded
+            view, snapshot, notice, drifted, older, library = loaded
             summaries = view.listed
             self._remember_case(snapshot)
             self._case_path = path
@@ -1186,6 +1267,7 @@ class MainWindow(QMainWindow):
             self._older_crs.show_notice(
                 older, action=("Run CRS again", lambda: self._run_crs_now())
             )
+            self._take_rules(library)
             self._heading.setText("")
             self._tabs.setVisible(False)
             self._clients.show_clients(summaries, total=view.whole.clients)
@@ -1195,7 +1277,7 @@ class MainWindow(QMainWindow):
             self._count_values()
             self._workspace.setCurrentIndex(0)
             if not self._scan_held:
-                self._triage.start(path)
+                self._triage.start(path, rules=self._rules)
             self._say_what_is_left()
             self._idle(
                 # Not "listed": the table holds the busiest few hundred of
@@ -1252,7 +1334,7 @@ class MainWindow(QMainWindow):
         self._evidence.clear(prompt=False)
         self._window = window
         self._activity_values = []
-        self._triage.start(self._case_path, window)
+        self._triage.start(self._case_path, window, self._rules)
         self._count_values()
         # Nothing in flight describes this range: each was asked over the range
         # before it. `_reselect` asks again below if the reader is still on
@@ -1613,6 +1695,7 @@ class MainWindow(QMainWindow):
         # is free to change it.
         crs = self._crs
         window = self._window
+        rules = self._rules
         buckets = self._buckets()
         # The requests a search found this client by, if one did: a new
         # client is read through the same filter.
@@ -1629,7 +1712,7 @@ class MainWindow(QMainWindow):
 
         def work(report: Callable[[str], None]) -> tuple[AnalysisResult, list[TimeSlot]]:
             report(f"Reconstructing {client_ip}…")
-            result = reconstruct_client(path, client_ip, crs, window=window)
+            result = reconstruct_client(path, client_ip, crs, window=window, rules=rules)
             # This client's own traffic, across its own life — not the range in
             # force. Built from the reconstruction it would only ever cover that
             # range, so the whole band would be lit and there would be nothing
@@ -2533,6 +2616,7 @@ class MainWindow(QMainWindow):
         client_ip = self._result.client_ip
         case_path = self._case_path
         crs = self._crs
+        rules = self._rules
         shelf = self._bookmarks.shelf
 
         if kind == "png":
@@ -2551,7 +2635,7 @@ class MainWindow(QMainWindow):
             # this one number: the graph written is the graph drawn, and only
             # its list of references is shorter.
             bounded = reconstruct_client(
-                case_path, client_ip, crs, evidence_sample=DEFAULT_EVIDENCE_SAMPLE
+                case_path, client_ip, crs, evidence_sample=DEFAULT_EVIDENCE_SAMPLE, rules=rules
             )
             with Case.open(case_path) as case:
                 # A request bookmark's own line goes in the report beside its

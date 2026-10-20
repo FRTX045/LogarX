@@ -27,6 +27,7 @@ longer holds, so this is where the state of each record is written down.
 | [0010](0010-a-log-format-is-data-that-travels-with-the-work.md) | A log format is data, and it travels with the work | Accepted |
 | [0011](0011-a-real-server-log-is-the-headline-corpus.md) | A real server's log is the headline corpus, and the generator is removed | Accepted |
 | [0012](0012-the-window-is-the-product.md) | The window is the product; the command line is a developer tool | **Accepted, carried out in two steps.** The build check that keeps the command line out of the packaged application is in force; the rename to `logarc-dev` and the deleted commands wait for the first public release. |
+| [0013](0013-rules-a-reader-writes.md) | A reader's rules live in their settings and reach the engine as data | Accepted |
 
 ## Which to read first
 

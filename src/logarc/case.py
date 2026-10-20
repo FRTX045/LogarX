@@ -15,8 +15,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from logarc.detect.crs.store import CrsEvidence
 from logarc.detect.engine import _URL_IN_PARAM, RuleEngine, _bare_host
-from logarc.detect.rulepacks import default_rules
-from logarc.detect.rules import load_rules
+from logarc.detect.ruleset import NO_EXTRA_RULES, build_rules
 from logarc.evidence import EvidenceLine, read_evidence
 from logarc.ingest.parallel import (
     DEFAULT_WORKERS,
@@ -39,6 +38,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
 
     from logarc.core.evidence import EvidenceRef
+    from logarc.detect.rules import Rule
+    from logarc.detect.ruleset import RuleSet
 
 __all__ = ["Case", "CaseError", "SiteHostSuggestion"]
 
@@ -195,7 +196,9 @@ class Case:
             worth_asking=urls > 0,
         )
 
-    def rule_engine(self, extra_packs: Sequence[Path] = ()) -> RuleEngine:
+    def rule_engine(
+        self, rules: RuleSet = NO_EXTRA_RULES, *, extra_packs: Sequence[Path] = ()
+    ) -> RuleEngine:
         """The engine this case is analysed with, knowing its own domains.
 
         Here rather than in the CLI and the GUI separately, for the reason
@@ -204,13 +207,21 @@ class Case:
         answer, so an engine built without the case is an engine that quietly
         detects less.
 
-        Extra packs are added to the bundled rules rather than replacing them,
-        and `load_rules` refuses a duplicate id, so a pack copying a bundled
-        rule to edit it fails loudly instead of shadowing it.
+        `rules` is what the window holds from the reader's library; the command
+        line passes its `--rules` files as `extra_packs`. Either way they add to
+        the built-in rules, and `build_rules` refuses an id already in force, so
+        a pack copying a built-in rule to edit it fails loudly instead of
+        shadowing it.
         """
-        rules = list(default_rules())
-        if extra_packs:
-            rules.extend(load_rules(list(extra_packs)))
+        in_force = build_rules(rules, extra_packs=extra_packs)
+        return self.engine_for(in_force.rules, described=in_force.described)
+
+    def engine_for(self, rules: Sequence[Rule], *, described: str = "") -> RuleEngine:
+        """An engine over exactly `rules`, knowing this case's own domains.
+
+        For counting what a few rules find (`rule_finds`). The domains still
+        matter there, because `rfi_offsite_url` reads them.
+        """
         return RuleEngine(
             rules,
             site_hosts=self.site_hosts,
@@ -218,6 +229,7 @@ class Case:
             # The engine trusts 931130's off-domain verdicts only when this is
             # one the reader still names.
             crs_host=self.manifest.config.get("crs_host"),
+            described=described,
         )
 
     def read_evidence(self, refs: Sequence[EvidenceRef]) -> list[EvidenceLine]:

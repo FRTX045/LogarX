@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Final
 
 from logarc.analysis import AnalysisPolicy, analyse_ip
 from logarc.case import Case
+from logarc.detect.ruleset import NO_EXTRA_RULES
 from logarc.episode.builder import EpisodePolicy
 
 if TYPE_CHECKING:
@@ -32,6 +33,7 @@ if TYPE_CHECKING:
     from logarc.core.graph import ActivityGraph, GraphNode
     from logarc.core.window import TimeWindow
     from logarc.detect.crs import CrsEvidence
+    from logarc.detect.ruleset import RuleSet
     from logarc.storage.base import CaseOverview, IpSummary, TimeSlot
 
 __all__ = [
@@ -150,6 +152,7 @@ def reconstruct_client(
     *,
     evidence_sample: int = EVIDENCE_LIMIT,
     window: TimeWindow | None = None,
+    rules: RuleSet = NO_EXTRA_RULES,
 ) -> AnalysisResult:
     """Reconstruct one client, applying whatever CRS contributed to the case.
 
@@ -163,6 +166,9 @@ def reconstruct_client(
     The default is not lowered anywhere else: the CLI, the benchmark and the
     evaluation — which reconstructs every client in a corpus — go on using the
     engine's, and the window's `_export` asks for it back explicitly.
+
+    `rules` is what the window holds from the reader's library. The same rules go
+    to *Where to start*, so the queue and the graph agree.
     """
     with Case.open(path) as case:
         return analyse_ip(
@@ -172,7 +178,7 @@ def reconstruct_client(
             # and triage detect. Left to its default, `analyse_ip` builds an engine
             # with no `site_hosts`, and for two days the domain question was asked,
             # answered, saved — and then ignored by every reconstruction on screen.
-            engine=case.rule_engine(),
+            engine=case.rule_engine(rules),
             policy=AnalysisPolicy(episode=EpisodePolicy(evidence_sample=evidence_sample)),
             crs=crs.index,
             crs_fingerprint=crs.fingerprint,

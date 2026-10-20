@@ -33,12 +33,35 @@ __all__ = [
     "SequenceRule",
     "SignatureRule",
     "WindowRule",
+    "load_pack_text",
     "load_rules",
 ]
 
 
 class RulePackError(ValueError):
-    """Raised when a rule pack cannot be loaded or is invalid."""
+    """Raised when a rule pack cannot be loaded or is invalid.
+
+    Carries where, as well as what, for the screen that has to point at the
+    mistake: the rule's id, the path to the condition inside it as the validator
+    gave it, or the line when the YAML itself would not read. The message stays
+    the whole sentence, for the command line; `reason` is the part after the
+    place, for a screen that says the place its own way.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        rule_id: str | None = None,
+        location: tuple[str | int, ...] = (),
+        line: int | None = None,
+        reason: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.rule_id = rule_id
+        self.location = location
+        self.line = line
+        self.reason = reason if reason is not None else message
 
 
 #: Text fields a signature rule may match against. `*_decoded` variants have
@@ -307,7 +330,16 @@ class _RulePack(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     version: Literal[1] = 1
+    note: str | None = None
+    """What the pack is for, in its author's words. Shown beside its name."""
     rules: list[dict[str, Any]] = []
+
+    @field_validator("rules", mode="before")
+    @classmethod
+    def _none_yet(cls, value: object) -> object:
+        # `rules:` with only comments under it is YAML for null: a pack with no
+        # rules yet, which is how a new one starts.
+        return [] if value is None else value
 
 
 def load_rules(sources: list[Path]) -> list[Rule]:
@@ -316,16 +348,43 @@ def load_rules(sources: list[Path]) -> list[Rule]:
     seen: dict[str, str] = {}
 
     for path in _expand(sources):
-        for raw in _read_pack(path):
-            rule = _build_rule(raw, path)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise RulePackError(f"{path.name} could not be read: {exc}") from exc
+        for rule in load_pack_text(path.name, text):
             if rule.id in seen:
                 raise RulePackError(
                     f"duplicate rule id {rule.id!r} in {path.name}; "
-                    f"already defined in {seen[rule.id]}"
+                    f"already defined in {seen[rule.id]}",
+                    rule_id=rule.id,
                 )
             seen[rule.id] = path.name
-            rule.compile()
             rules.append(rule)
+    return rules
+
+
+def load_pack_text(name: str, text: str) -> list[Rule]:
+    """One pack's rules from its YAML.
+
+    `name` is what a message calls the pack and what each rule records as the
+    pack it came from — the file name, `shopfront.yaml`. The one loader behind
+    both the files the command line is given and the text the window holds, so
+    the two cannot read the same pack differently.
+    """
+    rules: list[Rule] = []
+    seen: set[str] = set()
+    for raw in _parse_pack(name, text):
+        rule = _build_rule(raw, name)
+        if rule.id in seen:
+            raise RulePackError(
+                f"duplicate rule id {rule.id!r} in {name}; already defined in {name}",
+                rule_id=rule.id,
+                reason="another rule in this pack already has this id",
+            )
+        seen.add(rule.id)
+        rule.compile()
+        rules.append(rule)
     return rules
 
 
@@ -360,40 +419,74 @@ def _expand(sources: list[Path]) -> list[Path]:
     return paths
 
 
-def _read_pack(path: Path) -> list[dict[str, Any]]:
+def _parse_pack(name: str, text: str) -> list[dict[str, Any]]:
     try:
-        payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except (OSError, yaml.YAMLError) as exc:
-        raise RulePackError(f"{path.name} could not be read: {exc}") from exc
+        payload = yaml.safe_load(text) or {}
+    except yaml.YAMLError as exc:
+        raise RulePackError(
+            f"{name} could not be read: {exc}",
+            line=_yaml_line(exc),
+            reason=getattr(exc, "problem", None) or str(exc),
+        ) from exc
 
     try:
         pack = _RulePack.model_validate(payload)
     except ValidationError as exc:
-        raise RulePackError(f"{path.name} is not a valid rule pack: {_first_problem(exc)}") from exc
+        raise RulePackError(
+            f"{name} is not a valid rule pack: {_first_problem(exc)}",
+            location=_location(exc),
+            reason=_reason(exc),
+        ) from exc
     return pack.rules
 
 
-def _build_rule(raw: dict[str, Any], path: Path) -> Rule:
-    rule_id = raw.get("id", "<unnamed>")
-    body = {**raw, "source_pack": path.name}
+def _yaml_line(exc: yaml.YAMLError) -> int | None:
+    """The line a reader has to change, counted from one.
+
+    PyYAML has two marks. For a missing colon it reports the line after, where
+    it was still looking for one, and for an unclosed brace the line where the
+    next one opens; the line at fault is the one the context mark names.
+    Elsewhere the problem mark is the place.
+    """
+    context = getattr(exc, "context", None) or ""
+    mark = None
+    if "simple key" in context or "flow" in context:
+        mark = getattr(exc, "context_mark", None)
+    mark = mark or getattr(exc, "problem_mark", None)
+    return mark.line + 1 if mark is not None else None
+
+
+def _build_rule(raw: dict[str, Any], name: str) -> Rule:
+    label = raw.get("id", "<unnamed>")
+    rule_id = label if isinstance(label, str) else None
+    body = {**raw, "source_pack": name}
 
     kinds = [kind for kind in _KINDS if kind in body]
     if len(kinds) != 1:
         raise RulePackError(
-            f"rule {rule_id!r} in {path.name} must have exactly one of: {', '.join(_KINDS)}"
+            f"rule {label!r} in {name} must have exactly one of: {', '.join(_KINDS)}",
+            rule_id=rule_id,
+            reason=f"a rule needs exactly one of: {', '.join(_KINDS)}",
         )
 
     model = _KINDS[kinds[0]]
     try:
         rule = model.model_validate(body)
     except ValidationError as exc:
-        raise RulePackError(f"rule {rule_id!r} in {path.name}: {_first_problem(exc)}") from exc
+        raise RulePackError(
+            f"rule {label!r} in {name}: {_first_problem(exc)}",
+            rule_id=rule_id,
+            location=_location(exc),
+            reason=_reason(exc),
+        ) from exc
 
     if isinstance(rule, SignatureRule):
-        _check_patterns(rule.id, rule.match.conditions, path)
+        _check_patterns(rule.id, rule.match, name, ("match",))
     elif isinstance(rule, SequenceRule):
-        for block in rule.sequence.blocks():
-            _check_patterns(rule.id, block.conditions, path)
+        for part in ("first", "then", "unless_between"):
+            block = getattr(rule.sequence, part)
+            if block is not None:
+                _check_patterns(rule.id, block, name, ("sequence", part))
     return rule
 
 
@@ -405,19 +498,32 @@ _KINDS: Final[dict[str, type[Rule]]] = {
 }
 
 
-def _check_patterns(rule_id: str, conditions: list[Condition], path: Path) -> None:
-    for condition in conditions:
+def _check_patterns(rule_id: str, block: MatchBlock, name: str, at: tuple[str | int, ...]) -> None:
+    combinator = "all" if block.requires_all else "any"
+    for index, condition in enumerate(block.conditions):
         if condition.regex is None:
             continue
         try:
             re.compile(condition.regex)
         except re.error as exc:
             raise RulePackError(
-                f"rule {rule_id!r} in {path.name}: invalid regex {condition.regex!r}: {exc}"
+                f"rule {rule_id!r} in {name}: invalid regex {condition.regex!r}: {exc}",
+                rule_id=rule_id,
+                location=(*at, combinator, index),
+                reason=f"the pattern {condition.regex!r} is not a valid regular expression: {exc}",
             ) from exc
 
 
 def _first_problem(exc: ValidationError) -> str:
-    problem = exc.errors()[0]
-    location = ".".join(str(part) for part in problem["loc"]) or "rule"
-    return f"{location}: {problem['msg']}"
+    location = ".".join(str(part) for part in _location(exc)) or "rule"
+    return f"{location}: {_reason(exc)}"
+
+
+def _location(exc: ValidationError) -> tuple[str | int, ...]:
+    return tuple(exc.errors()[0]["loc"])
+
+
+def _reason(exc: ValidationError) -> str:
+    # Pydantic puts the kind of error in front of a validator's own message.
+    # "Value error" names a class in a library, nothing a pack's author can act on.
+    return str(exc.errors()[0]["msg"]).removeprefix("Value error, ")

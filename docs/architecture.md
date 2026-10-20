@@ -179,14 +179,15 @@ one merge pass absorbs short benign interludes between same-category episodes.
 ```python
 class LogParser(Protocol):
     name: str
-    def sniff(self, sample: Sequence[str]) -> float: ...          # 0.0–1.0 confidence
+
+    def sniff(self, sample: Sequence[str]) -> float: ...  # 0.0–1.0 confidence
     def parse_line(self, line: str, line_no: int) -> NormalizedEvent | None: ...
 ```
 
 Register it in `parsers/registry.py`. Nothing else changes.
 
 For Apache-style formats there is no new code at all, and no Python either: write the
-directive down with `logarc formats add` or in **Case → Log formats…**, and
+directive down with `logarc formats add` or in **Case → Formats and rules…**, and
 `parsers/logformat.py` compiles it into a matcher.
 
 A format is a *definition*, not a name — `parsers/spec.py` — because a name only

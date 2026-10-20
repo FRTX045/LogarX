@@ -9,6 +9,7 @@ from time import monotonic
 from typing import TYPE_CHECKING, cast
 
 from logarc.core.window import EVERYTHING, TimeWindow
+from logarc.detect.ruleset import NO_EXTRA_RULES, RuleSet
 from logarc.triage.scan import ScanCancelled, TriageResult, scan_case
 
 if TYPE_CHECKING:
@@ -21,12 +22,18 @@ if TYPE_CHECKING:
 
 
 def _scan_worker(
-    root: Path, window: TimeWindow, scratch: Path, output: Connection, stop: Event
+    root: Path,
+    window: TimeWindow,
+    rules: RuleSet,
+    scratch: Path,
+    output: Connection,
+    stop: Event,
 ) -> None:
     try:
         result = scan_case(
             root,
             window=window,
+            rules=rules,
             scratch_root=scratch,
             report=lambda progress: output.send(("progress", progress)),
             cancelled=stop.is_set,
@@ -44,6 +51,7 @@ def run_scan(
     root: Path,
     *,
     window: TimeWindow = EVERYTHING,
+    rules: RuleSet = NO_EXTRA_RULES,
     report: Callable[[TriageProgress], None],
     stop: ThreadEvent,
 ) -> TriageResult:
@@ -52,6 +60,9 @@ def run_scan(
     The live parent removes its child's scratch files after cancellation or exit.
     Abrupt termination of the parent can bypass cleanup and leave scratch files;
     completed caches are published separately and atomically.
+
+    `rules` crosses into the child as data, as `window` does: the child must
+    label with what the window holds, not read the reader's library for itself.
     """
     if stop.is_set():
         raise ScanCancelled()
@@ -62,7 +73,7 @@ def run_scan(
         incoming, outgoing = context.Pipe(duplex=False)
         cancel = context.Event()
         process = context.Process(
-            target=_scan_worker, args=(root, window, Path(temporary), outgoing, cancel)
+            target=_scan_worker, args=(root, window, rules, Path(temporary), outgoing, cancel)
         )
         try:
             process.start()

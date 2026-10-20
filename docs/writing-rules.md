@@ -21,6 +21,13 @@ against a better ruleset tomorrow without re-ingesting a gigabyte. Extra packs
 add to the bundled ones rather than replacing them, so writing one rule about
 your own application does not silently drop OWASP coverage.
 
+In the window there is no `--rules`: the *Detection rules* tab of **Case →
+Formats and rules…** keeps your packs in your settings, checks each one as you
+type, shows what it finds in the open case, and reads every case you open with
+them. It is also where a built-in rule that is wrong for your site can be
+switched off. See [Detection rules](desktop-app.md#detection-rules). The command
+line never reads those packs: it uses only what `--rules` names.
+
 ## The shape of a pack
 
 ```yaml
@@ -39,9 +46,15 @@ rules:
         - {field: path_decoded, regex: "union[\\s/*]+select"}
 ```
 
-`id` must be unique across every loaded pack. The loader refuses a duplicate
-rather than letting the later one win, because which pack was loaded first is
-not something a report should depend on.
+`id` must be unique across every rule in force, the built-in ones included.
+A pack that reuses one is refused, naming both places, rather than letting the
+later one win, because which pack was loaded first is not something a report
+should depend on. To replace a built-in rule, switch it off in the window: its
+id is then free.
+
+Two keys sit beside `rules:`. `version` is 1. `note`, optional, says in a
+sentence what the pack is for, and the window shows it as the pack's tooltip.
+A `rules:` with nothing under it yet is a pack with no rules, not a mistake.
 
 `category` controls activity grouping, so it helps shape episodes and the graph.
 A rule in one of the six attack categories (injection, path traversal, access
@@ -242,8 +255,7 @@ def test_an_ordinary_search_is_not_flagged(engine: RuleEngine) -> None:
     (labelled,) = engine.label_events([request("/search?q=or+1+products")])
 
     assert not [
-        label for label in labelled.all_labels
-        if label.category is ActivityCategory.INJECTION
+        label for label in labelled.all_labels if label.category is ActivityCategory.INJECTION
     ]
 ```
 
@@ -286,7 +298,9 @@ absorption rule needs in order to decide whether they are one act or two.
 ## Which ruleset produced a finding
 
 Every reconstruction carries a `ruleset_fingerprint`, derived from the rules
-that were loaded, and the HTML report prints it under Provenance. Changing any
+that were loaded, and the HTML report prints it under Provenance, with a line
+saying in words which rules those were: how many built in, any switched off, and
+each pack added, by name. Changing any
 rule definition, including only its `owasp` annotation, changes this fingerprint.
 An annotation-only migration can therefore change provenance without changing
 matching, classifications, episode boundaries or graph transitions. Previously
