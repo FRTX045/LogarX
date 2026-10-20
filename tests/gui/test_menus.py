@@ -81,6 +81,9 @@ def test_the_view_menu_holds_only_what_is_shown(qt_app: QApplication) -> None:
         "Behaviour map",
         "Timeline",
         "Fit to window",
+        "Zoom in",
+        "Zoom out",
+        "Reset zoom",
         "Full screen",
     ]
     window.close()

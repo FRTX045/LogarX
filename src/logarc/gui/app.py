@@ -83,6 +83,7 @@ from logarc.gui.quarantine_notice import notice_for
 from logarc.gui.recent import RecentCase
 from logarc.gui.site_hosts import SiteHostsOffer
 from logarc.gui.splitter import PanelSplitter
+from logarc.gui.text_size import MAX_POINTS, MIN_POINTS, stepped
 from logarc.gui.theme import (
     GAP,
     MONO_FAMILIES,
@@ -92,9 +93,11 @@ from logarc.gui.theme import (
     automatic_points_for,
     colour_text,
     heading_font,
+    set_text_points,
 )
 from logarc.gui.time_filter import TimeFilterBar
 from logarc.gui.triage import TriagePanel
+from logarc.gui.wheel_zoom import CtrlWheel
 from logarc.gui.who_else import WhoElseDialog, unavailable
 from logarc.gui.window_controls import install_window_controls
 from logarc.gui.workers import run_job
@@ -589,6 +592,28 @@ class MainWindow(QMainWindow):
         )
         view_menu.addSeparator()
         self._fit_action = self._add(view_menu, "&Fit to window", self._canvas.fit)
+        view_menu.addSeparator()
+        # The interface text, everywhere but the graph, which zooms with the
+        # wheel on its own. On the window too, like full screen below, so the
+        # keys still answer when full screen has hidden the menu bar.
+        zoom_in = self._add(view_menu, "Zoom &in", lambda: self._zoom_text(1))
+        zoom_in.setShortcuts(
+            [QKeySequence(QKeySequence.StandardKey.ZoomIn), QKeySequence("Ctrl+=")]
+        )
+        zoom_out = self._add(view_menu, "Zoom &out", lambda: self._zoom_text(-1))
+        zoom_out.setShortcuts([QKeySequence(QKeySequence.StandardKey.ZoomOut)])
+        reset = self._add(view_menu, "&Reset zoom", self._reset_text_zoom)
+        reset.setShortcut(QKeySequence("Ctrl+0"))
+        self._zoom_actions = (zoom_in, zoom_out, reset)
+        for action in self._zoom_actions:
+            action.setStatusTip(
+                "Make the interface text larger or smaller. The graph zooms with the mouse wheel."
+            )
+            self.addAction(action)
+        self._enable_zoom(QApplication.font().pointSizeF())
+        running = QApplication.instance()
+        if isinstance(running, QApplication):
+            CtrlWheel(running, self, skip=self._canvas).stepped.connect(self._zoom_text)
         view_menu.addSeparator()
         self._fullscreen_action = self._add(view_menu, "F&ull screen", self._fullscreen_from_menu)
         self._fullscreen_action.setCheckable(True)
@@ -1894,6 +1919,41 @@ class MainWindow(QMainWindow):
         # The action uses triggered, so synchronizing its check does not apply
         # or save the preference again.
         self._timeline_action.setChecked(showing)
+
+    def _zoom_text(self, by: int) -> None:
+        """One zoom step: `by` is +1 or -1, from the keys, the View menu or Ctrl+wheel."""
+        self._set_text_points(stepped(QApplication.font().pointSizeF(), by))
+
+    def _reset_text_zoom(self) -> None:
+        """Back to the size logarc picks for this desktop."""
+        running = QApplication.instance()
+        if isinstance(running, QApplication):
+            self._set_text_points(automatic_points_for(running))
+
+    def _set_text_points(self, points: float) -> None:
+        """Put a text size in force in every window, remember it, and say so briefly.
+
+        A message on the status bar rather than in the status line, so a scan's
+        progress and its Cancel button come back on their own afterwards.
+        """
+        running = QApplication.instance()
+        if not isinstance(running, QApplication):
+            return
+        chosen = set_text_points(running, points)
+        for window in QApplication.topLevelWidgets():
+            if isinstance(window, MainWindow):
+                window._follow_text_size(chosen)
+        _settings().setValue(prefs.TEXT_POINTS, int(chosen))
+        required(self.statusBar()).showMessage(f"Text {int(chosen)} pt", 2000)
+
+    def _follow_text_size(self, points: float) -> None:
+        self._evidence.follow_text_size()
+        self._enable_zoom(points)
+
+    def _enable_zoom(self, points: float) -> None:
+        zoom_in, zoom_out, _reset = self._zoom_actions
+        zoom_in.setEnabled(points < MAX_POINTS)
+        zoom_out.setEnabled(points > MIN_POINTS)
 
     def _timeline_from_menu(self) -> None:
         """Use the same saved choice as the Preferences dialog."""

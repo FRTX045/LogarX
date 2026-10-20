@@ -298,3 +298,111 @@ def test_unset_columns_refit_after_a_zoom_and_dragged_ones_stay(themed: QApplica
         assert table.columnWidth(1) == 77
     finally:
         table.close()
+
+
+# -- the controls --------------------------------------------------------------
+
+
+@pytest.fixture
+def window(themed: QApplication) -> Iterator[MainWindow]:
+    from logarc.gui import app, prefs
+
+    shown = MainWindow()
+    shown.show()
+    themed.processEvents()
+    yield shown
+    shown.close()
+    app._settings().remove(prefs.TEXT_POINTS)
+
+
+def _wheel(target: QWidget, dy: int) -> None:
+    from PyQt6.QtCore import QPoint, QPointF
+    from PyQt6.QtGui import QWheelEvent
+
+    middle = QPointF(target.rect().center())
+    event = QWheelEvent(
+        middle,
+        QPointF(target.mapToGlobal(middle.toPoint())),
+        QPoint(),
+        QPoint(0, dy),
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.ControlModifier,
+        Qt.ScrollPhase.NoScrollPhase,
+        False,
+    )
+    QApplication.sendEvent(target, event)
+
+
+def test_shortcuts_step_and_reset(window: MainWindow, themed: QApplication) -> None:
+    from PyQt6.QtTest import QTest
+
+    from logarc.gui.theme import automatic_points_for
+
+    ctrl = Qt.KeyboardModifier.ControlModifier
+    QTest.keyClick(window, Qt.Key.Key_Equal, ctrl)
+    assert themed.font().pointSizeF() == 12
+    assert window.statusBar().currentMessage() == "Text 12 pt"
+    QTest.keyClick(window, Qt.Key.Key_Minus, ctrl)
+    QTest.keyClick(window, Qt.Key.Key_Minus, ctrl)
+    assert themed.font().pointSizeF() == 10
+    QTest.keyClick(window, Qt.Key.Key_0, ctrl)
+    assert themed.font().pointSizeF() == automatic_points_for(themed)
+
+
+def test_the_view_menu_offers_the_zoom(window: MainWindow) -> None:
+    texts = [action.text() for action in window._zoom_actions]
+    assert texts == ["Zoom &in", "Zoom &out", "&Reset zoom"]
+    for action in window._zoom_actions:
+        assert action in window.actions(), "zoom must still answer in full screen"
+    shortcuts = [s.toString() for s in window._zoom_actions[0].shortcuts()]
+    assert "Ctrl+=" in shortcuts
+
+
+def test_limits_disable_the_action(window: MainWindow) -> None:
+    zoom_in, zoom_out, _reset = window._zoom_actions
+    window._set_text_points(16)
+    assert not zoom_in.isEnabled()
+    assert zoom_out.isEnabled()
+    window._set_text_points(8)
+    assert zoom_in.isEnabled()
+    assert not zoom_out.isEnabled()
+
+
+def test_zoom_is_remembered(window: MainWindow) -> None:
+    from logarc.gui import app, prefs
+
+    window._zoom_text(-2)
+    assert prefs.text_points_in(app._settings().value, automatic=12) == 9
+
+
+def test_ctrl_wheel_accumulates_small_steps(window: MainWindow, themed: QApplication) -> None:
+    details = window._triage.details
+    before = details.font().pointSizeF()
+    for _ in range(7):
+        _wheel(details.viewport(), 15)
+    assert themed.font().pointSizeF() == 11
+    _wheel(details.viewport(), 15)
+    assert themed.font().pointSizeF() == 12
+    assert details.font().pointSizeF() == before + 1, "the browser zoomed by itself too"
+
+
+def test_wheel_over_the_graph_is_left_to_the_graph(
+    window: MainWindow, themed: QApplication
+) -> None:
+    scale = window._canvas.transform().m11()
+    _wheel(window._canvas.viewport(), 120)
+    assert themed.font().pointSizeF() == 11
+    assert window._canvas.transform().m11() != scale
+
+
+def test_zooming_keeps_background_progress_and_cancellation(window: MainWindow) -> None:
+    from threading import Event
+
+    stop = Event()
+    window._busy("Processing logs", stop=stop)
+    window._zoom_text(1)
+    assert window._stop is stop
+    assert window._status.text() == "Processing logs"
+    assert not window._progress.isHidden() or window.statusBar().currentMessage()
+    window._request_cancel()
+    assert stop.is_set()
