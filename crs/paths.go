@@ -9,9 +9,10 @@ import (
 
 // CRS's file lists — lfi-os-files.data, restricted-files.data, unix-shell.data
 // — are written with forward slashes, and the rules that read them clean the
-// path first with t:normalizePath or t:normalizePathWin. Coraza v3.7.0 cleans
-// it with path/filepath, whose Clean on Windows turns every / into \, so on a
-// Windows build /etc/passwd was compared as \etc\passwd and never matched.
+// path first with t:normalizePath or t:normalizePathWin. Coraza (v3.7.0, and
+// still v3.8.1) cleans it with path/filepath, whose Clean on Windows turns
+// every / into \, so on a Windows build /etc/passwd was compared as
+// \etc\passwd and never matched.
 // Measured 2026-10-14 on CRS's regression corpus: the Windows sidecar made 104
 // fewer detections than the Linux one, all in 930120, 930121, 930130, 930140,
 // 932160 and 932161, and a request for /.git/config passed as harmless.
