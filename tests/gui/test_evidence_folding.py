@@ -173,3 +173,101 @@ def test_a_mixed_value_is_drawn_in_italics(panel: EvidencePanel) -> None:
     panel.set_fold_rule(FoldRule.REQUEST)
 
     assert panel._table.item(0, column_of(panel._table, "Status")).font().italic()
+
+
+# -- sorting, visits, the filter, bookmarks ----------------------------------------
+
+
+def test_sorting_by_another_column_shows_every_line_and_says_why(panel: EvidencePanel) -> None:
+    panel.show_evidence(node(39), brute_force())
+
+    panel._table.sortItems(column_of(panel._table, "Status"), Qt.SortOrder.AscendingOrder)
+    assert panel._table.rowCount() == 39
+    assert panel.fold_note.text().startswith("Sorted by Status")
+
+    panel._table.sortItems(column_of(panel._table, "Line"), Qt.SortOrder.AscendingOrder)
+    assert panel._table.rowCount() == 7
+
+
+def test_line_descending_shows_every_line_too(panel: EvidencePanel) -> None:
+    panel.show_evidence(node(39), brute_force())
+
+    panel._table.sortItems(column_of(panel._table, "Line"), Qt.SortOrder.DescendingOrder)
+
+    assert panel._table.rowCount() == 39
+
+
+def test_lines_in_two_visits_fold_separately(panel: EvidencePanel) -> None:
+    lines = [line(n, "POST", "/login", 401, 7744) for n in (1, 2, 3, 4)]
+    visits = {one.ref: ("a" if one.ref.line_no < 3 else "b") for one in lines}
+
+    panel.show_evidence(node(4), lines, visits=visits)
+
+    assert texts(panel, "Request") == ["2x  POST /login", "2x  POST /login"]
+
+
+def test_a_decode_switch_keeps_the_visits(panel: EvidencePanel) -> None:
+    lines = [line(n, "POST", "/login", 401, 7744) for n in (1, 2, 3, 4)]
+    visits = {one.ref: ("a" if one.ref.line_no < 3 else "b") for one in lines}
+    panel.show_evidence(node(4), lines, visits=visits)
+
+    panel.set_decode(False)
+
+    assert panel._table.rowCount() == 2
+
+
+def test_a_filter_folds_the_lines_it_keeps(panel: EvidencePanel) -> None:
+    """The window hands the panel only what the filter kept; neighbours in that
+    list fold even when the log had other lines between them."""
+    kept = [line(n, "POST", "/login", 401, 7744) for n in (10, 20, 30)]
+
+    panel.show_evidence(node(3), kept)
+
+    assert panel._table.rowCount() == 1
+
+
+def test_a_bookmark_inside_a_closed_row_shows_on_the_row_and_then_on_its_line(
+    panel: EvidencePanel,
+) -> None:
+    lines = brute_force()
+    panel.show_evidence(node(39), lines)
+
+    panel.set_marks({lines[2].ref: ("#49a9ff", "third try")})
+    first = panel._table.item(0, column_of(panel._table, "Line"))
+    assert not first.icon().isNull()
+    assert "third try" in first.toolTip()
+
+    panel.toggle_row(0)
+    marked = [
+        row
+        for row in range(panel._table.rowCount())
+        if not panel._table.item(row, 0).icon().isNull()
+    ]
+    assert marked == [2]
+
+
+def test_a_closed_row_without_a_bookmark_names_its_lines(panel: EvidencePanel) -> None:
+    panel.show_evidence(node(39), brute_force())
+
+    tip = panel._table.item(0, column_of(panel._table, "Line")).toolTip()
+
+    assert "5 lines: 2014 to 2018" in tip
+
+
+def test_selecting_a_line_inside_a_closed_row_opens_it(panel: EvidencePanel) -> None:
+    lines = brute_force()
+    panel.show_evidence(node(39), lines)
+
+    assert panel.select_line(lines[3].ref)
+
+    assert panel._table.rowCount() == 11
+    assert panel.selected_line().ref == lines[3].ref
+
+
+def test_the_menu_on_a_closed_row_names_the_line_it_bookmarks(panel: EvidencePanel) -> None:
+    panel.show_evidence(node(39), brute_force())
+    rect = panel._table.visualRect(panel._table.model().index(0, 2))
+
+    menu = panel._menu_at(rect.center())
+
+    assert [action.text() for action in menu.actions()] == ["Bookmark line 2014\u2026"]

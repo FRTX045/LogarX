@@ -443,6 +443,8 @@ class EvidencePanel(QWidget):
                 if folded and column == _LINE:
                     # Drawn in log order; the Line sort keeps the drawn order.
                     item.setData(SORT_KEY, float(row))
+                    if not member and len(self._folds[position]) > 1:
+                        item.setData(_FOLD_TIP, cell.tooltip)
                 if member:
                     item.setBackground(self._fold_ground)
                 self._table.setItem(row, column, item)
@@ -657,11 +659,33 @@ class EvidencePanel(QWidget):
             index = marker.data(_INDEX) if marker is not None else None
             if marker is None or not isinstance(index, int) or not 0 <= index < len(lines):
                 continue
-            mark = self._marks.get(lines[index].ref)
-            marker.setIcon(ribbon_icon(mark[0]) if mark is not None else QIcon())
-            # A bookmark's note, or else the whole reference a narrow column cuts.
-            whole = ribbon_tip(marker.text()) if marker.data(SHORT_TEXT) else ""
-            marker.setToolTip(ribbon_tip(mark[1]) if mark is not None else whole)
+            # A closed fold answers for every line it stands for: a bookmark on
+            # its third line is still a bookmark on what this row shows.
+            closed = self._closed_fold_at(row)
+            covered = [lines[i] for i in closed.members] if closed else [lines[index]]
+            marks = [(line, self._marks[line.ref]) for line in covered if line.ref in self._marks]
+            marker.setIcon(ribbon_icon(marks[0][1][0]) if marks else QIcon())
+            if closed is not None and marks:
+                said = "\n".join(f"line {line.ref.line_no}: {mark[1]}" for line, mark in marks)
+                marker.setToolTip(ribbon_tip(said))
+            elif closed is not None:
+                marker.setToolTip(ribbon_tip(str(marker.data(_FOLD_TIP) or "")))
+            elif marks:
+                marker.setToolTip(ribbon_tip(marks[0][1][1]))
+            else:
+                # A bookmark's note, or else the whole reference a narrow column cuts.
+                whole = ribbon_tip(marker.text()) if marker.data(SHORT_TEXT) else ""
+                marker.setToolTip(whole)
+
+    def _closed_fold_at(self, row: int) -> Fold | None:
+        """The fold a closed head row stands for; None for any other row."""
+        if not self._folded or not 0 <= row < len(self._rows):
+            return None
+        position, index = self._rows[row]
+        run = self._folds[position]
+        if len(run) < 2 or index != run.head or position in self._open:
+            return None
+        return run
 
     def _show_size(self, *, fit: bool = True) -> None:
         """Size, while the reader has asked for it and the activity has sizes."""
@@ -698,7 +722,18 @@ class EvidencePanel(QWidget):
         return self._line_at(rows[0].row()) if rows else None
 
     def select_line(self, ref: EvidenceRef) -> bool:
-        """Select the row holding `ref`; False when it is not on show."""
+        """Select the row holding `ref`, opening its fold; False when it is not on show."""
+        if self._shown is None:
+            return False
+        found = next((i for i, line in enumerate(self._shown[1]) if line.ref == ref), None)
+        if found is None:
+            return False
+        if self._folded:
+            position = next(p for p, run in enumerate(self._folds) if found in run.members)
+            if found != self._folds[position].head and position not in self._open:
+                self._open.add(position)
+                self._refill_keeping(found)
+                return True
         for row in range(self._table.rowCount()):
             line = self._line_at(row)
             if line is not None and line.ref == ref:
@@ -713,7 +748,13 @@ class EvidencePanel(QWidget):
         if line is None:
             return None
         menu = QMenu(self)
-        menu.addAction("Bookmark this line\u2026", lambda: self.bookmark_line_requested.emit(line))
+        # A closed fold stands for several lines; say which one this bookmarks.
+        wording = (
+            f"Bookmark line {line.ref.line_no}\u2026"
+            if self._closed_fold_at(index.row()) is not None
+            else "Bookmark this line\u2026"
+        )
+        menu.addAction(wording, lambda: self.bookmark_line_requested.emit(line))
         return menu
 
     def _show_menu(self, point: QPoint) -> None:
@@ -809,6 +850,9 @@ def _chip(text: str, colour: str | None = None) -> str:
 
 #: Where a row keeps its place in the evidence, so sorting cannot move it.
 _INDEX = Qt.ItemDataRole.UserRole
+
+#: A folded row's own tooltip, naming its lines, kept beside the bookmark one.
+_FOLD_TIP = Qt.ItemDataRole.UserRole + 3
 
 
 def _item(cell: Cell, *, index: int, column: int, short: bool) -> QTableWidgetItem:
