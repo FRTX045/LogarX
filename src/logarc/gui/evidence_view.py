@@ -19,10 +19,11 @@ beneath it, and a right-to-left override would reverse how a hostile path reads.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from http import HTTPStatus
 from typing import TYPE_CHECKING, Final
 
+from logarc.gui.folding import spread
 from logarc.search import ANY_DAY, Scope, parse
 from logarc.style import (
     EVIDENCE_INK,
@@ -35,16 +36,20 @@ from logarc.style import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Sequence
     from datetime import date
 
     from logarc.analysis import AnalysisResult, RequestAssignment
     from logarc.evidence import EvidenceLine
+    from logarc.gui.folding import Fold, Spread
     from logarc.search import Query
 
 __all__ = [
     "ALERT_COLOUR",
+    "ARROW_CLOSED",
+    "ARROW_OPEN",
     "COLUMNS",
+    "MIXED",
     "Cell",
     "Detail",
     "Filtered",
@@ -52,6 +57,8 @@ __all__ = [
     "cells_for",
     "detail_for",
     "filter_strip",
+    "fold_cells",
+    "member_cells",
     "no_results",
 ]
 
@@ -88,6 +95,7 @@ class Cell:
 
     colour: str = EVIDENCE_INK
     bold: bool = False
+    italic: bool = False
     tooltip: str = ""
     """Empty means none. The `Target` column is too narrow for a long payload
     however the panel is sized, so it carries its full value here."""
@@ -236,6 +244,103 @@ def _request_cell(line: EvidenceLine, *, decode: bool) -> Cell:
     method = display_safe(line.event.method or "")
     written = f"{method} {shown}".strip()
     return Cell(text=written, tooltip=written, bold=True)
+
+
+#: A folded row's arrow, closed and open.
+ARROW_CLOSED: Final = "\u25b8"
+ARROW_OPEN: Final = "\u25be"
+
+#: What a folded row's cell says when its lines do not share one value. Showing
+#: one line's value there would have the row misstate the others.
+MIXED: Final = "mixed"
+
+
+def fold_cells(
+    lines: Sequence[EvidenceLine], fold: Fold, *, decode: bool, opened: bool
+) -> tuple[Cell, ...]:
+    """The row a fold is drawn as: its first line, the count, and what every line shares.
+
+    A run of one is drawn exactly as `cells_for` draws it today. A longer run
+    keeps its first line's reference and time, puts the count in front of the
+    request — the column the reader came for — and shows Status and Size only
+    where every line has the same value; otherwise the cell reads `mixed` and its
+    tooltip lists the values (`gui.folding.Spread`).
+    """
+    head = lines[fold.head]
+    base = cells_for(head, decode=decode)
+    if len(fold) == 1:
+        return base
+    members = [lines[i] for i in fold.members]
+    events = [member.event for member in members if member.event is not None]
+    arrow = ARROW_OPEN if opened else ARROW_CLOSED
+    count = f"{len(fold)}x  "
+    line_cell = replace(
+        base[0],
+        text=f"{arrow} {head.ref}",
+        short=f"{arrow} {head.ref.line_no}",
+        tooltip=_lines_tip(members),
+    )
+    time_cell = replace(
+        base[1],
+        tooltip=f"{events[0].timestamp:%H:%M:%S} to {events[-1].timestamp:%H:%M:%S}",
+    )
+    requests = spread(
+        [(event.method or "", event.target) for event in events],
+        lambda request: _written(request[0], request[1], decode=decode),
+    )
+    if requests.shared:
+        request = replace(base[2], text=count + base[2].text)
+    else:
+        first = events[0]
+        request = replace(
+            base[2],
+            text=f"{count}{display_safe(first.method or '')} {display_safe(first.path or '')}?\u2026",
+            tooltip=f"{len(requests.values)} different requests: {requests.tip()}",
+        )
+    status = _shared_or_mixed(base[3], spread([event.status for event in events], _status_text))
+    size = _shared_or_mixed(base[4], spread([event.bytes_sent for event in events], _bytes_text))
+    return (line_cell, time_cell, request, status, size)
+
+
+def member_cells(line: EvidenceLine, *, decode: bool) -> tuple[Cell, ...]:
+    """A line inside an open fold: its own number and time, the repeated values quieter."""
+    base = cells_for(line, decode=decode)
+    quiet = tuple(replace(cell, colour=EVIDENCE_MUTED, bold=False) for cell in base[2:])
+    return (
+        replace(base[0], text=f"   {line.ref}", short=f"   {line.ref.line_no}"),
+        base[1],
+        *quiet,
+    )
+
+
+def _shared_or_mixed(cell: Cell, values: Spread) -> Cell:
+    if values.shared:
+        return cell
+    return Cell(text=MIXED, colour=EVIDENCE_MUTED, italic=True, tooltip=values.tip())
+
+
+def _written(method: str, target: str, *, decode: bool) -> str:
+    shown = decode_target(target) if decode else display_safe(target)
+    return f"{display_safe(method)} {shown}".strip()
+
+
+def _status_text(status: int | None) -> str:
+    return "not recorded" if status is None else str(status)
+
+
+def _bytes_text(size: int | None) -> str:
+    return "not recorded" if size is None else f"{size:,} B"
+
+
+def _lines_tip(members: Sequence[EvidenceLine]) -> str:
+    """`5 lines: 2014 to 2018` when they follow each other in one file."""
+    refs = [member.ref for member in members]
+    one_file = len({ref.source_file_id for ref in refs}) == 1
+    first, last = (refs[0].line_no, refs[-1].line_no) if one_file else (refs[0], refs[-1])
+    consecutive = one_file and refs[-1].line_no - refs[0].line_no == len(refs) - 1
+    if consecutive:
+        return f"{len(refs)} lines: {first} to {last}"
+    return f"{len(refs)} lines, from {first} to {last}"
 
 
 @dataclass(frozen=True, slots=True)

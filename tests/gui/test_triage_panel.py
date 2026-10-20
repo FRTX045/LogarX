@@ -291,9 +291,10 @@ def test_reason_evidence_precedes_sample_and_stale_reads_are_discarded(
     assert requested == [refs[-1], refs[0]]
     window._show_evidence(node.node_id, evidence=(refs[-2],))
     latest = callbacks[-1]
-    # An answer is the lines, the values the box offers, and what a filter kept.
-    latest[1]["on_done"]((["latest"], {}, None))
-    old[1]["on_done"]((["stale"], {}, None))
+    # An answer is the lines, the values the box offers, what a filter kept,
+    # and which visit each line belongs to.
+    latest[1]["on_done"]((["latest"], {}, None, {}))
+    old[1]["on_done"]((["stale"], {}, None, {}))
     assert displayed == [["latest"]]
     window.close()
 
@@ -387,7 +388,7 @@ def test_departure_rejects_old_evidence_and_old_load_errors_or_progress(
     evidence = callbacks[-1]
     window._apply_window(TimeWindow(start=datetime(2026, 1, 1, tzinfo=UTC)))
     range_job = callbacks[-1]
-    evidence["on_done"](([], {}, None))
+    evidence["on_done"](([], {}, None, {}))
     evidence["on_error"]("old evidence", "")
     assert not shown and not failures
     window._load_case(tmp_path / "pending")

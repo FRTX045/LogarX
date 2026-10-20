@@ -16,12 +16,14 @@ import html
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import QEvent, QObject, QPoint, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QIcon, QPalette
+from PyQt6.QtGui import QColor, QFont, QIcon, QKeyEvent, QMouseEvent, QPalette
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QLabel,
     QMenu,
     QPushButton,
+    QStyle,
+    QStyleOptionViewItem,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -33,6 +35,7 @@ from logarc.gui.columns import SHORT_TEXT, ColumnWidths, ShortWhenNarrow
 from logarc.gui.disclosure import Disclosure
 from logarc.gui.evidence_details import EvidenceDetails
 from logarc.gui.evidence_view import (
+    ARROW_CLOSED,
     COLUMNS,
     Cell,
     Detail,
@@ -40,9 +43,12 @@ from logarc.gui.evidence_view import (
     cells_for,
     detail_for,
     filter_strip,
+    fold_cells,
+    member_cells,
     no_results,
 )
 from logarc.gui.filter_box import FilterBox
+from logarc.gui.folding import Fold, FoldRule, fold
 from logarc.gui.ribbon import Mark, ribbon_icon, ribbon_tip
 from logarc.gui.splitter import PanelSplitter
 from logarc.gui.theme import PAD, TIGHT, caption_font, mono_font
@@ -56,6 +62,7 @@ from logarc.style import (
     SELECTION_TINT,
     THEME,
     format_requests,
+    plural,
     severity_text_colour,
 )
 
@@ -101,6 +108,22 @@ class EvidencePanel(QWidget):
         self._shown: tuple[GraphNode, Sequence[EvidenceLine], Filtered | None] | None = None
         # Which lines carry a bookmark, kept so every refill can mark them again.
         self._marks: dict[EvidenceRef, Mark] = {}
+        # Folding repeated lines (`gui.folding`). Off until the window applies the
+        # reader's rule: a panel on its own shows every line, as it always has.
+        self._fold_rule = FoldRule.OFF
+        self._visits: dict[EvidenceRef, str] = {}
+        self._folds: tuple[Fold, ...] = ()
+        self._open: set[int] = set()
+        # Folds follow log order, so they are drawn only while the table is sorted
+        # by Line ascending, the order it opens in.
+        self._in_log_order = True
+        # Each drawn row: its fold's position, and the line it shows. Position -1
+        # while every line is drawn on its own.
+        self._rows: list[tuple[int, int]] = []
+        self._filling = False
+        # The lines of an open fold sit on a ground between the paper and the
+        # selection, taken from the theme rather than a literal.
+        self._fold_ground = _between(PAPER, SELECTION_TINT)
 
         # Above the table, the filter: every line of the activity it reads, not
         # only the ones loaded. What matches is the window's to work out; this
@@ -126,6 +149,14 @@ class EvidencePanel(QWidget):
         )
         self.strip.linkActivated.connect(lambda _: self._clear_filter())
         self.strip.hide()
+        # How many rows the lines take, and by which rule. A quiet line of its own:
+        # the strip above belongs to the filter, and the heading counts lines.
+        self.fold_note = QLabel()
+        self.fold_note.setWordWrap(True)
+        self.fold_note.setTextFormat(Qt.TextFormat.PlainText)
+        self.fold_note.setFont(caption_font(self.fold_note.font()))
+        self.fold_note.setStyleSheet(f"color:{THEME.muted};")
+        self.fold_note.hide()
 
         # Empty, not inviting. At startup there is no case, no client and so no
         # activity to select; the canvas is asking for a case and this panel
@@ -160,6 +191,9 @@ class EvidencePanel(QWidget):
         self._table.itemSelectionChanged.connect(self._selection_changed)
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._show_menu)
+        # A folded row opens on a double-click, Enter, the arrow keys or its arrow.
+        self._table.cellDoubleClicked.connect(lambda row, _column: self.toggle_row(row))
+        self._table.installEventFilter(self)
         # Under the heading, while there is an activity to keep.
         self.bookmark_button = QPushButton("Bookmark")
         self.bookmark_button.setIcon(ribbon_icon(THEME.accent, hollow=True))
@@ -193,6 +227,7 @@ class EvidencePanel(QWidget):
         layout.addWidget(self.activity_details)
         layout.addWidget(self.filter_box)
         layout.addWidget(self.strip)
+        layout.addWidget(self.fold_note)
         layout.addWidget(split)
 
     # -- what is on show -----------------------------------------------------
@@ -233,7 +268,7 @@ class EvidencePanel(QWidget):
             self._decode = decode
             if self._shown is not None:
                 node, lines, filtered = self._shown
-                self.show_evidence(node, lines, filtered=filtered)
+                self.show_evidence(node, lines, filtered=filtered, visits=self._visits)
 
     def show_evidence(
         self,
@@ -241,11 +276,13 @@ class EvidencePanel(QWidget):
         lines: Sequence[EvidenceLine],
         *,
         filtered: Filtered | None = None,
+        visits: Mapping[EvidenceRef, str] | None = None,
     ) -> None:
         """Describe one activity on the canvas, and list what it is made of.
 
         `filtered` says the lines are what a filter kept, and how many of the
         activity's it searched. The heading still describes the whole activity.
+        `visits` names each line's episode, so a fold never joins two visits.
 
         The node, not an episode of it. The rows below have always come from
         `node.evidence`, while this heading was built from the first episode the
@@ -256,11 +293,12 @@ class EvidencePanel(QWidget):
         this panel is what gets read into a case file.
         """
         self._shown = (node, lines, filtered)
+        self._visits = dict(visits or {})
         colour = severity_text_colour(node.severity)
         # A behaviour node is several visits to one activity; a trace node is
         # always one, and saying "across 1 activities" on every node of the view
         # that opens by default would be noise.
-        visits = f" across {node.episode_count:,} activities" if node.episode_count > 1 else ""
+        across = f" across {node.episode_count:,} activities" if node.episode_count > 1 else ""
         # An episode keeps a bounded sample of its references and the true count
         # beside it, so the table below is often a part of the activity rather
         # than all of it. Unsaid, twenty rows under a heading reading 51 requests
@@ -311,7 +349,7 @@ class EvidencePanel(QWidget):
             f'<div style="font-size:{base + 3.0:.1f}pt;color:{colour}">'
             f"<b>{html.escape(node.label)}</b></div>"
             f'<div style="color:{EVIDENCE_MUTED}">'
-            f"{format_requests(node.request_count)}{visits}</div>"
+            f"{format_requests(node.request_count)}{across}</div>"
             f'<div style="font-size:{max(base - 1.0, 7.5):.1f}pt">{" ".join(chips)}</div>'
             + (
                 f'<div style="font-size:{max(base - 1.0, 7.5):.1f}pt;color:{THEME.faint}">'
@@ -322,37 +360,10 @@ class EvidencePanel(QWidget):
         )
         self._say_filtered(filtered, shown=len(lines))
 
-        # Sorting off while filling. With it on, each row is re-sorted against
-        # the rows already placed and the remaining values land in other rows.
-        self._table.setSortingEnabled(False)
-        # Interactive headers avoid re-measuring every column on each inserted
-        # cell. Untouched widths are fitted once when the refill is complete.
-        sizes = False
-        # The number alone stands for the line only while one file is behind them.
-        one_file = len({line.ref.source_file_id for line in lines}) <= 1
-        self._table.setRowCount(len(lines))
-        for row, line in enumerate(lines):
-            for column, cell in enumerate(cells_for(line, decode=self._decode)):
-                self._table.setItem(
-                    row, column, _item(cell, index=row, column=column, short=one_file)
-                )
-                sizes = sizes or (column == _SIZE and bool(cell.text))
-        self._apply_marks()
-        # A column costs its heading's width whatever it holds, and several log
-        # formats carry no response size at all. Hidden while there is nothing
-        # in it, whatever the reader asked for.
-        self._sizes = sizes
-        self._show_size(fit=False)
-        # Measured with sorting still off. With it on, Qt sizes every heading for
-        # a sort arrow only one of them draws, and the room comes out of Request.
-        self._column_sizes.fit_unset()
-        self._table.setSortingEnabled(True)
-        # Opened in the order the log holds, not in whatever order the widget
-        # last happened to be sorted by. Evidence is a sequence of events and
-        # the first thing a reader wants is the sequence; sorting by size or
-        # status is a question they ask afterwards.
-        self._table.sortItems(_LINE, Qt.SortOrder.AscendingOrder)
-        self._column_sizes.fit_heading(_LINE)
+        self._folds = self._fold(lines)
+        self._open = set()
+        self._in_log_order = True
+        self._fill(fit=True)
 
         if lines:
             self.select_row(0)
@@ -371,6 +382,196 @@ class EvidencePanel(QWidget):
             self._selection_changed()
         else:
             self._detail.clear()
+
+    # -- folding repeated lines ----------------------------------------------
+
+    def set_fold_rule(self, rule: FoldRule) -> None:
+        """Fold by `rule` from now on, and fold what is on show again, every row closed."""
+        if rule is self._fold_rule:
+            return
+        self._fold_rule = rule
+        if self._shown is not None:
+            self._folds = self._fold(self._shown[1])
+            self._open = set()
+            self._refill_keeping(None)
+
+    def _fold(self, lines: Sequence[EvidenceLine]) -> tuple[Fold, ...]:
+        visits = self._visits
+        return fold(lines, self._fold_rule, visits.get if visits else None)
+
+    @property
+    def _folded(self) -> bool:
+        """Whether the rows are drawn folded now: a rule, and the table in log order."""
+        return self._fold_rule is not FoldRule.OFF and self._in_log_order
+
+    def _fill(self, *, fit: bool) -> None:
+        """Draw the rows: folds and open lines in log order, or every line as it sorts.
+
+        Sorting is off while filling: with it on, each row is re-sorted against
+        the rows already placed and the remaining values land in other rows.
+        Untouched widths are fitted once, when `fit` says this is a new activity,
+        so opening a row does not make the columns jump. Line is the exception,
+        and only grows: an opened row's lines are indented past the arrow it was
+        fitted to, and their numbers were cut short.
+        """
+        assert self._shown is not None
+        lines = self._shown[1]
+        # The number alone stands for the line only while one file is behind them.
+        one_file = len({line.ref.source_file_id for line in lines}) <= 1
+        drawn: list[tuple[Cell, ...]] = []
+        self._rows = []
+        folded = self._folded
+        if folded:
+            for position, run in enumerate(self._folds):
+                opened = position in self._open and len(run) > 1
+                drawn.append(fold_cells(lines, run, decode=self._decode, opened=opened))
+                self._rows.append((position, run.head))
+                for index in run.members[1:] if opened else ():
+                    drawn.append(member_cells(lines[index], decode=self._decode))
+                    self._rows.append((position, index))
+        else:
+            for index, line in enumerate(lines):
+                drawn.append(cells_for(line, decode=self._decode))
+                self._rows.append((-1, index))
+        header = required(self._table.horizontalHeader(), "column header")
+        section, order = header.sortIndicatorSection(), header.sortIndicatorOrder()
+        self._filling = True
+        self._table.setSortingEnabled(False)
+        self._table.setRowCount(len(drawn))
+        for row, cells in enumerate(drawn):
+            position, index = self._rows[row]
+            member = position >= 0 and index != self._folds[position].head
+            for column, cell in enumerate(cells):
+                item = _item(cell, index=index, column=column, short=one_file)
+                if folded and column == _LINE:
+                    # Drawn in log order; the Line sort keeps the drawn order.
+                    item.setData(SORT_KEY, float(row))
+                    if not member and len(self._folds[position]) > 1:
+                        item.setData(_FOLD_TIP, cell.tooltip)
+                if member:
+                    item.setBackground(self._fold_ground)
+                self._table.setItem(row, column, item)
+        self._apply_marks()
+        # A column costs its heading's width whatever it holds, and several log
+        # formats carry no response size at all. Read from the lines rather than
+        # the drawn rows: a closed fold still holds its sizes.
+        self._sizes = any(
+            line.event is not None and line.event.bytes_sent is not None for line in lines
+        )
+        self._show_size(fit=False)
+        # Measured with sorting still off. With it on, Qt sizes every heading for
+        # a sort arrow only one of them draws, and the room comes out of Request.
+        if fit:
+            self._column_sizes.fit_unset()
+        else:
+            self._column_sizes.widen(_LINE)
+        self._table.setSortingEnabled(True)
+        # A new activity opens in the order the log holds, not in whatever order
+        # the widget last happened to be sorted by: evidence is a sequence of
+        # events, and sorting by size or status is a question asked afterwards.
+        if folded or fit:
+            self._table.sortItems(_LINE, Qt.SortOrder.AscendingOrder)
+        else:
+            self._table.sortItems(section, order)
+        self._filling = False
+        if fit:
+            self._column_sizes.fit_heading(_LINE)
+        self._say_folded()
+
+    def toggle_row(self, row: int) -> None:
+        """Open or close the folded row at `row`; nothing for any other row."""
+        if not self._folded or not 0 <= row < len(self._rows):
+            return
+        position, index = self._rows[row]
+        # A line inside an open row is just a line: a tree does not close when
+        # one of its leaves is double-clicked.
+        if len(self._folds[position]) < 2 or index != self._folds[position].head:
+            return
+        self._open ^= {position}
+        self._refill_keeping(self._folds[position].head)
+
+    def _refill_keeping(self, line_index: int | None) -> None:
+        """Draw again, then select the row of `line_index`, or the first row."""
+        if self._shown is None:
+            return
+        self._fill(fit=False)
+        rows = [row for row, (_position, index) in enumerate(self._rows) if index == line_index]
+        if self._rows:
+            self.select_row(rows[0] if rows else 0)
+            # Read back at once: `selectRow` says nothing when the row number is
+            # the one already selected, and the detail would describe the old row.
+            self._selection_changed()
+        else:
+            self._detail.clear()
+
+    def _say_folded(self) -> None:
+        lines = len(self._shown[1]) if self._shown is not None else 0
+        repeats = any(len(run) > 1 for run in self._folds)
+        if self._fold_rule is FoldRule.OFF or not repeats:
+            self.fold_note.hide()
+            return
+        if self._folded:
+            self.fold_note.setText(
+                f"{plural(lines, 'line')} in {plural(len(self._folds), 'row')} · lines "
+                f"next to each other with the same {self._fold_rule.says} share a row"
+            )
+        else:
+            header = required(self._table.horizontalHeader(), "column header")
+            heading = COLUMNS[header.sortIndicatorSection()]
+            self.fold_note.setText(
+                f"Sorted by {heading}: every line on its own row. Sort by Line to fold repeats."
+            )
+        self.fold_note.show()
+
+    def _key(self, event: QKeyEvent) -> bool:
+        """Enter or the right arrow opens the selected fold; the left arrow closes it."""
+        rows = required(self._table.selectionModel(), "selection model").selectedRows()
+        if not rows or not self._folded:
+            return False
+        row = rows[0].row()
+        position, index = self._rows[row]
+        run = self._folds[position]
+        head = index == run.head and len(run) > 1
+        opened = position in self._open
+        key = event.key()
+        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and head:
+            self.toggle_row(row)
+            return True
+        if key == Qt.Key.Key_Right and head and not opened:
+            self.toggle_row(row)
+            return True
+        if key == Qt.Key.Key_Left and opened:
+            self._open.discard(position)
+            self._refill_keeping(run.head)
+            return True
+        return False
+
+    def _arrow_clicked(self, event: QMouseEvent) -> bool:
+        """A click on a folded row's arrow opens or closes it; elsewhere it selects."""
+        index = self._table.indexAt(event.position().toPoint())
+        if not index.isValid() or index.column() != _LINE or not self._folded:
+            return False
+        position, line_index = self._rows[index.row()]
+        run = self._folds[position]
+        if line_index != run.head or len(run) < 2:
+            return False
+        # From where Qt draws the text, which a bookmark's ribbon pushes right:
+        # its own text margin, then the arrow and its space, measured from the
+        # cell's font rather than counted in pixels.
+        option = QStyleOptionViewItem()
+        self._table.initViewItemOption(option)
+        option.rect = self._table.visualRect(index)
+        delegate = self._table.itemDelegateForColumn(_LINE)
+        assert isinstance(delegate, ShortWhenNarrow)
+        delegate.initStyleOption(option, index)
+        style = required(self._table.style(), "style")
+        text = style.subElementRect(QStyle.SubElement.SE_ItemViewItemText, option, self._table)
+        margin = style.pixelMetric(QStyle.PixelMetric.PM_FocusFrameHMargin, None, self._table) + 1
+        reach = margin + option.fontMetrics.horizontalAdvance(ARROW_CLOSED + " ")
+        if not 0 <= event.position().x() - text.left() <= reach:
+            return False
+        self.toggle_row(index.row())
+        return True
 
     # -- the filter ------------------------------------------------------------
 
@@ -447,6 +648,11 @@ class EvidencePanel(QWidget):
         port = self._table.viewport()
         if watched is port and event is not None and event.type() == QEvent.Type.Resize:
             self.no_results.setGeometry(required(port, "viewport").rect())
+        if event is not None and self._shown is not None:
+            if watched is self._table and event.type() == QEvent.Type.KeyPress:
+                return self._key(event)  # type: ignore[arg-type]
+            if watched is port and event.type() == QEvent.Type.MouseButtonPress:
+                return self._arrow_clicked(event)  # type: ignore[arg-type]
         return False
 
     def select_row(self, row: int) -> None:
@@ -468,11 +674,33 @@ class EvidencePanel(QWidget):
             index = marker.data(_INDEX) if marker is not None else None
             if marker is None or not isinstance(index, int) or not 0 <= index < len(lines):
                 continue
-            mark = self._marks.get(lines[index].ref)
-            marker.setIcon(ribbon_icon(mark[0]) if mark is not None else QIcon())
-            # A bookmark's note, or else the whole reference a narrow column cuts.
-            whole = ribbon_tip(marker.text()) if marker.data(SHORT_TEXT) else ""
-            marker.setToolTip(ribbon_tip(mark[1]) if mark is not None else whole)
+            # A closed fold answers for every line it stands for: a bookmark on
+            # its third line is still a bookmark on what this row shows.
+            closed = self._closed_fold_at(row)
+            covered = [lines[i] for i in closed.members] if closed else [lines[index]]
+            marks = [(line, self._marks[line.ref]) for line in covered if line.ref in self._marks]
+            marker.setIcon(ribbon_icon(marks[0][1][0]) if marks else QIcon())
+            if closed is not None and marks:
+                said = "\n".join(f"line {line.ref.line_no}: {mark[1]}" for line, mark in marks)
+                marker.setToolTip(ribbon_tip(said))
+            elif closed is not None:
+                marker.setToolTip(ribbon_tip(str(marker.data(_FOLD_TIP) or "")))
+            elif marks:
+                marker.setToolTip(ribbon_tip(marks[0][1][1]))
+            else:
+                # A bookmark's note, or else the whole reference a narrow column cuts.
+                whole = ribbon_tip(marker.text()) if marker.data(SHORT_TEXT) else ""
+                marker.setToolTip(whole)
+
+    def _closed_fold_at(self, row: int) -> Fold | None:
+        """The fold a closed head row stands for; None for any other row."""
+        if not self._folded or not 0 <= row < len(self._rows):
+            return None
+        position, index = self._rows[row]
+        run = self._folds[position]
+        if len(run) < 2 or index != run.head or position in self._open:
+            return None
+        return run
 
     def _show_size(self, *, fit: bool = True) -> None:
         """Size, while the reader has asked for it and the activity has sizes."""
@@ -481,8 +709,17 @@ class EvidencePanel(QWidget):
         if fit:
             self._column_sizes.fit_unset()
 
-    def _sort_changed(self, section: int, _order: Qt.SortOrder) -> None:
+    def _sort_changed(self, section: int, order: Qt.SortOrder) -> None:
         self._column_sizes.fit_heading(section)
+        # Folds follow log order. Sorted by anything else every line is drawn on
+        # its own; sorted by Line ascending again they fold back, closed.
+        if self._filling or self._shown is None or self._fold_rule is FoldRule.OFF:
+            return
+        in_log_order = section == _LINE and order == Qt.SortOrder.AscendingOrder
+        if in_log_order != self._in_log_order:
+            self._in_log_order = in_log_order
+            self._open = set()
+            self._refill_keeping(None)
 
     def shown_node(self) -> GraphNode | None:
         return self._shown[0] if self._shown is not None else None
@@ -500,7 +737,18 @@ class EvidencePanel(QWidget):
         return self._line_at(rows[0].row()) if rows else None
 
     def select_line(self, ref: EvidenceRef) -> bool:
-        """Select the row holding `ref`; False when it is not on show."""
+        """Select the row holding `ref`, opening its fold; False when it is not on show."""
+        if self._shown is None:
+            return False
+        found = next((i for i, line in enumerate(self._shown[1]) if line.ref == ref), None)
+        if found is None:
+            return False
+        if self._folded:
+            position = next(p for p, run in enumerate(self._folds) if found in run.members)
+            if found != self._folds[position].head and position not in self._open:
+                self._open.add(position)
+                self._refill_keeping(found)
+                return True
         for row in range(self._table.rowCount()):
             line = self._line_at(row)
             if line is not None and line.ref == ref:
@@ -515,7 +763,13 @@ class EvidencePanel(QWidget):
         if line is None:
             return None
         menu = QMenu(self)
-        menu.addAction("Bookmark this line\u2026", lambda: self.bookmark_line_requested.emit(line))
+        # A closed fold stands for several lines; say which one this bookmarks.
+        wording = (
+            f"Bookmark line {line.ref.line_no}\u2026"
+            if self._closed_fold_at(index.row()) is not None
+            else "Bookmark this line\u2026"
+        )
+        menu.addAction(wording, lambda: self.bookmark_line_requested.emit(line))
         return menu
 
     def _show_menu(self, point: QPoint) -> None:
@@ -612,6 +866,9 @@ def _chip(text: str, colour: str | None = None) -> str:
 #: Where a row keeps its place in the evidence, so sorting cannot move it.
 _INDEX = Qt.ItemDataRole.UserRole
 
+#: A folded row's own tooltip, naming its lines, kept beside the bookmark one.
+_FOLD_TIP = Qt.ItemDataRole.UserRole + 3
+
 
 def _item(cell: Cell, *, index: int, column: int, short: bool) -> QTableWidgetItem:
     item = SortableItem(cell.text)
@@ -626,6 +883,10 @@ def _item(cell: Cell, *, index: int, column: int, short: bool) -> QTableWidgetIt
         font = item.font()
         font.setBold(True)
         item.setFont(font)
+    if cell.italic:
+        font = item.font()
+        font.setItalic(True)
+        item.setFont(font)
     if cell.tooltip:
         # Escaped and wrapped so Qt cannot read it as markup. A tooltip is rich
         # text whenever it looks like it, and this text came out of a request:
@@ -636,3 +897,11 @@ def _item(cell: Cell, *, index: int, column: int, short: bool) -> QTableWidgetIt
     # belongs to after the table has been re-ordered.
     item.setData(_INDEX, index)
     return item
+
+
+def _between(one: str, other: str) -> QColor:
+    """The colour halfway between two, for a ground that sits between them."""
+    a, b = QColor(one), QColor(other)
+    return QColor(
+        (a.red() + b.red()) // 2, (a.green() + b.green()) // 2, (a.blue() + b.blue()) // 2
+    )

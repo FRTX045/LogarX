@@ -1845,6 +1845,7 @@ class MainWindow(QMainWindow):
         self._apply_sessions(bool(self._prefs["view/session_boxes"]))
         self._apply_band(bool(self._prefs["view/traffic_band"]))
         self._apply_evidence_view(bool(self._prefs["view/decode_targets"]))
+        self._evidence.set_fold_rule(prefs.fold_rule_in(self._prefs))
 
     def _show_preferences(self) -> None:
         """Open the preferences, and apply them only if the reader says OK.
@@ -1858,7 +1859,7 @@ class MainWindow(QMainWindow):
             return
         self._apply_preferences(dialog.chosen())
 
-    def _apply_preferences(self, chosen: dict[str, bool | Density]) -> None:
+    def _apply_preferences(self, chosen: dict[str, prefs.Value]) -> None:
         """Put every setting in force and write them all down.
 
         All of them together rather than one signal each: they are decided in
@@ -1870,6 +1871,7 @@ class MainWindow(QMainWindow):
         self._apply_sessions(bool(chosen["view/session_boxes"]))
         self._apply_band(bool(chosen["view/traffic_band"]))
         self._apply_evidence_view(bool(chosen["view/decode_targets"]))
+        self._evidence.set_fold_rule(prefs.fold_rule_in(chosen))
         self._apply_density(prefs.density_in(chosen))
         # Carried across rather than read by the keeper on every ask. It holds
         # this as a plain attribute, so without this line the switch goes one
@@ -2084,8 +2086,10 @@ class MainWindow(QMainWindow):
                 pool = tuple(item.evidence for item in held if kept.keeps(item))
                 filtered = Filtered(text, len(pool), len(held))
             refs = tuple(dict.fromkeys((*[ref for ref in evidence if ref in supporting], *pool)))
+            # Which visit each line belongs to: repeats fold only within one.
+            visits = {item.evidence: item.episode_id for item in held}
             with Case.open(path) as case:
-                return case.read_evidence(refs[:limit]), values, filtered
+                return case.read_evidence(refs[:limit]), values, filtered, visits
 
         def current() -> bool:
             return (
@@ -2098,9 +2102,9 @@ class MainWindow(QMainWindow):
         def done(answer: Any) -> None:
             if not current():
                 return
-            lines, values, filtered = answer
+            lines, values, filtered, visits = answer
             self._evidence.set_suggestion_values(values)
-            self._evidence.show_evidence(node, lines, filtered=filtered)
+            self._evidence.show_evidence(node, lines, filtered=filtered, visits=visits)
             # The line asked for by name, wherever the table's order put it.
             if evidence:
                 self._evidence.select_line(evidence[0])

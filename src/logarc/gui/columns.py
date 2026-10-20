@@ -177,6 +177,25 @@ class ColumnWidths(QObject):
         finally:
             self._sizing = False
 
+    def widen(self, column: int) -> None:
+        """Give `column` room for the rows drawn now, if it has too little.
+
+        For a refill that draws rows the last fit never measured. Only widens,
+        so the columns do not shrink and grow as rows come and go, and never a
+        column the reader sized.
+        """
+        if column == self._fill or column in self._manual or self._table.isColumnHidden(column):
+            return
+        needed = self._table.sizeHintForColumn(column)
+        if self._header.sectionSize(column) >= needed:
+            return
+        self._sizing = True
+        try:
+            self._header.resizeSection(column, needed)
+            self._fill_remaining()
+        finally:
+            self._sizing = False
+
     def wanted(self, column: int) -> bool:
         """Whether the reader asked to see `column`, one of the optional ones."""
         return column in self._wanted

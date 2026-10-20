@@ -1113,6 +1113,37 @@ enclosed in double quotes: line 1 column 3 (char 2)), so none are shown. It is
 kept as it is; the next bookmark saved sets it aside as
 bookmarks.unreadable.json.*
 
+## 26. Repeated lines fold, and their arrow works at any text size
+
+Which lines fold, what a folded row says, and opening one by double-click, key or
+arrow are all tested. The arrow's click area is measured from the font, and the
+offscreen platform the tests run on has one font size, so the largest text size
+is checked here.
+
+1. Open a case made from the shopfront excerpt, then `192.0.2.23`, **Behaviour**,
+   and select **Credential Attack**.
+
+**Pass:** the heading says `Showing 39 of 39 lines`, and the line above the table
+`39 lines in 7 rows · lines next to each other with the same request, status and
+size share a row`. The first row is line 2014, `5x  POST /login`, `401`, with a
+▸ before its line number.
+
+2. Click the ▸.
+
+**Pass:** it turns to ▾, and lines 2015 to 2018 appear beneath it on a tinted
+ground, indented, every number whole. Clicking the request on the same row
+selects it without closing it.
+
+3. Set Windows' text size to its largest (**Settings → Accessibility → Text
+   size**, 225%), start logarc again, and repeat steps 1 and 2.
+
+**Pass:** the ▸ still opens the row and the ▾ closes it. A click on the line
+number just right of the arrow selects the row and nothing else.
+
+4. **Edit → Preferences…**, set *Fold repeated lines* to *Off*, and press OK.
+
+**Pass:** 39 rows, one per line, and no line above the table.
+
 ---
 
 ## Recording a run
@@ -1144,5 +1175,6 @@ bookmarks.unreadable.json.*
 | 23 | The evidence filters, says how much it kept, fades the canvas, and resets per client | | |
 | 24 | The client box finds clients by their requests, moves the range for a time, and opens a client filtered | | |
 | 25 | Bookmarks save from each place, wear ribbons, list by category, reopen past the range, export, reach a second window, and survive an unreadable file | | |
+| 26 | Repeated lines fold and open; the arrow works at the largest text size; Off shows every line | | |
 
 Version tested: ______  ·  Date: ______  ·  Machine: ______

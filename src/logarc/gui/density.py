@@ -34,6 +34,16 @@ class Density(Enum):
         """Pixels per bucket. The enum's value, named for what it means."""
         return int(self.value)
 
+    @property
+    def label(self) -> str:
+        """The choice as Preferences offers it."""
+        return self.name.title()
+
+    @property
+    def stored(self) -> str:
+        """The settings value, as it has always been written."""
+        return self.name.lower()
+
 
 #: The finest setting is one bucket to a pixel, and there is deliberately no
 #: finer one: two buckets sharing a pixel draw as a single bar, so the second is

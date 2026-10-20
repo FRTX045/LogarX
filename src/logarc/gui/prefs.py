@@ -22,9 +22,18 @@ from typing import TYPE_CHECKING, Final
 from logarc.gui.density import DEFAULT as DEFAULT_DENSITY
 from logarc.gui.density import Density
 from logarc.gui.density import named as named_density
+from logarc.gui.folding import DEFAULT_FOLD, FoldRule
+from logarc.gui.folding import named as named_fold
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+#: Every kind of value the catalogue holds: a switch, or one of two choices.
+Value = bool | Density | FoldRule
+
+#: Whether, and how, the evidence panel folds lines that repeat. Named because
+#: the window reads it on every start and every visit to Preferences.
+FOLD: Final = "view/fold_lines"
 
 #: The switch that decides whether leaving an unsaved arrangement warns first.
 #: Named here rather than spelled out at each use: the dialog writes it, the
@@ -44,11 +53,14 @@ __all__ = [
     "ASK_UNSAVED_ARRANGEMENT",
     "DENSITY",
     "EVERY",
+    "FOLD",
     "GROUPS",
     "RUN_CRS",
     "Setting",
+    "Value",
     "defaults",
     "density_in",
+    "fold_rule_in",
     "in_group",
     "read",
     "write",
@@ -66,12 +78,13 @@ class Setting:
     of these settings as a status tip; the dialog is where it goes now, and
     losing it in the move would make the move a step backwards."""
 
-    default: bool | Density
+    default: Value
     group: str
 
     #: Only for a setting that is a choice rather than a switch. `None` means a
-    #: checkbox; a tuple means one of these, in this order.
-    choices: tuple[Density, ...] | None = None
+    #: checkbox; a tuple means one of these, in this order. Each choice has a
+    #: `label` for the dialog and a `stored` form for the settings file.
+    choices: tuple[Density, ...] | tuple[FoldRule, ...] | None = None
 
 
 EVERY: tuple[Setting, ...] = (
@@ -134,6 +147,19 @@ EVERY: tuple[Setting, ...] = (
         group="Evidence",
     ),
     Setting(
+        key=FOLD,
+        label="Fold repeated lines",
+        note=(
+            "Show lines next to each other that match as one row with a count; open the "
+            "row to see each line. The default never folds lines that differ in anything "
+            "the table shows. The others fold more, and mark the values that differ as "
+            "mixed."
+        ),
+        default=DEFAULT_FOLD,
+        group="Evidence",
+        choices=tuple(FoldRule),
+    ),
+    Setting(
         key=RUN_CRS,
         label="Run OWASP CRS after a scan",
         note=(
@@ -157,8 +183,8 @@ EVERY: tuple[Setting, ...] = (
     ),
 )
 
-#: The one setting that is a choice rather than a switch. Named because every
-#: reader of a values mapping gets `bool | Density` back and has to narrow it.
+#: The band's choice. Named because every reader of a values mapping gets a
+#: `Value` back and has to narrow it; `FOLD` above is named for the same reason.
 DENSITY = "view/band_density"
 
 #: The order the dialog draws them in, read top to bottom. Graph first because
@@ -171,7 +197,7 @@ def in_group(group: str) -> tuple[Setting, ...]:
     return tuple(setting for setting in EVERY if setting.group == group)
 
 
-def density_in(values: dict[str, bool | Density]) -> Density:
+def density_in(values: dict[str, Value]) -> Density:
     """How finely the band counts, as the type it is.
 
     Falls back rather than raising if handed something else: that is reachable
@@ -182,12 +208,18 @@ def density_in(values: dict[str, bool | Density]) -> Density:
     return chosen if isinstance(chosen, Density) else DEFAULT_DENSITY
 
 
-def defaults() -> dict[str, bool | Density]:
+def fold_rule_in(values: dict[str, Value]) -> FoldRule:
+    """How the evidence panel folds, as the type it is; the default if handed anything else."""
+    chosen = values[FOLD]
+    return chosen if isinstance(chosen, FoldRule) else DEFAULT_FOLD
+
+
+def defaults() -> dict[str, Value]:
     """What every setting starts as, before a reader has touched any of them."""
     return {setting.key: setting.default for setting in EVERY}
 
 
-def read(stored: Callable[[str], object]) -> dict[str, bool | Density]:
+def read(stored: Callable[[str], object]) -> dict[str, Value]:
     """What is in force, given something that hands back a stored value.
 
     `stored` is `QSettings.value` or anything shaped like it, so this stays
@@ -195,7 +227,7 @@ def read(stored: Callable[[str], object]) -> dict[str, bool | Density]:
     default: settings outlive the code that wrote them, and a value from some
     other version of this application is not a reason to refuse to open.
     """
-    values: dict[str, bool | Density] = {}
+    values: dict[str, Value] = {}
     for setting in EVERY:
         raw = stored(setting.key)
         if raw is None and setting.key == RUN_CRS and stored(_ANSWERED_BEFORE) == "never":
@@ -205,6 +237,8 @@ def read(stored: Callable[[str], object]) -> dict[str, bool | Density]:
             raw = False
         if raw is None:
             values[setting.key] = setting.default
+        elif isinstance(setting.default, FoldRule):
+            values[setting.key] = named_fold(str(raw))
         elif setting.choices is not None:
             values[setting.key] = named_density(str(raw))
         else:
@@ -212,7 +246,7 @@ def read(stored: Callable[[str], object]) -> dict[str, bool | Density]:
     return values
 
 
-def write(store: Callable[[str, object], None], values: dict[str, bool | Density]) -> None:
+def write(store: Callable[[str, object], None], values: dict[str, Value]) -> None:
     """Put `values` where `read` will find them again.
 
     The round trip is the point. Written in a form the store cannot hand back,
@@ -221,7 +255,7 @@ def write(store: Callable[[str, object], None], values: dict[str, bool | Density
     """
     for setting in EVERY:
         value = values[setting.key]
-        store(setting.key, value.name.lower() if isinstance(value, Density) else bool(value))
+        store(setting.key, value.stored if isinstance(value, Density | FoldRule) else bool(value))
 
 
 def _truth(raw: object) -> bool:

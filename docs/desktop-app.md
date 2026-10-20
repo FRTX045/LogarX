@@ -232,6 +232,23 @@ Payloads are decoded, so `' OR '1'='1` reads as the tautology it is instead of
 including the source line exactly as the log holds it — every finding traces back
 to a line.
 
+### Repeated lines
+
+![Repeated sign-in attempts folded, the first run opened](images/screenshot-folded.png)
+
+Lines next to each other that repeat are folded into one row with a count:
+`5x  POST /login` is five attempts in a row, each answered 401 with the same
+number of bytes. Double-click the row, press Enter or →, or click its arrow to see
+each line with its own number and time; ← closes it again. By default a row folds
+only lines with the same request, status and size, so it never shows a value one
+of its lines did not have, and never lines from two separate visits. *Fold
+repeated lines* in **Edit → Preferences…** offers looser rules, which fold more
+and mark the values that differ as *mixed*, and Off. Sorting by anything but Line
+shows every line on its own row.
+
+Folding changes what the table draws and nothing else. The line count above it,
+the filter, bookmarks and every export still deal in single lines.
+
 ### Filtering the lines
 
 The box above the table keeps the lines of the selected activity that match what

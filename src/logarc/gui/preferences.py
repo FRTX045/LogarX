@@ -35,12 +35,11 @@ from PyQt6.QtWidgets import (
 )
 
 from logarc.gui import prefs
-from logarc.gui.density import Density
 from logarc.gui.theme import GAP, ROOM, caption_font
 from logarc.style import THEME
 
 if TYPE_CHECKING:
-    from logarc.gui.prefs import Setting
+    from logarc.gui.prefs import Setting, Value
 
 __all__ = ["PreferencesDialog"]
 
@@ -54,7 +53,7 @@ class PreferencesDialog(QDialog):
 
     def __init__(
         self,
-        values: dict[str, bool | Density],
+        values: dict[str, Value],
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -98,7 +97,7 @@ class PreferencesDialog(QDialog):
 
     # -- building ----------------------------------------------------------
 
-    def _box(self, group: str, values: dict[str, bool | Density]) -> QGroupBox:
+    def _box(self, group: str, values: dict[str, Value]) -> QGroupBox:
         box = QGroupBox(group)
         # Wrapped explanations must keep their requested height. The page can
         # scroll instead of compressing the first group until its notes clip.
@@ -110,7 +109,7 @@ class PreferencesDialog(QDialog):
             inner.addWidget(self._explained(setting, values[setting.key]))
         return box
 
-    def _explained(self, setting: Setting, value: bool | Density) -> QWidget:
+    def _explained(self, setting: Setting, value: Value) -> QWidget:
         """One setting: the control, and beneath it the sentence saying why.
 
         The sentence is not decoration. `Wrap long traces` does not say what a
@@ -140,7 +139,7 @@ class PreferencesDialog(QDialog):
         for note in self._notes:
             note.setVisible(showing)
 
-    def _control(self, setting: Setting, value: bool | Density) -> QWidget:
+    def _control(self, setting: Setting, value: Value) -> QWidget:
         if setting.choices is None:
             switch = QCheckBox(setting.label)
             switch.setChecked(bool(value))
@@ -154,8 +153,8 @@ class PreferencesDialog(QDialog):
         line.addWidget(QLabel(setting.label))
         choice = QComboBox()
         for option in setting.choices:
-            choice.addItem(option.name.title(), option)
-        choice.setCurrentIndex(setting.choices.index(value) if isinstance(value, Density) else 0)
+            choice.addItem(option.label, option)
+        choice.setCurrentIndex(max(choice.findData(value), 0))
         choice.setMinimumWidth(140)
         line.addWidget(choice)
         line.addStretch(1)
@@ -164,14 +163,14 @@ class PreferencesDialog(QDialog):
 
     # -- answering ---------------------------------------------------------
 
-    def chosen(self) -> dict[str, bool | Density]:
+    def chosen(self) -> dict[str, Value]:
         """What the controls are showing now.
 
         Every setting, not only the ones touched. Reporting the rest as their
         defaults would quietly undo every preference on every visit to this
         dialog.
         """
-        values: dict[str, bool | Density] = {}
+        values: dict[str, Value] = {}
         for setting in prefs.EVERY:
             control = self._controls[setting.key]
             if isinstance(control, QComboBox):

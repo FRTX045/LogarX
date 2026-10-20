@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import QApplication, QCheckBox, QComboBox, QGroupBox
 
 from logarc.gui import prefs
 from logarc.gui.density import Density
+from logarc.gui.folding import FoldRule
 from logarc.gui.preferences import PreferencesDialog
 from logarc.gui.theme import ui_font
 
@@ -212,3 +213,43 @@ def test_the_dialog_cannot_apply_anything_by_itself(qt_app: QApplication) -> Non
 
     assert dialog.chosen()["view/wrap_traces"] is False
     assert not hasattr(dialog, "_window")
+
+
+# -- folding repeated evidence lines ------------------------------------------
+
+
+def test_folding_offers_every_rule_by_name_with_the_default_chosen(qt_app: QApplication) -> None:
+    dialog = _opened()
+    control = dialog._controls[prefs.FOLD]
+
+    assert isinstance(control, QComboBox)
+    assert [control.itemText(i) for i in range(control.count())] == [
+        "Off",
+        "Same path",
+        "Same request",
+        "Same request and status",
+        "Same request, status and size",
+    ]
+    assert control.currentData() is FoldRule.REQUEST_STATUS_SIZE
+
+
+def test_a_chosen_rule_comes_back_and_restore_puts_the_default_back(
+    qt_app: QApplication,
+) -> None:
+    dialog = _opened()
+    control = dialog._controls[prefs.FOLD]
+    assert isinstance(control, QComboBox)
+
+    control.setCurrentIndex(control.findData(FoldRule.PATH))
+    assert dialog.chosen()[prefs.FOLD] is FoldRule.PATH
+
+    dialog.restore_defaults()
+    assert dialog.chosen()[prefs.FOLD] is FoldRule.REQUEST_STATUS_SIZE
+
+
+def test_the_band_choices_keep_their_names(qt_app: QApplication) -> None:
+    dialog = _opened()
+    control = dialog._controls["view/band_density"]
+
+    assert isinstance(control, QComboBox)
+    assert [control.itemText(i) for i in range(control.count())] == ["Coarse", "Medium", "Fine"]
