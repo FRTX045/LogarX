@@ -117,6 +117,14 @@ class ColumnWidths(QObject):
         )
         self._header.resizeSection(column, width)
 
+    def _torn_down(self) -> bool:
+        """Whether the table is being destroyed: its header still reports once more.
+
+        An exception in a slot is one PyQt answers by ending the program, so
+        `_space_changed` looks before it reaches for the table.
+        """
+        return not isinstance(self.parent(), QTableWidget)
+
     def _resized(self, column: int, before: int, after: int) -> None:
         # Hiding and restoring an optional column is not a manual width choice.
         if self._sizing or before == 0 or after == 0:
@@ -129,7 +137,7 @@ class ColumnWidths(QObject):
             self._sizing = False
 
     def _space_changed(self) -> None:
-        if self._sizing:
+        if self._sizing or self._torn_down():
             return
         self._sizing = True
         try:
