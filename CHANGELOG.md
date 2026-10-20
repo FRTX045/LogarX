@@ -814,6 +814,22 @@ which will be the first tag.
 
 ### Security
 
+- **The CRS sidecar is built on Coraza v3.8.1**, from v3.7.0, which closes the twelve Coraza
+  advisories and one `golang.org/x/net` advisory GitHub reported for it (libinjection-go moves to
+  v0.3.3 and `x/net` to v0.58.0 with it). The sidecar replays only the request line and three
+  headers, never a body, so the body-parser and response advisories never reached logarc; three
+  that did could make CRS miss an attack: a query string dropped when a URI failed to parse
+  (GHSA-x26q-wvhg-fh4m), arguments dropped silently past the argument limit (GHSA-6r3q-mjv7-xr8m),
+  and an off-by-one in JavaScript escape decoding (GHSA-pc5q-qfxp-ggqv).
+
+  Measured on CRS's regression corpus with both builds, against the rules each case says must and
+  must not fire: required detections **1,170 → 1,174** of 4,020 (1,073 → 1,077 of the 1,216 an
+  access log can show), forbidden ones **7 → 7** of 997. The four gained are payloads written in
+  IIS `%u` escapes (`%u2019 OR 1=1--`, `%u00abscript%u00bb`), which v3.7.0 saw only as an invalid
+  character. On the bundled shopfront log the two builds score the same (accuracy 0.9749, 0 false
+  alarms); v3.8.1 writes 894 detection lines where v3.7.0 wrote 939, the 45 dropped being exact
+  duplicates.
+
 - **A line is now bounded before it is parsed** (`--max-line-bytes`, default 1 MB). Parsing one
   costs about **327 times its own length in memory** — measured 5.5 GB for a 16 MB line and 20.9 GB
   for a 64 MB one. The parse is linear; the multiplier is simply very large. Nothing bounded the

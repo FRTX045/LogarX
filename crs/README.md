@@ -48,8 +48,8 @@ measurement requires all of them:
 | | |
 |---|---|
 | CRS | `4.29.0-dev`, commit `d694d465` |
-| Coraza | `v3.7.0` |
-| libinjection-go | `v0.3.2` |
+| Coraza | `v3.8.1` |
+| libinjection-go | `v0.3.3` |
 | go-re2 | `v1.12.0`: RE2 `2025-11-05`, translated to Go |
 
 ## Tests
@@ -151,9 +151,9 @@ These are deliberate, not defaults.
 
 CRS's file lists (`lfi-os-files.data`, `restricted-files.data`, `unix-shell.data`) are written
 with forward slashes, and the rules that read them first clean the path with `t:normalizePath` or
-`t:normalizePathWin`. Coraza v3.7.0 implements both with Go's `path/filepath`, whose `Clean` on
-Windows turns every `/` into `\`. So the Windows sidecar compared `/etc/passwd` as `\etc\passwd`
-and found nothing: on CRS's regression corpus it made 104 fewer detections than the Linux one, all
+`t:normalizePathWin`. Coraza (v3.7.0, and still v3.8.1) implements both with Go's
+`path/filepath`, whose `Clean` on Windows turns every `/` into `\`. So the Windows sidecar compared
+`/etc/passwd` as `\etc\passwd` and found nothing: on CRS's regression corpus it made 104 fewer detections than the Linux one, all
 in 930120, 930121, 930130, 930140, 932160 and 932161, and `/.git/config` passed as harmless.
 `paths.go` registers both transformations again on Go's `path`, which is what `path/filepath`
 already is on Linux, so the Linux sidecar reports what it did and the Windows one now matches it.
