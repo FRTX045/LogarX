@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QTabWidget
 
-from conftest import settled
+from conftest import fired, settled
 from logarc.case import Case
 from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
@@ -53,7 +53,7 @@ def test_panel_pages_and_searches_all_clients(qt_app, tmp_path):
     assert panel.table.rowCount() == 5
     assert panel.caption.text() == "Showing 101\u2013105 of 105 IPs with suspicious activity"
     panel.search.setText("192.0.2.104")
-    QTest.qWait(200)
+    fired(panel._search_timer)
     settled(qt_app)
     assert panel.table.rowCount() == 1
     assert (
@@ -120,7 +120,7 @@ def test_old_page_response_cannot_overwrite_new_query(qt_app, tmp_path, monkeypa
     panel.search.setText("192.0.2.1")
     old[1]["on_done"](read_page(result.path, "suspicious"))
     assert panel.table.rowCount() == 0
-    QTest.qWait(200)
+    fired(panel._search_timer)
     new = callbacks[-1]
     new[1]["on_done"](read_page(result.path, "suspicious", query="192.0.2.1"))
     old[1]["on_done"](read_page(result.path, "suspicious"))
@@ -148,7 +148,6 @@ def test_the_client_list_finds_any_client_while_the_scan_is_blocked_and_after_ca
     import time
 
     from logarc.gui import triage
-    from logarc.gui.panels import ClientTable
     from logarc.triage.scan import ScanCancelled
 
     started = threading.Event()
@@ -167,7 +166,7 @@ def test_the_client_list_finds_any_client_while_the_scan_is_blocked_and_after_ca
         QTest.qWait(20)
     clients = window._clients
     clients._filter.setText("192.0.2.604")
-    QTest.qWait(ClientTable.SEARCH_DELAY_MS + 50)
+    fired(clients._search_timer)
     while clients._table.rowCount() != 1:
         assert time.monotonic() < deadline
         QTest.qWait(20)
@@ -331,7 +330,7 @@ def test_a_client_search_answer_for_a_previous_case_is_dropped(qt_app, tmp_path,
     jobs = []
     monkeypatch.setattr(app, "run_job", lambda work, **kw: jobs.append((work, kw)))
     window._clients._filter.setText("192.0.2.2")
-    QTest.qWait(ClientTable.SEARCH_DELAY_MS + 50)
+    fired(window._clients._search_timer)
     work, callbacks = jobs[-1]
     answer = work(lambda _: None)
     window._load_case(make_case(tmp_path / "second", 3))
@@ -360,7 +359,7 @@ def test_departing_case_clears_triage_before_new_load_finishes(qt_app, tmp_path,
     assert not panel.isEnabled()
     assert panel.table.rowCount() == 0
     panel.search.setText("old-client")
-    QTest.qWait(200)
+    fired(panel._search_timer)
     panel._retry()
     assert summary_jobs == []
     assert panel._request is None and panel._result is None
@@ -493,7 +492,7 @@ def selected_panel(qt_app, root):
 
 def checked(qt_app, panel):
     """Let the debounced source check start, then wait for it to report back."""
-    QTest.qWait(panel.SOURCE_CHECK_DELAY_MS + 50)
+    fired(panel._source_timer)
     settled(qt_app)
 
 
@@ -635,7 +634,7 @@ def test_a_late_source_check_for_another_row_is_ignored(qt_app, tmp_path, monkey
     panel._request = (root, TimeWindow())
     panel._display(rows)
     panel.table.selectRow(0)
-    QTest.qWait(panel.SOURCE_CHECK_DELAY_MS + 50)
+    fired(panel._source_timer)
     first = jobs[-1]
     panel.table.selectRow(1)
     # Named by a line the second row shows, so only the guard can keep it out.
@@ -693,7 +692,7 @@ def test_moving_quickly_through_rows_checks_sources_once(qt_app, tmp_path, monke
     for index in (0, 1, 2, 1):
         panel.table.selectRow(index)
     assert jobs == []
-    QTest.qWait(panel.SOURCE_CHECK_DELAY_MS + 50)
+    fired(panel._source_timer)
     assert len(jobs) == 1
     panel.close()
 
@@ -711,7 +710,7 @@ def test_a_stale_check_does_no_reading(qt_app, tmp_path, monkeypatch):
     panel._request = (root, TimeWindow())
     panel._display(rows)
     panel.table.selectRow(0)
-    QTest.qWait(panel.SOURCE_CHECK_DELAY_MS + 50)
+    fired(panel._source_timer)
     panel.table.selectRow(1)
     opened = []
     monkeypatch.setattr(

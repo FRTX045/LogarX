@@ -24,12 +24,11 @@ from dragging import drag
 from on_canvas import node_item, node_items
 from PyQt6.QtCore import QPoint
 from PyQt6.QtGui import QFontMetrics, QPalette
-from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QSplitter, QStyle
 from tables import cell, column_of
 
 from colours import contrast
-from conftest import settled
+from conftest import fired, settled
 from logarc.analysis import analyse_ip
 from logarc.case import Case
 from logarc.caseview import read_case, reconstruct_client
@@ -3412,7 +3411,7 @@ def test_the_client_filter_finds_a_client_beyond_the_listed_page(
     assert _on_screen(window._clients) == ["10.0.0.0", "10.0.0.1", "10.0.0.2"]
 
     window._clients._filter.setText("10.0.0.5")
-    QTest.qWait(ClientTable.SEARCH_DELAY_MS + 50)
+    fired(window._clients._search_timer)
     settled(qt_app)
 
     assert _on_screen(window._clients) == ["10.0.0.5"]
@@ -3443,7 +3442,7 @@ def test_a_search_answer_for_an_earlier_range_is_dropped(
     jobs: list[dict[str, object]] = []
     monkeypatch.setattr(app, "run_job", lambda work, **kw: jobs.append({"work": work, **kw}))
     window._clients._filter.setText("10.0.0.5")
-    QTest.qWait(ClientTable.SEARCH_DELAY_MS + 50)
+    fired(window._clients._search_timer)
     search = jobs[-1]
     window._apply_window(TimeWindow(start=START + timedelta(seconds=250)))
     answer = search["work"](lambda value: None)

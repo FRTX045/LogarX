@@ -18,9 +18,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
-from PyQt6.QtTest import QTest
 
-from conftest import settled
+from conftest import fired, settled
 from logarc.case import Case
 from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
@@ -29,7 +28,6 @@ from logarc.core.window import TimeWindow
 from logarc.gui import app
 from logarc.gui.app import MainWindow
 from logarc.gui.canvas import FADED
-from logarc.gui.evidence_panel import EvidencePanel
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -122,7 +120,7 @@ def read(qt_app: QApplication, window: MainWindow, label: str) -> None:
 def type_filter(qt_app: QApplication, window: MainWindow, text: str) -> None:
     """Typed into the box, heard once typing rests: the reader's own path in."""
     window._evidence.filter_box.setText(text)
-    QTest.qWait(EvidencePanel.FILTER_DELAY_MS + 60)
+    fired(window._evidence._rest)
     settled(qt_app)
 
 
