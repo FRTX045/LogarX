@@ -226,6 +226,14 @@ def test_folding_is_an_evidence_setting_that_starts_on_the_strictest_rule() -> N
     assert setting.default is FoldRule.REQUEST_STATUS_SIZE
 
 
+def test_the_fold_note_says_what_the_default_compares() -> None:
+    """It said the default folds nothing that differs in anything the table
+    shows, and Line and Time differ on every folded line."""
+    (setting,) = [s for s in prefs.EVERY if s.key == prefs.FOLD]
+
+    assert setting.default.says in setting.note
+
+
 @pytest.mark.parametrize("rule", list(FoldRule))
 def test_each_fold_rule_survives_the_round_trip(rule: FoldRule) -> None:
     written: dict[str, object] = {}

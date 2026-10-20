@@ -511,16 +511,15 @@ class EvidencePanel(QWidget):
             self.fold_note.hide()
             return
         if self._folded:
-            self.fold_note.setText(
+            said = (
                 f"{plural(lines, 'line')} in {plural(len(self._folds), 'row')} · lines "
                 f"next to each other with the same {self._fold_rule.says} share a row"
             )
         else:
             header = required(self._table.horizontalHeader(), "column header")
             heading = COLUMNS[header.sortIndicatorSection()]
-            self.fold_note.setText(
-                f"Sorted by {heading}: every line on its own row. Sort by Line to fold repeats."
-            )
+            said = f"Sorted by {heading}: every line on its own row. Sort by Line to fold repeats."
+        self.fold_note.setText(_no_widow(said))
         self.fold_note.show()
 
     def _key(self, event: QKeyEvent) -> bool:
@@ -897,6 +896,16 @@ def _item(cell: Cell, *, index: int, column: int, short: bool) -> QTableWidgetIt
     # belongs to after the table has been re-ordered.
     item.setData(_INDEX, index)
     return item
+
+
+def _no_widow(text: str) -> str:
+    """`text` with its last two words joined by a no-break space.
+
+    A wrapped note whose last line is one word reads as cut off: the fold note
+    left `row` alone at some panel widths.
+    """
+    head, space, tail = text.rpartition(" ")
+    return f"{head}\u00a0{tail}" if space else text
 
 
 def _between(one: str, other: str) -> QColor:

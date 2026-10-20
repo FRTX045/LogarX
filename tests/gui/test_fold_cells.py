@@ -85,6 +85,18 @@ def test_different_payloads_under_same_path_say_how_many_there_are() -> None:
     assert request.tooltip.startswith("46 different requests")
 
 
+def test_the_shared_path_follows_the_decode_switch() -> None:
+    """Every other request cell is decoded while decoding is on; this one was not."""
+    lines = [line(1 + i, "GET", f"/files/a%20b?q={i}", 200, 10) for i in range(2)]
+    (both,) = fold(lines, FoldRule.PATH)
+
+    decoded = fold_cells(lines, both, decode=True, opened=False)[2]
+    logged = fold_cells(lines, both, decode=False, opened=False)[2]
+
+    assert decoded.text == "2x  GET /files/a b?…"
+    assert logged.text == "2x  GET /files/a%20b?…"
+
+
 def test_lines_from_two_files_are_named_with_their_file() -> None:
     lines = [
         line(9, "GET", "/a", 200, 1, file="a.log"),

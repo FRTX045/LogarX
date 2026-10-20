@@ -151,9 +151,9 @@ EVERY: tuple[Setting, ...] = (
         label="Fold repeated lines",
         note=(
             "Show lines next to each other that match as one row with a count; open the "
-            "row to see each line. The default never folds lines that differ in anything "
-            "the table shows. The others fold more, and mark the values that differ as "
-            "mixed."
+            "row to see each line. The default folds only lines with the same request, "
+            "status and size, so a row never shows a value one of its lines did not have. "
+            "The others fold more, and mark the values that differ as mixed."
         ),
         default=DEFAULT_FOLD,
         group="Evidence",

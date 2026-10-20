@@ -15,6 +15,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from PyQt6.QtCore import QPoint, QRect, Qt
+from PyQt6.QtGui import QFont, QTextLayout, QTextOption
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QStyle, QStyleOptionViewItem, QTableWidget
 from tables import column_of
@@ -68,6 +69,42 @@ def test_the_line_count_still_counts_lines_and_the_note_counts_rows(
     assert panel.fold_note.isVisibleTo(panel)
     assert panel.fold_note.text().startswith("39 lines in 7 rows")
     assert "request, status and size" in panel.fold_note.text()
+
+
+def last_lines(text: str, font: QFont) -> set[str]:
+    """The last line `text` wraps to, at every width from 150 to 1,200 pixels."""
+    found = set()
+    option = QTextOption()
+    option.setWrapMode(QTextOption.WrapMode.WordWrap)
+    for width in range(150, 1201):
+        layout = QTextLayout(text, font)
+        layout.setTextOption(option)
+        layout.beginLayout()
+        last = ""
+        while (line := layout.createLine()).isValid():
+            line.setLineWidth(width)
+            last = text[line.textStart() : line.textStart() + line.textLength()]
+        layout.endLayout()
+        found.add(last.strip())
+    return found
+
+
+@pytest.mark.parametrize("sort_by", [None, "Status"])
+def test_the_note_never_leaves_one_word_on_its_last_line(
+    panel: EvidencePanel, sort_by: str | None
+) -> None:
+    """It once wrapped to a second line holding only `row`."""
+    panel.show_evidence(node(39), brute_force())
+    if sort_by:
+        panel._table.sortItems(column_of(panel._table, sort_by), Qt.SortOrder.AscendingOrder)
+
+    alone = {
+        last
+        for last in last_lines(panel.fold_note.text(), panel.fold_note.font())
+        if len(last.replace("\u00a0", " ").split()) < 2
+    }
+
+    assert alone == set()
 
 
 def test_nothing_to_fold_says_nothing(panel: EvidencePanel) -> None:
