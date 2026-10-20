@@ -470,13 +470,14 @@ def test_the_manage_button_reopens_the_chooser_on_what_was_written(
 ) -> None:
     """The chooser offers formats; the editor writes them. A format written
     without leaving the ingest flow has to be choosable in the list behind."""
-    from logarc.gui import format_editor as module
+    from logarc.gui import formats_and_rules
 
-    def write_one(self: FormatEditor) -> int:
+    def write_one(self: formats_and_rules.FormatsAndRules) -> int:
         save_library([LogFormatSpec(name="log-kantor", directive=PIPED)])
         return 1
 
-    monkeypatch.setattr(module.FormatEditor, "exec", write_one)
+    # The dialog Manage formats opens since the rules tab joined it.
+    monkeypatch.setattr(formats_and_rules.FormatsAndRules, "exec", write_one)
 
     chooser = FormatChoice()
     assert "log-kantor" not in chooser.offered(), "premise: not there yet"
@@ -927,3 +928,23 @@ def test_a_saved_pattern_format_fills_the_screen_back_in(qt_app: QApplication) -
     assert editor.kind() == "pattern"
     assert editor._rule.text() == SYSLOG_PATTERN
     assert editor._note.text() == "the gateway"
+
+
+def test_manage_formats_opens_the_formats_and_rules_dialog(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ingest flow's way to the formats is the same dialog as the Case
+    menu's, on its formats tab."""
+    from logarc.gui import formats_and_rules
+
+    opened_on: list[str] = []
+
+    def shown(self: formats_and_rules.FormatsAndRules) -> int:
+        opened_on.append(self.tabs.tabText(self.tabs.currentIndex()))
+        return 0
+
+    monkeypatch.setattr(formats_and_rules.FormatsAndRules, "exec", shown)
+
+    FormatChoice()._manage()
+
+    assert opened_on == [formats_and_rules.FORMATS_TAB]

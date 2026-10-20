@@ -868,5 +868,9 @@ class FormatChoice(QDialog):
             self._choice.setCurrentIndex(found)
 
     def _manage(self) -> None:
-        FormatEditor(self).exec()
+        # Imported here: that dialog holds a FormatEditor, so importing it at the
+        # top would have each module import the other.
+        from logarc.gui.formats_and_rules import FormatsAndRules
+
+        FormatsAndRules(self).exec()
         self._fill()

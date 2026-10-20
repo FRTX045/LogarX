@@ -2701,7 +2701,10 @@ def test_a_real_ingest_reports_progress_that_only_goes_forwards(
     window = MainWindow()
     # This test measures ingest progress. Case-wide prioritization has its own
     # process and responsiveness tests and can outlive this 120,000-line ingest.
-    monkeypatch.setattr(window._triage, "start", lambda *_: None)
+    # Takes keywords too: the window passes the rules in force by name, and a
+    # stand-in narrower than the real method raised inside a Qt slot, which
+    # ends the whole process with 0xC0000409 and no traceback.
+    monkeypatch.setattr(window._triage, "start", lambda *_args, **_kwargs: None)
     original = window._show_ingest_progress
 
     def watch(snapshot: object) -> None:
