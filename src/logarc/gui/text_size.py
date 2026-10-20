@@ -1,5 +1,6 @@
 """The interface text zoom: its range, its steps and its default size."""
 
+import math
 from typing import Final
 
 #: The zoom range, in whole points. The roles in `gui.theme` sit up to 1.5 pt
@@ -37,9 +38,13 @@ def remembered(points: object, legacy: object, *, automatic: float) -> float:
     """
     if isinstance(points, int | float | str) and not isinstance(points, bool):
         try:
-            return clamped(float(points))
+            number = float(points)
         except ValueError:
-            pass
+            number = math.nan
+        # Read before the crash net is up, so an unreadable value such as
+        # `inf` must fall through rather than stop logarc from starting.
+        if math.isfinite(number):
+            return clamped(number)
     if isinstance(legacy, str) and legacy.strip().lower() in _LEGACY_POINTS:
         return float(_LEGACY_POINTS[legacy.strip().lower()])
     return automatic

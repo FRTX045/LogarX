@@ -1934,12 +1934,19 @@ class MainWindow(QMainWindow):
         self._set_text_points(stepped(QApplication.font().pointSizeF(), by))
 
     def _reset_text_zoom(self) -> None:
-        """Back to the size logarc picks for this desktop."""
+        """Back to the size logarc picks for this desktop, and keep picking it.
+
+        Both saved sizes are forgotten rather than the automatic one written
+        down, so a later desktop with more or less room starts at its own size.
+        """
         running = QApplication.instance()
         if isinstance(running, QApplication):
-            self._set_text_points(automatic_points_for(running))
+            self._set_text_points(automatic_points_for(running), remember=False)
+            stored = _settings()
+            stored.remove(prefs.TEXT_POINTS)
+            stored.remove(prefs.LEGACY_TEXT_SIZE)
 
-    def _set_text_points(self, points: float) -> None:
+    def _set_text_points(self, points: float, *, remember: bool = True) -> None:
         """Put a text size in force in every window, remember it, and say so briefly."""
         running = QApplication.instance()
         if not isinstance(running, QApplication):
@@ -1948,7 +1955,8 @@ class MainWindow(QMainWindow):
         for window in QApplication.topLevelWidgets():
             if isinstance(window, MainWindow):
                 window._follow_text_size(chosen)
-        _settings().setValue(prefs.TEXT_POINTS, int(chosen))
+        if remember:
+            _settings().setValue(prefs.TEXT_POINTS, int(chosen))
         self._zoom_note.setText(f"Text {int(chosen)} pt")
         self._zoom_note_timer.start()
 

@@ -18,7 +18,7 @@ window's own and has no command-line equivalent by nature.
 
 Interface text zooms like most applications: **View → Zoom in** (Ctrl++ or
 Ctrl+=), **Zoom out** (Ctrl+-) and **Reset zoom** (Ctrl+0), or Ctrl and the
-mouse wheel anywhere but the graph. Each step is 1 pt, from 8 to 16 pt, and
+mouse wheel anywhere in the main window but the graph. Each step is 1 pt, from 8 to 16 pt, and
 takes effect at once in every open window; the status bar shows the new size
 for a moment. The size is saved on this machine and used at the next start.
 Tables, column headings, captions, monospace IP text and the evidence panel all

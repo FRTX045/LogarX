@@ -55,6 +55,10 @@ def test_zoom_steps_are_whole_points_inside_the_range(points, by, expected):
         (None, "automatic", 13),
         (None, "nonsense", 13),
         (None, None, 13),
+        ("inf", None, 13),
+        ("-inf", "large", 14),
+        ("1e999", None, 13),
+        (float("inf"), None, 13),
     ],
 )
 def test_remembered_zoom_falls_back_to_the_old_size_then_automatic(points, legacy, expected):

@@ -423,3 +423,83 @@ def test_the_size_note_never_covers_the_status_line(
     assert window._zoom_note.text() == "Text 14 pt"
     fired(window._zoom_note_timer)
     assert window._zoom_note.text() == ""
+
+
+def test_tree_and_list_item_fonts_move_with_the_zoom(themed: QApplication) -> None:
+    from PyQt6.QtWidgets import QListWidgetItem, QTreeWidgetItem
+
+    tree = QTreeWidget()
+    tree.setColumnCount(2)
+    node = QTreeWidgetItem(tree, ["heading", "192.0.2.1"])
+    QTreeWidgetItem(node, ["child", "192.0.2.2"])
+    child = node.child(0)
+    assert child is not None
+    child.setFont(1, mono_font())
+    node.setFont(0, caption_font(QFont()))
+    entries = QListWidget()
+    entry = QListWidgetItem("suggestion", entries)
+    entry.setFont(caption_font(QFont()))
+    before = (node.font(0).pointSizeF(), child.font(1).pointSizeF(), entry.font().pointSizeF())
+    try:
+        set_text_points(themed, 14)
+        assert (
+            node.font(0).pointSizeF(),
+            child.font(1).pointSizeF(),
+            entry.font().pointSizeF(),
+        ) == (
+            before[0] + 3,
+            before[1] + 3,
+            before[2] + 3,
+        )
+    finally:
+        tree.close()
+        entries.close()
+
+
+def test_a_zoom_in_the_window_redraws_the_evidence_heading(window: MainWindow) -> None:
+    from test_narrow_columns import lines, node
+
+    window._evidence.show_evidence(node(5), lines())
+    window._set_text_points(14)
+    heading = window._evidence._heading
+    assert f"font-size:{heading.font().pointSizeF() + 3:.1f}pt" in heading.text()
+
+
+def test_reset_forgets_the_saved_size_so_automatic_keeps_adapting(window: MainWindow) -> None:
+    from logarc.gui import app, prefs
+
+    stored = app._settings()
+    stored.setValue(prefs.LEGACY_TEXT_SIZE, "compact")
+    window._zoom_text(-2)
+    assert app._settings().value(prefs.TEXT_POINTS) is not None
+    window._reset_text_zoom()
+    assert app._settings().value(prefs.TEXT_POINTS) is None
+    assert app._settings().value(prefs.LEGACY_TEXT_SIZE) is None
+    assert prefs.text_points_in(app._settings().value, automatic=13) == 13
+
+
+@pytest.mark.parametrize("points", [15, 16])
+def test_format_editor_rows_fit_their_text(themed: QApplication, points: int) -> None:
+    from logarc.gui.format_editor import FormatEditor
+
+    editor = FormatEditor()
+    try:
+        set_text_points(themed, points)
+        for table in (editor._mapping, editor._fields):
+            rows = table.verticalHeader()
+            assert rows is not None
+            assert rows.defaultSectionSize() >= table.fontMetrics().height() + 8
+    finally:
+        editor.close()
+
+
+def test_format_editor_rows_stay_tight_at_ordinary_sizes(themed: QApplication) -> None:
+    from logarc.gui.format_editor import FormatEditor
+
+    editor = FormatEditor()
+    try:
+        rows = editor._fields.verticalHeader()
+        assert rows is not None
+        assert rows.defaultSectionSize() == 26
+    finally:
+        editor.close()
