@@ -24,7 +24,7 @@ from logarc.gui.density import Density
 from logarc.gui.density import named as named_density
 from logarc.gui.folding import DEFAULT_FOLD, FoldRule
 from logarc.gui.folding import named as named_fold
-from logarc.gui.text_size import TextSize
+from logarc.gui.text_size import TextSize, remembered
 from logarc.gui.text_size import named as named_text_size
 
 if TYPE_CHECKING:
@@ -34,6 +34,12 @@ if TYPE_CHECKING:
 Value = bool | Density | FoldRule | TextSize
 
 TEXT_SIZE: Final = "view/text_size"
+
+#: The interface text size in whole points, changed by zooming rather than in
+#: the dialog. `LEGACY_TEXT_SIZE` is the restart-only choice it replaced, read
+#: once so a size picked there carries over.
+TEXT_POINTS: Final = "view/text_points"
+LEGACY_TEXT_SIZE: Final = TEXT_SIZE
 
 #: Whether, and how, the evidence panel folds lines that repeat. Named because
 #: the window reads it on every start and every visit to Preferences.
@@ -239,6 +245,11 @@ def text_size_in(values: dict[str, Value]) -> TextSize:
     """The selected text size, with automatic as the fallback."""
     chosen = values[TEXT_SIZE]
     return chosen if isinstance(chosen, TextSize) else TextSize.AUTOMATIC
+
+
+def text_points_in(stored: Callable[[str], object], *, automatic: float) -> float:
+    """The text size to start with, from `QSettings.value` or anything shaped like it."""
+    return remembered(stored(TEXT_POINTS), stored(LEGACY_TEXT_SIZE), automatic=automatic)
 
 
 def read(stored: Callable[[str], object]) -> dict[str, Value]:

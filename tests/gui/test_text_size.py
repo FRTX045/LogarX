@@ -12,7 +12,14 @@ from PyQt6.QtGui import QFont, QFontInfo
 from logarc.gui import prefs
 from logarc.gui.app import MainWindow
 from logarc.gui.panels import ClientTable
-from logarc.gui.text_size import TextSize, points_for
+from logarc.gui.text_size import (
+    MAX_POINTS,
+    TextSize,
+    automatic_points,
+    points_for,
+    remembered,
+    stepped,
+)
 from logarc.gui.theme import caption_font, mono_font, ui_font
 from logarc.storage.base import IpSummary
 
@@ -28,6 +35,47 @@ def test_automatic_fits_logical_available_space(width, height, expected):
 def test_automatic_preserves_larger_system_text_but_explicit_size_can_override_it():
     assert points_for(TextSize.AUTOMATIC, width=1920, height=1040, system_points=18) == 18
     assert points_for(TextSize.COMPACT, width=1920, height=1040, system_points=18) == 11
+
+
+@pytest.mark.parametrize(
+    ("width", "height", "expected"),
+    [(1920, 1040, 12), (1536, 824, 11), (1280, 680, 11), (2560, 1400, 14), (0, 0, 12)],
+)
+def test_automatic_points_fit_logical_available_space(width, height, expected):
+    assert automatic_points(width=width, height=height, system_points=9) == expected
+
+
+def test_automatic_points_keep_larger_system_text_within_the_range():
+    assert automatic_points(width=1920, height=1040, system_points=15) == 15
+    assert automatic_points(width=1920, height=1040, system_points=18) == MAX_POINTS
+
+
+@pytest.mark.parametrize(
+    ("points", "by", "expected"),
+    [(11, 1, 12), (11, -1, 10), (16, 1, 16), (8, -1, 8), (11.4, 1, 12)],
+)
+def test_zoom_steps_are_whole_points_inside_the_range(points, by, expected):
+    assert stepped(points, by) == expected
+
+
+@pytest.mark.parametrize(
+    ("points", "legacy", "expected"),
+    [
+        (10, None, 10),
+        ("9", None, 9),
+        ("11.0", None, 11),
+        (40, None, 16),
+        (-3, None, 8),
+        ("abc", "compact", 11),
+        (None, "Comfortable ", 12),
+        (None, "large", 14),
+        (None, "automatic", 13),
+        (None, "nonsense", 13),
+        (None, None, 13),
+    ],
+)
+def test_remembered_zoom_falls_back_to_the_old_size_then_automatic(points, legacy, expected):
+    assert remembered(points, legacy, automatic=13) == expected
 
 
 @pytest.mark.parametrize("points", [11, 12, 14, 18])

@@ -272,3 +272,9 @@ def test_text_size_survives_the_round_trip(size: TextSize) -> None:
 
 def test_unknown_text_size_returns_to_automatic() -> None:
     assert prefs.text_size_in(prefs.read({prefs.TEXT_SIZE: "unknown"}.get)) is TextSize.AUTOMATIC
+
+
+def test_text_points_read_the_zoom_then_the_old_text_size() -> None:
+    assert prefs.text_points_in({prefs.TEXT_POINTS: "10"}.get, automatic=12) == 10
+    assert prefs.text_points_in({prefs.LEGACY_TEXT_SIZE: "compact"}.get, automatic=12) == 11
+    assert prefs.text_points_in({}.get, automatic=12) == 12
