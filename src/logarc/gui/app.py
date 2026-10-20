@@ -1858,7 +1858,7 @@ class MainWindow(QMainWindow):
             return
         self._apply_preferences(dialog.chosen())
 
-    def _apply_preferences(self, chosen: dict[str, bool | Density]) -> None:
+    def _apply_preferences(self, chosen: dict[str, prefs.Value]) -> None:
         """Put every setting in force and write them all down.
 
         All of them together rather than one signal each: they are decided in

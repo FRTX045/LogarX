@@ -12,6 +12,7 @@ import pytest
 
 from logarc.gui import prefs
 from logarc.gui.density import Density
+from logarc.gui.folding import FoldRule
 
 
 def test_every_setting_the_window_keeps_is_in_the_catalogue() -> None:
@@ -25,6 +26,7 @@ def test_every_setting_the_window_keeps_is_in_the_catalogue() -> None:
         "view/ask_unsaved_arrangement",
         "view/band_density",
         "view/decode_targets",
+        "view/fold_lines",
         "analysis/run_crs",
         "cases/reopen_last",
     }
@@ -40,6 +42,7 @@ def test_the_defaults_are_the_ones_the_menu_already_used() -> None:
         "view/ask_unsaved_arrangement": True,
         "view/band_density": Density.FINE,
         "view/decode_targets": True,
+        "view/fold_lines": FoldRule.REQUEST_STATUS_SIZE,
         "analysis/run_crs": True,
         "cases/reopen_last": False,
     }
@@ -208,3 +211,41 @@ def test_the_setting_itself_outranks_the_old_answer() -> None:
     stored = {"crs/after-ingest": "never", prefs.RUN_CRS: "true"}
 
     assert prefs.read(stored.get)[prefs.RUN_CRS] is True
+
+
+# -- folding repeated evidence lines ------------------------------------------
+
+
+def test_folding_is_an_evidence_setting_that_starts_on_the_strictest_rule() -> None:
+    """The default never folds lines a row would misstate (`gui.folding`)."""
+    (setting,) = [s for s in prefs.EVERY if s.key == prefs.FOLD]
+
+    assert setting.group == "Evidence"
+    assert setting.label == "Fold repeated lines"
+    assert setting.choices == tuple(FoldRule)
+    assert setting.default is FoldRule.REQUEST_STATUS_SIZE
+
+
+@pytest.mark.parametrize("rule", list(FoldRule))
+def test_each_fold_rule_survives_the_round_trip(rule: FoldRule) -> None:
+    written: dict[str, object] = {}
+
+    prefs.write(written.__setitem__, {**prefs.defaults(), prefs.FOLD: rule})
+
+    assert written[prefs.FOLD] == rule.stored
+    assert prefs.fold_rule_in(prefs.read(written.get)) is rule
+
+
+def test_a_fold_rule_from_another_version_reads_as_the_default() -> None:
+    read = prefs.read({prefs.FOLD: "everything"}.get)
+
+    assert read[prefs.FOLD] is FoldRule.REQUEST_STATUS_SIZE
+
+
+def test_the_band_setting_is_stored_as_it_always_was() -> None:
+    """Making room for a second kind of choice must not move a reader's band."""
+    written: dict[str, object] = {}
+
+    prefs.write(written.__setitem__, {**prefs.defaults(), "view/band_density": Density.COARSE})
+
+    assert written["view/band_density"] == "coarse"
