@@ -83,3 +83,33 @@ def test_a_missing_source_is_reported_not_crashed(case: Path, tmp_path: Path) ->
     assert result.exit_code == 0, result.output
     assert "Traceback" not in result.output
     assert "unavailable" in result.output.lower() or "cannot" in result.output.lower()
+
+
+def test_one_request_is_counted_in_the_singular(case: Path) -> None:
+    result = runner.invoke(app, ["evidence", "--case", str(case), "--ip", "198.51.100.9"])
+
+    assert result.exit_code == 0, result.output
+    assert "1 request," in result.output
+    assert "1 requests" not in result.output
+
+
+def test_one_line_left_over_is_counted_in_the_singular(tmp_path: Path) -> None:
+    log = tmp_path / "pair.log"
+    log.write_text(
+        "".join(
+            f'198.51.100.9 - - [10/Oct/2020:13:56:0{n} +0000] "GET /about HTTP/1.1" 200 900 '
+            f'"-" "curl/8"\n'
+            for n in (0, 5)
+        ),
+        encoding="utf-8",
+    )
+    ingested = runner.invoke(app, ["ingest", str(log), "--case", str(tmp_path / "case")])
+    assert ingested.exit_code == 0, ingested.output
+
+    result = runner.invoke(
+        app,
+        ["evidence", "--case", str(tmp_path / "case"), "--ip", "198.51.100.9", "--limit", "1"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "1 more line in this activity" in result.output

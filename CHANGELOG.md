@@ -872,6 +872,10 @@ which will be the first tag.
 
 ### Fixed
 
+- **`logarc analyze` and `logarc evidence` count one thing as one.** They printed
+  `1 requests`, `1 activities` and `1 more lines`; the window already used the
+  singular.
+
 - **The client list sorts First and Last by time.** They sorted as text, so
   `10 Mar` came before `15 Feb` in a case spanning two months.
 

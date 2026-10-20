@@ -504,8 +504,9 @@ def analyze(
         )
     console.print(table)
     console.print(
-        f"{result.request_count:,} requests across {plural(len(result.sessions), 'session')} "
-        f"reduced to {len(result.episodes)} activities."
+        f"{plural(result.request_count, 'request')} across "
+        f"{plural(len(result.sessions), 'session')} reduced to "
+        f"{plural(len(result.episodes), 'activity', 'activities')}."
     )
 
     if out is not None:
@@ -553,7 +554,7 @@ def evidence(
         console.print(
             f"\n[bold]{item.episode_id}[/bold]  "
             f"[{_SEVERITY_STYLE[item.severity]}]{item.label}[/]  "
-            f"{item.request_count:,} requests, outcome {item.outcome.value}"
+            f"{plural(item.request_count, 'request')}, outcome {item.outcome.value}"
         )
         for line in lines[item.episode_id]:
             if line.available:
@@ -564,11 +565,9 @@ def evidence(
                 console.print(f"  [dim]{line.ref}[/dim] [yellow]unavailable[/yellow]")
                 if line.note:
                     console.print(f"    [yellow]{line.note}[/yellow]")
-        if item.evidence_total > len(lines[item.episode_id]):
-            console.print(
-                f"  [dim]… {item.evidence_total - len(lines[item.episode_id]):,} more lines "
-                f"in this activity[/dim]"
-            )
+        left = item.evidence_total - len(lines[item.episode_id])
+        if left > 0:
+            console.print(f"  [dim]… {plural(left, 'more line')} in this activity[/dim]")
 
 
 @app.command()
