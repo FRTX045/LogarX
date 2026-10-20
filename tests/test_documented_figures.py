@@ -32,12 +32,12 @@ ROOT = Path(__file__).parent.parent
 #: list and the tree disagree.
 NAMES_THE_PIN = (
     ".github/workflows/ci.yml",
-    "README.md",
     "crs/README.md",
     "docs/evaluation.md",
     "docs/evaluations/exploit-evidence-first-validation.md",
     "docs/evaluations/ip-prioritization-validation.md",
     "docs/evaluations/suspicious-recommendations-validation.md",
+    "docs/installing.md",
     "docs/ip-prioritization.md",
     "src/logarc/detect/crs/setup.py",
 )
