@@ -177,7 +177,7 @@ class CrsCard(_Spoken):
         )
 
         self._counts = QLabel("Starting…")
-        self._counts.setFont(mono_font(9.0))
+        self._counts.setFont(mono_font())
         self._counts.setStyleSheet(f"color: {THEME.muted};")
 
         self._buttons = QDialogButtonBox()

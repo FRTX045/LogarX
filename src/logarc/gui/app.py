@@ -83,7 +83,16 @@ from logarc.gui.quarantine_notice import notice_for
 from logarc.gui.recent import RecentCase
 from logarc.gui.site_hosts import SiteHostsOffer
 from logarc.gui.splitter import PanelSplitter
-from logarc.gui.theme import GAP, MONO_FAMILIES, PAD, TIGHT, apply_theme, colour_text, heading_font
+from logarc.gui.theme import (
+    GAP,
+    MONO_FAMILIES,
+    PAD,
+    TIGHT,
+    apply_theme,
+    automatic_points_for,
+    colour_text,
+    heading_font,
+)
 from logarc.gui.time_filter import TimeFilterBar
 from logarc.gui.triage import TriagePanel
 from logarc.gui.who_else import WhoElseDialog, unavailable
@@ -1866,7 +1875,6 @@ class MainWindow(QMainWindow):
         one go now, and applying them one at a time was how the window and the
         menu came to hold two copies of the same answer.
         """
-        text_size_changed = prefs.text_size_in(chosen) != prefs.text_size_in(self._prefs)
         self._prefs = dict(chosen)
         self._apply_wrap(bool(chosen["view/wrap_traces"]))
         self._apply_sessions(bool(chosen["view/session_boxes"]))
@@ -1879,8 +1887,6 @@ class MainWindow(QMainWindow):
         # way only: off from the dialog, and never back on from Preferences.
         self._arrangements_kept.ask_before_leaving = bool(chosen[prefs.ASK_UNSAVED_ARRANGEMENT])
         prefs.write(_settings().setValue, self._prefs)
-        if text_size_changed:
-            self._status.setText("Text size saved. Restart logarc to apply it.")
 
     def _apply_band(self, showing: bool) -> None:
         """Draw the traffic above the fields, or stop drawing it."""
@@ -2700,7 +2706,9 @@ def main() -> int:
     running = QApplication.instance()
     app = running if isinstance(running, QApplication) else QApplication(sys.argv)
     app.setApplicationName("logarc")
-    apply_theme(app, text_size=prefs.text_size_in(prefs.read(_settings().value)))
+    apply_theme(
+        app, points=prefs.text_points_in(_settings().value, automatic=automatic_points_for(app))
+    )
     try:
         window = MainWindow()
     except Exception:

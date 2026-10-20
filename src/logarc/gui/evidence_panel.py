@@ -51,7 +51,7 @@ from logarc.gui.filter_box import FilterBox
 from logarc.gui.folding import Fold, FoldRule, fold
 from logarc.gui.ribbon import Mark, ribbon_icon, ribbon_tip
 from logarc.gui.splitter import PanelSplitter
-from logarc.gui.theme import PAD, TIGHT, caption_font, mono_font
+from logarc.gui.theme import FLOOR, PAD, TIGHT, caption_font, mono_font
 from logarc.search import Scope
 from logarc.style import (
     EVIDENCE_INK,
@@ -170,7 +170,7 @@ class EvidencePanel(QWidget):
         self.activity_details = Disclosure("Activity details", self._metadata)
         self.activity_details.hide()
 
-        font = mono_font(8.5)
+        font = mono_font()
 
         self._table = _build_table(font)
         # The line number alone while the column is narrow; the file as well
@@ -350,9 +350,9 @@ class EvidencePanel(QWidget):
             f"<b>{html.escape(node.label)}</b></div>"
             f'<div style="color:{EVIDENCE_MUTED}">'
             f"{format_requests(node.request_count)}{across}</div>"
-            f'<div style="font-size:{max(base - 1.0, 7.5):.1f}pt">{" ".join(chips)}</div>'
+            f'<div style="font-size:{max(base - 1.0, FLOOR):.1f}pt">{" ".join(chips)}</div>'
             + (
-                f'<div style="font-size:{max(base - 1.0, 7.5):.1f}pt;color:{THEME.faint}">'
+                f'<div style="font-size:{max(base - 1.0, FLOOR):.1f}pt;color:{THEME.faint}">'
                 f"Showing {shown} {noun}</div>"
                 if filtered is None
                 else ""

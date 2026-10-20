@@ -24,13 +24,14 @@ from typing import TYPE_CHECKING, Final
 from PyQt6.QtGui import QColor, QFont, QPalette
 from PyQt6.QtWidgets import QProxyStyle, QStyle
 
-from logarc.gui.text_size import TextSize, points_for
+from logarc.gui.text_size import MIN_POINTS, automatic_points
 from logarc.style import THEME
 
 if TYPE_CHECKING:
     from PyQt6.QtWidgets import QApplication, QStyleOption, QWidget
 
 __all__ = [
+    "FLOOR",
     "GAP",
     "MONO_FAMILIES",
     "PAD",
@@ -39,6 +40,7 @@ __all__ = [
     "TIGHT",
     "UI_FAMILIES",
     "apply_theme",
+    "automatic_points_for",
     "caption_font",
     "colour_text",
     "heading_font",
@@ -66,13 +68,19 @@ UI_FAMILIES: Final = ("Segoe UI Variable Text", "Segoe UI", "Inter", "sans-serif
 #: and `100.66.1.152` only lines up under `100.66.2.9` if the digits are.
 MONO_FAMILIES: Final = ("Cascadia Mono", "Consolas", "DejaVu Sans Mono", "monospace")
 
-#: Minimum for callers outside the themed launcher. The selected startup size
-#: comes from text_size; role fonts follow it instead of enforcing 14/13pt.
-_UI_POINTS: Final = 11.0
+#: Minimum for callers outside the themed launcher. The size itself is the
+#: reader's zoom; role fonts follow it as steps above or below.
+_UI_POINTS: Final = float(MIN_POINTS)
 _TITLE_STEP: Final = 3.0
 _HEADING_STEP: Final = 1.0
 _CAPTION_STEP: Final = -1.0
-_FLOOR: Final = 9.0
+#: The smallest any role may go: the lowest step (-1.5, the progress card's
+#: note) at the smallest zoom. Nothing clamps inside the zoom range, which is
+#: what lets a live zoom move every font by the same amount and back again.
+FLOOR: Final = MIN_POINTS - 1.5
+
+#: The platform's own font size, read before the theme first replaces it.
+_system_points: float | None = None
 
 
 class _ReadableStyle(QProxyStyle):
@@ -136,7 +144,7 @@ def colour_text(widget: QWidget, colour: str) -> None:
 def _sized(base: QFont, step: float, *, weight: QFont.Weight | None = None) -> QFont:
     """`base` moved one role up or down the scale."""
     font = QFont(base)
-    font.setPointSizeF(max(base.pointSizeF() + step, _FLOOR))
+    font.setPointSizeF(max(base.pointSizeF() + step, FLOOR))
     if weight is not None:
         font.setWeight(weight)
     return font
@@ -165,12 +173,17 @@ def ui_font(base: QFont | None = None) -> QFont:
     return font
 
 
-def mono_font(point_size: float) -> QFont:
-    """Monospace follows the interface size, never forcing table text larger."""
+def mono_font(point_size: float | None = None) -> QFont:
+    """Monospace follows the interface size, never forcing table text larger.
+
+    Pass the size of the table or field it sits in; with none it is the
+    caption size, one step below the interface text.
+    """
     font = QFont()
     font.setFamilies(list(MONO_FAMILIES))
     font.setStyleHint(QFont.StyleHint.Monospace)
-    font.setPointSizeF(max(point_size, font.pointSizeF() - 1.0, _FLOOR))
+    caption = font.pointSizeF() + _CAPTION_STEP
+    font.setPointSizeF(max(caption if point_size is None else point_size, caption, FLOOR))
     return font
 
 
@@ -217,7 +230,25 @@ def palette() -> QPalette:
     return colours
 
 
-def apply_theme(app: QApplication, *, text_size: TextSize = TextSize.AUTOMATIC) -> None:
+def automatic_points_for(app: QApplication) -> float:
+    """The default text size for this desktop: what Reset zoom returns to.
+
+    Measured against the system font as it was before the theme replaced it,
+    so asking again after a zoom gives the same answer.
+    """
+    global _system_points
+    if _system_points is None:
+        _system_points = app.font().pointSizeF()
+    screen = app.primaryScreen()
+    area = screen.availableGeometry() if screen is not None else None
+    return automatic_points(
+        width=area.width() if area is not None else 0,
+        height=area.height() if area is not None else 0,
+        system_points=_system_points,
+    )
+
+
+def apply_theme(app: QApplication, *, points: float | None = None) -> None:
     """Put the whole application in the theme, once, at startup.
 
     Called from `gui.app.main` and from `ui-review/drive.py`. The review script
@@ -231,19 +262,16 @@ def apply_theme(app: QApplication, *, text_size: TextSize = TextSize.AUTOMATIC) 
     doing it. Left native, the tables and the menu bar would keep their system
     colours while everything around them changed, which is a more confusing
     result than not having tried.
+
+    `points` is the interface text size; `None` means `automatic_points_for`.
     """
+    chosen = automatic_points_for(app) if points is None else points
     app.setStyle(_ReadableStyle("Fusion"))
     app.setPalette(palette())
-    screen = app.primaryScreen()
-    area = screen.availableGeometry() if screen is not None else None
-    font = ui_font(app.font())
-    font.setPointSizeF(
-        points_for(
-            text_size,
-            width=area.width() if area is not None else 0,
-            height=area.height() if area is not None else 0,
-            system_points=app.font().pointSizeF(),
-        )
-    )
-    app.setFont(font)
+    # The stylesheet before the font: on Windows, setting a stylesheet refills
+    # the per-class fonts from the system (9 pt Segoe UI for every table and
+    # header), and only a later application font clears them again.
     app.setStyleSheet(_CONTROLS)
+    font = ui_font(app.font())
+    font.setPointSizeF(chosen)
+    app.setFont(font)
