@@ -156,6 +156,46 @@ def test_a_decode_switch_closes_every_row_and_keeps_the_detail_true(
     assert panel.selected_line().ref.line_no == 2014
 
 
+def fits(panel: EvidencePanel) -> bool:
+    """Whether the Line column holds every drawn row's number without cutting it."""
+    table = panel._table
+    line_column = column_of(table, "Line")
+    return table.columnWidth(line_column) >= table.sizeHintForColumn(line_column)
+
+
+def test_opening_a_row_keeps_its_line_numbers_whole(panel: EvidencePanel) -> None:
+    """The lines inside are indented past the arrow the column was fitted to."""
+    panel.show_evidence(node(39), brute_force())
+    assert fits(panel), "premise: fitted to the closed rows"
+
+    panel.toggle_row(0)
+
+    assert fits(panel)
+
+
+def test_folding_again_after_another_sort_keeps_the_arrows_whole(panel: EvidencePanel) -> None:
+    panel.show_evidence(node(39), brute_force())
+    table = panel._table
+    table.sortItems(column_of(table, "Status"), Qt.SortOrder.AscendingOrder)
+    panel._column_sizes.reset()
+    assert fits(panel), "premise: fitted to every line on its own row"
+
+    table.sortItems(column_of(table, "Line"), Qt.SortOrder.AscendingOrder)
+
+    assert fits(panel)
+
+
+def test_a_width_the_reader_chose_is_kept_when_a_row_opens(panel: EvidencePanel) -> None:
+    panel.show_evidence(node(39), brute_force())
+    table = panel._table
+    line_column = column_of(table, "Line")
+    table.horizontalHeader().resizeSection(line_column, 30)
+
+    panel.toggle_row(0)
+
+    assert table.columnWidth(line_column) == 30
+
+
 def test_changing_the_rule_refolds_what_is_on_show(panel: EvidencePanel) -> None:
     panel.show_evidence(node(39), brute_force())
 

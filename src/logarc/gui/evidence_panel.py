@@ -409,7 +409,9 @@ class EvidencePanel(QWidget):
         Sorting is off while filling: with it on, each row is re-sorted against
         the rows already placed and the remaining values land in other rows.
         Untouched widths are fitted once, when `fit` says this is a new activity,
-        so opening a row does not make the columns jump.
+        so opening a row does not make the columns jump. Line is the exception,
+        and only grows: an opened row's lines are indented past the arrow it was
+        fitted to, and their numbers were cut short.
         """
         assert self._shown is not None
         lines = self._shown[1]
@@ -460,6 +462,8 @@ class EvidencePanel(QWidget):
         # a sort arrow only one of them draws, and the room comes out of Request.
         if fit:
             self._column_sizes.fit_unset()
+        else:
+            self._column_sizes.widen(_LINE)
         self._table.setSortingEnabled(True)
         # A new activity opens in the order the log holds, not in whatever order
         # the widget last happened to be sorted by: evidence is a sequence of
