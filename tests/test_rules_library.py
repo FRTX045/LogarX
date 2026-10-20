@@ -230,3 +230,16 @@ def test_an_empty_folder_and_a_missing_one_are_both_no_packs() -> None:
     assert rules_library.in_force().ruleset.packs == ()
     rules_library.rules_dir().mkdir(parents=True)
     assert rules_library.in_force().ruleset.packs == ()
+
+
+def test_renaming_a_pack_only_in_its_capitals_keeps_it() -> None:
+    """Windows keeps one file for `Shop.yaml` and `shop.yaml`. Saving under the
+    new name and then deleting the old one deleted the pack just saved, and a
+    pack the reader wrote exists nowhere else."""
+    rules_library.save_pack("Shop", HOUSE)
+
+    rules_library.save_pack("shop", _with_id("other_rule"), replacing="Shop")
+
+    assert [(p.name, p.text) for p in rules_library.in_force().packs] == [
+        ("shop", _with_id("other_rule"))
+    ]

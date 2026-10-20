@@ -163,9 +163,13 @@ def save_pack(
     folder = rules_dir()
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / f"{name}.yaml"
+    old = folder / f"{replacing}.yaml" if replacing is not None else None
+    if old is not None and replacing != name and old.exists():
+        # Renamed first and written after, rather than written and the old one
+        # deleted: on Windows `Shop.yaml` and `shop.yaml` are one file, and
+        # deleting the old name deleted the pack just written.
+        old.rename(path)
     _write(path, text)
-    if replacing is not None and replacing != name:
-        (folder / f"{replacing}.yaml").unlink(missing_ok=True)
     return path
 
 
