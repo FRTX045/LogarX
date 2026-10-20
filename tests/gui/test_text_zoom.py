@@ -165,3 +165,136 @@ def required_header(table: QTableWidget) -> QWidget:
     header = table.horizontalHeader()
     assert header is not None
     return header
+
+
+# -- things measured or drawn from text --------------------------------------
+
+
+def test_evidence_heading_redraws_at_the_new_size(themed: QApplication) -> None:
+    from test_narrow_columns import lines, node
+
+    from logarc.gui.evidence_panel import EvidencePanel
+
+    panel = EvidencePanel()
+    try:
+        panel.show_evidence(node(5), lines())
+        set_text_points(themed, 14)
+        panel.follow_text_size()
+        title = panel._heading.font().pointSizeF() + 3
+        assert f"font-size:{title:.1f}pt" in panel._heading.text()
+    finally:
+        panel.close()
+
+
+def test_following_the_text_size_with_nothing_shown_draws_nothing(themed: QApplication) -> None:
+    from logarc.gui.evidence_panel import EvidencePanel
+
+    panel = EvidencePanel()
+    try:
+        panel.follow_text_size()
+        assert panel.shown_node() is None
+    finally:
+        panel.close()
+
+
+def test_the_no_results_title_follows_the_zoom(themed: QApplication) -> None:
+    from logarc.gui.evidence_panel import EvidencePanel
+
+    panel = EvidencePanel()
+    try:
+        title = next(
+            label for label in panel.findChildren(QLabel) if label.text() == "No results found"
+        )
+        _polished(panel, *panel.findChildren(QWidget))
+        assert title.font().pointSizeF() == 14
+        set_text_points(themed, 13)
+        assert title.font().pointSizeF() == 16
+    finally:
+        panel.close()
+
+
+def test_timeline_caption_follows_the_app_font(themed: QApplication) -> None:
+    from logarc.gui.timeline import caption_font as timeline_caption
+
+    assert timeline_caption().pointSizeF() == 11
+    set_text_points(themed, 15)
+    assert timeline_caption().pointSizeF() == 15
+
+
+def test_date_fields_widen_with_the_text(themed: QApplication) -> None:
+    from PyQt6.QtGui import QFontMetrics
+
+    from logarc.gui.time_filter import _ARROW, TimeFilterBar
+
+    bar = TimeFilterBar()
+    try:
+        _polished(bar, *bar.findChildren(QWidget))
+        narrow = bar._from.minimumWidth()
+        set_text_points(themed, 15)
+        wide = QFontMetrics(bar._from.font()).horizontalAdvance("2024-05-02  00:00") + _ARROW
+        assert bar._from.minimumWidth() == wide > narrow
+        assert bar._to.minimumWidth() == wide
+    finally:
+        bar.close()
+
+
+def test_client_header_keeps_room_for_its_sort_arrow(themed: QApplication) -> None:
+    from logarc.gui.panels import ClientTable
+
+    panel = ClientTable()
+    try:
+        header = required_header(panel._table)
+        _polished(panel, *panel.findChildren(QWidget))
+        set_text_points(themed, 15)
+        assert header.minimumHeight() == header.fontMetrics().height() + 14
+    finally:
+        panel.close()
+
+
+def test_bookmark_category_keeps_room_for_eight_characters(themed: QApplication) -> None:
+    from logarc.gui.bookmarks_tab import BookmarksTab
+
+    tab = BookmarksTab()
+    try:
+        _polished(tab, *tab.findChildren(QWidget))
+        set_text_points(themed, 15)
+        assert tab.category.minimumWidth() == tab.category.fontMetrics().averageCharWidth() * 8
+    finally:
+        tab.close()
+
+
+def test_client_rows_shown_after_a_zoom_match_their_table(themed: QApplication) -> None:
+    from datetime import UTC, datetime
+
+    from logarc.gui.panels import ClientTable
+    from logarc.storage.base import IpSummary
+
+    panel = ClientTable()
+    try:
+        set_text_points(themed, 14)
+        now = datetime(2026, 10, 20, tzinfo=UTC)
+        panel.show_clients([IpSummary("192.0.2.123", 5, now, now, 3, 0.2, 1000)])
+        address = panel._table.item(0, 0)
+        assert address is not None
+        assert address.font().pointSizeF() == panel._table.font().pointSizeF() == 14
+    finally:
+        panel.close()
+
+
+def test_unset_columns_refit_after_a_zoom_and_dragged_ones_stay(themed: QApplication) -> None:
+    from logarc.gui.columns import ColumnWidths
+
+    table = QTableWidget(1, 3)
+    for column in range(3):
+        table.setItem(0, column, QTableWidgetItem("a fairly long value"))
+    ColumnWidths(table)
+    header = required_header(table)
+    _polished(table, header)
+    header.resizeSection(1, 77)
+    fitted = table.columnWidth(0)
+    try:
+        set_text_points(themed, 16)
+        assert table.columnWidth(0) > fitted
+        assert table.columnWidth(1) == 77
+    finally:
+        table.close()

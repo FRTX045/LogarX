@@ -51,7 +51,7 @@ from logarc.gui.filter_box import FilterBox
 from logarc.gui.folding import Fold, FoldRule, fold
 from logarc.gui.ribbon import Mark, ribbon_icon, ribbon_tip
 from logarc.gui.splitter import PanelSplitter
-from logarc.gui.theme import FLOOR, PAD, TIGHT, caption_font, mono_font
+from logarc.gui.theme import FLOOR, PAD, TIGHT, caption_font, mono_font, title_font
 from logarc.search import Scope
 from logarc.style import (
     EVIDENCE_INK,
@@ -294,43 +294,6 @@ class EvidencePanel(QWidget):
         """
         self._shown = (node, lines, filtered)
         self._visits = dict(visits or {})
-        colour = severity_text_colour(node.severity)
-        # A behaviour node is several visits to one activity; a trace node is
-        # always one, and saying "across 1 activities" on every node of the view
-        # that opens by default would be noise.
-        across = f" across {node.episode_count:,} activities" if node.episode_count > 1 else ""
-        # An episode keeps a bounded sample of its references and the true count
-        # beside it, so the table below is often a part of the activity rather
-        # than all of it. Unsaid, twenty rows under a heading reading 51 requests
-        # leaves the reader to decide whether lines are missing or the count is
-        # wrong — and it is neither.
-        #
-        # Said every time, including `3 of 3`. Printed only on a shortfall, its
-        # absence would itself be a claim — that the table is complete — and one
-        # the reader has to know how to read. Always present, it is a fact about
-        # the table rather than a warning about it, and a complete list is
-        # confirmed rather than merely unremarked.
-        shown = f"{len(lines):,} of {node.evidence_total:,}"
-        # `1 of 1 lines` is the fault `format_requests` exists to stop, one noun
-        # along. The noun agrees with the total, which is what it counts.
-        noun = "line" if node.evidence_total == 1 else "lines"
-
-        # Three weights, not six identical lines. Every fact used to be set at
-        # the same size as every other, so the activity's name — the one thing
-        # that says what you are looking at — carried no more emphasis than the
-        # rule id that matched it, and the block had to be read start to finish
-        # to find anything in it.
-        #
-        # The labels stay. `Outcome: blocked` reads as a labelled fact and not
-        # as a loose word, which is what stopped the outcome being buried in a
-        # sentence in the first place; a chip that dropped the label would have
-        # undone that to gain a few pixels.
-        chips = []
-        chips.append(_chip(node.severity.name.title(), colour))
-        # The value stays as the taxonomy spells it. Title case here would have
-        # the panel reading `Blocked` beside a canvas caption reading `blocked`
-        # for the same activity — one name for one thing, in one case.
-        chips.append(_chip(f"Outcome: {node.outcome.value}"))
         metadata = [
             f'<span style="color:{THEME.timestamp}">'
             f"Time (UTC): {node.start:%Y-%m-%d %H:%M:%S} → {node.end:%Y-%m-%d %H:%M:%S}</span>",
@@ -344,20 +307,7 @@ class EvidencePanel(QWidget):
         self.activity_details.show()
         self.bookmark_button.show()
 
-        base = self._heading.font().pointSizeF()
-        self._heading.setText(
-            f'<div style="font-size:{base + 3.0:.1f}pt;color:{colour}">'
-            f"<b>{html.escape(node.label)}</b></div>"
-            f'<div style="color:{EVIDENCE_MUTED}">'
-            f"{format_requests(node.request_count)}{across}</div>"
-            f'<div style="font-size:{max(base - 1.0, FLOOR):.1f}pt">{" ".join(chips)}</div>'
-            + (
-                f'<div style="font-size:{max(base - 1.0, FLOOR):.1f}pt;color:{THEME.faint}">'
-                f"Showing {shown} {noun}</div>"
-                if filtered is None
-                else ""
-            )
-        )
+        self._draw_heading(node, lines, filtered)
         self._say_filtered(filtered, shown=len(lines))
 
         self._folds = self._fold(lines)
@@ -619,7 +569,8 @@ class EvidencePanel(QWidget):
         title = QLabel("No results found")
         title.setTextFormat(Qt.TextFormat.PlainText)
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet(f"color:{EVIDENCE_INK}; font-size:13pt; font-weight:600;")
+        title.setFont(title_font(title.font()))
+        title.setStyleSheet(f"color:{EVIDENCE_INK};")
         self._no_results_detail = QLabel()
         self._no_results_detail.setTextFormat(Qt.TextFormat.PlainText)
         self._no_results_detail.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -719,6 +670,71 @@ class EvidencePanel(QWidget):
             self._in_log_order = in_log_order
             self._open = set()
             self._refill_keeping(None)
+
+    def follow_text_size(self) -> None:
+        """Draw the heading again at the text size now in force, after a zoom.
+
+        Its sizes are written into its markup, so it does not follow a font
+        change by itself. The table below it does, and keeps its selection.
+        """
+        if self._shown is not None:
+            self._draw_heading(*self._shown)
+
+    def _draw_heading(
+        self, node: GraphNode, lines: Sequence[EvidenceLine], filtered: Filtered | None
+    ) -> None:
+        colour = severity_text_colour(node.severity)
+        # A behaviour node is several visits to one activity; a trace node is
+        # always one, and saying "across 1 activities" on every node of the view
+        # that opens by default would be noise.
+        across = f" across {node.episode_count:,} activities" if node.episode_count > 1 else ""
+        # An episode keeps a bounded sample of its references and the true count
+        # beside it, so the table below is often a part of the activity rather
+        # than all of it. Unsaid, twenty rows under a heading reading 51 requests
+        # leaves the reader to decide whether lines are missing or the count is
+        # wrong, and it is neither.
+        #
+        # Said every time, including `3 of 3`. Printed only on a shortfall, its
+        # absence would itself be a claim (that the table is complete) and one
+        # the reader has to know how to read. Always present, it is a fact about
+        # the table rather than a warning about it, and a complete list is
+        # confirmed rather than merely unremarked.
+        shown = f"{len(lines):,} of {node.evidence_total:,}"
+        # `1 of 1 lines` is the fault `format_requests` exists to stop, one noun
+        # along. The noun agrees with the total, which is what it counts.
+        noun = "line" if node.evidence_total == 1 else "lines"
+
+        # Three weights, not six identical lines. Every fact used to be set at
+        # the same size as every other, so the activity's name (the one thing
+        # that says what you are looking at) carried no more emphasis than the
+        # rule id that matched it, and the block had to be read start to finish
+        # to find anything in it.
+        #
+        # The labels stay. `Outcome: blocked` reads as a labelled fact and not
+        # as a loose word, which is what stopped the outcome being buried in a
+        # sentence in the first place; a chip that dropped the label would have
+        # undone that to gain a few pixels.
+        chips = []
+        chips.append(_chip(node.severity.name.title(), colour))
+        # The value stays as the taxonomy spells it. Title case here would have
+        # the panel reading `Blocked` beside a canvas caption reading `blocked`
+        # for the same activity: one name for one thing, in one case.
+        chips.append(_chip(f"Outcome: {node.outcome.value}"))
+
+        base = self._heading.font().pointSizeF()
+        self._heading.setText(
+            f'<div style="font-size:{base + 3.0:.1f}pt;color:{colour}">'
+            f"<b>{html.escape(node.label)}</b></div>"
+            f'<div style="color:{EVIDENCE_MUTED}">'
+            f"{format_requests(node.request_count)}{across}</div>"
+            f'<div style="font-size:{max(base - 1.0, FLOOR):.1f}pt">{" ".join(chips)}</div>'
+            + (
+                f'<div style="font-size:{max(base - 1.0, FLOOR):.1f}pt;color:{THEME.faint}">'
+                f"Showing {shown} {noun}</div>"
+                if filtered is None
+                else ""
+            )
+        )
 
     def shown_node(self) -> GraphNode | None:
         return self._shown[0] if self._shown is not None else None

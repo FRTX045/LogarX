@@ -40,7 +40,7 @@ from logarc.core.window import EVERYTHING
 from logarc.gui._qt import required
 from logarc.gui.flow import FlowLayout
 from logarc.gui.ribbon import ribbon_icon
-from logarc.gui.theme import PAD, caption_font, colour_text, mono_font
+from logarc.gui.theme import PAD, caption_font, colour_text, mono_font, on_font_change
 from logarc.style import THEME, plural
 from logarc.timerange import spoken
 
@@ -179,7 +179,8 @@ class BookmarksTab(QWidget):
         self.category.setMinimumContentsLength(14)
         # Fourteen characters when there is room, about eight when the column
         # is dragged narrow: the tab's minimum is the whole workspace's.
-        self.category.setMinimumWidth(self.category.fontMetrics().averageCharWidth() * 8)
+        self._fit_category()
+        on_font_change(self.category, self._fit_category)
         self.category.currentTextChanged.connect(lambda _text: self._fill())
         categories = QPushButton("Categories\N{HORIZONTAL ELLIPSIS}")
         categories.clicked.connect(self.categories_requested.emit)
@@ -264,6 +265,9 @@ class BookmarksTab(QWidget):
         layout.addWidget(self.empty, 1)
         layout.addLayout(bottom)
         self._update_buttons()
+
+    def _fit_category(self) -> None:
+        self.category.setMinimumWidth(self.category.fontMetrics().averageCharWidth() * 8)
 
     def _column_resized(self, _index: int, _old: int, _new: int) -> None:
         self.tree.measure_again()

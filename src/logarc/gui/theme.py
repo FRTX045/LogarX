@@ -19,9 +19,10 @@ decision and had the same problem — being made independently at every call sit
 
 from __future__ import annotations
 
+import weakref
 from typing import TYPE_CHECKING, Final
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QEvent, QObject, Qt
 from PyQt6.QtGui import QColor, QFont, QPalette
 from PyQt6.QtWidgets import (
     QApplication,
@@ -37,6 +38,8 @@ from logarc.gui.text_size import MIN_POINTS, automatic_points, clamped
 from logarc.style import THEME
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from PyQt6.QtWidgets import QStyleOption, QWidget
 
 __all__ = [
@@ -53,6 +56,7 @@ __all__ = [
     "caption_font",
     "colour_text",
     "heading_font",
+    "on_font_change",
     "set_text_points",
     "title_font",
 ]
@@ -307,6 +311,10 @@ def set_text_points(app: QApplication, points: float) -> float:
         for widget in QApplication.allWidgets()
         if widget.testAttribute(Qt.WidgetAttribute.WA_SetFont)
     ]
+    # Items first, so a table refitting its columns on the font change below
+    # measures them at the new size.
+    for widget in QApplication.allWidgets():
+        _move_items(widget, delta)
     font = QFont(app.font())
     font.setPointSizeF(chosen)
     app.setFont(font)
@@ -319,8 +327,6 @@ def set_text_points(app: QApplication, points: float) -> float:
         app.setStyleSheet(app.styleSheet())
         for widget, moved in explicit:
             widget.setFont(moved)
-    for widget in QApplication.allWidgets():
-        _move_items(widget, delta)
     return chosen
 
 
@@ -352,3 +358,35 @@ def _move_items(widget: QWidget, delta: float) -> None:
                 if node.data(column, role) is not None:
                     node.setFont(column, _moved(node.font(column), delta))
             found += 1
+
+
+def on_font_change(widget: QWidget, react: Callable[[], None]) -> None:
+    """Call `react` whenever `widget`'s font changes, as a zoom changes it.
+
+    For a size measured from text once at construction: a minimum width that
+    must keep fitting its text after the reader zooms. `react` must be a bound
+    method of a Qt object built in Python; it is held weakly, so the watch never
+    keeps that object alive.
+    """
+    _FontWatch(widget, react)
+
+
+class _FontWatch(QObject):
+    def __init__(self, widget: QWidget, react: Callable[[], None]) -> None:
+        # Parented to the method's owner rather than to `widget`. A widget Qt
+        # made itself, such as a table's header, has only a passing Python
+        # wrapper, and the Python half of a watch parented to it goes with that
+        # wrapper, leaving a filter that never calls back.
+        owner = getattr(react, "__self__", None)
+        if not isinstance(owner, QObject):
+            raise TypeError("on_font_change needs a bound method of a QObject")
+        super().__init__(owner)
+        self._react = weakref.WeakMethod(react)
+        widget.installEventFilter(self)
+
+    def eventFilter(self, watched: QObject | None, event: QEvent | None) -> bool:  # noqa: N802 - Qt's naming
+        if event is not None and event.type() == QEvent.Type.FontChange:
+            react = self._react()
+            if react is not None:
+                react()
+        return False
