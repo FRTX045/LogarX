@@ -29,7 +29,7 @@ if [ "$(git config --bool logarc.rebuild 2>/dev/null)" = "true" ] \
         _touched=$(git diff --name-only HEAD^ HEAD 2>/dev/null \
             || git diff --name-only HEAD 2>/dev/null)
         case "$_touched" in
-            *src/logarc/*|*packaging/*|*pyproject.toml*)
+            *src/logarc/*|*packaging/*|*pyproject.toml*|*crs/*.go*|*crs/go.mod*|*crs/go.sum*)
                 _root=$(git rev-parse --show-toplevel)
                 _py="$_root/.venv/Scripts/python.exe"
                 [ -x "$_py" ] || _py=python

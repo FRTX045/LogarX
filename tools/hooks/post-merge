@@ -14,11 +14,12 @@
 [ "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" = "main" ] || exit 0
 
 # Only when something that ends up in the bundle changed: a documentation
-# merge does not need a few hundred megabytes rewritten.
+# merge does not need a few hundred megabytes rewritten. The CRS sidecar is
+# compiled from crs/ into the bundle, so its Go source and modules count.
 _touched=$(git diff --name-only ORIG_HEAD HEAD 2>/dev/null \
     || git diff --name-only HEAD~1 HEAD 2>/dev/null)
 case "$_touched" in
-    *src/logarc/*|*packaging/*|*pyproject.toml*)
+    *src/logarc/*|*packaging/*|*pyproject.toml*|*crs/*.go*|*crs/go.mod*|*crs/go.sum*)
         _root=$(git rev-parse --show-toplevel)
         _py="$_root/.venv/Scripts/python.exe"
         [ -x "$_py" ] || _py=python
