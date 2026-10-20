@@ -158,6 +158,36 @@ def test_a_commit_on_main_that_changes_the_bundle_rebuilds_it(repo: Repo) -> Non
     assert "post-commit" in repo.build_log.read_text(encoding="utf-8")
 
 
+#: What `go build` compiles into the bundled CRS sidecar. A security bump of
+#: Coraza touched only these, and left the application shipping the old one.
+SIDECAR = ("crs/go.mod", "crs/go.sum", "crs/main.go")
+
+
+@pytest.mark.parametrize("path", SIDECAR)
+def test_a_commit_on_main_that_changes_the_sidecar_rebuilds_it(repo: Repo, path: str) -> None:
+    repo.ask_for_rebuilds()
+
+    assert REBUILDING in said(repo.commit(path))
+
+
+@pytest.mark.parametrize("path", SIDECAR)
+def test_a_merge_into_main_that_changes_the_sidecar_rebuilds_it(repo: Repo, path: str) -> None:
+    repo.ask_for_rebuilds()
+    repo.git("checkout", "-q", "-b", "fix/x")
+    repo.commit(path)
+    repo.git("checkout", "-q", "main")
+
+    done = repo.git("merge", "--no-ff", "-q", "-m", "merge", "fix/x")
+
+    assert REBUILDING in said(done)
+
+
+def test_the_sidecars_readme_rebuilds_nothing(repo: Repo) -> None:
+    repo.ask_for_rebuilds()
+
+    assert REBUILDING not in said(repo.commit("crs/README.md"))
+
+
 def test_nothing_is_rebuilt_unless_asked_for(repo: Repo) -> None:
     committed = said(repo.commit("src/logarc/a.py"))
     repo.git("checkout", "-q", "-b", "feat/x")

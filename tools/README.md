@@ -18,7 +18,7 @@ git config core.hooksPath tools/hooks
 | Hook | What it does |
 |---|---|
 | `pre-commit` | Runs `ruff check` and `ruff format --check` over the whole tree, as CI's lint job does, and stops the commit if either fails. Uses `.venv`'s ruff so it agrees with CI on the version; without a `.venv` it says so and lets the commit through. `git commit --no-verify` commits anyway. |
-| `post-merge` | Rebuilds `dist/` in the background when a merge into `main` (a `git pull` included) changed `src/logarc/`, `packaging/` or `pyproject.toml`. |
+| `post-merge` | Rebuilds `dist/` in the background when a merge into `main` (a `git pull` included) changed `src/logarc/`, `packaging/`, `pyproject.toml`, or the CRS sidecar's Go source and modules in `crs/`, which are compiled into the application. |
 | `post-commit` | The same for a commit made directly on `main`, which fires no merge. A commit on any other branch waits for its merge, so a branch rebuilds once, not once per commit. |
 | `post-checkout` | Prints the last rebuild failure, if there is one. `post-commit` does too. |
 
