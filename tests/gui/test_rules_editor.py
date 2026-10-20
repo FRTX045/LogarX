@@ -15,6 +15,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QPushButton
 
@@ -410,3 +411,54 @@ def test_loading_a_file_that_does_not_load_says_why(qt_app: QApplication, tmp_pa
     reason = RulesEditor().load_file(source)
 
     assert reason.startswith("Rule x")
+
+
+def test_a_count_that_climbs_from_nothing_is_not_left_faint(
+    qt_app: QApplication, shopfront_case: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Seen in the first real screenshot: a cell drawn faint while its rule had
+    found nothing yet stayed faint once its lines arrived, so a rule that was on
+    and finding things looked switched off."""
+    from logarc.rule_finds import FindsProgress
+    from logarc.style import THEME
+
+    def climbing(path, rules, *, cancelled, report):
+        report(FindsProgress(1, 2, {rule.id: Find(0, 0) for rule in rules}))
+        return {rule.id: Find(5, 1) for rule in rules}
+
+    monkeypatch.setattr(rules_editor_module, "count_finds", climbing)
+    editor = RulesEditor(shopfront_case)
+    editor._name.setText("shopfront")
+    _typed(editor, SHOPFRONT)
+    settled(qt_app)
+
+    table = editor._finds
+    assert {table.item(row, 3).text() for row in range(table.rowCount())} == {"5"}
+    assert {
+        table.item(row, column).foreground().color().name()
+        for row in range(table.rowCount())
+        for column in (3, 4)
+    } == {QColor(THEME.ink).name()}
+
+
+def test_switching_a_rule_back_on_gives_it_its_colours_back(qt_app: QApplication) -> None:
+    """Ticking a rule again repainted its whole row in the plain text colour,
+    and its severity lost the colour every other row's keeps."""
+    from logarc.core.activity import Severity
+    from logarc.style import severity_text_colour
+
+    editor = RulesEditor()
+    editor.select("recon")
+    table = editor._built_table
+    (row,) = [
+        r for r in range(table.rowCount())
+        if table.item(r, 1).data(Qt.ItemDataRole.UserRole) == "http_library_user_agent"
+    ]  # fmt: skip
+
+    table.item(row, 0).setCheckState(Qt.CheckState.Unchecked)
+    table.item(row, 0).setCheckState(Qt.CheckState.Checked)
+
+    assert (
+        table.item(row, 3).foreground().color().name()
+        == QColor(severity_text_colour(Severity.INFO)).name()
+    )

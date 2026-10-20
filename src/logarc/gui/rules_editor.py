@@ -494,7 +494,7 @@ class RulesEditor(QWidget):
         on = item.checkState() == Qt.CheckState.Checked
         rules_library.switch_rule(rule_id, on=on)
         self._library = rules_library.in_force(built_in=self._built_in)
-        self._grey(self._built_table, item.row(), not on)
+        self._colour_row(self._built_table, item.row())
         # A built-in switched back on can take its id back from one of the
         # reader's packs, which then stops loading: the list has to say so.
         current = self._packs.currentRow()
@@ -523,23 +523,41 @@ class RulesEditor(QWidget):
             table.setItem(row, first, name)
             table.setItem(row, first + 1, QTableWidgetItem(rule.category.value.replace("_", " ")))
             severity = QTableWidgetItem(rule.severity.name.lower())
-            severity.setForeground(QColor(severity_text_colour(rule.severity)))
+            # Kept on the cell, so a row painted faint and back keeps its colour.
+            severity.setData(Qt.ItemDataRole.UserRole, severity_text_colour(rule.severity))
             table.setItem(row, first + 2, severity)
             for column in (3, 4):
                 cell = QTableWidgetItem("")
                 cell.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 table.setItem(row, first + column, cell)
-            if switches and rule.id in self._library.ruleset.switched_off:
-                self._grey(table, row, True)
+            self._colour_row(table, row)
         table.blockSignals(False)
         (self._built_widths if switches else self._finds_widths).fit_unset()
 
-    def _grey(self, table: QTableWidget, row: int, off: bool) -> None:
-        table.blockSignals(True)
-        for column in range(1, table.columnCount()):
-            if (cell := table.item(row, column)) is not None:
-                cell.setForeground(QColor(THEME.faint if off else THEME.ink))
-        table.blockSignals(False)
+    def _colour_row(self, table: QTableWidget, row: int) -> None:
+        """Every cell of a row from what it says now: faint when the rule is
+        switched off or found nothing, the severity in its own colour, the rest
+        in the text colour. Worked out whole each time, because a count changes
+        under a row and a switch flips it, and either alone left it half right."""
+        first = 1 if table is self._built_table else 0
+        rule_id = required(table.item(row, first)).data(Qt.ItemDataRole.UserRole)
+        off = table is self._built_table and rule_id in self._library.ruleset.switched_off
+        # Put back what was in force, not "unblocked": called in the middle of
+        # filling the table, unblocking let the next row's tick box report a
+        # switch before that row had a rule in it.
+        was_blocked = table.blockSignals(True)
+        for column in range(first, table.columnCount()):
+            cell = required(table.item(row, column))
+            if off:
+                colour = THEME.faint
+            elif column == first + 2:
+                colour = cell.data(Qt.ItemDataRole.UserRole)
+            elif column >= first + 3 and cell.text() in ("", "—"):
+                colour = THEME.faint
+            else:
+                colour = THEME.ink
+            cell.setForeground(QColor(colour))
+        table.blockSignals(was_blocked)
 
     def _show_counts(self, table: QTableWidget, finds: dict[str, Find]) -> None:
         first = 1 if table is self._built_table else 0
@@ -550,10 +568,10 @@ class RulesEditor(QWidget):
             if found is None:
                 continue
             for column, value in ((3, found.lines), (4, found.clients)):
-                cell = required(table.item(row, first + column))
-                cell.setText(f"{value:,}" if found.lines else "—")
-                if not found.lines:
-                    cell.setForeground(QColor(THEME.faint))
+                required(table.item(row, first + column)).setText(
+                    f"{value:,}" if found.lines else "—"
+                )
+            self._colour_row(table, row)
         table.blockSignals(False)
 
     def _count(self, table: QTableWidget, rules: Sequence[Rule]) -> None:
