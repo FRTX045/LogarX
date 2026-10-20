@@ -122,6 +122,12 @@ class AnalysisResult:
     only reproducible if everything that produced it is named, and "CRS was not
     consulted" is as much a part of a result as which rules were."""
 
+    rules_in_force: str = ""
+    """Which rules produced this, in words: how many built in, any switched off
+    by id, and each pack added by name. The fingerprint proves which rules; this
+    says which, so a reader of a report does not need the ruleset to decode it.
+    Empty when the engine was built from a bare list of rules."""
+
     @property
     def request_count(self) -> int:
         return sum(session.request_count for session in self.sessions)
@@ -179,6 +185,7 @@ class AnalysisResult:
             "episode_count": len(self.episodes),
             "request_count": self.request_count,
             "ruleset_fingerprint": self.ruleset_fingerprint,
+            "rules_in_force": self.rules_in_force,
             "crs_fingerprint": self.crs_fingerprint,
             # Always present, empty when unanswered. A missing key would read as
             # a report written before this existed rather than as a question
@@ -266,4 +273,5 @@ def analyse_ip(
         window=window,
         crs_fingerprint=crs_fingerprint,
         site_hosts=tuple(sorted(engine.site_hosts)),
+        rules_in_force=engine.described,
     )

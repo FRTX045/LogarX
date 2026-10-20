@@ -26,6 +26,7 @@ from PyQt6.QtWidgets import (
 
 from logarc.case import Case
 from logarc.core.window import EVERYTHING, TimeWindow
+from logarc.detect.ruleset import NO_EXTRA_RULES, RuleSet
 from logarc.gui.columns import ColumnWidths
 from logarc.gui.disclosure import Disclosure
 from logarc.gui.recommendation import (
@@ -72,7 +73,7 @@ class TriagePanel(QWidget):
         self._generation = 0
         self._page_generation = 0
         self._stop: threading.Event | None = None
-        self._request: tuple[Path, TimeWindow] | None = None
+        self._request: tuple[Path, TimeWindow, RuleSet] | None = None
         self._result: TriageResult | None = None
         self._progress: TriageProgress | None = None
         self._rows: Sequence[RankedClient] = ()
@@ -193,11 +194,13 @@ class TriagePanel(QWidget):
         layout.addLayout(controls)
         self._display(())
 
-    def start(self, path: Path, window: TimeWindow = EVERYTHING) -> None:
+    def start(
+        self, path: Path, window: TimeWindow = EVERYTHING, rules: RuleSet = NO_EXTRA_RULES
+    ) -> None:
         """Replace the requested case/range and ignore all previous callbacks."""
         self.shutdown()
         self.setEnabled(True)
-        self._request = (path, window)
+        self._request = (path, window, rules)
         self._offset = 0
         self.notice.setText("Scanning IPs… Results are provisional.")
         colour_text(self.notice, THEME.warning)
@@ -210,7 +213,7 @@ class TriagePanel(QWidget):
 
         def work(report: Callable[[object], None]) -> TriageResult | None:
             try:
-                return run_scan(path, window=window, report=report, stop=stop)
+                return run_scan(path, window=window, rules=rules, report=report, stop=stop)
             except ScanCancelled:
                 return None
 

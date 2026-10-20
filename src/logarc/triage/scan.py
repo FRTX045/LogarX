@@ -17,6 +17,7 @@ from logarc.case import Case
 from logarc.core.evidence import EvidenceRef
 from logarc.core.window import EVERYTHING, TimeWindow
 from logarc.detect.crs.sidecar import CrsDetection
+from logarc.detect.ruleset import NO_EXTRA_RULES, RuleSet
 from logarc.search import labels_for_activity
 from logarc.sessionize.segmenter import SessionPolicy
 from logarc.storage.event_store import ParquetEventStore
@@ -291,8 +292,14 @@ def scan_case(
     report: Callable[[TriageProgress], None] | None = None,
     cancelled: Callable[[], bool] | None = None,
     scratch_root: Path | None = None,
+    rules: RuleSet = NO_EXTRA_RULES,
 ) -> TriageResult:
-    """Profile all clients and publish only complete results under their input hash."""
+    """Profile all clients and publish only complete results under their input hash.
+
+    `rules` is what the window reads clients with. The engine's fingerprint is
+    part of that hash, so a change of rules gets a scan of its own, and the one
+    before stays on disk for switching back.
+    """
     started = monotonic()
 
     def check() -> None:
@@ -308,7 +315,7 @@ def scan_case(
         # an engine built here would label a client differently from the
         # reconstruction of that same client, and the queue is only useful
         # while the two agree.
-        engine = case.rule_engine()
+        engine = case.rule_engine(rules)
         identity = {
             "sources": [asdict(source) for source in case.manifest.sources],
             "config": case.manifest.config,
@@ -451,6 +458,8 @@ def iter_labelled(root: Path, *, window: TimeWindow = EVERYTHING) -> Iterator[La
     """
     session_policy = SessionPolicy()
     with Case.open(root) as case:
+        # The built-in rules only, never a reader's: an evaluation measures the
+        # rules logarc ships.
         engine = case.rule_engine()
     directory = root / "triage"
     directory.mkdir(exist_ok=True)

@@ -799,3 +799,27 @@ def test_context_and_disclosure_choices_survive_source_updates(qt_app, tmp_path)
     assert "Recorded measurements:" not in panel.details.toPlainText()
     assert panel._opened == frozenset({0})
     panel.close()
+
+
+def test_running_the_scan_again_keeps_the_rules_it_was_started_with(qt_app, tmp_path, monkeypatch):
+    """Run scan, after a cancel, must not fall back to the built-in rules."""
+    from logarc.detect.ruleset import PackText, RuleSet
+    from logarc.gui import triage as triage_module
+    from logarc.gui.triage import TriagePanel
+
+    handed = []
+
+    def recording(path, *, window, rules, report, stop):
+        handed.append(rules)
+        return None  # what a cancelled scan returns, so Run scan is offered
+
+    monkeypatch.setattr(triage_module, "run_scan", recording)
+    rules = RuleSet((PackText("house", "version: 1\nrules: []\n"),))
+    panel = TriagePanel()
+
+    panel.start(tmp_path, rules=rules)
+    settled(qt_app)
+    panel._retry()
+    settled(qt_app)
+
+    assert handed == [rules, rules]

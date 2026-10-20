@@ -320,6 +320,8 @@ def _bookmarks(
 
 def _provenance(result: AnalysisResult, manifest: CaseManifest | None) -> str:
     rows = [("Ruleset fingerprint", result.ruleset_fingerprint)]
+    if result.rules_in_force:
+        rows.append(("Rules", result.rules_in_force))
     if manifest is not None:
         rows.append(("Case", manifest.case_id))
         rows.append(("Tool version", manifest.tool_version))
