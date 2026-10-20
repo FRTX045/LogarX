@@ -341,7 +341,7 @@ def test_shortcuts_step_and_reset(window: MainWindow, themed: QApplication) -> N
     ctrl = Qt.KeyboardModifier.ControlModifier
     QTest.keyClick(window, Qt.Key.Key_Equal, ctrl)
     assert themed.font().pointSizeF() == 12
-    assert window.statusBar().currentMessage() == "Text 12 pt"
+    assert window._zoom_note.text() == "Text 12 pt"
     QTest.keyClick(window, Qt.Key.Key_Minus, ctrl)
     QTest.keyClick(window, Qt.Key.Key_Minus, ctrl)
     assert themed.font().pointSizeF() == 10
@@ -403,6 +403,23 @@ def test_zooming_keeps_background_progress_and_cancellation(window: MainWindow) 
     window._zoom_text(1)
     assert window._stop is stop
     assert window._status.text() == "Processing logs"
-    assert not window._progress.isHidden() or window.statusBar().currentMessage()
+    assert not window._progress.isHidden()
     window._request_cancel()
     assert stop.is_set()
+
+
+def test_the_size_note_never_covers_the_status_line(
+    window: MainWindow, themed: QApplication
+) -> None:
+    from conftest import fired
+
+    window._status.setText("100.66.0.0: 8 activities")
+    for points in (9, 14):
+        window._set_text_points(points)
+        themed.processEvents()
+    bar = window.statusBar()
+    assert not (window._status.isVisible() and bar.currentMessage()), "drawn on top of each other"
+    assert window._status.isVisible()
+    assert window._zoom_note.text() == "Text 14 pt"
+    fired(window._zoom_note_timer)
+    assert window._zoom_note.text() == ""

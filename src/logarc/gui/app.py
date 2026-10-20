@@ -14,7 +14,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from PyQt6.QtCore import QEvent, QPoint, QSettings, Qt
+from PyQt6.QtCore import QEvent, QPoint, QSettings, Qt, QTimer
 from PyQt6.QtGui import QAction, QCloseEvent, QColor, QImage, QKeyEvent, QKeySequence, QPainter
 from PyQt6.QtWidgets import (
     QApplication,
@@ -342,6 +342,15 @@ class MainWindow(QMainWindow):
         status_bar = required(self.statusBar())
         status_bar.addWidget(self._progress)
         status_bar.addWidget(self._status, 1)
+        # The text size after a zoom, for two seconds. Its own permanent label:
+        # a status bar message would hide the status line and a scan's progress
+        # while it showed, and after a second zoom left them drawn underneath.
+        self._zoom_note = QLabel("")
+        self._zoom_note_timer = QTimer(self)
+        self._zoom_note_timer.setSingleShot(True)
+        self._zoom_note_timer.setInterval(2000)
+        self._zoom_note_timer.timeout.connect(self._zoom_note.clear)
+        status_bar.addPermanentWidget(self._zoom_note)
         status_bar.addPermanentWidget(self._cancel)
 
     # -- construction ------------------------------------------------------
@@ -1931,11 +1940,7 @@ class MainWindow(QMainWindow):
             self._set_text_points(automatic_points_for(running))
 
     def _set_text_points(self, points: float) -> None:
-        """Put a text size in force in every window, remember it, and say so briefly.
-
-        A message on the status bar rather than in the status line, so a scan's
-        progress and its Cancel button come back on their own afterwards.
-        """
+        """Put a text size in force in every window, remember it, and say so briefly."""
         running = QApplication.instance()
         if not isinstance(running, QApplication):
             return
@@ -1944,7 +1949,8 @@ class MainWindow(QMainWindow):
             if isinstance(window, MainWindow):
                 window._follow_text_size(chosen)
         _settings().setValue(prefs.TEXT_POINTS, int(chosen))
-        required(self.statusBar()).showMessage(f"Text {int(chosen)} pt", 2000)
+        self._zoom_note.setText(f"Text {int(chosen)} pt")
+        self._zoom_note_timer.start()
 
     def _follow_text_size(self, points: float) -> None:
         self._evidence.follow_text_size()
