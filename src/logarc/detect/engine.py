@@ -370,6 +370,7 @@ class RuleEngine:
         *,
         site_hosts: Iterable[str] = (),
         crs_host: str | None = None,
+        described: str = "",
     ) -> None:
         self.rules = list(rules)
         self._signatures = [rule for rule in self.rules if isinstance(rule, SignatureRule)]
@@ -406,6 +407,11 @@ class RuleEngine:
           that also answers to `shopcdn.net` would have links to its own second
           domain reported as remote file inclusion.
         """
+        self.described = described
+        """Which rules these are, in words, for a report (`ruleset.build_rules`).
+
+        Not part of `fingerprint`: the rules are, and this only names them.
+        Empty when the engine was built from a bare list of rules."""
 
     @property
     def crs_host_trusted(self) -> bool:

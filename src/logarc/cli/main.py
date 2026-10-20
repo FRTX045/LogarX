@@ -32,7 +32,8 @@ from logarc.detect.crs.setup import SetupError, setup_crs
 from logarc.detect.crs.store import CrsEvidence
 from logarc.detect.engine import RuleEngine
 from logarc.detect.rulepacks import default_rules
-from logarc.detect.rules import RulePackError, load_rules
+from logarc.detect.rules import RulePackError
+from logarc.detect.ruleset import build_rules
 from logarc.enrich import EnrichOutcome, enrich_case
 from logarc.episode.builder import EpisodePolicy
 from logarc.evaluation.benchmark import BenchmarkError, BenchmarkResult, run_benchmark
@@ -108,12 +109,14 @@ def _rule_engine(rules: list[Path] | None) -> RuleEngine | None:
 
     Extra packs are added to the defaults rather than replacing them: someone
     writing one rule about their own application should not silently lose OWASP
-    coverage in the process. `load_rules` refuses a duplicate id, so a pack that
-    copies a bundled rule to edit it fails loudly instead of shadowing it.
+    coverage in the process. `build_rules` refuses an id already in force, so a
+    pack that copies a bundled rule to edit it fails loudly instead of shadowing
+    it.
     """
     if not rules:
         return None
-    return RuleEngine([*default_rules(), *load_rules(list(rules))])
+    in_force = build_rules(extra_packs=rules)
+    return RuleEngine(in_force.rules, described=in_force.described)
 
 
 def _reconstruct(opened: Case, ip: str, rules: list[Path] | None) -> AnalysisResult:
@@ -127,7 +130,7 @@ def _reconstruct(opened: Case, ip: str, rules: list[Path] | None) -> AnalysisRes
     return analyse_ip(
         opened.store,
         ip,
-        engine=opened.rule_engine(rules or ()),
+        engine=opened.rule_engine(extra_packs=rules or ()),
         crs=crs.index,
         crs_fingerprint=crs.fingerprint,
     )
