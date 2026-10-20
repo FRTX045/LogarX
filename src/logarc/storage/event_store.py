@@ -13,8 +13,10 @@ case in milliseconds, repeatedly. See ADR-0002.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import uuid
+from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
@@ -152,6 +154,8 @@ class ParquetEventStore:
         self._writer: pq.ParquetWriter | None = None
         self._batch = 0
         self._connection: duckdb.DuckDBPyConnection | None = None
+        #: This store's own folder inside `_scratch`, while it has a connection.
+        self._spill: Path | None = None
 
     # -- ingest ------------------------------------------------------------
 
@@ -291,9 +295,13 @@ class ParquetEventStore:
 
         Redirecting the temp directory instead does not work: once DuckDB has
         used one it refuses to be moved off it.
+
+        Only this store's own spill goes, and the shared folder only once it is
+        empty: another reader of the case may be spilling beside it.
         """
         self.close()
-        shutil.rmtree(self._scratch, ignore_errors=True)
+        with suppress(OSError):
+            self._scratch.rmdir()
 
     def _write_empty_index(self) -> None:
         empty = pa.table(
@@ -742,6 +750,10 @@ class ParquetEventStore:
         if self._connection is not None:
             self._connection.close()
             self._connection = None
+        if self._spill is not None:
+            # DuckDB removes a folder it made itself; this is for one it could not.
+            shutil.rmtree(self._spill, ignore_errors=True)
+            self._spill = None
 
     def _connect(self) -> duckdb.DuckDBPyConnection:
         """Open the query engine with a memory ceiling and room to spill.
@@ -755,9 +767,16 @@ class ParquetEventStore:
         """
         if self._connection is None:
             self._scratch.mkdir(parents=True, exist_ok=True)
+            # A folder of its own, because DuckDB names its spill files the same
+            # in every process and connection (`duckdb_temp_storage_S64K-0.tmp`):
+            # two readers of one case spilling into one folder write over and
+            # delete each other's, and crash. DuckDB makes the folder on its
+            # first spill and removes it on close, so a reader that never
+            # spills leaves nothing behind.
+            self._spill = self._scratch / f"spill-{os.getpid()}-{uuid.uuid4().hex[:8]}"
             self._connection = duckdb.connect(":memory:")
             self._connection.execute(f"SET memory_limit = '{self._memory_limit}'")
-            self._connection.execute(f"SET temp_directory = {self._sql_path(self._scratch)}")
+            self._connection.execute(f"SET temp_directory = {self._sql_path(self._spill)}")
             # Under a ceiling, the partitioned write in `finalize` runs out of
             # memory rather than spilling, because holding insertion order
             # across 64 partitions means buffering them. Every query here that
