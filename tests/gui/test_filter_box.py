@@ -187,6 +187,60 @@ def test_focus_opens_the_list_of_filters(window: QWidget) -> None:
     assert box.suggestion_list.completions()[:2] == ["status:", "path:"]
 
 
+@pytest.mark.parametrize(
+    "reason",
+    [
+        Qt.FocusReason.MouseFocusReason,
+        Qt.FocusReason.TabFocusReason,
+        Qt.FocusReason.BacktabFocusReason,
+        Qt.FocusReason.ShortcutFocusReason,
+    ],
+)
+def test_the_reader_putting_the_keyboard_in_the_box_opens_the_list(
+    window: QWidget, reason: Qt.FocusReason
+) -> None:
+    box = boxed(window)
+
+    QApplication.sendEvent(box.edit, QFocusEvent(QEvent.Type.FocusIn, reason))
+    QApplication.processEvents()
+
+    assert box.suggestion_list.isVisible()
+
+
+@pytest.mark.parametrize(
+    "reason", [Qt.FocusReason.ActiveWindowFocusReason, Qt.FocusReason.PopupFocusReason]
+)
+def test_focus_handed_back_to_the_box_leaves_the_list_closed(
+    window: QWidget, reason: Qt.FocusReason
+) -> None:
+    """Coming back to the window, or out of a menu, is not the reader asking for it.
+
+    The list closes when the box loses the keyboard, so it came back over the
+    client list every time the reader switched to another window and back, even
+    after closing it with Escape; and it was open over the list as a case opened.
+    """
+    box = boxed(window)
+
+    QApplication.sendEvent(box.edit, QFocusEvent(QEvent.Type.FocusIn, reason))
+    QApplication.processEvents()
+
+    assert not box.suggestion_list.isVisible()
+
+
+def test_a_click_opens_the_list_in_a_box_that_already_had_the_keyboard(window: QWidget) -> None:
+    """Given the keyboard by the window coming back, a click on it is no new focus."""
+    box = boxed(window)
+    QApplication.sendEvent(
+        box.edit, QFocusEvent(QEvent.Type.FocusIn, Qt.FocusReason.ActiveWindowFocusReason)
+    )
+    QApplication.processEvents()
+
+    QTest.mouseClick(box.edit, Qt.MouseButton.LeftButton)
+    QApplication.processEvents()
+
+    assert box.suggestion_list.isVisible()
+
+
 def test_after_a_key_the_list_offers_its_values(window: QWidget) -> None:
     box = boxed(window)
     focus(box)
