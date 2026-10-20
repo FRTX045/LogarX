@@ -17,6 +17,7 @@ from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication
 from tables import column_of
 
+from conftest import fired
 from logarc.gui.panels import ClientTable
 from logarc.storage.base import ClientMatchPage, IpSummary, IpSummaryPage
 
@@ -61,8 +62,8 @@ def partial(qt_app: QApplication) -> ClientTable:
     return table
 
 
-def settle_search() -> None:
-    QTest.qWait(ClientTable.SEARCH_DELAY_MS + 50)
+def settle_search(table: ClientTable) -> None:
+    fired(table._search_timer)
 
 
 def test_rows_open_busiest_first(partial: ClientTable) -> None:
@@ -77,7 +78,7 @@ def test_a_partial_list_asks_for_a_whole_case_search(partial: ClientTable) -> No
     assert edits == [True], "a stale answer must be dropped as soon as the text changes"
     assert asked == []
     assert partial._caption.text() == f"Searching the whole case for 10.0.9{ELLIPSIS}"
-    settle_search()
+    settle_search(partial)
     assert asked == [("10.0.9", 0)]
 
 
@@ -87,7 +88,7 @@ def test_a_complete_list_filters_itself_and_asks_for_nothing(qt_app: QApplicatio
     asked = []
     table.page_requested.connect(lambda query, offset: asked.append((query, offset)))
     table._filter.setText("10.0.0.2")
-    settle_search()
+    settle_search(table)
     assert asked == []
     assert on_screen(table) == ["10.0.0.2"]
     assert table._caption.text() == "1 of 2 clients matches 10.0.0.2"
@@ -143,7 +144,7 @@ def test_clearing_the_search_restores_the_page_without_asking(partial: ClientTab
     asked = []
     partial.page_requested.connect(lambda query, offset: asked.append((query, offset)))
     partial._filter.clear()
-    settle_search()
+    settle_search(partial)
     assert asked == []
     assert on_screen(partial) == ["10.0.0.1", "10.0.0.2", "172.16.0.9"]
     assert partial._caption.text().startswith(f"Clients 1{DASH}3 of 900, busiest first")
@@ -256,7 +257,7 @@ def test_a_request_search_always_asks_the_whole_case(qt_app: QApplication) -> No
 
     assert table._caption.text() == f"Searching the whole case for status:200 10.0{ELLIPSIS}"
     assert on_screen(table) == [], "no rows that might be read as the answer"
-    settle_search()
+    settle_search(table)
     assert asked == [("status:200 10.0", 0)]
 
 
@@ -380,7 +381,7 @@ def test_a_finished_time_asks_for_the_range_and_hands_back_the_rest(
     partial.range_typed.connect(moved.append)
 
     partial._filter.setText("after:12:00 status:404 before:2024-05-01T13:00 10.0")
-    settle_search()
+    settle_search(partial)
 
     assert moved == ["after:12:00 before:2024-05-01T13:00"]
     assert partial.query_without_times() == "status:404 10.0"
@@ -399,13 +400,13 @@ def test_a_time_still_being_typed_is_searched_and_moves_the_range_once_finished(
 
     QTest.keyClicks(partial._filter.edit, "after:12:00")
     assert on_screen(partial) == [], "waiting for the case, as for any filter"
-    settle_search()
+    settle_search(partial)
 
     assert asked == [("after:12:00", 0)], "a time of day alone is still a filter"
     assert moved == []
 
     QTest.keyClicks(partial._filter.edit, " ")
-    settle_search()
+    settle_search(partial)
 
     assert moved == ["after:12:00"]
 
@@ -477,7 +478,7 @@ def test_ties_keep_the_order_the_page_was_cut_in(partial: ClientTable) -> None:
 def test_searching_again_asks_at_once(partial: ClientTable) -> None:
     """Nothing was typed, so there is no typing to wait out."""
     partial._filter.setText("activity:injection")
-    settle_search()
+    settle_search(partial)
     asked: list[tuple[str, int]] = []
     partial.page_requested.connect(lambda query, offset: asked.append((query, offset)))
 
@@ -489,12 +490,12 @@ def test_searching_again_asks_at_once(partial: ClientTable) -> None:
 def test_finishing_a_filter_that_is_not_a_time_asks_nothing_more(partial: ClientTable) -> None:
     """The search for `status:404` already ran while it was typed."""
     QTest.keyClicks(partial._filter.edit, "status:404")
-    settle_search()
+    settle_search(partial)
     asked: list[tuple[str, int]] = []
     partial.page_requested.connect(lambda query, offset: asked.append((query, offset)))
 
     QTest.keyClicks(partial._filter.edit, " ")
-    settle_search()
+    settle_search(partial)
 
     assert partial._filter.chips() == ("status:404",)
     assert asked == []

@@ -20,7 +20,7 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 from PyQt6.QtTest import QTest
 from tables import column_of
 
-from conftest import settled
+from conftest import fired, settled
 from logarc import caseview
 from logarc.case import Case
 from logarc.core.event import NormalizedEvent
@@ -28,7 +28,6 @@ from logarc.core.evidence import EvidenceRef
 from logarc.core.window import TimeWindow
 from logarc.gui.app import MainWindow
 from logarc.gui.client_filter import awaiting_scan
-from logarc.gui.evidence_panel import EvidencePanel
 from logarc.gui.panels import ClientTable
 
 if TYPE_CHECKING:
@@ -123,7 +122,7 @@ def paged(
 def search(qt_app: QApplication, window: MainWindow, text: str) -> None:
     """Typed into the client box, heard once typing rests."""
     window._clients._filter.setText(text)
-    QTest.qWait(ClientTable.SEARCH_DELAY_MS + 60)
+    fired(window._clients._search_timer)
     settled(qt_app)
 
 
@@ -242,7 +241,7 @@ def test_typing_while_the_range_moves_is_kept(qt_app: QApplication, window: Main
     window._clients._ask()  # the box at rest: the range starts moving
     QTest.keyClicks(window._clients._filter.edit, "status:401")
     settled(qt_app)
-    QTest.qWait(ClientTable.SEARCH_DELAY_MS + 60)
+    fired(window._clients._search_timer)
     settled(qt_app)
 
     assert window._window.start == DAY + timedelta(minutes=55)
@@ -480,7 +479,7 @@ def test_the_first_match_is_opened_only_once(qt_app: QApplication, window: MainW
     window._show_evidence(other.node_id)
     settled(qt_app)
     window._evidence.filter_box.setText("status:401")
-    QTest.qWait(EvidencePanel.FILTER_DELAY_MS + 60)
+    fired(window._evidence._rest)
     settled(qt_app)
 
     assert window._selected.node_id == other.node_id

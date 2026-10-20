@@ -22,6 +22,7 @@ from PyQt6.QtGui import QResizeEvent
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QPushButton
 
+from conftest import fired
 from logarc.core.activity import ActivityCategory, Outcome, Severity
 from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
@@ -160,7 +161,7 @@ def test_typing_is_heard_once_it_rests(panel: EvidencePanel) -> None:
 
     QTest.keyClicks(panel.filter_box.edit, "status:404")
     assert heard == [], "not on every key"
-    QTest.qWait(EvidencePanel.FILTER_DELAY_MS + 80)
+    fired(panel._rest)
 
     assert heard == ["status:404"]
 

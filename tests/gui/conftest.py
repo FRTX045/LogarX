@@ -23,7 +23,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
-from PyQt6.QtCore import QSettings, QThreadPool
+from PyQt6.QtCore import QSettings, QThreadPool, QTimer
+from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication
 
 from logarc.gui import app, workers
@@ -93,6 +94,22 @@ def settled(qt_app: QApplication, timeout: float = 30.0) -> None:
         # the window) with its own signal queued behind us.
         if pool.waitForDone(0) and not workers._in_flight:
             return
+
+
+def fired(timer: QTimer, timeout: float = 10.0) -> None:
+    """Pump events until `timer`, a single shot, has fired, if it is still waiting to.
+
+    The search boxes and the source check wait for typing or moving to rest.
+    Waiting out their interval and a margin raced them: on a loaded runner a
+    timer fires late, after the margin was spent, and the test read a search
+    that had not started (`test_a_search_answer_for_an_earlier_range_is_dropped`
+    on windows-latest, 2026-10-20). Made 100 ms late on purpose, 39 tests failed
+    that way; asking the timer instead of the clock, none.
+    """
+    deadline = time.monotonic() + timeout
+    while timer.isActive():
+        assert time.monotonic() < deadline, "the timer had still not fired"
+        QTest.qWait(10)
 
 
 @pytest.fixture(autouse=True)
