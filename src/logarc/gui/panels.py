@@ -7,6 +7,7 @@ no analysis of their own.
 
 from __future__ import annotations
 
+from datetime import UTC
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import QPoint, QRectF, Qt, QTimer, pyqtSignal
@@ -27,7 +28,7 @@ from logarc.caseview import CLIENT_LIMIT
 from logarc.gui._qt import SORT_KEY, SortableItem, required
 from logarc.gui.client_filter import caption as filter_caption
 from logarc.gui.client_filter import match_caption, matches
-from logarc.gui.columns import ColumnWidths
+from logarc.gui.columns import SHORT_TEXT, ColumnWidths, ShortWhenNarrow
 from logarc.gui.filter_box import FilterBox
 from logarc.gui.flow import FlowLayout
 from logarc.gui.ribbon import Mark, ribbon_icon, ribbon_tip
@@ -75,6 +76,8 @@ _ADDRESS = _COLUMNS.index("Client")
 #: columns, so none of the others moves, and shown beside the address: it is
 #: what the list is ordered by while a search is on.
 _MATCH = _COLUMNS.index("Match")
+_FIRST = _COLUMNS.index("First")
+_LAST = _COLUMNS.index("Last")
 
 #: What the client box says before anything is typed: that it searches the
 #: case, and the filters it takes.
@@ -91,8 +94,24 @@ def format_seen(when: datetime) -> str:
 
     Nothing is lost by it. This column is for ordering and orientation; the
     exact times, to the second, are in the evidence panel beside every line.
+    Narrower still, the column shows only `seen_day`, and its tooltip the whole
+    moment.
     """
     return when.strftime("%d %b %H:%M")
+
+
+def seen_day(when: datetime) -> str:
+    """The day alone: what First and Last show until they are given room for the time.
+
+    At the window's default size Last had 37 px beside a search and showed
+    `15 …` on every row. The reader chose the day over a wider panel.
+    """
+    return when.strftime("%d %b")
+
+
+def seen_whole(when: datetime) -> str:
+    """The moment to the second, for the tooltip of a cell showing less of it."""
+    return f"{when.astimezone(UTC):%d %b %Y %H:%M:%S} UTC"
 
 
 class _Rows(QTableWidget):
@@ -218,6 +237,10 @@ class ClientTable(QWidget):
         self._marks: dict[str, Mark] = {}
         self._table = _Rows(0, len(_COLUMNS))
         self._table.setHorizontalHeaderLabels(_COLUMNS)
+        # The day while the column is narrow, the time as well once it is not.
+        days = ShortWhenNarrow(self._table)
+        for column in (_FIRST, _LAST):
+            self._table.setItemDelegateForColumn(column, days)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -374,10 +397,15 @@ class ClientTable(QWidget):
             self._set(
                 row, 3, f"{summary.client_error_ratio:.0%}", sort_key=summary.client_error_ratio
             )
-            # On the moment, not the words: as text `10 Mar` sorts before `15 Feb`.
-            first, last = summary.first_seen, summary.last_seen
-            self._set(row, 4, format_seen(first), sort_key=first.timestamp())
-            self._set(row, 5, format_seen(last), sort_key=last.timestamp())
+            for column, when in ((_FIRST, summary.first_seen), (_LAST, summary.last_seen)):
+                self._set(
+                    row,
+                    column,
+                    format_seen(when),
+                    sort_key=when.timestamp(),
+                    short=seen_day(when),
+                    tooltip=seen_whole(when),
+                )
             found = hits[row] if row < len(hits) else 0
             self._set(row, _MATCH, f"{found:,}", sort_key=found)
         # Marked before the columns are measured, so a ribbon's width is counted
@@ -748,14 +776,27 @@ class ClientTable(QWidget):
             )
         )
 
-    def _set(self, row: int, column: int, text: str, *, sort_key: float | None = None) -> None:
+    def _set(
+        self,
+        row: int,
+        column: int,
+        text: str,
+        *,
+        sort_key: float | None = None,
+        short: str = "",
+        tooltip: str = "",
+    ) -> None:
         item = SortableItem(text)
+        if short:
+            item.setData(SHORT_TEXT, short)
+        if tooltip:
+            item.setToolTip(tooltip)
         if column in _NUMERIC:
             item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         if column == _ADDRESS:
             item.setFont(mono_font(self._table.font().pointSizeF()))
             item.setForeground(QColor(THEME.identity))
-        elif column in (4, 5):
+        elif column in (_FIRST, _LAST):
             item.setForeground(QColor(THEME.timestamp))
         if sort_key is not None:
             # Sort on the number, not on the formatted text: "1,000" sorts

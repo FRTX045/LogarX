@@ -289,6 +289,18 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The client list and the evidence table fit the window's default size.**
+  At 1400 px the client list cut Last to `15 …` on every row, and the evidence
+  table left Request 38 px, `PO…`, with Status and Size behind a scroll bar.
+  A narrow column now shows a shorter form of what it holds: First and Last
+  the day, and the evidence table's first column, now called Line, the line
+  number while the activity's lines come from one file. Widened, each shows
+  the whole value again, and a cell's tooltip always does. Size starts hidden
+  and comes back from the heading's menu (**Show Size**); it is in the details
+  as well. Headings other than the sorted one no longer keep room for a sort
+  arrow they do not draw. At the default size Request now gets 156 px with no
+  scroll bar, and Last 68 to 78 px.
+
 - **A page keeps the files it loaded in one activity, whatever kind of page it
   is.** A sign-in page's stylesheets and images were cut away from it into an
   activity of their own, because files count as ordinary browsing and signing
@@ -854,6 +866,14 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   261 lines of unchanged values and buried the line that had actually moved.
 
 ### Fixed
+
+- **The client list sorts First and Last by time.** They sorted as text, so
+  `10 Mar` came before `15 Feb` in a case spanning two months.
+
+- **A table let go of while shown no longer ends the program.** Its header
+  reported its geometry once more as it was destroyed, and the column sizing
+  reached for a table that was no longer there; PyQt answers an error at that
+  point by aborting the process.
 
 - **Two readers of one case no longer crash each other when both spill.** Every
   store gave the query engine the case's `tmp` folder for what does not fit in

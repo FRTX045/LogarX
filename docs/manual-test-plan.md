@@ -296,23 +296,34 @@ file it came from.
 
 1. Reconstruct a client with an injection episode and click that node.
 
-**Pass:** a table with a row per request — `Source`, `Time`, `Request`,
-`Status`, `Size`. The payload is readable: `GET /product?id=1' OR '1'='1`, not
+**Pass:** a table with a row per request — `Line`, `Time`, `Request`,
+`Status`. The payload is readable: `GET /product?id=1' OR '1'='1`, not
 `%27+OR+%271%27%3D%271`. A served response stands out from refused ones. Values
 read as values: a time of day rather than `1714564875`, `1.3 MB` rather than
 `1400000.0`. The same goes for the client table on the left, whose `4xx` column
 must show a percentage.
 
-2. Click the `Size` heading twice to sort descending.
+2. Right-click a heading and choose **Show Size**, then click the `Size`
+   heading twice to sort descending.
 
 **Pass:** the largest response is on top — the request that got data out. Click
 that row.
 
-**Pass:** the detail beneath names the same `Source` as the highlighted row.
+**Pass:** the detail beneath names the same file and line as the highlighted
+row's `Line`.
 Sorting must never leave the detail describing a different request from the one
 selected.
 
-3. Read the `as logged` block in the detail and compare it with the file:
+3. At the window's default size, read the `Line` column, then drag its right
+   edge wider.
+
+**Pass:** while narrow it shows the line number alone, such as `2014`, and
+`Request` has room for the request itself rather than its first two letters.
+Widened, it shows the file as well, such as `excerpt.log:2014`. The client
+list's `First` shows a day, such as `09 Mar`, the same way, and the time once
+dragged wider; hovering either shows the whole value.
+
+4. Read the `as logged` block in the detail and compare it with the file:
 
 ```powershell
 Get-Content <log> | Select-Object -Index (<line> - 1)
@@ -321,12 +332,12 @@ Get-Content <log> | Select-Object -Index (<line> - 1)
 They must be identical, character for character, including everything the table
 leaves out. This is the check that makes summarising permissible at all.
 
-4. **View → Decode URL escapes**, off.
+5. **View → Decode URL escapes**, off.
 
 **Pass:** requests are shown exactly as the log holds them, percent escapes and
 all. Close the application and reopen it: the choice is as it was left.
 
-5. Find or craft a request containing `%0A` and click its episode.
+6. Find or craft a request containing `%0A` and click its episode.
 
 **Pass:** it is printed as `<U+000A>` and occupies **one row**. A decoded
 newline would let whoever is being investigated draw over the row beneath — a

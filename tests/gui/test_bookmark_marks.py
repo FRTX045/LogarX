@@ -262,7 +262,8 @@ def test_marks_set_after_the_lines_are_shown_apply_at_once(panel: EvidencePanel)
     assert marked_lines(panel) == {lines()[0].ref}
     panel.set_marks({})
     assert marked_lines(panel) == set()
-    assert all(panel._table.item(row, 0).toolTip() == "" for row in range(4))
+    # What stays is the line's whole reference, which a narrow column cuts.
+    assert all("Bookmarked" not in panel._table.item(row, 0).toolTip() for row in range(4))
 
 
 def test_the_bookmark_button_is_there_while_an_activity_is(panel: EvidencePanel) -> None:

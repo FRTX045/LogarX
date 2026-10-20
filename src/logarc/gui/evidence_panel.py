@@ -29,7 +29,7 @@ from PyQt6.QtWidgets import (
 )
 
 from logarc.gui._qt import SORT_KEY, SortableItem, required
-from logarc.gui.columns import ColumnWidths
+from logarc.gui.columns import SHORT_TEXT, ColumnWidths, ShortWhenNarrow
 from logarc.gui.disclosure import Disclosure
 from logarc.gui.evidence_details import EvidenceDetails
 from logarc.gui.evidence_view import (
@@ -73,6 +73,7 @@ __all__ = ["EvidencePanel"]
 #: of them.
 _STATUS = COLUMNS.index("Status")
 _SIZE = COLUMNS.index("Size")
+_LINE = COLUMNS.index("Line")
 
 
 #: A short field hint; filter examples are available in its tooltip and suggestions.
@@ -141,7 +142,21 @@ class EvidencePanel(QWidget):
         font = mono_font(8.5)
 
         self._table = _build_table(font)
-        self._column_sizes = ColumnWidths(self._table, fill=COLUMNS.index("Request"))
+        # The line number alone while the column is narrow; the file as well
+        # once it is widened, or when the lines come from more than one file.
+        self._table.setItemDelegateForColumn(_LINE, ShortWhenNarrow(self._table))
+        # Size starts hidden: at the default width its 66px left Request 38px.
+        # The heading's menu shows it; it is in the details below as well.
+        self._column_sizes = ColumnWidths(
+            self._table, fill=COLUMNS.index("Request"), optional=(_SIZE,)
+        )
+        self._column_sizes.wanted_changed.connect(self._show_size)
+        # Whether the activity on show has any size to put in that column.
+        self._sizes = False
+        # The sorted heading gets room for its arrow; the others need none.
+        required(self._table.horizontalHeader(), "column header").sortIndicatorChanged.connect(
+            self._sort_changed
+        )
         self._table.itemSelectionChanged.connect(self._selection_changed)
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._show_menu)
@@ -313,24 +328,31 @@ class EvidencePanel(QWidget):
         # Interactive headers avoid re-measuring every column on each inserted
         # cell. Untouched widths are fitted once when the refill is complete.
         sizes = False
+        # The number alone stands for the line only while one file is behind them.
+        one_file = len({line.ref.source_file_id for line in lines}) <= 1
         self._table.setRowCount(len(lines))
         for row, line in enumerate(lines):
             for column, cell in enumerate(cells_for(line, decode=self._decode)):
-                self._table.setItem(row, column, _item(cell, index=row, column=column))
+                self._table.setItem(
+                    row, column, _item(cell, index=row, column=column, short=one_file)
+                )
                 sizes = sizes or (column == _SIZE and bool(cell.text))
         self._apply_marks()
-        self._table.setSortingEnabled(True)
         # A column costs its heading's width whatever it holds, and several log
-        # formats carry no response size at all. Empty on every row it was taking
-        # that width from `Request`, which is where the payload goes. Hidden only
-        # while there is nothing in it — one size anywhere brings it back.
-        self._table.setColumnHidden(_SIZE, not sizes)
+        # formats carry no response size at all. Hidden while there is nothing
+        # in it, whatever the reader asked for.
+        self._sizes = sizes
+        self._show_size(fit=False)
+        # Measured with sorting still off. With it on, Qt sizes every heading for
+        # a sort arrow only one of them draws, and the room comes out of Request.
         self._column_sizes.fit_unset()
+        self._table.setSortingEnabled(True)
         # Opened in the order the log holds, not in whatever order the widget
         # last happened to be sorted by. Evidence is a sequence of events and
         # the first thing a reader wants is the sequence; sorting by size or
         # status is a question they ask afterwards.
-        self._table.sortItems(COLUMNS.index("Source"), Qt.SortOrder.AscendingOrder)
+        self._table.sortItems(_LINE, Qt.SortOrder.AscendingOrder)
+        self._column_sizes.fit_heading(_LINE)
 
         if lines:
             self.select_row(0)
@@ -448,7 +470,19 @@ class EvidencePanel(QWidget):
                 continue
             mark = self._marks.get(lines[index].ref)
             marker.setIcon(ribbon_icon(mark[0]) if mark is not None else QIcon())
-            marker.setToolTip(ribbon_tip(mark[1]) if mark is not None else "")
+            # A bookmark's note, or else the whole reference a narrow column cuts.
+            whole = ribbon_tip(marker.text()) if marker.data(SHORT_TEXT) else ""
+            marker.setToolTip(ribbon_tip(mark[1]) if mark is not None else whole)
+
+    def _show_size(self, *, fit: bool = True) -> None:
+        """Size, while the reader has asked for it and the activity has sizes."""
+        wanted = self._sizes and self._column_sizes.wanted(_SIZE)
+        self._table.setColumnHidden(_SIZE, not wanted)
+        if fit:
+            self._column_sizes.fit_unset()
+
+    def _sort_changed(self, section: int, _order: Qt.SortOrder) -> None:
+        self._column_sizes.fit_heading(section)
 
     def shown_node(self) -> GraphNode | None:
         return self._shown[0] if self._shown is not None else None
@@ -579,8 +613,10 @@ def _chip(text: str, colour: str | None = None) -> str:
 _INDEX = Qt.ItemDataRole.UserRole
 
 
-def _item(cell: Cell, *, index: int, column: int) -> QTableWidgetItem:
+def _item(cell: Cell, *, index: int, column: int, short: bool) -> QTableWidgetItem:
     item = SortableItem(cell.text)
+    if short and cell.short:
+        item.setData(SHORT_TEXT, cell.short)
     if cell.sort_key is not None:
         item.setData(SORT_KEY, cell.sort_key)
     item.setForeground(QColor(cell.colour))
