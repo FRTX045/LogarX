@@ -21,7 +21,8 @@ source .venv/bin/activate         # Linux and macOS
 pip install -e ".[gui]"
 
 # 1. Read the log into a case. The format is detected; nothing is configured.
-logarc ingest tests/data/apache-shopfront/excerpt.log --case ./case-shop
+#    --no-crs skips the OWASP CRS replay, which needs a one-time setup first.
+logarc ingest tests/data/apache-shopfront/excerpt.log --case ./case-shop --no-crs
 
 # 2. Who looks like they were probing? Sort by the share of 4xx responses.
 logarc list-ips --case ./case-shop --sort errors --limit 8
@@ -39,10 +40,12 @@ logarc-gui
 
 Step 3 prints this:
 
-![logarc analyze reduces 48 requests to 8 activities, naming two successful SQL injections](images/cli-analyze.png)
+![logarc analyze reduces 48 requests to 3 activities, the last 46 requests of successful SQL injection](images/cli-analyze.png)
 
-Forty-eight requests, three sessions, eight activities — and the two that matter
-are named, dated, mapped to OWASP, and marked `success` rather than `blocked`.
+Forty-eight requests, three sessions, three activities — and the one that matters,
+46 requests of SQL injection, is named, dated, mapped to OWASP, and marked
+`success` rather than `blocked`. The first line says CRS was not consulted;
+[installing.md](installing.md#owasp-crs) sets it up.
 
 Step 4 shows why you can believe it:
 

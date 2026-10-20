@@ -66,7 +66,10 @@ Then, in the window:
 
 1. **Case → Ingest logs into a new case…**, choose
    `tests/data/apache-shopfront/excerpt.log`, then an empty folder for the case.
-   The format is detected; nothing is configured.
+   The format is detected; nothing is configured. On a fresh clone a notice
+   then says **CRS is not installed**: the case is complete without it, so
+   choose **Continue**. [docs/installing.md](docs/installing.md#owasp-crs) sets
+   up that optional second ruleset.
 2. **Where to start** lists the clients worth reading first, each with the
    measurements behind its place in the queue.
 3. Click **192.0.2.31** in the client list. Its 48 requests, over three
@@ -77,9 +80,9 @@ Then, in the window:
 5. **Ctrl+D** bookmarks what you are looking at. **Export → HTML report…**
    writes a standalone report.
 
-![557 requests folded into five activities, with the wordlist behind the selected one](docs/images/screenshot-behaviour.png)
+![557 requests folded into two activity types, with the wordlist behind the selected one](docs/images/screenshot-behaviour.png)
 
-<sub>The **behaviour map**: the same reconstruction folded by activity type, so repetition becomes structure. 201 episodes become five nodes, and `x23` on an arrow says the client went round that loop twenty-three times — the thing a chronological trace cannot show. The evidence panel holds all 242 requests of the selected one: `/admin.php`, `/vendor/`, `/db.sql`, `/backup.zip`, `/phpmyadmin/` — a wordlist, being worked through.</sub>
+<sub>The **behaviour map** of another client, 192.0.2.231: the same reconstruction folded by activity type, so repetition becomes structure. Its 157 activities become two nodes, and `x45` and `x41` on the arrows say it switched from one to the other 45 times and back 41 times — the thing a chronological trace cannot show. The evidence panel holds all 355 requests of the selected one: `/admin.php`, `/vendor/…`, `/db.sql`, `/backup.zip`, `/shell.php` — a wordlist, being worked through.</sub>
 
 Every screen is described in [docs/desktop-app.md](docs/desktop-app.md).
 
