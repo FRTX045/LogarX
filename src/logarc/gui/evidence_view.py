@@ -294,7 +294,7 @@ def fold_cells(
         first = events[0]
         request = replace(
             base[2],
-            text=f"{count}{display_safe(first.method or '')} {display_safe(first.path or '')}?\u2026",
+            text=f"{count}{_written(first.method or '', first.path or '', decode=decode)}?\u2026",
             tooltip=f"{len(requests.values)} different requests: {requests.tip()}",
         )
     status = _shared_or_mixed(base[3], spread([event.status for event in events], _status_text))
