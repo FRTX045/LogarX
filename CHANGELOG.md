@@ -3,6 +3,11 @@
 Notable changes to logarc. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+logarc has not been released yet. 0.1.0 and 0.2.0 below are development
+milestones: points the work reached and wrote down, never published as releases,
+and neither has a tag. The version reads `0.3.0.dev0` until the first release,
+which will be the first tag.
+
 ## [Unreleased]
 
 ### Added
@@ -1054,7 +1059,7 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the bundle does not carry, with a toolchain it does not include. It now says what is missing,
   the two ways to get it, and that nothing else depends on it.
 
-## [0.2.0] — 2026-09-14
+## [0.2.0] — 2026-09-14 — development milestone, not released
 
 ### Evaluation
 
@@ -1506,9 +1511,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   corpus grades the rules with the suite their project maintains. ADR-0007's postscript names the
   commits, and reverting the removal restores it.
 
-## [0.1.0] — 2026-08-09
+## [0.1.0] — 2026-08-09 — development milestone, not released
 
-First release. Reconstructs what an IP did on a web server, from its access logs,
+First milestone. Reconstructs what an IP did on a web server, from its access logs,
 and draws it as an activity graph.
 
 ### Parsing
@@ -1597,6 +1602,6 @@ and draws it as an activity graph.
 
 <!-- Reference links for the version headings above. `0.1.0` was never tagged,
      so it points at the history rather than at a release that does not exist. -->
-[Unreleased]: https://github.com/FRTX045/logarc/compare/v0.2.0...main
-[0.2.0]: https://github.com/FRTX045/logarc/releases/tag/v0.2.0
-[0.1.0]: https://github.com/FRTX045/logarc/commits/main
+[Unreleased]: https://github.com/FRTX045/logarc/compare/44d7bcbe3c23ee10eba3331cfa5fd9ed4e992c24...main
+[0.2.0]: https://github.com/FRTX045/logarc/tree/44d7bcbe3c23ee10eba3331cfa5fd9ed4e992c24
+[0.1.0]: https://github.com/FRTX045/logarc/tree/0622b7ddb57e95ef81cc520f0dd459d872eec9d4
