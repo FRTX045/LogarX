@@ -21,6 +21,7 @@ from logarc.gui import prefs
 from logarc.gui.density import Density
 from logarc.gui.folding import FoldRule
 from logarc.gui.preferences import PreferencesDialog
+from logarc.gui.text_size import TextSize
 from logarc.gui.theme import ui_font
 
 
@@ -245,6 +246,19 @@ def test_a_chosen_rule_comes_back_and_restore_puts_the_default_back(
 
     dialog.restore_defaults()
     assert dialog.chosen()[prefs.FOLD] is FoldRule.REQUEST_STATUS_SIZE
+
+
+def test_text_size_is_selectable_and_restore_returns_to_automatic(qt_app: QApplication) -> None:
+    dialog = _opened({**prefs.defaults(), prefs.TEXT_SIZE: TextSize.COMPACT})
+    control = dialog._controls[prefs.TEXT_SIZE]
+    assert isinstance(control, QComboBox)
+    assert [control.itemData(index) for index in range(control.count())] == list(TextSize)
+    assert control.currentData() is TextSize.COMPACT
+    control.setCurrentIndex(control.findData(TextSize.LARGE))
+    assert dialog.chosen()[prefs.TEXT_SIZE] is TextSize.LARGE
+    dialog.restore_defaults()
+    assert dialog.chosen()[prefs.TEXT_SIZE] is TextSize.AUTOMATIC
+    dialog.close()
 
 
 def test_the_band_choices_keep_their_names(qt_app: QApplication) -> None:

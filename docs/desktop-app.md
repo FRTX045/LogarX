@@ -16,10 +16,16 @@ serialisation of the reconstruction, and narrowing a reconstruction to a
 Window state — preferences, saved arrangements, the recent-case list — is the
 window's own and has no command-line equivalent by nature.
 
-Interface text starts at 14 pt, evidence text at 13 pt, and small interface
-captions at 12 pt. Larger system font choices are preserved. Graph captions and
-transition labels are slightly larger too, opening at about 11.6 pt or more at
-the default minimum zoom; zooming scales the graph and its text together.
+Interface text automatically fits the available desktop workspace after system
+display scaling: 12 pt for a typical 1920×1080 workspace, 11 pt for short or
+more heavily scaled workspaces, and 14 pt for larger workspaces such as
+2560×1440 at 100% scaling. Automatic preserves larger system font choices.
+**Edit → Preferences → Appearance → Text size** also offers explicit 11, 12 and
+14 pt sizes, saved on this machine and applied after restarting. Monospace IP
+text follows its table's size; evidence text and captions follow the selected
+interface size. OS display scaling remains in force.
+Graph captions open at about 11.6 pt or more at the default minimum zoom;
+zooming scales the graph and its text together.
 Preferences uses a scrolling page when its explanations need more room, with
 the confirmation buttons always visible below it.
 

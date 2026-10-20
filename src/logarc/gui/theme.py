@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Final
 from PyQt6.QtGui import QColor, QFont, QPalette
 from PyQt6.QtWidgets import QProxyStyle, QStyle
 
+from logarc.gui.text_size import TextSize, points_for
 from logarc.style import THEME
 
 if TYPE_CHECKING:
@@ -65,19 +66,13 @@ UI_FAMILIES: Final = ("Segoe UI Variable Text", "Segoe UI", "Inter", "sans-serif
 #: and `100.66.1.152` only lines up under `100.66.2.9` if the digits are.
 MONO_FAMILIES: Final = ("Cascadia Mono", "Consolas", "DejaVu Sans Mono", "monospace")
 
-#: The type scale, relative to a readable UI base. Larger system text is kept.
-#:
-#: Some desktops supply a tiny default font. Set a minimum without overriding
-#: a reader who already chose larger system text.
-_UI_POINTS: Final = 14.0
-_MONO_POINTS: Final = 13.0
+#: Minimum for callers outside the themed launcher. The selected startup size
+#: comes from text_size; role fonts follow it instead of enforcing 14/13pt.
+_UI_POINTS: Final = 11.0
 _TITLE_STEP: Final = 3.0
 _HEADING_STEP: Final = 1.0
 _CAPTION_STEP: Final = -1.0
-#: No smaller than this, whatever the arithmetic says. A caption on a machine
-#: set to a small base font was arriving at 6pt, which is not a quiet label but
-#: an unreadable one.
-_FLOOR: Final = 12.0
+_FLOOR: Final = 9.0
 
 
 class _ReadableStyle(QProxyStyle):
@@ -163,7 +158,7 @@ def caption_font(base: QFont) -> QFont:
 
 
 def ui_font(base: QFont | None = None) -> QFont:
-    """The interface face, at least 14pt and respecting larger system text."""
+    """The interface face, inheriting the chosen application text size."""
     font = QFont(base) if base is not None else QFont()
     font.setFamilies(list(UI_FAMILIES))
     font.setPointSizeF(max(font.pointSizeF(), _UI_POINTS))
@@ -171,11 +166,11 @@ def ui_font(base: QFont | None = None) -> QFont:
 
 
 def mono_font(point_size: float) -> QFont:
-    """The evidence face, with a readable minimum for raw log lines."""
+    """Monospace follows the interface size, never forcing table text larger."""
     font = QFont()
     font.setFamilies(list(MONO_FAMILIES))
     font.setStyleHint(QFont.StyleHint.Monospace)
-    font.setPointSizeF(max(point_size, _MONO_POINTS))
+    font.setPointSizeF(max(point_size, font.pointSizeF() - 1.0, _FLOOR))
     return font
 
 
@@ -222,7 +217,7 @@ def palette() -> QPalette:
     return colours
 
 
-def apply_theme(app: QApplication) -> None:
+def apply_theme(app: QApplication, *, text_size: TextSize = TextSize.AUTOMATIC) -> None:
     """Put the whole application in the theme, once, at startup.
 
     Called from `gui.app.main` and from `ui-review/drive.py`. The review script
@@ -239,5 +234,16 @@ def apply_theme(app: QApplication) -> None:
     """
     app.setStyle(_ReadableStyle("Fusion"))
     app.setPalette(palette())
-    app.setFont(ui_font(app.font()))
+    screen = app.primaryScreen()
+    area = screen.availableGeometry() if screen is not None else None
+    font = ui_font(app.font())
+    font.setPointSizeF(
+        points_for(
+            text_size,
+            width=area.width() if area is not None else 0,
+            height=area.height() if area is not None else 0,
+            system_points=app.font().pointSizeF(),
+        )
+    )
+    app.setFont(font)
     app.setStyleSheet(_CONTROLS)

@@ -1866,6 +1866,7 @@ class MainWindow(QMainWindow):
         one go now, and applying them one at a time was how the window and the
         menu came to hold two copies of the same answer.
         """
+        text_size_changed = prefs.text_size_in(chosen) != prefs.text_size_in(self._prefs)
         self._prefs = dict(chosen)
         self._apply_wrap(bool(chosen["view/wrap_traces"]))
         self._apply_sessions(bool(chosen["view/session_boxes"]))
@@ -1878,6 +1879,8 @@ class MainWindow(QMainWindow):
         # way only: off from the dialog, and never back on from Preferences.
         self._arrangements_kept.ask_before_leaving = bool(chosen[prefs.ASK_UNSAVED_ARRANGEMENT])
         prefs.write(_settings().setValue, self._prefs)
+        if text_size_changed:
+            self._status.setText("Text size saved. Restart logarc to apply it.")
 
     def _apply_band(self, showing: bool) -> None:
         """Draw the traffic above the fields, or stop drawing it."""
@@ -2697,7 +2700,7 @@ def main() -> int:
     running = QApplication.instance()
     app = running if isinstance(running, QApplication) else QApplication(sys.argv)
     app.setApplicationName("logarc")
-    apply_theme(app)
+    apply_theme(app, text_size=prefs.text_size_in(prefs.read(_settings().value)))
     try:
         window = MainWindow()
     except Exception:

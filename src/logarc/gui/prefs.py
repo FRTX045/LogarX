@@ -24,12 +24,16 @@ from logarc.gui.density import Density
 from logarc.gui.density import named as named_density
 from logarc.gui.folding import DEFAULT_FOLD, FoldRule
 from logarc.gui.folding import named as named_fold
+from logarc.gui.text_size import TextSize
+from logarc.gui.text_size import named as named_text_size
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-#: Every kind of value the catalogue holds: a switch, or one of two choices.
-Value = bool | Density | FoldRule
+#: Every kind of value the catalogue holds: a switch or a named choice.
+Value = bool | Density | FoldRule | TextSize
+
+TEXT_SIZE: Final = "view/text_size"
 
 #: Whether, and how, the evidence panel folds lines that repeat. Named because
 #: the window reads it on every start and every visit to Preferences.
@@ -56,6 +60,7 @@ __all__ = [
     "FOLD",
     "GROUPS",
     "RUN_CRS",
+    "TEXT_SIZE",
     "Setting",
     "Value",
     "defaults",
@@ -63,6 +68,7 @@ __all__ = [
     "fold_rule_in",
     "in_group",
     "read",
+    "text_size_in",
     "write",
 ]
 
@@ -84,10 +90,21 @@ class Setting:
     #: Only for a setting that is a choice rather than a switch. `None` means a
     #: checkbox; a tuple means one of these, in this order. Each choice has a
     #: `label` for the dialog and a `stored` form for the settings file.
-    choices: tuple[Density, ...] | tuple[FoldRule, ...] | None = None
+    choices: tuple[Density, ...] | tuple[FoldRule, ...] | tuple[TextSize, ...] | None = None
 
 
 EVERY: tuple[Setting, ...] = (
+    Setting(
+        key=TEXT_SIZE,
+        label="Text size (restart required)",
+        note=(
+            "Automatic fits the available desktop space and keeps larger system text. "
+            "Choose a fixed size to override it on this laptop. Applies after restarting logarc."
+        ),
+        default=TextSize.AUTOMATIC,
+        group="Appearance",
+        choices=tuple(TextSize),
+    ),
     Setting(
         key="view/wrap_traces",
         label="Wrap long traces",
@@ -187,9 +204,8 @@ EVERY: tuple[Setting, ...] = (
 #: `Value` back and has to narrow it; `FOLD` above is named for the same reason.
 DENSITY = "view/band_density"
 
-#: The order the dialog draws them in, read top to bottom. Graph first because
-#: it holds most of them and is what a reader came here to change.
-GROUPS: tuple[str, ...] = ("Graph", "Evidence", "Analysis", "Startup")
+#: The order the dialog draws them in, read top to bottom.
+GROUPS: tuple[str, ...] = ("Appearance", "Graph", "Evidence", "Analysis", "Startup")
 
 
 def in_group(group: str) -> tuple[Setting, ...]:
@@ -219,6 +235,12 @@ def defaults() -> dict[str, Value]:
     return {setting.key: setting.default for setting in EVERY}
 
 
+def text_size_in(values: dict[str, Value]) -> TextSize:
+    """The selected text size, with automatic as the fallback."""
+    chosen = values[TEXT_SIZE]
+    return chosen if isinstance(chosen, TextSize) else TextSize.AUTOMATIC
+
+
 def read(stored: Callable[[str], object]) -> dict[str, Value]:
     """What is in force, given something that hands back a stored value.
 
@@ -237,6 +259,8 @@ def read(stored: Callable[[str], object]) -> dict[str, Value]:
             raw = False
         if raw is None:
             values[setting.key] = setting.default
+        elif isinstance(setting.default, TextSize):
+            values[setting.key] = named_text_size(str(raw))
         elif isinstance(setting.default, FoldRule):
             values[setting.key] = named_fold(str(raw))
         elif setting.choices is not None:
@@ -255,7 +279,10 @@ def write(store: Callable[[str, object], None], values: dict[str, Value]) -> Non
     """
     for setting in EVERY:
         value = values[setting.key]
-        store(setting.key, value.stored if isinstance(value, Density | FoldRule) else bool(value))
+        store(
+            setting.key,
+            value.stored if isinstance(value, Density | FoldRule | TextSize) else bool(value),
+        )
 
 
 def _truth(raw: object) -> bool:

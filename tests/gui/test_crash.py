@@ -237,7 +237,14 @@ def test_the_entry_point_puts_the_net_up(
     """
     installed: list[object] = []
     monkeypatch.setattr(app_module.crash, "install", lambda report, **kw: installed.append(report))
-    monkeypatch.setattr(app_module, "apply_theme", lambda app: None)
+    from logarc.gui import prefs
+    from logarc.gui.text_size import TextSize
+
+    themed: list[TextSize] = []
+    app_module._settings().setValue(prefs.TEXT_SIZE, TextSize.COMPACT.stored)
+    monkeypatch.setattr(
+        app_module, "apply_theme", lambda app, *, text_size: themed.append(text_size)
+    )
     monkeypatch.setattr(app_module, "configure_display", lambda: None)
     monkeypatch.setattr(app_module.MainWindow, "show", lambda self: None)
     monkeypatch.setattr(app_module.MainWindow, "offer_start", lambda self: None)
@@ -246,3 +253,4 @@ def test_the_entry_point_puts_the_net_up(
     assert app_module.main() == 0
 
     assert installed, "main ran with no net under it"
+    assert themed == [TextSize.COMPACT], "read the saved text size before building the window"
