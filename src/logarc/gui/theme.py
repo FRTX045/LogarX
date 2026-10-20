@@ -21,14 +21,23 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFont, QPalette
-from PyQt6.QtWidgets import QProxyStyle, QStyle
+from PyQt6.QtWidgets import (
+    QApplication,
+    QListWidget,
+    QProxyStyle,
+    QStyle,
+    QTableWidget,
+    QTreeWidget,
+    QTreeWidgetItemIterator,
+)
 
-from logarc.gui.text_size import MIN_POINTS, automatic_points
+from logarc.gui.text_size import MIN_POINTS, automatic_points, clamped
 from logarc.style import THEME
 
 if TYPE_CHECKING:
-    from PyQt6.QtWidgets import QApplication, QStyleOption, QWidget
+    from PyQt6.QtWidgets import QStyleOption, QWidget
 
 __all__ = [
     "FLOOR",
@@ -44,6 +53,7 @@ __all__ = [
     "caption_font",
     "colour_text",
     "heading_font",
+    "set_text_points",
     "title_font",
 ]
 
@@ -275,3 +285,70 @@ def apply_theme(app: QApplication, *, points: float | None = None) -> None:
     font = ui_font(app.font())
     font.setPointSizeF(chosen)
     app.setFont(font)
+
+
+def set_text_points(app: QApplication, points: float) -> float:
+    """Change the interface text size while windows are open; return the size now in force.
+
+    `points` is clamped to the zoom range. Widgets on the application font
+    follow it. Fonts set explicitly (captions, headings, monospace runs and
+    item fonts in tables, trees and lists) move by the same number of points,
+    so every role keeps its step from the body text. The graph's own fonts are
+    graphics items, not widgets, and stay with the graph's zoom.
+    """
+    chosen = clamped(points)
+    delta = chosen - app.font().pointSizeF()
+    if delta == 0:
+        return chosen
+    # Read before anything changes: setting the stylesheet again puts each
+    # explicitly set widget font back to what it was when first styled.
+    explicit = [
+        (widget, _moved(widget.font(), delta))
+        for widget in QApplication.allWidgets()
+        if widget.testAttribute(Qt.WidgetAttribute.WA_SetFont)
+    ]
+    font = QFont(app.font())
+    font.setPointSizeF(chosen)
+    app.setFont(font)
+    # With a stylesheet in force Qt does not pass an application font change
+    # on to widgets that already exist; setting the sheet again re-polishes
+    # them. A re-polish gives children their parent's font as it stands, so
+    # the second round hands the children of explicitly set widgets the moved
+    # size rather than the restored one.
+    for _round in range(2):
+        app.setStyleSheet(app.styleSheet())
+        for widget, moved in explicit:
+            widget.setFont(moved)
+    for widget in QApplication.allWidgets():
+        _move_items(widget, delta)
+    return chosen
+
+
+def _moved(font: QFont, delta: float) -> QFont:
+    moved = QFont(font)
+    moved.setPointSizeF(font.pointSizeF() + delta)
+    return moved
+
+
+def _move_items(widget: QWidget, delta: float) -> None:
+    """Shift the item fonts a table, tree or list was given one by one."""
+    role = Qt.ItemDataRole.FontRole
+    if isinstance(widget, QTableWidget):
+        cells = (
+            widget.item(r, c) for r in range(widget.rowCount()) for c in range(widget.columnCount())
+        )
+        for cell in cells:
+            if cell is not None and cell.data(role) is not None:
+                cell.setFont(_moved(cell.font(), delta))
+    elif isinstance(widget, QListWidget):
+        for row in range(widget.count()):
+            entry = widget.item(row)
+            if entry is not None and entry.data(role) is not None:
+                entry.setFont(_moved(entry.font(), delta))
+    elif isinstance(widget, QTreeWidget):
+        found = QTreeWidgetItemIterator(widget)
+        while (node := found.value()) is not None:
+            for column in range(widget.columnCount()):
+                if node.data(column, role) is not None:
+                    node.setFont(column, _moved(node.font(column), delta))
+            found += 1
