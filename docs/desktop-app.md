@@ -78,7 +78,7 @@ and respects existing environment settings. For a larger cursor, launch with
 
 | Menu | Holds |
 |---|---|
-| **Case** | Open case… (Ctrl+O) · Recently opened… (Ctrl+Shift+O) · Ingest logs into a new case… · Log formats… · Exit |
+| **Case** | Open case… (Ctrl+O) · Recently opened… (Ctrl+Shift+O) · Ingest logs into a new case… · Formats and rules… · Exit |
 | **Edit** | Undo node move (Ctrl+Z) · Save this arrangement (Ctrl+S) · Reset layout (Ctrl+Shift+R) · Bookmark… (Ctrl+D) · Preferences… (Ctrl+,) |
 | **View** | Trace (chronological) · Behaviour map · Timeline · Fit to window · Full screen |
 | **Export** | HTML report… · JSON graph… · PNG image… · Bookmarks… |
@@ -397,7 +397,7 @@ back on for a stretch too narrow to drag onto.
 
 ![The format library: fourteen built in, and one of the reader's own](images/screenshot-log-formats.png)
 
-**Case → Log formats…** holds the formats that ship above and yours below, and
+The *Log formats* tab of **Case → Formats and rules…** holds the formats that ship above and yours below, and
 neither can be confused for the other: a built-in is readable and not editable,
 because registration order is preference order and an edited copy of
 `apache-combined` would never be reached.
@@ -412,6 +412,68 @@ whole reason a site has a format of its own. A rule that reads nothing says so.
 The same four kinds the CLI offers are here: a directive for a text log, a field
 mapping for a JSON one, columns for a table, and a regular expression for
 anything else.
+
+---
+
+## Detection rules
+
+![Your own rule pack, and what it finds in the open case](images/screenshot-rules.png)
+
+The second tab of **Case → Formats and rules…** holds the rules that say what a
+line *means*. The first tab decides whether a line can be read at all. On the
+left are the 13 packs that ship with logarc, named by file (actions, access,
+files, injection, recon, ssrf, java, nodejs, perl, php, python, shell, windows),
+and then yours.
+
+**Your packs** are YAML, in the format [writing-rules.md](writing-rules.md)
+describes. They live in your settings, beside your saved formats
+(`%APPDATA%\logarc\rules\`, one `<name>.yaml` each, or under `LOGARC_HOME` when
+that is set), so every case you open is read with them. *New rule pack…* starts
+from an empty pack with a commented example. *Load a pack from a file…* copies a
+pack in under its file name: `My Rules.yaml` becomes `My-Rules`. A name holds
+letters, digits, `-` and `_`, and two of your packs cannot share one, whatever
+their capitals.
+
+About half a second after you stop typing, the pack is read. The line under the
+editor says how many rules it holds, and of which kind, or what is wrong. A
+mistake is scrolled into sight and marked: the line itself for a YAML mistake,
+and for a rule mistake the condition it names, or failing that the rule's `id:`
+line. Save stays off while the pack has a mistake, and the version you last
+saved keeps applying. A rule may not reuse the id of a built-in rule that is
+switched on, or of a rule in another of your packs.
+
+*What this pack finds in the open case* counts, for each rule, the lines it
+labels and the clients they come from. It counts every label a rule puts on a
+line, not only the one that names it, so a rule that fires and is outranked
+still shows. The counts fill in as clients are read and start again when you
+edit. They are the lines a reconstruction would credit: rules about a run of
+requests are counted session by session, as the graph labels them. On the
+`2026-10-06-medium` [evaluation build](evaluation.md) (235,732 requests from
+2,760 clients) a pack of two rules took about 6 seconds, and the 24-rule
+injection pack 64 seconds.
+
+**A built-in pack** shows as a table of its rules, with what each finds. *Show as
+YAML* shows its source, which you cannot edit. Untick a rule that is wrong for
+your site and it is switched off for every case. It stays in the table, ready to
+be ticked again. Switching a built-in rule off frees its id, so a rule of yours
+can replace it.
+
+**When you change rules with a case open**, the tab asks first: *Saved. The open
+case was read with the old rules.* **Read it again now** reads the client on
+screen again and starts *Where to start* over with the new rules. **Later**, or
+closing the dialog, leaves a strip in the window, *Rules changed since this case
+was read.*, with a **Read it again** button. The scan made with the rules before is kept,
+and switching back to them reuses it.
+
+A pack that does not load, because it was edited by hand or written by a later
+version, is listed under *Yours* as not loading, with the reason as its tooltip.
+It is left out and never rewritten, and a strip in the window names it whenever
+a case is read without it.
+
+The HTML report says which rules it was read with, under Provenance: how many
+built in, which were switched off, and each of your packs by name. The command
+line does not read your packs; its `--rules` takes pack files explicitly
+([ADR-0013](adr/0013-rules-a-reader-writes.md)).
 
 ---
 

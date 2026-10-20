@@ -12,6 +12,20 @@ which will be the first tag.
 
 ### Added
 
+- **Detection rules in the window.** *Case → Log formats…* became **Case → Formats
+  and rules…**, with a second tab, *Detection rules: what does a line mean?* It
+  lists the 13 built-in packs and your own. Your packs are YAML, kept in your
+  settings and applied to every case you open; they are checked half a second
+  after typing stops, a mistake is marked on its line, and Save waits until the
+  pack reads. Each pack shows what its rules find in the open case, line and
+  client counts filling in as the case is read. A built-in rule can be switched
+  off. With a case open, a change asks before the case is read again, and *Later*
+  leaves a strip in the window until it is. The HTML report names the rules a
+  reconstruction used, under Provenance. The command line does not read these
+  packs (ADR-0013). On the `2026-10-06-medium` evaluation build (235,732
+  requests) a two-rule pack counted in about 6 seconds, and the 24-rule injection
+  pack in 64.
+
 - **Repeated evidence lines fold into one row.** Lines next to each other with the
   same request, status and size show as one row with a count (`5x  POST /login`),
   opened by a double-click, Enter, → or its arrow. Preferences offers looser rules,
@@ -894,6 +908,11 @@ which will be the first tag.
   261 lines of unchanged values and buried the line that had actually moved.
 
 ### Fixed
+
+- **A rule pack reusing a built-in rule's id is refused.** The documentation
+  said so, but `--rules` checked ids only between the packs it was given, so a
+  pack copying `sqli_union_select` loaded beside the real one and two rules
+  answered to one id. The command now stops with both places named.
 
 - **`logarc analyze` and `logarc evidence` count one thing as one.** They printed
   `1 requests`, `1 activities` and `1 more lines`; the window already used the

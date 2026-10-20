@@ -1,6 +1,6 @@
 # Log formats
 
-In the window, **Case → Log formats…** shows the whole library, and a format
+In the window, **Case → Formats and rules…** shows the whole library, and a format
 written there is tried against your log as you type. The command line does the
 same, as below.
 
