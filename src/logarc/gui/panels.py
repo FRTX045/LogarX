@@ -374,8 +374,10 @@ class ClientTable(QWidget):
             self._set(
                 row, 3, f"{summary.client_error_ratio:.0%}", sort_key=summary.client_error_ratio
             )
-            self._set(row, 4, format_seen(summary.first_seen))
-            self._set(row, 5, format_seen(summary.last_seen))
+            # On the moment, not the words: as text `10 Mar` sorts before `15 Feb`.
+            first, last = summary.first_seen, summary.last_seen
+            self._set(row, 4, format_seen(first), sort_key=first.timestamp())
+            self._set(row, 5, format_seen(last), sort_key=last.timestamp())
             found = hits[row] if row < len(hits) else 0
             self._set(row, _MATCH, f"{found:,}", sort_key=found)
         # Marked before the columns are measured, so a ribbon's width is counted
