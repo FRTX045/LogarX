@@ -11,7 +11,14 @@ from pathlib import Path
 import pytest
 
 from logarc.core.activity import ActivityCategory, Severity
-from logarc.detect.rules import RulePackError, SignatureRule, WindowRule, load_rules
+from logarc.detect.rulepacks import DEFAULT_RULEPACK_DIR
+from logarc.detect.rules import (
+    RulePackError,
+    SignatureRule,
+    WindowRule,
+    load_pack_text,
+    load_rules,
+)
 
 SIGNATURE_PACK = """
 version: 1
@@ -357,3 +364,140 @@ def test_rules_carry_the_pack_they_came_from(tmp_path: Path) -> None:
     (rule,) = load_rules([path])
 
     assert rule.source_pack == "owasp.yaml"
+
+
+# -- a pack read from text, as the window holds it ---------------------------
+
+SHOPFRONT = """\
+version: 1
+note: What misuse of our own shop's API looks like
+rules:
+  - id: shop_stock_polling
+    name: Stock levels polled by a script
+    category: crawling
+    severity: low
+    confidence: 0.7
+    member:
+      all:
+        - {field: path, regex: "^/api/stock$"}
+    window:
+      span_seconds: 300
+      min_requests: 3
+      conditions:
+        - {metric: request_count, op: ">=", value: 3}
+
+  - id: shop_cart_emptied_by_api
+    name: Cart emptied through the API
+    category: api_call
+    severity: info
+    match:
+      all:
+        - {field: method, equals: DELETE}
+        - {field: path, regex: "^/api/cart$"}
+"""
+
+
+@pytest.mark.parametrize(
+    "path",
+    sorted(DEFAULT_RULEPACK_DIR.rglob("*.yaml")),
+    ids=lambda path: path.relative_to(DEFAULT_RULEPACK_DIR).as_posix(),
+)
+def test_a_pack_read_from_text_is_the_pack_read_from_its_file(path: Path) -> None:
+    """The window holds packs as text and the command line reads files. Two
+    loaders that disagreed would label the same request two ways."""
+    from_text = load_pack_text(path.name, path.read_text(encoding="utf-8"))
+
+    assert [rule.model_dump() for rule in from_text] == [
+        rule.model_dump() for rule in load_rules([path])
+    ]
+
+
+def test_a_pack_may_say_what_it_is_for() -> None:
+    (stock, cart) = load_pack_text("shopfront.yaml", SHOPFRONT)
+
+    assert (stock.id, cart.id) == ("shop_stock_polling", "shop_cart_emptied_by_api")
+    assert cart.source_pack == "shopfront.yaml"
+
+
+def test_a_pack_still_refuses_a_key_it_does_not_know() -> None:
+    with pytest.raises(RulePackError, match="notes"):
+        load_pack_text("x.yaml", "version: 1\nnotes: misspelt\nrules: []\n")
+
+
+def test_a_pack_with_no_rules_yet_reads_as_empty() -> None:
+    """`rules:` with only comments under it is YAML for null. A new pack
+    starts that way, and it is not a mistake."""
+    assert load_pack_text("x.yaml", "version: 1\nrules:\n  # one day\n") == []
+
+
+def test_one_pack_cannot_use_an_id_twice() -> None:
+    twice = SHOPFRONT.replace("shop_stock_polling", "shop_cart_emptied_by_api")
+
+    with pytest.raises(RulePackError, match="duplicate rule id") as raised:
+        load_pack_text("shopfront.yaml", twice)
+
+    assert raised.value.rule_id == "shop_cart_emptied_by_api"
+
+
+@pytest.mark.parametrize(
+    ("text", "line"),
+    [
+        # A missing colon: PyYAML reports the line after, where it looked for one.
+        (
+            "version: 1\nrules:\n  - id: a\n    name: Cart\n    severity info\n"
+            "    category: api_call\n",
+            5,
+        ),
+        # An unclosed brace: reported where the next one opens.
+        (
+            "version: 1\nrules:\n  - id: a\n    match:\n      all:\n"
+            "        - {field: method, equals: DELETE\n        - {field: path}\n",
+            6,
+        ),
+        # Indentation: reported where it goes wrong.
+        ("version: 1\nrules:\n  - id: a\n    name: b\n   category: c\n", 5),
+    ],
+    ids=["missing colon", "unclosed brace", "indentation"],
+)
+def test_a_yaml_mistake_says_the_line_it_is_on(text: str, line: int) -> None:
+    with pytest.raises(RulePackError) as raised:
+        load_pack_text("x.yaml", text)
+
+    assert raised.value.line == line
+
+
+def test_a_rule_mistake_says_which_rule_and_which_condition() -> None:
+    two_tests = SHOPFRONT.replace(
+        "{field: method, equals: DELETE}", "{field: method, equals: DELETE, contains: DEL}"
+    )
+
+    with pytest.raises(RulePackError) as raised:
+        load_pack_text("shopfront.yaml", two_tests)
+
+    assert raised.value.rule_id == "shop_cart_emptied_by_api"
+    assert raised.value.location == ("match", "all", 0)
+    assert raised.value.reason.startswith("a condition needs exactly one of")
+
+
+def test_a_bad_pattern_says_which_condition() -> None:
+    broken = SHOPFRONT.replace('regex: "^/api/cart$"', 'regex: "^/api/(cart"')
+
+    with pytest.raises(RulePackError) as raised:
+        load_pack_text("shopfront.yaml", broken)
+
+    assert raised.value.rule_id == "shop_cart_emptied_by_api"
+    assert raised.value.location == ("match", "all", 1)
+
+
+def test_the_validator_s_own_prefix_is_not_passed_on(tmp_path: Path) -> None:
+    """ "Value error," names a pydantic class, not anything in the pack."""
+    pack = tmp_path / "x.yaml"
+    pack.write_text(
+        SHOPFRONT.replace("{field: method, equals: DELETE}", "{field: method}"), encoding="utf-8"
+    )
+
+    with pytest.raises(RulePackError) as raised:
+        load_rules([pack])
+
+    assert "Value error" not in str(raised.value)
+    assert "a condition needs exactly one of" in str(raised.value)
