@@ -69,7 +69,10 @@ ALERT_COLOUR: Final = THEME.alert
 #: heading's width whatever it holds — and at a 400px panel the five other
 #: columns left the payload 80px, which is the fault this table was built to
 #: fix. `GET /search?q=…` is also simply how a request is written.
-COLUMNS: Final[tuple[str, ...]] = ("Source", "Time", "Request", "Status", "Size")
+#:
+#: `Line` holds the whole reference, `excerpt.log:2014`, and shows the number
+#: alone while the column is too narrow for it and every line is from one file.
+COLUMNS: Final[tuple[str, ...]] = ("Line", "Time", "Request", "Status", "Size")
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +92,9 @@ class Cell:
     """Empty means none. The `Target` column is too narrow for a long payload
     however the panel is sized, so it carries its full value here."""
 
+    short: str = ""
+    """What to show while the column is too narrow for `text`; empty means elide it."""
+
 
 def cells_for(line: EvidenceLine, *, decode: bool) -> tuple[Cell, ...]:
     """One row of the table.
@@ -100,7 +106,12 @@ def cells_for(line: EvidenceLine, *, decode: bool) -> tuple[Cell, ...]:
     status = event.status if event else None
 
     return (
-        Cell(text=str(line.ref), sort_key=line.ref.line_no, colour=EVIDENCE_MUTED),
+        Cell(
+            text=str(line.ref),
+            sort_key=line.ref.line_no,
+            colour=EVIDENCE_MUTED,
+            short=str(line.ref.line_no),
+        ),
         Cell(
             text=f"{event.timestamp:%H:%M:%S}" if event else "",
             sort_key=event.timestamp.timestamp() if event else None,

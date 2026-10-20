@@ -1,5 +1,8 @@
 """Column handles work everywhere and refills do not undo manual widths."""
 
+import subprocess
+import sys
+
 import pytest
 from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtTest import QTest
@@ -149,3 +152,35 @@ def test_double_clicking_an_edge_fits_its_column(qt_app):
     assert table.columnWidth(0) < wider
     assert table.columnWidth(0) >= table.fontMetrics().horizontalAdvance("192.0.2.100")
     table.close()
+
+
+#: A shown table let go of without being closed: the header reports its geometry
+#: once more while the table is being destroyed, and is no longer one by then.
+_LET_GO = """
+import os, sys
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+from PyQt6.QtWidgets import QApplication, QTableWidget, QTableWidgetItem
+from logarc.gui.columns import ColumnWidths
+app = QApplication(sys.argv)
+table = QTableWidget(1, 2)
+table.setItem(0, 0, QTableWidgetItem("192.0.2.100"))
+ColumnWidths(table, fill=1)
+table.show()
+app.processEvents()
+del table
+app.processEvents()
+print("still running")
+"""
+
+
+def test_a_table_let_go_while_shown_does_not_end_the_program():
+    """In its own process, because what it guards against is the process ending.
+
+    An exception inside a Qt slot is one PyQt answers by aborting everything.
+    """
+    run = subprocess.run(
+        [sys.executable, "-c", _LET_GO], capture_output=True, text=True, timeout=120
+    )
+
+    assert run.returncode == 0, run.stderr[-800:]
+    assert "still running" in run.stdout

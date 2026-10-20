@@ -73,7 +73,7 @@ def test_every_column_gets_a_cell() -> None:
 
 def test_the_source_reference_is_a_column_of_its_own() -> None:
     """Provenance is the point of the panel; it cannot live in a tooltip."""
-    assert cell(line(), "Source").text == "access.log:36"
+    assert cell(line(), "Line").text == "access.log:36"
 
 
 def test_the_request_reads_as_the_attack_it_is() -> None:
@@ -103,7 +103,7 @@ def test_numbers_sort_as_numbers() -> None:
     sorting by size is how an analyst finds what returned the most data."""
     assert cell(line(size=1_400_000), "Size").sort_key == 1_400_000
     assert cell(line(status=404), "Status").sort_key == 404
-    assert cell(line(), "Source").sort_key == 36
+    assert cell(line(), "Line").sort_key == 36
 
 
 def test_a_size_reads_as_a_size() -> None:
@@ -137,7 +137,7 @@ def test_a_line_the_parser_rejects_still_gets_a_row() -> None:
     cells = cells_for(unparsed(), decode=True)
 
     assert len(cells) == len(COLUMNS)
-    assert cells[COLUMNS.index("Source")].text == "access.log:4"
+    assert cells[COLUMNS.index("Line")].text == "access.log:4"
     assert "not a log line" in cells[COLUMNS.index("Request")].text
 
 

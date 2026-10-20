@@ -44,7 +44,7 @@ from logarc.gui.arrangement_keeper import LAYOUT_KEY
 from logarc.gui.canvas import MIN_FIT_SCALE, ActivityCanvas
 from logarc.gui.evidence_panel import EvidencePanel
 from logarc.gui.notice_bar import NoticeBanner
-from logarc.gui.panels import ClientTable, format_seen
+from logarc.gui.panels import ClientTable, seen_day
 from logarc.gui.progress import Progress
 from logarc.gui.progress_card import IngestCard
 from logarc.gui.quarantine_notice import notice_for
@@ -1277,7 +1277,7 @@ def test_the_detail_follows_the_row_after_the_table_is_sorted(
     panel._table.sortItems(COLUMNS.index("Size"), QtNS.SortOrder.DescendingOrder)
     panel.select_row(0)
 
-    shown_source = panel._table.item(0, COLUMNS.index("Source"))
+    shown_source = panel._table.item(0, COLUMNS.index("Line"))
     assert shown_source is not None
     assert shown_source.text() in _read_all_details(panel)
 
@@ -1636,8 +1636,9 @@ def test_the_evidence_table_drops_a_size_column_it_has_no_sizes_for(
     formats carry no response size at all — so `Size` sat empty on every row
     while `Request`, the column carrying the payload, wrapped to two lines.
 
-    It comes back the moment one row has a size: this is about an empty column,
-    not about hiding evidence.
+    Since the default widths were narrowed it also starts hidden where there are
+    sizes, until the reader shows it from the heading's menu; shown, it still
+    stays out of the way of an activity with no size to put in it.
     """
     from logarc.core.event import NormalizedEvent
     from logarc.evidence import EvidenceLine
@@ -1656,12 +1657,14 @@ def test_the_evidence_table_drops_a_size_column_it_has_no_sizes_for(
         )
     ]
     panel = EvidencePanel()
+    size = COLUMNS.index("Size")
+    panel._column_sizes._wanted.add(size)
 
     panel.show_evidence(node, sizeless)  # type: ignore[arg-type]
-    assert panel._table.isColumnHidden(COLUMNS.index("Size"))
+    assert panel._table.isColumnHidden(size)
 
     panel.show_evidence(node, sized)  # type: ignore[arg-type]
-    assert not panel._table.isColumnHidden(COLUMNS.index("Size"))
+    assert not panel._table.isColumnHidden(size)
 
 
 def test_a_payload_cannot_forge_a_row_or_render_as_markup(
@@ -2850,7 +2853,8 @@ def test_the_columns_are_still_sized_to_what_they_hold(qt_app: QApplication) -> 
     # whatever room is left over rather than a measurement of anything — which
     # is why it reads 100px above while its dates want more.
     stamp = max(
-        (format_seen(summary.first_seen) for summary in summaries),
+        # The day: what First is sized for until it is given room for the time.
+        (seen_day(summary.first_seen) for summary in summaries),
         key=metrics.horizontalAdvance,
     )
     wanted = metrics.horizontalAdvance(stamp)

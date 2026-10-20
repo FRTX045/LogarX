@@ -695,3 +695,35 @@ def test_the_caption_wraps_rather_than_running_off_the_panel(partial: ClientTabl
     """`8 of 52 clients sent a request matching path:/admin · 123` stopped there,
     at the edge of a panel of the width the window opens with."""
     assert partial._caption.wordWrap()
+
+
+def test_first_and_last_sort_by_time_not_by_their_words(qt_app: QApplication) -> None:
+    """As text, `10 Mar` sorts before `15 Feb`."""
+    table = ClientTable()
+    table.show_clients(
+        [
+            IpSummary(
+                client_ip=ip,
+                request_count=10,
+                first_seen=first,
+                last_seen=first + timedelta(hours=1),
+                distinct_paths=3,
+                client_error_ratio=0.1,
+                bytes_total=1024,
+                position=0,
+            )
+            for ip, first in (
+                ("10.0.0.1", datetime(2026, 3, 10, 11, 9, tzinfo=UTC)),
+                ("10.0.0.2", datetime(2026, 2, 15, 8, 40, tzinfo=UTC)),
+            )
+        ],
+        total=2,
+    )
+    grid = table._table
+    address = column_of(grid, "Client")
+    for heading in ("First", "Last"):
+        grid.sortItems(column_of(grid, heading))
+        assert [grid.item(r, address).text() for r in range(grid.rowCount())] == [
+            "10.0.0.2",
+            "10.0.0.1",
+        ], heading

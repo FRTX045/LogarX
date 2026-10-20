@@ -36,6 +36,14 @@ Double-click an edge to fit that column to its contents, or right-click a headin
 for **Fit this column to contents** and **Reset column widths**. Manual widths
 stay in place when rows refresh or filters change, for the life of that window.
 
+A column too narrow for what it holds shows a shorter form of it rather than
+cutting it off. In the client list, **First** and **Last** show the day,
+`09 Mar`. In the evidence table, **Line** shows the line number, `2014`, while
+all of the activity's lines come from one log file. Widen the column and the
+time or the file name comes back; hover a cell to see the whole value. The
+evidence table starts without **Size**, which is in the details below it;
+right-click a heading and choose **Show Size** to add the column.
+
 Scrollbars have 20 px tracks, brighter handles, and a minimum handle length of
 42 px. The dividers between panels use 5 px lines with a 1 px margin on each
 side and highlight blue when hovered.
