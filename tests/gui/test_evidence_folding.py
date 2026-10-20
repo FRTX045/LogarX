@@ -14,14 +14,15 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
-from PyQt6.QtCore import QPoint, Qt
+from PyQt6.QtCore import QPoint, QRect, Qt
 from PyQt6.QtTest import QTest
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QStyle, QStyleOptionViewItem, QTableWidget
 from tables import column_of
 from test_folding import brute_force, line
 from test_narrow_columns import node
 
 from logarc.gui.evidence_panel import EvidencePanel
+from logarc.gui.evidence_view import ARROW_CLOSED
 from logarc.gui.folding import FoldRule
 
 
@@ -144,6 +145,57 @@ def test_the_arrow_click_toggles_and_a_click_elsewhere_only_selects(
     assert table.rowCount() == 11
 
 
+def text_rect(table: QTableWidget, row: int) -> QRect:
+    """Where Qt draws the Line cell's text: past any ribbon in front of it."""
+    index = table.model().index(row, column_of(table, "Line"))
+    option = QStyleOptionViewItem()
+    table.initViewItemOption(option)
+    option.rect = table.visualRect(index)
+    table.itemDelegateForIndex(index).initStyleOption(option, index)
+    return table.style().subElementRect(QStyle.SubElement.SE_ItemViewItemText, option, table)
+
+
+def test_the_arrow_still_toggles_beside_a_bookmark(panel: EvidencePanel) -> None:
+    lines = brute_force()
+    panel.show_evidence(node(39), lines)
+    panel.set_marks({lines[2].ref: ("#49a9ff", "third try")})
+    table = panel._table
+    assert not table.item(0, column_of(table, "Line")).icon().isNull(), "premise: a ribbon"
+    text = text_rect(table, 0)
+    # Qt's text margin in an item view, then the arrow's own width: its far edge.
+    margin = table.style().pixelMetric(QStyle.PixelMetric.PM_FocusFrameHMargin, None, table) + 1
+    edge = text.left() + margin + table.fontMetrics().horizontalAdvance(ARROW_CLOSED) - 2
+
+    QTest.mouseClick(
+        table.viewport(), Qt.MouseButton.LeftButton, pos=QPoint(edge, text.center().y())
+    )
+
+    assert table.rowCount() == 11
+
+
+def test_a_click_on_the_ribbon_only_selects(panel: EvidencePanel) -> None:
+    lines = brute_force()
+    panel.show_evidence(node(39), lines)
+    panel.set_marks({lines[2].ref: ("#49a9ff", "third try")})
+    table = panel._table
+    cell = table.visualRect(table.model().index(0, column_of(table, "Line")))
+    ribbon = QPoint((cell.left() + text_rect(table, 0).left()) // 2, cell.center().y())
+
+    QTest.mouseClick(table.viewport(), Qt.MouseButton.LeftButton, pos=ribbon)
+
+    assert table.rowCount() == 7
+
+
+def test_double_clicking_a_line_inside_leaves_its_row_open(panel: EvidencePanel) -> None:
+    """Only the folded row opens and closes; a line inside is just a line."""
+    panel.show_evidence(node(39), brute_force())
+    panel.toggle_row(0)
+
+    panel._table.cellDoubleClicked.emit(2, 2)
+
+    assert panel._table.rowCount() == 11
+
+
 def test_a_decode_switch_closes_every_row_and_keeps_the_detail_true(
     panel: EvidencePanel,
 ) -> None:
@@ -190,10 +242,13 @@ def test_a_width_the_reader_chose_is_kept_when_a_row_opens(panel: EvidencePanel)
     table = panel._table
     line_column = column_of(table, "Line")
     table.horizontalHeader().resizeSection(line_column, 30)
+    # Whatever the header allowed: a platform can hold a section to a minimum.
+    chosen = table.columnWidth(line_column)
+    assert chosen < table.sizeHintForColumn(line_column), "premise: narrower than its rows"
 
     panel.toggle_row(0)
 
-    assert table.columnWidth(line_column) == 30
+    assert table.columnWidth(line_column) == chosen
 
 
 def test_changing_the_rule_refolds_what_is_on_show(panel: EvidencePanel) -> None:

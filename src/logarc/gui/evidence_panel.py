@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
     QMenu,
     QPushButton,
     QStyle,
+    QStyleOptionViewItem,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -478,11 +479,13 @@ class EvidencePanel(QWidget):
         self._say_folded()
 
     def toggle_row(self, row: int) -> None:
-        """Open or close the fold drawn at `row`; nothing for a row that is no fold."""
+        """Open or close the folded row at `row`; nothing for any other row."""
         if not self._folded or not 0 <= row < len(self._rows):
             return
-        position, _index = self._rows[row]
-        if len(self._folds[position]) < 2:
+        position, index = self._rows[row]
+        # A line inside an open row is just a line: a tree does not close when
+        # one of its leaves is double-clicked.
+        if len(self._folds[position]) < 2 or index != self._folds[position].head:
             return
         self._open ^= {position}
         self._refill_keeping(self._folds[position].head)
@@ -552,12 +555,20 @@ class EvidencePanel(QWidget):
         run = self._folds[position]
         if line_index != run.head or len(run) < 2:
             return False
-        # Qt's own text margin in an item view, then the arrow and its space,
-        # measured from the table's font rather than counted in pixels.
+        # From where Qt draws the text, which a bookmark's ribbon pushes right:
+        # its own text margin, then the arrow and its space, measured from the
+        # cell's font rather than counted in pixels.
+        option = QStyleOptionViewItem()
+        self._table.initViewItemOption(option)
+        option.rect = self._table.visualRect(index)
+        delegate = self._table.itemDelegateForColumn(_LINE)
+        assert isinstance(delegate, ShortWhenNarrow)
+        delegate.initStyleOption(option, index)
         style = required(self._table.style(), "style")
+        text = style.subElementRect(QStyle.SubElement.SE_ItemViewItemText, option, self._table)
         margin = style.pixelMetric(QStyle.PixelMetric.PM_FocusFrameHMargin, None, self._table) + 1
-        reach = margin + self._table.fontMetrics().horizontalAdvance(ARROW_CLOSED + " ")
-        if event.position().x() - self._table.visualRect(index).left() > reach:
+        reach = margin + option.fontMetrics.horizontalAdvance(ARROW_CLOSED + " ")
+        if not 0 <= event.position().x() - text.left() <= reach:
             return False
         self.toggle_row(index.row())
         return True
