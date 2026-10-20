@@ -7,6 +7,64 @@ See [ADR-0011](adr/0011-a-real-server-log-is-the-headline-corpus.md) for why it 
 real server's log, and [ADR-0005](adr/0005-measuring-accuracy-against-generated-ground-truth.md)
 for the scoring method it kept.
 
+## In brief
+
+Measured on a real Apache log whose contents are known: the
+[BlackHat-Dataset](https://github.com/FRTX045/BlackHat-Dataset) `apache-shopfront`
+`2026-10-06-medium` build — 235,732 requests over seven days, a real PHP shop
+driven by real security tools, where a tagging proxy joins every line to a record
+of which client made the request and why. It includes an administrator doing
+ordinary work, which matters more than it sounds: see the false-alarm figure.
+
+Measured 2026-10-09 on a build made at a named commit from a clean tree, whose
+checksums were verified before scoring. Native rules only; CRS, which runs
+after every scan by default, is the paragraph below the table.
+
+| | |
+|---:|---|
+| **0.997** | accuracy over 235,732 requests |
+| **0.997** | weighted F1 |
+| **0.953** | macro F1 — *see below* |
+| **1.000 / 0.998** | attack precision / recall |
+| **0 requests** | false alarms, in 235,732 |
+| **85,908** | lines per second ingesting, with the default four workers |
+| **0** | lines quarantined, and 0 truth lines unmatched |
+
+**Both numbers, or neither.** No false alarm in 235,732 requests is one axis and
+not a claim that the rules are nearly right. Macro F1 of 0.953 is the other, and
+it is an unweighted mean over fourteen categories, so a category with five
+requests counts as much as one with 162,801. The weakest are the smallest:
+`ssrf` names 4 of 5, `exploitation` 6 of 8 and `unknown` 124 of 201. The
+tool's commonest mistake is calling an attack by a neighbouring name, 440 times
+`enumeration` read as `reconnaissance`, which costs nothing on the first axis and
+something on the second. Both are printed so neither can hide the other.
+
+**With OWASP CRS at paranoia level 2**, the same build scores accuracy 0.997,
+macro F1 0.952 and **0 false alarms**, and catches one attack the native rules
+miss: 17,108 against 17,107. Across the three `2026-10-06` builds CRS adds 1 to
+4 catches per build and no false alarm; until 2026-10-14 it added one on the
+small build, a Google Ads click ID read as SQL. Until the same day the Windows
+build of CRS also missed file paths such as `/etc/passwd` and `/.git/config`,
+which the Linux build always caught; both now find the same. Until 2026-10-06 CRS also called
+the shop's own unfilled `?id=${id}` placeholder an injection, 149 times on this
+build;
+[the rule-pack ledger](rule-pack-ledger.md) has how that was found and
+what changed.
+
+**Macro F1 is lower than the figure this project once published, and that is not
+a regression.** Until September 2026 accuracy was measured against a corpus this
+project generated itself, which scored macro F1 0.958. Moving to a log written by
+a real server dropped it to 0.633, and work on the rules — and on defects the
+dataset found in itself — has since brought it to 0.953 on the current build:
+against real traffic, not against a corpus built to be scored. That first
+drop was the first honest measurement, and
+[ADR-0011](adr/0011-a-real-server-log-is-the-headline-corpus.md) records why
+the generator was deleted rather than kept.
+
+Per-category figures below about fifty requests of support are an indication, not
+a measurement, and the sections below name which those are,
+along with every caveat these headline numbers carry.
+
 **Provenance note, 2026-09-17.** The bundled OWASP annotations migrated from
 Top 10:2021 to Top 10:2025 without changing detection rules or reconstruction.
 The committed 3,825-request excerpt was compared before and after, across all
