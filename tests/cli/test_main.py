@@ -126,6 +126,18 @@ def test_list_ips_on_a_missing_case_fails_cleanly(tmp_path: Path) -> None:
     assert "Traceback" not in result.output
 
 
+def test_analyze_counts_a_single_request_in_the_singular(log: Path, tmp_path: Path) -> None:
+    case = tmp_path / "case"
+    runner.invoke(app, ["ingest", str(log), "--case", str(case)])
+
+    result = runner.invoke(
+        app, ["analyze", "--case", str(case), "--ip", "198.51.100.9"], env={"COLUMNS": "200"}
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "1 request across 1 session reduced to 1 activity." in result.output
+
+
 def test_formats_lists_what_can_be_parsed() -> None:
     result = runner.invoke(app, ["formats"])
 

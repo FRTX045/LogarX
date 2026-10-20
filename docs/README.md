@@ -4,11 +4,18 @@ Start with whichever question you arrived with.
 
 | If you want to know | Read |
 |---|---|
+| How to install it, build the Windows application, or set up OWASP CRS | [installing.md](installing.md) |
 | How the whole thing fits together | [architecture.md](architecture.md) |
 | How to use the desktop application | [desktop-app.md](desktop-app.md) |
+| How Where to start decides which clients to read first | [ip-prioritization.md](ip-prioritization.md), and the checks behind it in [evaluations/](evaluations/) |
+| What it detects, and what its OWASP annotations claim | [detection.md](detection.md) |
+| Which log formats it reads, and how to write your own | [log-formats.md](log-formats.md) |
 | How to add a detection without writing Python | [writing-rules.md](writing-rules.md) |
-| How to support another log format | [adding-a-parser.md](adding-a-parser.md) |
+| How to support another log format in code | [adding-a-parser.md](adding-a-parser.md) |
 | How well it works, and what the numbers do not establish | [evaluation.md](evaluation.md) |
+| What each rule pack scored, and what still gets through | [rule-pack-ledger.md](rule-pack-ledger.md) |
+| Which colours the window's text uses, and why | [gui-text-colors.md](gui-text-colors.md) |
+| How to use the developer command line | [command-line.md](command-line.md) |
 | What the automated suite cannot check | [manual-test-plan.md](manual-test-plan.md) |
 | **Why** it is built this way | [adr/](adr/README.md), and the table below |
 

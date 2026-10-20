@@ -1,0 +1,70 @@
+name: Bug report
+description: logarc did something wrong, or could not read a log it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A report is most useful when it can be reproduced: the smallest log that shows the problem is worth more than any description.
+
+        **Is it exploitable?** Then do not file it here. Issues are public; report it privately as [SECURITY.md](https://github.com/FRTX045/logarc/blob/main/SECURITY.md) describes.
+
+        Logs from a real server hold other people's addresses and requests. Cut a log down to the lines that show the problem, and replace anything sensitive, before you paste it.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What logarc did, and what you expected it to do instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce it
+      description: The steps, and the smallest input that shows it — a few log lines, a format definition, a rule. Put log lines in a code block so they are shown as written.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The version in the window's title bar, or the output of `logarc --version`.
+      placeholder: 0.3.0.dev0
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How it is installed
+      options:
+        - From source (pip install -e)
+        - A Windows build made with packaging/rebuild.py
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - Linux
+        - macOS
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: crs
+    attributes:
+      label: OWASP CRS
+      description: Whether the CRS step ran on the case.
+      options:
+        - On (the default)
+        - Turned off
+        - Not set up
+        - Not sure
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: Error messages, a screenshot, the log format in use.

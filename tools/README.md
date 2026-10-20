@@ -4,7 +4,7 @@ Tools for working on logarc. Nothing here is part of the application.
 
 | | What it is for |
 |---|---|
-| [`local-ci.sh`](local-ci.sh) | Run the CI workflow's jobs on your machine. See *The whole CI, locally* in the [README](../README.md#the-whole-ci-locally). |
+| [`local-ci.sh`](local-ci.sh) | Run the CI workflow's jobs on your machine. See *The whole CI, locally* in [CONTRIBUTING.md](../CONTRIBUTING.md#the-whole-ci-locally). |
 | [`hooks/`](hooks/) | Git hooks: stop a commit CI would reject, keep `dist/` built. |
 | [`regen-crs-corpus.sh`](regen-crs-corpus.sh) | Rewrite the CRS corpus record from a complete clone. |
 | [`measure/`](measure/) | Measure the CRS sidecar: replay time, start-up time, memory, how responsive the window stays. |

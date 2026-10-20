@@ -1,5 +1,32 @@
 # Architecture
 
+## In brief
+
+The research question is: **how do you separate one action from another, and then
+classify it** — at log sizes measured in gigabytes, offline?
+
+logarc answers it with deterministic three-level segmentation and a two-pass
+ingest architecture. Determinism is a deliberate constraint: a forensic finding
+must be explainable and reproducible, so every boundary the tool draws can be
+traced to a stated rule and a recorded threshold.
+
+**Two passes.** Ingest is O(n) over the log and happens once per case. Analysis
+is O(k) over one client's events and happens many times, interactively. After
+ingest, selecting a client reads roughly 1/64 of the store, so everything after
+retrieval runs in memory instantly.
+
+**Three levels of segmentation.**
+
+1. **Session** — new session on an idle gap over 30 minutes, a User-Agent change
+   (same address, different client: the NAT case), or 8 hours elapsed.
+2. **Request label** — signature, window and sequence rules, over normalised text.
+3. **Episode** — new episode when the category changes or the gap exceeds 5
+   minutes, then one merge pass absorbs short benign interludes between
+   same-category episodes. Without that pass a single `favicon.ico` fetch splits
+   one attack into three.
+
+Full detail below, and the reasoning behind each choice in [adr/](adr/).
+
 ## Layers
 
 Dependencies point inward. `core/` is the centre and imports nothing else.

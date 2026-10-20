@@ -117,9 +117,13 @@ list removes the registry key rather than storing an empty one in it.
 
 ## Reading a case
 
-![The case as it opens: every client, and the traffic band above](images/screenshot-case.png)
+![The case as it opens: every client, the traffic band above, and Where to start](images/screenshot-case.png)
 
-The table lists the busiest clients in the case, sortable by every column. The
+A case opens on **Where to start**, which scans every client in the background
+and queues the ones worth reading first;
+[ip-prioritization.md](ip-prioritization.md) explains how it orders them.
+
+The table on the left lists the busiest clients in the case, sortable by every column. The
 `4xx` share is the one worth sorting by first: a client probing for things that
 are not there looks exactly like a high refusal rate.
 
@@ -199,12 +203,12 @@ no pause inside it longer than 30 minutes, the same user agent throughout, and
 *Outline each session* preference turns the boxes off, and nothing moves when
 it does.
 
-![The behaviour map: 557 requests folded into five activities](images/screenshot-behaviour.png)
+![The behaviour map: 557 requests folded into two activity types](images/screenshot-behaviour.png)
 
 **Behaviour map** is aggregated: one node per activity type, arrows weighted by
-how often that transition was observed. It reads as a habit. The `x23` on an
-arrow is the thing the trace cannot show — that the client went round that loop
-twenty-three times.
+how often that transition was observed. It reads as a habit. The `x45` on an
+arrow is the thing the trace cannot show — that the client went from one probe
+to the other forty-five times.
 
 Neither view links across a session boundary. A gap long enough to end a session
 is a break in the story, not a transition within it.
