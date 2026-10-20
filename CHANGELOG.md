@@ -12,6 +12,13 @@ which will be the first tag.
 
 ### Added
 
+- **Repeated evidence lines fold into one row.** Lines next to each other with the
+  same request, status and size show as one row with a count (`5x  POST /login`),
+  opened by a double-click, Enter, → or its arrow. Preferences offers looser rules,
+  which mark values their lines do not share as *mixed*, and Off. Lines from two
+  visits never share a row. Display only: the case, reports and every count are
+  unchanged. On the bundled log the default folds 3,825 lines into 3,629 rows, and
+  192.0.2.23's 39 sign-in attempts into 7.
 - **Bookmarks.** A client, an activity, a log line or a search of the case can
   be saved into a category, with a note, from where it is: **Ctrl+D** saves
   what has the keyboard, and a right-click or a Bookmark button offers it in
