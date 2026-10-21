@@ -84,7 +84,7 @@ _LINE = COLUMNS.index("Line")
 
 
 #: A short field hint; filter examples are available in its tooltip and suggestions.
-EVIDENCE_HINT = "Filter these lines\u2026"
+EVIDENCE_HINT = "Filter lines\u2026"
 
 
 class EvidencePanel(QWidget):
@@ -129,7 +129,7 @@ class EvidencePanel(QWidget):
         # only the ones loaded. What matches is the window's to work out; this
         # only takes the words in and says what came of them.
         self.filter_box = FilterBox(
-            scope=Scope.EVIDENCE, placeholder=EVIDENCE_HINT, accessible_name="Filter these lines"
+            scope=Scope.EVIDENCE, placeholder=EVIDENCE_HINT, accessible_name="Filter lines"
         )
         self.filter_box.setToolTip("Filter by text, status:404, path:/admin, or other log fields")
         self.filter_box.textChanged.connect(lambda _: self._rest.start())
@@ -167,7 +167,7 @@ class EvidencePanel(QWidget):
         self._metadata.setWordWrap(True)
         self._metadata.setTextFormat(Qt.TextFormat.RichText)
         self._metadata.setFont(caption_font(self._metadata.font()))
-        self.activity_details = Disclosure("Activity details", self._metadata)
+        self.activity_details = Disclosure("Details", self._metadata)
         self.activity_details.hide()
 
         font = mono_font()

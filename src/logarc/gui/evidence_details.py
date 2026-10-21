@@ -136,7 +136,7 @@ class EvidenceDetails(QScrollArea):
                 ("request", "Request"),
                 ("response", "Response"),
                 ("client", "Client"),
-                ("raw", "Original log line"),
+                ("raw", "Raw line"),
             )
         }
         for section in self.sections.values():

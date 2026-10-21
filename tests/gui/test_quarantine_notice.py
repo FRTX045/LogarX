@@ -111,7 +111,10 @@ def test_a_file_that_produced_nothing_is_escalated() -> None:
     # the parser was wrong rather than the log being empty.
     assert "apache-combined" in notice.detail
     assert "11,268" in notice.detail
-    assert "logarc formats" in notice.detail
+    # The way out is named where the reader is: the window, not a command
+    # line the packaged application does not have (ADR-0012).
+    assert "Case → New from logs…" in notice.detail
+    assert "logarc formats" not in notice.detail
 
 
 def test_every_file_failing_is_the_same_rule() -> None:

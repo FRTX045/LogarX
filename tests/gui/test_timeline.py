@@ -277,3 +277,15 @@ def test_a_client_that_started_with_a_pause_is_still_drawn_at_its_own_step(
     )
 
     assert late.bar_width() == pytest.approx(full.bar_width(), abs=2)
+
+
+def test_an_empty_band_says_why_it_is_empty(qt_app: QApplication) -> None:
+    """A blank grey slab under the menu bar read as a drawing that failed."""
+    assert Timeline().placeholder() == "No case open"
+
+
+def test_a_band_with_traffic_has_nothing_to_explain(qt_app: QApplication) -> None:
+    band = Timeline()
+    band.set_bars(bars())
+
+    assert band.placeholder() == ""

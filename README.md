@@ -64,25 +64,25 @@ logarc-gui
 
 Then, in the window:
 
-1. **Case → Ingest logs into a new case…**, choose
+1. **Case → New from logs…**, choose
    `tests/data/apache-shopfront/excerpt.log`, then an empty folder for the case.
    The format is detected; nothing is configured. On a fresh clone a notice
    then says **CRS is not installed**: the case is complete without it, so
    choose **Continue**. [docs/installing.md](docs/installing.md#owasp-crs) sets
    up that optional second ruleset.
-2. **Where to start** lists the clients worth reading first, each with the
+2. **Triage** lists the clients worth reading first, each with the
    measurements behind its place in the queue.
 3. Click **192.0.2.31** in the client list. Its 48 requests, over three
    sessions, become three activities, and the last is 46 requests of SQL
    injection, every one answered with a 200.
 4. Click an activity. The panel on the right lists the log lines it rests on,
    and shows each raw line exactly as the log holds it.
-5. **Ctrl+D** bookmarks what you are looking at. **Export → HTML report…**
+5. **Ctrl+D** bookmarks what you are looking at. **Export → Report (HTML)…**
    writes a standalone report.
 
 ![557 requests folded into two activity types, with the wordlist behind the selected one](docs/images/screenshot-behaviour.png)
 
-<sub>The **behaviour map** of another client, 192.0.2.231: the same reconstruction folded by activity type, so repetition becomes structure. Its 157 activities become two nodes, and `x45` and `x41` on the arrows say it switched from one to the other 45 times and back 41 times — the thing a chronological trace cannot show. The evidence panel holds all 355 requests of the selected one: `/admin.php`, `/vendor/…`, `/db.sql`, `/backup.zip`, `/shell.php` — a wordlist, being worked through.</sub>
+<sub>The **Behaviour** view of another client, 192.0.2.231: the same reconstruction folded by activity type, so repetition becomes structure. Its 157 activities become two nodes, and `x45` and `x41` on the arrows say it switched from one to the other 45 times and back 41 times — the thing a chronological trace cannot show. The evidence panel holds all 355 requests of the selected one: `/admin.php`, `/vendor/…`, `/db.sql`, `/backup.zip`, `/shell.php` — a wordlist, being worked through.</sub>
 
 Every screen is described in [docs/desktop-app.md](docs/desktop-app.md).
 
@@ -97,7 +97,7 @@ complete and is not.
   every line and presents as a clean, empty case.
 - **Malformed lines are quarantined and counted, never dropped.** A case that
   could not read all of its logs says so every time it is opened.
-- **A cancelled ingest leaves the case un-finalised**, so a partial read cannot be
+- **A cancelled read leaves the case unfinished**, so a partial read cannot be
   analysed as if it were whole.
 - **An analysis that ran without CRS says so on every run**, rather than quietly
   reporting less.

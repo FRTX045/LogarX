@@ -34,6 +34,8 @@ from logarc.style import THEME
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from PyQt6.QtGui import QKeyEvent
+
     from logarc.enrich import EnrichProgress
 
 __all__ = ["CrsCard", "CrsUnavailable"]
@@ -184,6 +186,8 @@ class CrsCard(_Spoken):
         self._stop = required(
             self._buttons.addButton("Stop", QDialogButtonBox.ButtonRole.RejectRole)
         )
+        # Never the default: Enter would stop the run.
+        self._stop.setAutoDefault(False)
         self._stop.clicked.connect(self.press_stop)
 
         stack = QVBoxLayout(self)
@@ -202,6 +206,14 @@ class CrsCard(_Spoken):
         self._bar.setRange(0, progress.total)
         self._bar.setValue(progress.replayed)
         self._counts.setText(f"{progress.replayed:,} of {progress.total:,} requests")
+
+    def keyPressEvent(self, event: QKeyEvent | None) -> None:  # noqa: N802
+        """Escape is not a way out. A dialog hides on it, and this card hidden
+        is a job still running with nothing on screen about it."""
+        if event is not None and event.key() == Qt.Key.Key_Escape:
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def press_stop(self) -> None:
         """Ask once. A second press cannot un-ask, and the run ends at the next

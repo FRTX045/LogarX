@@ -46,7 +46,7 @@ def summary(
     whole feature was shaped to avoid, and this is where a reader would see it.
     """
     if window.is_open:
-        return "whole case"
+        return "All time"
     said = _of(clients, all_clients, "client")
     if requests is None or all_requests is None:
         return said
@@ -68,13 +68,15 @@ def nobody_here(window: TimeWindow) -> str:
     Names the stretch rather than counting to zero. Nothing was found, but
     something was answered — often the thing that was being asked.
     """
+    if window.is_open:
+        return "No clients in this case."
     return f"No client was active {spoken(window)}."
 
 
 def spoken(window: TimeWindow) -> str:
     """A stretch of time as someone would say it."""
     if window.is_open:
-        return "whole case"
+        return "All time"
     if window.start is None:
         return f"up to {_moment(window.end)}"
     if window.end is None:

@@ -69,7 +69,7 @@ def test_the_groups_hold_every_setting_between_them() -> None:
 
 def test_the_groups_come_back_in_a_settled_order() -> None:
     """The dialog is read top to bottom and remembered by position."""
-    assert prefs.GROUPS == ("Graph", "Evidence", "Analysis", "Startup")
+    assert prefs.GROUPS == ("General", "Graph", "Evidence")
 
 
 def test_a_group_keeps_its_settings_in_catalogue_order() -> None:
@@ -85,15 +85,15 @@ def test_a_group_keeps_its_settings_in_catalogue_order() -> None:
 def test_the_startup_setting_is_not_filed_under_the_graph() -> None:
     """It was in the View menu, where it decided nothing about the view. What
     it decides is what happens when the application opens."""
-    startup = [s.key for s in prefs.in_group("Startup")]
+    general = [s.key for s in prefs.in_group("General")]
 
-    assert startup == ["cases/reopen_last"]
+    assert general == [prefs.RUN_CRS, "cases/reopen_last"]
 
 
 def test_crs_is_on_until_the_reader_turns_it_off() -> None:
     """The decision this setting records, made 2026-10-05: CRS runs after every
     scan, and the reader who does not want it says so once, here."""
-    (setting,) = prefs.in_group("Analysis")
+    (setting,) = [s for s in prefs.EVERY if s.key == prefs.RUN_CRS]
 
     assert setting.key == prefs.RUN_CRS
     assert setting.default is True
@@ -103,7 +103,7 @@ def test_the_crs_setting_names_what_it_costs() -> None:
     """It runs after every scan, so the note says that it adds time. No figure:
     a number in a dialog gets no footnote, which is how two wrong ones reached
     the offer this setting replaces."""
-    (setting,) = prefs.in_group("Analysis")
+    (setting,) = [s for s in prefs.EVERY if s.key == prefs.RUN_CRS]
 
     assert "longer" in setting.note
     assert not any(char.isdigit() for char in setting.note)
@@ -263,3 +263,9 @@ def test_text_points_read_the_zoom_then_the_old_text_size() -> None:
     assert prefs.text_points_in({prefs.TEXT_POINTS: "10"}.get, automatic=12) == 10
     assert prefs.text_points_in({prefs.LEGACY_TEXT_SIZE: "compact"}.get, automatic=12) == 11
     assert prefs.text_points_in({}.get, automatic=12) == 12
+
+
+def test_the_layout_setting_is_named_for_the_layout() -> None:
+    by_key = {setting.key: setting for setting in prefs.EVERY}
+
+    assert by_key["view/ask_unsaved_arrangement"].label == "Ask before leaving an unsaved layout"

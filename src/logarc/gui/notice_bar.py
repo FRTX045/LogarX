@@ -80,7 +80,7 @@ class NoticeBanner(QFrame):
         self._detail.setStyleSheet(f"color: {THEME.muted}; background: transparent;")
         self._detail.setWordWrap(True)
 
-        self._reveal = QPushButton("Show the quarantined lines")
+        self._reveal = QPushButton("Show refused lines")
         self._reveal.setFont(caption_font(self._reveal.font()))
         self._reveal.clicked.connect(self._open_quarantine)
         self._reveal.setToolTip(

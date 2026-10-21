@@ -22,7 +22,7 @@ WINDOW = TimeWindow(FROM, TO)
 def test_the_whole_case_says_so_rather_than_counting_itself() -> None:
     """`9,910 of 9,910 clients` is a program telling you it has done nothing.
     The unfiltered state is the ordinary one and should read as ordinary."""
-    assert summary(EVERYTHING, clients=9910, all_clients=9910) == "whole case"
+    assert summary(EVERYTHING, clients=9910, all_clients=9910) == "All time"
 
 
 def test_a_window_says_how_much_of_the_case_is_left() -> None:
@@ -84,5 +84,12 @@ def test_an_open_end_says_which_end_is_open() -> None:
     assert spoken(TimeWindow(end=TO)) == "up to 2 May 02:00"
 
 
-def test_the_whole_case_is_spoken_as_the_whole_case() -> None:
-    assert spoken(EVERYTHING) == "whole case"
+def test_the_whole_case_is_spoken_as_the_button_names_it() -> None:
+    """All time is what the time bar calls it, so a bookmark says the same."""
+    assert spoken(EVERYTHING) == "All time"
+
+
+def test_an_empty_case_with_no_range_is_not_given_one() -> None:
+    """A case whose every line was refused has no clients at all. There is no
+    stretch to name, and "active All time" is not a sentence."""
+    assert nobody_here(EVERYTHING) == "No clients in this case."

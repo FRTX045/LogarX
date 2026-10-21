@@ -132,7 +132,7 @@ def test_a_page_sorted_another_way_says_the_order_is_only_within_it() -> None:
 
 def test_while_the_whole_case_is_searched_the_caption_says_so() -> None:
     assert caption(shown=3, total=931, query="10.0", searching=True) == (
-        "Searching the whole case for 10.0\u2026"
+        "Searching all clients for 10.0\u2026"
     )
 
 
@@ -153,25 +153,25 @@ def test_more_matches_than_a_page_are_paged() -> None:
 
 def test_an_open_client_outside_the_list_is_named() -> None:
     text = caption(shown=500, total=931, query="", missing_open="100.99.203.115")
-    assert text.endswith(" Current IP: 100.99.203.115 (outside this list).")
+    # A line of its own: run on after the counts it read as part of them.
+    assert text.endswith("\nCurrent client: 100.99.203.115 (not in this list).")
 
 
 def test_an_activity_search_waits_for_the_scan_and_says_how_far_it_has_got() -> None:
     """Asked again by itself when the scan finishes, so it never says "ask again"."""
     assert awaiting_scan(TriageProgress(40, 1_200, ()), scanning=True) == (
-        "Activities come from the Where to start scan, which is still checking IPs:"
+        "Activities come from the Triage scan, which is still checking clients:"
         " 40 of 1,200 so far. The list fills in when it finishes."
     )
     assert awaiting_scan(None, scanning=True) == (
-        "Activities come from the Where to start scan, which is still checking IPs."
+        "Activities come from the Triage scan, which is still checking clients."
         " The list fills in when it finishes."
     )
 
 
 def test_an_activity_search_with_no_scan_running_says_where_to_start_one() -> None:
     assert awaiting_scan(None, scanning=False) == (
-        "Activities come from the Where to start scan, which has not finished."
-        " Run it from Where to start."
+        "Activities come from the Triage scan, which has not finished. Run it from Triage."
     )
 
 
@@ -184,7 +184,8 @@ def test_an_open_client_outside_a_search_is_named_as_outside_any_list() -> None:
         missing_open="100.99.203.115",
     )  # fmt: skip
 
-    assert text.endswith(" Current IP: 100.99.203.115 (outside this list).")
+    # A line of its own: run on after the counts it read as part of them.
+    assert text.endswith("\nCurrent client: 100.99.203.115 (not in this list).")
 
 
 def test_an_activity_on_more_clients_than_a_page_names_the_page() -> None:
@@ -202,6 +203,6 @@ def test_an_activity_on_more_clients_than_a_page_names_the_page() -> None:
     )  # fmt: skip
 
     assert paged == (
-        "Clients 501\u20131,000 of 4,916 that match activity:api_call in the Where to start scan"
+        "Clients 501\u20131,000 of 4,916 that match activity:api_call in the Triage scan"
     )
-    assert whole == "3 of 7,450 clients match activity:injection in the Where to start scan"
+    assert whole == "3 of 7,450 clients match activity:injection in the Triage scan"

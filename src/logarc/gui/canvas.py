@@ -76,8 +76,8 @@ __all__ = ["FADED", "MIN_FIT_SCALE", "STARTUP_MESSAGE", "WAITING_MESSAGE", "Acti
 #: What the canvas says while it has no graph. Two waits, two questions: before
 #: a case is open there is no client to pick yet, and telling the reader to pick
 #: one would point at an empty table.
-STARTUP_MESSAGE: Final = "Open a case, or ingest logs into a new one."
-WAITING_MESSAGE: Final = "Select an IP."
+STARTUP_MESSAGE: Final = "Open a case, or start a new one from log files."
+WAITING_MESSAGE: Final = "Select a client."
 
 #: Leave more room around the empty-canvas message than around an activity graph.
 _PLACEHOLDER_SCALE: Final = 0.75
@@ -1275,7 +1275,7 @@ class ActivityCanvas(QGraphicsView):
 
         laid_out = _spread(layout_graph(graph, wrap=self._wrap), graph)
         if not laid_out:
-            self._show_message("This client has no reconstructed activity.")
+            self._show_message("No activity to show for this client.")
             return
         self._base = laid_out
 

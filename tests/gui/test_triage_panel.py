@@ -41,7 +41,7 @@ def test_panel_pages_and_searches_all_clients(qt_app, tmp_path):
     panel.show_result(result)
     settled(qt_app)
     assert panel.table.rowCount() == 100
-    assert panel.caption.text() == "Showing 1\u2013100 of 105 IPs with suspicious activity"
+    assert panel.caption.text() == "Showing 1\u2013100 of 105 clients with suspicious activity"
     expected_rank = next(
         panel.table.item(index, 0).text()
         for index in range(panel.table.rowCount())
@@ -51,14 +51,14 @@ def test_panel_pages_and_searches_all_clients(qt_app, tmp_path):
     panel.next_page.click()
     settled(qt_app)
     assert panel.table.rowCount() == 5
-    assert panel.caption.text() == "Showing 101\u2013105 of 105 IPs with suspicious activity"
+    assert panel.caption.text() == "Showing 101\u2013105 of 105 clients with suspicious activity"
     panel.search.setText("192.0.2.104")
     fired(panel._search_timer)
     settled(qt_app)
     assert panel.table.rowCount() == 1
     assert (
         panel.caption.text()
-        == "Showing 1\u20131 of 1 IP with suspicious activity (matching your search)"
+        == "Showing 1\u20131 of 1 client with suspicious activity (matching your search)"
     )
     assert panel.table.item(0, 1).text() == "192.0.2.104"
     assert panel.table.item(0, 0).text() == expected_rank
@@ -185,9 +185,21 @@ def test_where_to_start_offers_only_the_queues_that_analyse_clients(qt_app):
 
     panel = TriagePanel()
     assert [panel.queues.tabText(i) for i in range(panel.queues.count())] == [
-        "Suspicious activity",
-        "Unusual activity",
+        "Suspicious",
+        "Unusual",
     ]
+    panel.close()
+
+
+def test_the_queues_explain_themselves_on_hover(qt_app):
+    """What "About these queues" said, now where a reader rests the pointer."""
+    from logarc.gui.triage import TriagePanel
+
+    panel = TriagePanel()
+    suspicious, unusual = (panel.queues.tabToolTip(i) for i in range(2))
+    assert "do not establish intent or compromise" in suspicious
+    assert "Legitimate activity can be unusual" in unusual
+    assert not hasattr(panel, "guidance"), "the disclosure is gone"
     panel.close()
 
 
@@ -505,14 +517,41 @@ def test_the_queue_shows_each_clients_key_observation(qt_app, tmp_path):
     from logarc.gui.recommendation import summary_for
 
     panel = selected_panel(qt_app, make_case(tmp_path))
-    assert panel.table.horizontalHeaderItem(2).text() == "Key observation"
+    headers = [panel.table.horizontalHeaderItem(i).text() for i in range(4)]
+    assert headers == ["#", "Client", "Finding", "Requests"]
     assert panel.table.item(0, 2).text() == summary_for(panel._rows[0])
     assert panel.table.item(0, 2).text().startswith("Exploit evidence: ")
-    assert panel.open_client.text() == "Inspect IP"
+    assert panel.open_client.text() == "Open client"
+    assert panel.open_client.property("primary") is True
     panel.close()
 
 
-def test_queue_guidance_stays_available_without_filling_the_panel(qt_app, tmp_path):
+def test_paging_sits_left_and_opening_sits_right(qt_app):
+    """At their own widths: three equal slabs read as one control."""
+    from logarc.gui.triage import TriagePanel
+
+    panel = TriagePanel()
+    panel.resize(900, 600)
+    panel.show()
+    qt_app.processEvents()
+    gap = panel.open_client.x() - (panel.next_page.x() + panel.next_page.width())
+    assert panel.previous_page.x() < panel.next_page.x() < panel.open_client.x()
+    assert gap > 200
+    panel.close()
+
+
+def test_the_notice_counts_clients(qt_app, tmp_path):
+    from logarc.gui.triage import TriagePanel
+
+    panel = TriagePanel()
+    panel.show_result(scan_case(make_case(tmp_path)))
+    settled(qt_app)
+    assert panel.notice.text().startswith("Scanned ")
+    assert " clients · " in panel.notice.text()
+    panel.close()
+
+
+def test_the_notice_stays_short(qt_app, tmp_path):
     from logarc.gui.triage import TriagePanel
 
     panel = TriagePanel()
@@ -520,16 +559,6 @@ def test_queue_guidance_stays_available_without_filling_the_panel(qt_app, tmp_pa
     settled(qt_app)
     assert "CRS not applied" in panel.notice.text()
     assert "compromise" not in panel.notice.text()
-    assert panel.guidance.content.isHidden()
-    panel.guidance.button.click()
-    assert not panel.guidance.content.isHidden()
-    assert "do not establish intent or compromise" in panel.guidance.content.text()
-    assert "Legitimate activity can be unusual" in panel.guidance.content.text()
-    panel.queues.setCurrentIndex(1)
-    settled(qt_app)
-    assert panel.guidance.button.isChecked()
-    panel.guidance.button.click()
-    assert panel.guidance.content.isHidden()
     panel.close()
 
 

@@ -35,7 +35,7 @@ def themed(qt_app: QApplication) -> Iterator[QApplication]:
     afterwards so the rest of the suite runs on the plain application.
     """
     font, sheet = qt_app.font(), qt_app.styleSheet()
-    qt_app.setStyleSheet(theme._CONTROLS)
+    qt_app.setStyleSheet(theme.controls_sheet(11))
     chosen = ui_font(font)
     chosen.setPointSizeF(11)
     qt_app.setFont(chosen)
@@ -552,3 +552,21 @@ def test_a_partial_wheel_turn_is_forgotten_after_a_pause(
     for _ in range(4):
         _wheel(details.viewport(), 15)
     assert themed.font().pointSizeF() == 12, "one whole turn without a pause still steps"
+
+
+def test_the_menus_follow_a_live_zoom(themed: QApplication) -> None:
+    """The sheet names the menus' size outright, because on Windows they take
+    the platform's 9 pt menu font back after the application font. A zoom that
+    put the same sheet back would leave the menus at the starting size."""
+    from PyQt6.QtWidgets import QMenu, QMenuBar
+
+    bar, menu = QMenuBar(), QMenu()
+    for widget in (bar, menu):
+        widget.ensurePolished()
+    assert menu.font().pointSizeF() == 11, "premise: the sheet's starting size"
+
+    theme.set_text_points(themed, 14)
+
+    assert menu.font().pointSizeF() == 14
+    assert bar.font().pointSizeF() == 14
+    theme.set_text_points(themed, 11)

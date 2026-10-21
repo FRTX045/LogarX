@@ -71,6 +71,13 @@ class Timeline(QWidget):
         self._from_x: int | None = None
         self._to_x: int | None = None
 
+    def placeholder(self) -> str:
+        """What the band says while it has nothing to draw.
+
+        An empty frame under the menu bar read as a drawing that had failed.
+        """
+        return "" if self._bars else "No case open"
+
     # -- what the window tells it ------------------------------------------
 
     def set_bars(self, bars: list[TimeSlot]) -> None:
@@ -195,6 +202,8 @@ class Timeline(QWidget):
         painter.setBrush(QBrush(QColor(THEME.raised)))
         painter.drawRoundedRect(frame, 3, 3)
         if not self._bars or self._first is None or self._last is None:
+            painter.setPen(QPen(QColor(THEME.faint)))
+            painter.drawText(frame, int(Qt.AlignmentFlag.AlignCenter), self.placeholder())
             painter.end()
             return
 

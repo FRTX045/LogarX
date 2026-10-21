@@ -422,3 +422,16 @@ def test_after_a_key_it_offers_the_values_there_are() -> None:
 
 def test_a_key_with_no_values_to_offer_offers_nothing() -> None:
     assert suggestions("path:", Scope.EVIDENCE, {"status": [("404", "1 line")]}) == ("", ())
+
+
+def test_the_case_box_is_titled_for_what_it_searches() -> None:
+    title, _rows = suggestions("", Scope.CASE, {})
+
+    assert title == "SEARCH CLIENTS BY"
+
+
+def test_the_activity_filter_names_the_tab_it_comes_from() -> None:
+    _title, rows = suggestions("", Scope.CASE, {})
+    (activity,) = [row for row in rows if row.completion == "activity:"]
+
+    assert activity.note.endswith("(per client, from Triage)")

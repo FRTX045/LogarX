@@ -537,6 +537,24 @@ def test_the_light_theme_still_holds_the_colours_it_always_had() -> None:
     ]
 
 
+def test_the_window_sits_on_graphite_to_meet_the_windows_title_bar() -> None:
+    """Lifted from near-black, so the window and the frame Windows draws around
+    it (about #202020) read as one piece rather than two programs stacked."""
+    assert (DARK.chrome, DARK.surface, DARK.raised, DARK.stripe) == (
+        "#1b1a19",
+        "#222120",
+        "#2b2a29",
+        "#282726",
+    )
+    assert (DARK.line, DARK.edge, DARK.faint, DARK.tint, DARK.grid_dot) == (
+        "#363533",
+        "#4a4846",
+        "#9a9997",
+        "#123153",
+        "#5c5b59",
+    )
+
+
 # -- counting things ---------------------------------------------------------
 
 
@@ -686,7 +704,7 @@ def test_a_threshold_of_odd_seconds_is_given_in_seconds() -> None:
 def test_a_box_ground_is_the_paper_with_a_breath_of_the_accent() -> None:
     """Derived rather than chosen, so it follows the theme. Pinned here so the
     blend cannot drift into a colour nobody measured."""
-    assert SESSION_GROUND == "#13171a"
+    assert SESSION_GROUND == "#24282b"
 
 
 def test_everything_drawn_inside_a_box_still_reads_against_it() -> None:

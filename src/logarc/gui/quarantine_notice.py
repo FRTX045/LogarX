@@ -89,9 +89,9 @@ def _dead_file_detail(dead: Sequence[SourceRecord]) -> str:
 
     return (
         f"{opening}\n\n"
-        "Every line being refused is what reading a log with the wrong parser looks "
-        "like. Re-ingest naming the format explicitly — `logarc formats` lists the "
-        "names it accepts, and the directive behind each."
+        "Every line being refused is what reading a log with the wrong format looks "
+        "like. Make the case again from Case → New from logs… and choose the "
+        "format there."
     )
 
 

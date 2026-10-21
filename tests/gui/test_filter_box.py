@@ -432,3 +432,50 @@ def test_a_chip_longer_than_the_box_gives_way_and_keeps_its_cross(window: QWidge
     assert chip.rect().contains(chip.cross.geometry()), "the cross is still there to press"
     assert chip.value.text().endswith("\N{HORIZONTAL ELLIPSIS}")
     assert box.geometry().right() < window.width()
+
+
+# -- how it reads -------------------------------------------------------------
+
+
+def test_typing_is_in_the_interface_font_not_the_evidence_font(window: QWidget) -> None:
+    """Monospace made the hint and the query look like terminal input."""
+    from logarc.gui.theme import MONO_FAMILIES
+
+    box = boxed(window)
+
+    assert not set(box.edit.font().families()) & set(MONO_FAMILIES)
+
+
+def test_the_field_inside_the_box_draws_no_box_of_its_own(window: QWidget) -> None:
+    """The application sheet frames every line edit; this one is framed by the
+    box around it, and a second frame inside read as a box in a box."""
+    box = boxed(window)
+
+    assert "border: none" in box.edit.styleSheet()
+
+
+def test_chips_are_set_in_the_interface_caption_size(window: QWidget) -> None:
+    from logarc.gui.theme import MONO_FAMILIES, caption_font
+
+    box = boxed(window)
+    box.setText("status:404")
+    (chip,) = box._chips
+
+    assert not set(chip.key.font().families()) & set(MONO_FAMILIES)
+    assert chip.key.font().pointSizeF() == caption_font(QApplication.font()).pointSizeF()
+
+
+def test_with_chips_the_box_invites_another(window: QWidget) -> None:
+    box = boxed(window)
+    box.setText("status:404")
+
+    assert box.edit.placeholderText() == "Add a filter\u2026"
+
+
+def test_the_two_boxes_are_named_shortly_with_the_syntax_on_hover(qt_app: QApplication) -> None:
+    from logarc.gui.evidence_panel import EVIDENCE_HINT
+    from logarc.gui.panels import CASE_HINT, ClientTable
+
+    assert CASE_HINT == "Search clients\u2026"
+    assert EVIDENCE_HINT == "Filter lines\u2026"
+    assert "status:" in ClientTable()._filter.toolTip()

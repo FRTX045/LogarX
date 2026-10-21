@@ -19,8 +19,9 @@ import html
 from typing import TYPE_CHECKING, Final
 
 from PyQt6.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QFocusEvent, QFontMetrics
+from PyQt6.QtGui import QFocusEvent, QFont, QFontMetrics
 from PyQt6.QtWidgets import (
+    QApplication,
     QFrame,
     QLabel,
     QLayout,
@@ -36,7 +37,7 @@ from PyQt6.QtWidgets import (
 )
 
 from logarc.gui._qt import required
-from logarc.gui.theme import mono_font
+from logarc.gui.theme import caption_font, mono_font
 from logarc.search import Scope, Suggestion, suggestions, tokens, understood
 from logarc.style import THEME
 
@@ -82,12 +83,14 @@ class _Chip(QFrame):
         self.setObjectName("chip")
         key, _, value = token.partition(":")
         self._value = value[1:-1] if len(value) > 1 and value[0] == value[-1] == '"' else value
-        font = mono_font()
+        # The interface face at caption size. A fixed 8.5 pt monospace sat a
+        # third smaller than the text typed beside it.
+        font = caption_font(QApplication.font())
         self.key = QLabel(key, self)
         self.key.setFont(font)
         self.key.setStyleSheet(f"color:{THEME.muted}; background:transparent;")
-        bold = mono_font()
-        bold.setBold(True)
+        bold = QFont(font)
+        bold.setWeight(QFont.Weight.DemiBold)
         self.value = QLabel(self._value, self)
         self.value.setFont(bold)
         self.value.setStyleSheet(f"color:{THEME.ink}; background:transparent;")
@@ -285,7 +288,7 @@ class SuggestionList(QFrame):
         self._rows = tuple(rows)
         self._title.setText(title)
         self._list.clear()
-        mono = mono_font()
+        mono = mono_font(QApplication.font().pointSizeF())
         for row in self._rows:
             item = QListWidgetItem(f"{row.completion}   {row.note}")
             item.setFont(mono)
@@ -378,7 +381,7 @@ class FilterBox(QFrame):
         self.setProperty("focused", False)
         self.setStyleSheet(
             f"#filterBox {{ background:{THEME.surface}; border:1px solid {THEME.edge};"
-            " border-radius:3px; }"
+            " border-radius:4px; }"
             f' #filterBox[focused="true"] {{ border:1px solid {THEME.accent}; }}'
         )
         policy = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
@@ -387,9 +390,10 @@ class FilterBox(QFrame):
 
         self.edit = QLineEdit()
         self.edit.setFrame(False)
-        self.edit.setFont(mono_font(self.edit.font().pointSizeF()))
         self.edit.setAccessibleName(accessible_name)
-        self.edit.setStyleSheet("background:transparent;")
+        # Framed by the box around it. The application sheet frames every line
+        # edit, and a second frame inside this one read as a box in a box.
+        self.edit.setStyleSheet("background:transparent; border: none; padding: 0;")
         self.edit.setPlaceholderText(placeholder)
         self.edit.textEdited.connect(self._edited)
         self.edit.installEventFilter(self)
@@ -477,9 +481,7 @@ class FilterBox(QFrame):
         self.edit.setFocus()
 
     def _changed(self) -> None:
-        self.edit.setPlaceholderText(
-            self._placeholder if not self._chips else "add a filter, or type any text…"
-        )
+        self.edit.setPlaceholderText(self._placeholder if not self._chips else "Add a filter…")
         self._flow.invalidate()
         self.updateGeometry()
         now = self.text()

@@ -107,18 +107,18 @@ def match_caption(
     """What to write above the clients a search of their requests found.
 
     Both numbers again: how many clients matched, of how many in the case, and
-    how many requests that is. `counted` is false for a search the Where to
-    start scan answered on its own, which knows which clients an activity
+    how many requests that is. `counted` is false for a search the Triage scan
+    answered on its own, which knows which clients an activity
     reached but not in how many of their requests.
     """
     wanted = query.strip()
     if not counted and shown < matching:
         text = (
             f"Clients {first:,}\u2013{first + shown - 1:,} of {matching:,} that match {wanted}"
-            " in the Where to start scan"
+            " in the Triage scan"
         )
     elif not counted:
-        text = f"{matching:,} of {total:,} clients match {wanted} in the Where to start scan"
+        text = f"{matching:,} of {total:,} clients match {wanted} in the Triage scan"
     elif matching == 0:
         text = f"No client sent a request matching {wanted}. {total:,} in the case."
     else:
@@ -138,8 +138,9 @@ def match_caption(
 
 
 def _outside(client_ip: str) -> str:
-    """Said after either caption when the client being read is not in the list."""
-    return f" Current IP: {client_ip} (outside this list)."
+    """Said after either caption when the client being read is not in the list,
+    on a line of its own: run on after the counts, it read as part of them."""
+    return f"\nCurrent client: {client_ip} (not in this list)."
 
 
 def awaiting_scan(progress: TriageProgress | None, *, scanning: bool) -> str:
@@ -148,13 +149,13 @@ def awaiting_scan(progress: TriageProgress | None, *, scanning: bool) -> str:
     The list asks again by itself when the scan finishes, so this never tells the
     reader to; only a scan that is not running needs them to do anything.
     """
-    opening = "Activities come from the Where to start scan, which"
+    opening = "Activities come from the Triage scan, which"
     if not scanning:
-        return f"{opening} has not finished. Run it from Where to start."
+        return f"{opening} has not finished. Run it from Triage."
     so_far = (
         f": {progress.processed:,} of {progress.total:,} so far" if progress is not None else ""
     )
-    return f"{opening} is still checking IPs{so_far}. The list fills in when it finishes."
+    return f"{opening} is still checking clients{so_far}. The list fills in when it finishes."
 
 
 def _counts(
@@ -179,7 +180,7 @@ def _counts(
         order = " by request count, sorted within this page" if reordered else ", busiest first"
         return f"Clients {first:,}\u2013{last:,} of {total:,}{order}"
     if searching:
-        return f"Searching the whole case for {wanted}\u2026"
+        return f"Searching all clients for {wanted}\u2026"
     found = shown if matching is None else matching
     if found == 0:
         # Named as a filter result, not as an absence. An empty table with no

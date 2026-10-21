@@ -62,8 +62,12 @@ if TYPE_CHECKING:
 
 __all__ = ["RulesEditor"]
 
-_NEW: Final = "New rule pack…"
-_LOAD: Final = "Load a pack from a file…"
+#: The list's own rows: two section headings and the blank pack being written.
+#: Commands are buttons under the list, not rows in it; a row that sometimes
+#: opens a pack and sometimes runs a command made every click a guess.
+_CUSTOM: Final = "CUSTOM"
+_BUILT_IN: Final = "BUILT-IN"
+_DRAFT: Final = "Untitled"
 
 #: What a row of the list is, `(kind, name)`, held on the row rather than read
 #: off its text, so a pack named like a heading cannot be taken for one.
@@ -110,7 +114,6 @@ class RulesEditor(QWidget):
         self.stale = False
         self._finds_stop: threading.Event | None = None
         self._finds_generation = 0
-        self._previous_row = 0
 
         self._packs = QListWidget()
         self._packs.setMaximumWidth(220)
@@ -118,7 +121,8 @@ class RulesEditor(QWidget):
 
         # -- your pack
         self._name = QLineEdit()
-        self._name.setPlaceholderText("Letters, digits, - and _")
+        self._name.setPlaceholderText("my-site")
+        self._name.setToolTip("Letters, digits, - and _")
         self._name.textChanged.connect(self._schedule_check)
         self._yaml = QPlainTextEdit()
         self._yaml.setFont(mono_font(QApplication.font().pointSizeF()))
@@ -155,12 +159,12 @@ class RulesEditor(QWidget):
         self._built_views = QStackedWidget()
         self._built_views.addWidget(self._built_table)
         self._built_views.addWidget(self._built_yaml)
-        self._as_yaml = QPushButton("Show as YAML")
+        self._as_yaml = QPushButton("View YAML")
         self._as_yaml.clicked.connect(self._swap_view)
 
         # -- ask first
         self._ask, self._ask_text = self._bar(
-            ("Read it again now", self._read_again, "readAgain"), ("Later", self._later, "later")
+            ("Re-read now", self._read_again, "readAgain"), ("Later", self._later, "later")
         )
 
         self._pages = QStackedWidget()
@@ -168,7 +172,7 @@ class RulesEditor(QWidget):
         self._pages.addWidget(self._built_in_page())
         self._build()
         self._fill_list()
-        self._packs.setCurrentRow(0)
+        self._packs.setCurrentRow(self._draft_row())
 
     # -- assembling ----------------------------------------------------------
 
@@ -176,6 +180,11 @@ class RulesEditor(QWidget):
         headers = (["On"] if switches else []) + list(_COLUMNS)
         table = QTableWidget(0, len(headers))
         table.setHorizontalHeaderLabels(headers)
+        if switches:
+            required(table.horizontalHeaderItem(0)).setToolTip(
+                "Untick a rule that is wrong for your site. It stays listed and can be "
+                "ticked again."
+            )
         required(table.verticalHeader()).setVisible(False)
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._tables.append(table)
@@ -210,10 +219,10 @@ class RulesEditor(QWidget):
         column.setSpacing(GAP // 2)
         column.addWidget(_heading("Name"))
         column.addWidget(self._name)
-        column.addWidget(_heading("Rules, as YAML"))
+        column.addWidget(_heading("Rules (YAML)"))
         column.addWidget(self._yaml, 4)
         column.addWidget(self._status)
-        column.addWidget(_heading("What this pack finds in the open case"))
+        column.addWidget(_heading("Matches in this case"))
         column.addWidget(self._finds, 2)
         column.addWidget(self._finds_note)
         column.addWidget(self._confirm)
@@ -252,6 +261,18 @@ class RulesEditor(QWidget):
         left.setSpacing(GAP // 2)
         left.addWidget(_heading("Rule packs"))
         left.addWidget(self._packs, 1)
+        self.new_button = QPushButton("New")
+        self.new_button.setToolTip("Start a new rule pack.")
+        self.new_button.clicked.connect(self.start_new)
+        self.import_button = QPushButton("Import\u2026")
+        self.import_button.setToolTip("Add a rule pack from a YAML file.")
+        self.import_button.clicked.connect(self._ask_for_file)
+        tools = QHBoxLayout()
+        tools.setContentsMargins(0, 0, 0, 0)
+        tools.addWidget(self.new_button)
+        tools.addWidget(self.import_button)
+        tools.addStretch(1)
+        left.addLayout(tools)
         row.addLayout(left)
         row.addWidget(self._pages, 1)
         outer.addLayout(row, 1)
@@ -273,13 +294,13 @@ class RulesEditor(QWidget):
     def _fill_list(self) -> None:
         self._packs.blockSignals(True)
         self._packs.clear()
-        self._row(_NEW, "new")
-        self._row(_LOAD, "load")
-        self._packs.addItem(self._heading_row("Built in"))
-        for pack in self._built_in:
-            self._row(pack.name, "built-in", pack.name)
-        if self._library.packs:
-            self._packs.addItem(self._heading_row("Yours"))
+        # The reader's own first: those are the ones worked on. The blank pack
+        # heads them, so a rebuilt list always has somewhere safe to land.
+        self._packs.addItem(self._heading_row(_CUSTOM))
+        draft = self._row(_DRAFT, "new")
+        italic = draft.font()
+        italic.setItalic(True)
+        draft.setFont(italic)
         for saved in self._library.packs:
             item = self._row(
                 f"{saved.name} (does not load)" if saved.problem else saved.name,
@@ -289,6 +310,9 @@ class RulesEditor(QWidget):
             item.setToolTip(saved.problem or saved.note)
             if saved.problem:
                 item.setForeground(QColor(THEME.alert))
+        self._packs.addItem(self._heading_row(_BUILT_IN))
+        for pack in self._built_in:
+            self._row(pack.name, "built-in", pack.name)
         self._packs.blockSignals(False)
 
     def _row(self, text: str, kind: str, name: str | None = None) -> QListWidgetItem:
@@ -296,6 +320,19 @@ class RulesEditor(QWidget):
         item.setData(_ROLE, (kind, name))
         self._packs.addItem(item)
         return item
+
+    def _draft_row(self) -> int:
+        """Where the blank pack is: under the CUSTOM heading."""
+        return next(
+            row
+            for row in range(self._packs.count())
+            if required(self._packs.item(row)).data(_ROLE) == ("new", None)
+        )
+
+    def start_new(self) -> None:
+        """Open a blank pack, from wherever the list is."""
+        self._packs.setCurrentRow(self._draft_row())
+        self._open_new()
 
     def _heading_row(self, text: str) -> QListWidgetItem:
         item = QListWidgetItem(text)
@@ -310,14 +347,6 @@ class RulesEditor(QWidget):
             return
         kind, name = item.data(_ROLE)
         self._confirm.hide()
-        if kind == "load":
-            # Put the selection back: the row is an action, not a place to be.
-            self._packs.blockSignals(True)
-            self._packs.setCurrentRow(self._previous_row)
-            self._packs.blockSignals(False)
-            QTimer.singleShot(0, self._ask_for_file)
-            return
-        self._previous_row = row
         if kind == "new":
             self._open_new()
         elif kind == "built-in":
@@ -329,7 +358,7 @@ class RulesEditor(QWidget):
         self._library = rules_library.in_force(built_in=self._built_in)
         self._fill_list()
         if select is None:
-            self._packs.setCurrentRow(0)
+            self._packs.setCurrentRow(self._draft_row())
             self._open_new()
         else:
             self.select(select)
@@ -387,7 +416,7 @@ class RulesEditor(QWidget):
         self._mark(None)
         self._status.setStyleSheet("")
         said = read_summary(rules)
-        self._status.setText(said if name else f"{said} Give the pack a name to save it.")
+        self._status.setText(said if name else f"{said} Name the pack to save it.")
         self._save.setEnabled(bool(name))
         self._count(self._finds, rules)
         return bool(name)
@@ -468,13 +497,13 @@ class RulesEditor(QWidget):
         except rules_library.RulesLibraryError as exc:
             return str(exc)
         self._reload(name)
-        self._changed("Loaded.")
+        self._changed("Imported.")
         return ""
 
     def _ask_for_file(self) -> None:
-        chosen, _ = QFileDialog.getOpenFileName(self, "Load a rule pack", "", "Rule packs (*.yaml)")
+        chosen, _ = QFileDialog.getOpenFileName(self, "Import rule pack", "", "Rule packs (*.yaml)")
         if chosen and (reason := self.load_file(Path(chosen))):
-            QMessageBox.warning(self, "Pack not loaded", reason)
+            QMessageBox.warning(self, "Pack not imported", reason)
 
     # -- a built-in pack -----------------------------------------------------
 
@@ -483,9 +512,8 @@ class RulesEditor(QWidget):
         self._pages.setCurrentIndex(1)
         self._built_name.setText(pack.name)
         self._built_note.setText(
-            f"Ships with logarc: {plural(len(pack.rules), 'rule')}. Untick one that is wrong "
-            "for your site; it stays here and can be ticked again."
-            + (f" {self._library.trouble}" if self._library.trouble else "")
+            f"Built-in \u00b7 {plural(len(pack.rules), 'rule')}"
+            + (f". {self._library.trouble}" if self._library.trouble else "")
         )
         self._built_yaml.setPlainText(pack.path.read_text(encoding="utf-8"))
         self._fill(self._built_table, pack.rules, switches=True)
@@ -494,7 +522,7 @@ class RulesEditor(QWidget):
     def _swap_view(self) -> None:
         showing_yaml = self._built_views.currentIndex() == 0
         self._built_views.setCurrentIndex(1 if showing_yaml else 0)
-        self._as_yaml.setText("Show as table" if showing_yaml else "Show as YAML")
+        self._as_yaml.setText("View table" if showing_yaml else "View YAML")
 
     def _switched(self, item: QTableWidgetItem) -> None:
         if item.column() != 0:
@@ -619,7 +647,7 @@ class RulesEditor(QWidget):
                 return
             self._finds_stop = None
             self._show_counts(table, finds)
-            note.setText("Every client in the open case read.")
+            note.setText("All clients counted.")
 
         def failed(message: str, _detail: str) -> None:
             if generation == self._finds_generation:

@@ -81,7 +81,7 @@ _LAST = _COLUMNS.index("Last")
 
 #: What the client box says before anything is typed: that it searches the
 #: case, and the filters it takes.
-CASE_HINT = "Search the case\u2026   ip:   status:   path:   activity:"
+CASE_HINT = "Search clients\u2026"
 
 
 def format_seen(when: datetime) -> str:
@@ -280,11 +280,15 @@ class ClientTable(QWidget):
         self._table.customContextMenuRequested.connect(self._show_menu)
 
         # Addresses as before, typed and found at once on the page; filters on
-        # what clients sent, as chips, answered from the whole case. Monospace,
-        # as the box sets it: an address is a column of digits pretending to be
-        # a word, and what is typed should look like what it is compared with.
+        # what clients sent, as chips, answered from the whole case. In the
+        # interface face since 2026-10-21: in monospace the hint read as a
+        # prompt in a terminal. The syntax is on hover and in the list below.
         self._filter = FilterBox(
-            scope=Scope.CASE, placeholder=CASE_HINT, accessible_name="Search the case"
+            scope=Scope.CASE, placeholder=CASE_HINT, accessible_name="Search clients"
+        )
+        self._filter.setToolTip(
+            "Type an address, or filter by what clients sent: status:404, path:/admin, "
+            "method:POST, activity:injection, after:14:05, before:2026-03-10"
         )
         self._filter.textChanged.connect(lambda _text: self._filter_changed())
         self._filter.committed.connect(self._committed)
@@ -521,7 +525,7 @@ class ClientTable(QWidget):
         if wanted != self._filter.text().strip():
             return
         self._searching = False
-        self._message = (f"Could not search the whole case for {wanted}: {message}", THEME.alert)
+        self._message = (f"Could not search all clients for {wanted}: {message}", THEME.alert)
         self._filter.give_way()
         self._refresh_caption()
 

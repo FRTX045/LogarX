@@ -447,13 +447,13 @@ _NOTES: Final[dict[str, str]] = {
     "status": "response code \u2014 404, 2xx",
     "path": "part of the path \u2014 /admin, .env",
     "method": "GET, POST, HEAD",
-    "activity": "what the rules named it \u2014 injection (per client, from Where to start)",
+    "activity": "what the rules named it \u2014 injection (per client, from Triage)",
     "after": "at or after a time \u2014 after:14:05, after:2026-03-09",
     "before": "before a time \u2014 before:14:30, before:2026-03-10",
 }
 _ORDER: Final = ("ip", "status", "path", "method", "activity", "after", "before")
 _ANY_TEXT: Final = Suggestion("any text", "searches the request itself \u2014 union select", False)
-_TITLES: Final = {Scope.EVIDENCE: "FILTER BY", Scope.CASE: "SEARCH THE CASE BY"}
+_TITLES: Final = {Scope.EVIDENCE: "FILTER BY", Scope.CASE: "SEARCH CLIENTS BY"}
 
 
 def suggestions(

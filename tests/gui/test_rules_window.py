@@ -96,7 +96,7 @@ def test_read_it_again_reads_the_client_on_screen_with_the_new_rules(
     rules_library.save_pack("house", HOUSE)
     window._rules_changed()
 
-    _button(window, "Read it again").click()
+    _button(window, "Re-read").click()
     settled(qt_app)
 
     assert "House rule CGI probe" in _on_screen(window)

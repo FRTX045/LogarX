@@ -203,7 +203,7 @@ def _block(
         lines.append(f"<p><b>Why:</b><br>{escape(reason.why)}</p>")
     if reason.kind in NOTES:
         lines.append(f'<p class="secondary">{escape(NOTES[reason.kind])}</p>')
-    lines.append(f'<p><a href="reason:{number}">Inspect supporting requests</a></p>')
+    lines.append(f'<p><a href="reason:{number}">Open supporting requests</a></p>')
     if reason.examples:
         lines.append(f'<p class="section"><b>Examples: {len(reason.examples)} shown</b></p>')
         lines.extend(

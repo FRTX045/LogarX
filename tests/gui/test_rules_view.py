@@ -159,6 +159,9 @@ def test_the_ask_bar_says_what_changed_and_why_it_matters() -> None:
 
 def test_the_window_says_the_rules_changed() -> None:
     assert rules_changed_notice().headline == "Rules changed since this case was read."
+    assert rules_changed_notice().detail == (
+        "The open client and Triage still use the old rules. Re-read to apply the new ones."
+    )
 
 
 @pytest.mark.parametrize(

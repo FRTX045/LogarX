@@ -77,7 +77,7 @@ def test_a_partial_list_asks_for_a_whole_case_search(partial: ClientTable) -> No
     partial._filter.setText("10.0.9")
     assert edits == [True], "a stale answer must be dropped as soon as the text changes"
     assert asked == []
-    assert partial._caption.text() == f"Searching the whole case for 10.0.9{ELLIPSIS}"
+    assert partial._caption.text() == f"Searching all clients for 10.0.9{ELLIPSIS}"
     settle_search(partial)
     assert asked == [("10.0.9", 0)]
 
@@ -155,7 +155,7 @@ def test_an_open_client_outside_the_list_is_named_not_added(partial: ClientTable
     partial.client_chosen.connect(chosen.append)
     partial.set_open_client("10.0.9.9")
     assert "10.0.9.9" not in on_screen(partial)
-    assert partial._caption.text().endswith("Current IP: 10.0.9.9 (outside this list).")
+    assert partial._caption.text().endswith("Current client: 10.0.9.9 (not in this list).")
     partial.set_open_client("10.0.0.2")
     assert partial._table.currentRow() >= 0
     assert "open now" not in partial._caption.text()
@@ -173,7 +173,7 @@ def test_a_failed_search_says_so(partial: ClientTable) -> None:
     partial._filter.setText("10.0.9")
     partial.show_failure("10.0.9", "the case could not be read")
     assert partial._caption.text() == (
-        "Could not search the whole case for 10.0.9: the case could not be read"
+        "Could not search all clients for 10.0.9: the case could not be read"
     )
 
 
@@ -255,7 +255,7 @@ def test_a_request_search_always_asks_the_whole_case(qt_app: QApplication) -> No
     # Both rows hold the address; neither is known to hold the request yet.
     table._filter.setText("status:200 10.0")
 
-    assert table._caption.text() == f"Searching the whole case for status:200 10.0{ELLIPSIS}"
+    assert table._caption.text() == f"Searching all clients for status:200 10.0{ELLIPSIS}"
     assert on_screen(table) == [], "no rows that might be read as the answer"
     settle_search(table)
     assert asked == [("status:200 10.0", 0)]
@@ -321,7 +321,7 @@ def test_an_activity_alone_lists_clients_without_counting_requests(partial: Clie
     assert on_screen(partial) == ["10.0.0.2", "10.0.5.5"], "busiest first: nothing was counted"
     assert partial._table.isColumnHidden(column_of(partial._table, "Match"))
     assert partial._caption.text() == (
-        "2 of 900 clients match activity:injection in the Where to start scan"
+        "2 of 900 clients match activity:injection in the Triage scan"
     )
 
 
@@ -444,7 +444,7 @@ def test_a_failed_search_keeps_saying_so(partial: ClientTable) -> None:
     partial.set_open_client("10.0.0.1")
 
     assert partial._caption.text() == (
-        "Could not search the whole case for 10.0.9: the case could not be read"
+        "Could not search all clients for 10.0.9: the case could not be read"
     )
 
 

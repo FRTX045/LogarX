@@ -21,9 +21,11 @@ def test_the_two_tabs_say_what_each_half_decides(qt_app: QApplication) -> None:
     dialog = FormatsAndRules()
 
     assert [dialog.tabs.tabText(i) for i in range(dialog.tabs.count())] == [
-        "Log formats: can a line be read?",
-        "Detection rules: what does a line mean?",
+        "Log formats",
+        "Detection rules",
     ]
+    assert "can a line be read" in dialog.tabs.tabToolTip(0)
+    assert "what does a line mean" in dialog.tabs.tabToolTip(1)
     assert (dialog.tabs.tabText(0), dialog.tabs.tabText(1)) == (FORMATS_TAB, RULES_TAB)
     assert isinstance(dialog.formats, FormatEditor)
     assert isinstance(dialog.rules, RulesEditor)

@@ -22,12 +22,14 @@ from __future__ import annotations
 import weakref
 from typing import TYPE_CHECKING, Final
 
-from PyQt6.QtCore import QEvent, QObject, Qt
-from PyQt6.QtGui import QColor, QFont, QPalette
+from PyQt6.QtCore import QEvent, QObject, QRectF, Qt
+from PyQt6.QtGui import QColor, QFont, QPainter, QPainterPath, QPalette, QPen
 from PyQt6.QtWidgets import (
     QApplication,
+    QDialogButtonBox,
     QListWidget,
     QProxyStyle,
+    QPushButton,
     QStyle,
     QTableWidget,
     QTreeWidget,
@@ -55,9 +57,11 @@ __all__ = [
     "automatic_points_for",
     "caption_font",
     "colour_text",
+    "controls_sheet",
     "heading_font",
     "on_font_change",
     "set_text_points",
+    "settle_buttons",
     "title_font",
 ]
 
@@ -116,26 +120,151 @@ class _ReadableStyle(QProxyStyle):
         minimum = minimums.get(metric)
         return max(value, minimum) if minimum is not None else value
 
+    def drawPrimitive(  # noqa: N802 - Qt's naming
+        self,
+        element: QStyle.PrimitiveElement,
+        option: QStyleOption | None,
+        painter: QPainter | None,
+        widget: QWidget | None = None,
+    ) -> None:
+        """Draw check boxes as boxes.
 
-_CONTROLS: Final = f"""
-QScrollBar {{ background: {THEME.surface}; border: 1px solid {THEME.edge}; }}
-QScrollBar:vertical {{ width: 20px; margin: 2px; }}
-QScrollBar:horizontal {{ height: 20px; margin: 2px; }}
-QScrollBar::handle {{
-    background: {THEME.faint};
-    border: 1px solid {THEME.muted};
-    border-radius: 6px;
-    margin: 2px;
-}}
+        Fusion strokes the box in a shade of the window and fills it with the
+        base colour, which on this ground is the ground: a ticked setting showed
+        a bare tick and an unticked one showed nothing at all. Drawn here rather
+        than in the stylesheet, which can only paint a tick from an image file,
+        and here it reaches the rules table's On column too.
+        """
+        if element in _CHECKS and option is not None and painter is not None:
+            _draw_check(option, painter)
+            return
+        super().drawPrimitive(element, option, painter, widget)
+
+
+_CHECKS: Final = (
+    QStyle.PrimitiveElement.PE_IndicatorCheckBox,
+    QStyle.PrimitiveElement.PE_IndicatorItemViewItemCheck,
+)
+
+
+def _draw_check(option: QStyleOption, painter: QPainter) -> None:
+    """A rounded box: outlined when off, filled with the accent and ticked when on."""
+    area = QRectF(option.rect).adjusted(1.5, 1.5, -1.5, -1.5)
+    side = min(area.width(), area.height(), 16.0)
+    box = QRectF(area.center().x() - side / 2, area.center().y() - side / 2, side, side)
+    on = bool(option.state & QStyle.StateFlag.State_On)
+    enabled = bool(option.state & QStyle.StateFlag.State_Enabled)
+    painter.save()
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    if on:
+        fill = THEME.accent if enabled else THEME.edge
+        painter.setPen(QPen(QColor(fill), 1.0))
+        painter.setBrush(QColor(fill))
+    else:
+        painter.setPen(QPen(QColor(THEME.muted if enabled else THEME.edge), 1.2))
+        painter.setBrush(QColor(THEME.surface))
+    painter.drawRoundedRect(box, 3, 3)
+    if on:
+        tick = QPainterPath()
+        tick.moveTo(box.left() + side * 0.24, box.top() + side * 0.52)
+        tick.lineTo(box.left() + side * 0.43, box.top() + side * 0.70)
+        tick.lineTo(box.left() + side * 0.77, box.top() + side * 0.32)
+        pen = QPen(QColor(THEME.on_accent if enabled else THEME.faint), max(1.6, side / 8))
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawPath(tick)
+    painter.restore()
+
+
+def controls_sheet(points: float) -> str:
+    """The one stylesheet every control is drawn with.
+
+    Each screen used to style its own buttons, edits and tabs, close enough to
+    look like a system and different enough not to be one. `points` is the
+    interface size, which the menus are told outright: the platform hands them
+    its own smaller menu font otherwise (Windows: 9 pt under an 11 pt window).
+
+    The default button is filled but never bold. Bold set under `:default`
+    widens the label after the button was sized, and "Restore Defaults" lost
+    its last letters to it.
+
+    Scroll bars keep the 20 px the readable style insists on. Headings have no
+    side padding: the style already leaves a margin, and 8 px more on each side
+    put the client list's Last column behind a scroll bar.
+    """
+    return f"""
+QToolTip {{ background: {THEME.raised}; color: {THEME.ink}; border: 1px solid {THEME.edge};
+    padding: 6px 8px; }}
+QMenuBar, QMenu {{ font-size: {points}pt; }}
+QMenuBar {{ background: {THEME.chrome}; border-bottom: 1px solid {THEME.line}; }}
+QMenuBar::item {{ padding: 6px 10px; background: transparent; border-radius: 4px; }}
+QMenuBar::item:selected {{ background: {THEME.raised}; }}
+QMenu {{ background: {THEME.raised}; border: 1px solid {THEME.edge}; padding: 4px; }}
+QMenu::item {{ padding: 6px 32px 6px 26px; border-radius: 4px; }}
+QMenu::item:selected {{ background: {THEME.tint}; }}
+QMenu::item:disabled {{ color: {THEME.faint}; }}
+QMenu::separator {{ height: 1px; background: {THEME.line}; margin: 4px 8px; }}
+QPushButton {{ background: {THEME.raised}; color: {THEME.ink}; border: 1px solid {THEME.edge};
+    border-radius: 4px; padding: 5px 16px; min-height: 20px; }}
+QPushButton:hover {{ border-color: {THEME.muted}; }}
+QPushButton:pressed {{ background: {THEME.tint}; }}
+QPushButton:default {{ background: {THEME.accent}; color: {THEME.on_accent};
+    border-color: {THEME.accent}; }}
+QPushButton[primary="true"] {{ background: {THEME.accent}; color: {THEME.on_accent};
+    border-color: {THEME.accent}; }}
+QPushButton:disabled {{ color: {THEME.faint}; background: transparent;
+    border-color: {THEME.line}; }}
+QLineEdit, QPlainTextEdit, QDateTimeEdit {{ background: {THEME.surface};
+    border: 1px solid {THEME.edge}; border-radius: 4px; padding: 4px 6px;
+    selection-background-color: {THEME.tint}; }}
+QLineEdit:focus, QPlainTextEdit:focus, QDateTimeEdit:focus {{ border-color: {THEME.accent}; }}
+QTabWidget::pane {{ border: none; border-top: 1px solid {THEME.line}; top: -1px; }}
+QTabBar {{ qproperty-drawBase: 0; }}
+QTabBar::tab {{ background: transparent; color: {THEME.muted}; border: none;
+    border-bottom: 2px solid transparent; padding: 6px 14px; margin-right: 4px; }}
+QTabBar::tab:hover {{ color: {THEME.ink}; }}
+QTabBar::tab:selected {{ color: {THEME.ink}; border-bottom: 2px solid {THEME.accent}; }}
+QHeaderView::section {{ background: {THEME.raised}; color: {THEME.muted}; border: none;
+    border-right: 1px solid {THEME.line}; border-bottom: 1px solid {THEME.edge};
+    padding: 4px 0px; }}
+QTableView, QTreeView, QListView {{ border: 1px solid {THEME.line};
+    gridline-color: {THEME.line}; }}
+QListView::item {{ padding: 3px 6px; }}
+QListView::item:selected {{ background: {THEME.tint}; color: {THEME.ink}; }}
+QStatusBar {{ background: {THEME.chrome}; border-top: 1px solid {THEME.line}; }}
+QStatusBar QLabel {{ color: {THEME.muted}; }}
+QScrollBar {{ background: transparent; border: none; }}
+QScrollBar:vertical {{ width: 20px; margin: 3px; }}
+QScrollBar:horizontal {{ height: 20px; margin: 3px; }}
+QScrollBar::handle {{ background: {THEME.edge}; border: none; border-radius: 5px; margin: 1px; }}
 QScrollBar::handle:vertical {{ min-height: 42px; }}
 QScrollBar::handle:horizontal {{ min-width: 42px; }}
-QScrollBar::handle:hover {{ background: {THEME.muted}; }}
+QScrollBar::handle:hover {{ background: {THEME.faint}; }}
 QScrollBar::handle:pressed {{ background: {THEME.accent}; }}
-QScrollBar::handle:disabled {{ background: {THEME.edge}; border-color: {THEME.edge}; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
 QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
-QTabBar::tab:selected {{ color: {THEME.accent}; }}
 """
+
+
+def settle_buttons(buttons: QDialogButtonBox) -> None:
+    """Make the accepting button the default, and nothing else ever.
+
+    A push button in a dialog becomes the default when it takes focus unless it
+    is told not to, so Restore Defaults could end up filled like OK — and the
+    Enter key with it.
+    """
+    chosen = False
+    for button in buttons.buttons():
+        if not isinstance(button, QPushButton):  # pragma: no cover - a box holds push buttons
+            continue
+        accepting = (
+            not chosen and buttons.buttonRole(button) == QDialogButtonBox.ButtonRole.AcceptRole
+        )
+        chosen = chosen or accepting
+        button.setAutoDefault(accepting)
+        button.setDefault(accepting)
 
 
 def colour_text(widget: QWidget, colour: str) -> None:
@@ -295,8 +424,9 @@ def apply_theme(app: QApplication, *, points: float | None = None) -> None:
     app.setPalette(palette())
     # The stylesheet before the font: on Windows, setting a stylesheet refills
     # the per-class fonts from the system (9 pt Segoe UI for every table and
-    # header), and only a later application font clears them again.
-    app.setStyleSheet(_CONTROLS)
+    # header), and only a later application font clears them again. The menus
+    # do not take that font back, so the sheet names their size outright.
+    app.setStyleSheet(controls_sheet(chosen))
     font = ui_font(app.font())
     font.setPointSizeF(chosen)
     app.setFont(font)
@@ -331,11 +461,12 @@ def set_text_points(app: QApplication, points: float) -> float:
     app.setFont(font)
     # With a stylesheet in force Qt does not pass an application font change
     # on to widgets that already exist; setting the sheet again re-polishes
-    # them. A re-polish gives children their parent's font as it stands, so
+    # them, and the sheet is rebuilt for the new size because it names the
+    # menus' size outright. A re-polish gives children their parent's font as it stands, so
     # the second round hands the children of explicitly set widgets the moved
     # size rather than the restored one.
     for _round in range(2):
-        app.setStyleSheet(app.styleSheet())
+        app.setStyleSheet(controls_sheet(chosen))
         for widget, moved in explicit:
             widget.setFont(moved)
     return chosen

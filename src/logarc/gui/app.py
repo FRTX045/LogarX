@@ -15,11 +15,21 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from PyQt6.QtCore import QEvent, QPoint, QSettings, Qt, QTimer
-from PyQt6.QtGui import QAction, QCloseEvent, QColor, QImage, QKeyEvent, QKeySequence, QPainter
+from PyQt6.QtGui import (
+    QAction,
+    QActionGroup,
+    QCloseEvent,
+    QColor,
+    QImage,
+    QKeyEvent,
+    QKeySequence,
+    QPainter,
+)
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
     QFileDialog,
+    QHBoxLayout,
     QLabel,
     QMainWindow,
     QMenu,
@@ -33,7 +43,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from logarc import __version__, rules_library
+from logarc import rules_library
 from logarc.bookmarks import (
     Kind,
     said_for_activity,
@@ -76,6 +86,7 @@ from logarc.gui.format_editor import FormatChoice
 from logarc.gui.format_notice import drift_notice
 from logarc.gui.formats_and_rules import FormatsAndRules
 from logarc.gui.full_screen import FullScreen
+from logarc.gui.help import open_user_guide, show_about, show_shortcuts
 from logarc.gui.notice_bar import NoticeBanner, warn_about_dead_files
 from logarc.gui.panels import ClientTable, LegendBar
 from logarc.gui.preferences import PreferencesDialog
@@ -101,7 +112,7 @@ from logarc.gui.theme import (
 from logarc.gui.time_filter import TimeFilterBar
 from logarc.gui.triage import TriagePanel
 from logarc.gui.wheel_zoom import CtrlWheel
-from logarc.gui.who_else import WhoElseDialog, unavailable
+from logarc.gui.who_else import WhoElseDialog, rule_names, unavailable
 from logarc.gui.window_controls import install_window_controls
 from logarc.gui.workers import run_job
 from logarc.ingest.pipeline import IngestCancelled
@@ -163,6 +174,14 @@ _SITE_HOSTS_KEY = "site-hosts/after-ingest"
 _TABS: tuple[GraphKind, ...] = (GraphKind.TRACE, GraphKind.BEHAVIOUR)
 _TAB_NAMES = {GraphKind.TRACE: "Trace", GraphKind.BEHAVIOUR: "Behaviour"}
 
+#: What each workspace tab is for, said on hover. The tab names are short;
+#: these carry what a reader new to the tool needs.
+_WORKSPACE_TIPS: tuple[str, ...] = (
+    "Clients ranked by how suspicious or unusual their traffic is: where to start reading.",
+    "What the selected client did, drawn as a graph of activities.",
+    "What you saved in this case to come back to.",
+)
+
 #: The evidence face, spelled for Qt's rich text rather than for `QFont`. The
 #: heading is a `QLabel` of markup, so the family list has to travel as CSS.
 _MONO_CSS = ",".join(f"'{family}'" for family in MONO_FAMILIES)
@@ -174,7 +193,7 @@ _JUST_BEFORE = timedelta(microseconds=1)
 
 #: Said when opening a bookmark moved the range: what it points at is outside
 #: the stretch that was set, and the time bar puts that back in one step.
-_WIDENED = "The range is now the whole case: the bookmark is outside the one that was set."
+_WIDENED = "Range set to All time to show the bookmark."
 
 
 def _raw_lines(case: Case, refs: Sequence[EvidenceRef]) -> dict[EvidenceRef, str]:
@@ -205,12 +224,17 @@ def _settings() -> QSettings:
     return QSettings(*_SETTINGS)
 
 
+def _whole(phrase: str) -> str:
+    """`phrase` as rich text that a wrapping label will not break inside."""
+    return phrase.replace(" ", "&nbsp;")
+
+
 class MainWindow(QMainWindow):
     """Open a case, pick a client, read what it did."""
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle(f"logarc {__version__}")
+        self.setWindowTitle("logarc")
         self.resize(1400, 880)
 
         self._case_path: Path | None = None
@@ -332,7 +356,8 @@ class MainWindow(QMainWindow):
         # entries gone it is said outright.
         self._restore_preferences()
 
-        self._status = QLabel("Open a case, or ingest logs into a new one.")
+        # The canvas says what to do; this says what is the case.
+        self._status = QLabel("No case open")
         # It repeats what the reader typed, a category's name among it.
         self._status.setTextFormat(Qt.TextFormat.PlainText)
         colour_text(self._status, THEME.muted)
@@ -374,6 +399,10 @@ class MainWindow(QMainWindow):
         self._heading = QLabel("")
         self._heading.setTextFormat(Qt.TextFormat.RichText)
         self._heading.setFont(heading_font(self._heading.font()))
+        # The heading gives way to the switch beside it, onto a second line,
+        # when the graph's column is dragged narrow. Unwrapped it held its
+        # width and the switch lost "Behaviour" to two scroll arrows.
+        self._heading.setWordWrap(True)
 
         self._build_tabs()
 
@@ -403,17 +432,26 @@ class MainWindow(QMainWindow):
         # framed document rather than a hole cut in the window.
         column.setContentsMargins(PAD, TIGHT, PAD, TIGHT)
         column.setSpacing(TIGHT)
-        column.addWidget(self._tabs)
-        column.addWidget(self._heading)
+        # The switch beside the client it describes, rather than a row of tabs
+        # of its own above it: one line says whose graph this is and how it is
+        # drawn.
+        heading_row = QHBoxLayout()
+        heading_row.setContentsMargins(0, 0, 0, 0)
+        heading_row.setSpacing(GAP)
+        heading_row.addWidget(self._heading, 1)
+        heading_row.addWidget(self._tabs)
+        column.addLayout(heading_row)
         column.addWidget(self._canvas)
         column.addWidget(self._arrangement_bar)
-        self._graph_key = Disclosure("Graph key", self._legend)
+        self._graph_key = Disclosure("Legend", self._legend)
         column.addWidget(self._graph_key)
 
         self._workspace = QTabWidget()
-        self._workspace.addTab(self._triage, "Where to start")
-        self._workspace.addTab(centre, "Reconstruction")
+        self._workspace.addTab(self._triage, "Triage")
+        self._workspace.addTab(centre, "Activity")
         self._workspace.addTab(self._bookmarks_tab, "Bookmarks")
+        for index, explained in enumerate(_WORKSPACE_TIPS):
+            self._workspace.setTabToolTip(index, explained)
         self._workspace.setCurrentIndex(1)
         splitter = self._build_splitter(self._workspace)
         # Kept as an attribute for the tests that size it directly, now that
@@ -461,6 +499,9 @@ class MainWindow(QMainWindow):
         # reads as a pair of buttons rather than as a choice between two views —
         # and at that size the selected one is not obviously selected.
         self._tabs.setExpanding(False)
+        # Two words, always whole: never scrolled, never elided.
+        self._tabs.setUsesScrollButtons(False)
+        self._tabs.setElideMode(Qt.TextElideMode.ElideNone)
         # Drawn here rather than left to the style, which had it backwards.
         #
         # Under Fusion in document mode the selected tab takes the page colour
@@ -470,23 +511,29 @@ class MainWindow(QMainWindow):
         # the background and the *unselected* tab was the one drawn as a raised
         # box. The bar was confidently indicating the view you were not looking
         # at, which is worse than the menu-only state it replaced.
+        #
+        # Since 2026-10-21 a segmented control: two halves of one outlined pill,
+        # the chosen half filled. Tabs read as places to go; this is a way of
+        # drawing the same thing, and it now sits on the heading's own row.
         self._tabs.setStyleSheet(f"""
             QTabBar::tab {{
                 background: transparent;
                 color: {THEME.muted};
-                border: 1px solid transparent;
-                border-top-left-radius: 3px;
-                border-top-right-radius: 3px;
-                padding: {TIGHT}px {GAP}px;
-                margin-right: 2px;
+                border: 1px solid {THEME.edge};
+                padding: 3px {GAP + 2}px;
+                margin: 0;
+            }}
+            QTabBar::tab:first {{
+                border-top-left-radius: 4px;
+                border-bottom-left-radius: 4px;
+            }}
+            QTabBar::tab:last {{
+                border-top-right-radius: 4px;
+                border-bottom-right-radius: 4px;
+                border-left: none;
             }}
             QTabBar::tab:hover {{ color: {THEME.ink}; }}
-            QTabBar::tab:selected {{
-                background: {THEME.raised};
-                color: {THEME.accent};
-                border: 1px solid {THEME.edge};
-                border-top: 2px solid {THEME.accent};
-            }}
+            QTabBar::tab:selected {{ background: {THEME.tint}; color: {THEME.ink}; }}
         """)
         for kind in _TABS:
             self._tabs.addTab(_TAB_NAMES[kind])
@@ -532,23 +579,29 @@ class MainWindow(QMainWindow):
 
     def _build_menu(self) -> None:
         menu_bar = required(self.menuBar())
+        # New before Open, as in every other application; the longer story of
+        # each entry is its status tip, not its name.
         case_menu = required(menu_bar.addMenu("&Case"))
-        self._add(case_menu, "&Open case…", self._open_case, QKeySequence.StandardKey.Open)
-        recently = self._add(case_menu, "&Recently opened…", self._show_recent)
-        recently.setShortcut(QKeySequence("Ctrl+Shift+O"))
-        recently.setStatusTip("Pick up a case that has been opened on this machine before.")
-        self._add(case_menu, "Ingest logs into a &new case…", self._ingest_new_case)
-        self._add(case_menu, "Formats and &rules…", self._manage_formats).setStatusTip(
-            "See the log formats logarc reads and the rules that say what a line means, "
-            "and write your own."
+        fresh = self._add(
+            case_menu, "&New from logs…", self._ingest_new_case, QKeySequence.StandardKey.New
         )
-        self._crs_action = self._add(case_menu, "Run OWASP &CRS on this case", self._run_crs_now)
+        fresh.setStatusTip("Read log files into a new case.")
+        self._add(case_menu, "&Open…", self._open_case, QKeySequence.StandardKey.Open)
+        recently = self._add(case_menu, "Open &recent…", self._show_recent)
+        recently.setShortcut(QKeySequence("Ctrl+Shift+O"))
+        recently.setStatusTip("Pick up a case opened on this machine before.")
+        case_menu.addSeparator()
+        self._add(case_menu, "Formats and &rules…", self._manage_formats).setStatusTip(
+            "The log formats logarc reads and the rules that say what a line means."
+        )
+        self._crs_action = self._add(case_menu, "Run &CRS scan", self._run_crs_now)
         self._crs_action.setStatusTip(
-            "Replay the open case through OWASP CRS now, whether or not it runs after "
-            "every scan. Stopping keeps what it found."
+            "Replay this case through OWASP CRS now. Stopping keeps what it found."
         )
         case_menu.addSeparator()
-        self._add(case_menu, "E&xit", self.close, QKeySequence.StandardKey.Quit)
+        # No shortcut. `StandardKey.Quit` has no binding on Windows and Qt
+        # printed it as the word itself, so the entry read "Exit    Exit".
+        self._add(case_menu, "E&xit", self.close)
 
         # What is done to the graph, and the door to the preferences. `Edit`
         # rather than `View` because `Ctrl+Z` is the first thing anyone looks
@@ -559,11 +612,11 @@ class MainWindow(QMainWindow):
         # with every other control rather than on the canvas: a strip floating
         # over the graph covers a patch of it, has to be moved on every resize,
         # and swallows clicks meant for whatever node is underneath.
-        self._undo_action = self._add(edit_menu, "&Undo node move", self._arrangements_kept.undo)
+        self._undo_action = self._add(edit_menu, "&Undo move", self._arrangements_kept.undo)
         self._undo_action.setShortcut(QKeySequence.StandardKey.Undo)
         self._undo_action.setStatusTip("Put the last activity you moved back where it was.")
         self._save_layout_action = self._add(
-            edit_menu, "&Save this arrangement", self._arrangements_kept.save
+            edit_menu, "&Save layout", self._arrangements_kept.save
         )
         self._save_layout_action.setShortcut(QKeySequence.StandardKey.Save)
         self._save_layout_action.setStatusTip(
@@ -574,7 +627,7 @@ class MainWindow(QMainWindow):
         )
         self._reset_layout_action.setShortcut(QKeySequence("Ctrl+Shift+R"))
         self._reset_layout_action.setStatusTip(
-            "Put every activity back where it was laid out, and forget the saved arrangement."
+            "Put every activity back where it was laid out, and forget the saved layout."
         )
         self._arrangements_kept.offer(
             self._save_layout_action, self._undo_action, self._reset_layout_action
@@ -602,10 +655,18 @@ class MainWindow(QMainWindow):
         # four — two switches, four actions, four preferences, and one setting
         # about what happens at launch, which is not a view at all.
         view_menu = required(menu_bar.addMenu("&View"))
-        self._trace_action = self._add(view_menu, "&Trace (chronological)", self._show_trace)
-        self._behaviour_action = self._add(view_menu, "&Behaviour map", self._show_behaviour)
+        self._trace_action = self._add(view_menu, "&Trace", self._show_trace)
+        self._trace_action.setStatusTip("The client's activities in the order they happened.")
+        self._behaviour_action = self._add(view_menu, "&Behaviour", self._show_behaviour)
+        self._behaviour_action.setStatusTip(
+            "Each kind of activity once, with how the client moved between them."
+        )
+        # One group, so the menu draws them as the single choice they are.
+        views = QActionGroup(self)
+        views.setExclusive(True)
         for action in (self._trace_action, self._behaviour_action):
             action.setCheckable(True)
+            views.addAction(action)
         self._trace_action.setChecked(True)
         view_menu.addSeparator()
         self._timeline_action = self._add(view_menu, "&Timeline", self._timeline_from_menu)
@@ -690,13 +751,36 @@ class MainWindow(QMainWindow):
         self._canvas.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
 
         export_menu = required(menu_bar.addMenu("&Export"))
-        self._add(export_menu, "&HTML report…", lambda: self._export("html"))
-        self._add(export_menu, "&JSON graph…", lambda: self._export("json"))
-        self._add(export_menu, "&PNG image…", lambda: self._export("png"))
+        # What each writes, then the file it writes it as.
+        self._add(export_menu, "&Report (HTML)…", lambda: self._export("html")).setStatusTip(
+            "A self-contained report of the client on screen, with its evidence."
+        )
+        self._add(export_menu, "&Graph (JSON)…", lambda: self._export("json")).setStatusTip(
+            "The client's activity graph as data."
+        )
+        self._add(export_menu, "&Image (PNG)…", lambda: self._export("png")).setStatusTip(
+            "A picture of the graph as it is drawn now."
+        )
         export_menu.addSeparator()
-        self._add(export_menu, "&Bookmarks…", self._export_bookmarks).setStatusTip(
+        self._add(export_menu, "&Bookmarks (CSV)…", self._export_bookmarks).setStatusTip(
             "Write every bookmark in this case to a CSV file, with its note and log line."
         )
+
+        help_menu = required(menu_bar.addMenu("&Help"))
+        guide = self._add(help_menu, "&User guide", open_user_guide)
+        guide.setShortcut(QKeySequence("F1"))
+        guide.setStatusTip("Open the desktop guide in your browser.")
+        self._add(help_menu, "&Keyboard shortcuts", self._show_shortcuts).setStatusTip(
+            "Every key the menus answer to."
+        )
+        help_menu.addSeparator()
+        self._add(help_menu, "&About logarc", self._show_about)
+
+    def _show_shortcuts(self) -> None:
+        show_shortcuts(self, required(self.menuBar()))
+
+    def _show_about(self) -> None:
+        show_about(self)
 
     def _add(
         self,
@@ -717,7 +801,7 @@ class MainWindow(QMainWindow):
     # -- case --------------------------------------------------------------
 
     def _open_case(self) -> None:
-        chosen = QFileDialog.getExistingDirectory(self, "Open case directory")
+        chosen = QFileDialog.getExistingDirectory(self, "Open case folder")
         if chosen:
             self._load_case(Path(chosen))
 
@@ -747,7 +831,7 @@ class MainWindow(QMainWindow):
         sizes = [path.stat().st_size for path in paths]
 
         def work(report: Callable[[object], None]) -> IngestCancelled | None:
-            report(f"Ingesting {plural(len(paths), 'file')}…")
+            report(f"Reading {plural(len(paths), 'file')}…")
             reading = Reading([path.name for path in paths], sizes)
             try:
                 with Case.create(case_dir) as case:
@@ -781,7 +865,7 @@ class MainWindow(QMainWindow):
 
         self._ingest_card = IngestCard(self, on_cancel=self._request_cancel)
         self._ingest_card.show()
-        self._busy(f"Ingesting into {case_dir}…", stop=stop)
+        self._busy(f"Reading logs into {case_dir}…", stop=stop)
         run_job(
             work,
             on_done=lambda outcome: self._ingest_finished(case_dir, outcome),
@@ -825,7 +909,7 @@ class MainWindow(QMainWindow):
             self._rules_notice.show_notice(None)
         elif self._rules_stale:
             self._rules_notice.show_notice(
-                rules_changed_notice(), action=("Read it again", self._read_again)
+                rules_changed_notice(), action=("Re-read", self._read_again)
             )
         elif self._rules_refused:
             self._rules_notice.show_notice(
@@ -895,14 +979,13 @@ class MainWindow(QMainWindow):
             self._ask_site_hosts(case_dir)
             return
 
-        self._idle(f"Cancelled after {outcome.lines_read:,} lines.")
+        self._idle(f"Stopped after {outcome.lines_read:,} lines.")
         QMessageBox.information(
             self,
-            "Ingest cancelled",
+            "Reading stopped",
             f"Stopped after {outcome.lines_read:,} lines.\n\n"
-            f"{case_dir} holds what had been read by then and was not finalised, so it "
-            "cannot be analysed. It is left in place rather than deleted — delete the "
-            "folder yourself if you want to start over.",
+            f"{case_dir} holds a partial case that cannot be analysed. It is left in "
+            "place; delete the folder to start over.",
         )
 
     # -- the site's own domains, asked once and only where it matters --------
@@ -1030,7 +1113,7 @@ class MainWindow(QMainWindow):
         silenced the notice after a scan, not the answer to a question.
         """
         if self._case_path is None:
-            self._status.setText("Open a case first, then run CRS on it.")
+            self._status.setText("Open a case first.")
             colour_text(self._status, THEME.muted)
             return
         try:
@@ -1098,7 +1181,7 @@ class MainWindow(QMainWindow):
             detail,
             explanation=(
                 f"{reason}\n\nNothing in the case was changed, and everything else in it "
-                "works. To try again: Case → Run OWASP CRS on this case."
+                "works. To try again: Case → Run CRS scan."
             ),
         )
         # The case is as it was before CRS started, and complete. Without this
@@ -1143,6 +1226,11 @@ class MainWindow(QMainWindow):
         """
         _settings().setValue(_RECENT_KEY, recent.dump(recent.remember(self._recent_cases(), entry)))
 
+    def _name_the_window(self, path: Path | None) -> None:
+        """`<case> — logarc`, the case called what the recent list calls it."""
+        entry = next((e for e in self._recent_cases() if path and e.path == str(path)), None)
+        self.setWindowTitle(f"{entry.display_name} — logarc" if entry else "logarc")
+
     def _forget_recent(self) -> None:
         _settings().remove(_RECENT_KEY)
 
@@ -1170,7 +1258,7 @@ class MainWindow(QMainWindow):
                 # it back; an empty value would satisfy every visible symptom
                 # and leave the key sitting there.
                 self._forget_recent()
-                self._idle("Forgot the list of cases opened here.")
+                self._idle("Recent cases list cleared.")
 
         if chooser.wants_other_case:
             self._open_case()
@@ -1222,6 +1310,9 @@ class MainWindow(QMainWindow):
         self._awaiting = None
         self._evidence_request = object()
         self._case_path = None
+        # Named again only once this one has opened: a title still naming the
+        # last case would claim it is the one on screen.
+        self._name_the_window(None)
         self._evidence.clear(prompt=False)
         # The last case's bookmarks go now, not when this one arrives: until
         # then nothing on screen may carry a ribbon from another case.
@@ -1271,6 +1362,7 @@ class MainWindow(QMainWindow):
             view, snapshot, notice, drifted, older, library = loaded
             summaries = view.listed
             self._remember_case(snapshot)
+            self._name_the_window(path)
             self._case_path = path
             self._crs = view.crs
             # A fresh case is read whole. Opening one already narrowed would
@@ -1450,6 +1542,11 @@ class MainWindow(QMainWindow):
         numbers that have to agree — what the range did to the list, and what it
         did to the graph.
         """
+        if self._window.is_open:
+            # Nothing to add at All time: the fields show the whole span and the
+            # button is named for it. "whole case" stood alone at the far right.
+            self._time_filter.say("")
+            return
         whole = self._whole_counts.get(result.client_ip) if result is not None else None
         self._time_filter.say(
             summary(
@@ -1754,7 +1851,7 @@ class MainWindow(QMainWindow):
             )
 
         def work(report: Callable[[str], None]) -> tuple[AnalysisResult, list[TimeSlot]]:
-            report(f"Reconstructing {client_ip}…")
+            report(f"Opening {client_ip}…")
             result = reconstruct_client(path, client_ip, crs, window=window, rules=rules)
             # This client's own traffic, across its own life — not the range in
             # force. Built from the reconstruction it would only ever cover that
@@ -1765,7 +1862,7 @@ class MainWindow(QMainWindow):
             with Case.open(path) as case:
                 return result, case.store.activity_over_time(buckets=buckets, client_ip=client_ip)
 
-        self._busy(f"Reconstructing {client_ip}…")
+        self._busy(f"Opening {client_ip}…")
 
         def done(loaded: tuple[AnalysisResult, list[TimeSlot]]) -> None:
             result, bars = loaded
@@ -1816,10 +1913,13 @@ class MainWindow(QMainWindow):
                 # Normal weight, explicitly: the label itself is set in the
                 # heading face, which is DemiBold, and without this the counts
                 # carry the same emphasis as the address they belong to.
-                f'<span style="color:{THEME.muted};font-weight:normal">&nbsp;&nbsp;'
-                f"{format_requests(result.request_count)}"
-                f" · {plural(len(result.sessions), 'session')}"
-                f" · {plural(len(result.episodes), 'activity', 'activities')}</span>"
+                # Each count is one unbreakable piece, so a narrow column
+                # wraps the heading between counts and never between a
+                # number and its noun.
+                f'<span style="color:{THEME.muted};font-weight:normal">&nbsp; '
+                f"{_whole(format_requests(result.request_count))}"
+                f" · {_whole(plural(len(result.sessions), 'session'))}"
+                f" · {_whole(plural(len(result.episodes), 'activity', 'activities'))}</span>"
             )
             self._redraw()
             self._workspace.setCurrentIndex(1)
@@ -2154,8 +2254,13 @@ class MainWindow(QMainWindow):
                 self._who_else_menu.addAction("Select an activity first"), "action"
             ).setEnabled(False)
             return
+        # Named as the evidence panel's activity is, with the id on hover for a
+        # reader who searches by it. An id with no label in this result is
+        # still offered, by its id.
+        names = rule_names(self._result) if self._result is not None else {}
         for rule_id in node.rule_ids:
-            action = required(self._who_else_menu.addAction(rule_id), "action")
+            action = required(self._who_else_menu.addAction(names.get(rule_id, rule_id)), "action")
+            action.setToolTip(rule_id)
             action.triggered.connect(lambda _checked=False, rule=rule_id: self._who_else(rule))
 
     def _who_else(self, rule_id: str) -> None:
@@ -2163,6 +2268,7 @@ class MainWindow(QMainWindow):
         if self._result is None:
             return
         client_ip = self._result.client_ip
+        name = rule_names(self._result).get(rule_id, rule_id)
         if self._who_else_dialog is None:
             self._who_else_dialog = WhoElseDialog(self)
             self._who_else_dialog.open_client.connect(self._reconstruct)
@@ -2171,11 +2277,11 @@ class MainWindow(QMainWindow):
         index = self._triage.result
         if index is None:
             dialog.show_unavailable(
-                rule_id, unavailable(self._triage.progress, scanning=self._triage.scanning)
+                name, unavailable(self._triage.progress, scanning=self._triage.scanning)
             )
         else:
             path = index.path
-            dialog.show_unavailable(rule_id, "Looking up the other IPs…")
+            dialog.show_unavailable(name, "Looking up other clients…")
 
             def work(_: Callable[[object], None]) -> Any:
                 return read_rule_matches(path, rule_id)
@@ -2184,13 +2290,11 @@ class MainWindow(QMainWindow):
                 # The range can move while this runs, and a new scan replaces
                 # the index; an answer from the old one is about other traffic.
                 if self._triage.result is index:
-                    dialog.show_matches(rule_id, matches, client_ip=client_ip)
+                    dialog.show_matches(rule_id, matches, client_ip=client_ip, name=name)
 
             def failed(message: str, _detail: str) -> None:
                 if self._triage.result is index:
-                    dialog.show_unavailable(
-                        rule_id, f"Could not read the scan's results: {message}."
-                    )
+                    dialog.show_unavailable(name, f"Could not read the scan's results: {message}.")
 
             run_job(work, on_done=done, on_error=failed)
         dialog.show()
@@ -2552,7 +2656,7 @@ class MainWindow(QMainWindow):
         """Bookmark the client box's search, with the range it was answered over."""
         answered = self._clients.answered_search()
         if answered is None:
-            self._idle("Search the case from the client box first, then bookmark the search.")
+            self._idle("Search clients first, then bookmark the search.")
             return
         query, clients, requests = answered
         self._bookmarks.bookmark(
@@ -2675,7 +2779,7 @@ class MainWindow(QMainWindow):
 
     def _export(self, kind: str) -> None:
         if self._result is None or self._case_path is None:
-            QMessageBox.information(self, "Nothing to export", "Reconstruct a client first.")
+            QMessageBox.information(self, "Nothing to export", "Open a client first.")
             return
 
         # What each format is called and what it suggests saving as comes from

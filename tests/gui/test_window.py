@@ -2635,19 +2635,19 @@ def test_cancelling_says_it_is_waiting(qt_app: QApplication) -> None:
 
     assert asked == [True]
     assert not card._cancel.isEnabled(), "asking a second time cannot help"
-    assert "STOPPING" in card.text(), "the state in the head has to change"
+    assert "Stopping" in card.text(), "the state in the head has to change"
     card.close()
 
 
 def test_the_card_names_the_cost_of_cancelling(qt_app: QApplication) -> None:
-    """Cancelling is not free — the case is left un-finalised and cannot be
+    """Cancelling is not free — the case is left unfinished and cannot be
     analysed. That belongs beside the button, not in the documentation."""
     card = IngestCard(None, on_cancel=lambda: None)
 
     # On the face, not in a tooltip. A tooltip is shown only if somebody rests
     # the pointer on the control, and this sentence exists to be read *before*
     # that control is pressed.
-    assert "un-finalised" in card._consequence.text()
+    assert "unfinished" in card._consequence.text()
     assert card._consequence.isVisibleTo(card)
     card.close()
 
@@ -3463,6 +3463,6 @@ def test_a_client_opened_from_elsewhere_is_named_when_it_is_not_listed(
     settled(qt_app)
     window._reconstruct("10.0.0.5")
     settled(qt_app)
-    assert window._clients._caption.text().endswith("Current IP: 10.0.0.5 (outside this list).")
+    assert window._clients._caption.text().endswith("Current client: 10.0.0.5 (not in this list).")
     window.close()
     settled(qt_app)

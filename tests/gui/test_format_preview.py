@@ -65,7 +65,7 @@ def test_nothing_written_yet_asks_for_a_directive_rather_than_failing() -> None:
 
     assert not result.ok
     assert not result.fields
-    assert "directive" in result.status.lower()
+    assert "logformat" in result.status.lower()
 
 
 def test_no_sample_line_yet_asks_for_one() -> None:

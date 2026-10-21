@@ -36,8 +36,9 @@ class _Grip(QSplitterHandle):
         painter = QPainter(self)
         painter.fillRect(self.rect(), QColor(THEME.chrome))
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        colour = QColor(THEME.accent)
-        colour.setAlphaF(1.0 if self._hovered else 0.65)
+        # Accent only under the pointer: accent means "chosen" everywhere else,
+        # and a grip drawn in it at rest read as a selected panel edge.
+        colour = QColor(THEME.accent if self._hovered else THEME.edge)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(colour)
         vertical = self.orientation() == Qt.Orientation.Horizontal

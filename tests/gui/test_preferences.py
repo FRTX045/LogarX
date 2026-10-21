@@ -15,7 +15,14 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
-from PyQt6.QtWidgets import QApplication, QCheckBox, QComboBox, QGroupBox, QLabel
+from PyQt6.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QDialogButtonBox,
+    QLabel,
+    QTabWidget,
+)
 
 from logarc.gui import prefs
 from logarc.gui.density import Density
@@ -47,94 +54,90 @@ def test_a_switch_is_a_checkbox_and_a_choice_is_a_list(qt_app: QApplication) -> 
     assert isinstance(dialog._controls["view/band_density"], QComboBox)
 
 
-def test_the_groups_are_drawn_as_groups_in_order(qt_app: QApplication) -> None:
-    """The shape the reader picked: one page, three boxes, nothing hidden
-    behind a tab or a category list."""
+def test_the_groups_are_tabs_in_order(qt_app: QApplication) -> None:
+    """The shape the reader picked on 2026-10-21: three tabs, each with
+    something on it. (It was one page of five boxes before that.)"""
     dialog = _opened()
 
-    boxes = [box.title() for box in dialog.findChildren(QGroupBox)]
+    tabs = dialog.findChild(QTabWidget)
+    assert tabs is not None
+    assert [tabs.tabText(i) for i in range(tabs.count())] == list(prefs.GROUPS)
+    assert list(prefs.GROUPS) == ["General", "Graph", "Evidence"]
 
-    assert boxes == list(prefs.GROUPS)
 
-
-def test_explanations_can_be_hidden_without_changing_preferences(qt_app: QApplication) -> None:
+def test_every_setting_explains_itself_on_hover(qt_app: QApplication) -> None:
+    """The notes the menu carried as status tips, now where the pointer rests.
+    There is no switch to show them: hover is how every other application does
+    it, and a switch for help was one more thing to learn."""
     dialog = _opened()
-    before = dialog.chosen()
-    assert all(note.isHidden() for note in dialog._notes)
-    dialog.explanations.click()
-    assert all(not note.isHidden() for note in dialog._notes)
-    assert dialog.chosen() == before
-    dialog.explanations.click()
-    assert all(note.isHidden() for note in dialog._notes)
-    assert dialog.chosen() == before
+
+    assert not hasattr(dialog, "explanations")
     for setting in prefs.EVERY:
         assert dialog._controls[setting.key].toolTip() == setting.note
-    dialog.close()
 
 
-def test_larger_text_scrolls_without_clipping_notes_or_confirmation_buttons(
+def test_switching_tabs_still_hands_back_every_setting(qt_app: QApplication) -> None:
+    """A tab out of sight is still a tab whose values matter on OK."""
+    dialog = _opened({**prefs.defaults(), "view/decode_targets": False})
+    tabs = dialog.findChild(QTabWidget)
+    assert tabs is not None
+
+    tabs.setCurrentIndex(2)
+    tabs.setCurrentIndex(0)
+
+    chosen = dialog.chosen()
+    assert set(chosen) == {setting.key for setting in prefs.EVERY}
+    assert chosen["view/decode_targets"] is False
+
+
+def test_ok_is_the_default_and_restore_defaults_never_is(qt_app: QApplication) -> None:
+    dialog = _opened()
+    buttons = dialog.findChild(QDialogButtonBox)
+    assert buttons is not None
+
+    ok = buttons.button(QDialogButtonBox.StandardButton.Ok)
+    restore = buttons.button(QDialogButtonBox.StandardButton.RestoreDefaults)
+    assert ok is not None and restore is not None
+    assert ok.isDefault()
+    assert not restore.autoDefault()
+
+
+def test_larger_text_scrolls_without_clipping_the_confirmation_buttons(
     qt_app: QApplication,
 ) -> None:
     from PyQt6.QtCore import QPoint, QRect
-    from PyQt6.QtTest import QTest
-    from PyQt6.QtWidgets import QDialogButtonBox, QLabel, QScrollArea
+    from PyQt6.QtWidgets import QScrollArea
 
     original_font = qt_app.font()
-    qt_app.setFont(ui_font(original_font))
+    large = ui_font(original_font)
+    large.setPointSizeF(14)
+    qt_app.setFont(large)
     dialog = _opened()
     try:
-        dialog.resize(560, 420)
-        dialog.explanations.setChecked(True)
+        dialog.resize(560, 360)
+        tabs = dialog.findChild(QTabWidget)
+        assert tabs is not None
+        tabs.setCurrentIndex(1)
         dialog.show()
         qt_app.processEvents()
-        # Revealing wrapped notes queues another height-for-width layout pass.
-        QTest.qWait(20)
-        scroll = dialog.findChild(QScrollArea)
-        assert scroll is not None
-        body = scroll.widget()
-        bar = scroll.verticalScrollBar()
-        assert body is not None and bar is not None
-        assert bar.maximum() > 0
-        for note in body.findChildren(QLabel):
-            assert note.height() >= note.heightForWidth(note.width())
         buttons = dialog.findChild(QDialogButtonBox)
         assert buttons is not None and buttons.isVisible()
         assert dialog.rect().contains(buttons.geometry())
+        scroll = tabs.currentWidget()
+        assert isinstance(scroll, QScrollArea)
+        bar = scroll.verticalScrollBar()
+        assert bar is not None
         bar.setValue(bar.maximum())
         qt_app.processEvents()
         viewport = scroll.viewport()
         assert viewport is not None
-        last_control = dialog._controls["cases/reopen_last"]
-        rect = QRect(last_control.mapTo(viewport, QPoint()), last_control.size())
-        # Scrolled to the bottom, the last control is in view from its left edge
-        # and over its whole height. Its width is left alone: offscreen Qt on
-        # Windows lays this checkbox out 803 pixels wide, where a real window of
-        # the same size gives it 488 of 516, so a sideways check here would be
-        # testing the stand-in font rather than the dialog.
+        last = dialog._controls["view/ask_unsaved_arrangement"]
+        rect = QRect(last.mapTo(viewport, QPoint()), last.size())
         assert viewport.rect().contains(rect.topLeft())
         assert rect.bottom() <= viewport.rect().bottom()
     finally:
         dialog.close()
         qt_app.setFont(original_font)
-
-
-def test_each_setting_says_what_it_is_for_on_screen(qt_app: QApplication) -> None:
-    """Not only in the catalogue. The menu carried these as status tips; a
-    dialog that dropped them would make the move a step backwards."""
-    dialog = _opened()
-    dialog.explanations.setChecked(True)
-    written = dialog.grab().size()  # forces a layout, so nothing is unbuilt
-    assert written.isValid()
-
-    on_screen = _all_text(dialog)
-    for setting in prefs.EVERY:
-        assert setting.note in on_screen, f"{setting.key} explains nothing on screen"
-
-
-def _all_text(dialog: PreferencesDialog) -> str:
-    from PyQt6.QtWidgets import QLabel
-
-    return "\n".join(label.text() for label in dialog.findChildren(QLabel))
 
 
 # -- what it shows ---------------------------------------------------------
@@ -249,7 +252,9 @@ def test_a_chosen_rule_comes_back_and_restore_puts_the_default_back(
 
 def test_text_size_is_zoomed_rather_than_chosen_here(qt_app: QApplication) -> None:
     dialog = _opened()
-    assert "Appearance" not in [box.title() for box in dialog.findChildren(QGroupBox)]
+    tabs = dialog.findChild(QTabWidget)
+    assert tabs is not None
+    assert "Appearance" not in [tabs.tabText(i) for i in range(tabs.count())]
     assert not any("Text size" in label.text() for label in dialog.findChildren(QLabel))
     assert not any("Text size" in box.text() for box in dialog.findChildren(QCheckBox))
     dialog.close()

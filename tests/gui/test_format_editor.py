@@ -297,10 +297,8 @@ def test_the_two_kinds_of_format_are_kept_apart_in_the_list(
         if editor._formats.item(row) is not None
     ]
 
-    assert "Built in" in rows
-    assert "Saved by you" in rows
-    assert rows.index("Built in") < rows.index("apache-combined")
-    assert rows.index("Saved by you") < rows.index("log-kantor")
+    assert rows.index("CUSTOM") < rows.index("Untitled") < rows.index("log-kantor")
+    assert rows.index("log-kantor") < rows.index("BUILT-IN") < rows.index("apache-combined")
 
 
 def test_a_heading_is_not_offered_as_a_format(
@@ -308,8 +306,9 @@ def test_a_heading_is_not_offered_as_a_format(
 ) -> None:
     editor = FormatEditor()
 
-    assert "Built in" not in editor.listed()
-    assert "Saved by you" not in editor.listed()
+    assert "BUILT-IN" not in editor.listed()
+    assert "CUSTOM" not in editor.listed()
+    assert "Untitled" not in editor.listed()
     assert "log-kantor" in editor.listed()
 
 
@@ -355,7 +354,7 @@ def test_a_name_the_list_itself_uses_is_refused(qt_app: QApplication) -> None:
     by the wrong branch and edited as something it is not."""
     editor = FormatEditor()
 
-    for reserved in ("New text format…", "New JSON format…", "Built in", "Saved by you"):
+    for reserved in ("Untitled", "CUSTOM", "BUILT-IN"):
         editor.start_new()
         editor._name.setText(reserved)
         editor._rule.setText(PIPED)
@@ -540,8 +539,13 @@ def test_both_kinds_of_format_can_be_started(qt_app: QApplication) -> None:
         if editor._formats.item(row) is not None
     ]
 
-    assert "New text format…" in rows
-    assert "New JSON format…" in rows
+    assert not [row for row in rows if row.startswith("New ")], "commands are not rows"
+    assert [action.text() for action in editor.new_button.menu().actions()] == [
+        "Text (LogFormat)",
+        "JSON",
+        "Table (CSV, TSV, W3C)",
+        "Pattern (regular expression)",
+    ]
 
 
 def test_starting_a_json_format_shows_the_mapping_and_hides_the_directive(
@@ -703,7 +707,7 @@ def test_a_table_format_can_be_started(qt_app: QApplication) -> None:
         if editor._formats.item(row) is not None
     ]
 
-    assert "New table format…" in rows
+    assert "Untitled" in rows
 
 
 def test_starting_a_table_shows_the_separator_and_the_columns(
@@ -850,7 +854,7 @@ def test_a_pattern_format_can_be_started(qt_app: QApplication) -> None:
         if editor._formats.item(row) is not None
     ]
 
-    assert "New pattern format…" in rows
+    assert "Untitled" in rows
 
 
 def test_a_pattern_shows_one_rule_line_and_a_time_format(qt_app: QApplication) -> None:
@@ -948,3 +952,103 @@ def test_manage_formats_opens_the_formats_and_rules_dialog(
     FormatChoice()._manage()
 
     assert opened_on == [formats_and_rules.FORMATS_TAB]
+
+
+# -- the list holds formats; New is a button ----------------------------------
+
+
+@pytest.mark.parametrize(
+    ("entry", "kind"),
+    [
+        ("Text (LogFormat)", "logformat"),
+        ("JSON", "json"),
+        ("Table (CSV, TSV, W3C)", "columns"),
+        ("Pattern (regular expression)", "pattern"),
+    ],
+)
+def test_each_new_entry_starts_its_kind_on_the_untitled_row(
+    qt_app: QApplication, entry: str, kind: str
+) -> None:
+    editor = FormatEditor()
+    editor.select("apache-combined")
+    (action,) = [a for a in editor.new_button.menu().actions() if a.text() == entry]
+
+    action.trigger()
+
+    assert editor._formats.currentItem().text() == "Untitled"
+    assert editor.kind() == kind
+    assert editor._name.text() == ""
+
+
+def test_a_saved_format_called_untitled_still_opens_as_itself(qt_app: QApplication) -> None:
+    """The command line can save any name; the blank row is known by what it
+    is, not by what it says."""
+    save_library([LogFormatSpec(name="Untitled", directive=PIPED)])
+    editor = FormatEditor()
+
+    assert "Untitled" in editor.listed()
+    editor.select("Untitled")
+    assert editor._rule.text() == PIPED
+
+
+def test_the_labels_are_short(qt_app: QApplication) -> None:
+    from PyQt6.QtWidgets import QLabel
+
+    editor = FormatEditor()
+    words = {label.text() for label in editor.findChildren(QLabel)}
+
+    assert {"Formats", "Name", "LogFormat", "Note", "Sample line"} <= words
+    assert editor._guess.text() == "Guess fields"
+    assert editor._guess.toolTip()
+    assert editor._fields.horizontalHeaderItem(1).text() == "Value"
+    editor.start_new_json()
+    assert editor._mapping.horizontalHeaderItem(0).text() == "Field"
+    assert editor._mapping.horizontalHeaderItem(1).text() == "Your log's key"
+    editor.start_new_pattern()
+    assert editor._rule_label.text() == "Regular expression"
+
+
+def test_the_ingest_choice_is_short_and_explains_itself_on_hover(qt_app: QApplication) -> None:
+    from PyQt6.QtWidgets import QLabel, QPushButton
+
+    chooser = FormatChoice()
+
+    assert chooser.windowTitle() == "Log format"
+    assert "Format" in {label.text() for label in chooser.findChildren(QLabel)}
+    assert "Apache and nginx" in chooser._choice.toolTip()
+    assert "Manage\u2026" in {button.text() for button in chooser.findChildren(QPushButton)}
+
+
+def test_only_save_is_drawn_as_the_default(qt_app: QApplication) -> None:
+    """The editor is a dialog, where every button wants to be the default
+    unless told not to. New, first in the tab order, took the filled look,
+    and beside an enabled Save there were two."""
+    editor = FormatEditor()
+    editor.show()
+    editor.select("caddy-json")
+    editor.new_button.setFocus()
+    qt_app.processEvents()
+
+    assert not editor.new_button.autoDefault()
+    assert not editor.new_button.isDefault()
+    assert editor._save.isDefault()
+    assert not editor._delete.autoDefault()
+    editor.close()
+
+
+def test_the_format_question_answers_ok_to_enter(qt_app: QApplication) -> None:
+    from PyQt6.QtWidgets import QDialogButtonBox, QPushButton
+
+    choice = FormatChoice(None)
+    choice.show()
+    manage = next(b for b in choice.findChildren(QPushButton) if b.text() == "Manage\u2026")
+    manage.setFocus()
+    qt_app.processEvents()
+    box = choice.findChild(QDialogButtonBox)
+    assert box is not None
+    ok = box.button(QDialogButtonBox.StandardButton.Ok)
+    assert ok is not None
+
+    assert ok.isDefault()
+    assert not manage.autoDefault()
+    choice.close()
