@@ -77,8 +77,8 @@ def test_the_view_menu_holds_only_what_is_shown(qt_app: QApplication) -> None:
     window = MainWindow()
 
     assert _entries(_menu(window, "View")) == [
-        "Trace (chronological)",
-        "Behaviour map",
+        "Trace",
+        "Behaviour",
         "Timeline",
         "Fit to window",
         "Full screen",
@@ -126,12 +126,67 @@ def test_the_edit_menu_holds_what_is_done_to_the_graph(qt_app: QApplication) -> 
     window = MainWindow()
 
     assert _entries(_menu(window, "Edit")) == [
-        "Undo node move",
-        "Save this arrangement",
+        "Undo move",
+        "Save layout",
         "Reset layout",
         "Bookmark…",
         "Preferences…",
     ]
+    window.close()
+
+
+def test_the_case_menu_reads_like_every_other_application(qt_app: QApplication) -> None:
+    """New before Open, short names; what each does is on the status tip."""
+    window = MainWindow()
+
+    assert _entries(_menu(window, "Case")) == [
+        "New from logs…",
+        "Open…",
+        "Open recent…",
+        "Formats and rules…",
+        "Run CRS scan",
+        "Exit",
+    ]
+    window.close()
+
+
+def test_exit_shows_no_shortcut(qt_app: QApplication) -> None:
+    """`StandardKey.Quit` has no binding on Windows and renders as the word
+    "Exit", so the menu read "Exit    Exit"."""
+    window = MainWindow()
+    (leave,) = [a for a in _menu(window, "Case").actions() if a.text() == "E&xit"]
+
+    assert leave.shortcut().isEmpty()
+    window.close()
+
+
+def test_export_names_the_file_each_entry_writes(qt_app: QApplication) -> None:
+    window = MainWindow()
+
+    assert _entries(_menu(window, "Export")) == [
+        "Report (HTML)…",
+        "Graph (JSON)…",
+        "Image (PNG)…",
+        "Bookmarks (CSV)…",
+    ]
+    window.close()
+
+
+def test_there_is_a_help_menu(qt_app: QApplication) -> None:
+    window = MainWindow()
+
+    assert _entries(_menu(window, "Help")) == ["User guide", "Keyboard shortcuts", "About logarc"]
+    window.close()
+
+
+def test_trace_and_behaviour_are_one_choice(qt_app: QApplication) -> None:
+    """Shown as a pair of radio entries, because exactly one is ever in force."""
+    window = MainWindow()
+    group = window._trace_action.actionGroup()
+
+    assert group is not None
+    assert group is window._behaviour_action.actionGroup()
+    assert group.isExclusive()
     window.close()
 
 
@@ -143,7 +198,7 @@ def test_bookmarking_is_ctrl_d_and_is_offered_where_it_is_used(qt_app: QApplicat
     assert window._bookmark_action in window.actions()
     assert window._canvas.actions()[0].text() == "Bookmark this activity…"
     assert window._canvas.actions()[0].shortcut().isEmpty(), "Ctrl+D is the Edit menu's"
-    assert _entries(_menu(window, "Export"))[-1] == "Bookmarks…"
+    assert _entries(_menu(window, "Export"))[-1] == "Bookmarks (CSV)…"
     window.close()
 
 
@@ -170,11 +225,13 @@ def test_every_shortcut_still_reaches_the_same_entry(qt_app: QApplication) -> No
         if not action.shortcut().isEmpty()
     }
 
-    assert reachable["Ctrl+Z"] == "Undo node move"
-    assert reachable["Ctrl+S"] == "Save this arrangement"
+    assert reachable["Ctrl+Z"] == "Undo move"
+    assert reachable["Ctrl+S"] == "Save layout"
     assert reachable["Ctrl+Shift+R"] == "Reset layout"
-    assert reachable["Ctrl+O"] == "Open case…"
-    assert reachable["Ctrl+Shift+O"] == "Recently opened…"
+    assert reachable["Ctrl+O"] == "Open…"
+    assert reachable["Ctrl+Shift+O"] == "Open recent…"
+    assert reachable["Ctrl+N"] == "New from logs…"
+    assert reachable["F1"] == "User guide"
     window.close()
 
 

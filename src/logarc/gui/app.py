@@ -15,7 +15,16 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from PyQt6.QtCore import QEvent, QPoint, QSettings, Qt
-from PyQt6.QtGui import QAction, QCloseEvent, QColor, QImage, QKeyEvent, QKeySequence, QPainter
+from PyQt6.QtGui import (
+    QAction,
+    QActionGroup,
+    QCloseEvent,
+    QColor,
+    QImage,
+    QKeyEvent,
+    QKeySequence,
+    QPainter,
+)
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
@@ -33,7 +42,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from logarc import __version__, rules_library
+from logarc import rules_library
 from logarc.bookmarks import (
     Kind,
     said_for_activity,
@@ -76,6 +85,7 @@ from logarc.gui.format_editor import FormatChoice
 from logarc.gui.format_notice import drift_notice
 from logarc.gui.formats_and_rules import FormatsAndRules
 from logarc.gui.full_screen import FullScreen
+from logarc.gui.help import open_user_guide, show_about, show_shortcuts
 from logarc.gui.notice_bar import NoticeBanner, warn_about_dead_files
 from logarc.gui.panels import ClientTable, LegendBar
 from logarc.gui.preferences import PreferencesDialog
@@ -151,6 +161,14 @@ _SITE_HOSTS_KEY = "site-hosts/after-ingest"
 _TABS: tuple[GraphKind, ...] = (GraphKind.TRACE, GraphKind.BEHAVIOUR)
 _TAB_NAMES = {GraphKind.TRACE: "Trace", GraphKind.BEHAVIOUR: "Behaviour"}
 
+#: What each workspace tab is for, said on hover. The tab names are short;
+#: these carry what a reader new to the tool needs.
+_WORKSPACE_TIPS: tuple[str, ...] = (
+    "Clients ranked by how suspicious or unusual their traffic is: where to start reading.",
+    "What the selected client did, drawn as a graph of activities.",
+    "What you saved in this case to come back to.",
+)
+
 #: The evidence face, spelled for Qt's rich text rather than for `QFont`. The
 #: heading is a `QLabel` of markup, so the family list has to travel as CSS.
 _MONO_CSS = ",".join(f"'{family}'" for family in MONO_FAMILIES)
@@ -198,7 +216,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle(f"logarc {__version__}")
+        self.setWindowTitle("logarc")
         self.resize(1400, 880)
 
         self._case_path: Path | None = None
@@ -320,7 +338,8 @@ class MainWindow(QMainWindow):
         # entries gone it is said outright.
         self._restore_preferences()
 
-        self._status = QLabel("Open a case, or ingest logs into a new one.")
+        # The canvas says what to do; this says what is the case.
+        self._status = QLabel("No case open")
         # It repeats what the reader typed, a category's name among it.
         self._status.setTextFormat(Qt.TextFormat.PlainText)
         colour_text(self._status, THEME.muted)
@@ -386,13 +405,15 @@ class MainWindow(QMainWindow):
         column.addWidget(self._heading)
         column.addWidget(self._canvas)
         column.addWidget(self._arrangement_bar)
-        self._graph_key = Disclosure("Graph key", self._legend)
+        self._graph_key = Disclosure("Legend", self._legend)
         column.addWidget(self._graph_key)
 
         self._workspace = QTabWidget()
-        self._workspace.addTab(self._triage, "Where to start")
-        self._workspace.addTab(centre, "Reconstruction")
+        self._workspace.addTab(self._triage, "Triage")
+        self._workspace.addTab(centre, "Activity")
         self._workspace.addTab(self._bookmarks_tab, "Bookmarks")
+        for index, explained in enumerate(_WORKSPACE_TIPS):
+            self._workspace.setTabToolTip(index, explained)
         self._workspace.setCurrentIndex(1)
         splitter = self._build_splitter(self._workspace)
         # Kept as an attribute for the tests that size it directly, now that
@@ -511,23 +532,29 @@ class MainWindow(QMainWindow):
 
     def _build_menu(self) -> None:
         menu_bar = required(self.menuBar())
+        # New before Open, as in every other application; the longer story of
+        # each entry is its status tip, not its name.
         case_menu = required(menu_bar.addMenu("&Case"))
-        self._add(case_menu, "&Open case…", self._open_case, QKeySequence.StandardKey.Open)
-        recently = self._add(case_menu, "&Recently opened…", self._show_recent)
-        recently.setShortcut(QKeySequence("Ctrl+Shift+O"))
-        recently.setStatusTip("Pick up a case that has been opened on this machine before.")
-        self._add(case_menu, "Ingest logs into a &new case…", self._ingest_new_case)
-        self._add(case_menu, "Formats and &rules…", self._manage_formats).setStatusTip(
-            "See the log formats logarc reads and the rules that say what a line means, "
-            "and write your own."
+        fresh = self._add(
+            case_menu, "&New from logs…", self._ingest_new_case, QKeySequence.StandardKey.New
         )
-        self._crs_action = self._add(case_menu, "Run OWASP &CRS on this case", self._run_crs_now)
+        fresh.setStatusTip("Read log files into a new case.")
+        self._add(case_menu, "&Open…", self._open_case, QKeySequence.StandardKey.Open)
+        recently = self._add(case_menu, "Open &recent…", self._show_recent)
+        recently.setShortcut(QKeySequence("Ctrl+Shift+O"))
+        recently.setStatusTip("Pick up a case opened on this machine before.")
+        case_menu.addSeparator()
+        self._add(case_menu, "Formats and &rules…", self._manage_formats).setStatusTip(
+            "The log formats logarc reads and the rules that say what a line means."
+        )
+        self._crs_action = self._add(case_menu, "Run &CRS scan", self._run_crs_now)
         self._crs_action.setStatusTip(
-            "Replay the open case through OWASP CRS now, whether or not it runs after "
-            "every scan. Stopping keeps what it found."
+            "Replay this case through OWASP CRS now. Stopping keeps what it found."
         )
         case_menu.addSeparator()
-        self._add(case_menu, "E&xit", self.close, QKeySequence.StandardKey.Quit)
+        # No shortcut. `StandardKey.Quit` has no binding on Windows and Qt
+        # printed it as the word itself, so the entry read "Exit    Exit".
+        self._add(case_menu, "E&xit", self.close)
 
         # What is done to the graph, and the door to the preferences. `Edit`
         # rather than `View` because `Ctrl+Z` is the first thing anyone looks
@@ -538,11 +565,11 @@ class MainWindow(QMainWindow):
         # with every other control rather than on the canvas: a strip floating
         # over the graph covers a patch of it, has to be moved on every resize,
         # and swallows clicks meant for whatever node is underneath.
-        self._undo_action = self._add(edit_menu, "&Undo node move", self._arrangements_kept.undo)
+        self._undo_action = self._add(edit_menu, "&Undo move", self._arrangements_kept.undo)
         self._undo_action.setShortcut(QKeySequence.StandardKey.Undo)
         self._undo_action.setStatusTip("Put the last activity you moved back where it was.")
         self._save_layout_action = self._add(
-            edit_menu, "&Save this arrangement", self._arrangements_kept.save
+            edit_menu, "&Save layout", self._arrangements_kept.save
         )
         self._save_layout_action.setShortcut(QKeySequence.StandardKey.Save)
         self._save_layout_action.setStatusTip(
@@ -553,7 +580,7 @@ class MainWindow(QMainWindow):
         )
         self._reset_layout_action.setShortcut(QKeySequence("Ctrl+Shift+R"))
         self._reset_layout_action.setStatusTip(
-            "Put every activity back where it was laid out, and forget the saved arrangement."
+            "Put every activity back where it was laid out, and forget the saved layout."
         )
         self._arrangements_kept.offer(
             self._save_layout_action, self._undo_action, self._reset_layout_action
@@ -581,10 +608,18 @@ class MainWindow(QMainWindow):
         # four — two switches, four actions, four preferences, and one setting
         # about what happens at launch, which is not a view at all.
         view_menu = required(menu_bar.addMenu("&View"))
-        self._trace_action = self._add(view_menu, "&Trace (chronological)", self._show_trace)
-        self._behaviour_action = self._add(view_menu, "&Behaviour map", self._show_behaviour)
+        self._trace_action = self._add(view_menu, "&Trace", self._show_trace)
+        self._trace_action.setStatusTip("The client's activities in the order they happened.")
+        self._behaviour_action = self._add(view_menu, "&Behaviour", self._show_behaviour)
+        self._behaviour_action.setStatusTip(
+            "Each kind of activity once, with how the client moved between them."
+        )
+        # One group, so the menu draws them as the single choice they are.
+        views = QActionGroup(self)
+        views.setExclusive(True)
         for action in (self._trace_action, self._behaviour_action):
             action.setCheckable(True)
+            views.addAction(action)
         self._trace_action.setChecked(True)
         view_menu.addSeparator()
         self._timeline_action = self._add(view_menu, "&Timeline", self._timeline_from_menu)
@@ -647,13 +682,36 @@ class MainWindow(QMainWindow):
         self._canvas.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
 
         export_menu = required(menu_bar.addMenu("&Export"))
-        self._add(export_menu, "&HTML report…", lambda: self._export("html"))
-        self._add(export_menu, "&JSON graph…", lambda: self._export("json"))
-        self._add(export_menu, "&PNG image…", lambda: self._export("png"))
+        # What each writes, then the file it writes it as.
+        self._add(export_menu, "&Report (HTML)…", lambda: self._export("html")).setStatusTip(
+            "A self-contained report of the client on screen, with its evidence."
+        )
+        self._add(export_menu, "&Graph (JSON)…", lambda: self._export("json")).setStatusTip(
+            "The client's activity graph as data."
+        )
+        self._add(export_menu, "&Image (PNG)…", lambda: self._export("png")).setStatusTip(
+            "A picture of the graph as it is drawn now."
+        )
         export_menu.addSeparator()
-        self._add(export_menu, "&Bookmarks…", self._export_bookmarks).setStatusTip(
+        self._add(export_menu, "&Bookmarks (CSV)…", self._export_bookmarks).setStatusTip(
             "Write every bookmark in this case to a CSV file, with its note and log line."
         )
+
+        help_menu = required(menu_bar.addMenu("&Help"))
+        guide = self._add(help_menu, "&User guide", open_user_guide)
+        guide.setShortcut(QKeySequence("F1"))
+        guide.setStatusTip("Open the desktop guide in your browser.")
+        self._add(help_menu, "&Keyboard shortcuts", self._show_shortcuts).setStatusTip(
+            "Every key the menus answer to."
+        )
+        help_menu.addSeparator()
+        self._add(help_menu, "&About logarc", self._show_about)
+
+    def _show_shortcuts(self) -> None:
+        show_shortcuts(self, required(self.menuBar()))
+
+    def _show_about(self) -> None:
+        show_about(self)
 
     def _add(
         self,
@@ -1100,6 +1158,11 @@ class MainWindow(QMainWindow):
         """
         _settings().setValue(_RECENT_KEY, recent.dump(recent.remember(self._recent_cases(), entry)))
 
+    def _name_the_window(self, path: Path | None) -> None:
+        """`<case> — logarc`, the case called what the recent list calls it."""
+        entry = next((e for e in self._recent_cases() if path and e.path == str(path)), None)
+        self.setWindowTitle(f"{entry.display_name} — logarc" if entry else "logarc")
+
     def _forget_recent(self) -> None:
         _settings().remove(_RECENT_KEY)
 
@@ -1179,6 +1242,9 @@ class MainWindow(QMainWindow):
         self._awaiting = None
         self._evidence_request = object()
         self._case_path = None
+        # Named again only once this one has opened: a title still naming the
+        # last case would claim it is the one on screen.
+        self._name_the_window(None)
         self._evidence.clear(prompt=False)
         # The last case's bookmarks go now, not when this one arrives: until
         # then nothing on screen may carry a ribbon from another case.
@@ -1228,6 +1294,7 @@ class MainWindow(QMainWindow):
             view, snapshot, notice, drifted, older, library = loaded
             summaries = view.listed
             self._remember_case(snapshot)
+            self._name_the_window(path)
             self._case_path = path
             self._crs = view.crs
             # A fresh case is read whole. Opening one already narrowed would
