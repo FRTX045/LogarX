@@ -14,6 +14,7 @@ import pytest
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from PyQt6.QtGui import QFont
+from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication
 
 from logarc.gui.crs import CrsCard
@@ -111,3 +112,26 @@ def test_the_cards_follow_the_chosen_text_size(qt_app: QApplication) -> None:
         crs.close()
     finally:
         qt_app.setFont(original)
+
+
+def test_enter_never_stops_a_long_job(qt_app: QApplication) -> None:
+    """The only button on each card is the one that throws work away. In a
+    dialog the focused button is the default, drawn filled and pressed by
+    Enter: measured, Enter cancelled both. And Escape hid either card while
+    its job went on running, with nothing on screen about it."""
+    from PyQt6.QtCore import Qt
+
+    reading = IngestCard(None, on_cancel=lambda: None)
+    crs = CrsCard(None, on_stop=lambda: None)
+    for card, button in ((reading, reading._cancel), (crs, crs._stop)):
+        card.show()
+        button.setFocus()
+        qt_app.processEvents()
+        assert not button.autoDefault()
+        assert not button.isDefault()
+        QTest.keyClick(card, Qt.Key.Key_Return)
+        assert button.isEnabled(), "Enter pressed the button"
+        QTest.keyClick(card, Qt.Key.Key_Escape)
+        assert card.isVisible(), "Escape hid a card whose job is still running"
+        card.close()
+        assert not card.isVisible(), "the window can still put it away"

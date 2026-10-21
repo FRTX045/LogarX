@@ -49,6 +49,8 @@ from logarc.style import THEME
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from PyQt6.QtGui import QKeyEvent
+
     from logarc.gui.progress import Progress
 
 __all__ = ["IngestCard"]
@@ -228,6 +230,8 @@ class IngestCard(QDialog):
 
         # Drawn by the application stylesheet, like every other button.
         self._cancel = QPushButton("Cancel")
+        # Never the default: Enter would throw the read away.
+        self._cancel.setAutoDefault(False)
         self._cancel.clicked.connect(self._cancelled)
         self._cancel.setToolTip(
             "Stop reading. The case is left unfinished, so a partial read can never "
@@ -278,6 +282,14 @@ class IngestCard(QDialog):
         self._cancel.setEnabled(False)
         self._state.setText("Stopping\u2026")
         colour_text(self._state, THEME.warning)
+
+    def keyPressEvent(self, event: QKeyEvent | None) -> None:  # noqa: N802
+        """Escape is not a way out. A dialog hides on it, and this card hidden
+        is a job still running with nothing on screen about it."""
+        if event is not None and event.key() == Qt.Key.Key_Escape:
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def _cancelled(self) -> None:
         self.stopping()
