@@ -107,8 +107,8 @@ def match_caption(
     """What to write above the clients a search of their requests found.
 
     Both numbers again: how many clients matched, of how many in the case, and
-    how many requests that is. `counted` is false for a search the Where to
-    start scan answered on its own, which knows which clients an activity
+    how many requests that is. `counted` is false for a search the Triage scan
+    answered on its own, which knows which clients an activity
     reached but not in how many of their requests.
     """
     wanted = query.strip()
@@ -138,8 +138,9 @@ def match_caption(
 
 
 def _outside(client_ip: str) -> str:
-    """Said after either caption when the client being read is not in the list."""
-    return f" Current client: {client_ip} (not in this list)."
+    """Said after either caption when the client being read is not in the list,
+    on a line of its own: run on after the counts, it read as part of them."""
+    return f"\nCurrent client: {client_ip} (not in this list)."
 
 
 def awaiting_scan(progress: TriageProgress | None, *, scanning: bool) -> str:

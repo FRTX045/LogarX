@@ -153,7 +153,8 @@ def test_more_matches_than_a_page_are_paged() -> None:
 
 def test_an_open_client_outside_the_list_is_named() -> None:
     text = caption(shown=500, total=931, query="", missing_open="100.99.203.115")
-    assert text.endswith(" Current client: 100.99.203.115 (not in this list).")
+    # A line of its own: run on after the counts it read as part of them.
+    assert text.endswith("\nCurrent client: 100.99.203.115 (not in this list).")
 
 
 def test_an_activity_search_waits_for_the_scan_and_says_how_far_it_has_got() -> None:
@@ -183,7 +184,8 @@ def test_an_open_client_outside_a_search_is_named_as_outside_any_list() -> None:
         missing_open="100.99.203.115",
     )  # fmt: skip
 
-    assert text.endswith(" Current client: 100.99.203.115 (not in this list).")
+    # A line of its own: run on after the counts it read as part of them.
+    assert text.endswith("\nCurrent client: 100.99.203.115 (not in this list).")
 
 
 def test_an_activity_on_more_clients_than_a_page_names_the_page() -> None:
