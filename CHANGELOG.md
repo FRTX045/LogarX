@@ -342,8 +342,8 @@ which will be the first tag.
   - Older slips, found while retaking the screenshots: the note naming the
     open client ran on after the client list's counts with nothing between
     them; the format editor drew New as its default button; and on the
-    reading and CRS cards Enter cancelled the job, while Escape hid the card
-    and left the job running.
+    reading and CRS cards Enter cancelled the job, while Escape or Alt+F4 hid
+    the card and left the job running.
 
 - **The client list and the evidence table fit the window's default size.**
   At 1400 px the client list cut Last to `15 …` on every row, and the evidence
@@ -938,6 +938,19 @@ which will be the first tag.
   261 lines of unchanged values and buried the line that had actually moved.
 
 ### Fixed
+
+- **Long table cells are cut at the column's edge.** Rows are one line high, but
+  the tables wrapped their text, so a long cell was cut where its first line
+  ended: the evidence table showed `GET /search?q=' AND 1=(SELECT …` with a fifth
+  of the Request column empty, and the case chooser's Folder read `C:…` at any
+  width. A folder still too long for its column is now cut in the middle, which
+  keeps the case folder's own name, and the chooser opens wide enough for its
+  columns when the screen has the room.
+
+- **The two counts of a two-way pair sit apart on the behaviour view.** Both
+  labels of a pair of opposite arrows sat side by side at the middle,
+  `x45 · 18s x41 · 9s`, close enough to read as one; each now sits beyond its
+  own arrow.
 
 - **A rule pack reusing a built-in rule's id is refused.** The documentation
   said so, but `--rules` checked ids only between the packs it was given, so a
