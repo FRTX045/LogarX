@@ -99,6 +99,9 @@ class EvidencePanel(QWidget):
     bookmark_line_requested = pyqtSignal(object)
     """A line asked to be bookmarked, from its right-click menu; carries the `EvidenceLine`."""
 
+    make_rule_requested = pyqtSignal(object)
+    """A rule asked to be made from a line, from its right-click menu; carries the `EvidenceLine`."""
+
     #: How long typing must rest before the filter is applied.
     FILTER_DELAY_MS = 150
 
@@ -778,13 +781,15 @@ class EvidencePanel(QWidget):
         if line is None:
             return None
         menu = QMenu(self)
-        # A closed fold stands for several lines; say which one this bookmarks.
-        wording = (
-            f"Bookmark line {line.ref.line_no}\u2026"
-            if self._closed_fold_at(index.row()) is not None
-            else "Bookmark this line\u2026"
-        )
-        menu.addAction(wording, lambda: self.bookmark_line_requested.emit(line))
+        # A closed fold stands for several lines; say which one each entry uses.
+        folded = self._closed_fold_at(index.row()) is not None
+        which = f"line {line.ref.line_no}" if folded else "this line"
+        menu.addAction(f"Bookmark {which}\u2026", lambda: self.bookmark_line_requested.emit(line))
+        # A line the parser could not read has no parts to build a rule from.
+        if line.event is not None:
+            menu.addAction(
+                f"Make a rule from {which}\u2026", lambda: self.make_rule_requested.emit(line)
+            )
         return menu
 
     def _show_menu(self, point: QPoint) -> None:

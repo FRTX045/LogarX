@@ -284,8 +284,11 @@ def test_a_right_click_on_a_line_bookmarks_that_line(panel: EvidencePanel) -> No
     panel.show_evidence(attack(), lines())
     menu = panel._menu_at(row_point(panel._table, 1))
     assert menu is not None
-    (action,) = menu.actions()
-    assert action.text() == "Bookmark this line\N{HORIZONTAL ELLIPSIS}"
+    assert [action.text() for action in menu.actions()] == [
+        "Bookmark this line\N{HORIZONTAL ELLIPSIS}",
+        "Make a rule from this line\N{HORIZONTAL ELLIPSIS}",
+    ]
+    action = menu.actions()[0]
     action.trigger()
     shown_index = panel._table.item(1, 0).data(Qt.ItemDataRole.UserRole)
     assert [line.ref for line in asked] == [lines()[shown_index].ref]

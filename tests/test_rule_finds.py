@@ -118,3 +118,40 @@ def test_the_count_is_what_a_reconstruction_credits(shopfront: Path) -> None:
             )
 
     assert count_finds(shopfront, rules)["shop_stock_polling"].lines == credited
+
+
+def _cart_line() -> int:
+    (number,) = [
+        number
+        for number, text in enumerate(SHOPFRONT_LOG.read_text(encoding="utf-8").splitlines(), 1)
+        if "DELETE /api/cart" in text
+    ]
+    return number
+
+
+def test_examples_are_the_first_lines_a_rule_labels(shopfront: Path) -> None:
+    rules = load_pack_text("shopfront.yaml", SHOPFRONT)
+
+    (example,) = count_finds(shopfront, rules, examples=3)["shop_cart_emptied_by_api"].examples
+
+    assert example.ref.line_no == _cart_line()
+    assert example.request.startswith("DELETE /api/cart")
+    assert example.status is not None
+
+
+def test_no_examples_unless_asked(shopfront: Path) -> None:
+    rules = load_pack_text("shopfront.yaml", SHOPFRONT)
+
+    finds = count_finds(shopfront, rules)
+
+    assert all(find.examples == () for find in finds.values())
+    assert finds["shop_stock_polling"] == Find(lines=29, clients=7)
+
+
+def test_examples_stop_at_the_limit(shopfront: Path) -> None:
+    rules = load_pack_text("shopfront.yaml", SHOPFRONT)
+
+    finds = count_finds(shopfront, rules, examples=2)
+
+    assert len(finds["shop_stock_polling"].examples) == 2
+    assert finds["shop_stock_polling"].lines == 29

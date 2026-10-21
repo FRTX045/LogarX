@@ -171,3 +171,62 @@ def test_the_report_the_window_writes_names_the_reader_s_pack(
     page = target.read_text(encoding="utf-8")
     assert "House rule CGI probe" in page
     assert "added: house (1 rule)" in page
+
+
+def test_dirty_save_then_add_then_re_read_leaves_no_strip(
+    qt_app: QApplication, root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Saving typed YAML, adding a rule in the window, then Re-read now: one change,
+    read once, and closing Formats and rules raises no strip for a case already
+    read with the new rules."""
+    from PyQt6.QtWidgets import QMessageBox
+
+    from logarc.core.activity import ActivityCategory, Severity
+    from logarc.gui import rules_editor as rules_editor_module
+    from logarc.gui.formats_and_rules import FormatsAndRules
+    from logarc.rule_draft import Test
+
+    rules_library.save_pack("house", HOUSE.replace("/cgi-bin/quux", "/never"))
+    window = _opened(qt_app, root)
+    reconstructed: list[str] = []
+    real_reconstruct = window._reconstruct
+
+    def counting(ip: str) -> None:
+        reconstructed.append(ip)
+        real_reconstruct(ip)
+
+    monkeypatch.setattr(window, "_reconstruct", counting)
+    monkeypatch.setattr(
+        rules_editor_module, "_ask_unsaved", lambda _parent: QMessageBox.StandardButton.Save
+    )
+
+    def add_in_the_window(dialog) -> None:
+        dialog._name.setText("Quux probe")
+        dialog._category.setCurrentIndex(
+            dialog._category.findData(ActivityCategory.INJECTION.value)
+        )
+        dialog._severity.setCurrentIndex(dialog._severity.findData(Severity.HIGH.name))
+        dialog._rows[0].set("path_decoded", Test.CONTAINS, "/cgi-bin/quux")
+        dialog.show()
+        assert dialog.add()
+        (button,) = [b for b in dialog.findChildren(QPushButton) if b.objectName() == "readAgain"]
+        button.click()
+
+    monkeypatch.setattr(rules_editor_module, "_open_add_rule", add_in_the_window)
+
+    def run(dialog: FormatsAndRules) -> int:
+        tab = dialog.rules
+        tab.select("house")
+        tab._yaml.setPlainText(tab._yaml.toPlainText() + "# typed, not saved\n")
+        tab.add_button.click()
+        return 0
+
+    monkeypatch.setattr(FormatsAndRules, "exec", run)
+    window._manage_rules()
+    settled(qt_app)
+
+    assert reconstructed == [IP]
+    assert not window._rules_notice.isVisible()
+    assert "Quux probe" in _on_screen(window)
+    saved = (rules_library.rules_dir() / "house.yaml").read_text(encoding="utf-8")
+    assert "# typed, not saved" in saved

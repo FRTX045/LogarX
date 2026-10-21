@@ -570,3 +570,23 @@ def test_the_menus_follow_a_live_zoom(themed: QApplication) -> None:
     assert menu.font().pointSizeF() == 14
     assert bar.font().pointSizeF() == 14
     theme.set_text_points(themed, 11)
+
+
+@pytest.mark.parametrize("points", [15, 16])
+def test_add_rule_example_rows_fit_their_text(themed: QApplication, points: int) -> None:
+    from logarc import rules_library
+    from logarc.detect.ruleset import built_in_packs
+    from logarc.gui.add_rule import AddRuleDialog
+
+    built_in = built_in_packs()
+    dialog = AddRuleDialog(
+        None, case_path=None, library=rules_library.in_force(built_in=built_in), built_in=built_in
+    )
+    try:
+        set_text_points(themed, points)
+        rows = dialog._examples.verticalHeader()
+        assert rows is not None
+        assert rows.defaultSectionSize() >= dialog._examples.fontMetrics().height() + 8
+    finally:
+        dialog.shutdown()
+        dialog.close()

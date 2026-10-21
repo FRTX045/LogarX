@@ -26,6 +26,7 @@ import yaml
 
 from logarc.detect.rules import load_pack_text
 from logarc.detect.ruleset import PackText, RuleSet, build_rules, sort_out
+from logarc.pack_append import appended
 from logarc.parsers.library import logarc_home
 
 if TYPE_CHECKING:
@@ -34,10 +35,14 @@ if TYPE_CHECKING:
     from logarc.detect.ruleset import BuiltInPack
 
 __all__ = [
+    "DEFAULT_PACK",
+    "NEW_PACK_HEAD",
     "SWITCHED_OFF",
     "Library",
     "RulesLibraryError",
     "SavedPack",
+    "Target",
+    "add_rule",
     "delete_pack",
     "file_name_for",
     "import_pack",
@@ -47,9 +52,15 @@ __all__ = [
     "save_pack",
     "switch_rule",
     "switched_off",
+    "target_for",
 ]
 
 SWITCHED_OFF: Final = "switched-off.json"
+
+#: Where the Add a rule window puts a rule when no pack of the reader's is chosen.
+#: Not "My rules": a pack name holds letters, digits, - and _ only.
+DEFAULT_PACK: Final = "My-rules"
+NEW_PACK_HEAD: Final = "version: 1\nnote: Rules added with the Add a rule window.\nrules:\n"
 _NAME: Final = re.compile(r"[A-Za-z0-9_-]+")
 _NOT_IN_A_NAME: Final = re.compile(r"[^A-Za-z0-9_-]")
 
@@ -171,6 +182,79 @@ def save_pack(
         old.rename(path)
     _write(path, text)
     return path
+
+
+@dataclass(frozen=True, slots=True)
+class Target:
+    """The pack the Add a rule window adds to: one of the reader's, or one to create.
+
+    `problem` says why it cannot be used, which keeps Add rule off.
+    """
+
+    name: str
+    exists: bool
+    problem: str = ""
+
+
+def target_for(library: Library, preferred: str | None) -> Target:
+    """`preferred` when it is a pack of the reader's that loads, else My-rules.
+
+    My-rules is matched ignoring case, as Windows does. One that exists but does
+    not load is never created over: it is named, and the reader picks another
+    pack or fixes it.
+    """
+    loading = [pack for pack in library.packs if not pack.problem]
+    for pack in loading:
+        if pack.name == preferred:
+            return Target(pack.name, True)
+    for pack in library.packs:
+        if pack.name.casefold() == DEFAULT_PACK.casefold():
+            if pack.problem:
+                return Target(
+                    DEFAULT_PACK,
+                    False,
+                    f"A pack called {pack.name} exists but does not load. "
+                    "Pick another pack, or fix that one in the YAML editor.",
+                )
+            return Target(pack.name, True)
+    return Target(DEFAULT_PACK, False)
+
+
+def add_rule(
+    target: Target,
+    block: str,
+    *,
+    started_from: str,
+    built_in: Sequence[BuiltInPack] | None = None,
+) -> Path:
+    """Add `block`, one rule's YAML, to `target`, or create it holding only that rule.
+
+    `started_from` is the pack's text as the window read it. The file is read
+    again first, and a pack that changed, went away or cannot be read since is
+    refused rather than written over. Raises `CannotAppend` for a layout the
+    form cannot add to, and `RulePackError` for a rule that would not load
+    beside the others (an id already in use).
+    """
+    if target.problem:
+        raise RulesLibraryError(target.problem)
+    if not target.exists:
+        return save_pack(target.name, appended(NEW_PACK_HEAD, block), built_in=built_in)
+    path = rules_dir() / f"{target.name}.yaml"
+    try:
+        now = path.read_text(encoding="utf-8")
+    except FileNotFoundError as exc:
+        raise RulesLibraryError(
+            f"{target.name} is no longer in your rules folder. Close this window and try again."
+        ) from exc
+    except (OSError, UnicodeDecodeError) as exc:
+        raise RulesLibraryError(f"{target.name}.yaml could not be read: {exc}") from exc
+    if now != started_from:
+        raise RulesLibraryError(
+            f"{target.name} was changed outside this window. Close it and try again."
+        )
+    return save_pack(
+        target.name, appended(started_from, block), replacing=target.name, built_in=built_in
+    )
 
 
 def delete_pack(name: str) -> None:

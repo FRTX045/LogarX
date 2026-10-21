@@ -62,12 +62,13 @@ from logarc.caseview import (
 from logarc.core.graph import GraphKind
 from logarc.core.window import EVERYTHING, TimeWindow
 from logarc.detect.crs import CrsEvidence, CrsUnavailableError, SidecarConfig, runs_by_default
-from logarc.detect.ruleset import NO_EXTRA_RULES, RuleSet
+from logarc.detect.ruleset import NO_EXTRA_RULES, BuiltInPack, RuleSet, built_in_packs
 from logarc.enrich import EnrichOutcome, EnrichProgress, crs_config, enrich_case
 from logarc.episode.builder import DEFAULT_EVIDENCE_SAMPLE
 from logarc.formats import drifted_sources
 from logarc.gui import crash, prefs, recent
 from logarc.gui._qt import required
+from logarc.gui.add_rule import AddRuleDialog
 from logarc.gui.arrangement_bar import ArrangementBar
 from logarc.gui.arrangement_keeper import ArrangementKeeper, Showing
 from logarc.gui.bookmark_keeper import BookmarkKeeper, Draft
@@ -212,6 +213,11 @@ def _crs_config_now(site_hosts: Sequence[str]) -> SidecarConfig | None:
     return config
 
 
+def _open_add_rule(dialog: AddRuleDialog) -> None:
+    """Run the Add a rule window. A seam for tests, which cannot answer a modal one."""
+    dialog.exec()
+
+
 def _settings() -> QSettings:
     """Where the window's preferences live — the one place that decides.
 
@@ -304,6 +310,7 @@ class MainWindow(QMainWindow):
         # reader's that did not load, or rules changed since the case was read.
         self._rules_notice = NoticeBanner()
         self._rules: RuleSet = NO_EXTRA_RULES
+        self._built_in_rules: tuple[BuiltInPack, ...] | None = None
         """The reader's rules as last read from their library. Every reading of
         the open case — the client on screen, its report, Where to start — is
         handed these, so the three agree."""
@@ -347,6 +354,7 @@ class MainWindow(QMainWindow):
         self._triage.bookmark_requested.connect(self._bookmark_client)
         self._evidence.bookmark_requested.connect(self._bookmark_activity_from_button)
         self._evidence.bookmark_line_requested.connect(self._bookmark_line)
+        self._evidence.make_rule_requested.connect(self._make_rule)
 
         self._build_layout()
         self._build_menu()
@@ -890,10 +898,35 @@ class MainWindow(QMainWindow):
         A rules change with a case open is asked about inside the dialog. One
         the reader put off is the strip's to say."""
         dialog = FormatsAndRules(self, case_path=self._case_path, on_rules=on_rules)
-        dialog.rules.read_again.connect(self._read_again)
+        dialog.rules.read_again.connect(self._read_again_with_new_rules)
         dialog.exec()
         if dialog.rules.stale:
             self._rules_changed()
+
+    def _make_rule(self, line: EvidenceLine) -> None:
+        """The Add a rule window, started from a line of the client on show.
+
+        The window asks Re-read now or Later itself; both answers come here.
+        """
+        if self._built_in_rules is None:
+            # About 170 ms, so loaded once, on first use rather than at start.
+            self._built_in_rules = built_in_packs()
+        dialog = AddRuleDialog(
+            self,
+            case_path=self._case_path,
+            library=rules_library.in_force(built_in=self._built_in_rules),
+            built_in=self._built_in_rules,
+            line=line,
+        )
+        dialog.read_again.connect(self._read_again_with_new_rules)
+        dialog.later.connect(self._rules_changed)
+        _open_add_rule(dialog)
+
+    def _read_again_with_new_rules(self) -> None:
+        """Re-read after a rules change. Stale until the new rules have loaded, so
+        a library that fails to load leaves the strip saying so."""
+        self._rules_changed()
+        self._read_again()
 
     def _rules_changed(self) -> None:
         """The reader's rules changed, and the open case was read with the old ones."""

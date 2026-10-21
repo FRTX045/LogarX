@@ -1244,6 +1244,49 @@ is gone.
 
 ---
 
+## 28. A rule added without YAML, from the tab and from a line
+
+The form's checks, the text it writes, the pack it adds to and the question
+after saving are all tested. What is checked here is what a reader sees: that
+the window reads, that the rule lands in the pack they can open, and that it
+names an activity once the case is read again.
+
+1. Open a case made from the shopfront excerpt. **Case → Formats and rules…**,
+   the *Detection rules* tab, **Add rule…** under the list. Name the rule
+   `Cart emptied`, choose *API call* and *info*, and set the first condition to
+   *Method* *is exactly* `DELETE`. Add a second, *Path, as logged* *matches
+   pattern* `^/api/cart$`.
+
+**Pass:** under the name the window says `Saved with the id cart_emptied`. The
+count reaches `1 match from 1 client.` with one example line, and **View YAML**
+shows a rule with those two conditions. **Add rule** is on.
+
+2. Clear the value of the second condition.
+
+**Pass:** the window says `Condition 2: give it a value.` and **Add rule** is
+off. Put the value back.
+
+3. Press **Add rule**.
+
+**Pass:** the buttons give way to `Saved. The open case was read with the old
+rules.` Press **Re-read now**: the window closes, the tab lists `My-rules` and
+shows it, and its YAML holds the rule at the end. Close the dialog: no strip.
+
+4. Open a client with a request no rule names. In its evidence, right-click
+   that line and choose **Make a rule from this line…**.
+
+**Pass:** the window names the line by number and lists its parts with the path
+ticked, and the query too if it has one. **Continue** shows the form with one
+*is exactly* condition per ticked part and the note about *matches pattern*.
+
+5. Name the rule, choose a kind and a severity, **Add rule**, then **Later**.
+
+**Pass:** the window closes and the main window shows `Rules changed since this
+case was read.` Press **Re-read**: the line's activity is now named by your
+rule.
+
+---
+
 ## Recording a run
 
 | # | Check | Result | Notes |
@@ -1275,5 +1318,6 @@ is gone.
 | 25 | Bookmarks save from each place, wear ribbons, list by category, reopen past the range, export, reach a second window, and survive an unreadable file | | |
 | 26 | Repeated lines fold and open; the arrow works at the largest text size; Off shows every line | | |
 | 27 | Text zoom reaches tables, headings and evidence, stops at 8 and 16 pt, leaves the graph alone, and survives a restart | | |
+| 28 | A rule added from the tab and from a line checks itself, lands in My-rules, and names its activity after a re-read | | |
 
 Version tested: ______  ·  Date: ______  ·  Machine: ______

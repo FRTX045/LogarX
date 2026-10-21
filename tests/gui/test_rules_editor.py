@@ -17,7 +17,7 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from PyQt6.QtTest import QTest
-from PyQt6.QtWidgets import QApplication, QPushButton
+from PyQt6.QtWidgets import QApplication, QMessageBox, QPushButton
 
 from conftest import fired, settled
 from logarc import rules_library
@@ -540,3 +540,201 @@ def test_the_rules_tab_labels_are_short(qt_app: QApplication) -> None:
     assert editor._name.placeholderText() == "my-site"
     assert editor._name.toolTip() == "Letters, digits, - and _"
     assert editor._ask.findChild(QPushButton, "readAgain").text() == "Re-read now"
+
+
+# -- Add rule… -----------------------------------------------------------------
+
+
+@pytest.fixture
+def opened(monkeypatch: pytest.MonkeyPatch) -> list[object]:
+    """The Add a rule windows the tab opened, instead of running them."""
+    found: list[object] = []
+    monkeypatch.setattr(rules_editor_module, "_open_add_rule", found.append)
+    return found
+
+
+def _answer(monkeypatch: pytest.MonkeyPatch, button: QMessageBox.StandardButton) -> list[bool]:
+    asked: list[bool] = []
+
+    def answer(_parent: object) -> QMessageBox.StandardButton:
+        asked.append(True)
+        return button
+
+    monkeypatch.setattr(rules_editor_module, "_ask_unsaved", answer)
+    return asked
+
+
+def test_add_rule_sits_beside_new_and_import(qt_app: QApplication) -> None:
+    editor = RulesEditor()
+    editor.show()
+    QApplication.processEvents()
+
+    buttons = [editor.new_button, editor.import_button, editor.add_button]
+    assert [button.text() for button in buttons] == ["New", "Import…", "Add rule…"]
+    assert [button.x() for button in buttons] == sorted(button.x() for button in buttons)
+    editor.close()
+
+
+def test_opening_the_tab_opens_no_window(qt_app: QApplication, opened: list[object]) -> None:
+    editor = RulesEditor()
+    editor._reload(None)
+    editor.start_new()
+
+    assert opened == []
+
+
+def test_unsaved_yaml_is_asked_about_before_the_window_opens(
+    qt_app: QApplication, opened: list[object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rules_library.save_pack("shop", CART_NEVER)
+    editor = RulesEditor()
+    editor.select("shop")
+    _typed(editor, CART_NEVER + "\n# edited\n")
+    asked = _answer(monkeypatch, QMessageBox.StandardButton.Cancel)
+
+    editor.add_button.click()
+
+    assert asked == [True]
+    assert opened == []
+    assert editor._yaml.toPlainText().endswith("# edited\n")
+
+
+def test_saving_first_that_fails_keeps_the_window_closed(
+    qt_app: QApplication, opened: list[object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    editor = RulesEditor()
+    editor.start_new()
+    editor._name.setText("broken")
+    _typed(editor, "version: 1\nrules: [\n")
+    _answer(monkeypatch, QMessageBox.StandardButton.Save)
+
+    editor.add_button.click()
+
+    assert opened == []
+    assert not (rules_library.rules_dir() / "broken.yaml").exists()
+    assert editor._status.text()
+
+
+def test_discard_puts_the_saved_pack_back(
+    qt_app: QApplication, opened: list[object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rules_library.save_pack("shop", CART_NEVER)
+    editor = RulesEditor()
+    editor.select("shop")
+    _typed(editor, CART_NEVER + "\n# edited\n")
+    _answer(monkeypatch, QMessageBox.StandardButton.Discard)
+
+    editor.add_button.click()
+
+    assert editor._yaml.toPlainText() == CART_NEVER
+    assert len(opened) == 1
+
+
+def test_a_clean_page_opens_the_window_straight_away(
+    qt_app: QApplication, opened: list[object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    editor = RulesEditor()
+    editor.start_new()
+    asked = _answer(monkeypatch, QMessageBox.StandardButton.Cancel)
+
+    editor.add_button.click()
+
+    assert asked == []
+    assert len(opened) == 1
+
+
+def test_a_built_in_pack_on_show_is_never_unsaved(
+    qt_app: QApplication, opened: list[object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    editor = RulesEditor()
+    editor.select("recon")
+    asked = _answer(monkeypatch, QMessageBox.StandardButton.Cancel)
+
+    editor.add_button.click()
+
+    assert asked == []
+    assert len(opened) == 1
+
+
+def test_the_window_starts_on_the_selected_pack(qt_app: QApplication, opened: list[object]) -> None:
+    rules_library.save_pack("shop", CART_NEVER)
+    editor = RulesEditor()
+    editor.select("shop")
+
+    editor.add_button.click()
+
+    (dialog,) = opened
+    assert dialog._into.currentText() == "shop"
+    dialog.shutdown()
+
+
+def test_a_rule_added_selects_its_pack_and_marks_rules_changed(
+    qt_app: QApplication, shopfront_case: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def added(dialog: object) -> None:
+        rules_library.save_pack("My-rules", CART_NEVER)
+        dialog.saved.emit("My-rules")
+
+    monkeypatch.setattr(rules_editor_module, "_open_add_rule", added)
+    editor = RulesEditor(shopfront_case)
+    editor.show()
+
+    editor.add_button.click()
+
+    assert editor._editing == "My-rules"
+    assert editor.stale
+    assert not editor._ask.isVisible()
+    editor.shutdown()
+    settled(qt_app)
+
+
+def test_the_window_s_answer_reaches_the_tab(
+    qt_app: QApplication, shopfront_case: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def added(dialog: object) -> None:
+        rules_library.save_pack("My-rules", CART_NEVER)
+        dialog.saved.emit("My-rules")
+        dialog.read_again.emit()
+
+    monkeypatch.setattr(rules_editor_module, "_open_add_rule", added)
+    editor = RulesEditor(shopfront_case)
+    asked: list[bool] = []
+    editor.read_again.connect(lambda: asked.append(True))
+
+    editor.add_button.click()
+
+    assert asked == [True]
+    assert not editor.stale
+    editor.shutdown()
+    settled(qt_app)
+
+
+def test_a_built_in_pack_on_show_saves_into_my_rules(
+    qt_app: QApplication, opened: list[object]
+) -> None:
+    rules_library.save_pack("shop", CART_NEVER)
+    editor = RulesEditor()
+    editor.select("shop")
+    editor.select("recon")
+
+    editor.add_button.click()
+
+    (dialog,) = opened
+    assert dialog._into.currentText() == "My-rules"
+    dialog.shutdown()
+
+
+def test_text_the_editor_shows_differently_is_not_unsaved(
+    qt_app: QApplication, opened: list[object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rules_library.save_pack(
+        "shop", CART_NEVER.replace("version: 1", "version: 1\n#\N{NO-BREAK SPACE}note")
+    )
+    editor = RulesEditor()
+    editor.select("shop")
+    asked = _answer(monkeypatch, QMessageBox.StandardButton.Save)
+
+    editor.add_button.click()
+
+    assert asked == []
+    assert len(opened) == 1
