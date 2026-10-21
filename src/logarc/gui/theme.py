@@ -190,7 +190,9 @@ def controls_sheet(points: float) -> str:
     widens the label after the button was sized, and "Restore Defaults" lost
     its last letters to it.
 
-    Scroll bars keep the 20 px the readable style insists on.
+    Scroll bars keep the 20 px the readable style insists on. Headings have no
+    side padding: the style already leaves a margin, and 8 px more on each side
+    put the client list's Last column behind a scroll bar.
     """
     return f"""
 QToolTip {{ background: {THEME.raised}; color: {THEME.ink}; border: 1px solid {THEME.edge};
@@ -226,7 +228,7 @@ QTabBar::tab:hover {{ color: {THEME.ink}; }}
 QTabBar::tab:selected {{ color: {THEME.ink}; border-bottom: 2px solid {THEME.accent}; }}
 QHeaderView::section {{ background: {THEME.raised}; color: {THEME.muted}; border: none;
     border-right: 1px solid {THEME.line}; border-bottom: 1px solid {THEME.edge};
-    padding: 4px 8px; }}
+    padding: 4px 0px; }}
 QTableView, QTreeView, QListView {{ border: 1px solid {THEME.line};
     gridline-color: {THEME.line}; }}
 QListView::item {{ padding: 3px 6px; }}

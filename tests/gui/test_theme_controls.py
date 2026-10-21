@@ -103,6 +103,16 @@ splitter.addWidget(QWidget()); splitter.addWidget(QWidget())
 splitter.resize(200, 100); splitter.show(); qt.processEvents()
 grip = splitter.handle(1)
 facts["resting_grip_accent"] = bluish(grip.grab().toImage())
+
+# Last, because it takes the stylesheet away to measure Fusion alone.
+from logarc.gui.panels import ClientTable
+clients = ClientTable(); clients.resize(420, 500); clients.show(); qt.processEvents()
+header = clients._table.horizontalHeader()
+shown = [i for i in range(clients._table.columnCount()) if not header.isSectionHidden(i)]
+themed = [header.sectionSizeHint(i) for i in shown]
+qt.setStyleSheet(""); qt.processEvents()
+plain = [header.sectionSizeHint(i) for i in shown]
+facts["header_widening"] = max(a - b for a, b in zip(themed, plain))
 print(json.dumps(facts))
 """
 
@@ -161,3 +171,10 @@ def test_restore_defaults_and_cancel_are_never_the_default(facts: dict[str, obje
 def test_a_resting_splitter_grip_is_quiet(facts: dict[str, object]) -> None:
     """Accent means "chosen" everywhere else; a grip at rest is not chosen."""
     assert facts["resting_grip_accent"] == 0
+
+
+def test_the_stylesheet_does_not_widen_a_heading(facts: dict[str, object]) -> None:
+    """Measured 17 px wider per column than Fusion draws it, which pushed the
+    client list's Last column behind a scroll bar at the default window size.
+    The client list was fitted to Fusion's headings; the sheet keeps them."""
+    assert int(str(facts["header_widening"])) <= 2
