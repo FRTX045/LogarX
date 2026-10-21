@@ -339,9 +339,11 @@ which will be the first tag.
     Read, Lines, Speed, Time left), with the figures still in monospace.
   - A guard test reads every string the interface can show and fails on a
     retired phrase.
-  - Two older slips, found while retaking the screenshots: the note naming
-    the open client ran on after the client list's counts with nothing
-    between them, and the format editor drew New as its default button.
+  - Older slips, found while retaking the screenshots: the note naming the
+    open client ran on after the client list's counts with nothing between
+    them; the format editor drew New as its default button; and on the
+    reading and CRS cards Enter cancelled the job, while Escape hid the card
+    and left the job running.
 
 - **The client list and the evidence table fit the window's default size.**
   At 1400 px the client list cut Last to `15 …` on every row, and the evidence
