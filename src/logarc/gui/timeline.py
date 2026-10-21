@@ -64,6 +64,8 @@ class Timeline(QWidget):
         self.setMinimumHeight(_HEIGHT)
         self.setCursor(Qt.CursorShape.IBeamCursor)
         self._bars: list[TimeSlot] = []
+        # Whether a case is open: one with no requests has no bars either.
+        self._open = False
         self._first: datetime | None = None
         self._last: datetime | None = None
         self._step: timedelta | None = None
@@ -76,9 +78,16 @@ class Timeline(QWidget):
 
         An empty frame under the menu bar read as a drawing that had failed.
         """
-        return "" if self._bars else "No case open"
+        if self._bars:
+            return ""
+        return "No requests in this case" if self._open else "No case open"
 
     # -- what the window tells it ------------------------------------------
+
+    def set_open(self, is_open: bool) -> None:
+        """Whether a case is open, which bars alone cannot say."""
+        self._open = is_open
+        self.update()
 
     def set_bars(self, bars: list[TimeSlot]) -> None:
         """The case's traffic, counted once when it was opened."""

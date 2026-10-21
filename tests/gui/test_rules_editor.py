@@ -139,6 +139,21 @@ def test_new_starts_an_untitled_pack_from_wherever_you_are(qt_app: QApplication)
     assert not editor._delete.isEnabled()
 
 
+def test_new_keeps_the_untitled_pack_already_being_written(qt_app: QApplication) -> None:
+    """On the Untitled row there is nothing new to start: the pack being written
+    is the new one. Blanking it threw that work away without a word."""
+    editor = RulesEditor()
+    editor.new_button.click()
+    editor._name.setText("house")
+    editor._yaml.setPlainText(SHOPFRONT)
+
+    editor.new_button.click()
+
+    assert editor._packs.currentItem().text() == "Untitled"
+    assert editor._name.text() == "house"
+    assert editor._yaml.toPlainText() == SHOPFRONT
+
+
 def test_import_copies_the_file_in_and_opens_it(
     qt_app: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

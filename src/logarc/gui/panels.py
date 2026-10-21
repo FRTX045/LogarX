@@ -301,7 +301,7 @@ class ClientTable(QWidget):
         self._previous.clicked.connect(lambda: self._step(-1))
         self._next.clicked.connect(lambda: self._step(1))
 
-        self._caption = QLabel("No case open.")
+        self._caption = QLabel("No case open")
         # A search's caption is a sentence, and was cut at the panel's edge.
         self._caption.setWordWrap(True)
         self._caption.setFont(caption_font(self._caption.font()))

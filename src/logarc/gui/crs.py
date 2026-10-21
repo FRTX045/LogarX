@@ -34,7 +34,7 @@ from logarc.style import THEME
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from PyQt6.QtGui import QKeyEvent
+    from PyQt6.QtGui import QCloseEvent, QKeyEvent
 
     from logarc.enrich import EnrichProgress
 
@@ -206,6 +206,15 @@ class CrsCard(_Spoken):
         self._bar.setRange(0, progress.total)
         self._bar.setValue(progress.replayed)
         self._counts.setText(f"{progress.replayed:,} of {progress.total:,} requests")
+
+    def closeEvent(self, event: QCloseEvent | None) -> None:  # noqa: N802
+        """Not from the system. Alt+F4 arrives as a spontaneous close, and would
+        hide the card with its job still running; the window that owns the
+        card closes it in code when the job ends, and that close goes through."""
+        if event is not None and event.spontaneous():
+            event.ignore()
+            return
+        super().closeEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent | None) -> None:  # noqa: N802
         """Escape is not a way out. A dialog hides on it, and this card hidden

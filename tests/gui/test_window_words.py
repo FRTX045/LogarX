@@ -212,3 +212,40 @@ def _wrapped(label, width: int) -> list[str]:
         text[line.textStart() : line.textStart() + line.textLength()]
         for line in (layout.lineAt(i) for i in range(layout.lineCount()))
     ]
+
+
+def test_the_empty_window_says_no_case_open_one_way(qt_app: QApplication) -> None:
+    """Three places say it before a case is open; they say it identically."""
+    window = MainWindow()
+
+    said = {
+        window._status.text(),
+        window._clients._caption.text(),
+        window._time_filter._band.placeholder(),
+    }
+
+    assert said == {"No case open"}
+    window.close()
+
+
+def test_an_open_case_with_no_requests_does_not_say_no_case_is_open(
+    qt_app: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every line refused leaves a case with nothing to draw. The band said the
+    case was not open, beside a title naming it."""
+    from logarc.gui import app as app_module
+
+    log = tmp_path / "garbage.log"
+    log.write_text("not a log line\nnor this\n", encoding="utf-8")
+    with Case.create(tmp_path / "case") as case:
+        case.ingest([log], log_format="apache-combined")
+    monkeypatch.setattr(app_module, "warn_about_dead_files", lambda *_: None)
+    window = MainWindow()
+    band = window._time_filter._band
+    assert band.placeholder() == "No case open", "premise: nothing is open yet"
+
+    window._load_case(tmp_path / "case")
+    settled(qt_app)
+
+    assert band.placeholder() == "No requests in this case"
+    window.close()

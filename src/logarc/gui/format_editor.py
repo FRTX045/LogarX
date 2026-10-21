@@ -554,8 +554,12 @@ class FormatEditor(QDialog):
         """Put the Untitled row in front, as a blank `kind`.
 
         Blanked here as well as by the selection, which does not fire when
-        the row is already current.
+        the row is already current. Not when it is current as `kind` already:
+        that is the new format, being written, and blanking it lost the work.
         """
+        current = self._formats.currentItem()
+        if current is not None and _is_draft(current) and kind == self._draft_kind:
+            return
         self._draft_kind = kind
         self._formats.blockSignals(True)
         self._formats.setCurrentRow(self._draft_row())

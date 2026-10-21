@@ -330,9 +330,14 @@ class RulesEditor(QWidget):
         )
 
     def start_new(self) -> None:
-        """Open a blank pack, from wherever the list is."""
+        """Open a blank pack, from wherever the list is.
+
+        From the blank pack itself it does nothing: that is the new pack, being
+        written, and blanking it lost the work.
+        """
+        if self._packs.currentRow() == self._draft_row():
+            return
         self._packs.setCurrentRow(self._draft_row())
-        self._open_new()
 
     def _heading_row(self, text: str) -> QListWidgetItem:
         item = QListWidgetItem(text)

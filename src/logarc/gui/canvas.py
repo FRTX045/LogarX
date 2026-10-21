@@ -13,7 +13,7 @@ can run it without installing anything. See ADR-0006.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Final
 
 from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, pyqtSignal
@@ -201,6 +201,9 @@ _ARROW_WIDTH: Final = 7.0
 #: says *there are two arrows here*, and everywhere else the map stays straight.
 _BOW: Final = 34.0
 
+#: How far a bowed arrow's number sits past the apex of its curve.
+_LABEL_CLEAR: Final = 4.0
+
 #: The numbers written on the arrows. Not `edge_ink`, which they were: at 5.5:1
 #: against the ground they were three times dimmer than the captions beside
 #: them and half a point smaller, and the eye — calibrated by the captions —
@@ -309,10 +312,31 @@ class _EdgeShape:
     """How far the arrow reaches, rim to rim. What decides whether there is room
     to write a number on it."""
 
+    outward: QPointF = field(default_factory=QPointF)
+    """The side a bowed arrow bows to, as a unit vector; nothing for a straight
+    one. Its number goes out that way, clear of the pair's other arrow."""
+
     @property
     def label_at(self) -> QPointF:
         """Where the number sits: clear of the arrow, not on top of it."""
         return QPointF(self.anchor.x(), self.anchor.y() - _ARROW_WIDTH * 2)
+
+
+def _clear_of_the_pair(label: QGraphicsRectItem, shape: _EdgeShape) -> None:
+    """Move a bowed arrow's number out past the apex of its own curve.
+
+    Centred on the apex, half of it reached back towards the pair's other
+    arrow, whose number does the same from the other side: 192.0.2.231's pair
+    read `x45 · 18s x41 · 9s`, one label as far as the eye could tell.
+    """
+    out = shape.outward
+    if out.isNull():
+        return
+    box = label.sceneBoundingRect()
+    corners = (box.topLeft(), box.topRight(), box.bottomLeft(), box.bottomRight())
+    nearest = min(QPointF.dotProduct(corner - shape.anchor, out) for corner in corners)
+    if nearest < _LABEL_CLEAR:
+        label.setPos(label.pos() + out * (_LABEL_CLEAR - nearest))
 
 
 def _edge_width(weight: int) -> float:
@@ -345,6 +369,7 @@ def _edge_shape(
     finish = end - QPointF(math.cos(angle) * target_radius, math.sin(angle) * target_radius)
 
     middle = (begin + finish) / 2
+    away = QPointF(-math.sin(angle), math.cos(angle))
     path = QPainterPath(begin)
     arriving = angle
     if paired:
@@ -353,7 +378,6 @@ def _edge_shape(
         # other exists. A quadratic control point at twice the bow puts the apex
         # of the curve at the bow itself, which is where the label goes — and is
         # what separates the pair's two numbers.
-        away = QPointF(-math.sin(angle), math.cos(angle))
         control = middle + away * (_BOW * 2)
         path.quadTo(control, finish)
         anchor = middle + away * _BOW
@@ -386,6 +410,7 @@ def _edge_shape(
         head=head,
         anchor=anchor,
         length=math.hypot(finish.x() - begin.x(), finish.y() - begin.y()),
+        outward=away if paired else QPointF(),
     )
 
 
@@ -460,6 +485,7 @@ class _EdgeArt:
         self.head.setPolygon(shape.head)
         if self.label is not None:
             self.label.setPos(shape.label_at)
+            _clear_of_the_pair(self.label, shape)
             # The number sits on a patch of ground so an arrow passing behind it
             # cannot cross the text. Two activities dragged close together leave
             # an arrow shorter than that patch is wide, and then the patch hides

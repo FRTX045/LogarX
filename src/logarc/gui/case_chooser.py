@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
-from PyQt6.QtCore import QPoint, Qt, QUrl
+from PyQt6.QtCore import QPoint, QSize, Qt, QUrl
 from PyQt6.QtGui import QColor, QDesktopServices
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -104,6 +104,27 @@ class CaseChooser(QDialog):
         self._table.itemSelectionChanged.connect(self._selection_changed)
         self._refill()
 
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt's naming
+        """Wide enough for every column's text, Folder's included.
+
+        Every other column takes the width its text needs and Folder is given
+        what is left, so at a fixed width one case marked missing left every
+        Folder reading `C:…`. Qt opens a window no wider than two thirds of the
+        screen; past that the path is cut in the middle.
+        """
+        hint = super().sizeHint()
+        table = self._table
+        header = required(table.horizontalHeader(), "column header")
+        columns = sum(
+            max(header.sectionSizeHint(column), table.sizeHintForColumn(column))
+            for column in range(table.columnCount())
+        )
+        bar = required(table.verticalScrollBar(), "scroll bar").sizeHint().width()
+        margins = required(self.layout(), "layout").contentsMargins()
+        wanted = columns + 2 * table.frameWidth() + bar + margins.left() + margins.right()
+        hint.setWidth(max(hint.width(), wanted))
+        return hint
+
     # -- construction ------------------------------------------------------
 
     def _build_table(self) -> QTableWidget:
@@ -116,6 +137,9 @@ class CaseChooser(QDialog):
         table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         required(table.verticalHeader(), "row header").setVisible(False)
+        # Cut in the middle a path keeps the folder's own name, the part that
+        # tells two cases apart.
+        table.setTextElideMode(Qt.TextElideMode.ElideMiddle)
         self._column_sizes = ColumnWidths(table, fill=COLUMNS.index("Folder"))
         # Sized to what it holds rather than to a guessed height: five entries in
         # a fixed-height table left two thirds of it empty, which is what the

@@ -169,6 +169,10 @@ class TimeFilterBar(QWidget):
         """The case's traffic, for the band to draw."""
         self._band.set_bars(bars)
 
+    def set_case_open(self, is_open: bool) -> None:
+        """Whether a case is open, so an empty band says the right thing."""
+        self._band.set_open(is_open)
+
     def band_width(self) -> int:
         """How many pixels wide the band's bars are drawn across.
 
