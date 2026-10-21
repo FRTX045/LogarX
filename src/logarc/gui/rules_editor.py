@@ -39,6 +39,7 @@ from logarc import rules_library
 from logarc.detect.rules import RulePackError, load_pack_text
 from logarc.detect.ruleset import PackText, RuleSet, build_rules, built_in_packs
 from logarc.gui._qt import required
+from logarc.gui.add_rule import AddRuleDialog
 from logarc.gui.columns import ColumnWidths
 from logarc.gui.rules_view import (
     NEW_PACK_TEXT,
@@ -61,6 +62,28 @@ if TYPE_CHECKING:
     from logarc.rule_finds import Find
 
 __all__ = ["RulesEditor"]
+
+
+def _ask_unsaved(parent: QWidget) -> QMessageBox.StandardButton:
+    """Save, Discard or Cancel for a pack with changes not saved. A seam for tests."""
+    buttons = (
+        QMessageBox.StandardButton.Save
+        | QMessageBox.StandardButton.Discard
+        | QMessageBox.StandardButton.Cancel
+    )
+    return QMessageBox.question(
+        parent,
+        "Unsaved changes",
+        "This pack has changes that are not saved. Save them before adding a rule?",
+        buttons,
+        QMessageBox.StandardButton.Save,
+    )
+
+
+def _open_add_rule(dialog: AddRuleDialog) -> None:
+    """Run the Add a rule window. A seam for tests, which cannot answer a modal one."""
+    dialog.exec()
+
 
 #: The list's own rows: two section headings and the blank pack being written.
 #: Commands are buttons under the list, not rows in it; a row that sometimes
@@ -111,6 +134,7 @@ class RulesEditor(QWidget):
         self._built_in: tuple[BuiltInPack, ...] = built_in_packs()
         self._library = rules_library.in_force(built_in=self._built_in)
         self._editing: str | None = None
+        self._shown: tuple[str, str] = ("", "")
         self.stale = False
         self._finds_stop: threading.Event | None = None
         self._finds_generation = 0
@@ -267,10 +291,14 @@ class RulesEditor(QWidget):
         self.import_button = QPushButton("Import\u2026")
         self.import_button.setToolTip("Add a rule pack from a YAML file.")
         self.import_button.clicked.connect(self._ask_for_file)
+        self.add_button = QPushButton("Add rule\u2026")
+        self.add_button.setToolTip("Add one rule by filling in a form, no YAML.")
+        self.add_button.clicked.connect(self._add_rule)
         tools = QHBoxLayout()
         tools.setContentsMargins(0, 0, 0, 0)
         tools.addWidget(self.new_button)
         tools.addWidget(self.import_button)
+        tools.addWidget(self.add_button)
         tools.addStretch(1)
         left.addLayout(tools)
         row.addLayout(left)
@@ -384,6 +412,7 @@ class RulesEditor(QWidget):
         self._delete.setEnabled(True)
 
     def _show_pack(self, name: str, text: str) -> None:
+        self._shown = (name, text)
         for widget in (self._name, self._yaml):
             widget.blockSignals(True)
         self._name.setText(name)
@@ -670,9 +699,56 @@ class RulesEditor(QWidget):
 
     # -- ask first -----------------------------------------------------------
 
-    def _changed(self, what: str) -> None:
+    def has_unsaved(self) -> bool:
+        """Whether the pack on show has typing in it that was not saved.
+
+        A pack of the reader's, or the blank one, whose name or YAML differs from
+        what was put on show. A built-in pack cannot be typed into.
+        """
+        if self._pages.currentIndex() != 0:
+            return False
+        return (self._name.text(), self._yaml.toPlainText()) != self._shown
+
+    def _add_rule(self) -> None:
+        """Open the Add a rule window, after asking about changes not saved.
+
+        Asked first, not after: the window offers the packs as saved, and a pack
+        renamed in the Name box but not saved would be offered by its old name.
+        """
+        if self.has_unsaved():
+            answer = _ask_unsaved(self)
+            if answer == QMessageBox.StandardButton.Cancel:
+                return
+            if answer == QMessageBox.StandardButton.Save and not self.save():
+                return
+            if answer == QMessageBox.StandardButton.Discard:
+                if self._editing is None:
+                    self._open_new()
+                else:
+                    self._open_yours(self._editing)
+        dialog = AddRuleDialog(
+            self,
+            case_path=self._case_path,
+            library=self._library,
+            built_in=self._built_in,
+            into=self._editing,
+        )
+        dialog.saved.connect(self._rule_added)
+        dialog.read_again.connect(self._read_again)
+        dialog.later.connect(self._later)
+        _open_add_rule(dialog)
+
+    def _rule_added(self, name: str) -> None:
+        """The window asks about re-reading itself, so the tab only takes note."""
+        self._reload(name)
+        self._changed_quietly()
+
+    def _changed_quietly(self) -> None:
         self.stale = True
         self.changed.emit()
+
+    def _changed(self, what: str) -> None:
+        self._changed_quietly()
         if self._case_path is not None:
             self._ask_text.setText(ask_text(what))
             self._ask.show()
