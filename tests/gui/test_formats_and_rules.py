@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from itertools import pairwise
 
 import pytest
 
@@ -62,3 +63,28 @@ def test_closing_stops_the_rules_tab_s_count(qt_app: QApplication) -> None:
     dialog.reject()
 
     assert stopped == [True]
+
+
+def test_the_pack_list_rows_do_not_overlap_when_the_dialog_opens_on_formats(
+    qt_app: QApplication,
+) -> None:
+    """The pack list is filled while its tab is hidden. Measured before the
+    stylesheet's item padding reached it, its rows were placed closer than they
+    are drawn, and the highlight on one spilled onto the rows either side."""
+    from logarc.gui import theme
+
+    sheet = qt_app.styleSheet()
+    qt_app.setStyleSheet(theme.controls_sheet(11))
+    try:
+        dialog = FormatsAndRules(None, case_path=None, on_rules=False)
+        dialog.show()
+        QApplication.processEvents()
+        dialog.tabs.setCurrentIndex(1)
+        QApplication.processEvents()
+
+        packs = dialog.rules._packs
+        rects = [packs.visualItemRect(packs.item(row)) for row in range(packs.count())]
+        assert all(above.bottom() < below.top() for above, below in pairwise(rects))
+        dialog.close()
+    finally:
+        qt_app.setStyleSheet(sheet)

@@ -140,6 +140,10 @@ class RulesEditor(QWidget):
         self._finds_generation = 0
 
         self._packs = QListWidget()
+        # Filled while its tab may still be hidden, before the stylesheet would
+        # otherwise reach it: rows measured without the item padding are placed
+        # closer than they are drawn, and a highlight spills onto its neighbours.
+        self._packs.ensurePolished()
         self._packs.setMaximumWidth(220)
         self._packs.currentRowChanged.connect(self._on_row)
 
