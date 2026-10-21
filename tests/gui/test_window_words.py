@@ -186,4 +186,29 @@ def test_a_narrow_graph_column_never_cuts_the_view_switch(
     assert heading.width() >= heading.minimumSizeHint().width(), "no word is cut off"
     assert heading.height() >= heading.heightForWidth(heading.width()), "every line shows"
     assert columns.sizes()[1] <= 500, "the graph column can be dragged narrow"
+    assert len(_wrapped(heading, heading.contentsRect().width())) > 1, "premise: it wrapped"
+    # And at any width the column could be dragged to, not only this one.
+    for width in range(80, 420, 4):
+        for line in _wrapped(heading, width):
+            noun = line.lstrip().startswith(("request", "session", "activit"))
+            assert not noun, f"a count split from its number at {width}px: {line!r}"
     window.close()
+
+
+def _wrapped(label, width: int) -> list[str]:
+    """The lines `label`'s text breaks into at `width`."""
+    from PyQt6.QtGui import QTextDocument
+
+    document = QTextDocument()
+    document.setDefaultFont(label.font())
+    document.setDocumentMargin(0)
+    document.setHtml(label.text())
+    document.setTextWidth(width)
+    document.size()  # laid out on demand
+    block = document.firstBlock()
+    layout = block.layout()
+    text = block.text()
+    return [
+        text[line.textStart() : line.textStart() + line.textLength()]
+        for line in (layout.lineAt(i) for i in range(layout.lineCount()))
+    ]

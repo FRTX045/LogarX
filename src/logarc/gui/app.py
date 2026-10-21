@@ -212,6 +212,11 @@ def _settings() -> QSettings:
     return QSettings(*_SETTINGS)
 
 
+def _whole(phrase: str) -> str:
+    """`phrase` as rich text that a wrapping label will not break inside."""
+    return phrase.replace(" ", "&nbsp;")
+
+
 class MainWindow(QMainWindow):
     """Open a case, pick a client, read what it did."""
 
@@ -1865,10 +1870,13 @@ class MainWindow(QMainWindow):
                 # Normal weight, explicitly: the label itself is set in the
                 # heading face, which is DemiBold, and without this the counts
                 # carry the same emphasis as the address they belong to.
-                f'<span style="color:{THEME.muted};font-weight:normal">&nbsp;&nbsp;'
-                f"{format_requests(result.request_count)}"
-                f" · {plural(len(result.sessions), 'session')}"
-                f" · {plural(len(result.episodes), 'activity', 'activities')}</span>"
+                # Each count is one unbreakable piece, so a narrow column
+                # wraps the heading between counts and never between a
+                # number and its noun.
+                f'<span style="color:{THEME.muted};font-weight:normal">&nbsp; '
+                f"{_whole(format_requests(result.request_count))}"
+                f" · {_whole(plural(len(result.sessions), 'session'))}"
+                f" · {_whole(plural(len(result.episodes), 'activity', 'activities'))}</span>"
             )
             self._redraw()
             self._workspace.setCurrentIndex(1)
