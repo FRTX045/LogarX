@@ -402,4 +402,7 @@ def test_the_menu_on_a_closed_row_names_the_line_it_bookmarks(panel: EvidencePan
 
     menu = panel._menu_at(rect.center())
 
-    assert [action.text() for action in menu.actions()] == ["Bookmark line 2014\u2026"]
+    assert [action.text() for action in menu.actions()] == [
+        "Bookmark line 2014\u2026",
+        "Make a rule from line 2014\u2026",
+    ]
