@@ -723,3 +723,18 @@ def test_a_built_in_pack_on_show_saves_into_my_rules(
     assert dialog._into.currentText() == "My-rules"
     dialog.shutdown()
 
+
+def test_text_the_editor_shows_differently_is_not_unsaved(
+    qt_app: QApplication, opened: list[object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rules_library.save_pack(
+        "shop", CART_NEVER.replace("version: 1", "version: 1\n#\N{NO-BREAK SPACE}note")
+    )
+    editor = RulesEditor()
+    editor.select("shop")
+    asked = _answer(monkeypatch, QMessageBox.StandardButton.Save)
+
+    editor.add_button.click()
+
+    assert asked == []
+    assert len(opened) == 1

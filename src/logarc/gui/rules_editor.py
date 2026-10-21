@@ -412,11 +412,13 @@ class RulesEditor(QWidget):
         self._delete.setEnabled(True)
 
     def _show_pack(self, name: str, text: str) -> None:
-        self._shown = (name, text)
         for widget in (self._name, self._yaml):
             widget.blockSignals(True)
         self._name.setText(name)
         self._yaml.setPlainText(text)
+        # What the editor holds, not `text`: it shows a no-break space as a
+        # space, so `text` itself would always look edited.
+        self._shown = (self._name.text(), self._yaml.toPlainText())
         for widget in (self._name, self._yaml):
             widget.blockSignals(False)
         self._check()
