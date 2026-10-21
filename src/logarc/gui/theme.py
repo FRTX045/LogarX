@@ -250,16 +250,26 @@ def automatic_points_for(app: QApplication) -> float:
     Measured against the system font as it was before the theme replaced it,
     so asking again after a zoom gives the same answer.
     """
-    global _system_points
-    if _system_points is None:
-        _system_points = app.font().pointSizeF()
+    system_points = _system_points_of(app)
     screen = app.primaryScreen()
     area = screen.availableGeometry() if screen is not None else None
     return automatic_points(
         width=area.width() if area is not None else 0,
         height=area.height() if area is not None else 0,
-        system_points=_system_points,
+        system_points=system_points,
     )
+
+
+def _system_points_of(app: QApplication) -> float:
+    """The platform's font size, read the first time it is asked for.
+
+    Both entry points ask before the theme sets a font of its own, so a fixed
+    starting size never becomes what Reset zoom measures against.
+    """
+    global _system_points
+    if _system_points is None:
+        _system_points = app.font().pointSizeF()
+    return _system_points
 
 
 def apply_theme(app: QApplication, *, points: float | None = None) -> None:
@@ -279,6 +289,7 @@ def apply_theme(app: QApplication, *, points: float | None = None) -> None:
 
     `points` is the interface text size; `None` means `automatic_points_for`.
     """
+    _system_points_of(app)
     chosen = automatic_points_for(app) if points is None else points
     app.setStyle(_ReadableStyle("Fusion"))
     app.setPalette(palette())
