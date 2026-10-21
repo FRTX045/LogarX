@@ -13,28 +13,29 @@ exporting the canvas as a **PNG**, which is a picture rather than a
 serialisation of the reconstruction, and narrowing a reconstruction to a
 **stretch of time**. Both are described below.
 
-Window state — preferences, saved arrangements, the recent-case list — is the
+Window state — preferences, saved layouts, the recent-case list — is the
 window's own and has no command-line equivalent by nature.
 
 Interface text automatically fits the available desktop workspace after system
 display scaling: 12 pt for a typical 1920×1080 workspace, 11 pt for short or
 more heavily scaled workspaces, and 14 pt for larger workspaces such as
 2560×1440 at 100% scaling. Automatic preserves larger system font choices.
-**Edit → Preferences → Appearance → Text size** also offers explicit 11, 12 and
+**Edit → Preferences → General → Text size** also offers explicit 11, 12 and
 14 pt sizes, saved on this machine and applied after restarting. Monospace IP
 text follows its table's size; evidence text and captions follow the selected
 interface size. OS display scaling remains in force.
 Graph captions open at about 11.6 pt or more at the default minimum zoom;
 zooming scales the graph and its text together.
-Preferences uses a scrolling page when its explanations need more room, with
-the confirmation buttons always visible below it.
+Preferences is in three tabs, **General**, **Graph** and **Evidence**. A tab
+scrolls when a large text size needs more room, with OK and Cancel always
+visible below it.
 
-Optional text starts closed. **About these queues** explains how investigation
-results should be read, **Activity details** shows the time range, matching rules
-and OWASP mapping, and **Graph key** explains the graph's colors, outlines and
-sizes. Each can be opened and closed independently. Counts, active filters,
-provisional scan state and source warnings remain visible. Preferences offers
-**Show explanations**; individual controls also explain themselves on hover.
+Optional text starts closed. **Details**, above the evidence, shows the time
+range, matching rules and OWASP mapping, and **Legend** explains the graph's
+colors, outlines and sizes. Each opens and closes on its own. Counts, active
+filters, provisional scan state and source warnings stay visible. Everything
+else explains itself on hover: the Triage queues, column headings, buttons,
+and every preference.
 
 Every table supports resizing columns by dragging the edge between headings,
 including the client list, requests, investigation queues and dialog tables.
@@ -78,13 +79,15 @@ and respects existing environment settings. For a larger cursor, launch with
 
 | Menu | Holds |
 |---|---|
-| **Case** | Open case… (Ctrl+O) · Recently opened… (Ctrl+Shift+O) · Ingest logs into a new case… · Formats and rules… · Exit |
-| **Edit** | Undo node move (Ctrl+Z) · Save this arrangement (Ctrl+S) · Reset layout (Ctrl+Shift+R) · Bookmark… (Ctrl+D) · Preferences… (Ctrl+,) |
-| **View** | Trace (chronological) · Behaviour map · Timeline · Fit to window · Full screen |
-| **Export** | HTML report… · JSON graph… · PNG image… · Bookmarks… |
+| **Case** | New from logs… (Ctrl+N) · Open… (Ctrl+O) · Open recent… (Ctrl+Shift+O) · Formats and rules… · Run CRS scan · Exit |
+| **Edit** | Undo move (Ctrl+Z) · Save layout (Ctrl+S) · Reset layout (Ctrl+Shift+R) · Bookmark… (Ctrl+D) · Preferences… (Ctrl+,) |
+| **View** | Trace · Behaviour · Timeline · Fit to window · Full screen (F11) |
+| **Export** | Report (HTML)… · Graph (JSON)… · Image (PNG)… · Bookmarks (CSV)… |
+| **Help** | User guide (F1) · Keyboard shortcuts · About logarc |
 
-`Edit` rather than `View` for the arrangement entries, because Ctrl+Z is the
-first thing anyone looks for there.
+`Edit` rather than `View` for the layout entries, because Ctrl+Z is the
+first thing anyone looks for there. **Help → Keyboard shortcuts** lists every
+shortcut the menus hold, and **User guide** opens this page.
 
 Several behaviours that read like menu items are **preferences**, under
 **Edit → Preferences…**: *Wrap long traces*, *Outline each session*, *Show
@@ -102,46 +105,50 @@ filters stay available when it is hidden. This uses the same saved choice as
 ![Choosing from the cases opened before](images/screenshot-case-chooser.png)
 
 Opening the window offers the cases you have worked on before.
-**Case → Recently opened…** brings that list back at any time, and the
+**Case → Open recent…** brings that list back at any time, and the
 *Reopen the last case on start* preference skips it and goes straight to the one
-you were in.
+you were in. **Browse…** opens a case folder that is not on the list, and
+**New from logs…** makes a case. Once a case is open, the window's title names
+it.
 
-Ctrl-click chooses several rows and **Forget these** takes them off the list,
+Ctrl-click chooses several rows and **Remove from list** takes them off the list,
 which stays open — so tidying a list of ten is one pass rather than ten openings.
-Right-click a row to pin it to the top, rename it in the list, or show its
-folder. A rename is a label here only: `case.json` keeps the case id that every
-exported report prints.
+Right-click a row for **Pin to top**, **Rename…**, **Show in folder** and
+**Remove from list**. A rename is a label here only: `case.json` keeps the case
+id that every exported report prints.
 
 **That list is kept on the machine you are working at.** It records which cases
 were opened here — their folders, when, and how much was in them — under
 `HKCU\Software\logarc` on Windows, beside the view preferences. That is a record
 of what was investigated, not merely of how the window looked, so it has to be
-removable: **Ctrl+A** then **Forget these** takes every entry, and an emptied
+removable: **Ctrl+A** then **Remove from list** takes every entry, and an emptied
 list removes the registry key rather than storing an empty one in it.
 
 ---
 
 ## Reading a case
 
-![The case as it opens: every client, the traffic band above, and Where to start](images/screenshot-case.png)
+![The case as it opens: every client, the traffic band above, and Triage](images/screenshot-case.png)
 
-A case opens on **Where to start**, which scans every client in the background
-and queues the ones worth reading first;
-[ip-prioritization.md](ip-prioritization.md) explains how it orders them.
+A case opens on **Triage**, which scans every client in the background and
+queues the ones worth reading first, under **Suspicious** and **Unusual**.
+Hover a queue's tab to see what puts a client on it;
+[ip-prioritization.md](ip-prioritization.md) explains how each is ordered.
+**Open client** opens the selected one in **Activity**.
 
 The table on the left lists the busiest clients in the case, sortable by every column. The
 `4xx` share is the one worth sorting by first: a client probing for things that
 are not there looks exactly like a high refusal rate.
 
 Pick a client and the reconstruction runs on a worker thread. Long work can be
-cancelled. A running ingest says how far it has got — the log being read, a real
-percentage of the bytes, the lines parsed so far and the rate — because reading a
-gigabyte takes minutes and a busy tool is otherwise indistinguishable from a hung
-one. The estimate of what is left is withheld until the read has settled and
-always reads *about*: the first seconds are the least representative, and a
-confident figure drawn from them is the kind of number this tool is built not to
-print. **A cancelled ingest leaves the case un-finalised**, so a partial read can
-never be analysed as if it were complete.
+cancelled. **Reading logs** into a new case says how far it has got: the file,
+how much of it has been read, the lines so far, the speed, and the time left.
+Reading a gigabyte takes minutes, and a busy tool is otherwise
+indistinguishable from a hung one. The time left is withheld until the read has
+settled and always reads *about*: the first seconds are the least
+representative, and a confident figure drawn from them is the kind of number
+this tool is built not to print. **Cancelling leaves the case unfinished**, so a
+partial read can never be analysed as if it were complete.
 
 **Pressing the client you are on lets go of it.** The graph goes back to waiting
 and the band goes back to the whole case. Pressing a different row moves to that
@@ -149,10 +156,10 @@ client as it always did.
 
 ### Searching the case
 
-The box above the list searches the whole case, not only the clients the table
-holds. An address finds a client as it always did: part of one finds every
-client whose address contains it, a whole one only that client, and several
-find any of them.
+The **Search clients** box above the list searches every client in the case, not
+only the ones the table holds. Hover it for the filters it takes. An address
+finds a client as it always did: part of one finds every client whose address
+contains it, a whole one only that client, and several find any of them.
 
 It also takes the evidence box's filters, and finds the clients that sent a
 matching request:
@@ -161,7 +168,7 @@ matching request:
 |---|---|
 | `status:404`, `path:/admin`, `method:POST`, any text | clients with at least one matching request, most matches first, with a **Match** column saying how many |
 | `ip:10.0` | clients whose address contains it |
-| `activity:enumeration` | clients the Where to start scan saw that activity on, by category or by part of a rule's name. Quote a value with a space in it: `activity:"path traversal"` |
+| `activity:enumeration` | clients the Triage scan saw that activity on, by category or by part of a rule's name. Quote a value with a space in it: `activity:"path traversal"` |
 | `after:02:58`, `before:2026-03-09T03:00` | move the range above the list, and leave the box. A time of day is read on the range's first day |
 
 The line above the list gives both numbers:
@@ -173,7 +180,7 @@ from the list. So a pause while typing `after:2026-03-09` on the way to a time
 on that day does not move the range to midnight. Whatever else is in the box is
 searched again over the new range.
 
-`activity:` is answered by the Where to start scan. Until the scan finishes the
+`activity:` is answered by the Triage scan. Until the scan finishes the
 line above the list says so, and the list fills in by itself when it does.
 
 Click the box to see what it searches by. Type `status:`, `method:` or
@@ -190,6 +197,9 @@ are not carried over.
 ## The two views
 
 ![The trace, with the evidence behind the selected activity](images/screenshot-trace.png)
+
+The **Activity** tab draws the open client two ways. Switch between them with
+**Trace** and **Behaviour** beside the client's name, or from the **View** menu.
 
 **Trace** is chronological: one node per episode, arrows in time order. It reads
 as a sequence.
@@ -211,7 +221,7 @@ it does.
 
 ![The behaviour map: 557 requests folded into two activity types](images/screenshot-behaviour.png)
 
-**Behaviour map** is aggregated: one node per activity type, arrows weighted by
+**Behaviour** is aggregated: one node per activity type, arrows weighted by
 how often that transition was observed. It reads as a habit. The `x45` on an
 arrow is the thing the trace cannot show — that the client went from one probe
 to the other forty-five times.
@@ -230,13 +240,14 @@ is a break in the story, not a transition within it.
 ![The raw lines behind a SQL injection episode](images/screenshot-evidence.png)
 
 The panel on the right is what the selected node was built from, a row per
-request. Sort it by size to find the one that got data out, or by status to find
-what was served rather than refused.
+request, with the activity's time range, matching rules and OWASP mapping under
+**Details** above it. Sort it by size to find the one that got data out, or by
+status to find what was served rather than refused.
 
 Payloads are decoded, so `' OR '1'='1` reads as the tautology it is instead of
 `%27+OR+%271%27%3D%271`. The pane beneath holds the selected request in full,
-including the source line exactly as the log holds it — every finding traces back
-to a line.
+and its **Raw line** is the source line exactly as the log holds it — every
+finding traces back to a line.
 
 ### Repeated lines
 
@@ -257,9 +268,9 @@ the filter, bookmarks and every export still deal in single lines.
 
 ### Filtering the lines
 
-The box above the table keeps the lines of the selected activity that match what
-you type. A word keeps the lines whose request, path and query, holds it, as
-logged or decoded. A filter narrows by one field:
+The **Filter lines** box above the table keeps the lines of the selected
+activity that match what you type. A word keeps the lines whose request, path
+and query, holds it, as logged or decoded. A filter narrows by one field:
 
 | Filter | Keeps |
 |---|---|
@@ -297,7 +308,7 @@ Anything worth coming back to can be saved, into a category, with a note:
 
 | What | How |
 |---|---|
-| A client | Right-click it in the client list, in Where to start, or in Who else |
+| A client | Right-click it in the client list, in Triage, or in Who else |
 | An activity | **Bookmark** under its heading in the evidence panel, or right-click it on the canvas |
 | A log line | Right-click it in the evidence table |
 | A search of the case | **Bookmark this search**, under the client box's answer |
@@ -328,7 +339,7 @@ Double-click a bookmark, or press Enter or **Open**, to go back to it:
   filter that leaves it out stays on, and the panel says nothing matches;
 - a search runs again over the range it was made in.
 
-If the range in force leaves the bookmark out, the range becomes the whole case
+If the range in force leaves the bookmark out, the range becomes **All time**
 and the status line says so; the fields above the panels narrow it again. A
 bookmark whose client or log file is no longer in the case says *Not found in
 this case any more.* It can still be edited and removed, but not opened.
@@ -340,23 +351,24 @@ file that cannot be read is left as it is, and the tab says so; the next change
 saved moves it aside as `bookmarks.unreadable.json`.
 
 The HTML report lists the exported client's bookmarks, with their notes and,
-for a log line, the line itself. **Export → Bookmarks…** writes every bookmark
-in the case to a CSV file: category, kind, client, what, note, when saved, and
-for a log line or an activity its file and line number and the line itself.
+for a log line, the line itself. **Export → Bookmarks (CSV)…** writes every
+bookmark in the case to a CSV file: category, kind, client, what, note, when
+saved, and for a log line or an activity its file and line number and the line
+itself.
 
 ---
 
 ## Moving things about
 
 Activities can be dragged where you want them. Their arrows and the selection
-ring come along, **Ctrl+Z** takes the last move back, and **Edit → Save this
-arrangement** keeps it for the next time this client is opened.
+ring come along, **Ctrl+Z** takes the last move back, and **Edit → Save
+layout** keeps it for the next time this client is opened.
 **Edit → Reset layout** returns to the computed one and forgets what was saved.
 
-**A saved arrangement is a record of what you were reading.** It is filed under
+**A saved layout is a record of what you were reading.** It is filed under
 the case, the client, the view and the wrap setting, and the coordinates it holds
 are keyed by activity id — which for a trace carries the client's address in
-plain text. So saving an arrangement writes down which client of which case you
+plain text. So saving a layout writes down which client of which case you
 were reading, in the same place and with the same consequences as the recent-case
 list. **Reset layout** removes the one for the graph in front of you.
 
@@ -366,7 +378,7 @@ list. **Reset layout** removes the one for the graph in front of you.
 
 The band above the panels shows where the traffic sits — the day-night rhythm,
 and the bursts standing out of it — and a stretch is dragged out of it or typed
-into the two fields beside it.
+into the **From** and **to** fields beside it.
 
 Both halves of the window narrow together: the client list shows only who was
 active in that stretch, with that stretch's own counts, and the graph is
@@ -378,7 +390,7 @@ Because that is a different answer, it is given a different name: identifiers
 carry the range, so `100.67.0.86@20240502T012500-20240502T020000#1/1` can never
 be mistaken for the whole-case `100.67.0.86#1/1` in a folder holding both
 reports. Without a range nothing changes — every case and report made before this
-existed still reads exactly as it did. **Whole case** goes back.
+existed still reads exactly as it did. **All time** goes back.
 
 **The band follows whoever is being read.** Before a client is picked it draws the
 whole case. Pick one and it becomes that client's own history, across that
@@ -386,9 +398,10 @@ client's own life — first request to last — so a client alive for ninety min
 fills the band instead of being a hairline in the middle of two days. Letting go
 of the client hands the case back.
 
-The band is optional: the *Show the traffic band* preference turns the drawing
-off and gives its pixels back to the graph. Only the picture goes — the fields
-and **Whole case** stay, because they are the precise control and the one to fall
+The band is optional: the *Show timeline* preference, or **View → Timeline**,
+turns the drawing off and gives its pixels back to the graph. Only the picture
+goes — the fields and **All time** stay, because they are the precise control
+and the one to fall
 back on for a stretch too narrow to drag onto.
 
 ---
@@ -397,21 +410,24 @@ back on for a stretch too narrow to drag onto.
 
 ![The format library: fourteen built in, and one of the reader's own](images/screenshot-log-formats.png)
 
-The *Log formats* tab of **Case → Formats and rules…** holds the formats that ship above and yours below, and
-neither can be confused for the other: a built-in is readable and not editable,
+The *Log formats* tab of **Case → Formats and rules…** lists yours under
+**CUSTOM** and the ones that ship under **BUILT-IN**, and neither can be
+confused for the other: a built-in is readable and not editable,
 because registration order is preference order and an edited copy of
 `apache-combined` would never be reached.
 
 ![Writing a format, with a pasted line read back field by field](images/screenshot-format-editor.png)
 
-Paste one line from your log and the rule is tried against it as you type. Here a
+Paste one line from your log into **Sample line** and the rule is tried against
+it as you type. Here a
 directive with a forwarded-for header and a duration reads into nine of the
 eleven canonical fields plus two more besides — and those two are usually the
 whole reason a site has a format of its own. A rule that reads nothing says so.
 
-The same four kinds the CLI offers are here: a directive for a text log, a field
-mapping for a JSON one, columns for a table, and a regular expression for
-anything else.
+**New**, under the list, offers the same four kinds the CLI does: **Text
+(LogFormat)** for a text log, **JSON** for a field mapping, **Table (CSV, TSV,
+W3C)** for columns, and **Pattern (regular expression)** for anything else. For
+a JSON log or a table, **Guess fields** fills the mapping from the sample line.
 
 ---
 
@@ -421,15 +437,15 @@ anything else.
 
 The second tab of **Case → Formats and rules…** holds the rules that say what a
 line *means*. The first tab decides whether a line can be read at all. On the
-left are the 13 packs that ship with logarc, named by file (actions, access,
-files, injection, recon, ssrf, java, nodejs, perl, php, python, shell, windows),
-and then yours.
+left are yours, under **CUSTOM**, and then the 13 packs that ship with logarc,
+under **BUILT-IN**, named by file (actions, access, files, injection, recon,
+ssrf, java, nodejs, perl, php, python, shell, windows).
 
 **Your packs** are YAML, in the format [writing-rules.md](writing-rules.md)
 describes. They live in your settings, beside your saved formats
 (`%APPDATA%\logarc\rules\`, one `<name>.yaml` each, or under `LOGARC_HOME` when
-that is set), so every case you open is read with them. *New rule pack…* starts
-from an empty pack with a commented example. *Load a pack from a file…* copies a
+that is set), so every case you open is read with them. **New**, under the
+list, starts from an empty pack with a commented example. **Import…** copies a
 pack in under its file name: `My Rules.yaml` becomes `My-Rules`. A name holds
 letters, digits, `-` and `_`, and two of your packs cannot share one, whatever
 their capitals.
@@ -442,7 +458,7 @@ line. Save stays off while the pack has a mistake, and the version you last
 saved keeps applying. A rule may not reuse the id of a built-in rule that is
 switched on, or of a rule in another of your packs.
 
-*What this pack finds in the open case* counts, for each rule, the lines it
+*Matches in this case* counts, for each rule, the lines it
 labels and the clients they come from. It counts every label a rule puts on a
 line, not only the one that names it, so a rule that fires and is outranked
 still shows. The counts fill in as clients are read and start again when you
@@ -452,21 +468,22 @@ requests are counted session by session, as the graph labels them. On the
 2,760 clients) a pack of two rules took about 6 seconds, and the 24-rule
 injection pack 64 seconds.
 
-**A built-in pack** shows as a table of its rules, with what each finds. *Show as
-YAML* shows its source, which you cannot edit. Untick a rule that is wrong for
+**A built-in pack** shows as a table of its rules, with what each finds. **View
+YAML** shows its source, which you cannot edit. Untick a rule that is wrong for
 your site and it is switched off for every case. It stays in the table, ready to
 be ticked again. Switching a built-in rule off frees its id, so a rule of yours
 can replace it.
 
 **When you change rules with a case open**, the tab asks first: *Saved. The open
-case was read with the old rules.* **Read it again now** reads the client on
-screen again and starts *Where to start* over with the new rules. **Later**, or
-closing the dialog, leaves a strip in the window, *Rules changed since this case
-was read.*, with a **Read it again** button. The scan made with the rules before is kept,
+case was read with the old rules.* **Re-read now** reads the open client again
+and starts *Triage* over with the new rules. **Later**, or closing the dialog,
+leaves a strip in the window, *Rules changed since this case was read.*, with a
+**Re-read** button. The scan made with the rules before is kept,
 and switching back to them reuses it.
 
 A pack that does not load, because it was edited by hand or written by a later
-version, is listed under *Yours* as not loading, with the reason as its tooltip.
+version, is listed under **CUSTOM** as *(does not load)*, with the reason as its
+tooltip.
 It is left out and never rewritten, and a strip in the window names it whenever
 a case is read without it.
 
@@ -486,13 +503,13 @@ parser, so it interrupts instead, naming the file and the format it was read as;
 that name is the part that separates a wrong parser from a log that genuinely
 holds nothing.
 
-The counts come from the case manifest rather than from having watched the
-ingest, so they are still there when a colleague opens the case a week later.
-Nothing is shown when nothing was quarantined — silence means the case holds
-everything its logs did.
+**Show refused lines** on the strip lists them. The counts come from the case
+manifest rather than from having watched the read, so they are still there when
+a colleague opens the case a week later. Nothing is shown when nothing was
+refused — silence means the case holds everything its logs did.
 
-A case whose format has been edited or deleted since it was ingested says that
-too. The case itself is unaffected: it records the format *definition* it was
+A case whose format has been edited or deleted since the case was made says
+that too. The case itself is unaffected: it records the format *definition* it was
 read with, not the name.
 
 ---

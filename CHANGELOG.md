@@ -315,6 +315,34 @@ which will be the first tag.
 
 ### Changed
 
+- **The window reads like one desktop application.** The dark theme is lifted
+  to a warm graphite so the window meets its title bar, and one stylesheet draws
+  every control: check boxes with a visible box, one filled default button per
+  dialog, menus at the interface text size, underline tabs, and a Trace /
+  Behaviour switch beside the client it describes. The words are shorter and
+  the explanations moved to tooltips:
+  - Menus: **Case** (New from logs…, Open…, Open recent…, Formats and rules…,
+    Run CRS scan), **Edit** (Undo move, Save layout), **View** (Trace,
+    Behaviour), **Export** (Report (HTML)…, Graph (JSON)…, Image (PNG)…,
+    Bookmarks (CSV)…), and a new **Help** menu with the user guide (F1),
+    the keyboard shortcuts and About. The window's title names the open case.
+  - Tabs: *Where to start* is **Triage**, with **Suspicious** and **Unusual**
+    queues; *Reconstruction* is **Activity**. Rows are *clients* throughout,
+    a saved arrangement is a **layout**, and the time bar reads
+    **From … to … All time**.
+  - Formats and rules: **New** and **Import…** buttons under each list replace
+    the command rows, the lists are grouped **CUSTOM** and **BUILT-IN**, and an
+    *Untitled* row holds work not yet saved.
+  - Preferences: three tabs, **General**, **Graph** and **Evidence**, each
+    setting explained on hover, with no *Show explanations* switch.
+  - The reading card speaks in sentence case in the interface face (File,
+    Read, Lines, Speed, Time left), with the figures still in monospace.
+  - A guard test reads every string the interface can show and fails on a
+    retired phrase.
+  - Two older slips, found while retaking the screenshots: the note naming
+    the open client ran on after the client list's counts with nothing
+    between them, and the format editor drew New as its default button.
+
 - **The client list and the evidence table fit the window's default size.**
   At 1400 px the client list cut Last to `15 …` on every row, and the evidence
   table left Request 38 px, `PO…`, with Status and Size behind a scroll bar.

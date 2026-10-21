@@ -1,12 +1,13 @@
-# Where to start
+# Triage
 
-Opening a case starts a background scan of every IP in the selected time range.
-The **Where to start** tab offers two views:
+Opening a case starts a background scan of every client in the selected time
+range. The **Triage** tab offers two queues; hover either tab for what puts a
+client on it:
 
 | View | What determines its order |
 | --- | --- |
-| Suspicious activity | Clients with exploit evidence first, then all others; within each group, supporting requests weighted by bounded severity and supporting-request share, with category breadth and hostile paths breaking score ties |
-| Unusual activity | Strongest upper-tail statistical deviations from comparable clients in this case |
+| Suspicious | Clients with exploit evidence first, then all others; within each group, supporting requests weighted by bounded severity and supporting-request share, with category breadth and hostile paths breaking score ties |
+| Unusual | Strongest upper-tail statistical deviations from comparable clients in this case |
 
 Finding any one client, busy or quiet, is the client list's job. It shows the
 case 500 clients at a time by request count, busiest first, with **Previous**
@@ -20,10 +21,12 @@ not among the rows shown.
 The queues order the entire eligible population before showing pages of 100.
 Address search covers that population. The queue and the details below it share
 a divider the reader can drag; the details start with half the space. Select a
-row and choose **Inspect supporting requests** to reconstruct the client and
-select an activity containing its supporting source lines, or click an example
-request in the details to open reconstruction on that request. For a client in
-the first group, Inspect opens the request that matched its exploit rule; for
+row and press **Open client**, or double-click it, to open the client in
+**Activity** with an activity containing its supporting source lines selected.
+**Open supporting requests**, under each reason in the details, does the same
+for that reason, and an example request in the details opens on that request.
+For a client in the first group, Open client opens the request that matched its
+exploit rule; for
 every other client it opens the sampled flagged requests. Requested source
 lines appear before the ordinary activity sample, within the same display limit.
 Counts describe all supporting requests; examples and references are a bounded
@@ -40,9 +43,9 @@ results from previous requests cannot replace the current queue.
 
 ## Reading the recommendations
 
-Each Suspicious activity recommendation answers three questions, one block per
+Each Suspicious recommendation answers three questions, one block per
 reason: what was observed, why that deserves attention for this client, and which
-requests to inspect. The table's **Key observation** column shows the first
+requests to inspect. The table's **Finding** column shows the first
 block's observation, for example "Exploit evidence: SQL Injection (UNION
 SELECT)" or, for a client without exploit evidence, "40 of 50 requests flagged;
 strongest high".
@@ -89,7 +92,7 @@ written when a page is read, so rewording them does not require a rescan.
 
 Blocks 3 to 5 are context for reading a client. They do not affect its rank.
 
-Suspicious activity uses the existing engine's native and CRS label precedence.
+The Suspicious queue uses the existing engine's native and CRS label precedence.
 Several rule matches on one request still count as one supporting request.
 Policy 5 puts clients with exploit evidence, native or CRS paranoia level 1,
 first and orders each group by
@@ -105,7 +108,7 @@ queue, and the other views, are unchanged. Category labels are
 observations and hypotheses to investigate; response codes and response sizes
 do not establish compromise. An IP can represent multiple users or systems.
 
-Unusual activity compares clients within the current case and selected range.
+The Unusual queue compares clients within the current case and selected range.
 The comparison population is not assumed to be benign or to contain one kind
 of application. Mixed workloads therefore need interpretation by the reader.
 It measures request count, peak requests in a half-open 60-second window,
@@ -310,11 +313,11 @@ file. Shared IPs are consequently positive even when most traffic is legitimate.
 | --- | ---: | ---: | ---: |
 | Request count | 20 / 0.50 | 8 / 0.50 | 10 / 1.25 |
 | 4xx share | 100 / 2.51 | 100 / 6.27 | 100 / 12.53 |
-| Suspicious activity | 50 / 1.25 | 60 / 3.76 | 80 / 10.03 |
+| Suspicious queue | 50 / 1.25 | 60 / 3.76 | 80 / 10.03 |
 | Statistical unusualness | 40 / 1.00 | 24 / 1.50 | 16 / 2.01 |
 | Isolation Forest | 100 / 2.51 | 80 / 5.01 | 76 / 9.52 |
 
-Suspicious activity improves over request count here but underperforms 4xx-share
+The Suspicious queue improves over request count here but underperforms 4xx-share
 sorting at all three budgets. The model outperforms the suspicious queue at 10
 and 25, but underperforms it at 50. Statistical unusualness has a different
 purpose and performs poorly against attack truth. These results do not justify

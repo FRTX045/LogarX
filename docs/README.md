@@ -7,7 +7,7 @@ Start with whichever question you arrived with.
 | How to install it, build the Windows application, or set up OWASP CRS | [installing.md](installing.md) |
 | How the whole thing fits together | [architecture.md](architecture.md) |
 | How to use the desktop application | [desktop-app.md](desktop-app.md) |
-| How Where to start decides which clients to read first | [ip-prioritization.md](ip-prioritization.md), and the checks behind it in [evaluations/](evaluations/) |
+| How Triage decides which clients to read first | [ip-prioritization.md](ip-prioritization.md), and the checks behind it in [evaluations/](evaluations/) |
 | What it detects, and what its OWASP annotations claim | [detection.md](detection.md) |
 | Which log formats it reads, and how to write your own | [log-formats.md](log-formats.md) |
 | How to add a detection without writing Python | [writing-rules.md](writing-rules.md) |

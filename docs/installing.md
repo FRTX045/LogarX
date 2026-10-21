@@ -8,7 +8,7 @@ Its tests run on Linux headless (`QT_QPA_PLATFORM=offscreen`), and on
 2026-10-05 it was also run on real display servers: Ubuntu 24.04 under WSLg,
 Qt 6.11, once on Wayland and once on X11 (XWayland). Both opened a case, listed
 its clients, drew a client's graph, showed the evidence behind an activity and
-switched between Where to start, Trace and Behaviour, with no warning from Qt
+switched between Triage, Trace and Behaviour, with no warning from Qt
 and a clean exit. What that run did not cover: a full GNOME or KDE session on
 real hardware, native file dialogs, and HiDPI scaling. macOS has neither a
 runner nor a report.
@@ -88,7 +88,7 @@ through CRS on a card that can be stopped, keeping what it found so far, and
 | One `ingest` | `--no-crs` (and `--crs` asks for it whatever the machine says) |
 | A whole machine, both | `LOGARC_CRS=off` |
 
-Turned off or not, *Case → Run OWASP CRS on this case* runs it on the open
+Turned off or not, *Case → Run CRS scan* runs it on the open
 case whenever asked, as `logarc enrich` does on the command line.
 
 The packaged Windows build carries the sidecar and the ruleset, so there is

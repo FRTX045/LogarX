@@ -51,7 +51,7 @@ Start the application with `.venv\Scripts\logarc-gui.exe`, or the packaged
 call would not fail — it would just make a busy tool indistinguishable from a
 hung one, which is how an investigator ends up killing a run that was working.
 
-1. **Case → Ingest logs into a new case…**, choose `fixture\big.log`, choose an
+1. **Case → New from logs…**, choose `fixture\big.log`, choose an
    empty target folder.
 2. While it runs: drag the window, resize it, drag the splitter between the
    panels, open the **View** menu.
@@ -105,7 +105,7 @@ flight…". Within a few seconds a dialog reports how many lines were read and
 says the case was not finalised. The folder still exists — the application must
 not delete a directory the user chose.
 
-3. Now try to open that folder with **Case → Open case…**.
+3. Now try to open that folder with **Case → Open…**.
 
 **Pass:** a dialog reporting that the case has not been finalised. No client
 list appears. The partial case must never present as an analysable one — a
@@ -159,11 +159,11 @@ window shown in the heading.
 **Why:** the behaviour map is a fold over the trace. If the two disagree, one of
 them is not derived from the analysis on screen.
 
-1. With a client reconstructed, switch **View → Behaviour map**, then back to
+1. With a client reconstructed, switch **View → Behaviour**, then back to
    **View → Trace**.
 
 **Pass:** every activity type in the trace appears exactly once in the behaviour
-map. Severity colours and outcome borders match for the same activity. Request
+view. Severity colours and outcome borders match for the same activity. Request
 counts on behaviour nodes equal the sum over the trace nodes of that type. The
 heading above the canvas does not change — it describes the client, not the
 view.
@@ -179,8 +179,8 @@ view.
 **Why:** the report is what leaves the building. If it disagrees with the
 screen, the screen was a preview of nothing.
 
-1. **Export → HTML report…**, then **Export → JSON graph…**, then
-   **Export → PNG image…**.
+1. **Export → Report (HTML)…**, then **Export → Graph (JSON)…**, then
+   **Export → Image (PNG)…**.
 2. Produce the CLI's version of the same client:
 
 ```powershell
@@ -210,7 +210,7 @@ trust and nobody can question.
 **Pass:** the evidence panel says the source is unavailable and names it. It
 does not show blank lines where evidence should be, and it does not crash.
 
-3. Point **Case → Open case…** at an ordinary folder that is not a case.
+3. Point **Case → Open…** at an ordinary folder that is not a case.
 
 **Pass:** a dialog explaining that, with the traceback available under
 **Show Details**. The window stays usable afterwards.
@@ -234,7 +234,7 @@ Then, on the built `dist\logarc\logarc.exe`:
 
 **Pass:** the window opens. No console window appears alongside it.
 
-2. Ingest `fixture\small.log` and reconstruct the busiest client.
+2. Make a case from `fixture\small.log` and reconstruct the busiest client.
 
 **Pass:** attack activities are found. **If every request comes back benign, the
 rule packs did not make it into the bundle** — that is the failure this step
@@ -269,7 +269,7 @@ opens on its *first* activity with a scrollbar to pan rightwards along it —
 not part-way through. Any ring is still on the same activity, at the position
 that activity has moved to.
 
-3. Switch to **View → Behaviour map**.
+3. Switch to **View → Behaviour**.
 
 **Pass:** the wrap item is greyed out — a circle has no rows to fold — and still
 shows its tick, so the remembered choice is visible rather than merely stored.
@@ -439,11 +439,11 @@ and the desktop application did not.
 
 The automated tests can check that the strip appears. They cannot check that it
 is legible, that it does not squeeze the client table, or — the point of the
-whole feature — that it is still there for someone who never watched the ingest.
+whole feature — that it is still there for someone who never watched the read.
 
 1. Take a log of a few thousand lines and corrupt a scattering of them: delete
-   the timestamp from some, truncate the request on others. Ingest it through
-   **Case → Ingest logs into a new case…**.
+   the timestamp from some, truncate the request on others. Make a case from it
+with    **Case → New from logs…**.
 
 **Pass:** an amber strip appears beneath the menu bar naming how many lines were
 refused and what share of the file that was. The share and the two counts
@@ -459,12 +459,12 @@ window and must not take it from the table's width.
 **Pass:** the strip's text wraps onto a further line. Nothing is cut off
 mid-word, and no scrollbar appears across the strip.
 
-4. Click **Show the quarantined lines**.
+4. Click **Show refused lines**.
 
 **Pass:** the case's `quarantine` folder opens, holding `unparsed.jsonl` with
 those lines and the reason each was refused.
 
-5. Ingest a clean log into a second case.
+5. Make a second case from a clean log.
 
 **Pass:** no strip at all. Silence has to mean something, or the strip means
 nothing.
@@ -498,7 +498,7 @@ where `notes.txt` is any file that is not an access log. That the case has to
 arrive from elsewhere is the realistic shape of it anyway: this is what an
 investigator opens when a colleague did the ingest.
 
-1. Open `case-dead` in the window through **Case → Open case…**.
+1. Open `case-dead` in the window through **Case → Open…**.
 
 **Pass:** a dialog appears. It names the file, the format it was read as, and
 how many of its lines were refused — the format is the part that tells you the
@@ -525,7 +525,8 @@ where it was asserted — and neither silently swallows a file.
 
 ## 14. Several cases can be taken off the list in one pass
 
-**Why:** the only visible control in the chooser was `Forget these`, and it wiped
+**Why:** the only visible control in the chooser was `Forget these` (now
+**Remove from list**), and it wiped
 the whole list and shut the dialog — so a reader tidying ten entries reopened it
 ten times, and the button's name described the selection while its behaviour
 ignored it. Removing one entry worked, and was hidden behind a right-click.
@@ -533,11 +534,11 @@ ignored it. Removing one entry worked, and was hidden behind a right-click.
 What the suite cannot judge: whether the star reads as *pinned* rather than as a
 rating, and whether the rows still look right after several redraws.
 
-1. Open **Case → Recently opened…** with five or more entries. Ctrl-click three.
+1. Open **Case → Open recent…** with five or more entries. Ctrl-click three.
 
 **Pass:** three rows highlight. **Open** greys out — it has no answer for three.
 
-2. Press **Forget these**.
+2. Press **Remove from list**.
 
 **Pass:** those three go, the other rows stay, and *the dialog is still open*.
 The rows are the same height they were before the redraw.
@@ -557,7 +558,7 @@ and it becomes the only one selected, as in any file list.
 this application means something is wrong with the evidence, and a pinned case
 is not that.
 
-6. Press **Ctrl+A**, then **Forget these**. Close the window and open it again.
+6. Press **Ctrl+A**, then **Remove from list**. Close the window and open it again.
 
 **Pass:** the chooser does not appear at all — there is nothing to offer. Check
 `HKCU\Software\logarc` with `regedit`: the recent-cases value is **gone**, not
@@ -565,7 +566,7 @@ present and empty. That distinction is the whole promise of this control.
 
 ---
 
-## 15. Activities can be rearranged, and the arrangement kept
+## 15. Activities can be rearranged, and the layout kept
 
 **Why:** the arrows and the selection ring were drawn once from the layout and
 knew nothing about a node that had moved since. The suite checks that they
@@ -601,19 +602,19 @@ disappears rather than covering it, and comes back when they are pulled apart.
 it. Press it again with nothing left to undo: the menu entry is greyed out and
 nothing moves.
 
-5. Move three activities, then **View → Save this arrangement**. Switch to
-   **Behaviour map** and back to **Trace**.
+5. Move three activities, then **Edit → Save layout**. Switch to
+   **Behaviour** and back to **Trace**.
 
-**Pass:** the three are where you left them. The behaviour map is laid out
-normally — its arrangement is its own.
+**Pass:** the three are where you left them. The behaviour view is laid out
+normally — its layout is its own.
 
 6. Close the application and open the same case and client again.
 
-**Pass:** the arrangement is still there.
+**Pass:** the layout is still there.
 
-7. **View → Reset layout**, then close and reopen the case.
+7. **Edit → Reset layout**, then close and reopen the case.
 
-**Pass:** the computed layout, both times. The saved arrangement is gone, not
+**Pass:** the computed layout, both times. The saved layout is gone, not
 merely overridden — reset that only moved the nodes would let it come back on
 the next open, which reads as the reset having failed.
 
@@ -646,7 +647,7 @@ nights, busy hours. If it is a flat wall, say so: that is the finding.
 
 2. Drag a stretch out of the middle of the band.
 
-**Pass:** the fields beneath it change to match. The client list shrinks to who
+**Pass:** the **From** and **to** fields change to match. The client list shrinks to who
 was active then. The line on the right says both counts.
 
 3. Pick a client and compare its row against the heading above the graph.
@@ -667,12 +668,12 @@ feature was shaped around; if these two ever disagree, stop and report it.
 **Pass:** the list is empty and says *No client was active …* with the times.
 Not a blank panel, and not zero of nine thousand.
 
-7. Export an HTML report while a range is set, and another with **Whole case**.
+7. Export an HTML report while a range is set, and another with **All time**.
 
 **Pass:** the filtered one carries a **Time range** card; the other does not.
 Open both and search for the same activity id: they must not share one.
 
-8. Press **Whole case**.
+8. Press **All time**.
 
 **Pass:** the full client list is back, and the graph is the whole reconstruction
 again.
@@ -696,7 +697,7 @@ usual.
 **Pass:** the graph empties and the band goes back to the whole case — it must
 not go on drawing a client no longer on screen.
 
-12. **View → Show the traffic band**, to turn the drawing off.
+12. **View → Timeline**, to turn the drawing off.
 
 **Pass:** the bars go and the date fields stay. The graph gains the height —
 measured at 62 pixels. Set a range with the fields: it still narrows both halves.
@@ -720,16 +721,16 @@ printf '203.0.113.5|[10/Oct/2020:13:55:36 +0000]|"GET /.env HTTP/1.1"|404|0\n' >
 
 2. Open the application. **Case → Formats and rules…**
 
-**Pass:** the list is grouped — *Built in* above, *Saved by you* below — with
-*New format…* at the top. Selecting `apache-combined` fills the fields and
+**Pass:** the list is grouped — **CUSTOM** above, with an *Untitled* row,
+**BUILT-IN** below — with **New** beneath it. Selecting `apache-combined` fills the fields and
 greys them out; Save and Delete are unavailable.
 
-3. Paste the line from `piped.log` into *A line from your log*, while
+3. Paste the line from `piped.log` into *Sample line*, while
    `apache-combined` is still selected.
 
 **Pass:** it says the directive does not read that line. The table is empty.
 
-4. Click *New format…*. Name it `piped`. Type the directive one character at a
+4. Click **New → Text (LogFormat)**. Name it `piped`. Type the directive one character at a
    time: `%h|%t|"%r"|%>s|%b`
 
 **Pass:** the message changes as you type, and settles on *Read this line, and
@@ -738,8 +739,8 @@ scrolling — Client, When, Method, Path, Query, Protocol, Status, Bytes,
 Referer, User agent, Host — with the four the format does not carry shown
 empty rather than missing.
 
-5. Save. Close the dialog. **Case → Ingest logs into a new case…**, choose
-   `piped.log`, and in the format question choose `piped`.
+5. Save. Close the dialog. **Case → New from logs…**, choose
+   `piped.log`, and under *Log format* choose `piped`.
 
 **Pass:** the case opens with one client in it, not an empty one.
 
@@ -768,8 +769,8 @@ pathlib.Path("ecs.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\
 PY
 ```
 
-2. **Case → Formats and rules… → New JSON format…** Paste one line into *A line from
-   your log*, then press **Guess from the line above**.
+2. **Case → Formats and rules… → New → JSON.** Paste one line into *Sample
+   line*, then press **Guess fields**.
 
 **Pass:** the left table fills in — `timestamp` → `@timestamp`, `client_ip` →
 `client.ip`, `method` → `http.request.method`, `user_agent` →
@@ -782,7 +783,8 @@ the line. Both tables are fully visible without scrolling.
 line actually has** — that is the answer worth having here, and it is different
 from the one a directive gets.
 
-4. Put `client.ip` back, name it `ecs`, save, and ingest `ecs.jsonl` with it.
+4. Put `client.ip` back, name it `ecs`, save, and make a case from `ecs.jsonl`
+   with it.
 
 **Pass:** 40 events, none quarantined. `logarc formats show ecs` prints the
 mapping.
@@ -806,8 +808,8 @@ pathlib.Path("u_ex240501.log").write_text("\n".join(head + rows) + "\n")
 PY
 ```
 
-2. **Case → Formats and rules… → New table format…** Paste the four header lines and
-   one row, then press **Guess from the line above**.
+2. **Case → Formats and rules… → New → Table (CSV, TSV, W3C).** Paste the four
+   header lines and one row, then press **Guess fields**.
 
 **Pass:** the left table fills in with W3C names — `timestamp` → `date+time`,
 `client_ip` → `c-ip`, `method` → `cs-method`, `status` → `sc-status`. The right
@@ -973,13 +975,13 @@ the canvas is faded.
 
 ---
 
-## 24. The client box searches the whole case
+## 24. The client box searches every client
 
 1. Open a case made from the shopfront excerpt: 52 clients, 9 to 15 March 2026.
-   Wait for Where to start to finish its scan, then click the box above the
+   Wait for Triage to finish its scan, then click **Search clients** above the
    client list.
 
-**Pass:** a list opens under the box, headed `SEARCH THE CASE BY`: ip, status,
+**Pass:** a list opens under the box, headed `SEARCH CLIENTS BY`: ip, status,
 path, method, activity, after and before, each with an example, then
 `any text`.
 
@@ -1012,7 +1014,7 @@ Project Metadata Probe activities are faded; the three Credential Attacks are no
    `activity:enumeration`.
 
 **Pass:** five clients, with no Match column:
-`5 of 52 clients match activity:enumeration in the Where to start scan`. Typing
+`5 of 52 clients match activity:enumeration in the Triage scan`. Typing
 `activity:` instead lists `VALUES IN THE CASE` with how many clients each
 activity was seen on, and `enumeration` says 5.
 
@@ -1032,7 +1034,7 @@ noon on the 15th, `9 of 52 clients`. The list keeps `status:404`, now
 9. Clear the box, then type `after:23:00 before:22:00` and a space.
 
 **Pass:** the range does not move, and the line above the list says
-`Could not search the whole case for after:23:00 before:22:00: the range would
+`Could not search all clients for after:23:00 before:22:00: the range would
 end before it starts`.
 
 ---
@@ -1069,13 +1071,13 @@ does `192.0.2.23` in the client list.
    search** under the caption.
 
 **Pass:** `Bookmark this search`, `path:/admin · 8 clients · 123 requests`,
-`whole case`. Type `Recon` as the category and save.
+`All time`. Type `Recon` as the category and save.
 
 6. Open the **Bookmarks** tab.
 
 **Pass:** `Bookmarks (3)` and `3 bookmarks in 2 categories`. Under **Login
 attacks**, the line first and then the activity, each with its note in italics.
-Under **Recon**, the search, with `whole case` in the Client column.
+Under **Recon**, the search, with `All time` in the Client column.
 
 7. Go back to the first Credential Attack and press **Bookmark** again.
 
@@ -1085,12 +1087,11 @@ is `Edit bookmark`, holding the note. Press Esc.
 8. Set the range to start at `2026-03-14 00:00`: the line beside it says
    `16 of 52 clients`. Double-click the Credential Attack in the Bookmarks tab.
 
-**Pass:** the range becomes the whole case. `192.0.2.23` is shown with the
+**Pass:** the range becomes **All time**. `192.0.2.23` is shown with the
 Credential Attack selected, ringed and in view, and the status line says
-`192.0.2.23: 8 activities. The range is now the whole case: the bookmark is
-outside the one that was set.`
+`192.0.2.23: 8 activities. Range set to All time to show the bookmark.`
 
-9. **Export → HTML report…**, then **Export → Bookmarks…**.
+9. **Export → Report (HTML)…**, then **Export → Bookmarks (CSV)…**.
 
 **Pass:** the report has a **Bookmarks** section before Provenance, with both
 notes and line 2019 as the log holds it; the search, which belongs to no client,
@@ -1153,7 +1154,7 @@ tested. What is checked here is the part no test reaches: a pack changed in
 another program while logarc is closed.
 
 1. Open a case made from the shopfront excerpt. **Case → Formats and rules…**,
-   the *Detection rules* tab, **New rule pack…**. Name it `shopfront`, replace
+   the *Detection rules* tab, **New** under the list. Name it `shopfront`, replace
    the YAML with this, and wait half a second:
 
    ```yaml
@@ -1186,7 +1187,7 @@ another program while logarc is closed.
 
 **Pass:** the line under the editor says `2 rules read: 1 about a single
 request, 1 about a run of requests.` The table under it fills in to 29 lines
-from 7 clients and 1 line from 1 client, and says every client was read.
+from 7 clients and 1 line from 1 client, and says `All clients counted.`
 **Save** is on.
 
 2. Add `, contains: DEL` inside the braces of the `method` condition.
@@ -1198,7 +1199,7 @@ shop_cart_emptied_by_api, first condition under match`, and **Save** is off.
 
 **Pass:** a bar asks `Saved. The open case was read with the old rules.` Press
 **Later** and close the dialog: the window shows `Rules changed since this case
-was read.` Press **Read it again**: the strip goes, and in `100.70.92.188`'s
+was read.` Press **Re-read**: the strip goes, and in `100.70.92.188`'s
 trace an activity is now named *Stock levels polled by a script*.
 
 4. Close logarc. Open `%APPDATA%\logarc\rules\shopfront.yaml` in Notepad,
@@ -1210,7 +1211,7 @@ load)`, and its tooltip says what is wrong. The file is as you left it.
 
 5. Select it, put the `name:` line back in the editor, and **Save**.
 
-**Pass:** it is listed as `shopfront` again, and after **Read it again** the strip
+**Pass:** it is listed as `shopfront` again, and after **Re-read** the strip
 is gone.
 
 ---

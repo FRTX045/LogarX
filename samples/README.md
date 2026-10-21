@@ -87,7 +87,7 @@ logarc analyze  --case .\case-demo --ip <address>
 logarc evidence --case .\case-demo --ip <address>
 ```
 
-In the application: **Case → Ingest logs into a new case…**, pick a log, pick an
+In the application: **Case → New from logs…**, pick a log, pick an
 empty folder, then click a client in the table.
 
 ## Checking the answers
