@@ -854,7 +854,7 @@ class MainWindow(QMainWindow):
             self._rules_notice.show_notice(None)
         elif self._rules_stale:
             self._rules_notice.show_notice(
-                rules_changed_notice(), action=("Read it again", self._read_again)
+                rules_changed_notice(), action=("Re-read", self._read_again)
             )
         elif self._rules_refused:
             self._rules_notice.show_notice(

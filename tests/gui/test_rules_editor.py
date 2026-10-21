@@ -103,17 +103,58 @@ def _counts(editor: RulesEditor, table_name: str = "_finds") -> dict[str, tuple[
     }
 
 
-def test_the_list_offers_new_load_the_built_in_packs_and_yours(qt_app: QApplication) -> None:
+def test_the_list_holds_packs_yours_first(qt_app: QApplication) -> None:
+    """Only packs: the commands that were rows in it are buttons under it."""
     rules_library.save_pack("shopfront", SHOPFRONT)
 
     editor = RulesEditor()
 
     assert editor.listed() == [
-        "New rule pack…", "Load a pack from a file…", "Built in",
-        "actions", "access", "files", "injection", "recon", "ssrf",
+        "CUSTOM", "Untitled", "shopfront",
+        "BUILT-IN", "actions", "access", "files", "injection", "recon", "ssrf",
         "java", "nodejs", "perl", "php", "python", "shell", "windows",
-        "Yours", "shopfront",
     ]  # fmt: skip
+    assert not [row for row in editor.listed() if row.endswith("\u2026")]
+
+
+def test_new_and_import_are_buttons_under_the_list(qt_app: QApplication) -> None:
+    editor = RulesEditor()
+
+    assert editor.new_button.text() == "New"
+    assert editor.import_button.text() == "Import\u2026"
+    assert editor.new_button.toolTip()
+    assert editor.import_button.toolTip()
+
+
+def test_new_starts_an_untitled_pack_from_wherever_you_are(qt_app: QApplication) -> None:
+    rules_library.save_pack("shopfront", SHOPFRONT)
+    editor = RulesEditor()
+    editor.select("shopfront")
+
+    editor.new_button.click()
+
+    assert editor._packs.currentItem().text() == "Untitled"
+    assert editor._name.text() == ""
+    assert "rules:" in editor._yaml.toPlainText()
+    assert not editor._delete.isEnabled()
+
+
+def test_import_copies_the_file_in_and_opens_it(
+    qt_app: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "house.yaml"
+    source.write_text(SHOPFRONT, encoding="utf-8")
+    monkeypatch.setattr(
+        rules_editor_module.QFileDialog,
+        "getOpenFileName",
+        lambda *_args, **_kwargs: (str(source), ""),
+    )
+    editor = RulesEditor()
+
+    editor.import_button.click()
+
+    assert editor._packs.currentItem().text() == "house"
+    assert "house" in editor.listed()
 
 
 def test_a_pack_s_note_is_its_tooltip_in_the_list(qt_app: QApplication) -> None:
@@ -247,7 +288,7 @@ def test_show_as_yaml_swaps_the_table_for_the_source(qt_app: QApplication) -> No
     editor._as_yaml.click()
 
     assert editor._built_views.currentIndex() == 1
-    assert editor._as_yaml.text() == "Show as table"
+    assert editor._as_yaml.text() == "View table"
     editor._as_yaml.click()
     assert editor._built_views.currentIndex() == 0
 
@@ -339,7 +380,7 @@ def test_a_built_in_pack_s_counts_fill_in(qt_app: QApplication, shopfront_case: 
     settled(qt_app)
 
     assert _counts(editor, "_built_table")["http_library_user_agent"] == ("117", "4")
-    assert editor._built_count.text() == "Every client in the open case read."
+    assert editor._built_count.text() == "All clients counted."
 
 
 def test_a_damaged_switch_file_is_said_on_a_built_in_pack(qt_app: QApplication) -> None:
@@ -357,7 +398,7 @@ def test_a_new_pack_asks_for_a_name_without_calling_it_a_mistake(qt_app: QApplic
     editor = RulesEditor()
 
     assert editor._status.text() == (
-        "No rules yet. Add them under rules:, as in the example. Give the pack a name to save it."
+        "No rules yet. Add them under rules:, as in the example. Name the pack to save it."
     )
     assert editor._status.styleSheet() == ""
     assert not editor._save.isEnabled()
@@ -462,3 +503,25 @@ def test_switching_a_rule_back_on_gives_it_its_colours_back(qt_app: QApplication
         table.item(row, 3).foreground().color().name()
         == QColor(severity_text_colour(Severity.INFO)).name()
     )
+
+
+def test_a_built_in_pack_is_introduced_by_its_count(qt_app: QApplication) -> None:
+    """The advice about unticking moved to the On column, where it is acted on."""
+    editor = RulesEditor()
+    editor.select("recon")
+
+    assert editor._built_note.text() == "Built-in \u00b7 15 rules"
+    assert "Untick" in editor._built_table.horizontalHeaderItem(0).toolTip()
+
+
+def test_the_rules_tab_labels_are_short(qt_app: QApplication) -> None:
+    from PyQt6.QtWidgets import QLabel
+
+    editor = RulesEditor()
+    words = {label.text() for label in editor.findChildren(QLabel)}
+
+    assert {"Rule packs", "Name", "Rules (YAML)", "Matches in this case"} <= words
+    assert editor._as_yaml.text() == "View YAML"
+    assert editor._name.placeholderText() == "my-site"
+    assert editor._name.toolTip() == "Letters, digits, - and _"
+    assert editor._ask.findChild(QPushButton, "readAgain").text() == "Re-read now"

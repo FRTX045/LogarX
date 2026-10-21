@@ -194,8 +194,7 @@ def ask_text(what: str) -> str:
 def rules_changed_notice() -> Notice:
     return Notice(
         "Rules changed since this case was read.",
-        "The client on screen and Where to start were worked out with the rules before. "
-        "Read it again to use the ones in force now.",
+        "The open client and Triage still use the old rules. Re-read to apply the new ones.",
         (),
     )
 
