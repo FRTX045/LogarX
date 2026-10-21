@@ -113,7 +113,13 @@ themed = [header.sectionSizeHint(i) for i in shown]
 qt.setStyleSheet(""); qt.processEvents()
 plain = [header.sectionSizeHint(i) for i in shown]
 facts["header_widening"] = max(a - b for a, b in zip(themed, plain))
-print(json.dumps(facts))
+print(json.dumps(facts), flush=True)
+# Gone without tearing anything down. The answer is out, and Python's teardown
+# released `qt` before the widgets made after it: a widget destroyed after its
+# application crashed this process at exit, 14 of 1,440 runs twelve at a time,
+# and the rebuild's suite with it. Exit itself is `test_crash`'s to check.
+import os
+os._exit(0)
 """
 
 
