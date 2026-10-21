@@ -520,7 +520,7 @@ class ClientTable(QWidget):
         if wanted != self._filter.text().strip():
             return
         self._searching = False
-        self._message = (f"Could not search the whole case for {wanted}: {message}", THEME.alert)
+        self._message = (f"Could not search all clients for {wanted}: {message}", THEME.alert)
         self._filter.give_way()
         self._refresh_caption()
 

@@ -308,7 +308,7 @@ def test_a_range_that_ends_before_it_starts_is_refused(
     search(qt_app, window, "after:01:00 before:00:50")
 
     assert window._window.is_open, "the range did not move"
-    assert caption(window).startswith("Could not search the whole case for after:01:00")
+    assert caption(window).startswith("Could not search all clients for after:01:00")
 
 
 # -- activity ------------------------------------------------------------------------

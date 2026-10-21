@@ -52,6 +52,8 @@ RETIRED = (
     "re-ingesting",
     "ingesting the same",
     "IP may represent",
+    "Searching the whole case",
+    "search the whole case",
 )
 
 

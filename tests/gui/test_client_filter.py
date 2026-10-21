@@ -132,7 +132,7 @@ def test_a_page_sorted_another_way_says_the_order_is_only_within_it() -> None:
 
 def test_while_the_whole_case_is_searched_the_caption_says_so() -> None:
     assert caption(shown=3, total=931, query="10.0", searching=True) == (
-        "Searching the whole case for 10.0\u2026"
+        "Searching all clients for 10.0\u2026"
     )
 
 

@@ -179,7 +179,7 @@ def _counts(
         order = " by request count, sorted within this page" if reordered else ", busiest first"
         return f"Clients {first:,}\u2013{last:,} of {total:,}{order}"
     if searching:
-        return f"Searching the whole case for {wanted}\u2026"
+        return f"Searching all clients for {wanted}\u2026"
     found = shown if matching is None else matching
     if found == 0:
         # Named as a filter result, not as an absence. An empty table with no

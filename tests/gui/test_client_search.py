@@ -77,7 +77,7 @@ def test_a_partial_list_asks_for_a_whole_case_search(partial: ClientTable) -> No
     partial._filter.setText("10.0.9")
     assert edits == [True], "a stale answer must be dropped as soon as the text changes"
     assert asked == []
-    assert partial._caption.text() == f"Searching the whole case for 10.0.9{ELLIPSIS}"
+    assert partial._caption.text() == f"Searching all clients for 10.0.9{ELLIPSIS}"
     settle_search(partial)
     assert asked == [("10.0.9", 0)]
 
@@ -173,7 +173,7 @@ def test_a_failed_search_says_so(partial: ClientTable) -> None:
     partial._filter.setText("10.0.9")
     partial.show_failure("10.0.9", "the case could not be read")
     assert partial._caption.text() == (
-        "Could not search the whole case for 10.0.9: the case could not be read"
+        "Could not search all clients for 10.0.9: the case could not be read"
     )
 
 
@@ -255,7 +255,7 @@ def test_a_request_search_always_asks_the_whole_case(qt_app: QApplication) -> No
     # Both rows hold the address; neither is known to hold the request yet.
     table._filter.setText("status:200 10.0")
 
-    assert table._caption.text() == f"Searching the whole case for status:200 10.0{ELLIPSIS}"
+    assert table._caption.text() == f"Searching all clients for status:200 10.0{ELLIPSIS}"
     assert on_screen(table) == [], "no rows that might be read as the answer"
     settle_search(table)
     assert asked == [("status:200 10.0", 0)]
@@ -444,7 +444,7 @@ def test_a_failed_search_keeps_saying_so(partial: ClientTable) -> None:
     partial.set_open_client("10.0.0.1")
 
     assert partial._caption.text() == (
-        "Could not search the whole case for 10.0.9: the case could not be read"
+        "Could not search all clients for 10.0.9: the case could not be read"
     )
 
 
