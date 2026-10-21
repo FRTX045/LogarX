@@ -135,3 +135,27 @@ def test_enter_never_stops_a_long_job(qt_app: QApplication) -> None:
         assert card.isVisible(), "Escape hid a card whose job is still running"
         card.close()
         assert not card.isVisible(), "the window can still put it away"
+
+
+def test_a_system_close_does_not_put_a_running_card_away(qt_app: QApplication) -> None:
+    """Alt+F4 reaches Qt as a spontaneous close: measured, a WM_CLOSE posted to a
+    dialog on Windows arrives with `spontaneous()` true, and `close()` from the
+    window that owns the card does not. The first hid the card and left its job
+    running with nothing on screen; the second is how the window puts it away."""
+    from PyQt6.QtGui import QCloseEvent
+
+    class SystemClose(QCloseEvent):
+        def spontaneous(self) -> bool:  # what WM_CLOSE delivers
+            return True
+
+    reading = IngestCard(None, on_cancel=lambda: None)
+    crs = CrsCard(None, on_stop=lambda: None)
+    for card in (reading, crs):
+        card.show()
+        qt_app.processEvents()
+        asked = SystemClose()
+        card.closeEvent(asked)
+        assert not asked.isAccepted()
+        assert card.isVisible(), f"{type(card).__name__} closed under its running job"
+        card.close()
+        assert not card.isVisible()
