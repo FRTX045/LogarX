@@ -213,12 +213,12 @@ def test_the_no_results_title_follows_the_zoom(themed: QApplication) -> None:
         panel.close()
 
 
-def test_timeline_caption_follows_the_app_font(themed: QApplication) -> None:
-    from logarc.gui.timeline import caption_font as timeline_caption
+def test_timeline_stamps_follow_the_app_font(themed: QApplication) -> None:
+    from logarc.gui.timeline import stamp_font
 
-    assert timeline_caption().pointSizeF() == 11
+    assert stamp_font().pointSizeF() == 11
     set_text_points(themed, 15)
-    assert timeline_caption().pointSizeF() == 15
+    assert stamp_font().pointSizeF() == 15
 
 
 def test_date_fields_widen_with_the_text(themed: QApplication) -> None:
