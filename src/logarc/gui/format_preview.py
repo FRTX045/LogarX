@@ -98,7 +98,7 @@ def preview(directive: str, sample: str) -> Preview:
     """Try `directive` against one `sample` line and say what came of it."""
     sample = sample.strip()
     if not directive.strip():
-        return Preview(ok=False, status="Write a LogFormat directive above.")
+        return Preview(ok=False, status="Enter a LogFormat above.")
     if not sample:
         return Preview(ok=False, status="Paste one line from your log.")
 

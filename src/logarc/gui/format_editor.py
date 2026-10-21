@@ -38,6 +38,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QPlainTextEdit,
     QPushButton,
     QTableWidget,
@@ -94,29 +95,33 @@ _ROW = 26
 
 _DETECT = "Detect automatically"
 
-#: The first rows of the list, and the reason there is no "nothing is
-#: selected" state to get wrong. `QListWidget` makes row 0 current the first
-#: time it is shown if nothing is — measured, by watching it overwrite a
-#: half-written format — so a list whose row 0 is a real format silently
-#: discards what the reader has typed. A list whose row 0 *is* a blank form
-#: cannot.
+#: The blank form's row, and the reason there is no "nothing is selected"
+#: state to get wrong. `QListWidget` makes a row current the first time it is
+#: shown if nothing is — measured, by watching it overwrite a half-written
+#: format — so a list that lands on a real format silently discards what the
+#: reader has typed. A list that lands on a blank form cannot.
 #:
-#: Two of them rather than one, because a single row could not say which kind
-#: is being started, and asking afterwards means the reader types a directive
-#: into a screen that wanted a mapping.
-_NEW_TEXT = "New text format…"
-_NEW_JSON = "New JSON format…"
-_NEW_TABLE = "New table format…"
-_NEW_PATTERN = "New pattern format…"
+#: One row, whose kind New's menu sets; it was four rows, one per kind, which
+#: made the list half commands. Known by a data role rather than by its text,
+#: so a format saved under the same name (the command line allows any) still
+#: opens as itself.
+_DRAFT = "Untitled"
+_DRAFT_ROLE: Final = Qt.ItemDataRole.UserRole
 
-_BUILT_IN_HEADING = "Built in"
-_SAVED_HEADING = "Saved by you"
+_CUSTOM_HEADING = "CUSTOM"
+_BUILT_IN_HEADING = "BUILT-IN"
 
-#: The rows of the list that are not formats. A format named after one of them
-#: would be picked up by the wrong branch of `_on_selected` and edited as
-#: something it is not, so the names are refused on the way in.
-_RESERVED = frozenset(
-    {_NEW_TEXT, _NEW_JSON, _NEW_TABLE, _NEW_PATTERN, _BUILT_IN_HEADING, _SAVED_HEADING}
+#: Names the list keeps for its own rows. A format called one of them would be
+#: hard to tell from the row on screen, so the editor refuses them.
+_RESERVED = frozenset({_DRAFT, _CUSTOM_HEADING, _BUILT_IN_HEADING})
+
+#: What New offers, and the kind each starts. A menu on one button rather than
+#: four rows in the list: rows are things, and these are commands.
+_NEW_KINDS: Final = (
+    ("Text (LogFormat)", "logformat"),
+    ("JSON", "json"),
+    ("Table (CSV, TSV, W3C)", "columns"),
+    ("Pattern (regular expression)", "pattern"),
 )
 
 #: What the separator box offers, in the spelling a reader recognises. A tab is
@@ -147,8 +152,8 @@ _SAMPLE_HINTS: Final[dict[str, str]] = {
 #: for one kind and a regular expression for another, and naming it for either
 #: would be wrong half the time.
 _RULE_LABELS: Final[dict[str, str]] = {
-    "logformat": "LogFormat directive",
-    "pattern": "Regular expression, with named groups",
+    "logformat": "LogFormat",
+    "pattern": "Regular expression",
 }
 
 #: The placeholder in that box, per kind.
@@ -158,13 +163,8 @@ _RULE_HINTS: Final[dict[str, str]] = {
 }
 
 
-#: Which kind each blank-form row starts.
-_BLANK_FORMS: Final[dict[str, str]] = {
-    _NEW_TEXT: "logformat",
-    _NEW_JSON: "json",
-    _NEW_TABLE: "columns",
-    _NEW_PATTERN: "pattern",
-}
+def _is_draft(item: QListWidgetItem) -> bool:
+    return bool(item.data(_DRAFT_ROLE))
 
 
 def _saved() -> list[FormatSpec]:
@@ -212,8 +212,16 @@ class FormatEditor(QDialog):
 
         self._formats = QListWidget()
         self._formats.setMaximumWidth(220)
-        self._formats.currentTextChanged.connect(self._on_selected)
+        self._formats.currentItemChanged.connect(self._on_item)
         self._headings: set[int] = set()
+        self._draft_kind = "logformat"
+        self.new_button = QPushButton("New")
+        self.new_button.setToolTip("Start a new log format.")
+        kinds = QMenu(self.new_button)
+        for offered, kind in _NEW_KINDS:
+            entry = required(kinds.addAction(offered))
+            entry.triggered.connect(lambda _checked=False, k=kind: self._start(k))
+        self.new_button.setMenu(kinds)
 
         self._name = QLineEdit()
         self._name.setPlaceholderText("A name you will recognise later")
@@ -231,7 +239,7 @@ class FormatEditor(QDialog):
         # ones they have not thought of.
         self._mapping = QTableWidget(len(MAPPABLE), 2)
         self._mapping_edit_triggers = self._mapping.editTriggers()
-        self._mapping.setHorizontalHeaderLabels(["logarc calls it", "your log calls it"])
+        self._mapping.setHorizontalHeaderLabels(["Field", "Your log's key"])
         required(self._mapping.verticalHeader()).setVisible(False)
         required(self._mapping.verticalHeader()).setDefaultSectionSize(_ROW)
         self._mapping_columns = ColumnWidths(self._mapping, fill=1)
@@ -249,7 +257,8 @@ class FormatEditor(QDialog):
         )
         self._time_format.textChanged.connect(self._refresh_preview)
 
-        self._guess = QPushButton("Guess from the line above")
+        self._guess = QPushButton("Guess fields")
+        self._guess.setToolTip("Fill the mapping in from the sample line.")
         self._guess.clicked.connect(self.guess)
 
         # The table half. Only these two are new: a table is a mapping like a
@@ -271,7 +280,7 @@ class FormatEditor(QDialog):
         self._sample.textChanged.connect(self._refresh_preview)
 
         self._fields = QTableWidget(0, 2)
-        self._fields.setHorizontalHeaderLabels(["Field", "Read from the line"])
+        self._fields.setHorizontalHeaderLabels(["Field", "Value"])
         required(self._fields.verticalHeader()).setVisible(False)
         self._fields.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         # The value column takes the rest of the width. Left at its content
@@ -306,20 +315,25 @@ class FormatEditor(QDialog):
         left.setSpacing(GAP // 2)
         left.addWidget(self._labelled("Formats"))
         left.addWidget(self._formats, 1)
+        tools = QHBoxLayout()
+        tools.setContentsMargins(0, 0, 0, 0)
+        tools.addWidget(self.new_button)
+        tools.addStretch(1)
+        left.addLayout(tools)
 
         right = QVBoxLayout()
         right.setSpacing(GAP // 2)
         right.addWidget(self._labelled("Name"))
         right.addWidget(self._name)
 
-        self._rule_label = self._labelled("LogFormat directive")
+        self._rule_label = self._labelled("LogFormat")
         right.addWidget(self._rule_label)
         right.addWidget(self._rule)
 
         right.addWidget(self._labelled("Note"))
         right.addWidget(self._note)
 
-        right.addWidget(self._labelled("A line from your log"))
+        right.addWidget(self._labelled("Sample line"))
         right.addWidget(self._sample)
 
         # Under the sample, because guessing reads it and mapping is checked
@@ -396,9 +410,7 @@ class FormatEditor(QDialog):
             for row in range(self._formats.count())
             if row not in self._headings
         ]
-        return [
-            item.text() for item in items if item is not None and item.text() not in _BLANK_FORMS
-        ]
+        return [item.text() for item in items if item is not None and not _is_draft(item)]
 
     def kind(self) -> str:
         """Which shape the right-hand side is in: `logformat` or `json`."""
@@ -500,7 +512,11 @@ class FormatEditor(QDialog):
 
     def select(self, name: str) -> None:
         """Load `name` into the fields on the right."""
-        matches = self._formats.findItems(name, Qt.MatchFlag.MatchExactly)
+        matches = [
+            item
+            for item in self._formats.findItems(name, Qt.MatchFlag.MatchExactly)
+            if not _is_draft(item)
+        ]
         if matches:
             self._formats.setCurrentItem(matches[0])
         else:  # pragma: no cover - only reachable if the list went stale
@@ -508,19 +524,38 @@ class FormatEditor(QDialog):
 
     def start_new(self) -> None:
         """Clear the right-hand side for a text format that does not exist yet."""
-        self.select(_NEW_TEXT)
+        self._start("logformat")
 
     def start_new_json(self) -> None:
         """Clear the right-hand side for a JSON format that does not exist yet."""
-        self.select(_NEW_JSON)
+        self._start("json")
 
     def start_new_columns(self) -> None:
         """Clear the right-hand side for a table format that does not exist yet."""
-        self.select(_NEW_TABLE)
+        self._start("columns")
 
     def start_new_pattern(self) -> None:
         """Clear the right-hand side for a pattern that does not exist yet."""
-        self.select(_NEW_PATTERN)
+        self._start("pattern")
+
+    def _start(self, kind: str) -> None:
+        """Put the Untitled row in front, as a blank `kind`.
+
+        Blanked here as well as by the selection, which does not fire when
+        the row is already current.
+        """
+        self._draft_kind = kind
+        self._formats.blockSignals(True)
+        self._formats.setCurrentRow(self._draft_row())
+        self._formats.blockSignals(False)
+        self._blank(kind)
+
+    def _draft_row(self) -> int:
+        return next(
+            row
+            for row in range(self._formats.count())
+            if _is_draft(required(self._formats.item(row)))
+        )
 
     def _blank(self, kind: str) -> None:
         self._editing = None
@@ -562,14 +597,19 @@ class FormatEditor(QDialog):
         self._sample.setFixedHeight(_SAMPLE_TALL if kind == "columns" else _SAMPLE_SHORT)
         required(self._mapping.horizontalHeader()).setVisible(True)
         self._mapping.setHorizontalHeaderLabels(
-            ["logarc calls it", "your log's column" if kind == "columns" else "your log's key"]
+            ["Field", "Your log's column" if kind == "columns" else "Your log's key"]
         )
+
+    def _on_item(self, item: QListWidgetItem | None, _previous: QListWidgetItem | None) -> None:
+        if item is None:
+            return
+        if _is_draft(item):
+            self._blank(self._draft_kind)
+            return
+        self._on_selected(item.text())
 
     def _on_selected(self, name: str) -> None:
         if not name:
-            return
-        if name in _BLANK_FORMS:
-            self._blank(_BLANK_FORMS[name])
             return
         try:
             spec = get_spec(name)
@@ -639,7 +679,7 @@ class FormatEditor(QDialog):
         if not name:
             return self._refuse("Give this format a name.")
         if name in _RESERVED:
-            return self._refuse(f"{name!r} is what the list beside this calls one of its own rows.")
+            return self._refuse(f"{name!r} is reserved: the list uses it for its own rows.")
 
         saved = _saved()
         if is_built_in(name):
@@ -743,23 +783,28 @@ class FormatEditor(QDialog):
         self._formats.blockSignals(True)
         self._formats.clear()
         self._headings.clear()
-        for blank in _BLANK_FORMS:
-            self._formats.addItem(blank)
-        for heading, names in ((_BUILT_IN_HEADING, built_in), (_SAVED_HEADING, saved)):
-            if not names:
-                continue
-            self._headings.add(self._formats.count())
-            self._formats.addItem(self._heading_item(heading))
-            self._formats.addItems(names)
+        # The reader's own first, headed by the blank form: a rebuilt list then
+        # always has a blank to land on, never a real format to overwrite.
+        self._headings.add(self._formats.count())
+        self._formats.addItem(self._heading_item(_CUSTOM_HEADING))
+        draft = QListWidgetItem(_DRAFT)
+        draft.setData(_DRAFT_ROLE, True)
+        italic = draft.font()
+        italic.setItalic(True)
+        draft.setFont(italic)
+        self._formats.addItem(draft)
+        self._formats.addItems(saved)
+        self._headings.add(self._formats.count())
+        self._formats.addItem(self._heading_item(_BUILT_IN_HEADING))
+        self._formats.addItems(built_in)
         self._formats.blockSignals(False)
 
         if current in available_formats():
             self.select(current)
         else:
-            # Deliberately, rather than leaving it to the widget: see the
-            # `_NEW_TEXT` note above.
-            self._formats.setCurrentRow(0)
-            self._blank("logformat")
+            # Deliberately, rather than leaving it to the widget: a list landing
+            # on a real format would discard what the reader had typed.
+            self._start("logformat")
 
     def _heading_item(self, text: str) -> QListWidgetItem:
         item = QListWidgetItem(text)
@@ -804,22 +849,26 @@ class FormatChoice(QDialog):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("How should these logs be read?")
+        self.setWindowTitle("Log format")
 
         self._library_trouble = ""
         self._choice = QComboBox()
         self._fill()
 
-        explain = QLabel(
-            self._library_trouble
-            or "Detecting works for Apache and nginx logs and anything shaped like "
+        self._choice.setToolTip(
+            "Detecting works for Apache and nginx logs and anything shaped like "
             "them. Choose a format when the logs are in one of your own."
         )
+        # Said on screen only when something is wrong with the library; the
+        # usual advice is the list's tooltip.
+        explain = QLabel(self._library_trouble)
         explain.setWordWrap(True)
         explain.setFont(caption_font(explain.font()))
-        explain.setStyleSheet(f"color: {THEME.muted};")
+        explain.setStyleSheet(f"color: {THEME.alert};")
+        explain.setVisible(bool(self._library_trouble))
 
-        manage = QPushButton("Log formats…")
+        manage = QPushButton("Manage…")
+        manage.setToolTip("See and write the log formats logarc can read.")
         manage.clicked.connect(self._manage)
 
         buttons = QDialogButtonBox(
@@ -832,7 +881,11 @@ class FormatChoice(QDialog):
         stack = QVBoxLayout(self)
         stack.setContentsMargins(ROOM, ROOM, ROOM, ROOM)
         stack.setSpacing(GAP)
-        stack.addWidget(self._choice)
+        row = QHBoxLayout()
+        row.setSpacing(GAP)
+        row.addWidget(QLabel("Format"))
+        row.addWidget(self._choice, 1)
+        stack.addLayout(row)
         stack.addWidget(explain)
         stack.addWidget(buttons)
 
