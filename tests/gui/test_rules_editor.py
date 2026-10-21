@@ -707,3 +707,19 @@ def test_the_window_s_answer_reaches_the_tab(
     assert not editor.stale
     editor.shutdown()
     settled(qt_app)
+
+
+def test_a_built_in_pack_on_show_saves_into_my_rules(
+    qt_app: QApplication, opened: list[object]
+) -> None:
+    rules_library.save_pack("shop", CART_NEVER)
+    editor = RulesEditor()
+    editor.select("shop")
+    editor.select("recon")
+
+    editor.add_button.click()
+
+    (dialog,) = opened
+    assert dialog._into.currentText() == "My-rules"
+    dialog.shutdown()
+

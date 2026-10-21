@@ -731,7 +731,7 @@ class RulesEditor(QWidget):
             case_path=self._case_path,
             library=self._library,
             built_in=self._built_in,
-            into=self._editing,
+            into=self._editing if self._pages.currentIndex() == 0 else None,
         )
         dialog.saved.connect(self._rule_added)
         dialog.read_again.connect(self._read_again)
