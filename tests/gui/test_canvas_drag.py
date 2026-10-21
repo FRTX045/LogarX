@@ -1234,3 +1234,25 @@ def test_a_graph_opened_on_a_crowded_arrangement_hides_the_number_too(
     art = edge_between(canvas, "n0", "n1")
     assert art.label is not None
     assert not art.label.isVisible()
+
+
+def test_each_number_of_a_pair_sits_beyond_its_own_bow(qt_app: QApplication) -> None:
+    """Centred on the apex, half of each number reached back towards the other
+    arrow, and 192.0.2.231's pair read `x45 · 18s x41 · 9s` as one label. Each
+    now lies wholly on its own arrow's side, past the apex of its curve."""
+    canvas = ActivityCanvas()
+    canvas.show_graph(both_ways())
+    first, second = node_item(canvas, "n0").pos(), node_item(canvas, "n1").pos()
+    along = second - first
+    length = math.hypot(along.x(), along.y())
+    across = QPointF(-along.y() / length, along.x() / length)
+
+    for source, target in (("n0", "n1"), ("n1", "n0")):
+        label = edge_between(canvas, source, target).label
+        assert label is not None and label.isVisible()
+        box = label.sceneBoundingRect()
+        corners = (box.topLeft(), box.topRight(), box.bottomLeft(), box.bottomRight())
+        reach = [QPointF.dotProduct(corner - first, across) for corner in corners]
+        assert min(reach) > 0 or max(reach) < 0, f"{source}->{target} crosses the middle"
+        nearest = min(abs(r) for r in reach)
+        assert nearest >= 30, f"{source}->{target} reaches within {nearest:.0f} of the middle"
