@@ -498,7 +498,9 @@ class AddRuleDialog(QDialog):
                 built_in=self._built_in,
             )
         except CannotAppend as exc:
-            return self._refuse(f"{exc} Add the rule in the YAML editor: View YAML gives its text.")
+            return self._refuse(
+                f"{exc} Add the rule in the YAML editor: View YAML gives its text.", block
+            )
         except RulePackError as exc:
             return self._refuse(in_words(exc))
         self._block = block
@@ -509,13 +511,15 @@ class AddRuleDialog(QDialog):
         self._count(load_pack_text("new.yaml", "version: 1\nrules:\n" + indent(block, "  ")))
         return True
 
-    def _refuse(self, message: str) -> bool:
+    def _refuse(self, message: str, block: str = "") -> bool:
+        """Say why the rule cannot be added. `block` stays in View YAML when the
+        reader is told to paste it into the YAML editor instead."""
         self._stop_count()
         self._block = ""
         self._add.setEnabled(False)
         self._check_line.setStyleSheet(f"color: {THEME.alert};")
         self._check_line.setText(message)
-        self._yaml_view.setPlainText("")
+        self._yaml_view.setPlainText(block)
         self._examples.setRowCount(0)
         self._finds_line.setText("")
         return False
@@ -532,19 +536,22 @@ class AddRuleDialog(QDialog):
         if not self._check():
             return False
         target = self._target()
+        block = self._block
         try:
             rules_library.add_rule(
                 target,
-                self._block,
+                block,
                 started_from=self._started_from(target) if target.exists else "",
                 built_in=self._built_in,
             )
         except CannotAppend as exc:
-            return self._refuse(f"{exc} Add the rule in the YAML editor: View YAML gives its text.")
+            return self._refuse(
+                f"{exc} Add the rule in the YAML editor: View YAML gives its text.", block
+            )
         except RulePackError as exc:
             return self._refuse(in_words(exc))
         except rules_library.RulesLibraryError as exc:
-            return self._refuse(str(exc))
+            return self._refuse(str(exc), block)
         self.saved.emit(target.name)
         if self._case_path is None:
             self._answered = True

@@ -465,3 +465,21 @@ def test_the_rule_from_a_line_is_added(qt_app: QApplication) -> None:
     assert line.event is not None
     (labelled,) = RuleEngine(rules).label_events([line.event])
     assert "script_in_a_search" in {label.rule_id for label in labelled.all_labels}
+
+
+def test_view_yaml_still_gives_the_text_when_the_pack_cannot_take_it(
+    qt_app: QApplication,
+) -> None:
+    flow = (
+        "version: 1\nrules: [{id: one, name: One, category: injection, severity: high,"
+        " match: {all: [{field: path, equals: /one}]}}]\n"
+    )
+    rules_library.save_pack("flow", flow)
+    dialog = _dialog(into="flow")
+    _fill(dialog)
+
+    assert dialog._check_line.text().endswith("View YAML gives its text.")
+    assert not _button(dialog, "addRule").isEnabled()
+    _button(dialog, "viewYaml").click()
+    assert dialog._yaml_view.toPlainText() == rule_block(dialog.draft(), "cart_emptied")
+    dialog.shutdown()
