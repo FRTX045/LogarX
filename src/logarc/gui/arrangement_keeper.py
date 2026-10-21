@@ -168,7 +168,7 @@ class ArrangementKeeper:
         store = arrangement.remember(self._stored(), name, self._canvas.positions)
         self._settings().setValue(LAYOUT_KEY, arrangement.dump(store))
         self.refresh()
-        self._say("Arrangement saved.")
+        self._say("Layout saved.")
 
     def reset(self) -> None:
         """Put every activity back, and forget the arrangement that was saved.
@@ -219,8 +219,8 @@ class ArrangementKeeper:
         client = showing.client_ip if showing is not None else "this client"
         box = QMessageBox(self._parent)
         box.setIcon(QMessageBox.Icon.Question)
-        box.setWindowTitle("Unsaved arrangement")
-        box.setText(f"Keep how you have arranged {client}?")
+        box.setWindowTitle("Unsaved layout")
+        box.setText(f"Save the layout of {client}?")
         box.setInformativeText(
             "Leaving without saving puts the activities back where they were laid out."
         )

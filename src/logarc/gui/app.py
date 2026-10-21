@@ -100,7 +100,7 @@ from logarc.gui.splitter import PanelSplitter
 from logarc.gui.theme import GAP, MONO_FAMILIES, PAD, TIGHT, apply_theme, colour_text, heading_font
 from logarc.gui.time_filter import TimeFilterBar
 from logarc.gui.triage import TriagePanel
-from logarc.gui.who_else import WhoElseDialog, unavailable
+from logarc.gui.who_else import WhoElseDialog, rule_names, unavailable
 from logarc.gui.window_controls import install_window_controls
 from logarc.gui.workers import run_job
 from logarc.ingest.pipeline import IngestCancelled
@@ -181,7 +181,7 @@ _JUST_BEFORE = timedelta(microseconds=1)
 
 #: Said when opening a bookmark moved the range: what it points at is outside
 #: the stretch that was set, and the time bar puts that back in one step.
-_WIDENED = "The range is now the whole case: the bookmark is outside the one that was set."
+_WIDENED = "Range set to All time to show the bookmark."
 
 
 def _raw_lines(case: Case, refs: Sequence[EvidenceRef]) -> dict[EvidenceRef, str]:
@@ -746,7 +746,7 @@ class MainWindow(QMainWindow):
     # -- case --------------------------------------------------------------
 
     def _open_case(self) -> None:
-        chosen = QFileDialog.getExistingDirectory(self, "Open case directory")
+        chosen = QFileDialog.getExistingDirectory(self, "Open case folder")
         if chosen:
             self._load_case(Path(chosen))
 
@@ -776,7 +776,7 @@ class MainWindow(QMainWindow):
         sizes = [path.stat().st_size for path in paths]
 
         def work(report: Callable[[object], None]) -> IngestCancelled | None:
-            report(f"Ingesting {plural(len(paths), 'file')}…")
+            report(f"Reading {plural(len(paths), 'file')}…")
             reading = Reading([path.name for path in paths], sizes)
             try:
                 with Case.create(case_dir) as case:
@@ -810,7 +810,7 @@ class MainWindow(QMainWindow):
 
         self._ingest_card = IngestCard(self, on_cancel=self._request_cancel)
         self._ingest_card.show()
-        self._busy(f"Ingesting into {case_dir}…", stop=stop)
+        self._busy(f"Reading logs into {case_dir}…", stop=stop)
         run_job(
             work,
             on_done=lambda outcome: self._ingest_finished(case_dir, outcome),
@@ -924,14 +924,13 @@ class MainWindow(QMainWindow):
             self._ask_site_hosts(case_dir)
             return
 
-        self._idle(f"Cancelled after {outcome.lines_read:,} lines.")
+        self._idle(f"Stopped after {outcome.lines_read:,} lines.")
         QMessageBox.information(
             self,
-            "Ingest cancelled",
+            "Reading stopped",
             f"Stopped after {outcome.lines_read:,} lines.\n\n"
-            f"{case_dir} holds what had been read by then and was not finalised, so it "
-            "cannot be analysed. It is left in place rather than deleted — delete the "
-            "folder yourself if you want to start over.",
+            f"{case_dir} holds a partial case that cannot be analysed. It is left in "
+            "place; delete the folder to start over.",
         )
 
     # -- the site's own domains, asked once and only where it matters --------
@@ -1059,7 +1058,7 @@ class MainWindow(QMainWindow):
         silenced the notice after a scan, not the answer to a question.
         """
         if self._case_path is None:
-            self._status.setText("Open a case first, then run CRS on it.")
+            self._status.setText("Open a case first.")
             colour_text(self._status, THEME.muted)
             return
         try:
@@ -1127,7 +1126,7 @@ class MainWindow(QMainWindow):
             detail,
             explanation=(
                 f"{reason}\n\nNothing in the case was changed, and everything else in it "
-                "works. To try again: Case → Run OWASP CRS on this case."
+                "works. To try again: Case → Run CRS scan."
             ),
         )
         # The case is as it was before CRS started, and complete. Without this
@@ -1204,7 +1203,7 @@ class MainWindow(QMainWindow):
                 # it back; an empty value would satisfy every visible symptom
                 # and leave the key sitting there.
                 self._forget_recent()
-                self._idle("Forgot the list of cases opened here.")
+                self._idle("Recent cases list cleared.")
 
         if chooser.wants_other_case:
             self._open_case()
@@ -1797,7 +1796,7 @@ class MainWindow(QMainWindow):
             )
 
         def work(report: Callable[[str], None]) -> tuple[AnalysisResult, list[TimeSlot]]:
-            report(f"Reconstructing {client_ip}…")
+            report(f"Opening {client_ip}…")
             result = reconstruct_client(path, client_ip, crs, window=window, rules=rules)
             # This client's own traffic, across its own life — not the range in
             # force. Built from the reconstruction it would only ever cover that
@@ -1808,7 +1807,7 @@ class MainWindow(QMainWindow):
             with Case.open(path) as case:
                 return result, case.store.activity_over_time(buckets=buckets, client_ip=client_ip)
 
-        self._busy(f"Reconstructing {client_ip}…")
+        self._busy(f"Opening {client_ip}…")
 
         def done(loaded: tuple[AnalysisResult, list[TimeSlot]]) -> None:
             result, bars = loaded
@@ -2160,8 +2159,13 @@ class MainWindow(QMainWindow):
                 self._who_else_menu.addAction("Select an activity first"), "action"
             ).setEnabled(False)
             return
+        # Named as the evidence panel's activity is, with the id on hover for a
+        # reader who searches by it. An id with no label in this result is
+        # still offered, by its id.
+        names = rule_names(self._result) if self._result is not None else {}
         for rule_id in node.rule_ids:
-            action = required(self._who_else_menu.addAction(rule_id), "action")
+            action = required(self._who_else_menu.addAction(names.get(rule_id, rule_id)), "action")
+            action.setToolTip(rule_id)
             action.triggered.connect(lambda _checked=False, rule=rule_id: self._who_else(rule))
 
     def _who_else(self, rule_id: str) -> None:
@@ -2169,6 +2173,7 @@ class MainWindow(QMainWindow):
         if self._result is None:
             return
         client_ip = self._result.client_ip
+        name = rule_names(self._result).get(rule_id, rule_id)
         if self._who_else_dialog is None:
             self._who_else_dialog = WhoElseDialog(self)
             self._who_else_dialog.open_client.connect(self._reconstruct)
@@ -2177,11 +2182,11 @@ class MainWindow(QMainWindow):
         index = self._triage.result
         if index is None:
             dialog.show_unavailable(
-                rule_id, unavailable(self._triage.progress, scanning=self._triage.scanning)
+                name, unavailable(self._triage.progress, scanning=self._triage.scanning)
             )
         else:
             path = index.path
-            dialog.show_unavailable(rule_id, "Looking up the other IPs…")
+            dialog.show_unavailable(name, "Looking up other clients…")
 
             def work(_: Callable[[object], None]) -> Any:
                 return read_rule_matches(path, rule_id)
@@ -2190,13 +2195,11 @@ class MainWindow(QMainWindow):
                 # The range can move while this runs, and a new scan replaces
                 # the index; an answer from the old one is about other traffic.
                 if self._triage.result is index:
-                    dialog.show_matches(rule_id, matches, client_ip=client_ip)
+                    dialog.show_matches(rule_id, matches, client_ip=client_ip, name=name)
 
             def failed(message: str, _detail: str) -> None:
                 if self._triage.result is index:
-                    dialog.show_unavailable(
-                        rule_id, f"Could not read the scan's results: {message}."
-                    )
+                    dialog.show_unavailable(name, f"Could not read the scan's results: {message}.")
 
             run_job(work, on_done=done, on_error=failed)
         dialog.show()
@@ -2558,7 +2561,7 @@ class MainWindow(QMainWindow):
         """Bookmark the client box's search, with the range it was answered over."""
         answered = self._clients.answered_search()
         if answered is None:
-            self._idle("Search the case from the client box first, then bookmark the search.")
+            self._idle("Search clients first, then bookmark the search.")
             return
         query, clients, requests = answered
         self._bookmarks.bookmark(
@@ -2681,7 +2684,7 @@ class MainWindow(QMainWindow):
 
     def _export(self, kind: str) -> None:
         if self._result is None or self._case_path is None:
-            QMessageBox.information(self, "Nothing to export", "Reconstruct a client first.")
+            QMessageBox.information(self, "Nothing to export", "Open a client first.")
             return
 
         # What each format is called and what it suggests saving as comes from

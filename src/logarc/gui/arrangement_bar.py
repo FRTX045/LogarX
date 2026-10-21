@@ -67,10 +67,10 @@ class ArrangementBar(QFrame):
         self._reset.setCursor(Qt.CursorShape.PointingHandCursor)
         self._reset.clicked.connect(self.reset_requested)
         self._reset.setToolTip(
-            "Put every activity back where it was laid out, and forget the saved arrangement."
+            "Put every activity back where it was laid out, and forget the saved layout."
         )
 
-        self._save = QPushButton("Save arrangement")
+        self._save = QPushButton("Save layout")
         self._save.setFont(caption_font(self._save.font()))
         self._save.setCursor(Qt.CursorShape.PointingHandCursor)
         self._save.setDefault(True)

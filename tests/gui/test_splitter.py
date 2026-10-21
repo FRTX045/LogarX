@@ -27,19 +27,25 @@ def splitter(qt_app: QApplication, request: pytest.FixtureRequest):
     widget.close()
 
 
-def test_only_a_short_centered_grip_is_blue(qt_app: QApplication, splitter: PanelSplitter) -> None:
+def test_at_rest_only_a_short_centered_grip_shows(
+    qt_app: QApplication, splitter: PanelSplitter
+) -> None:
+    """Drawn in the edge grey at rest: accent means "chosen" everywhere
+    else in the window, and a blue bar at rest read as a selected panel."""
     handle = splitter.handle(1)
     assert handle is not None
     QApplication.sendEvent(handle, QEvent(QEvent.Type.Leave))
     image = handle.grab().toImage()
-    blue = [
+    halfway = (QColor(THEME.chrome).lightness() + QColor(THEME.edge).lightness()) // 2
+    grip = [
         QPoint(x, y)
         for x in range(image.width())
         for y in range(image.height())
-        if image.pixelColor(x, y).blue() > 100
+        if image.pixelColor(x, y).lightness() > halfway
     ]
-    assert blue, "the divider needs a visible resize affordance"
-    xs, ys = [point.x() for point in blue], [point.y() for point in blue]
+    assert grip, "the divider needs a visible resize affordance"
+    assert all(image.pixelColor(point).blue() <= 100 for point in grip), "blue only on hover"
+    xs, ys = [point.x() for point in grip], [point.y() for point in grip]
     ratio = image.devicePixelRatio()
     long_span, short_span = (
         (max(ys) - min(ys) + 1, max(xs) - min(xs) + 1)

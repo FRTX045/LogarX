@@ -292,11 +292,11 @@ def test_a_node_that_has_gone_is_not_a_move_either() -> None:
 
 
 def test_one_activity_is_counted_in_the_singular() -> None:
-    assert notice(1) == "You have moved 1 activity. This arrangement is not saved."
+    assert notice(1) == "You moved 1 activity. The layout is not saved."
 
 
 def test_several_activities_are_counted_in_the_plural() -> None:
     """`activities`, not `activitys`. The window already says `1 session(s)`
     nowhere, and this is the noun that would have made it start again.
     """
-    assert notice(2) == "You have moved 2 activities. This arrangement is not saved."
+    assert notice(2) == "You moved 2 activities. The layout is not saved."

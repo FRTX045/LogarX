@@ -114,3 +114,45 @@ def test_the_activity_metadata_is_called_details(qt_app: QApplication) -> None:
 
     assert panel.activity_details.button.text() == "Details"
     panel.close()
+
+
+def test_the_categories_dialog_says_its_rule_on_the_delete_button(qt_app: QApplication) -> None:
+    from PyQt6.QtWidgets import QLabel
+
+    from logarc.bookmarks import EMPTY
+    from logarc.gui.bookmarks_tab import CategoriesDialog
+
+    dialog = CategoriesDialog(None, EMPTY)
+
+    assert not [w for w in dialog.findChildren(QLabel) if w.text().startswith("Deleting")]
+    assert "first one" in dialog.delete_button.toolTip()
+    dialog.close()
+
+
+def test_the_bookmark_box_explains_new_categories_on_hover(qt_app: QApplication) -> None:
+    from PyQt6.QtWidgets import QLabel, QWidget
+
+    from logarc.gui.bookmark_box import BookmarkBox
+
+    host = QWidget()
+    box = BookmarkBox(
+        host,
+        title="Bookmark this client",
+        said="",
+        client=None,
+        categories=["Bookmarked"],
+        category="Bookmarked",
+    )
+
+    assert not [w for w in box.findChildren(QLabel) if w.text().startswith("Type a new name")]
+    assert "new category" in box.category.toolTip()
+    assert box.save.property("primary") is True
+    assert box.save.styleSheet() == ""
+    box.close()
+
+
+def test_the_canvas_and_the_notice_use_the_new_words() -> None:
+    from logarc.gui.canvas import STARTUP_MESSAGE, WAITING_MESSAGE
+
+    assert STARTUP_MESSAGE == "Open a case, or start a new one from log files."
+    assert WAITING_MESSAGE == "Select a client."

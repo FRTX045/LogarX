@@ -95,7 +95,7 @@ class TriagePanel(QWidget):
             (
                 "Suspicious",
                 "Clients with requests a rule flagged. Findings do not establish intent or "
-                "compromise; one IP may represent several clients.",
+                "compromise; one address may be shared by several people.",
             ),
             (
                 "Unusual",
@@ -437,7 +437,7 @@ class TriagePanel(QWidget):
             html = (
                 f'<p style="color:{THEME.alert}">Sources could not be checked: '
                 f"{escape(self._source_error)}. Examples "
-                "still open; reconstruction reports any line it cannot read.</p>" + html
+                "still open; any line that cannot be read is reported when you open it.</p>" + html
             )
         # Redrawing replaces the document, which would otherwise return the reader
         # to the top whenever a source check lands or a path is expanded.

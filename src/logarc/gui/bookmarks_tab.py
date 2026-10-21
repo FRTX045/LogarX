@@ -425,12 +425,9 @@ class CategoriesDialog(QDialog):
         self.error.setWordWrap(True)
         colour_text(self.error, THEME.alert)
         self.error.hide()
-        note = QLabel(
+        self.delete_button.setToolTip(
             "Deleting a category moves its bookmarks to the first one, which cannot be deleted."
         )
-        note.setWordWrap(True)
-        note.setFont(caption_font(note.font()))
-        colour_text(note, THEME.faint)
         close = QPushButton("Close")
         close.clicked.connect(self.accept)
 
@@ -442,7 +439,6 @@ class CategoriesDialog(QDialog):
         layout.addWidget(self.names, 1)
         layout.addLayout(rename)
         layout.addWidget(self.error)
-        layout.addWidget(note)
         layout.addWidget(close, 0, Qt.AlignmentFlag.AlignRight)
         self.resize(380, 340)
         self.show_shelf(shelf)

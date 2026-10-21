@@ -90,9 +90,7 @@ class BookmarkBox(QDialog):
         self.category.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self.category.setCurrentText(category)
         self.category.setAccessibleName("Category")
-        hint = QLabel("Type a new name to make a new category.")
-        hint.setFont(caption_font(hint.font()))
-        colour_text(hint, THEME.faint)
+        self.category.setToolTip("Pick a category, or type a new name to make a new category.")
 
         self.note = QLineEdit(note)
         self.note.setMaxLength(NOTE_LIMIT)
@@ -110,9 +108,7 @@ class BookmarkBox(QDialog):
         colour_text(keys, THEME.faint)
         cancel = QPushButton("Cancel")
         self.save = QPushButton("Save")
-        self.save.setStyleSheet(
-            f"background:{THEME.accent}; color:{THEME.on_accent}; padding:4px 16px;"
-        )
+        self.save.setProperty("primary", True)
         # Enter is heard once, here in the box (`keyPressEvent`), not from the
         # fields: an editable combo hands Enter back to its own field, which
         # then announces it a second time, and a default button would be a third.
@@ -137,7 +133,6 @@ class BookmarkBox(QDialog):
         layout.addSpacing(PAD // 2)
         layout.addWidget(QLabel("Category"))
         layout.addWidget(self.category)
-        layout.addWidget(hint)
         layout.addSpacing(PAD // 2)
         layout.addWidget(QLabel("Note"))
         layout.addWidget(self.note)

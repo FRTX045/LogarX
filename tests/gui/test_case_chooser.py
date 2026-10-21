@@ -98,7 +98,7 @@ def test_the_menu_offers_to_undo_what_is_already_done(
     pinned._table.selectRow(0)
     pinned._show_menu(QPoint(1, 1))
 
-    assert unpinned_first == "Pin to the top"
+    assert unpinned_first == "Pin to top"
     assert labels[0] == "Unpin"
 
 
@@ -473,3 +473,16 @@ def test_the_rows_keep_the_height_the_header_asks_for(qt_app: QApplication) -> N
         qt_app.processEvents()
 
     chooser.close()
+
+
+def test_the_chooser_is_short_and_explains_itself_on_hover(qt_app: QApplication) -> None:
+    from PyQt6.QtWidgets import QLabel, QPushButton
+
+    chooser = CaseChooser(five(), exists=lambda _p: True)
+    words = {label.text() for label in chooser.findChildren(QLabel)}
+    buttons = {button.text() for button in chooser.findChildren(QPushButton)}
+
+    assert "Recent cases" in words
+    assert not [word for word in words if "Ctrl-click" in word], "the hint is a tooltip now"
+    assert "Ctrl-click" in chooser._table.toolTip()
+    assert {"Open", "Browse\u2026", "New from logs\u2026", "Remove from list"} <= buttons

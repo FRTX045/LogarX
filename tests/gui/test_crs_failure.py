@@ -100,7 +100,7 @@ def test_a_crashed_sidecar_is_told_in_a_sentence_with_its_output_behind_details(
     assert text == "CRS did not finish."
     assert "CRS stopped unexpectedly" in under
     assert "Nothing in the case was changed" in under
-    assert "Case → Run OWASP CRS on this case" in under
+    assert "Case → Run CRS scan" in under
     assert "goroutine 1 [running]:" not in text + under
     assert "goroutine 1 [running]:" in details
 

@@ -228,6 +228,4 @@ def notice(count: int) -> str:
     checkable without starting a window. `gui.quarantine_notice` and
     `gui.notice_bar` are already split along this line.
     """
-    return (
-        f"You have moved {plural(count, 'activity', 'activities')}. This arrangement is not saved."
-    )
+    return f"You moved {plural(count, 'activity', 'activities')}. The layout is not saved."

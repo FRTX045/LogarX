@@ -465,7 +465,7 @@ def test_an_activity_outside_a_narrowed_range_widens_it_and_says_so(
     settled(qt_app)
 
     assert window._window == EVERYTHING
-    assert "whole case" in window._status.text()
+    assert "All time" in window._status.text()
     assert window._selected is not None and "/login" in window._selected.top_targets
 
 
@@ -484,7 +484,7 @@ def test_a_client_outside_a_narrowed_range_opens_over_the_whole_case(
     assert window._window == EVERYTHING
     assert window._result is not None and window._result.client_ip == BROWSER
     assert window._result.request_count == 4
-    assert "whole case" in window._status.text()
+    assert "All time" in window._status.text()
 
 
 def test_a_search_opens_in_the_range_it_was_made_in(

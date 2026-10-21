@@ -65,10 +65,10 @@ def drift_notice(drifts: Sequence[FormatDrift]) -> Notice | None:
     return Notice(
         headline=_headline(drifts),
         detail=(
-            "This case still reads exactly as it was ingested, from its own copy of "
-            "the format — nothing here needs re-ingesting.\n\n"
-            "What changed is the saved format of that name, so ingesting the same "
-            f"log today would not produce this case:\n\n{_comparison(drifts)}"
+            "This case still reads exactly as it was made, from its own copy of the "
+            "format — nothing in it needs doing again.\n\n"
+            "What changed is the saved format of that name, so a new case from the "
+            f"same log today would not match this one:\n\n{_comparison(drifts)}"
         ),
         dead_files=(),
     )

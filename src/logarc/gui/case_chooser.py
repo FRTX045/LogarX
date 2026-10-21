@@ -32,7 +32,7 @@ from PyQt6.QtWidgets import (
 from logarc.gui import recent
 from logarc.gui._qt import required
 from logarc.gui.columns import ColumnWidths
-from logarc.gui.theme import GAP, PAD, caption_font, heading_font, ui_font
+from logarc.gui.theme import GAP, PAD, heading_font, ui_font
 from logarc.style import (
     EVIDENCE_MUTED,
     PIN_COLOUR,
@@ -87,18 +87,15 @@ class CaseChooser(QDialog):
         column.setContentsMargins(GAP, GAP, GAP, GAP)
         column.setSpacing(PAD)
 
-        title = QLabel("Recently opened")
+        title = QLabel("Recent cases")
         title.setFont(heading_font(ui_font()))
         column.addWidget(title)
 
-        hint = QLabel(
-            "Pick up where you left off, or open something that is not here. "
-            "Ctrl-click to choose several, then Forget these."
-        )
-        hint.setFont(caption_font(ui_font()))
-        column.addWidget(hint)
-
         self._table = self._build_table()
+        # Said on hover: it was a paragraph under the heading.
+        self._table.setToolTip(
+            "Pick up where you left off. Ctrl-click to choose several, then Remove from list."
+        )
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._show_menu)
         column.addWidget(self._table)
@@ -167,19 +164,21 @@ class CaseChooser(QDialog):
         self._open_button.clicked.connect(self._accept_selection)
         row.addWidget(self._open_button)
 
-        other = QPushButton("Open another case…")
+        other = QPushButton("Browse…")
+        other.setToolTip("Open a case that is not on this list.")
         other.clicked.connect(self._choose_other)
         row.addWidget(other)
 
-        fresh = QPushButton("Ingest logs into a new case…")
+        fresh = QPushButton("New from logs…")
+        fresh.setToolTip("Read log files into a new case.")
         fresh.clicked.connect(self._choose_new)
         row.addWidget(fresh)
 
         row.addStretch(1)
-        self._forget_button = QPushButton("Forget these")
+        self._forget_button = QPushButton("Remove from list")
         self._forget_button.setToolTip(
-            "Take the highlighted cases off this list, which records which cases were "
-            "opened on this machine. Ctrl+A selects all of them."
+            "Remove the selected cases from this list. The cases themselves are not "
+            "deleted. Ctrl+A selects all."
         )
         self._forget_button.clicked.connect(self._forget)
         row.addWidget(self._forget_button)
@@ -258,14 +257,14 @@ class CaseChooser(QDialog):
 
         menu = QMenu(self)
         pinned = self.cases[row].pinned
-        _entry(menu, "Unpin" if pinned else "Pin to the top", self._toggle_pin)
+        _entry(menu, "Unpin" if pinned else "Pin to top", self._toggle_pin)
         menu.addSeparator()
-        _entry(menu, "Rename in this list…", self._rename)
+        _entry(menu, "Rename…", self._rename)
         # Offered even when the folder has gone: the reader may be trying to
         # work out where it went.
-        _entry(menu, "Show the folder", self._show_folder)
+        _entry(menu, "Show in folder", self._show_folder)
         menu.addSeparator()
-        _entry(menu, "Remove from this list", self._remove)
+        _entry(menu, "Remove from list", self._remove)
         menu.exec(required(self._table.viewport(), "table viewport").mapToGlobal(where))
 
     def _amend(self, cases: tuple[RecentCase, ...]) -> None:
@@ -318,8 +317,8 @@ def _ask_for_a_name(parent: CaseChooser, current: str) -> str | None:
     """
     name, accepted = QInputDialog.getText(
         parent,
-        "Rename in this list",
-        "Show this case as:",
+        "Rename",
+        "Name in this list:",
         text=current,
     )
     return name if accepted else None

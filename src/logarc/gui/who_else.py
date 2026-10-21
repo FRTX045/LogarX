@@ -29,6 +29,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from logarc.gui._qt import required
 from logarc.gui.columns import ColumnWidths
 from logarc.gui.theme import PAD
 from logarc.style import THEME
@@ -36,6 +37,7 @@ from logarc.style import THEME
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from logarc.analysis import AnalysisResult
     from logarc.triage.scan import RuleMatch, TriageProgress
 
 
@@ -44,26 +46,44 @@ def others(matches: Sequence[RuleMatch], client_ip: str) -> list[RuleMatch]:
     return [match for match in matches if match.client_ip != client_ip]
 
 
-def describe(rule_id: str, matches: Sequence[RuleMatch], *, client_ip: str) -> str:
+def describe(
+    rule_id: str, matches: Sequence[RuleMatch], *, client_ip: str, name: str | None = None
+) -> str:
     """One line over the list, counting the other clients and nobody else."""
     count = len(others(matches, client_ip))
+    called = name or rule_id
     if not count:
-        return f"No other IP matched {rule_id} in this time range."
-    return f"{count:,} other {'IP' if count == 1 else 'IPs'} matched {rule_id} in this time range."
+        return f"No other client matched {called} in this time range."
+    noun = "client" if count == 1 else "clients"
+    return f"{count:,} other {noun} matched {called} in this time range."
+
+
+def rule_names(result: AnalysisResult) -> dict[str, str]:
+    """What each rule in `result` is called, by its id.
+
+    Read off the labels the result already carries, which are what the graph
+    and the evidence panel name an activity after; no rules are loaded for it.
+    """
+    names: dict[str, str] = {}
+    for assignment in result.assignments:
+        labelled = assignment.labelled
+        for label in (labelled.label, *labelled.all_labels):
+            names.setdefault(label.rule_id, label.name)
+    return names
 
 
 def unavailable(progress: TriageProgress | None, *, scanning: bool) -> str:
     """Why there is no answer yet, never phrased as though there were one."""
     if scanning and progress is not None:
         return (
-            f"Still checking IPs: {progress.processed:,} of {progress.total:,} so far. "
-            "Ask again when the scan in Where to start finishes."
+            f"Still checking clients: {progress.processed:,} of {progress.total:,} so far. "
+            "Ask again when the Triage scan finishes."
         )
     if scanning:
-        return "Still checking IPs. Ask again when the scan in Where to start finishes."
+        return "Still checking clients. Ask again when the Triage scan finishes."
     return (
-        "Every IP has to be checked before this can be answered, and that scan has not "
-        "finished. Run it from Where to start."
+        "Every client has to be checked before this can be answered, and that scan has not "
+        "finished. Run it from Triage."
     )
 
 
@@ -81,7 +101,21 @@ class WhoElseDialog(QDialog):
         self.caption.setWordWrap(True)
         self.caption.setTextFormat(Qt.TextFormat.PlainText)
         self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(("IP address", "Matched", "Named here", "Requests"))
+        self.table.setHorizontalHeaderLabels(("Client", "Matched", "Named", "Requests"))
+        # What the two counts mean, on the columns themselves. The difference
+        # between them is why a client is on this list at all when its own
+        # activity is called something else; it was a footnote under the table.
+        for column, explained in (
+            (1, "Requests this rule matched."),
+            (
+                2,
+                "How many of those the activity is named after; the rest were named by "
+                "a stronger rule.",
+            ),
+        ):
+            required(self.table.horizontalHeaderItem(column)).setToolTip(explained)
+        required(self.table.verticalHeader()).hide()
+        self.table.setToolTip("Double-click a client to open it.")
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -89,29 +123,26 @@ class WhoElseDialog(QDialog):
         self.table.cellDoubleClicked.connect(self._opened)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._show_menu)
-        # Says what the two counts mean, because the difference between them is
-        # the reason a client is on this list at all when its own activity is
-        # called something else.
-        self.note = QLabel(
-            "Matched: requests this rule matched. Named here: how many of those the "
-            "activity is named after; the rest were named by a stronger rule. "
-            "Double-click an IP to open it."
-        )
-        self.note.setWordWrap(True)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.close)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(PAD, PAD, PAD, PAD)
         layout.addWidget(self.caption)
         layout.addWidget(self.table, 1)
-        layout.addWidget(self.note)
         layout.addWidget(buttons)
         self.resize(560, 420)
 
-    def show_matches(self, rule_id: str, matches: Sequence[RuleMatch], *, client_ip: str) -> None:
+    def show_matches(
+        self,
+        rule_id: str,
+        matches: Sequence[RuleMatch],
+        *,
+        client_ip: str,
+        name: str | None = None,
+    ) -> None:
         rows = others(matches, client_ip)
-        self.setWindowTitle(f"Who else matched {rule_id}?")
-        self.caption.setText(describe(rule_id, matches, client_ip=client_ip))
+        self.setWindowTitle(f"Who else matched {name or rule_id}?")
+        self.caption.setText(describe(rule_id, matches, client_ip=client_ip, name=name))
         self.table.setRowCount(len(rows))
         for index, match in enumerate(rows):
             for column, value in enumerate(
@@ -123,14 +154,12 @@ class WhoElseDialog(QDialog):
                 self.table.setItem(index, column, item)
         self.table.setVisible(bool(rows))
         self._column_sizes.fit_unset()
-        self.note.setVisible(bool(rows))
 
     def show_unavailable(self, rule_id: str, text: str) -> None:
         self.setWindowTitle(f"Who else matched {rule_id}?")
         self.caption.setText(text)
         self.table.setRowCount(0)
         self.table.hide()
-        self.note.hide()
 
     def _menu_at(self, point: QPoint) -> QMenu | None:
         """The menu a right-click at `point` opens, or None off the rows."""
