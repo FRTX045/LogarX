@@ -82,11 +82,11 @@ class _Chip(QFrame):
         self.setObjectName("chip")
         key, _, value = token.partition(":")
         self._value = value[1:-1] if len(value) > 1 and value[0] == value[-1] == '"' else value
-        font = mono_font(8.5)
+        font = mono_font()
         self.key = QLabel(key, self)
         self.key.setFont(font)
         self.key.setStyleSheet(f"color:{THEME.muted}; background:transparent;")
-        bold = mono_font(8.5)
+        bold = mono_font()
         bold.setBold(True)
         self.value = QLabel(self._value, self)
         self.value.setFont(bold)
@@ -285,7 +285,7 @@ class SuggestionList(QFrame):
         self._rows = tuple(rows)
         self._title.setText(title)
         self._list.clear()
-        mono = mono_font(9)
+        mono = mono_font()
         for row in self._rows:
             item = QListWidgetItem(f"{row.completion}   {row.note}")
             item.setFont(mono)

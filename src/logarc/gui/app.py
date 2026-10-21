@@ -14,7 +14,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from PyQt6.QtCore import QEvent, QPoint, QSettings, Qt
+from PyQt6.QtCore import QEvent, QPoint, QSettings, Qt, QTimer
 from PyQt6.QtGui import QAction, QCloseEvent, QColor, QImage, QKeyEvent, QKeySequence, QPainter
 from PyQt6.QtWidgets import (
     QApplication,
@@ -86,9 +86,21 @@ from logarc.gui.recent import RecentCase
 from logarc.gui.rules_view import packs_refused_notice, rules_changed_notice
 from logarc.gui.site_hosts import SiteHostsOffer
 from logarc.gui.splitter import PanelSplitter
-from logarc.gui.theme import GAP, MONO_FAMILIES, PAD, TIGHT, apply_theme, colour_text, heading_font
+from logarc.gui.text_size import MAX_POINTS, MIN_POINTS, stepped
+from logarc.gui.theme import (
+    GAP,
+    MONO_FAMILIES,
+    PAD,
+    TIGHT,
+    apply_theme,
+    automatic_points_for,
+    colour_text,
+    heading_font,
+    set_text_points,
+)
 from logarc.gui.time_filter import TimeFilterBar
 from logarc.gui.triage import TriagePanel
+from logarc.gui.wheel_zoom import CtrlWheel
 from logarc.gui.who_else import WhoElseDialog, unavailable
 from logarc.gui.window_controls import install_window_controls
 from logarc.gui.workers import run_job
@@ -342,6 +354,15 @@ class MainWindow(QMainWindow):
         status_bar = required(self.statusBar())
         status_bar.addWidget(self._progress)
         status_bar.addWidget(self._status, 1)
+        # The text size after a zoom, for two seconds. Its own permanent label:
+        # a status bar message would hide the status line and a scan's progress
+        # while it showed, and after a second zoom left them drawn underneath.
+        self._zoom_note = QLabel("")
+        self._zoom_note_timer = QTimer(self)
+        self._zoom_note_timer.setSingleShot(True)
+        self._zoom_note_timer.setInterval(2000)
+        self._zoom_note_timer.timeout.connect(self._zoom_note.clear)
+        status_bar.addPermanentWidget(self._zoom_note)
         status_bar.addPermanentWidget(self._cancel)
 
     # -- construction ------------------------------------------------------
@@ -594,6 +615,28 @@ class MainWindow(QMainWindow):
         )
         view_menu.addSeparator()
         self._fit_action = self._add(view_menu, "&Fit to window", self._canvas.fit)
+        view_menu.addSeparator()
+        # The interface text, everywhere but the graph, which zooms with the
+        # wheel on its own. On the window too, like full screen below, so the
+        # keys still answer when full screen has hidden the menu bar.
+        zoom_in = self._add(view_menu, "Zoom &in", lambda: self._zoom_text(1))
+        zoom_in.setShortcuts(
+            [QKeySequence(QKeySequence.StandardKey.ZoomIn), QKeySequence("Ctrl+=")]
+        )
+        zoom_out = self._add(view_menu, "Zoom &out", lambda: self._zoom_text(-1))
+        zoom_out.setShortcuts([QKeySequence(QKeySequence.StandardKey.ZoomOut)])
+        reset = self._add(view_menu, "&Reset zoom", self._reset_text_zoom)
+        reset.setShortcut(QKeySequence("Ctrl+0"))
+        self._zoom_actions = (zoom_in, zoom_out, reset)
+        for action in self._zoom_actions:
+            action.setStatusTip(
+                "Make the interface text larger or smaller. The graph zooms with the mouse wheel."
+            )
+            self.addAction(action)
+        self._enable_zoom(QApplication.font().pointSizeF())
+        running = QApplication.instance()
+        if isinstance(running, QApplication):
+            CtrlWheel(running, self, skip=self._canvas).stepped.connect(self._zoom_text)
         view_menu.addSeparator()
         self._fullscreen_action = self._add(view_menu, "F&ull screen", self._fullscreen_from_menu)
         self._fullscreen_action.setCheckable(True)
@@ -1949,7 +1992,6 @@ class MainWindow(QMainWindow):
         one go now, and applying them one at a time was how the window and the
         menu came to hold two copies of the same answer.
         """
-        text_size_changed = prefs.text_size_in(chosen) != prefs.text_size_in(self._prefs)
         self._prefs = dict(chosen)
         self._apply_wrap(bool(chosen["view/wrap_traces"]))
         self._apply_sessions(bool(chosen["view/session_boxes"]))
@@ -1962,8 +2004,6 @@ class MainWindow(QMainWindow):
         # way only: off from the dialog, and never back on from Preferences.
         self._arrangements_kept.ask_before_leaving = bool(chosen[prefs.ASK_UNSAVED_ARRANGEMENT])
         prefs.write(_settings().setValue, self._prefs)
-        if text_size_changed:
-            self._status.setText("Text size saved. Restart logarc to apply it.")
 
     def _apply_band(self, showing: bool) -> None:
         """Draw the traffic above the fields, or stop drawing it."""
@@ -1971,6 +2011,46 @@ class MainWindow(QMainWindow):
         # The action uses triggered, so synchronizing its check does not apply
         # or save the preference again.
         self._timeline_action.setChecked(showing)
+
+    def _zoom_text(self, by: int) -> None:
+        """One zoom step: `by` is +1 or -1, from the keys, the View menu or Ctrl+wheel."""
+        self._set_text_points(stepped(QApplication.font().pointSizeF(), by))
+
+    def _reset_text_zoom(self) -> None:
+        """Back to the size logarc picks for this desktop, and keep picking it.
+
+        Both saved sizes are forgotten rather than the automatic one written
+        down, so a later desktop with more or less room starts at its own size.
+        """
+        running = QApplication.instance()
+        if isinstance(running, QApplication):
+            self._set_text_points(automatic_points_for(running), remember=False)
+            stored = _settings()
+            stored.remove(prefs.TEXT_POINTS)
+            stored.remove(prefs.LEGACY_TEXT_SIZE)
+
+    def _set_text_points(self, points: float, *, remember: bool = True) -> None:
+        """Put a text size in force in every window, remember it, and say so briefly."""
+        running = QApplication.instance()
+        if not isinstance(running, QApplication):
+            return
+        chosen = set_text_points(running, points)
+        for window in QApplication.topLevelWidgets():
+            if isinstance(window, MainWindow):
+                window._follow_text_size(chosen)
+        if remember:
+            _settings().setValue(prefs.TEXT_POINTS, int(chosen))
+        self._zoom_note.setText(f"Text {int(chosen)} pt")
+        self._zoom_note_timer.start()
+
+    def _follow_text_size(self, points: float) -> None:
+        self._evidence.follow_text_size()
+        self._enable_zoom(points)
+
+    def _enable_zoom(self, points: float) -> None:
+        zoom_in, zoom_out, _reset = self._zoom_actions
+        zoom_in.setEnabled(points < MAX_POINTS)
+        zoom_out.setEnabled(points > MIN_POINTS)
 
     def _timeline_from_menu(self) -> None:
         """Use the same saved choice as the Preferences dialog."""
@@ -2784,7 +2864,9 @@ def main() -> int:
     running = QApplication.instance()
     app = running if isinstance(running, QApplication) else QApplication(sys.argv)
     app.setApplicationName("logarc")
-    apply_theme(app, text_size=prefs.text_size_in(prefs.read(_settings().value)))
+    apply_theme(
+        app, points=prefs.text_points_in(_settings().value, automatic=automatic_points_for(app))
+    )
     try:
         window = MainWindow()
     except Exception:

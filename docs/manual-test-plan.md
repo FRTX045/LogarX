@@ -1144,6 +1144,34 @@ number just right of the arrow selects the row and nothing else.
 
 **Pass:** 39 rows, one per line, and no line above the table.
 
+## 27. Text zoom reaches everything and comes back exactly
+
+The tests check every font on the offscreen platform. On Windows the tables
+take their own system font unless the theme is applied in the right order, so
+the real platform is checked here.
+
+1. Open a case, select a client, then an activity, so the client list, the
+   **Where to start** queue and the evidence panel all have rows.
+2. Press Ctrl+- three times.
+
+**Pass:** the status bar says `Text 9 pt` (from a 12 pt start) and then clears.
+Tabs, date fields, the client list, the queue rows and their headings, the
+evidence heading and the menu bar all shrink together. The graph does not.
+
+3. Press Ctrl+= until the status bar says `Text 16 pt`.
+
+**Pass:** **View → Zoom in** is greyed out. The date fields still show their
+minutes and the client list's heading still shows its sort arrow.
+
+4. Hold Ctrl and turn the wheel over the queue, then over the graph.
+
+**Pass:** over the queue the text steps one size per notch; over the graph only
+the graph zooms.
+
+5. Press Ctrl+0. Then zoom to 10 pt, close logarc and start it again.
+
+**Pass:** Ctrl+0 returns to the starting size, and the restart opens at 10 pt.
+
 ---
 
 ## 27. Your own detection rules, and one edited by hand
@@ -1245,5 +1273,6 @@ is gone.
 | 24 | The client box finds clients by their requests, moves the range for a time, and opens a client filtered | | |
 | 25 | Bookmarks save from each place, wear ribbons, list by category, reopen past the range, export, reach a second window, and survive an unreadable file | | |
 | 26 | Repeated lines fold and open; the arrow works at the largest text size; Off shows every line | | |
+| 27 | Text zoom reaches tables, headings and evidence, stops at 8 and 16 pt, leaves the graph alone, and survives a restart | | |
 
 Version tested: ______  ·  Date: ______  ·  Machine: ______
