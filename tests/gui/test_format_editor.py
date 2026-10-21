@@ -1017,3 +1017,38 @@ def test_the_ingest_choice_is_short_and_explains_itself_on_hover(qt_app: QApplic
     assert "Format" in {label.text() for label in chooser.findChildren(QLabel)}
     assert "Apache and nginx" in chooser._choice.toolTip()
     assert "Manage\u2026" in {button.text() for button in chooser.findChildren(QPushButton)}
+
+
+def test_only_save_is_drawn_as_the_default(qt_app: QApplication) -> None:
+    """The editor is a dialog, where every button wants to be the default
+    unless told not to. New, first in the tab order, took the filled look,
+    and beside an enabled Save there were two."""
+    editor = FormatEditor()
+    editor.show()
+    editor.select("caddy-json")
+    editor.new_button.setFocus()
+    qt_app.processEvents()
+
+    assert not editor.new_button.autoDefault()
+    assert not editor.new_button.isDefault()
+    assert editor._save.isDefault()
+    assert not editor._delete.autoDefault()
+    editor.close()
+
+
+def test_the_format_question_answers_ok_to_enter(qt_app: QApplication) -> None:
+    from PyQt6.QtWidgets import QDialogButtonBox, QPushButton
+
+    choice = FormatChoice(None)
+    choice.show()
+    manage = next(b for b in choice.findChildren(QPushButton) if b.text() == "Manage\u2026")
+    manage.setFocus()
+    qt_app.processEvents()
+    box = choice.findChild(QDialogButtonBox)
+    assert box is not None
+    ok = box.button(QDialogButtonBox.StandardButton.Ok)
+    assert ok is not None
+
+    assert ok.isDefault()
+    assert not manage.autoDefault()
+    choice.close()

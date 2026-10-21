@@ -55,7 +55,7 @@ from logarc.gui.format_preview import (
     preview_mapping,
     preview_pattern,
 )
-from logarc.gui.theme import GAP, ROOM, caption_font, colour_text
+from logarc.gui.theme import GAP, ROOM, caption_font, colour_text, settle_buttons
 from logarc.parsers.columns import FIELDS_DIRECTIVE, declared_columns
 from logarc.parsers.fieldnames import MAPPABLE
 from logarc.parsers.fieldnames import guess_mapping as guess_from_names
@@ -222,6 +222,8 @@ class FormatEditor(QDialog):
             entry = required(kinds.addAction(offered))
             entry.triggered.connect(lambda _checked=False, k=kind: self._start(k))
         self.new_button.setMenu(kinds)
+        # In a dialog every push button wants to be the default. Only Save is.
+        self.new_button.setAutoDefault(False)
 
         self._name = QLineEdit()
         self._name.setPlaceholderText("A name you will recognise later")
@@ -258,6 +260,7 @@ class FormatEditor(QDialog):
         self._time_format.textChanged.connect(self._refresh_preview)
 
         self._guess = QPushButton("Guess fields")
+        self._guess.setAutoDefault(False)
         self._guess.setToolTip("Fill the mapping in from the sample line.")
         self._guess.clicked.connect(self.guess)
 
@@ -386,6 +389,7 @@ class FormatEditor(QDialog):
         close = buttons.addButton(QDialogButtonBox.StandardButton.Close)
         if close is not None:
             close.clicked.connect(self.reject)
+        settle_buttons(buttons)
         right.addWidget(buttons)
 
         parent_layout.addLayout(left)
@@ -877,6 +881,7 @@ class FormatChoice(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         buttons.addButton(manage, QDialogButtonBox.ButtonRole.ResetRole)
+        settle_buttons(buttons)
 
         stack = QVBoxLayout(self)
         stack.setContentsMargins(ROOM, ROOM, ROOM, ROOM)
