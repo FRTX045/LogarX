@@ -71,6 +71,33 @@ def test_every_table_column_can_be_resized_by_dragging(qt_app, kind):
         view.close()
 
 
+@pytest.mark.parametrize(
+    "kind",
+    ["clients", "requests", "queues", "cases", "who_else", "mapping", "preview", "finds", "pack"],
+)
+def test_every_table_cuts_a_long_cell_at_its_edge(qt_app, kind):
+    """Rows are one line high, and a table that wraps lays a cell out in lines
+    first, so a long cell was cut at its first break rather than at its edge:
+    `GET /search?q=' AND 1=(SELECT …` with a fifth of the Request column empty,
+    and a case folder read `C:…` at any width. Seen on the real display."""
+    from logarc.gui.rules_editor import RulesEditor
+
+    views = {
+        "clients": lambda: (ClientTable(), "_table"),
+        "requests": lambda: (EvidencePanel(), "_table"),
+        "queues": lambda: (TriagePanel(), "table"),
+        "cases": lambda: (CaseChooser((), exists=lambda _: True), "_table"),
+        "who_else": lambda: (WhoElseDialog(), "table"),
+        "mapping": lambda: (FormatEditor(), "_mapping"),
+        "preview": lambda: (FormatEditor(), "_fields"),
+        "finds": lambda: (RulesEditor(), "_finds"),
+        "pack": lambda: (RulesEditor(), "_built_table"),
+    }
+    view, name = views[kind]()
+
+    assert not getattr(view, name).wordWrap()
+
+
 def example_table():
     table = QTableWidget(1, 3)
     table.setHorizontalHeaderLabels(["Client", "Requests", "Details"])

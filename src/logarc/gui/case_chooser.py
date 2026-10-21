@@ -138,10 +138,7 @@ class CaseChooser(QDialog):
         table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         required(table.verticalHeader(), "row header").setVisible(False)
         # Cut in the middle a path keeps the folder's own name, the part that
-        # tells two cases apart. Not wrapped, or it is never cut: Qt breaks a
-        # path after `C:`, the rest falls to a line the row has no room for,
-        # and the cell reads `C:…` however wide the column is.
-        table.setWordWrap(False)
+        # tells two cases apart.
         table.setTextElideMode(Qt.TextElideMode.ElideMiddle)
         self._column_sizes = ColumnWidths(table, fill=COLUMNS.index("Folder"))
         # Sized to what it holds rather than to a guessed height: five entries in

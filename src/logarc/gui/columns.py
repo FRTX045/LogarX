@@ -104,6 +104,11 @@ class ColumnWidths(QObject):
         self._wanted: set[int] = set()
         self._manual: set[int] = set()
         self._sizing = False
+        # Columns are sized to their text on one line, and rows are one line
+        # high. Wrapped, a long cell is laid out in lines first and cut at its
+        # first break: `GET /search?q=' AND 1=(SELECT …` with a fifth of the
+        # column empty, a case folder reading `C:…` at any width.
+        table.setWordWrap(False)
         self._header.setStretchLastSection(False)
         self._header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self._header.setToolTip(
