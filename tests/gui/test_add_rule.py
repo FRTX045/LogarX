@@ -22,11 +22,15 @@ from conftest import fired, settled
 from logarc import rules_library
 from logarc.case import Case
 from logarc.core.activity import ActivityCategory, Severity
+from logarc.core.event import NormalizedEvent
+from logarc.core.evidence import EvidenceRef
+from logarc.detect.engine import RuleEngine
 from logarc.detect.rules import load_pack_text
 from logarc.detect.ruleset import built_in_packs
+from logarc.evidence import EvidenceLine
 from logarc.gui import add_rule as add_rule_module
 from logarc.gui.add_rule import AddRuleDialog
-from logarc.rule_draft import Test, rule_block
+from logarc.rule_draft import Condition, Test, rule_block
 from logarc.rule_finds import Find, FindsProgress
 
 SHOPFRONT_LOG = Path(__file__).parents[1] / "data" / "apache-shopfront" / "excerpt.log"
@@ -53,9 +57,13 @@ def shopfront_case(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return root
 
 
-def _dialog(case_path: Path | None = None, *, into: str | None = None) -> AddRuleDialog:
+def _dialog(
+    case_path: Path | None = None, *, into: str | None = None, line: EvidenceLine | None = None
+) -> AddRuleDialog:
     library = rules_library.in_force(built_in=BUILT_IN)
-    return AddRuleDialog(None, case_path=case_path, library=library, built_in=BUILT_IN, into=into)
+    return AddRuleDialog(
+        None, case_path=case_path, library=library, built_in=BUILT_IN, into=into, line=line
+    )
 
 
 def _fill(
@@ -347,3 +355,113 @@ def test_a_rule_can_be_added_while_the_count_runs(
     assert _ids("My-rules") == ["cart_emptied"]
     release.set()
     settled(qt_app)
+
+
+# -- started from a line -------------------------------------------------------
+
+
+def _line(note: str | None = None) -> EvidenceLine:
+    from datetime import UTC, datetime
+
+    ref = EvidenceRef("access.log", 42)
+    event = NormalizedEvent(
+        timestamp=datetime(2026, 8, 23, tzinfo=UTC),
+        client_ip="203.0.113.5",
+        evidence=ref,
+        method="GET",
+        path="/search",
+        query="q=%3Cscript%3E",
+        status=200,
+        user_agent="curl/8.4.0",
+    )
+    return EvidenceLine(ref, "access.log", text="...", note=note, event=event)
+
+
+def _ticks(dialog: AddRuleDialog) -> dict[str, bool]:
+    return {part.field: box.isChecked() for part, box in dialog._part_boxes}
+
+
+def test_a_line_opens_on_its_parts_with_path_and_query_ticked(qt_app: QApplication) -> None:
+    dialog = _dialog(line=_line())
+
+    assert dialog._pages.currentIndex() == 0
+    assert dialog._parts_heading.text() == "Line 42: tick what makes it suspicious."
+    assert _ticks(dialog) == {
+        "path_decoded": True,
+        "query_decoded": True,
+        "status": False,
+        "method": False,
+        "user_agent_decoded": False,
+    }
+    dialog.shutdown()
+
+
+def test_continue_fills_one_condition_per_tick(qt_app: QApplication) -> None:
+    dialog = _dialog(line=_line())
+    boxes = {part.field: box for part, box in dialog._part_boxes}
+    boxes["query_decoded"].setChecked(False)
+    boxes["status"].setChecked(True)
+
+    _button(dialog, "continue").click()
+
+    assert dialog._pages.currentIndex() == 1
+    assert [row.condition() for row in dialog._rows] == [
+        Condition("path_decoded", Test.EQUALS, "/search"),
+        Condition("status", Test.ANY_OF, "200"),
+    ]
+    assert not dialog._exact_note.isHidden()
+    dialog.shutdown()
+
+
+def test_back_and_continue_replace_the_conditions_but_keep_the_name(
+    qt_app: QApplication,
+) -> None:
+    dialog = _dialog(line=_line())
+    _button(dialog, "continue").click()
+    dialog._name.setText("Script in a search")
+    dialog.add_condition("method", Test.EQUALS, "GET")
+
+    _button(dialog, "back").click()
+    boxes = {part.field: box for part, box in dialog._part_boxes}
+    boxes["query_decoded"].setChecked(False)
+    _button(dialog, "continue").click()
+
+    assert [row.condition() for row in dialog._rows] == [
+        Condition("path_decoded", Test.EQUALS, "/search")
+    ]
+    assert dialog._name.text() == "Script in a search"
+    dialog.shutdown()
+
+
+def test_a_changed_source_is_warned_about(qt_app: QApplication) -> None:
+    note = "access.log has changed size since ingest (10 bytes then, 12 now)"
+    dialog = _dialog(line=_line(note))
+
+    assert dialog._parts_note.text() == note
+    assert not dialog._parts_note.isHidden()
+    assert _dialog(line=_line())._parts_note.isHidden()
+    dialog.shutdown()
+
+
+def test_the_window_without_a_line_has_no_parts_step(qt_app: QApplication) -> None:
+    dialog = _dialog()
+
+    assert dialog._pages.currentIndex() == 1
+    assert dialog._exact_note.isHidden()
+    assert dialog.findChild(QPushButton, "back").isHidden()
+    dialog.shutdown()
+
+
+def test_the_rule_from_a_line_is_added(qt_app: QApplication) -> None:
+    line = _line()
+    dialog = _dialog(line=line)
+    _button(dialog, "continue").click()
+    _fill(dialog, name="Script in a search", conditions=())
+
+    assert dialog.add()
+
+    text = (rules_library.rules_dir() / "My-rules.yaml").read_text(encoding="utf-8")
+    rules = load_pack_text("t.yaml", text)
+    assert line.event is not None
+    (labelled,) = RuleEngine(rules).label_events([line.event])
+    assert "script_in_a_search" in {label.rule_id for label in labelled.all_labels}

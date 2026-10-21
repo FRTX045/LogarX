@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Final
 from PyQt6.QtCore import QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -31,6 +32,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
+    QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
     QToolButton,
@@ -47,10 +49,12 @@ from logarc.gui.rule_form_view import (
     CASE_NOTE,
     CATEGORY_LABELS,
     DECODED_TIP,
+    EXACT_NOTE,
     FIELD_LABELS,
     TEST_LABELS,
     finds_caption,
     id_caption,
+    parts_heading,
 )
 from logarc.gui.rules_view import ask_text, in_words
 from logarc.gui.theme import GAP, ROOM, caption_font, mono_font, on_font_change
@@ -60,14 +64,17 @@ from logarc.rule_draft import (
     FORM_FIELDS,
     Condition,
     Draft,
+    LinePart,
     Test,
+    conditions_from,
+    line_parts,
     problems,
     rule_block,
     rule_id_for,
     tests_for,
 )
 from logarc.rule_finds import FindsCancelled, FindsProgress, count_finds
-from logarc.style import THEME
+from logarc.style import THEME, display_safe
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -253,6 +260,18 @@ class AddRuleDialog(QDialog):
         cancel.setObjectName("cancel")
         cancel.clicked.connect(self.reject)
         self._buttons.addButton(self._add, QDialogButtonBox.ButtonRole.AcceptRole)
+        self._back = QPushButton("Back")
+        self._back.setObjectName("back")
+        self._back.clicked.connect(lambda: self._pages.setCurrentIndex(0))
+        self._buttons.addButton(self._back, QDialogButtonBox.ButtonRole.ResetRole)
+        self._exact_note = _caption(EXACT_NOTE)
+
+        # -- the first step when started from a line
+        self._parts_heading = _caption()
+        self._parts_note = _caption()
+        self._parts_note.setStyleSheet(f"color: {THEME.alert};")
+        self._part_boxes: list[tuple[LinePart, QCheckBox]] = []
+        self._pages = QStackedWidget()
         self._ask, self._ask_text = self._bar(
             ("Re-read now", self._re_read, "readAgain"), ("Later", self._put_off, "later")
         )
@@ -267,7 +286,21 @@ class AddRuleDialog(QDialog):
             edit.textChanged.connect(self._schedule)
 
         self._build()
-        self.add_condition()
+        if line is not None and line.event is not None:
+            self._parts_heading.setText(parts_heading(line.ref.line_no))
+            self._parts_note.setText(line.note or "")
+            self._parts_note.setVisible(bool(line.note))
+            for part in line_parts(line.event):
+                tick = QCheckBox(f"{FIELD_LABELS[part.field]}: {display_safe(part.value)}")
+                tick.setChecked(part.ticked)
+                self._part_boxes.append((part, tick))
+            self._pages.setCurrentIndex(0)
+        else:
+            self._back.hide()
+            self._exact_note.hide()
+            self.add_condition()
+            self._pages.setCurrentIndex(1)
+        self._fill_parts_page()
         self._schedule()
 
     # -- assembling ----------------------------------------------------------
@@ -303,8 +336,15 @@ class AddRuleDialog(QDialog):
         return frame, text
 
     def _build(self) -> None:
-        column = QVBoxLayout(self)
-        column.setContentsMargins(ROOM, ROOM, ROOM, ROOM)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(ROOM, ROOM, ROOM, ROOM)
+        self._parts_page = QWidget()
+        form = QWidget()
+        self._pages.addWidget(self._parts_page)
+        self._pages.addWidget(form)
+        outer.addWidget(self._pages)
+        column = QVBoxLayout(form)
+        column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(GAP // 2)
         column.addWidget(_heading("Name"))
         column.addWidget(self._name)
@@ -331,6 +371,7 @@ class AddRuleDialog(QDialog):
         adding.addStretch(1)
         column.addLayout(adding)
         column.addWidget(_caption(CASE_NOTE))
+        column.addWidget(self._exact_note)
         column.addWidget(self._more_toggle)
         column.addWidget(self._more)
         into = QHBoxLayout()
@@ -344,6 +385,36 @@ class AddRuleDialog(QDialog):
         column.addWidget(self._examples, 2)
         column.addWidget(self._ask)
         column.addWidget(self._buttons)
+
+    def _fill_parts_page(self) -> None:
+        column = QVBoxLayout(self._parts_page)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(GAP // 2)
+        column.addWidget(self._parts_heading)
+        column.addWidget(self._parts_note)
+        for _part, box in self._part_boxes:
+            box.setFont(mono_font(QApplication.font().pointSizeF()))
+            column.addWidget(box)
+        column.addStretch(1)
+        buttons = QDialogButtonBox()
+        go_on = QPushButton("Continue")
+        go_on.setObjectName("continue")
+        go_on.setDefault(True)
+        go_on.clicked.connect(self._continue)
+        buttons.addButton(go_on, QDialogButtonBox.ButtonRole.AcceptRole)
+        cancel = required(buttons.addButton(QDialogButtonBox.StandardButton.Cancel))
+        cancel.clicked.connect(self.reject)
+        column.addWidget(buttons)
+
+    def _continue(self) -> None:
+        """Conditions from the ticked parts, in place of any there; the rest is kept."""
+        for row in list(self._rows):
+            self._remove(row)
+        ticked = [part for part, box in self._part_boxes if box.isChecked()]
+        for condition in conditions_from(LinePart(p.field, p.value, True) for p in ticked):
+            self.add_condition(condition.field, condition.test, condition.value)
+        self._mode.setCurrentIndex(self._mode.findData("all"))
+        self._pages.setCurrentIndex(1)
 
     def _fit_rows(self) -> None:
         """Rows of `_ROW`, taller only when zoomed text would not fit it."""
