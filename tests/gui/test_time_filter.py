@@ -55,6 +55,32 @@ def test_the_control_is_dead_until_a_case_is_open(qt_app: QApplication) -> None:
     assert bar.chosen is EVERYTHING
 
 
+def test_with_no_case_the_dates_are_blank_rather_than_invented(qt_app: QApplication) -> None:
+    """They read 2000-01-01 00:00: a date nobody chose, on a case nobody opened."""
+    bar = TimeFilterBar()
+
+    assert bar._from.text() == "—"
+    assert bar._to.text() == "—"
+
+
+def test_an_open_case_shows_its_own_dates(qt_app: QApplication) -> None:
+    """The blank is a special value at the minimum, and the case's first moment
+    *is* the minimum once a case is open, so it has to be taken away again."""
+    bar = opened(qt_app)
+
+    assert bar._from.text() == "2024-05-01  12:00"
+    assert bar._to.text() == "2024-05-02  12:00"
+
+
+def test_the_bar_says_from_and_to_and_all_time(qt_app: QApplication) -> None:
+    bar = TimeFilterBar()
+    from PyQt6.QtWidgets import QLabel
+
+    words = [label.text() for label in bar.findChildren(QLabel) if label.text()]
+    assert words[:2] == ["From", "to"]
+    assert bar._clear.text() == "All time"
+
+
 def test_an_open_case_starts_on_the_whole_of_it(qt_app: QApplication) -> None:
     """Not on a range the reader did not ask for. Opening a case already
     filtered would hide part of it with nothing on screen saying so."""
@@ -298,7 +324,7 @@ def test_the_line_beside_the_control_carries_both_counts(
     from the list to the heading and back. `logarc.timerange` decides the wording;
     this is what proves the window fills it with the right figures."""
     window = reading(qt_app, two_bursts, BUSY)
-    assert window._time_filter._summary.text() == "whole case"
+    assert window._time_filter._summary.text() == ""
 
     window._apply_window(EARLY_ONLY)
     settled(qt_app)
@@ -307,7 +333,7 @@ def test_the_line_beside_the_control_carries_both_counts(
     window.close()
 
 
-def test_the_line_goes_back_to_saying_whole_case(
+def test_the_line_goes_quiet_again_at_all_time(
     qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
 ) -> None:
     window = reading(qt_app, two_bursts, BUSY)
@@ -317,7 +343,9 @@ def test_the_line_goes_back_to_saying_whole_case(
     window._apply_window(EVERYTHING)
     settled(qt_app)
 
-    assert window._time_filter._summary.text() == "whole case"
+    # Nothing to say: the fields show the whole span and the button is named
+    # for it. What must not happen is a count left from the narrower range.
+    assert window._time_filter._summary.text() == ""
     window.close()
 
 

@@ -14,7 +14,7 @@ out to each of them would be three chances for them to disagree.
 from __future__ import annotations
 
 from datetime import UTC
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from PyQt6.QtCore import QDateTime, Qt, pyqtSignal
 from PyQt6.QtGui import QFontMetrics
@@ -76,6 +76,10 @@ QPushButton:disabled {{ color: {THEME.faint}; }}
 """
 
 
+#: What a date field shows while no case is open.
+_NO_DATE: Final = "—"
+
+
 class TimeFilterBar(QWidget):
     """Pick the stretch of time the case is read over."""
 
@@ -107,14 +111,15 @@ class TimeFilterBar(QWidget):
         row.setSpacing(GAP)
         column.addLayout(row)
 
-        row.addWidget(QLabel("Between"))
+        row.addWidget(QLabel("From"))
         self._from = self._field()
         row.addWidget(self._from)
-        row.addWidget(QLabel("and"))
+        row.addWidget(QLabel("to"))
         self._to = self._field()
         row.addWidget(self._to)
 
-        self._clear = QPushButton("Whole case")
+        self._clear = QPushButton("All time")
+        self._clear.setToolTip("Read the whole case again, from its first request to its last.")
         self._clear.setCursor(Qt.CursorShape.PointingHandCursor)
         self._clear.clicked.connect(self.clear)
         row.addWidget(self._clear)
@@ -186,7 +191,15 @@ class TimeFilterBar(QWidget):
         for field in (self._from, self._to):
             field.blockSignals(True)
             field.setEnabled(span is not None)
-            if span is not None:
+            if span is None:
+                # A dash, not 2000-01-01: Qt shows the special text only at the
+                # minimum, so the field is put there while no case is open.
+                field.setSpecialValueText(_NO_DATE)
+                field.setDateTime(field.minimumDateTime())
+            else:
+                # Taken away again before the range is set: the case's first
+                # moment becomes the minimum, and would read as a dash.
+                field.setSpecialValueText("")
                 field.setDateTimeRange(_qt(span[0]), _qt(span[1]))
             field.blockSignals(False)
         self._clear.setEnabled(span is not None)

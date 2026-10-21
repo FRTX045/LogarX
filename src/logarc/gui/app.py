@@ -1488,6 +1488,11 @@ class MainWindow(QMainWindow):
         numbers that have to agree — what the range did to the list, and what it
         did to the graph.
         """
+        if self._window.is_open:
+            # Nothing to add at All time: the fields show the whole span and the
+            # button is named for it. "whole case" stood alone at the far right.
+            self._time_filter.say("")
+            return
         whole = self._whole_counts.get(result.client_ip) if result is not None else None
         self._time_filter.say(
             summary(
