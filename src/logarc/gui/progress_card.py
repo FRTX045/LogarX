@@ -43,7 +43,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from logarc.gui.theme import MONO_FAMILIES, PAD, ROOM, TIGHT, colour_text, ui_font
+from logarc.gui.theme import FLOOR, MONO_FAMILIES, PAD, ROOM, TIGHT, colour_text, ui_font
 from logarc.style import THEME
 
 if TYPE_CHECKING:
@@ -81,7 +81,7 @@ def _mono(step: float = 0.0, *, bold: bool = False) -> QFont:
     """
     font = QFont()
     font.setFamilies(list(MONO_FAMILIES))
-    font.setPointSizeF(max(7.5, ui_font().pointSizeF() + step))
+    font.setPointSizeF(max(FLOOR, ui_font().pointSizeF() + step))
     if bold:
         font.setWeight(QFont.Weight.DemiBold)
     return font

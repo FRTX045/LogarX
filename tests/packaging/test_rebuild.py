@@ -127,6 +127,24 @@ def test_build_prefers_windows_system_dlls_to_unrelated_path_entries(
     assert calls[0]["env"]["PATH"].split(";")[0] == "C:\\Windows\\System32"
 
 
+def test_the_suite_runs_across_every_core(
+    rebuild: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from subprocess import CompletedProcess
+
+    monkeypatch.setattr(rebuild, "TEMPROOT", tmp_path / "temproot")
+    commands = []
+
+    def run(args, **kwargs):
+        commands.append(args)
+        return CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(rebuild.subprocess, "run", run)
+    assert rebuild.run_tests() == (True, "")
+    command = commands[0]
+    assert command[command.index("-n") + 1] == "auto"
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows native runtime validation")
 def test_verification_rejects_a_qt_runtime_that_cannot_load(
     rebuild: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

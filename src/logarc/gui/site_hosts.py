@@ -56,10 +56,6 @@ __all__ = ["SiteHostsOffer"]
 #: what the command line is given. One place decides what a domain is.
 _SEPARATORS = re.compile(r"[,\s]+")
 
-#: The point size of the field. Absolute, like every other monospaced run in
-#: this interface: it is showing a value, not prose.
-_FIELD_POINTS = 9.5
-
 
 class SiteHostsOffer(_Spoken):
     """Asked once, after a scan, and only where the answer would change something."""
@@ -74,7 +70,7 @@ class SiteHostsOffer(_Spoken):
         self.setModal(True)
 
         self._field = QLineEdit(", ".join(suggestion.hosts))
-        self._field.setFont(mono_font(_FIELD_POINTS))
+        self._field.setFont(mono_font())
         self._field.setPlaceholderText("example.com, www.example.com")
         colour_text(self._field, THEME.identity)
 

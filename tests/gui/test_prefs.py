@@ -13,7 +13,6 @@ import pytest
 from logarc.gui import prefs
 from logarc.gui.density import Density
 from logarc.gui.folding import FoldRule
-from logarc.gui.text_size import TextSize
 
 
 def test_every_setting_the_window_keeps_is_in_the_catalogue() -> None:
@@ -21,7 +20,6 @@ def test_every_setting_the_window_keeps_is_in_the_catalogue() -> None:
     renamed one would hand back a default and lose their preference without
     saying so."""
     assert {setting.key for setting in prefs.EVERY} == {
-        "view/text_size",
         "view/wrap_traces",
         "view/session_boxes",
         "view/traffic_band",
@@ -38,7 +36,6 @@ def test_the_defaults_are_the_ones_the_menu_already_used() -> None:
     """Moving a setting into a dialog must not change what it starts as. Read
     off the menu entries these replace."""
     assert prefs.defaults() == {
-        "view/text_size": TextSize.AUTOMATIC,
         "view/wrap_traces": True,
         "view/session_boxes": True,
         "view/traffic_band": True,
@@ -90,7 +87,7 @@ def test_the_startup_setting_is_not_filed_under_the_graph() -> None:
     it decides is what happens when the application opens."""
     general = [s.key for s in prefs.in_group("General")]
 
-    assert general == [prefs.TEXT_SIZE, prefs.RUN_CRS, "cases/reopen_last"]
+    assert general == [prefs.RUN_CRS, "cases/reopen_last"]
 
 
 def test_crs_is_on_until_the_reader_turns_it_off() -> None:
@@ -262,21 +259,13 @@ def test_the_band_setting_is_stored_as_it_always_was() -> None:
     assert written["view/band_density"] == "coarse"
 
 
-@pytest.mark.parametrize("size", list(TextSize))
-def test_text_size_survives_the_round_trip(size: TextSize) -> None:
-    written: dict[str, object] = {}
-    prefs.write(written.__setitem__, {**prefs.defaults(), prefs.TEXT_SIZE: size})
-    assert written[prefs.TEXT_SIZE] == size.stored
-    assert prefs.text_size_in(prefs.read(written.get)) is size
+def test_text_points_read_the_zoom_then_the_old_text_size() -> None:
+    assert prefs.text_points_in({prefs.TEXT_POINTS: "10"}.get, automatic=12) == 10
+    assert prefs.text_points_in({prefs.LEGACY_TEXT_SIZE: "compact"}.get, automatic=12) == 11
+    assert prefs.text_points_in({}.get, automatic=12) == 12
 
 
-def test_unknown_text_size_returns_to_automatic() -> None:
-    assert prefs.text_size_in(prefs.read({prefs.TEXT_SIZE: "unknown"}.get)) is TextSize.AUTOMATIC
-
-
-def test_the_labels_are_short_and_the_restart_is_in_the_note() -> None:
+def test_the_layout_setting_is_named_for_the_layout() -> None:
     by_key = {setting.key: setting for setting in prefs.EVERY}
 
-    assert by_key[prefs.TEXT_SIZE].label == "Text size"
-    assert "restart" in by_key[prefs.TEXT_SIZE].note
     assert by_key["view/ask_unsaved_arrangement"].label == "Ask before leaving an unsaved layout"

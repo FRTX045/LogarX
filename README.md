@@ -104,9 +104,10 @@ complete and is not.
 - **A time format with no year is refused**, rather than dating every event 1900.
 - **No progress estimate is shown until the read has settled**, and it always
   reads *about*.
-- **`case.json` records every threshold used**, the rule-pack versions and hashes,
-  the CRS revision, and a SHA-256 of every source file — so a finding can be
-  reproduced from the manifest alone, or shown not to be.
+- **`case.json` records a SHA-256 of every source file**, the format definition
+  each was read with, and the CRS revision and settings. Each JSON export records
+  the ruleset fingerprint and every threshold the analysis used, so a finding
+  names the rules and settings that produced it.
 
 ---
 

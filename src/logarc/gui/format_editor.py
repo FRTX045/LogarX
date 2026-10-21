@@ -55,7 +55,7 @@ from logarc.gui.format_preview import (
     preview_mapping,
     preview_pattern,
 )
-from logarc.gui.theme import GAP, ROOM, caption_font, colour_text, settle_buttons
+from logarc.gui.theme import GAP, ROOM, caption_font, colour_text, on_font_change, settle_buttons
 from logarc.parsers.columns import FIELDS_DIRECTIVE, declared_columns
 from logarc.parsers.fieldnames import MAPPABLE
 from logarc.parsers.fieldnames import guess_mapping as guess_from_names
@@ -243,7 +243,6 @@ class FormatEditor(QDialog):
         self._mapping_edit_triggers = self._mapping.editTriggers()
         self._mapping.setHorizontalHeaderLabels(["Field", "Your log's key"])
         required(self._mapping.verticalHeader()).setVisible(False)
-        required(self._mapping.verticalHeader()).setDefaultSectionSize(_ROW)
         self._mapping_columns = ColumnWidths(self._mapping, fill=1)
         for row, ours in enumerate(MAPPABLE):
             label = QTableWidgetItem(ours)
@@ -290,11 +289,9 @@ class FormatEditor(QDialog):
         # width it stopped after the longest short value, leaving half the
         # table empty and a long user agent clipped in the same picture.
         self._field_columns = ColumnWidths(self._fields, fill=1)
-        # Tight rows so all eleven fields are in sight at the opening size.
-        # At Qt's default only seven were, and the four out of view are the
-        # ones a custom format most often gets wrong — referer, user agent,
-        # host, and the byte count.
-        required(self._fields.verticalHeader()).setDefaultSectionSize(_ROW)
+        self._fit_rows()
+        for table in (self._mapping, self._fields):
+            on_font_change(table, self._fit_rows)
 
         self._status = QLabel("")
         self._status.setWordWrap(True)
@@ -309,6 +306,17 @@ class FormatEditor(QDialog):
         self._reload()
 
     # -- assembling --------------------------------------------------------
+
+    def _fit_rows(self) -> None:
+        """Tight rows, so all eleven fields are in sight at the opening size.
+
+        At Qt's default only seven were, and the four out of view are the ones
+        a custom format most often gets wrong: referer, user agent, host, and
+        the byte count. Taller only when zoomed text would not fit `_ROW`.
+        """
+        for table in (self._mapping, self._fields):
+            height = max(_ROW, table.fontMetrics().height() + 8)
+            required(table.verticalHeader()).setDefaultSectionSize(height)
 
     def _build(self, parent_layout: QHBoxLayout) -> None:
         parent_layout.setContentsMargins(ROOM, ROOM, ROOM, ROOM)

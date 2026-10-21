@@ -16,14 +16,22 @@ serialisation of the reconstruction, and narrowing a reconstruction to a
 Window state — preferences, saved layouts, the recent-case list — is the
 window's own and has no command-line equivalent by nature.
 
-Interface text automatically fits the available desktop workspace after system
-display scaling: 12 pt for a typical 1920×1080 workspace, 11 pt for short or
-more heavily scaled workspaces, and 14 pt for larger workspaces such as
-2560×1440 at 100% scaling. Automatic preserves larger system font choices.
-**Edit → Preferences → General → Text size** also offers explicit 11, 12 and
-14 pt sizes, saved on this machine and applied after restarting. Monospace IP
-text follows its table's size; evidence text and captions follow the selected
-interface size. OS display scaling remains in force.
+Interface text zooms like most applications: **View → Zoom in** (Ctrl++ or
+Ctrl+=), **Zoom out** (Ctrl+-) and **Reset zoom** (Ctrl+0), or Ctrl and the
+mouse wheel anywhere in the main window but the graph. Each step is 1 pt, from 8 to 16 pt, and
+takes effect at once in every open window; the status bar shows the new size
+for a moment. The size is saved on this machine and used at the next start.
+Tables, column headings, captions, monospace IP text and the evidence panel all
+follow it, each keeping its step above or below the body text.
+
+The size logarc starts with, and Reset zoom returns to, fits the available
+desktop workspace after system display scaling: 12 pt for a typical
+1920×1080 workspace, 11 pt for short or more heavily scaled workspaces, and
+14 pt for larger workspaces such as 2560×1440 at 100% scaling. A larger system
+font wins. A size chosen in the earlier **Text size** preference (Compact,
+Comfortable or Large) carries over as 11, 12 or 14 pt. OS display scaling
+remains in force, and zoom changes text only: scrollbars, padding and icons
+keep their size.
 Graph captions open at about 11.6 pt or more at the default minimum zoom;
 zooming scales the graph and its text together.
 Preferences is in three tabs, **General**, **Graph** and **Evidence**. A tab
@@ -81,7 +89,7 @@ and respects existing environment settings. For a larger cursor, launch with
 |---|---|
 | **Case** | New from logs… (Ctrl+N) · Open… (Ctrl+O) · Open recent… (Ctrl+Shift+O) · Formats and rules… · Run CRS scan · Exit |
 | **Edit** | Undo move (Ctrl+Z) · Save layout (Ctrl+S) · Reset layout (Ctrl+Shift+R) · Bookmark… (Ctrl+D) · Preferences… (Ctrl+,) |
-| **View** | Trace · Behaviour · Timeline · Fit to window · Full screen (F11) |
+| **View** | Trace · Behaviour · Timeline · Fit to window · Zoom in (Ctrl++) · Zoom out (Ctrl+-) · Reset zoom (Ctrl+0) · Full screen (F11) |
 | **Export** | Report (HTML)… · Graph (JSON)… · Image (PNG)… · Bookmarks (CSV)… |
 | **Help** | User guide (F1) · Keyboard shortcuts · About logarc |
 

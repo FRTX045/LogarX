@@ -52,15 +52,17 @@ class SourceRecord:
 
 @dataclass
 class CaseManifest:
-    """Everything needed to reproduce a case's analysis."""
+    """A case's identity and the integrity record of the logs it was built from."""
 
     case_id: str
     created_at: datetime
     tool_version: str
     sources: list[SourceRecord] = field(default_factory=list)
     config: dict[str, Any] = field(default_factory=dict)
-    """Every threshold the analysis was run with, recorded so that a result can
-    be reproduced without knowing which defaults applied at the time."""
+    """Per-case settings the analysis depends on: the site's own host names, and
+    the CRS revision, fingerprint, paranoia level and host once enrichment has
+    run. Segmentation thresholds and the ruleset fingerprint are not kept here;
+    each analysis export records them."""
 
     @classmethod
     def create(cls, case_id: str) -> CaseManifest:

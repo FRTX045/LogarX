@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import QModelIndex, QObject, QRect, QSize, Qt, pyqtSignal
+from PyQt6.QtCore import QEvent, QModelIndex, QObject, QRect, QSize, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QApplication,
     QHeaderView,
@@ -114,6 +114,7 @@ class ColumnWidths(QObject):
         self._header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._header.customContextMenuRequested.connect(self._show_menu)
         self._header.geometriesChanged.connect(self._space_changed)
+        table.installEventFilter(self)
         self.fit_unset()
 
     @property
@@ -237,6 +238,17 @@ class ColumnWidths(QObject):
             self._fill_remaining()
         finally:
             self._sizing = False
+
+    def eventFilter(self, watched: QObject | None, event: QEvent | None) -> bool:  # noqa: N802 - Qt's naming
+        """Refit untouched columns when the table's text changes size, as a zoom does."""
+        if (
+            event is not None
+            and event.type() == QEvent.Type.FontChange
+            and not self._sizing
+            and not self._torn_down()
+        ):
+            self.fit_unset()
+        return False
 
     def _space_changed(self) -> None:
         if self._sizing or self._torn_down():

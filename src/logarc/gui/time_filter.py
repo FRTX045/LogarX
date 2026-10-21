@@ -28,7 +28,7 @@ from PyQt6.QtWidgets import (
 )
 
 from logarc.core.window import EVERYTHING, TimeWindow
-from logarc.gui.theme import GAP, TIGHT
+from logarc.gui.theme import GAP, TIGHT, on_font_change
 from logarc.gui.timeline import Timeline
 from logarc.style import THEME
 
@@ -117,6 +117,9 @@ class TimeFilterBar(QWidget):
         row.addWidget(QLabel("to"))
         self._to = self._field()
         row.addWidget(self._to)
+        self._fit_fields()
+        for field in (self._from, self._to):
+            on_font_change(field, self._fit_fields)
 
         self._clear = QPushButton("All time")
         self._clear.setToolTip("Read the whole case again, from its first request to its last.")
@@ -144,15 +147,21 @@ class TimeFilterBar(QWidget):
         field = QDateTimeEdit()
         field.setDisplayFormat(_FORMAT)
         field.setCalendarPopup(True)
-        # Measured, not guessed. Qt sizes one of these to its format string and
-        # then puts the calendar arrow on top of the result, so the minutes are
-        # clipped — `2024-05-02 01:2` for a field whose whole job is to say when.
-        # `_ARROW` is the room that arrow takes.
-        field.setMinimumWidth(
-            QFontMetrics(field.font()).horizontalAdvance("2024-05-02  00:00") + _ARROW
-        )
         field.editingFinished.connect(self._announce)
         return field
+
+    def _fit_fields(self) -> None:
+        """Room for a whole date and time in each field, at the text size in force.
+
+        Measured, not guessed. Qt sizes one of these to its format string and
+        then puts the calendar arrow on top of the result, so the minutes are
+        clipped: `2024-05-02 01:2` for a field whose whole job is to say when.
+        `_ARROW` is the room that arrow takes.
+        """
+        for field in (self._from, self._to):
+            field.setMinimumWidth(
+                QFontMetrics(field.font()).horizontalAdvance("2024-05-02  00:00") + _ARROW
+            )
 
     # -- what the window tells it ------------------------------------------
 

@@ -24,16 +24,19 @@ from logarc.gui.density import Density
 from logarc.gui.density import named as named_density
 from logarc.gui.folding import DEFAULT_FOLD, FoldRule
 from logarc.gui.folding import named as named_fold
-from logarc.gui.text_size import TextSize
-from logarc.gui.text_size import named as named_text_size
+from logarc.gui.text_size import remembered
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
 #: Every kind of value the catalogue holds: a switch or a named choice.
-Value = bool | Density | FoldRule | TextSize
+Value = bool | Density | FoldRule
 
-TEXT_SIZE: Final = "view/text_size"
+#: The interface text size in whole points, changed by zooming rather than in
+#: the dialog. `LEGACY_TEXT_SIZE` is the restart-only choice it replaced, read
+#: so a size picked there carries over.
+TEXT_POINTS: Final = "view/text_points"
+LEGACY_TEXT_SIZE: Final = "view/text_size"
 
 #: Whether, and how, the evidence panel folds lines that repeat. Named because
 #: the window reads it on every start and every visit to Preferences.
@@ -59,8 +62,9 @@ __all__ = [
     "EVERY",
     "FOLD",
     "GROUPS",
+    "LEGACY_TEXT_SIZE",
     "RUN_CRS",
-    "TEXT_SIZE",
+    "TEXT_POINTS",
     "Setting",
     "Value",
     "defaults",
@@ -68,7 +72,7 @@ __all__ = [
     "fold_rule_in",
     "in_group",
     "read",
-    "text_size_in",
+    "text_points_in",
     "write",
 ]
 
@@ -90,22 +94,10 @@ class Setting:
     #: Only for a setting that is a choice rather than a switch. `None` means a
     #: checkbox; a tuple means one of these, in this order. Each choice has a
     #: `label` for the dialog and a `stored` form for the settings file.
-    choices: tuple[Density, ...] | tuple[FoldRule, ...] | tuple[TextSize, ...] | None = None
+    choices: tuple[Density, ...] | tuple[FoldRule, ...] | None = None
 
 
 EVERY: tuple[Setting, ...] = (
-    Setting(
-        key=TEXT_SIZE,
-        label="Text size",
-        note=(
-            "Automatic fits the available desktop space and keeps larger system text. "
-            "Choose a fixed size to override it on this laptop. Applies after you "
-            "restart logarc."
-        ),
-        default=TextSize.AUTOMATIC,
-        group="General",
-        choices=tuple(TextSize),
-    ),
     Setting(
         key="view/wrap_traces",
         label="Wrap long traces",
@@ -206,8 +198,9 @@ EVERY: tuple[Setting, ...] = (
 DENSITY = "view/band_density"
 
 #: The dialog's tabs, in order. Three since 2026-10-21: five groups, three of
-#: them holding a single setting, made tabs that were mostly empty, so text
-#: size, CRS and the start-up choice share General.
+#: them holding a single setting, made tabs that were mostly empty, so CRS and
+#: the start-up choice share General. Text size left the dialog the same day,
+#: for a zoom that applies at once (View, Ctrl +/-, Ctrl and the wheel).
 GROUPS: tuple[str, ...] = ("General", "Graph", "Evidence")
 
 
@@ -238,10 +231,9 @@ def defaults() -> dict[str, Value]:
     return {setting.key: setting.default for setting in EVERY}
 
 
-def text_size_in(values: dict[str, Value]) -> TextSize:
-    """The selected text size, with automatic as the fallback."""
-    chosen = values[TEXT_SIZE]
-    return chosen if isinstance(chosen, TextSize) else TextSize.AUTOMATIC
+def text_points_in(stored: Callable[[str], object], *, automatic: float) -> float:
+    """The text size to start with, from `QSettings.value` or anything shaped like it."""
+    return remembered(stored(TEXT_POINTS), stored(LEGACY_TEXT_SIZE), automatic=automatic)
 
 
 def read(stored: Callable[[str], object]) -> dict[str, Value]:
@@ -262,8 +254,6 @@ def read(stored: Callable[[str], object]) -> dict[str, Value]:
             raw = False
         if raw is None:
             values[setting.key] = setting.default
-        elif isinstance(setting.default, TextSize):
-            values[setting.key] = named_text_size(str(raw))
         elif isinstance(setting.default, FoldRule):
             values[setting.key] = named_fold(str(raw))
         elif setting.choices is not None:
@@ -284,7 +274,7 @@ def write(store: Callable[[str, object], None], values: dict[str, Value]) -> Non
         value = values[setting.key]
         store(
             setting.key,
-            value.stored if isinstance(value, Density | FoldRule | TextSize) else bool(value),
+            value.stored if isinstance(value, Density | FoldRule) else bool(value),
         )
 
 

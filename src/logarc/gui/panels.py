@@ -32,7 +32,7 @@ from logarc.gui.columns import SHORT_TEXT, ColumnWidths, ShortWhenNarrow
 from logarc.gui.filter_box import FilterBox
 from logarc.gui.flow import FlowLayout
 from logarc.gui.ribbon import Mark, ribbon_icon, ribbon_tip
-from logarc.gui.theme import PAD, TIGHT, caption_font, colour_text, mono_font
+from logarc.gui.theme import PAD, TIGHT, caption_font, colour_text, mono_font, on_font_change
 from logarc.search import ANY_DAY, Scope, is_time, parse
 from logarc.style import (
     SIZE_NOTE,
@@ -267,7 +267,8 @@ class ClientTable(QWidget):
         # came out 16px tall for 12px of text, and the top edge cut the indicator
         # in half — leaving the one thing this header says beyond its six words,
         # which column the table is ordered by, half drawn.
-        header.setMinimumHeight(header.fontMetrics().height() + 14)
+        self._fit_header()
+        on_font_change(header, self._fit_header)
         # A bound method, not a lambda: Qt made this header, so the collector
         # cannot reach a lambda through it, and one closing over the table kept
         # the table alive for good (test_window_lifetime).
@@ -329,6 +330,10 @@ class ClientTable(QWidget):
         paging.addWidget(self._next)
         layout.addLayout(paging)
         self._update_paging()
+
+    def _fit_header(self) -> None:
+        header = required(self._table.horizontalHeader(), "column header")
+        header.setMinimumHeight(header.fontMetrics().height() + 14)
 
     def show_clients(self, summaries: Sequence[IpSummary], *, total: int | None = None) -> None:
         """Draw these rows, and say how large the case they came from is.

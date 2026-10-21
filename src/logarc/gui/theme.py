@@ -19,19 +19,33 @@ decision and had the same problem — being made independently at every call sit
 
 from __future__ import annotations
 
+import weakref
 from typing import TYPE_CHECKING, Final
 
-from PyQt6.QtCore import QRectF, Qt
+from PyQt6.QtCore import QEvent, QObject, QRectF, Qt
 from PyQt6.QtGui import QColor, QFont, QPainter, QPainterPath, QPalette, QPen
-from PyQt6.QtWidgets import QDialogButtonBox, QProxyStyle, QPushButton, QStyle
+from PyQt6.QtWidgets import (
+    QApplication,
+    QDialogButtonBox,
+    QListWidget,
+    QProxyStyle,
+    QPushButton,
+    QStyle,
+    QTableWidget,
+    QTreeWidget,
+    QTreeWidgetItemIterator,
+)
 
-from logarc.gui.text_size import TextSize, points_for
+from logarc.gui.text_size import MIN_POINTS, automatic_points, clamped
 from logarc.style import THEME
 
 if TYPE_CHECKING:
-    from PyQt6.QtWidgets import QApplication, QStyleOption, QWidget
+    from collections.abc import Callable
+
+    from PyQt6.QtWidgets import QStyleOption, QWidget
 
 __all__ = [
+    "FLOOR",
     "GAP",
     "MONO_FAMILIES",
     "PAD",
@@ -40,10 +54,13 @@ __all__ = [
     "TIGHT",
     "UI_FAMILIES",
     "apply_theme",
+    "automatic_points_for",
     "caption_font",
     "colour_text",
     "controls_sheet",
     "heading_font",
+    "on_font_change",
+    "set_text_points",
     "settle_buttons",
     "title_font",
 ]
@@ -69,13 +86,19 @@ UI_FAMILIES: Final = ("Segoe UI Variable Text", "Segoe UI", "Inter", "sans-serif
 #: and `100.66.1.152` only lines up under `100.66.2.9` if the digits are.
 MONO_FAMILIES: Final = ("Cascadia Mono", "Consolas", "DejaVu Sans Mono", "monospace")
 
-#: Minimum for callers outside the themed launcher. The selected startup size
-#: comes from text_size; role fonts follow it instead of enforcing 14/13pt.
-_UI_POINTS: Final = 11.0
+#: Minimum for callers outside the themed launcher. The size itself is the
+#: reader's zoom; role fonts follow it as steps above or below.
+_UI_POINTS: Final = float(MIN_POINTS)
 _TITLE_STEP: Final = 3.0
 _HEADING_STEP: Final = 1.0
 _CAPTION_STEP: Final = -1.0
-_FLOOR: Final = 9.0
+#: The smallest any role may go: the lowest step (-1.5, the progress card's
+#: note) at the smallest zoom. Nothing clamps inside the zoom range, which is
+#: what lets a live zoom move every font by the same amount and back again.
+FLOOR: Final = MIN_POINTS - 1.5
+
+#: The platform's own font size, read before the theme first replaces it.
+_system_points: float | None = None
 
 
 class _ReadableStyle(QProxyStyle):
@@ -262,7 +285,7 @@ def colour_text(widget: QWidget, colour: str) -> None:
 def _sized(base: QFont, step: float, *, weight: QFont.Weight | None = None) -> QFont:
     """`base` moved one role up or down the scale."""
     font = QFont(base)
-    font.setPointSizeF(max(base.pointSizeF() + step, _FLOOR))
+    font.setPointSizeF(max(base.pointSizeF() + step, FLOOR))
     if weight is not None:
         font.setWeight(weight)
     return font
@@ -291,12 +314,17 @@ def ui_font(base: QFont | None = None) -> QFont:
     return font
 
 
-def mono_font(point_size: float) -> QFont:
-    """Monospace follows the interface size, never forcing table text larger."""
+def mono_font(point_size: float | None = None) -> QFont:
+    """Monospace follows the interface size, never forcing table text larger.
+
+    Pass the size of the table or field it sits in; with none it is the
+    caption size, one step below the interface text.
+    """
     font = QFont()
     font.setFamilies(list(MONO_FAMILIES))
     font.setStyleHint(QFont.StyleHint.Monospace)
-    font.setPointSizeF(max(point_size, font.pointSizeF() - 1.0, _FLOOR))
+    caption = font.pointSizeF() + _CAPTION_STEP
+    font.setPointSizeF(max(caption if point_size is None else point_size, caption, FLOOR))
     return font
 
 
@@ -343,7 +371,35 @@ def palette() -> QPalette:
     return colours
 
 
-def apply_theme(app: QApplication, *, text_size: TextSize = TextSize.AUTOMATIC) -> None:
+def automatic_points_for(app: QApplication) -> float:
+    """The default text size for this desktop: what Reset zoom returns to.
+
+    Measured against the system font as it was before the theme replaced it,
+    so asking again after a zoom gives the same answer.
+    """
+    system_points = _system_points_of(app)
+    screen = app.primaryScreen()
+    area = screen.availableGeometry() if screen is not None else None
+    return automatic_points(
+        width=area.width() if area is not None else 0,
+        height=area.height() if area is not None else 0,
+        system_points=system_points,
+    )
+
+
+def _system_points_of(app: QApplication) -> float:
+    """The platform's font size, read the first time it is asked for.
+
+    Both entry points ask before the theme sets a font of its own, so a fixed
+    starting size never becomes what Reset zoom measures against.
+    """
+    global _system_points
+    if _system_points is None:
+        _system_points = app.font().pointSizeF()
+    return _system_points
+
+
+def apply_theme(app: QApplication, *, points: float | None = None) -> None:
     """Put the whole application in the theme, once, at startup.
 
     Called from `gui.app.main` and from `ui-review/drive.py`. The review script
@@ -357,19 +413,120 @@ def apply_theme(app: QApplication, *, text_size: TextSize = TextSize.AUTOMATIC) 
     doing it. Left native, the tables and the menu bar would keep their system
     colours while everything around them changed, which is a more confusing
     result than not having tried.
+
+    `points` is the interface text size; `None` means `automatic_points_for`.
     """
+    _system_points_of(app)
+    chosen = automatic_points_for(app) if points is None else points
     app.setStyle(_ReadableStyle("Fusion"))
     app.setPalette(palette())
-    screen = app.primaryScreen()
-    area = screen.availableGeometry() if screen is not None else None
+    # The stylesheet before the font: on Windows, setting a stylesheet refills
+    # the per-class fonts from the system (9 pt Segoe UI for every table and
+    # header), and only a later application font clears them again. The menus
+    # do not take that font back, so the sheet names their size outright.
+    app.setStyleSheet(controls_sheet(chosen))
     font = ui_font(app.font())
-    font.setPointSizeF(
-        points_for(
-            text_size,
-            width=area.width() if area is not None else 0,
-            height=area.height() if area is not None else 0,
-            system_points=app.font().pointSizeF(),
-        )
-    )
+    font.setPointSizeF(chosen)
     app.setFont(font)
-    app.setStyleSheet(controls_sheet(font.pointSizeF()))
+
+
+def set_text_points(app: QApplication, points: float) -> float:
+    """Change the interface text size while windows are open; return the size now in force.
+
+    `points` is clamped to the zoom range. Widgets on the application font
+    follow it. Fonts set explicitly (captions, headings, monospace runs and
+    item fonts in tables, trees and lists) move by the same number of points,
+    so every role keeps its step from the body text. The graph's own fonts are
+    graphics items, not widgets, and stay with the graph's zoom.
+    """
+    chosen = clamped(points)
+    delta = chosen - app.font().pointSizeF()
+    if delta == 0:
+        return chosen
+    # Read before anything changes: setting the stylesheet again puts each
+    # explicitly set widget font back to what it was when first styled.
+    explicit = [
+        (widget, _moved(widget.font(), delta))
+        for widget in QApplication.allWidgets()
+        if widget.testAttribute(Qt.WidgetAttribute.WA_SetFont)
+    ]
+    # Items first, so a table refitting its columns on the font change below
+    # measures them at the new size.
+    for widget in QApplication.allWidgets():
+        _move_items(widget, delta)
+    font = QFont(app.font())
+    font.setPointSizeF(chosen)
+    app.setFont(font)
+    # With a stylesheet in force Qt does not pass an application font change
+    # on to widgets that already exist; setting the sheet again re-polishes
+    # them, and the sheet is rebuilt for the new size because it names the
+    # menus' size outright. A re-polish gives children their parent's font as it stands, so
+    # the second round hands the children of explicitly set widgets the moved
+    # size rather than the restored one.
+    for _round in range(2):
+        app.setStyleSheet(controls_sheet(chosen))
+        for widget, moved in explicit:
+            widget.setFont(moved)
+    return chosen
+
+
+def _moved(font: QFont, delta: float) -> QFont:
+    moved = QFont(font)
+    moved.setPointSizeF(font.pointSizeF() + delta)
+    return moved
+
+
+def _move_items(widget: QWidget, delta: float) -> None:
+    """Shift the item fonts a table, tree or list was given one by one."""
+    role = Qt.ItemDataRole.FontRole
+    if isinstance(widget, QTableWidget):
+        cells = (
+            widget.item(r, c) for r in range(widget.rowCount()) for c in range(widget.columnCount())
+        )
+        for cell in cells:
+            if cell is not None and cell.data(role) is not None:
+                cell.setFont(_moved(cell.font(), delta))
+    elif isinstance(widget, QListWidget):
+        for row in range(widget.count()):
+            entry = widget.item(row)
+            if entry is not None and entry.data(role) is not None:
+                entry.setFont(_moved(entry.font(), delta))
+    elif isinstance(widget, QTreeWidget):
+        found = QTreeWidgetItemIterator(widget)
+        while (node := found.value()) is not None:
+            for column in range(widget.columnCount()):
+                if node.data(column, role) is not None:
+                    node.setFont(column, _moved(node.font(column), delta))
+            found += 1
+
+
+def on_font_change(widget: QWidget, react: Callable[[], None]) -> None:
+    """Call `react` whenever `widget`'s font changes, as a zoom changes it.
+
+    For a size measured from text once at construction: a minimum width that
+    must keep fitting its text after the reader zooms. `react` must be a bound
+    method of a Qt object built in Python; it is held weakly, so the watch never
+    keeps that object alive.
+    """
+    _FontWatch(widget, react)
+
+
+class _FontWatch(QObject):
+    def __init__(self, widget: QWidget, react: Callable[[], None]) -> None:
+        # Parented to the method's owner rather than to `widget`. A widget Qt
+        # made itself, such as a table's header, has only a passing Python
+        # wrapper, and the Python half of a watch parented to it goes with that
+        # wrapper, leaving a filter that never calls back.
+        owner = getattr(react, "__self__", None)
+        if not isinstance(owner, QObject):
+            raise TypeError("on_font_change needs a bound method of a QObject")
+        super().__init__(owner)
+        self._react = weakref.WeakMethod(react)
+        widget.installEventFilter(self)
+
+    def eventFilter(self, watched: QObject | None, event: QEvent | None) -> bool:  # noqa: N802 - Qt's naming
+        if event is not None and event.type() == QEvent.Type.FontChange:
+            react = self._react()
+            if react is not None:
+                react()
+        return False
