@@ -139,6 +139,43 @@ def test_a_case_whose_folder_has_gone_cannot_be_opened(qt_app: QApplication) -> 
     assert "missing" in name.text().lower()
 
 
+def test_at_its_own_size_every_folder_shows_whole(qt_app: QApplication) -> None:
+    """Every other column takes the width its text needs and Folder is given
+    what is left. So at a fixed width, one case marked missing widened Case
+    until every Folder read `C:…`, and the folder is what tells two cases of
+    the same name apart. The dialog asks for the room instead."""
+    cases = (
+        case(r"C:\Users\someone\Documents\logarc\cases\shopfront-march", "shopfront-march"),
+        case(r"C:\Users\someone\Documents\logarc\cases\staging-smoke", "staging-smoke"),
+    )
+    chooser = CaseChooser(cases, exists=lambda path: "staging" not in path)
+    chooser.resize(chooser.sizeHint())
+    chooser.show()
+    qt_app.processEvents()
+
+    table = chooser._table
+    header = table.horizontalHeader()
+    assert header is not None
+    folder = COLUMNS.index("Folder")
+    assert header.sectionSize(folder) >= table.sizeHintForColumn(folder)
+    chooser.close()
+
+
+def test_a_folder_cut_short_keeps_both_ends(qt_app: QApplication) -> None:
+    """A window is never wider than the screen lets it be. Cut in the middle a
+    path keeps the folder's own name, which is the part that is read.
+
+    Not wrapped, or it is never cut at all: Qt breaks a path after `C:`, the
+    rest falls to a second line the row has no room for, and the cell reads
+    `C:…` however wide the column is. Seen on the real display at 367 px."""
+    from PyQt6.QtCore import Qt
+
+    chooser = CaseChooser((case("/a"),), exists=lambda _p: True)
+
+    assert not chooser._table.wordWrap()
+    assert chooser._table.textElideMode() == Qt.TextElideMode.ElideMiddle
+
+
 def test_choosing_a_row_yields_its_folder(qt_app: QApplication) -> None:
     cases = (case(r"D:\cases\a", "a"), case(r"D:\cases\b", "b"))
     chooser = CaseChooser(cases, exists=lambda _p: True)
