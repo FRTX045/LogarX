@@ -29,6 +29,7 @@ from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
     QFileDialog,
+    QHBoxLayout,
     QLabel,
     QMainWindow,
     QMenu,
@@ -401,8 +402,15 @@ class MainWindow(QMainWindow):
         # framed document rather than a hole cut in the window.
         column.setContentsMargins(PAD, TIGHT, PAD, TIGHT)
         column.setSpacing(TIGHT)
-        column.addWidget(self._tabs)
-        column.addWidget(self._heading)
+        # The switch beside the client it describes, rather than a row of tabs
+        # of its own above it: one line says whose graph this is and how it is
+        # drawn.
+        heading_row = QHBoxLayout()
+        heading_row.setContentsMargins(0, 0, 0, 0)
+        heading_row.setSpacing(GAP)
+        heading_row.addWidget(self._heading, 1)
+        heading_row.addWidget(self._tabs)
+        column.addLayout(heading_row)
         column.addWidget(self._canvas)
         column.addWidget(self._arrangement_bar)
         self._graph_key = Disclosure("Legend", self._legend)
@@ -470,23 +478,29 @@ class MainWindow(QMainWindow):
         # the background and the *unselected* tab was the one drawn as a raised
         # box. The bar was confidently indicating the view you were not looking
         # at, which is worse than the menu-only state it replaced.
+        #
+        # Since 2026-10-21 a segmented control: two halves of one outlined pill,
+        # the chosen half filled. Tabs read as places to go; this is a way of
+        # drawing the same thing, and it now sits on the heading's own row.
         self._tabs.setStyleSheet(f"""
             QTabBar::tab {{
                 background: transparent;
                 color: {THEME.muted};
-                border: 1px solid transparent;
-                border-top-left-radius: 3px;
-                border-top-right-radius: 3px;
-                padding: {TIGHT}px {GAP}px;
-                margin-right: 2px;
+                border: 1px solid {THEME.edge};
+                padding: 3px {GAP + 2}px;
+                margin: 0;
+            }}
+            QTabBar::tab:first {{
+                border-top-left-radius: 4px;
+                border-bottom-left-radius: 4px;
+            }}
+            QTabBar::tab:last {{
+                border-top-right-radius: 4px;
+                border-bottom-right-radius: 4px;
+                border-left: none;
             }}
             QTabBar::tab:hover {{ color: {THEME.ink}; }}
-            QTabBar::tab:selected {{
-                background: {THEME.raised};
-                color: {THEME.accent};
-                border: 1px solid {THEME.edge};
-                border-top: 2px solid {THEME.accent};
-            }}
+            QTabBar::tab:selected {{ background: {THEME.tint}; color: {THEME.ink}; }}
         """)
         for kind in _TABS:
             self._tabs.addTab(_TAB_NAMES[kind])

@@ -82,3 +82,26 @@ def test_a_case_that_fails_to_open_takes_its_name_off_the_title(
 
     assert window.windowTitle() == "logarc"
     window.close()
+
+
+def test_trace_and_behaviour_sit_beside_the_client_they_describe(
+    qt_app: QApplication, small_case: Path
+) -> None:
+    """One row, address on the left and the switch on the right, drawn as one
+    segmented control rather than a second row of tabs above the heading."""
+    window = MainWindow()
+    window.resize(1400, 880)
+    window.show()
+    window._load_case(small_case)
+    settled(qt_app)
+    window._reconstruct("203.0.113.9")
+    settled(qt_app)
+
+    heading = window._heading.mapTo(window, window._heading.rect().center())
+    switch = window._tabs.mapTo(window, window._tabs.rect().center())
+    assert window._tabs.isVisible()
+    assert abs(heading.y() - switch.y()) <= 12
+    assert switch.x() > heading.x()
+    assert ":first" in window._tabs.styleSheet()
+    assert ":last" in window._tabs.styleSheet()
+    window.close()
