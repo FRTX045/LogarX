@@ -8,9 +8,11 @@ from pathlib import Path
 import pytest
 
 from logarc import rules_library
-from logarc.detect.rules import RulePackError
+from logarc.core.activity import ActivityCategory, Severity
+from logarc.detect.rules import RulePackError, load_pack_text
 from logarc.detect.ruleset import PackText
 from logarc.parsers.library import logarc_home
+from logarc.rule_draft import Condition, Draft, Test, rule_block
 
 HOUSE = """\
 version: 1
@@ -243,3 +245,125 @@ def test_renaming_a_pack_only_in_its_capitals_keeps_it() -> None:
     assert [(p.name, p.text) for p in rules_library.in_force().packs] == [
         ("shop", _with_id("other_rule"))
     ]
+
+
+# -- adding one rule from the Add a rule window -------------------------------
+
+
+def _block(rule_id: str = "added") -> str:
+    draft = Draft(
+        name="Added",
+        category=ActivityCategory.INJECTION,
+        severity=Severity.HIGH,
+        mode="all",
+        conditions=(Condition("path", Test.EQUALS, "/added"),),
+    )
+    return rule_block(draft, rule_id)
+
+
+def _ids(name: str) -> list[str]:
+    text = (rules_library.rules_dir() / f"{name}.yaml").read_text(encoding="utf-8")
+    return [rule.id for rule in load_pack_text("t.yaml", text)]
+
+
+def test_a_rule_is_added_to_the_end_of_a_pack() -> None:
+    rules_library.save_pack("shop", HOUSE)
+
+    rules_library.add_rule(rules_library.Target("shop", True), _block(), started_from=HOUSE)
+
+    assert _ids("shop") == ["house_cgi_probe", "added"]
+    written = (rules_library.rules_dir() / "shop.yaml").read_text(encoding="utf-8")
+    assert written.startswith(HOUSE)
+
+
+def test_the_first_rule_creates_my_rules() -> None:
+    target = rules_library.target_for(rules_library.in_force(), None)
+
+    assert target == rules_library.Target("My-rules", False)
+    rules_library.add_rule(target, _block(), started_from="")
+    written = (rules_library.rules_dir() / "My-rules.yaml").read_text(encoding="utf-8")
+    assert written.startswith(rules_library.NEW_PACK_HEAD)
+    assert _ids("My-rules") == ["added"]
+
+
+def test_a_pack_changed_elsewhere_is_not_overwritten() -> None:
+    rules_library.save_pack("shop", HOUSE)
+    changed = HOUSE.replace("Our own CGI scripts", "Edited elsewhere")
+    (rules_library.rules_dir() / "shop.yaml").write_text(changed, encoding="utf-8")
+
+    with pytest.raises(rules_library.RulesLibraryError) as raised:
+        rules_library.add_rule(rules_library.Target("shop", True), _block(), started_from=HOUSE)
+
+    assert str(raised.value) == "shop was changed outside this window. Close it and try again."
+    assert (rules_library.rules_dir() / "shop.yaml").read_text(encoding="utf-8") == changed
+
+
+def test_a_pack_deleted_meanwhile_is_said() -> None:
+    rules_library.save_pack("shop", HOUSE)
+    (rules_library.rules_dir() / "shop.yaml").unlink()
+
+    with pytest.raises(rules_library.RulesLibraryError) as raised:
+        rules_library.add_rule(rules_library.Target("shop", True), _block(), started_from=HOUSE)
+
+    assert str(raised.value) == (
+        "shop is no longer in your rules folder. Close this window and try again."
+    )
+    assert not (rules_library.rules_dir() / "shop.yaml").exists()
+
+
+def test_a_pack_that_cannot_be_read_is_said() -> None:
+    rules_library.save_pack("shop", HOUSE)
+    (rules_library.rules_dir() / "shop.yaml").write_bytes(b"version: 1\n\xff\xfe\n")
+
+    with pytest.raises(rules_library.RulesLibraryError) as raised:
+        rules_library.add_rule(rules_library.Target("shop", True), _block(), started_from=HOUSE)
+
+    assert str(raised.value).startswith("shop.yaml could not be read:")
+
+
+def test_a_broken_my_rules_in_any_case_is_never_replaced() -> None:
+    folder = rules_library.rules_dir()
+    folder.mkdir(parents=True)
+    (folder / "my-rules.yaml").write_bytes(b"rules: [oops")
+
+    target = rules_library.target_for(rules_library.in_force(), None)
+
+    assert target.problem == (
+        "A pack called my-rules exists but does not load. "
+        "Pick another pack, or fix that one in the YAML editor."
+    )
+    with pytest.raises(rules_library.RulesLibraryError, match="my-rules exists"):
+        rules_library.add_rule(target, _block(), started_from="")
+    assert (folder / "my-rules.yaml").read_bytes() == b"rules: [oops"
+    assert sorted(path.name for path in folder.iterdir()) == ["my-rules.yaml"]
+
+
+def test_the_preferred_pack_is_the_target_when_it_loads() -> None:
+    rules_library.save_pack("a", HOUSE)
+    rules_library.save_pack("b", _with_id("other"))
+    (rules_library.rules_dir() / "c.yaml").write_text("rules: [oops", encoding="utf-8")
+    library = rules_library.in_force()
+
+    assert rules_library.target_for(library, "b") == rules_library.Target("b", True)
+    assert rules_library.target_for(library, "c") == rules_library.Target("My-rules", False)
+
+
+def test_an_existing_my_rules_in_other_capitals_is_used() -> None:
+    rules_library.save_pack("my-RULES", HOUSE)
+
+    target = rules_library.target_for(rules_library.in_force(), None)
+
+    assert target == rules_library.Target("my-RULES", True)
+
+
+def test_an_id_clash_with_another_pack_is_refused() -> None:
+    rules_library.save_pack("a", HOUSE)
+    rules_library.save_pack("b", _with_id("other"))
+    text_b = (rules_library.rules_dir() / "b.yaml").read_text(encoding="utf-8")
+
+    with pytest.raises(RulePackError):
+        rules_library.add_rule(
+            rules_library.Target("b", True), _block("house_cgi_probe"), started_from=text_b
+        )
+
+    assert (rules_library.rules_dir() / "b.yaml").read_text(encoding="utf-8") == text_b
