@@ -980,6 +980,34 @@ def test_each_new_entry_starts_its_kind_on_the_untitled_row(
     assert editor._name.text() == ""
 
 
+def test_new_of_the_same_kind_keeps_the_untitled_format_being_written(
+    qt_app: QApplication,
+) -> None:
+    """On the Untitled row, New of the kind already there has nothing to start.
+    Blanking it threw the work away without a word."""
+    editor = FormatEditor()
+    editor.start_new()
+    editor._name.setText("log-kantor")
+    editor._rule.setText(PIPED)
+
+    editor.start_new()
+
+    assert editor._name.text() == "log-kantor"
+    assert editor._rule.text() == PIPED
+
+
+def test_new_of_another_kind_starts_that_kind(qt_app: QApplication) -> None:
+    """A different kind is a different form: the fields do not carry across."""
+    editor = FormatEditor()
+    editor.start_new()
+    editor._name.setText("log-kantor")
+
+    editor.start_new_json()
+
+    assert editor.kind() == "json"
+    assert editor._name.text() == ""
+
+
 def test_a_saved_format_called_untitled_still_opens_as_itself(qt_app: QApplication) -> None:
     """The command line can save any name; the blank row is known by what it
     is, not by what it says."""
