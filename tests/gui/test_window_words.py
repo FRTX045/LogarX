@@ -212,3 +212,17 @@ def _wrapped(label, width: int) -> list[str]:
         text[line.textStart() : line.textStart() + line.textLength()]
         for line in (layout.lineAt(i) for i in range(layout.lineCount()))
     ]
+
+
+def test_the_empty_window_says_no_case_open_one_way(qt_app: QApplication) -> None:
+    """Three places say it before a case is open; they say it identically."""
+    window = MainWindow()
+
+    said = {
+        window._status.text(),
+        window._clients._caption.text(),
+        window._time_filter._band.placeholder(),
+    }
+
+    assert said == {"No case open"}
+    window.close()
