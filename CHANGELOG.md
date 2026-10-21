@@ -939,6 +939,15 @@ which will be the first tag.
 
 ### Fixed
 
+- **Closing the window no longer ends in a crash.** On the way out of `main`,
+  Python released the application before the window, and a window destroyed
+  after its application could crash the process with an access violation, after
+  the window had already gone. Measured on the real entry point, twelve exits
+  at a time: 201 of 1,440 crashed before, none after. Nothing in a case was
+  lost, since the window had closed, but Windows recorded a crash. A test that
+  draws the theme in a process of its own failed at exit the same way, about
+  one run in a hundred, which turned the packaged application's rebuild red.
+
 - **Long table cells are cut at the column's edge.** Rows are one line high, but
   the tables wrapped their text, so a long cell was cut where its first line
   ended: the evidence table showed `GET /search?q=' AND 1=(SELECT …` with a fifth
