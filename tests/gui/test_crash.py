@@ -236,7 +236,11 @@ def test_the_entry_point_puts_the_net_up(
     ones they were written against.
     """
     installed: list[object] = []
-    monkeypatch.setattr(app_module.crash, "install", lambda report, **kw: installed.append(report))
+    monkeypatch.setattr(
+        app_module.crash,
+        "install",
+        lambda report, **kw: installed.append(report) or sys.excepthook,
+    )
     from logarc.gui import prefs
 
     themed: list[float | None] = []
@@ -251,3 +255,46 @@ def test_the_entry_point_puts_the_net_up(
 
     assert installed, "main ran with no net under it"
     assert themed == [10], "read the saved text size before building the window"
+
+
+# -- on the way out -------------------------------------------------------
+
+
+def _main_without_a_screen(monkeypatch: pytest.MonkeyPatch, made: list[object]) -> None:
+    """`main` up to its event loop, which returns at once; the window it built goes in `made`."""
+    monkeypatch.setattr(app_module, "apply_theme", lambda app, *, points: None)
+    monkeypatch.setattr(app_module, "configure_display", lambda: None)
+    monkeypatch.setattr(app_module.MainWindow, "show", lambda self: None)
+    monkeypatch.setattr(app_module.MainWindow, "offer_start", lambda self: made.append(self))
+    monkeypatch.setattr(app_module.QApplication, "exec", lambda self: 0)
+
+
+def test_the_window_is_destroyed_before_the_application(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Left to Python, the application went first: `main`'s locals are released
+    in order, `app` before `window`, and a window destroyed after its
+    application crashed the exit with an access violation. Measured over 1,440
+    runs of `main`'s shape, twelve at a time: 151 crashed."""
+    from PyQt6 import sip
+
+    made: list[object] = []
+    _main_without_a_screen(monkeypatch, made)
+
+    assert app_module.main() == 0
+
+    (window,) = made
+    assert sip.isdeleted(window)
+
+
+def test_the_net_comes_down_before_the_window_goes(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch, hook_restored: object
+) -> None:
+    """The net reports to the window. Left up once the window is destroyed, a
+    mistake on the way out would be reported to nothing that exists."""
+    made: list[object] = []
+    _main_without_a_screen(monkeypatch, made)
+
+    app_module.main()
+
+    assert sys.excepthook is hook_restored

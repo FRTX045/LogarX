@@ -14,6 +14,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from PyQt6 import sip
 from PyQt6.QtCore import QEvent, QPoint, QSettings, Qt, QTimer
 from PyQt6.QtGui import (
     QAction,
@@ -3013,10 +3014,18 @@ def main() -> int:
     # The net goes up as soon as there is somewhere to show a problem. Before
     # it, a mistake anywhere in the interface reached Qt's own handler, which
     # ends the process without printing anything at all — see `gui.crash`.
-    crash.install(window.report_error)
+    previous = crash.install(window.report_error)
     window.show()
     window.offer_start()
-    return app.exec()
+    code = app.exec()
+    # The window goes now, while the application is still there. Left to
+    # Python, `app` was released before `window` on the way out of this
+    # function, and a widget destroyed after its application crashed the exit
+    # with an access violation: 151 of 1,440 runs of this shape, under load.
+    # The net reports to the window, so it comes down first.
+    sys.excepthook = previous
+    sip.delete(window)
+    return code
 
 
 if __name__ == "__main__":
