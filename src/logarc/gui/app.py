@@ -373,6 +373,10 @@ class MainWindow(QMainWindow):
         self._heading = QLabel("")
         self._heading.setTextFormat(Qt.TextFormat.RichText)
         self._heading.setFont(heading_font(self._heading.font()))
+        # The heading gives way to the switch beside it, onto a second line,
+        # when the graph's column is dragged narrow. Unwrapped it held its
+        # width and the switch lost "Behaviour" to two scroll arrows.
+        self._heading.setWordWrap(True)
 
         self._build_tabs()
 
@@ -469,6 +473,9 @@ class MainWindow(QMainWindow):
         # reads as a pair of buttons rather than as a choice between two views —
         # and at that size the selected one is not obviously selected.
         self._tabs.setExpanding(False)
+        # Two words, always whole: never scrolled, never elided.
+        self._tabs.setUsesScrollButtons(False)
+        self._tabs.setElideMode(Qt.TextElideMode.ElideNone)
         # Drawn here rather than left to the style, which had it backwards.
         #
         # Under Fusion in document mode the selected tab takes the page colour

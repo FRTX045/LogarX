@@ -156,3 +156,34 @@ def test_the_canvas_and_the_notice_use_the_new_words() -> None:
 
     assert STARTUP_MESSAGE == "Open a case, or start a new one from log files."
     assert WAITING_MESSAGE == "Select a client."
+
+
+def test_a_narrow_graph_column_never_cuts_the_view_switch(
+    qt_app: QApplication, small_case: Path
+) -> None:
+    """Dragging the evidence column wider squeezes the graph's. The heading
+    gives way, onto a second line, and the switch keeps both its words: it
+    once lost "Behaviour" to two scroll arrows."""
+    from PyQt6.QtWidgets import QSplitter
+
+    window = MainWindow()
+    window.resize(1400, 880)
+    window.show()
+    window._load_case(small_case)
+    settled(qt_app)
+    window._reconstruct("203.0.113.9")
+    settled(qt_app)
+    columns = window._evidence.parentWidget()
+    while not (isinstance(columns, QSplitter) and columns.count() == 3):
+        columns = columns.parentWidget()
+    left, centre, right = columns.sizes()
+    columns.setSizes([left, 360, right + centre - 360])
+    settled(qt_app)
+
+    assert window._tabs.width() >= window._tabs.sizeHint().width()
+    heading = window._heading
+    assert heading.geometry().right() < window._tabs.geometry().left()
+    assert heading.width() >= heading.minimumSizeHint().width(), "no word is cut off"
+    assert heading.height() >= heading.heightForWidth(heading.width()), "every line shows"
+    assert columns.sizes()[1] <= 500, "the graph column can be dragged narrow"
+    window.close()
