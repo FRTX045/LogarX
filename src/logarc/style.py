@@ -282,24 +282,29 @@ LIGHT: Final = Theme(
 #: resolved to sRGB. `LOW` is the one severity that moved hue rather than
 #: lightness: the old `#4c8dae` sat in the accent's own family, and a selection
 #: ring beside a Low node has to be unmistakably the ring.
+#:
+#: Graphite rather than near-black since 2026-10-21. Windows draws the title bar
+#: above the window at about #202020, and a chrome of #080706 under it read as
+#: two programs stacked. Lifted so the two meet; `faint` rose with the ground to
+#: keep its contrast, and the grid dot fell so the canvas stays quiet.
 DARK: Final = Theme(
-    chrome="#080706",
-    surface="#100f0e",
-    raised="#191817",
-    stripe="#222120",
-    line="#2f2e2c",
-    edge="#413f3e",
+    chrome="#1b1a19",
+    surface="#222120",
+    raised="#2b2a29",
+    stripe="#282726",
+    line="#363533",
+    edge="#4a4846",
     ink="#efeeed",
     muted="#b2b1af",
-    faint="#8a8987",
+    faint="#9a9997",
     identity="#79c9c0",
     timestamp="#b9ade3",
     warning="#d0a144",
     accent="#49a9ff",
     on_accent="#001226",
-    tint="#0e2a45",
+    tint="#123153",
     edge_ink="#8a8987",
-    grid_dot="#8a8987",
+    grid_dot="#5c5b59",
     alert="#ff8293",
     severity={
         Severity.INFO: "#6e7a85",
