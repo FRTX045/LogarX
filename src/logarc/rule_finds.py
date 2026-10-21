@@ -22,20 +22,44 @@ from typing import TYPE_CHECKING
 from logarc.analysis import label_sessions
 from logarc.case import Case
 from logarc.sessionize.segmenter import SessionPolicy
+from logarc.style import display_safe
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+    from datetime import datetime
     from pathlib import Path
 
+    from logarc.core.event import NormalizedEvent
+    from logarc.core.evidence import EvidenceRef
     from logarc.detect.rules import Rule
 
-__all__ = ["Find", "FindsCancelled", "FindsProgress", "count_finds"]
+__all__ = ["Example", "Find", "FindsCancelled", "FindsProgress", "count_finds"]
+
+
+@dataclass(frozen=True, slots=True)
+class Example:
+    """One line a rule labelled, as the Add a rule window lists it.
+
+    `ref` names the line; client, time and request alone do not.
+    """
+
+    ref: EvidenceRef
+    client: str
+    when: datetime
+    request: str
+    status: int | None
+
+    @classmethod
+    def of(cls, event: NormalizedEvent) -> Example:
+        request = display_safe(f"{event.method or '-'} {event.target or '-'}")
+        return cls(event.evidence, event.client_ip, event.timestamp, request, event.status)
 
 
 @dataclass(frozen=True, slots=True)
 class Find:
     lines: int
     clients: int
+    examples: tuple[Example, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,11 +80,17 @@ def count_finds(
     cancelled: Callable[[], bool] | None = None,
     report: Callable[[FindsProgress], None] | None = None,
     every: float = 0.25,
+    examples: int = 0,
 ) -> dict[str, Find]:
-    """Per rule id in `rules`, the lines it labels and how many clients they come from."""
+    """Per rule id in `rules`, the lines it labels and how many clients they come from.
+
+    With `examples`, up to that many of each rule's lines too, the first met:
+    clients in the store's order, each client's lines in time order.
+    """
     wanted = {rule.id for rule in rules}
     lines: Counter[str] = Counter()
     clients: Counter[str] = Counter()
+    found: dict[str, list[Example]] = {rule_id: [] for rule_id in wanted}
     policy = SessionPolicy()
     with Case.open(case_path) as case:
         engine = case.engine_for(rules)
@@ -77,15 +107,25 @@ def count_finds(
                     for rule_id in {label.rule_id for label in item.all_labels} & wanted:
                         lines[rule_id] += 1
                         here.add(rule_id)
+                        if len(found[rule_id]) < examples:
+                            found[rule_id].append(Example.of(item.event))
             clients.update(here)
             done += 1
             if report is not None and monotonic() - last >= every:
-                report(FindsProgress(done, total, _finds(wanted, lines, clients)))
+                report(FindsProgress(done, total, _finds(wanted, lines, clients, found)))
                 last = monotonic()
     if report is not None:
-        report(FindsProgress(done, total, _finds(wanted, lines, clients)))
-    return _finds(wanted, lines, clients)
+        report(FindsProgress(done, total, _finds(wanted, lines, clients, found)))
+    return _finds(wanted, lines, clients, found)
 
 
-def _finds(wanted: set[str], lines: Counter[str], clients: Counter[str]) -> dict[str, Find]:
-    return {rule_id: Find(lines[rule_id], clients[rule_id]) for rule_id in sorted(wanted)}
+def _finds(
+    wanted: set[str],
+    lines: Counter[str],
+    clients: Counter[str],
+    found: dict[str, list[Example]],
+) -> dict[str, Find]:
+    return {
+        rule_id: Find(lines[rule_id], clients[rule_id], tuple(found[rule_id]))
+        for rule_id in sorted(wanted)
+    }
