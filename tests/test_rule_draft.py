@@ -260,3 +260,10 @@ def test_a_rule_from_a_line_matches_that_line() -> None:
     draft = _draft(*conditions_from(line_parts(event)))
 
     assert _labels(_loaded(rule_block(draft, "from_line")), event) == {"from_line"}
+
+
+@pytest.mark.parametrize("pattern", ["a{4294967296}", "(" * 2000], ids=["repeat", "nested"])
+def test_a_pattern_too_large_to_compile_is_a_problem(pattern: str) -> None:
+    draft = _draft(Condition("path", Test.REGEX, pattern))
+
+    assert problems(draft) == ("Condition 1: the pattern is too large to use.",)

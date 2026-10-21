@@ -226,6 +226,10 @@ def _condition_problem(condition: Condition) -> str:
             re.compile(condition.value)
         except re.error as exc:
             return str(exc)
+        except (OverflowError, RecursionError):
+            # A repeat count past the limit, or brackets nested too deep: `re`
+            # raises these rather than `re.error`.
+            return "the pattern is too large to use."
     return ""
 
 
