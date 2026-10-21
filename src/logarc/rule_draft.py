@@ -20,17 +20,23 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Final, Literal
 
+from logarc.detect.engine import RequestView
+
 if TYPE_CHECKING:
-    from collections.abc import Collection
+    from collections.abc import Collection, Iterable
 
     from logarc.core.activity import ActivityCategory, Severity
+    from logarc.core.event import NormalizedEvent
 
 __all__ = [
     "FORM_FIELDS",
     "NUMERIC_FIELDS",
     "Condition",
     "Draft",
+    "LinePart",
     "Test",
+    "conditions_from",
+    "line_parts",
     "problems",
     "rule_block",
     "rule_id_for",
@@ -158,6 +164,52 @@ def rule_block(draft: Draft, rule_id: str) -> str:
         for condition in draft.conditions
     ]
     return "\n".join(lines) + "\n"
+
+
+#: The parts of a line offered when a rule is started from it, in the order shown.
+_LINE_FIELDS: Final = (
+    "path_decoded",
+    "query_decoded",
+    "status",
+    "method",
+    "user_agent_decoded",
+    "referer_decoded",
+    "host",
+)
+
+#: Ticked to begin with: where the payload usually is. The status is not, since
+#: requiring the answer this request got misses the same probe answered otherwise.
+_TICKED: Final = frozenset({"path_decoded", "query_decoded"})
+
+
+@dataclass(frozen=True, slots=True)
+class LinePart:
+    field: str
+    value: str
+    ticked: bool
+
+
+def line_parts(event: NormalizedEvent) -> tuple[LinePart, ...]:
+    """The parts of a logged request a rule could match, as matching sees them.
+
+    Values come from the engine's own view of the request, so a rule made of
+    them matches the line it was made from.
+    """
+    view = RequestView(event)
+    return tuple(
+        LinePart(field, value, field in _TICKED)
+        for field in _LINE_FIELDS
+        if (value := view.value(field))
+    )
+
+
+def conditions_from(parts: Iterable[LinePart]) -> tuple[Condition, ...]:
+    """One condition per ticked part: the whole value, or the status as one of one."""
+    return tuple(
+        Condition(part.field, Test.ANY_OF if part.field == "status" else Test.EQUALS, part.value)
+        for part in parts
+        if part.ticked
+    )
 
 
 def _condition_problem(condition: Condition) -> str:

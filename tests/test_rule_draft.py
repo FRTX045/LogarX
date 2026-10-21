@@ -22,7 +22,10 @@ from logarc.rule_draft import (
     FORM_FIELDS,
     Condition,
     Draft,
+    LinePart,
     Test,
+    conditions_from,
+    line_parts,
     problems,
     rule_block,
     rule_id_for,
@@ -206,3 +209,54 @@ def test_tests_follow_the_field() -> None:
     assert tests_for("bytes_sent") == (Test.MIN, Test.MAX, Test.ANY_OF)
     assert tests_for("path_decoded")[0] is Test.CONTAINS
     assert set(FORM_FIELDS) <= MATCH_FIELDS
+
+
+def _line(target: str, *, status: int = 200) -> NormalizedEvent:
+    path, _, query = target.partition("?")
+    return NormalizedEvent(
+        timestamp=datetime(2026, 8, 23, tzinfo=UTC),
+        client_ip="203.0.113.5",
+        evidence=EvidenceRef("access.log", 7),
+        method="GET",
+        path=path,
+        query=query or None,
+        status=status,
+        user_agent="curl/8.4.0",
+    )
+
+
+def test_a_line_s_path_and_query_are_ticked() -> None:
+    parts = line_parts(_line("/search?q=%3Cscript%3E"))
+
+    assert [(part.field, part.value) for part in parts] == [
+        ("path_decoded", "/search"),
+        ("query_decoded", "q=<script>"),
+        ("status", "200"),
+        ("method", "GET"),
+        ("user_agent_decoded", "curl/8.4.0"),
+    ]
+    assert {part.field for part in parts if part.ticked} == {"path_decoded", "query_decoded"}
+
+
+def test_without_a_query_only_the_path_is_ticked() -> None:
+    parts = line_parts(_line("/admin"))
+
+    assert "query_decoded" not in [part.field for part in parts]
+    assert [part.field for part in parts if part.ticked] == ["path_decoded"]
+
+
+def test_status_becomes_is_one_of() -> None:
+    assert conditions_from([LinePart("status", "200", ticked=True)]) == (
+        Condition("status", Test.ANY_OF, "200"),
+    )
+
+
+def test_unticked_parts_make_no_condition() -> None:
+    assert conditions_from([LinePart("method", "GET", ticked=False)]) == ()
+
+
+def test_a_rule_from_a_line_matches_that_line() -> None:
+    event = _line("/search?q=%3Cscript%3E")
+    draft = _draft(*conditions_from(line_parts(event)))
+
+    assert _labels(_loaded(rule_block(draft, "from_line")), event) == {"from_line"}
