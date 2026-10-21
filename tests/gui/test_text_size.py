@@ -184,3 +184,32 @@ def test_windows_tables_use_the_chosen_size():
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert result.stdout.split() == ["11.0", "11.0"]
+
+
+FIXED_THEN_AUTOMATIC = """
+from types import SimpleNamespace
+from PyQt6.QtCore import QRect
+from PyQt6.QtWidgets import QApplication
+from logarc.gui.theme import apply_theme, automatic_points_for
+
+qt = QApplication([])
+system = qt.font()
+system.setPointSizeF(9)
+qt.setFont(system)
+qt.primaryScreen = lambda: SimpleNamespace(availableGeometry=lambda: QRect(0, 0, 1920, 1040))
+apply_theme(qt, points=15)
+print(automatic_points_for(qt))
+"""
+
+
+def test_reset_measures_against_the_system_font_even_after_a_fixed_start():
+    # A separate application: the system size is read once per process.
+    result = subprocess.run(
+        [sys.executable, "-c", FIXED_THEN_AUTOMATIC],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "QT_QPA_PLATFORM": "offscreen", "QT_SCALE_FACTOR": "1"},
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.split() == ["12.0"]

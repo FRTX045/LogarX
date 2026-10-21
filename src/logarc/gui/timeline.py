@@ -48,7 +48,7 @@ _BELOW = 26
 _ENOUGH = 4
 
 
-def caption_font() -> QFont:
+def stamp_font() -> QFont:
     """The first and last timestamps under the band: the interface text size."""
     return QFont()
 
@@ -217,7 +217,7 @@ class Timeline(QWidget):
         for edge in (left, right):
             painter.drawLine(edge, track.top() - 2, edge, track.bottom() + 2)
 
-        painter.setFont(caption_font())
+        painter.setFont(stamp_font())
         painter.setPen(QPen(QColor(THEME.timestamp)))
         below = QRect(track.left(), track.bottom() + 2, track.width(), _BELOW - 2)
         painter.drawText(below, int(Qt.AlignmentFlag.AlignLeft), _stamp(self._first))
