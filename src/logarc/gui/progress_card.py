@@ -17,6 +17,12 @@ fixed-width readout: one figure per row, every value starting at the same
 column, square corners, hairline rules. Digits that line up under one another
 are read at a glance, which is the entire job of a panel somebody watches for
 several minutes and does nothing with.
+
+**The words are in the interface face, the figures in monospace.** Until
+2026-10-21 the labels were monospace too, in lower case, under a heading in
+capitals, which made this the one screen in the application that looked like a
+terminal. Only the figures need one width to line up; the grid keeps every
+value starting at the same column either way.
 """
 
 from __future__ import annotations
@@ -55,6 +61,15 @@ UNKNOWN: Final = "—"
 #: line is called; the values are filled in from a `Progress`.
 _ROWS: Final = ("source", "read", "parsed", "rate", "remaining")
 
+#: What each row is called on the face.
+_NAMES: Final = {
+    "source": "File",
+    "read": "Read",
+    "parsed": "Lines",
+    "rate": "Speed",
+    "remaining": "Time left",
+}
+
 
 def _mono(step: float = 0.0, *, bold: bool = False) -> QFont:
     """The evidence face, which is also the right face for a readout.
@@ -65,6 +80,15 @@ def _mono(step: float = 0.0, *, bold: bool = False) -> QFont:
     font = QFont()
     font.setFamilies(list(MONO_FAMILIES))
     font.setPointSizeF(max(7.5, ui_font().pointSizeF() + step))
+    if bold:
+        font.setWeight(QFont.Weight.DemiBold)
+    return font
+
+
+def _words(step: float = 0.0, *, bold: bool = False) -> QFont:
+    """The interface face, for everything on the card that is not a figure."""
+    font = ui_font()
+    font.setPointSizeF(font.pointSizeF() + step)
     if bold:
         font.setWeight(QFont.Weight.DemiBold)
     return font
@@ -125,7 +149,7 @@ class IngestCard(QDialog):
         head.setStyleSheet(f"background: {THEME.surface};")
         row = QHBoxLayout(head)
         row.setContentsMargins(ROOM, PAD + 2, ROOM, PAD + 2)
-        self._state = _label("READING", _mono(-0.5, bold=True), THEME.accent)
+        self._state = _label("Reading logs", _words(bold=True), THEME.accent)
         row.addWidget(self._state)
         row.addStretch(1)
         self._which = _label("", _mono(-0.5), THEME.faint)
@@ -140,9 +164,12 @@ class IngestCard(QDialog):
         grid.setHorizontalSpacing(ROOM)
         grid.setVerticalSpacing(TIGHT + 1)
 
+        self._names: dict[str, QLabel] = {}
         self._values: dict[str, QLabel] = {}
         for index, key in enumerate(_ROWS):
-            grid.addWidget(_label(key, _mono(-0.5), THEME.faint), index, 0)
+            name = _label(_NAMES[key], _words(-0.5), THEME.faint)
+            grid.addWidget(name, index, 0)
+            self._names[key] = name
             # `read` carries the weight: it is the one figure the whole panel
             # exists to report, and the others explain it.
             colour = THEME.timestamp if key == "remaining" else THEME.ink
@@ -183,7 +210,7 @@ class IngestCard(QDialog):
         row = QHBoxLayout(holder)
         row.setContentsMargins(ROOM, 0, ROOM, PAD)
         self._consequence = _label(
-            "cancelling leaves the case un-finalised", _mono(-1.5), THEME.edge_ink
+            "Cancelling leaves the case unfinished.", _words(-1), THEME.faint
         )
         row.addWidget(self._consequence)
         row.addStretch(1)
@@ -199,16 +226,11 @@ class IngestCard(QDialog):
         row.addWidget(self._percent)
         row.addStretch(1)
 
+        # Drawn by the application stylesheet, like every other button.
         self._cancel = QPushButton("Cancel")
-        self._cancel.setFont(_mono(-0.5))
         self._cancel.clicked.connect(self._cancelled)
-        self._cancel.setStyleSheet(
-            f"QPushButton {{ color: {THEME.muted}; background: transparent;"
-            f" border: 1px solid {THEME.edge}; border-radius: 0; padding: 5px 18px; }}"
-            f"QPushButton:disabled {{ color: {THEME.edge_ink}; }}"
-        )
         self._cancel.setToolTip(
-            "Stop reading. The case is left un-finalised, so a partial read can never "
+            "Stop reading. The case is left unfinished, so a partial read can never "
             "be analysed as if it were complete."
         )
         row.addWidget(self._cancel)
@@ -219,13 +241,13 @@ class IngestCard(QDialog):
     def text(self) -> str:
         """Everything the card says, for tests and anything reading it whole."""
         parts = [self._state.text(), self._which.text(), self._percent.text()]
-        parts.extend(f"{key} {self._values[key].text()}" for key in _ROWS)
+        parts.extend(f"{_NAMES[key]} {self._values[key].text()}" for key in _ROWS)
         return " ".join(part for part in parts if part)
 
     def update_progress(self, progress: Progress) -> None:
         """Draw `progress`. Nothing here is worked out, only shown."""
         self._values["source"].setText(progress.file_name)
-        self._values["parsed"].setText(f"{progress.lines:,} lines")
+        self._values["parsed"].setText(f"{progress.lines:,}")
         self._values["rate"].setText(progress.rate or UNKNOWN)
         # `remaining` is None until the read has settled and again once it is
         # done. A dash rather than a guess: the seam withheld it on purpose, and
@@ -254,7 +276,7 @@ class IngestCard(QDialog):
     def stopping(self) -> None:
         """Say the cancel has been heard and is being waited on."""
         self._cancel.setEnabled(False)
-        self._state.setText("STOPPING")
+        self._state.setText("Stopping\u2026")
         colour_text(self._state, THEME.warning)
 
     def _cancelled(self) -> None:
