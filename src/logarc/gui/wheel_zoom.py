@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 import weakref
 from typing import TYPE_CHECKING
 
@@ -17,6 +18,13 @@ __all__ = ["CtrlWheel"]
 #: One notch of an ordinary wheel. Touchpads and high-resolution wheels send
 #: a fraction of this per event, so steps are counted from the running total.
 _NOTCH = 120
+
+#: How long the wheel must rest before a part-turn is dropped, in seconds, so
+#: half a gesture now and half a minute later do not add up to a step.
+_PAUSE = 0.5
+
+#: The clock the pause is measured on; a test replaces it.
+_now = time.monotonic
 
 
 class CtrlWheel(QObject):
@@ -37,6 +45,7 @@ class CtrlWheel(QObject):
         # Python reference back to either would outlive Qt's destruction of it.
         self._skip = weakref.ref(skip)
         self._pending = 0
+        self._last = 0.0
         app.installEventFilter(self)
 
     def eventFilter(self, watched: QObject | None, event: QEvent | None) -> bool:  # noqa: N802 - Qt's naming
@@ -51,6 +60,10 @@ class CtrlWheel(QObject):
             or skip.isAncestorOf(watched)
         ):
             return False
+        now = _now()
+        if now - self._last > _PAUSE:
+            self._pending = 0
+        self._last = now
         self._pending += event.angleDelta().y()
         while abs(self._pending) >= _NOTCH:
             step = 1 if self._pending > 0 else -1

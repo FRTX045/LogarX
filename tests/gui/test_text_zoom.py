@@ -533,3 +533,22 @@ def test_rule_editor_rows_stay_tight_at_ordinary_sizes(themed: QApplication) -> 
             assert rows.defaultSectionSize() == 26
     finally:
         editor.close()
+
+
+def test_a_partial_wheel_turn_is_forgotten_after_a_pause(
+    window: MainWindow, themed: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from logarc.gui import wheel_zoom
+
+    clock = [100.0]
+    monkeypatch.setattr(wheel_zoom, "_now", lambda: clock[0])
+    details = window._triage.details
+    for _ in range(4):
+        _wheel(details.viewport(), 15)
+    clock[0] += 5.0
+    for _ in range(4):
+        _wheel(details.viewport(), 15)
+    assert themed.font().pointSizeF() == 11, "two half turns a pause apart made a step"
+    for _ in range(4):
+        _wheel(details.viewport(), 15)
+    assert themed.font().pointSizeF() == 12, "one whole turn without a pause still steps"
