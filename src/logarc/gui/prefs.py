@@ -96,13 +96,14 @@ class Setting:
 EVERY: tuple[Setting, ...] = (
     Setting(
         key=TEXT_SIZE,
-        label="Text size (restart required)",
+        label="Text size",
         note=(
             "Automatic fits the available desktop space and keeps larger system text. "
-            "Choose a fixed size to override it on this laptop. Applies after restarting logarc."
+            "Choose a fixed size to override it on this laptop. Applies after you "
+            "restart logarc."
         ),
         default=TextSize.AUTOMATIC,
-        group="Appearance",
+        group="General",
         choices=tuple(TextSize),
     ),
     Setting(
@@ -134,7 +135,7 @@ EVERY: tuple[Setting, ...] = (
     ),
     Setting(
         key=ASK_UNSAVED_ARRANGEMENT,
-        label="Ask before leaving an unsaved arrangement",
+        label="Ask before leaving an unsaved layout",
         note=(
             "Warn when leaving a client whose activities you have moved and not "
             "saved, rather than putting them back without saying so."
@@ -186,7 +187,7 @@ EVERY: tuple[Setting, ...] = (
             "it found."
         ),
         default=True,
-        group="Analysis",
+        group="General",
     ),
     Setting(
         key="cases/reopen_last",
@@ -196,7 +197,7 @@ EVERY: tuple[Setting, ...] = (
             "rather than starting with the list of recent cases."
         ),
         default=False,
-        group="Startup",
+        group="General",
     ),
 )
 
@@ -204,8 +205,10 @@ EVERY: tuple[Setting, ...] = (
 #: `Value` back and has to narrow it; `FOLD` above is named for the same reason.
 DENSITY = "view/band_density"
 
-#: The order the dialog draws them in, read top to bottom.
-GROUPS: tuple[str, ...] = ("Appearance", "Graph", "Evidence", "Analysis", "Startup")
+#: The dialog's tabs, in order. Three since 2026-10-21: five groups, three of
+#: them holding a single setting, made tabs that were mostly empty, so text
+#: size, CRS and the start-up choice share General.
+GROUPS: tuple[str, ...] = ("General", "Graph", "Evidence")
 
 
 def in_group(group: str) -> tuple[Setting, ...]:

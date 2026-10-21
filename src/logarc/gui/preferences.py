@@ -1,12 +1,17 @@
 """Where the reader changes how the window behaves.
 
-One page, the settings grouped without categories or tabs to switch between.
-The page scrolls when larger text or a shorter screen needs more room; the
-confirmation buttons stay visible below it.
+Three tabs since 2026-10-21, General, Graph and Evidence, each with something
+on it; the reader picked them from pictures over five tabs (three holding one
+setting) and a sidebar. Each tab scrolls when larger text or a shorter screen
+needs more room, and the confirmation buttons stay below all of them.
 
 Drawn from `gui.prefs` rather than written out, so a setting cannot be added to
 the catalogue and left undrawn — it would then be reachable only by editing the
 settings file by hand.
+
+Every setting explains itself on hover. Its note was once a line under it that
+a check box at the top showed and hid; hover is where every other application
+keeps that, and a switch for help was one more thing to learn.
 
 It applies nothing. The dialog is handed the values in force and hands values
 back; the window decides what to do with them, and only if the reader says OK.
@@ -24,28 +29,27 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFormLayout,
     QFrame,
-    QGroupBox,
-    QHBoxLayout,
     QLabel,
     QScrollArea,
-    QSizePolicy,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from logarc.gui import prefs
-from logarc.gui.theme import GAP, ROOM, caption_font
-from logarc.style import THEME
+from logarc.gui.theme import GAP, ROOM, settle_buttons
 
 if TYPE_CHECKING:
     from logarc.gui.prefs import Setting, Value
 
 __all__ = ["PreferencesDialog"]
 
-#: Wide enough for the longest explaining sentence to take two lines rather
-#: than four, measured against the notes in the catalogue.
 _WIDTH = 560
+
+#: Every choice box the same width, so the column of them reads as a column.
+_CHOICE_WIDTH = 240
 
 
 class PreferencesDialog(QDialog):
@@ -60,28 +64,15 @@ class PreferencesDialog(QDialog):
         self.setWindowTitle("Preferences")
         self.setMinimumWidth(_WIDTH)
         self._controls: dict[str, QCheckBox | QComboBox] = {}
-        self._notes: list[QLabel] = []
 
         column = QVBoxLayout(self)
         column.setContentsMargins(ROOM, ROOM, ROOM, ROOM)
         column.setSpacing(ROOM)
-        self.explanations = QCheckBox("Show explanations")
-        self.explanations.toggled.connect(self._show_explanations)
-        column.addWidget(self.explanations)
 
-        body = QWidget()
-        settings = QVBoxLayout(body)
-        settings.setContentsMargins(0, 0, 0, 0)
-        settings.setSpacing(ROOM)
+        self.tabs = QTabWidget()
         for group in prefs.GROUPS:
-            settings.addWidget(self._box(group, values))
-        settings.addStretch(1)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setWidget(body)
-        column.addWidget(scroll, 1)
+            self.tabs.addTab(self._page(group, values), group)
+        column.addWidget(self.tabs, 1)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok
@@ -93,73 +84,58 @@ class PreferencesDialog(QDialog):
         restore = buttons.button(QDialogButtonBox.StandardButton.RestoreDefaults)
         if restore is not None:  # pragma: no branch - Qt always builds the ones asked for
             restore.clicked.connect(self.restore_defaults)
+        settle_buttons(buttons)
         column.addWidget(buttons)
 
     # -- building ----------------------------------------------------------
 
-    def _box(self, group: str, values: dict[str, Value]) -> QGroupBox:
-        box = QGroupBox(group)
-        # Wrapped explanations must keep their requested height. The page can
-        # scroll instead of compressing the first group until its notes clip.
-        box.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
-        inner = QVBoxLayout(box)
-        inner.setContentsMargins(GAP, GAP, GAP, GAP)
-        inner.setSpacing(GAP)
+    def _page(self, group: str, values: dict[str, Value]) -> QScrollArea:
+        """One tab: the choices as a form, then the switches under them."""
+        body = QWidget()
+        page = QVBoxLayout(body)
+        page.setContentsMargins(GAP, ROOM, GAP, GAP)
+        page.setSpacing(GAP)
+        form = QFormLayout()
+        form.setHorizontalSpacing(GAP)
+        form.setVerticalSpacing(GAP)
+        switches: list[QCheckBox] = []
         for setting in prefs.in_group(group):
-            inner.addWidget(self._explained(setting, values[setting.key]))
-        return box
+            control = self._control(setting, values[setting.key])
+            control.setToolTip(setting.note)
+            control.setAccessibleDescription(setting.note)
+            if isinstance(control, QComboBox):
+                name = QLabel(setting.label)
+                name.setToolTip(setting.note)
+                name.setBuddy(control)
+                form.addRow(name, control)
+            else:
+                switches.append(control)
+        if form.rowCount():
+            page.addLayout(form)
+        for switch in switches:
+            page.addWidget(switch)
+        page.addStretch(1)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setWidget(body)
+        return scroll
 
-    def _explained(self, setting: Setting, value: Value) -> QWidget:
-        """One setting: the control, and beneath it the sentence saying why.
-
-        The sentence is not decoration. `Wrap long traces` does not say what a
-        trace is or what wrapping does to it, and the menu these replace
-        carried exactly this text as a status tip — dropping it in the move
-        would make the move a step backwards.
-        """
-        holder = QWidget()
-        column = QVBoxLayout(holder)
-        column.setContentsMargins(0, 0, 0, 0)
-        column.setSpacing(2)
-        column.addWidget(self._control(setting, value))
-
-        note = QLabel(setting.note)
-        note.setWordWrap(True)
-        note.setFont(caption_font(note.font()))
-        note.setStyleSheet(f"color:{THEME.faint};")
-        column.addWidget(note)
-        self._notes.append(note)
-        note.hide()
-        control = self._controls[setting.key]
-        control.setToolTip(setting.note)
-        control.setAccessibleDescription(setting.note)
-        return holder
-
-    def _show_explanations(self, showing: bool) -> None:
-        for note in self._notes:
-            note.setVisible(showing)
-
-    def _control(self, setting: Setting, value: Value) -> QWidget:
+    def _control(self, setting: Setting, value: Value) -> QCheckBox | QComboBox:
         if setting.choices is None:
             switch = QCheckBox(setting.label)
             switch.setChecked(bool(value))
             self._controls[setting.key] = switch
             return switch
 
-        row = QWidget()
-        line = QHBoxLayout(row)
-        line.setContentsMargins(0, 0, 0, 0)
-        line.setSpacing(GAP)
-        line.addWidget(QLabel(setting.label))
         choice = QComboBox()
         for option in setting.choices:
             choice.addItem(option.label, option)
         choice.setCurrentIndex(max(choice.findData(value), 0))
-        choice.setMinimumWidth(140)
-        line.addWidget(choice)
-        line.addStretch(1)
+        choice.setFixedWidth(_CHOICE_WIDTH)
         self._controls[setting.key] = choice
-        return row
+        return choice
 
     # -- answering ---------------------------------------------------------
 
