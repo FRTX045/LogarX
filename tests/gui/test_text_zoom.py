@@ -503,3 +503,33 @@ def test_format_editor_rows_stay_tight_at_ordinary_sizes(themed: QApplication) -
         assert rows.defaultSectionSize() == 26
     finally:
         editor.close()
+
+
+@pytest.mark.parametrize("points", [15, 16])
+def test_rule_editor_rows_fit_their_text(themed: QApplication, points: int) -> None:
+    from logarc.gui.rules_editor import RulesEditor
+
+    editor = RulesEditor()
+    try:
+        tables = editor.findChildren(QTableWidget)
+        assert tables
+        set_text_points(themed, points)
+        for table in tables:
+            rows = table.verticalHeader()
+            assert rows is not None
+            assert rows.defaultSectionSize() >= table.fontMetrics().height() + 8
+    finally:
+        editor.close()
+
+
+def test_rule_editor_rows_stay_tight_at_ordinary_sizes(themed: QApplication) -> None:
+    from logarc.gui.rules_editor import RulesEditor
+
+    editor = RulesEditor()
+    try:
+        for table in editor.findChildren(QTableWidget):
+            rows = table.verticalHeader()
+            assert rows is not None
+            assert rows.defaultSectionSize() == 26
+    finally:
+        editor.close()

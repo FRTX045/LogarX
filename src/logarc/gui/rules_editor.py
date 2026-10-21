@@ -48,7 +48,7 @@ from logarc.gui.rules_view import (
     in_words,
     read_summary,
 )
-from logarc.gui.theme import GAP, ROOM, caption_font, mono_font
+from logarc.gui.theme import GAP, ROOM, caption_font, mono_font, on_font_change
 from logarc.gui.workers import run_job
 from logarc.rule_finds import FindsCancelled, FindsProgress, count_finds
 from logarc.style import THEME, plural, severity_text_colour
@@ -101,6 +101,7 @@ class RulesEditor(QWidget):
     def __init__(self, case_path: Path | None = None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._case_path = case_path
+        self._tables: list[QTableWidget] = []
         # Loaded once: about 170 ms, and the pack is checked against them every
         # time typing pauses.
         self._built_in: tuple[BuiltInPack, ...] = built_in_packs()
@@ -176,9 +177,17 @@ class RulesEditor(QWidget):
         table = QTableWidget(0, len(headers))
         table.setHorizontalHeaderLabels(headers)
         required(table.verticalHeader()).setVisible(False)
-        required(table.verticalHeader()).setDefaultSectionSize(_ROW)
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._tables.append(table)
+        self._fit_rows()
+        on_font_change(table, self._fit_rows)
         return table
+
+    def _fit_rows(self) -> None:
+        """Rows of `_ROW`, taller only when zoomed text would not fit it."""
+        for table in self._tables:
+            height = max(_ROW, table.fontMetrics().height() + 8)
+            required(table.verticalHeader()).setDefaultSectionSize(height)
 
     def _bar(self, *buttons: tuple[str, Callable[[], None], str]) -> tuple[QFrame, QLabel]:
         frame = QFrame()
