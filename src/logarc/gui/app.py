@@ -1363,6 +1363,7 @@ class MainWindow(QMainWindow):
             summaries = view.listed
             self._remember_case(snapshot)
             self._name_the_window(path)
+            self._time_filter.set_case_open(True)
             self._case_path = path
             self._crs = view.crs
             # A fresh case is read whole. Opening one already narrowed would
