@@ -3463,6 +3463,6 @@ def test_a_client_opened_from_elsewhere_is_named_when_it_is_not_listed(
     settled(qt_app)
     window._reconstruct("10.0.0.5")
     settled(qt_app)
-    assert window._clients._caption.text().endswith("Current IP: 10.0.0.5 (outside this list).")
+    assert window._clients._caption.text().endswith("Current client: 10.0.0.5 (not in this list).")
     window.close()
     settled(qt_app)

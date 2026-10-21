@@ -115,10 +115,10 @@ def match_caption(
     if not counted and shown < matching:
         text = (
             f"Clients {first:,}\u2013{first + shown - 1:,} of {matching:,} that match {wanted}"
-            " in the Where to start scan"
+            " in the Triage scan"
         )
     elif not counted:
-        text = f"{matching:,} of {total:,} clients match {wanted} in the Where to start scan"
+        text = f"{matching:,} of {total:,} clients match {wanted} in the Triage scan"
     elif matching == 0:
         text = f"No client sent a request matching {wanted}. {total:,} in the case."
     else:
@@ -139,7 +139,7 @@ def match_caption(
 
 def _outside(client_ip: str) -> str:
     """Said after either caption when the client being read is not in the list."""
-    return f" Current IP: {client_ip} (outside this list)."
+    return f" Current client: {client_ip} (not in this list)."
 
 
 def awaiting_scan(progress: TriageProgress | None, *, scanning: bool) -> str:
@@ -148,13 +148,13 @@ def awaiting_scan(progress: TriageProgress | None, *, scanning: bool) -> str:
     The list asks again by itself when the scan finishes, so this never tells the
     reader to; only a scan that is not running needs them to do anything.
     """
-    opening = "Activities come from the Where to start scan, which"
+    opening = "Activities come from the Triage scan, which"
     if not scanning:
-        return f"{opening} has not finished. Run it from Where to start."
+        return f"{opening} has not finished. Run it from Triage."
     so_far = (
         f": {progress.processed:,} of {progress.total:,} so far" if progress is not None else ""
     )
-    return f"{opening} is still checking IPs{so_far}. The list fills in when it finishes."
+    return f"{opening} is still checking clients{so_far}. The list fills in when it finishes."
 
 
 def _counts(

@@ -28,7 +28,6 @@ from logarc.case import Case
 from logarc.core.window import EVERYTHING, TimeWindow
 from logarc.detect.ruleset import NO_EXTRA_RULES, RuleSet
 from logarc.gui.columns import ColumnWidths
-from logarc.gui.disclosure import Disclosure
 from logarc.gui.recommendation import (
     SourceStatus,
     parse_anchor,
@@ -90,16 +89,31 @@ class TriagePanel(QWidget):
         self._source_timer.setInterval(self.SOURCE_CHECK_DELAY_MS)
         self._source_timer.timeout.connect(self._check_sources)
         self.queues = QTabBar()
-        for name in ("Suspicious activity", "Unusual activity"):
-            self.queues.addTab(name)
+        # Short names; what each queue is, and is not, is said on hover. It was a
+        # disclosure under the search box that every reader had to open once.
+        for name, explained in (
+            (
+                "Suspicious",
+                "Clients with requests a rule flagged. Findings do not establish intent or "
+                "compromise; one IP may represent several clients.",
+            ),
+            (
+                "Unusual",
+                "Clients whose traffic stands out from the rest of this case. Legitimate "
+                "activity can be unusual; missing fields are excluded. Comparisons need at "
+                f"least {DEFAULT_POLICY.minimum_population} clients with "
+                f"{DEFAULT_POLICY.minimum_requests}+ requests each.",
+            ),
+        ):
+            self.queues.setTabToolTip(self.queues.addTab(name), explained)
         self.queues.setExpanding(False)
         self.queues.currentChanged.connect(self._reset_page)
-        self.notice = QLabel("Open a case to scan IPs.")
+        self.notice = QLabel("Open a case to scan its clients.")
         self.notice.setWordWrap(True)
         self.notice.setTextFormat(Qt.TextFormat.PlainText)
         colour_text(self.notice, THEME.muted)
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Search IP addresses in this tab…")
+        self.search.setPlaceholderText("Filter clients…")
         self.search.setClearButtonEnabled(True)
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
@@ -110,22 +124,12 @@ class TriagePanel(QWidget):
         self.caption.setWordWrap(True)
         self.caption.setTextFormat(Qt.TextFormat.PlainText)
         colour_text(self.caption, THEME.muted)
-        guidance = QLabel(
-            "Suspicious activity lists IPs with flagged requests. Findings do not establish "
-            "intent or compromise; one IP may represent several clients.\n\n"
-            "Unusual activity compares clients within this case. Legitimate activity can "
-            "be unusual; missing fields are excluded. Comparisons require at least "
-            f"{DEFAULT_POLICY.minimum_population} IPs with "
-            f"{DEFAULT_POLICY.minimum_requests}+ requests each.\n\n"
-            "Select an IP to read its findings. Double-click it or choose Inspect IP "
-            "to open supporting requests in Reconstruction."
-        )
-        guidance.setWordWrap(True)
-        guidance.setTextFormat(Qt.TextFormat.PlainText)
-        colour_text(guidance, THEME.muted)
-        self.guidance = Disclosure("About these queues", guidance)
         self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(("Rank", "IP address", "Key observation", "Requests"))
+        self.table.setHorizontalHeaderLabels(("#", "Client", "Finding", "Requests"))
+        self.table.setToolTip(
+            "Select a client to read its findings. Double-click it, or press Open client, "
+            "to see its supporting requests in Activity."
+        )
         row_header = self.table.verticalHeader()
         if row_header is not None:
             row_header.hide()
@@ -150,7 +154,7 @@ class TriagePanel(QWidget):
         self.details.setWordWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
         self.details.setOpenLinks(False)
         self.details.anchorClicked.connect(self._anchor)
-        self.details.setPlaceholderText("Select an IP to see its findings.")
+        self.details.setPlaceholderText("Select a client to see its findings.")
         # The reader decides how much of the panel the recommendation gets: at a
         # fixed height either the queue or the reasons were cut off.
         self.split = PanelSplitter(Qt.Orientation.Vertical)
@@ -160,8 +164,10 @@ class TriagePanel(QWidget):
         self.split.setStretchFactor(0, 1)
         self.split.setStretchFactor(1, 1)
         self.split.setSizes([1000, 1000])
-        self.open_client = QPushButton("Inspect IP")
-        self.open_client.setToolTip("Open supporting requests in Reconstruction")
+        self.open_client = QPushButton("Open client")
+        self.open_client.setToolTip("Open this client's supporting requests in Activity")
+        # The one thing this panel exists to lead to, so it is the filled button.
+        self.open_client.setProperty("primary", True)
         self.open_client.setEnabled(False)
         self.open_client.clicked.connect(self._investigate)
         self.previous_page = QPushButton("Previous")
@@ -174,14 +180,13 @@ class TriagePanel(QWidget):
         self.retry = QPushButton("Run scan")
         self.retry.clicked.connect(self._retry)
         self.retry.hide()
+        # Paging on the left and the action on the right, each at its own width.
+        # Stretched into three equal slabs they read as one control.
         controls = QHBoxLayout()
-        for widget in (
-            self.previous_page,
-            self.next_page,
-            self.open_client,
-            self.cancel,
-            self.retry,
-        ):
+        controls.addWidget(self.previous_page)
+        controls.addWidget(self.next_page)
+        controls.addStretch(1)
+        for widget in (self.cancel, self.retry, self.open_client):
             controls.addWidget(widget)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(PAD, TIGHT, PAD, TIGHT)
@@ -189,7 +194,6 @@ class TriagePanel(QWidget):
         layout.addWidget(self.queues)
         layout.addWidget(self.search)
         layout.addWidget(self.caption)
-        layout.addWidget(self.guidance)
         layout.addWidget(self.split, 1)
         layout.addLayout(controls)
         self._display(())
@@ -202,7 +206,7 @@ class TriagePanel(QWidget):
         self.setEnabled(True)
         self._request = (path, window, rules)
         self._offset = 0
-        self.notice.setText("Scanning IPs… Results are provisional.")
+        self.notice.setText("Scanning clients… Results are provisional.")
         colour_text(self.notice, THEME.warning)
         self.caption.setText("Preparing the scan…")
         self.cancel.show()
@@ -222,7 +226,7 @@ class TriagePanel(QWidget):
                 return
             self._progress = progress
             self.notice.setText(
-                f"Scanned {progress.processed:,} of {progress.total:,} IPs · provisional results"
+                f"Scanned {progress.processed:,} of {progress.total:,} clients · provisional results"
             )
             if self.queues.currentIndex() == 0 and not self.search.text():
                 self._display(progress.findings)
@@ -296,7 +300,7 @@ class TriagePanel(QWidget):
         self.cancel.hide()
         self.retry.hide()
         crs = "CRS evidence included" if result.crs_present else "CRS not applied"
-        self.notice.setText(f"Scanned {result.clients:,} IPs · {crs}")
+        self.notice.setText(f"Scanned {result.clients:,} clients · {crs}")
         colour_text(self.notice, THEME.muted)
         self._reset_page()
         self.finished.emit()
@@ -324,7 +328,7 @@ class TriagePanel(QWidget):
         queue = QUEUES[self.queues.currentIndex()]
         if self._result is None:
             self.caption.setText(
-                "Unusual activity is available after the scan." if queue == "unusual" else ""
+                "Unusual is available after the scan." if queue == "unusual" else ""
             )
             return
         result = self._result
@@ -339,10 +343,10 @@ class TriagePanel(QWidget):
             if page.rows:
                 text = (
                     f"Showing {page.offset + 1:,}\u2013{page.offset + len(page.rows):,} "
-                    f"of {plural(page.total, 'IP')} with {queue} activity"
+                    f"of {plural(page.total, 'client')} with {queue} activity"
                 )
             else:
-                text = f"No IPs with {queue} activity"
+                text = f"No clients with {queue} activity"
             if query.strip():
                 text += " (matching your search)"
             elif not page.rows:
@@ -351,7 +355,7 @@ class TriagePanel(QWidget):
                 policy = DEFAULT_POLICY
                 if result.eligible < policy.minimum_population:
                     text = (
-                        f"Need {policy.minimum_population} IPs with {policy.minimum_requests}+ "
+                        f"Need {policy.minimum_population} clients with {policy.minimum_requests}+ "
                         f"requests; found {result.eligible}."
                     )
             elif queue == "suspicious" and not page.total:

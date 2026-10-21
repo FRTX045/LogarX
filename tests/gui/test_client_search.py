@@ -155,7 +155,7 @@ def test_an_open_client_outside_the_list_is_named_not_added(partial: ClientTable
     partial.client_chosen.connect(chosen.append)
     partial.set_open_client("10.0.9.9")
     assert "10.0.9.9" not in on_screen(partial)
-    assert partial._caption.text().endswith("Current IP: 10.0.9.9 (outside this list).")
+    assert partial._caption.text().endswith("Current client: 10.0.9.9 (not in this list).")
     partial.set_open_client("10.0.0.2")
     assert partial._table.currentRow() >= 0
     assert "open now" not in partial._caption.text()
@@ -321,7 +321,7 @@ def test_an_activity_alone_lists_clients_without_counting_requests(partial: Clie
     assert on_screen(partial) == ["10.0.0.2", "10.0.5.5"], "busiest first: nothing was counted"
     assert partial._table.isColumnHidden(column_of(partial._table, "Match"))
     assert partial._caption.text() == (
-        "2 of 900 clients match activity:injection in the Where to start scan"
+        "2 of 900 clients match activity:injection in the Triage scan"
     )
 
 

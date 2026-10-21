@@ -321,7 +321,7 @@ def test_an_activity_lists_the_clients_the_scan_saw_it_on(
 
     assert listed(window) == [SWEEPER]
     assert window._clients._table.isColumnHidden(column_of(window._clients._table, "Match"))
-    assert caption(window) == "1 of 3 clients match activity:enumeration in the Where to start scan"
+    assert caption(window) == "1 of 3 clients match activity:enumeration in the Triage scan"
 
 
 def test_an_activity_and_a_filter_count_the_requests(
@@ -347,7 +347,7 @@ def test_an_activity_before_the_scan_finishes_says_so_then_answers(
     settled(qt_app)
 
     assert listed(window) == [SWEEPER], "asked again once the scan finished"
-    assert caption(window) == "1 of 3 clients match activity:enumeration in the Where to start scan"
+    assert caption(window) == "1 of 3 clients match activity:enumeration in the Triage scan"
 
 
 # -- what the box offers -----------------------------------------------------------
