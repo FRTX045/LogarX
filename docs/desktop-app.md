@@ -482,11 +482,54 @@ your site and it is switched off for every case. It stays in the table, ready to
 be ticked again. Switching a built-in rule off frees its id, so a rule of yours
 can replace it.
 
+### Adding a rule without YAML
+
+**Add rule…**, under the list beside **New** and **Import…**, opens a window
+that writes one rule for you: a rule about a single request, the kind
+[writing-rules.md](writing-rules.md) calls a signature rule. Rules about a run
+of requests or a sequence of them are written in YAML.
+
+Give the rule a name, say what kind of activity it is and how severe, and add
+conditions: a field, a test and a value, such as *Path (decoded)* *matches
+pattern* `^/uploads/.+\.php$`. A request matches when all of the conditions are
+true, or any of them, as you choose. The decoded fields are listed first and
+are usually the ones to use; *as logged* fields test what was literally sent.
+Upper and lower case match alike in every test. Confidence, an OWASP category
+and references are under **More**, and left empty they are not written.
+
+About half a second after you stop typing, the rule is checked and the window
+says what is missing or wrong, the id the rule will be saved with, and what it
+matches in the open case: matches and clients, and a few example lines by line
+number. **View YAML** shows the rule as it will be written. **Add rule** stays
+off until the rule can be added; you need not wait for the count to finish.
+
+The rule goes into the pack chosen under **Save into**: the one selected in the
+tab, or **My-rules**, created the first time. It is added at the end of that
+pack and nothing else in the pack changes, comments included. If the pack was
+changed in another program while the window was open, or is laid out in a way
+the window cannot add to, nothing is written and the window says so; **View
+YAML** gives you the text to paste in the YAML editor instead. If the page in
+the tab has changes you have not saved, the tab asks whether to save them before
+the window opens.
+
+**From the evidence panel**, right-click a line nothing caught and choose
+**Make a rule from this line…**. The window opens on that line's parts, each
+with a tick box; the path and the query are ticked. **Continue** turns the
+ticked parts into conditions that match only those exact values, so widen one
+with *matches pattern* if the rule should catch more than this request. If the
+log file changed since it was read in, the window repeats the evidence panel's
+warning: the case may then not hold the line you see.
+
+A pattern that takes very long to match on a long value, such as `(a+)+$`, can
+keep the count running; the window stays usable. The same pattern in a pack
+slows the YAML editor's counts and the reading of a case in the same way.
+
 **When you change rules with a case open**, the tab asks first: *Saved. The open
 case was read with the old rules.* **Re-read now** reads the open client again
 and starts *Triage* over with the new rules. **Later**, or closing the dialog,
 leaves a strip in the window, *Rules changed since this case was read.*, with a
-**Re-read** button. The scan made with the rules before is kept,
+**Re-read** button. A rule added with **Add rule…** or **Make a rule from this
+line…** is asked about the same way, in its own window. The scan made with the rules before is kept,
 and switching back to them reuses it.
 
 A pack that does not load, because it was edited by hand or written by a later

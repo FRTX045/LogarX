@@ -28,6 +28,11 @@ them. It is also where a built-in rule that is wrong for your site can be
 switched off. See [Detection rules](desktop-app.md#detection-rules). The command
 line never reads those packs: it uses only what `--rules` names.
 
+A rule about a single request can be written without YAML: **Add rule…** in that
+tab, or **Make a rule from this line…** on a line in the evidence panel, opens a
+form that adds the rule to one of your packs as ordinary pack YAML, the same as
+writing it here. See [Adding a rule without YAML](desktop-app.md#adding-a-rule-without-yaml).
+
 ## The shape of a pack
 
 ```yaml
