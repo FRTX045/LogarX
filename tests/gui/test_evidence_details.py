@@ -158,3 +158,9 @@ def test_the_panel_allocates_room_for_choosing_sections(
     qt_app.processEvents()
     assert panel._detail.height() >= panel.height() * 0.3
     panel.close()
+
+
+def test_the_sections_are_named_shortly(view: EvidenceDetails) -> None:
+    titles = [section.button.text() for section in view.sections.values()]
+
+    assert titles == ["Source", "Request", "Response", "Client", "Raw line"]

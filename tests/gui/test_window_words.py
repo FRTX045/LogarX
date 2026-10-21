@@ -105,3 +105,12 @@ def test_trace_and_behaviour_sit_beside_the_client_they_describe(
     assert ":first" in window._tabs.styleSheet()
     assert ":last" in window._tabs.styleSheet()
     window.close()
+
+
+def test_the_activity_metadata_is_called_details(qt_app: QApplication) -> None:
+    from logarc.gui.evidence_panel import EvidencePanel
+
+    panel = EvidencePanel()
+
+    assert panel.activity_details.button.text() == "Details"
+    panel.close()

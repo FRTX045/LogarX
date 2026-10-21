@@ -167,7 +167,7 @@ class EvidencePanel(QWidget):
         self._metadata.setWordWrap(True)
         self._metadata.setTextFormat(Qt.TextFormat.RichText)
         self._metadata.setFont(caption_font(self._metadata.font()))
-        self.activity_details = Disclosure("Activity details", self._metadata)
+        self.activity_details = Disclosure("Details", self._metadata)
         self.activity_details.hide()
 
         font = mono_font(8.5)
