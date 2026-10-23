@@ -139,7 +139,7 @@ This matters because the input is a production access log, which is evidence.
 
 ---
 
-## How it refuses to lie to you
+## Built not to mislead
 
 The failure this tool is built against is not a crash. It is a case that looks
 complete and is not.
