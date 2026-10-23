@@ -13,6 +13,7 @@ Start with whichever question you arrived with.
 | How to add a detection without writing Python | [writing-rules.md](writing-rules.md) |
 | How to support another log format in code | [adding-a-parser.md](adding-a-parser.md) |
 | How well it works, and what the numbers do not establish | [evaluation.md](evaluation.md) |
+| What logarc cannot tell you, whatever the numbers | [limitations.md](limitations.md) |
 | What each rule pack scored, and what still gets through | [rule-pack-ledger.md](rule-pack-ledger.md) |
 | Which colours the window's text uses, and why | [gui-text-colors.md](gui-text-colors.md) |
 | How to use the developer command line | [command-line.md](command-line.md) |
