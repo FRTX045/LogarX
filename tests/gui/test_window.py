@@ -367,6 +367,19 @@ def test_the_client_table_still_opens_wide_enough_for_every_column(
     window.close()
 
 
+def test_the_client_panel_opens_with_room_for_a_search(qt_app: QApplication) -> None:
+    """A search adds a Match column, and at 440 px the panel had no room for
+    it: Last was cut to `15…`. Measured on the real display at the default
+    window (1400 x 880) searching `path:/admin`, the columns needed 442 px of a
+    422 px table, and a scroll bar takes about 20 more. Chosen by the reader
+    from screenshots on 2026-10-24: a wider panel from the start, which a drag
+    still narrows, over one that widens while searching or a shared column."""
+    window, splitter = _laid_out()
+
+    assert splitter.sizes()[0] >= 480
+    window.close()
+
+
 def test_a_wider_window_gives_the_extra_room_to_the_graph(qt_app: QApplication) -> None:
     """Without stretch factors the splitter shares new space out proportionally,
     so widening the window fattens the side panels and the graph — the thing
