@@ -583,7 +583,9 @@ class MainWindow(QMainWindow):
         # and with a minimum in place the last part of that drag was a jump
         # anyway. Continuous down to the minimum, and no further.
         splitter.setChildrenCollapsible(False)
-        splitter.setSizes([440, 560, 400])
+        # 480 rather than 440: a search adds a Match column, and at 440 it left
+        # Last cut to `15…`. The reader can still drag it narrower.
+        splitter.setSizes([480, 520, 400])
         return splitter
 
     def _build_menu(self) -> None:

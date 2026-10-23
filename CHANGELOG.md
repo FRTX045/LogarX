@@ -939,6 +939,12 @@ which will be the first tag.
 
 ### Fixed
 
+- **A search no longer cuts the client list's Last date.** A search adds a
+  Match column, and at the default window the client panel had no room for
+  it: Last read `15…` on every row. The panel now opens at 480 px instead of
+  440, taken from the graph, and can still be dragged narrower. Without a
+  search, Last has room for the time as well.
+
 - **Closing the window no longer ends in a crash.** On the way out of `main`,
   Python released the application before the window, and a window destroyed
   after its application could crash the process with an access violation, after
