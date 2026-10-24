@@ -702,7 +702,8 @@ def _rebuild() -> int:
     STATUS.write_text(
         f"{stamp}  {started[0]}  ok  {size_mb(LIVE):.0f} MB\n"
         "tests green; rule packs bundled; version metadata bundled; no QtWebEngine; "
-        "no command line; Qt runtime loads; CRS sidecar bundled and catches 942100\n",
+        "no command line; Qt runtime loads; icons draw; "
+        "CRS sidecar bundled and catches 942100\n",
         encoding="utf-8",
     )
     MARKER.unlink(missing_ok=True)

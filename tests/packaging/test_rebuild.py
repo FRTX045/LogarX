@@ -380,6 +380,15 @@ def test_a_quiet_tree_is_built_and_stamped_with_its_commit(
     assert rebuild.STATUS.read_text(encoding="utf-8").split()[2] == built
 
 
+def test_the_status_of_a_good_build_names_the_icon_check(
+    rebuild: ModuleType, tree: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _while_testing(rebuild, monkeypatch, lambda: None)
+
+    assert rebuild._rebuild() == 0
+    assert "icons draw" in rebuild.STATUS.read_text(encoding="utf-8")
+
+
 def test_the_sidecar_is_built_before_the_suite_runs(
     rebuild: ModuleType, tree: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
