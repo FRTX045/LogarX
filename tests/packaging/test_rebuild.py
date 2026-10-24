@@ -158,6 +158,7 @@ def test_verification_rejects_a_qt_runtime_that_cannot_load(
         "check_no_browser_engine",
         "check_no_command_line",
         "check_crs",
+        "check_icons",
     ):
         monkeypatch.setattr(rebuild, name, lambda bundle: None)
     monkeypatch.setattr(
@@ -471,3 +472,93 @@ def test_a_second_edit_to_a_modified_file_is_caught(
     )
 
     assert rebuild._rebuild() == 1
+
+
+# -- icons -----------------------------------------------------------------
+
+
+def _bundled_icons(
+    tmp_path: Path,
+    text: str = '{"icons": {"syringe": {"svg": "<svg/>"}}}',
+    notice: str = "Lucide, https://lucide.dev, ISC License",
+) -> Path:
+    data = tmp_path / "_internal" / "logarc" / "gui" / "lucide.json"
+    data.parent.mkdir(parents=True)
+    data.write_text(text, encoding="utf-8")
+    (tmp_path / "_internal" / "NOTICE").write_text(notice, encoding="utf-8")
+    return tmp_path
+
+
+def test_verification_rejects_icons_shipped_without_their_licence(
+    rebuild: ModuleType, tmp_path: Path
+) -> None:
+    """ISC asks for the notice in every copy, and the bundle is a copy."""
+    problem = rebuild.check_icons(_bundled_icons(tmp_path, notice="logarc"))
+    assert problem is not None and "NOTICE" in problem
+
+
+def test_verification_rejects_a_bundle_without_the_icon_set(
+    rebuild: ModuleType, tmp_path: Path
+) -> None:
+    (tmp_path / "_internal").mkdir()
+    problem = rebuild.check_icons(tmp_path)
+    assert problem is not None and "lucide.json" in problem
+
+
+def test_verification_rejects_an_icon_set_that_does_not_read(
+    rebuild: ModuleType, tmp_path: Path
+) -> None:
+    problem = rebuild.check_icons(_bundled_icons(tmp_path, "{not json"))
+    assert problem is not None and "lucide.json" in problem
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="the drawing probe loads Windows DLLs")
+@pytest.mark.parametrize(("said", "fails"), [("drawn 0\n", True), ("drawn 412\n", False)])
+def test_verification_asks_the_bundle_to_draw_an_icon(
+    rebuild: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    said: str,
+    fails: bool,
+) -> None:
+    from subprocess import CompletedProcess
+
+    monkeypatch.setattr(
+        rebuild.subprocess, "run", lambda args, **kwargs: CompletedProcess(args, 0, said, "")
+    )
+    problem = rebuild.check_icons(_bundled_icons(tmp_path))
+    assert (problem is not None) is fails
+    if fails:
+        assert problem is not None and "draw" in problem
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="the drawing probe loads Windows DLLs")
+def test_a_probe_that_cannot_load_qt_svg_says_so(
+    rebuild: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from subprocess import CompletedProcess
+
+    monkeypatch.setattr(
+        rebuild.subprocess,
+        "run",
+        lambda args, **kwargs: CompletedProcess(args, 1, "", "No module named 'PyQt6.QtSvg'"),
+    )
+    problem = rebuild.check_icons(_bundled_icons(tmp_path))
+    assert problem is not None and "PyQt6.QtSvg" in problem
+
+
+def test_the_icon_check_is_one_of_the_checks(
+    rebuild: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in (
+        "check_executable",
+        "check_rule_packs",
+        "check_metadata",
+        "check_no_browser_engine",
+        "check_no_command_line",
+        "check_qt_runtime",
+        "check_crs",
+    ):
+        monkeypatch.setattr(rebuild, name, lambda bundle: None)
+    monkeypatch.setattr(rebuild, "check_icons", lambda bundle: "no icons")
+    assert rebuild.verify(tmp_path) == ["no icons"]

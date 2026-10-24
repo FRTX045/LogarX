@@ -38,6 +38,7 @@ wrong tool for this job:
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -441,6 +442,82 @@ def check_crs(bundle: Path) -> str | None:
     return None
 
 
+#: Run by the venv's interpreter, but on the bundle's own Qt: a bare `PyQt6`
+#: package whose path is the bundle's folder stands in for the venv's, so the
+#: `QtSvg.pyd` and Qt DLLs it loads are the ones that ship. Importing the
+#: bundle's PyQt6 the ordinary way would find the venv's instead, because the
+#: package's `__init__` lives inside the bundle's archive, not on disk. QtCore
+#: finds its Qt folder from the package's `__file__`, so the stand-in has one.
+_ICON_PROBE: Final = """
+import ctypes
+import json
+import os
+import sys
+import types
+from pathlib import Path
+root = Path(sys.argv[1]) / "_internal"
+ctypes.windll.kernel32.SetDllDirectoryW(str(root))
+os.add_dll_directory(str(root / "PyQt6" / "Qt6" / "bin"))
+package = types.ModuleType("PyQt6")
+package.__path__ = [str(root / "PyQt6")]
+package.__file__ = str(root / "PyQt6" / "__init__.py")
+sys.modules["PyQt6"] = package
+from PyQt6.QtCore import QByteArray, QRectF
+from PyQt6.QtGui import QColor, QGuiApplication, QImage, QPainter
+from PyQt6.QtSvg import QSvgRenderer
+application = QGuiApplication(["probe", "-platform", "offscreen"])
+icons = json.loads((root / "logarc" / "gui" / "lucide.json").read_text(encoding="utf-8"))
+svg = icons["icons"]["syringe"]["svg"].replace("currentColor", "#000000")
+image = QImage(64, 64, QImage.Format.Format_ARGB32)
+image.fill(0)
+painter = QPainter(image)
+QSvgRenderer(QByteArray(svg.encode())).render(painter, QRectF(0, 0, 64, 64))
+painter.end()
+drawn = sum(1 for y in range(64) for x in range(64) if QColor.fromRgba(image.pixel(x, y)).alpha())
+print("drawn", drawn)
+"""
+
+
+def check_icons(bundle: Path) -> str | None:
+    """The icon set ships, with its licence, and the bundle's Qt can draw from it.
+
+    Drawn rather than looked for: `QtSvg.pyd` is collected only because the
+    source imports it, and a bundle without it would carry 1,533 icons and
+    draw none.
+    """
+    root = bundle / "_internal"
+    data = root / "logarc" / "gui" / "lucide.json"
+    try:
+        json.loads(data.read_text(encoding="utf-8"))["icons"]["syringe"]
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        return f"the icon set logarc/gui/lucide.json is missing or unreadable: {exc}"
+    try:
+        notice = (root / "NOTICE").read_text(encoding="utf-8")
+    except OSError:
+        notice = ""
+    if "Lucide" not in notice:
+        return "NOTICE, carrying Lucide's licence, is not in the bundle beside its icons"
+    if os.name != "nt":
+        return None
+    try:
+        result = subprocess.run(
+            [sys.executable, "-I", "-c", _ICON_PROBE, str(bundle)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return f"the bundle's icons could not be checked: {exc}"
+    if result.returncode:
+        return f"the bundle cannot draw an icon: {result.stderr.strip()[-400:]}"
+    drawn = re.search(r"^drawn (\d+)$", result.stdout, re.MULTILINE)
+    if drawn is None or int(drawn.group(1)) == 0:
+        return "the bundle's Qt loaded but did not draw the syringe icon"
+    return None
+
+
 def verify(bundle: Path) -> list[str]:
     checks = (
         check_executable,
@@ -449,6 +526,7 @@ def verify(bundle: Path) -> list[str]:
         check_no_browser_engine,
         check_no_command_line,
         check_qt_runtime,
+        check_icons,
         check_crs,
     )
     return [problem for check in checks if (problem := check(bundle)) is not None]
