@@ -23,7 +23,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from dragging import drag, mouse
-from on_canvas import box_text, node_item, node_items, session_boxes
+from on_canvas import box_detail, node_item, node_items, session_boxes
 from PyQt6.QtCore import QEvent, QPoint, QPointF, QRectF
 from PyQt6.QtGui import QColor, QHelpEvent, QImage, QPainter
 from PyQt6.QtWidgets import (
@@ -43,7 +43,7 @@ from logarc.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
 from logarc.gui.app import MainWindow
 from logarc.gui.canvas import _SESSION_EDGE_WIDTH, _SESSION_PAD, ActivityCanvas
 from logarc.sessionize.segmenter import SessionPolicy
-from logarc.style import PAPER, SESSION_GROUND, session_rule
+from logarc.style import PAPER, RENAME_HINT, SESSION_GROUND, session_rule
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 
@@ -145,7 +145,7 @@ def test_each_session_of_a_trace_gets_a_labelled_box(qt_app: QApplication) -> No
 
     boxes = session_boxes(canvas)
 
-    assert [box_text(box) for box in boxes] == [
+    assert [box_detail(box) for box in boxes] == [
         "Session 1 of 2 · 1 activity · 01 May 13:01",
         "Session 2 of 2 · 3 activities · 01 May 14:01\u201314:03",
     ]
@@ -454,6 +454,11 @@ def tips(canvas: ActivityCanvas) -> set[str]:
     return {box.label.toolTip() for box in session_boxes(canvas)}
 
 
+def explained(policy: SessionPolicy) -> str:
+    """The tip on a heading logarc named: what a session is, then how to rename."""
+    return session_rule(policy) + "\n\n" + RENAME_HINT
+
+
 def test_hovering_a_box_label_says_what_a_session_is(qt_app: QApplication) -> None:
     canvas = ActivityCanvas()
     canvas.resize(600, 480)
@@ -463,7 +468,7 @@ def test_hovering_a_box_label_says_what_a_session_is(qt_app: QApplication) -> No
     for box in session_boxes(canvas):
         canvas.centerOn(box.label)
         spot = box.label.sceneBoundingRect().center()
-        assert hover(canvas, spot) == session_rule(SessionPolicy())
+        assert hover(canvas, spot) == explained(SessionPolicy())
     canvas.close()
 
 
@@ -474,13 +479,13 @@ def test_the_explanation_is_of_the_rules_the_trace_was_cut_with(qt_app: QApplica
 
     canvas.show_graph(trace(1, 3), session_policy=policy)
 
-    assert tips(canvas) == {session_rule(policy)}
+    assert tips(canvas) == {explained(policy)}
 
 
 def test_a_canvas_not_told_the_rules_does_not_guess_them(qt_app: QApplication) -> None:
     canvas = drawn(trace(1, 3))
 
-    assert tips(canvas) == {""}
+    assert tips(canvas) == {RENAME_HINT}
 
 
 def test_hovering_the_paper_inside_a_box_says_nothing(qt_app: QApplication) -> None:
@@ -508,7 +513,7 @@ def test_the_explanation_survives_a_wrap_toggle(qt_app: QApplication) -> None:
 
     canvas.set_wrap(False)
 
-    assert tips(canvas) == {session_rule(policy)}
+    assert tips(canvas) == {explained(policy)}
 
 
 def test_the_explanation_survives_the_boxes_going_off_and_on(qt_app: QApplication) -> None:
@@ -519,7 +524,7 @@ def test_the_explanation_survives_the_boxes_going_off_and_on(qt_app: QApplicatio
     canvas.set_sessions(False)
     canvas.set_sessions(True)
 
-    assert tips(canvas) == {session_rule(policy)}
+    assert tips(canvas) == {explained(policy)}
 
 
 def test_the_window_explains_the_rules_its_reconstruction_used(
@@ -545,7 +550,7 @@ def test_the_window_explains_the_rules_its_reconstruction_used(
     assert window._result is not None, "premise: the client is being read"
     assert len(session_boxes(window._canvas)) == 2, "premise: two visits, two boxes"
 
-    assert tips(window._canvas) == {session_rule(window._result.policy.session)}
+    assert tips(window._canvas) == {explained(window._result.policy.session)}
     window.close()
 
 
@@ -717,7 +722,8 @@ def test_the_busiest_shopfront_clients_boxes_stand_apart(
     """The two clients the mockups were judged on: 69 sessions of up to seven
     activities, and 150 sessions of one. Measured by hand with no overlap: 91
     units at the closest on 2026-10-17, 90 once every activity was given the
-    widest one's room across on 2026-10-18. This holds it there."""
+    widest one's room across on 2026-10-18, 48 once each box was headed by a
+    name over its old label on 2026-10-25. This holds them apart."""
     result = analyse_ip(shopfront.store, client)
     canvas = ActivityCanvas()
     canvas.show_graph(result.trace)
@@ -725,7 +731,7 @@ def test_the_busiest_shopfront_clients_boxes_stand_apart(
     boxes = session_boxes(canvas)
     total = len(result.sessions)
     assert len(boxes) == total, "a box for every session the header counts"
-    assert box_text(boxes[-1]).startswith(f"Session {total} of {total} · ")
+    assert box_detail(boxes[-1]).startswith(f"Session {total} of {total} · ")
     outlines = [box.shape.sceneBoundingRect() for box in boxes]
     for one, other in combinations(outlines, 2):
         assert not one.intersects(other)

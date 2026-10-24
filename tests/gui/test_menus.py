@@ -201,8 +201,9 @@ def test_bookmarking_is_ctrl_d_and_is_offered_where_it_is_used(qt_app: QApplicat
 
     assert window._bookmark_action.shortcut().toString() == "Ctrl+D"
     assert window._bookmark_action in window.actions()
-    assert window._canvas.actions()[0].text() == "Bookmark this activity…"
-    assert window._canvas.actions()[0].shortcut().isEmpty(), "Ctrl+D is the Edit menu's"
+    # After Rename session… and its separator.
+    assert window._canvas.actions()[2].text() == "Bookmark this activity…"
+    assert window._canvas.actions()[2].shortcut().isEmpty(), "Ctrl+D is the Edit menu's"
     assert _entries(_menu(window, "Export"))[-1] == "Bookmarks (CSV)…"
     window.close()
 

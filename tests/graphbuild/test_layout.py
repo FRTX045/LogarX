@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 from logarc.core.activity import ActivityCategory, ActivityLabel, Outcome, Severity
 from logarc.core.episode import Episode
 from logarc.core.evidence import EvidenceRef
 from logarc.graphbuild.build import build_behaviour_map, build_trace_graph
-from logarc.graphbuild.layout import layout_graph, sessions_in
+from logarc.graphbuild.layout import layout_graph, session_of, sessions_in
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 
@@ -313,3 +314,18 @@ def test_a_windowed_session_is_still_one_session() -> None:
 
 def test_an_empty_trace_has_no_sessions() -> None:
     assert sessions_in(build_trace_graph([], client_ip="1.2.3.4")) == ()
+
+
+def test_an_activity_names_the_session_it_belongs_to() -> None:
+    """The part of its episode id before the slash, tag and all: one rule for
+    the layout, the boxes, and the names a reader gives sessions."""
+    graph = build_trace_graph(
+        [
+            episode(ActivityCategory.INJECTION, index=4, session="1.2.3.4#2"),
+            episode(ActivityCategory.INJECTION, index=1, session="1.2.3.4@0900-1000#1"),
+        ],
+        client_ip="1.2.3.4",
+    )
+
+    assert [session_of(node) for node in graph.nodes] == ["1.2.3.4#2", "1.2.3.4@0900-1000#1"]
+    assert session_of(replace(graph.nodes[0], episode_ids=())) == ""
