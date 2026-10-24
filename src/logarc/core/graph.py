@@ -49,6 +49,11 @@ class GraphNode:
     evidence_total: int
     episode_ids: tuple[str, ...]
     episode_count: int = 1
+    named_by: str = ""
+    """The rule the node is named after, which `rule_ids`, sorted, cannot say.
+
+    The window draws a reader's own rule's icon from it. Not exported: what
+    the window draws is the window's business."""
 
     def to_dict(self) -> dict[str, Any]:
         return {

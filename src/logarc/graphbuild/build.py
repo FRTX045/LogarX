@@ -97,6 +97,7 @@ def _node_from_episode(episode: Episode) -> GraphNode:
         evidence=episode.evidence,
         evidence_total=episode.evidence_total,
         episode_ids=(episode.episode_id,),
+        named_by=episode.activity.rule_id,
     )
 
 
@@ -124,6 +125,7 @@ def _node_from_group(category: str, group: Sequence[Episode]) -> GraphNode:
         evidence_total=sum(episode.evidence_total for episode in group),
         episode_ids=tuple(episode.episode_id for episode in group),
         episode_count=len(group),
+        named_by=worst.activity.rule_id,
     )
 
 
