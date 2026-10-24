@@ -89,6 +89,8 @@ from logarc.gui.format_notice import drift_notice
 from logarc.gui.formats_and_rules import FormatsAndRules
 from logarc.gui.full_screen import FullScreen
 from logarc.gui.help import open_user_guide, show_about, show_shortcuts
+from logarc.gui.icon_set import IconChoice, rule_icons
+from logarc.gui.icons import read_kind_icons
 from logarc.gui.notice_bar import NoticeBanner, warn_about_dead_files
 from logarc.gui.panels import ClientTable, LegendBar
 from logarc.gui.preferences import PreferencesDialog
@@ -327,6 +329,7 @@ class MainWindow(QMainWindow):
         # an open offer is work the reader would never see.
         self._scan_held = False
         self._canvas = ActivityCanvas()
+        self._canvas.set_icons(self._icon_choice())
         self._legend = LegendBar()
         self._evidence = EvidencePanel()
         self._evidence.filter_changed.connect(self._filter_changed)
@@ -982,6 +985,14 @@ class MainWindow(QMainWindow):
         self._rules_refused = library.refused
         self._rules_stale = False
         self._say_rules()
+        # The icons the reader's rules name follow their rules at once, though
+        # the case read with the old ones still waits for Re-read: an icon is
+        # not a finding.
+        self._canvas.set_icons(self._icon_choice())
+
+    def _icon_choice(self) -> IconChoice:
+        """The icons in force: the reader's for each kind, and their rules'."""
+        return IconChoice(kinds=read_kind_icons(_settings().value), rules=rule_icons(self._rules))
 
     def _show_ingest_progress(self, snapshot: object) -> None:
         if self._ingest_card is not None and isinstance(snapshot, Progress):

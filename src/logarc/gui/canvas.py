@@ -35,6 +35,7 @@ from PyQt6.QtWidgets import (
     QGraphicsEllipseItem,
     QGraphicsItem,
     QGraphicsPathItem,
+    QGraphicsPixmapItem,
     QGraphicsPolygonItem,
     QGraphicsRectItem,
     QGraphicsScene,
@@ -47,6 +48,8 @@ from PyQt6.QtWidgets import (
 from logarc.core.graph import GraphKind, reciprocal_pairs
 from logarc.graphbuild.layout import COLUMN, ROW, Point, layout_graph, sessions_in
 from logarc.gui.arrangement import Move, MoveHistory, Positions
+from logarc.gui.icon_set import KIND_NAMES, IconChoice
+from logarc.gui.icons import ICON_PIXELS, first_drawable, ink_for
 from logarc.gui.ribbon import Mark, ribbon_polygon, ribbon_tip
 from logarc.style import (
     CAPTION_COLOUR,
@@ -278,6 +281,15 @@ _SESSION_POINTS: Final = 8.5
 #: faint the story they belong to disappears: the faded are still read as
 #: what happened in between.
 FADED: Final = 0.28
+
+#: The children of an activity with no words on them, by their `data(0)` tag:
+#: everything else a node carries is a caption.
+_WORDLESS: Final = frozenset({"bookmark", "icon"})
+
+#: How wide an activity's icon is, against the circle's radius. Large enough to
+#: read at the zoom a graph opens at, and well inside the outline, which still
+#: has to say how the activity ended.
+_ICON_SHARE: Final = 1.05
 
 
 def _steps(start: float, stop: float, pitch: float) -> list[float]:
@@ -710,6 +722,10 @@ class ActivityCanvas(QGraphicsView):
         # them: kept so a redraw of the same graph puts them back.
         self._marks: dict[str, Mark] = {}
         self._ribbons: list[QGraphicsPolygonItem] = []
+        # The icon inside each activity, by node id, and what decides it. The
+        # choice outlives a graph: the reader's icons are theirs, not a client's.
+        self._icons = IconChoice()
+        self._icon_items: dict[str, QGraphicsPixmapItem] = {}
         self._lit: str | None = None
         self._history = MoveHistory()
         # Where the layout put each node, before any saved arrangement was
@@ -929,6 +945,47 @@ class ActivityCanvas(QGraphicsView):
         self._matching = node_ids
         self._fade()
 
+    @property
+    def icons(self) -> IconChoice:
+        return self._icons
+
+    def set_icons(self, choice: IconChoice) -> None:
+        """Draw every activity's icon by `choice` from now on.
+
+        The icons on screen are swapped where they stand, so the reader's place,
+        zoom, selection and Undo history all survive a change of icon. Safe
+        before anything is drawn: the window hands its choice over while it is
+        still being built.
+        """
+        self._icons = choice
+        if self._graph is None:
+            return
+        for node in self._graph.nodes:
+            if (shown := self._icon_items.get(node.node_id)) is not None:
+                shown.setPixmap(self._icon_for(node))
+
+    def icon_of(self, node_id: str) -> QGraphicsPixmapItem | None:
+        """The icon drawn inside an activity, if that activity is drawn."""
+        return self._icon_items.get(node_id)
+
+    def _icon_for(self, node: GraphNode) -> QPixmap:
+        return first_drawable(self._icons.candidates(node), ink_for(style_for(node).fill))
+
+    def _place_icon(self, node: GraphNode, item: _NodeItem) -> QGraphicsPixmapItem:
+        """The icon for `node`, centred in its circle and moving with it.
+
+        A child of the circle, so a drag carries it and a fade dims it. It takes
+        no mouse buttons: a press on it is a press on the activity.
+        """
+        icon = QGraphicsPixmapItem(self._icon_for(node), item)
+        icon.setData(0, "icon")
+        icon.setTransformationMode(Qt.TransformationMode.SmoothTransformation)
+        icon.setOffset(-ICON_PIXELS / 2, -ICON_PIXELS / 2)
+        icon.setScale(item.rect().width() / 2 * _ICON_SHARE / ICON_PIXELS)
+        icon.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+        icon.setAcceptHoverEvents(False)
+        return icon
+
     def _fade(self) -> None:
         """Draw the activities a filter reaches at full strength and the rest faded.
 
@@ -945,9 +1002,10 @@ class ActivityCanvas(QGraphicsView):
             level = 1.0 if wanted is None or node_id in wanted else FADED
             item.setOpacity(level)
             for caption in item.childItems():
-                # A bookmark's ribbon is a child too, with no words on it; it
-                # takes its node's opacity as every child does.
-                if caption.data(0) != "bookmark":
+                # A bookmark's ribbon and the icon are children too, with no
+                # words on them; they take their node's opacity as every child
+                # does.
+                if caption.data(0) not in _WORDLESS:
                     _words(caption).setOpacity(level)
         for art in self._edge_art:
             full = wanted is None or (art.source_id in wanted and art.target_id in wanted)
@@ -1480,6 +1538,7 @@ class ActivityCanvas(QGraphicsView):
         self._scene.clear()
         self._ribbons = []
         self._nodes.clear()
+        self._icon_items.clear()
         self._edge_art.clear()
         self._edges_by_node.clear()
         self._halo = None
@@ -1517,6 +1576,7 @@ class ActivityCanvas(QGraphicsView):
         item.setToolTip(_tooltip(node))
         self._scene.addItem(item)
         self._nodes[node.node_id] = item
+        self._icon_items[node.node_id] = self._place_icon(node, item)
 
         # Below the circle, not inside it. An activity name long enough to mean
         # something does not fit in a node sized by request count, and the
@@ -1738,6 +1798,7 @@ class ActivityCanvas(QGraphicsView):
 def _tooltip(node: GraphNode) -> str:
     parts = [
         node.label,
+        f"kind: {KIND_NAMES[node.category]}",
         f"{node.request_count:,} requests over {node.distinct_paths:,} path(s)",
         f"outcome: {node.outcome.value}",
         f"severity: {node.severity.name.lower()}",

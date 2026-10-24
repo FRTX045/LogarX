@@ -13,7 +13,7 @@ with and what the kinds are called are facts about data; drawing them is
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -26,6 +26,7 @@ from logarc.parsers.library import logarc_home
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
+    from logarc.core.graph import GraphNode
     from logarc.detect.rules import Rule
     from logarc.detect.ruleset import RuleSet
 
@@ -35,6 +36,7 @@ __all__ = [
     "KIND_NAMES",
     "LUCIDE_VERSION",
     "Icon",
+    "IconChoice",
     "file_name_of",
     "icons_dir",
     "is_known",
@@ -82,6 +84,29 @@ class Icon:
     name: str
     svg: str
     tags: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class IconChoice:
+    """What the reader chose: icons for kinds, and the icons their own rules name."""
+
+    kinds: Mapping[ActivityCategory, str] = field(default_factory=dict)
+    rules: Mapping[str, str] = field(default_factory=dict)
+    """By rule id. Only the reader's rules can name one."""
+
+    def candidates(self, node: GraphNode) -> tuple[str, ...]:
+        """The icons `node` could carry, best first; whoever draws takes the first that draws.
+
+        The icon of the rule the activity is named after, then the reader's
+        icon for its kind, then the kind's own. Only the naming rule counts: a
+        rule that merely matched inside the activity did not make it what it is.
+        """
+        found = (
+            self.rules.get(node.named_by),
+            self.kinds.get(node.category),
+            DEFAULT_ICONS[node.category],
+        )
+        return tuple(dict.fromkeys(value for value in found if value))
 
 
 @cache
