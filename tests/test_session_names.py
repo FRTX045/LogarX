@@ -243,3 +243,41 @@ def test_bookmarks_are_not_touched(tmp_path: Path) -> None:
 
 def test_names_compare_by_what_they_hold() -> None:
     assert Names(entries=()) == EMPTY
+
+
+# -- which session a name belongs to ---------------------------------------------
+
+
+def lines(*numbers: int) -> frozenset[EvidenceRef]:
+    return frozenset(EvidenceRef("access.log", number) for number in numbers)
+
+
+def test_a_name_belongs_to_the_session_that_holds_its_line() -> None:
+    """A name given under a time filter is keyed on the clipped session's first
+    line; the whole visit holds that line, so it keeps the name once the filter
+    goes."""
+    names = rename(EMPTY, KEY, "Scanner", logarc_name=LOGARC, now=NOW)
+
+    assert names.name_in("192.0.2.22", lines(1200, 1234, 1300)) == "Scanner"
+    assert names.name_in("192.0.2.22", lines(1200, 1300)) is None
+    assert names.name_in("192.0.2.99", lines(1234)) is None
+
+
+def test_the_name_given_last_wins_inside_one_session() -> None:
+    names = rename(EMPTY, KEY, "Earlier", logarc_name=LOGARC, now=NOW)
+    names = rename(names, OTHER, "Later", logarc_name=LOGARC, now=NOW)
+
+    assert names.name_in("192.0.2.22", lines(1234, 2000)) == "Later"
+
+
+def test_renaming_a_session_replaces_every_name_inside_it() -> None:
+    names = rename(EMPTY, KEY, "Under one filter", logarc_name=LOGARC, now=NOW)
+    names = rename(names, OTHER, "Under another", logarc_name=LOGARC, now=NOW)
+    whole = SessionKey("192.0.2.22", EvidenceRef("access.log", 1000))
+
+    renamed = rename(
+        names, whole, "The whole visit", logarc_name=LOGARC, now=NOW, within=lines(1000, 1234, 2000)
+    )
+
+    assert [entry.name for entry in renamed.entries] == ["The whole visit"]
+    assert forget(names, whole, within=lines(1000, 1234, 2000)).entries == ()

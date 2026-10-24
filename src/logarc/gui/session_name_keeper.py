@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from PyQt6.QtWidgets import QWidget
 
     from logarc.analysis import AnalysisResult
+    from logarc.core.evidence import EvidenceRef
     from logarc.gui.canvas import ActivityCanvas
 
 __all__ = ["SessionNameKeeper"]
@@ -59,10 +60,16 @@ class SessionNameKeeper:
         #: The Rename session window, while one is open or was last opened.
         self.dialog: SessionRename | None = None
 
-    def _keys(self, result: AnalysisResult) -> dict[str, SessionKey]:
-        """Each session on screen, by id, as the file knows it."""
+    def _sessions(
+        self, result: AnalysisResult
+    ) -> dict[str, tuple[SessionKey, frozenset[EvidenceRef]]]:
+        """Each session on screen, by id: the key a new name is kept against, and
+        every line it holds, which is what a name already given is found by."""
         return {
-            session.session_id: SessionKey(result.client_ip, session.events[0].evidence)
+            session.session_id: (
+                SessionKey(result.client_ip, session.events[0].evidence),
+                frozenset(event.evidence for event in session.events),
+            )
             for session in result.sessions
             if session.events
         }
@@ -87,8 +94,8 @@ class SessionNameKeeper:
                 # straight over it.
                 QTimer.singleShot(0, lambda: self._say(message))
         names = {}
-        for session_id, key in self._keys(result).items():
-            given = loaded.names.name_for(key)
+        for session_id, (_key, lines) in self._sessions(result).items():
+            given = loaded.names.name_in(result.client_ip, lines)
             if given:
                 names[session_id] = given
         return names
@@ -102,27 +109,30 @@ class SessionNameKeeper:
         case, result = self._case_path(), self._result()
         if case is None or result is None:
             return
-        key = self._keys(result).get(session_id)
+        held = self._sessions(result).get(session_id)
         groups = sessions_in(result.trace)
         found = [
             (index, nodes)
             for index, nodes in enumerate(groups, start=1)
             if session_of(nodes[0]) == session_id
         ]
-        if key is None or not found:
+        if held is None or not found:
             return
+        key, lines = held
         ((index, nodes),) = found
         logarc_name = session_name(nodes)
-        given = session_names.load(case).names.name_for(key)
+        given = session_names.load(case).names.name_in(result.client_ip, lines)
 
         def save(name: str | None) -> None:
             if name is None:
-                session_names.apply(case, lambda names: session_names.forget(names, key))
+                session_names.apply(
+                    case, lambda names: session_names.forget(names, key, within=lines)
+                )
             else:
                 session_names.apply(
                     case,
                     lambda names: session_names.rename(
-                        names, key, name, logarc_name=logarc_name, now=utc_now()
+                        names, key, name, logarc_name=logarc_name, now=utc_now(), within=lines
                     ),
                 )
             self._canvas.set_session_names(self.names_for_drawing())

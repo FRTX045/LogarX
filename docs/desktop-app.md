@@ -237,8 +237,10 @@ the heading's tip begins with logarc's own name, so nobody takes your words for
 something the log says. Names are kept in `session-names.json` in the case
 folder, beside your bookmarks and outside the manifest, so they come back when
 the case is opened again, on any machine the folder is copied to. A name
-belongs to the session that starts at the same log line: a time filter that
-cuts that line off shows logarc's name until the filter is cleared.
+belongs to the session that holds the log line it was given at, the first line
+of that session as it stood: a time filter that cuts that line off shows
+logarc's name until the filter is cleared, and a name given while a filter was
+on stays with the whole visit once it is cleared.
 
 A box follows its activities when they are dragged. The *Outline each session*
 preference turns the boxes off, and nothing moves when it does.

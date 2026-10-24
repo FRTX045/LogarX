@@ -8,11 +8,13 @@ The file is `session-names.json` in the case folder, beside `bookmarks.json` and
 like it outside the manifest. A reader's name for a session is a note, not
 evidence: it says what they made of a visit, never what the log holds.
 
-A session is named by its client and its first request, `file:line`, never by
-its number. Numbers shift when a time filter cuts a client's visits
-differently; the first line of a session does not. A filter that cuts that line
-off shows logarc's name for what is left, and the reader's comes back with the
-whole visit.
+A name is kept against its client and the first request of the session it was
+given to, `file:line`, never against the session's number: numbers shift when a
+time filter cuts a client's visits differently, and log lines do not. It then
+belongs to whichever session holds that line. A filter that cuts the line off
+shows logarc's name for what is left, and the reader's comes back with the
+whole visit; a name given while a filter clipped the visit is kept against a
+line the whole visit still holds, so it survives the filter being cleared.
 
 A reader's names are the one thing here nobody can regenerate, so the file
 keeps `bookmarks.json`'s rules:
@@ -37,7 +39,7 @@ from logarc.bookmarks import NAME_LIMIT, parse_ref
 from logarc.core.evidence import EvidenceRef
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
+    from collections.abc import Callable, Collection, Mapping
     from pathlib import Path
 
 __all__ = [
@@ -94,8 +96,21 @@ class Names:
     extra: Mapping[str, Any] = field(default_factory=dict)
 
     def name_for(self, key: SessionKey) -> str | None:
-        """The reader's name for that session; the last, if a hand edit left two."""
+        """The name kept against exactly `key`; the last, if a hand edit left two."""
         found = [entry.name for entry in self.entries if entry.key == key]
+        return found[-1] if found else None
+
+    def name_in(self, client: str, lines: Collection[EvidenceRef]) -> str | None:
+        """The reader's name for the session of `client` holding these `lines`.
+
+        The name given last, should the session hold the lines of two: one given
+        under a time filter and one given to the whole visit, say.
+        """
+        found = [
+            entry.name
+            for entry in self.entries
+            if entry.key.client == client and entry.key.first in lines
+        ]
         return found[-1] if found else None
 
 
@@ -117,23 +132,40 @@ def tidy(name: str) -> str:
     return " ".join(name.split())
 
 
-def forget(names: Names, key: SessionKey) -> Names:
-    """`names` without the reader's name for `key`: logarc's shows again."""
-    return changed(names, entries=tuple(entry for entry in names.entries if entry.key != key))
+def forget(names: Names, key: SessionKey, *, within: Collection[EvidenceRef] = ()) -> Names:
+    """`names` without the reader's name for `key`: logarc's shows again.
+
+    `within` is every line of the session being renamed: a name kept against any
+    of them would otherwise still name it.
+    """
+
+    def inside(entry: Entry) -> bool:
+        return entry.key == key or (entry.key.client == key.client and entry.key.first in within)
+
+    return changed(names, entries=tuple(entry for entry in names.entries if not inside(entry)))
 
 
-def rename(names: Names, key: SessionKey, name: str, *, logarc_name: str, now: datetime) -> Names:
+def rename(
+    names: Names,
+    key: SessionKey,
+    name: str,
+    *,
+    logarc_name: str,
+    now: datetime,
+    within: Collection[EvidenceRef] = (),
+) -> Names:
     """Name the session `key` as the reader asked.
 
     A name that comes out blank, or the same as `logarc_name`, takes the
     reader's name away instead: a pencil on logarc's own words would claim
-    authorship of nothing. Every earlier entry for `key` goes either way, so a
-    hand edit that left two is tidied to one.
+    authorship of nothing. Every earlier name for the session goes either way,
+    those kept against `key` and any against a line in `within`, so the session
+    ends with one name.
     """
     wanted = tidy(name)
     if len(wanted) > NAME_LIMIT:
         raise ValueError(f"A session name is at most {NAME_LIMIT} characters.")
-    without = forget(names, key)
+    without = forget(names, key, within=within)
     if not wanted or wanted == tidy(logarc_name):
         return without
     entry = Entry(key=key, name=wanted, named=now)

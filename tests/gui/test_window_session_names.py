@@ -274,3 +274,31 @@ def test_a_refused_folder_leaves_the_heading_as_it_was(
     assert (box_name(first), has_pencil(first)) == (logarc_name, False)
     dialog.close()
     window.close()
+
+
+def test_a_name_given_under_a_filter_survives_clearing_it(
+    qt_app: QApplication, case_dir: Path
+) -> None:
+    """Named while a filter clips the visit's first request, the name is keyed on
+    the clipped session's first line, which the whole visit still holds."""
+    with Case.open(case_dir) as case:
+        whole = analyse_ip(case.store, CLIENT)
+        cut = analyse_ip(case.store, CLIENT, window=TimeWindow(start=START + timedelta(seconds=10)))
+    canvas = ActivityCanvas()
+    showing = {"result": cut}
+    keeper = SessionNameKeeper(
+        canvas=canvas,
+        parent=canvas,
+        case_path=lambda: case_dir,
+        result=lambda: showing["result"],
+        say=lambda _: None,
+    )
+    keeper.rename(cut.sessions[0].session_id)
+    assert keeper.dialog is not None
+    keeper.dialog.field.setText("Named under a filter")
+    keeper.dialog.rename_button.click()
+    assert keeper.names_for_drawing() == {cut.sessions[0].session_id: "Named under a filter"}
+
+    showing["result"] = whole
+
+    assert keeper.names_for_drawing() == {FIRST: "Named under a filter"}
