@@ -78,6 +78,11 @@ __all__ = ["EvidencePanel"]
 #: The two columns whose values are numbers, and the one of them that is often
 #: absent. Right-aligned so their digits line up under a heading wider than any
 #: of them.
+#: How the panel's height is shared between the table and the details under
+#: it, when it opens and when the reader asks for it back.
+_TABLE_SHARE = 3
+_DETAIL_SHARE = 2
+
 _STATUS = COLUMNS.index("Status")
 _SIZE = COLUMNS.index("Size")
 _LINE = COLUMNS.index("Line")
@@ -211,11 +216,11 @@ class EvidencePanel(QWidget):
 
         # Split, so the reader decides how much of each they want: a wide
         # episode wants more table, a long payload more detail.
-        split = PanelSplitter(Qt.Orientation.Vertical)
+        self.split = split = PanelSplitter(Qt.Orientation.Vertical)
         split.addWidget(self._table)
         split.addWidget(self._detail)
-        split.setStretchFactor(0, 3)
-        split.setStretchFactor(1, 2)
+        split.setStretchFactor(0, _TABLE_SHARE)
+        split.setStretchFactor(1, _DETAIL_SHARE)
         split.setChildrenCollapsible(False)
         self._table.setMinimumHeight(80)
         self._detail.setMinimumHeight(70)
@@ -234,6 +239,10 @@ class EvidencePanel(QWidget):
         layout.addWidget(split)
 
     # -- what is on show -----------------------------------------------------
+
+    def reset_split(self) -> None:
+        """The table and the details back to the share they open with."""
+        self.split.setSizes([_TABLE_SHARE * 1000, _DETAIL_SHARE * 1000])
 
     def clear(self, *, prompt: bool = True) -> None:
         """Empty the panel, and either invite a selection or say nothing.

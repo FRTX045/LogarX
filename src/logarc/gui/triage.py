@@ -163,7 +163,7 @@ class TriagePanel(QWidget):
         self.split.setChildrenCollapsible(False)
         self.split.setStretchFactor(0, 1)
         self.split.setStretchFactor(1, 1)
-        self.split.setSizes([1000, 1000])
+        self.reset_split()
         self.open_client = QPushButton("Open client")
         self.open_client.setToolTip("Open this client's supporting requests in Activity")
         # The one thing this panel exists to lead to, so it is the filled button.
@@ -251,6 +251,10 @@ class TriagePanel(QWidget):
                 colour_text(self.notice, THEME.alert)
 
         run_job(work, on_done=done, on_error=failed, on_advance=advanced)
+
+    def reset_split(self) -> None:
+        """The queue and the reasons back to half the panel each, as they open."""
+        self.split.setSizes([1000, 1000])
 
     def shutdown(self) -> None:
         """Invalidate queued signals before stopping the worker that produced them."""

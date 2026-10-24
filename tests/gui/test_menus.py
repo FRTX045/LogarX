@@ -72,7 +72,8 @@ def test_the_view_menu_holds_only_what_is_shown(qt_app: QApplication) -> None:
     `Full screen` belongs here on the same test every other entry passes: it
     decides what is on screen and nothing else. It is not a preference — it is
     not remembered, and it describes this moment rather than how the reader
-    likes to work.
+    likes to work. `Reset panel sizes` passes it too: it puts the panels that
+    show things back where they started.
     """
     window = MainWindow()
 
@@ -84,6 +85,7 @@ def test_the_view_menu_holds_only_what_is_shown(qt_app: QApplication) -> None:
         "Zoom in",
         "Zoom out",
         "Reset zoom",
+        "Reset panel sizes",
         "Full screen",
     ]
     window.close()

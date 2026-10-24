@@ -169,6 +169,18 @@ def settings_in_a_temp_file(tmp_path_factory: pytest.TempPathFactory) -> Iterato
 
 
 @pytest.fixture(autouse=True)
+def opened_as_if_for_the_first_time(settings_in_a_temp_file: Path) -> None:
+    """Every test's window opens at the shape a first launch has.
+
+    The window remembers its panel sizes and its own size when it closes, and
+    the settings file is shared by a whole module, so without this one test's
+    drag would be the next test's starting layout. Only the shape is cleared:
+    the rest of the store stays module-wide, as `test_window` needs.
+    """
+    app._settings().remove("window")
+
+
+@pytest.fixture(autouse=True)
 def nothing_left_running(request: pytest.FixtureRequest) -> Iterator[None]:
     """Fail a test that walks away from work it started.
 
