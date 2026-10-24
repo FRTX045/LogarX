@@ -46,10 +46,10 @@ from PyQt6.QtWidgets import (
 )
 
 from logarc.core.graph import GraphKind, reciprocal_pairs
-from logarc.graphbuild.layout import COLUMN, ROW, Point, layout_graph, sessions_in
+from logarc.graphbuild.layout import COLUMN, ROW, Point, layout_graph, session_of, sessions_in
 from logarc.gui.arrangement import Move, MoveHistory, Positions
 from logarc.gui.icon_set import KIND_NAMES, IconChoice
-from logarc.gui.icons import ICON_PIXELS, first_drawable, ink_for
+from logarc.gui.icons import ICON_PIXELS, first_drawable, icon_pixmap, ink_for
 from logarc.gui.ribbon import Mark, ribbon_polygon, ribbon_tip
 from logarc.style import (
     CAPTION_COLOUR,
@@ -59,8 +59,11 @@ from logarc.style import (
     SELECTION_WIDTH,
     SESSION_GROUND,
     THEME,
+    display_safe,
     edge_label,
     session_caption,
+    session_heading_tip,
+    session_name,
     session_rule,
     style_for,
     summarise,
@@ -265,17 +268,25 @@ _SCENE_MARGIN: Final = 24.0
 #:
 #: The padding is what keeps two boxes apart: sessions are laid out two rows
 #: apart, and at 20 the closest two boxes on the shopfront excerpt still have
-#: 90 units of paper between them (192.0.2.231, 69 sessions; 101 on
+#: 48 units of paper between them (192.0.2.231, 69 sessions; 59 on
 #: 203.0.113.6, 150), with every activity given the widest one's room across.
+#: Measured on the real display on 2026-10-25, once each box was headed by a
+#: name over its old label: the heading grew to 71 units and took 36 of the
+#: 84 there were.
 _SESSION_PAD: Final = 20.0
 _SESSION_CORNER: Final = 14.0
-#: The outline and the label, both `muted`: 8.4:1 on the box ground, a step
-#: below the captions it holds, which is the order they should be read in.
+#: The outline and the line under the name, both `muted`: 8.4:1 on the box
+#: ground. That line was once the whole label, kept a step below the captions
+#: so it was read after them; the name above it is meant to be read first.
 _SESSION_EDGE: Final = THEME.muted
 _SESSION_EDGE_WIDTH: Final = 1.4
 _SESSION_INK: Final = THEME.muted
-#: A heading for the box, a point above the captions inside it.
+#: The session's name, in the ink the captions are written in.
+_SESSION_NAME_INK: Final = THEME.ink
+#: The line under the name, a point above the captions inside the box.
 _SESSION_POINTS: Final = 8.5
+#: The name, larger again, as the user chose from the mockups (option B).
+_SESSION_NAME_SCALE: Final = 1.15
 
 #: How much of an activity shows when a filter on the evidence reaches none of
 #: its lines. Faint enough that the ones it does reach stand out, and not so
@@ -520,14 +531,20 @@ class _SessionBox:
     `_EdgeArt` is: a drag sends a position change per mouse-move event.
     """
 
-    __slots__ = ("label", "node_ids", "shape")
+    __slots__ = ("label", "node_ids", "session_id", "shape")
 
     def __init__(
-        self, *, shape: QGraphicsPathItem, label: QGraphicsRectItem, node_ids: tuple[str, ...]
+        self,
+        *,
+        shape: QGraphicsPathItem,
+        label: QGraphicsRectItem,
+        node_ids: tuple[str, ...],
+        session_id: str,
     ) -> None:
         self.shape = shape
         self.label = label
         self.node_ids = node_ids
+        self.session_id = session_id
 
     def reshape(self, around: QRectF, *, at_least: float) -> None:
         """Fit the box to `around`, the activities it holds, in scene units.
@@ -757,6 +774,10 @@ class ActivityCanvas(QGraphicsView):
         # label explains. None when whoever drew it did not say, and the label
         # then explains nothing rather than quote rules it was not given.
         self._session_policy: SessionPolicy | None = None
+        # The names the reader gave sessions, by session id. Kept across graphs:
+        # an id carries the client and the time filter, so a name for another
+        # client or another stretch of time names nothing here.
+        self._session_names: dict[str, str] = {}
         # The activities a filter on the evidence reaches, or None when there is
         # no filter. Every other activity is drawn faded.
         self._matching: frozenset[str] | None = None
@@ -939,6 +960,22 @@ class ActivityCanvas(QGraphicsView):
             self._draw_sessions(graph)
         else:
             self._forget_sessions()
+        self._spread_paper()
+
+    def set_session_names(self, names: Mapping[str, str]) -> None:
+        """Head these sessions with the reader's names, by session id.
+
+        The boxes are drawn again round the activities where they stand, as
+        `set_sessions` draws them, so nothing moves and the view stays where
+        the reader left it. Only widths can change: one-activity boxes share
+        the widest heading.
+        """
+        self._session_names = dict(names)
+        graph = self._graph
+        if graph is None or not self._boxes:
+            return
+        self._forget_sessions()
+        self._draw_sessions(graph)
         self._spread_paper()
 
     def set_matching(self, node_ids: frozenset[str] | None) -> None:
@@ -1344,6 +1381,7 @@ class ActivityCanvas(QGraphicsView):
         *,
         session_policy: SessionPolicy | None = None,
         matching: frozenset[str] | None = None,
+        session_names: Mapping[str, str] | None = None,
     ) -> None:
         """Replace whatever is on the canvas with `graph`.
 
@@ -1364,6 +1402,9 @@ class ActivityCanvas(QGraphicsView):
         `matching` names the activities a filter on the evidence reaches; the
         rest are drawn faded. Not carried from one graph to the next: ids from
         the last client name nothing in this one, and kept they would fade it all.
+
+        `session_names` are the names the reader gave sessions, by session id;
+        left out, the names already handed over stand.
         """
         if graph is not self._graph:
             # Ids from the last graph name nothing in this one.
@@ -1371,6 +1412,8 @@ class ActivityCanvas(QGraphicsView):
         self._graph = graph
         self._session_policy = session_policy
         self._matching = matching
+        if session_names is not None:
+            self._session_names = dict(session_names)
         self._forget_drawing()
 
         laid_out = _spread(layout_graph(graph, wrap=self._wrap), graph)
@@ -1448,6 +1491,9 @@ class ActivityCanvas(QGraphicsView):
         tip = session_rule(policy) if policy is not None else ""
         drawn: list[_SessionBox] = []
         for index, nodes in enumerate(groups, start=1):
+            session_id = session_of(nodes[0])
+            logarc_name = session_name(nodes)
+            given = self._session_names.get(session_id, "")
             shape = QGraphicsPathItem()
             shape.setPen(pen)
             shape.setBrush(QBrush(QColor(SESSION_GROUND)))
@@ -1457,23 +1503,24 @@ class ActivityCanvas(QGraphicsView):
             # view as it does everywhere else on the paper.
             shape.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
             self._scene.addItem(shape)
-            label = self._canvas_text(
+            label = self._session_heading(
+                # Through `display_safe`: the file can be edited by hand, or
+                # come with a case from someone else.
+                display_safe(given) if given else logarc_name,
                 session_caption(index, len(groups), nodes),
-                colour=_SESSION_INK,
-                point_size=_SESSION_POINTS,
-                anchor=QPointF(),
-                ground=SESSION_GROUND,
-                centred=False,
-                bold=True,
+                pencil=bool(given),
             )
             for part in (label, *label.childItems()):
                 part.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
             # On the label, not the box: the boxes cover most of a trace, and a
             # tip on the whole of one would chase the pointer wherever it went.
-            label.setToolTip(tip)
+            label.setToolTip(session_heading_tip(tip, logarc_name, renamed=bool(given)))
             drawn.append(
                 _SessionBox(
-                    shape=shape, label=label, node_ids=tuple(node.node_id for node in nodes)
+                    shape=shape,
+                    label=label,
+                    node_ids=tuple(node.node_id for node in nodes),
+                    session_id=session_id,
                 )
             )
         # Only the labels that are wider than their own activities set it: a
@@ -1616,6 +1663,57 @@ class ActivityCanvas(QGraphicsView):
                 parent=item,
             )
         )
+
+    def _session_heading(self, name: str, detail: str, *, pencil: bool) -> QGraphicsRectItem:
+        """A session box's heading: its name, and under it which visit, how much
+        and when. Written on one patch of box ground, as `_canvas_text` writes a
+        caption, so a box's label is one item to place and to size by.
+
+        `pencil` marks a name the reader gave, so it is never taken for
+        something the log says. Each part is tagged in `data(0)`.
+        """
+        backdrop = QGraphicsRectItem()
+        backdrop.setBrush(QBrush(QColor(SESSION_GROUND)))
+        backdrop.setPen(QPen(Qt.PenStyle.NoPen))
+        # Where `_canvas_text` puts a caption's patch: above the arrows, below
+        # the activities.
+        backdrop.setZValue(0.6)
+        backdrop.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresParentOpacity, True)
+        self._scene.addItem(backdrop)
+        padding = _TEXT_PADDING / _LEGIBLE_AT
+
+        title = QGraphicsSimpleTextItem(name, backdrop)
+        title.setData(0, "session-name")
+        title.setBrush(QBrush(QColor(_SESSION_NAME_INK)))
+        font = QFont()
+        font.setPointSizeF(_SESSION_POINTS * _SESSION_NAME_SCALE / _LEGIBLE_AT)
+        font.setWeight(QFont.Weight.DemiBold)
+        title.setFont(font)
+        line = title.boundingRect().height()
+
+        across = padding
+        picture = icon_pixmap("pencil", _SESSION_NAME_INK) if pencil else None
+        if picture is not None:
+            mark = QGraphicsPixmapItem(picture, backdrop)
+            mark.setData(0, "pencil")
+            mark.setTransformationMode(Qt.TransformationMode.SmoothTransformation)
+            mark.setScale(line * 0.9 / picture.width())
+            mark.setPos(padding, padding + line * 0.05)
+            across += line * 1.2
+        title.setPos(across, padding)
+
+        under = QGraphicsSimpleTextItem(detail, backdrop)
+        under.setData(0, "session-detail")
+        under.setBrush(QBrush(QColor(_SESSION_INK)))
+        small = QFont()
+        small.setPointSizeF(_SESSION_POINTS / _LEGIBLE_AT)
+        under.setFont(small)
+        under.setPos(padding, padding + line + padding)
+
+        width = max(across + title.boundingRect().width(), padding + under.boundingRect().width())
+        height = under.pos().y() + under.boundingRect().height()
+        backdrop.setRect(0.0, 0.0, width + padding, height + padding)
+        return backdrop
 
     def _canvas_text(
         self,

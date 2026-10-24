@@ -17,9 +17,19 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from PyQt6.QtWidgets import QGraphicsItem
+
     from logarc.gui.canvas import ActivityCanvas, _EdgeArt, _NodeItem, _SessionBox
 
-__all__ = ["box_text", "edge_between", "node_item", "node_items", "session_boxes"]
+__all__ = [
+    "box_detail",
+    "box_name",
+    "edge_between",
+    "has_pencil",
+    "node_item",
+    "node_items",
+    "session_boxes",
+]
 
 
 def node_item(canvas: ActivityCanvas, node_id: str) -> _NodeItem:
@@ -60,7 +70,23 @@ def session_boxes(canvas: ActivityCanvas) -> list[_SessionBox]:
     return list(canvas._boxes)
 
 
-def box_text(box: _SessionBox) -> str:
-    """What a box's label says."""
-    (text,) = box.label.childItems()
-    return text.text()  # type: ignore[attr-defined]
+def _parts(box: _SessionBox, tag: str) -> list[QGraphicsItem]:
+    """The parts of a box's heading tagged `tag`: a name, a detail line, a pencil."""
+    return [part for part in box.label.childItems() if part.data(0) == tag]
+
+
+def box_name(box: _SessionBox) -> str:
+    """The name a box's heading gives its session: the first line."""
+    (name,) = _parts(box, "session-name")
+    return name.text()  # type: ignore[attr-defined]
+
+
+def box_detail(box: _SessionBox) -> str:
+    """The line under the name: which session, how much, and when."""
+    (detail,) = _parts(box, "session-detail")
+    return detail.text()  # type: ignore[attr-defined]
+
+
+def has_pencil(box: _SessionBox) -> bool:
+    """Whether the heading carries the pencil a reader's own name is marked with."""
+    return bool(_parts(box, "pencil"))
