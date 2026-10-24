@@ -15,6 +15,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QLineEdit, QVBoxLayout
 
 from logarc.bookmarks import NAME_LIMIT
+from logarc.gui._qt import required
 from logarc.gui.theme import colour_text
 from logarc.session_names import SessionNameWriteError
 from logarc.style import THEME
@@ -88,11 +89,13 @@ class SessionRename(QDialog):
         self.error.hide()
 
         buttons = QDialogButtonBox()
-        self.reset_button = buttons.addButton(
-            "Use logarc's name", QDialogButtonBox.ButtonRole.ResetRole
+        self.reset_button = required(
+            buttons.addButton("Use logarc's name", QDialogButtonBox.ButtonRole.ResetRole)
         )
-        self.cancel_button = buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
-        self.rename_button = buttons.addButton("Rename", QDialogButtonBox.ButtonRole.AcceptRole)
+        self.cancel_button = required(buttons.addButton(QDialogButtonBox.StandardButton.Cancel))
+        self.rename_button = required(
+            buttons.addButton("Rename", QDialogButtonBox.ButtonRole.AcceptRole)
+        )
         # Enter renames; neither other button may take it over when it has focus.
         for other in (self.reset_button, self.cancel_button):
             other.setAutoDefault(False)
