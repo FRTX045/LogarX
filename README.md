@@ -13,7 +13,7 @@ readable account of what each client did. Instead of thousands of lines, you get
 each client's requests grouped into **activities**, connected in the order they
 happened, and every one of them opens the exact log lines it was built from.
 
-![The logarc window: the client list, one client's trace with each session in a box, and the 46 log lines behind the selected SQL injection](docs/images/screenshot-trace.png)
+![The logarc window: the client list, one client's trace with each session in a box headed by its name, and the 46 log lines behind the selected SQL injection](docs/images/screenshot-trace.png)
 
 <sub>sqlmap against a shop, in the last of three sessions. The selected activity is 46 requests: 30 `UNION ALL SELECT`, 11 always-true conditions, one column count, and four known only by sqlmap's user agent. The server answered every one with HTTP 200. The panel on the right is the evidence: line numbers, statuses, and the raw line exactly as Apache wrote it.</sub>
 
@@ -65,7 +65,7 @@ professionals.**
 |---|---|---|
 | **Open the log** | "What format is this? Do I need a database?" | **Case → New from logs…** detects the format (fourteen are built in) and reads the log on your machine. Lines it cannot read are counted and reported, never silently dropped. |
 | **Find a starting point** | "A million lines. Where do I look?" | **Triage** ranks clients in a *Suspicious* and an *Unusual* queue, each with a *Finding* and the reasons behind its place. |
-| **Understand and check** | "What did this address do, in what order, and how did the server answer?" | Each client becomes a graph of activities, grouped into sessions with their times. A node's outline summarises the response codes it received, and the icon inside it says what kind of activity it was. Click it and the evidence panel lists the requests behind it, decoded, with the raw line kept and repeated lines folded. |
+| **Understand and check** | "What did this address do, in what order, and how did the server answer?" | Each client becomes a graph of activities, grouped into sessions with their times and a name for each, which you can change. A node's outline summarises the response codes it received, and the icon inside it says what kind of activity it was. Click it and the evidence panel lists the requests behind it, decoded, with the raw line kept and repeated lines folded. |
 | **Explain and hand over** | "How do I show this to someone who can act?" | **Ctrl+D** bookmarks a client, an activity or a line, with a note. **Export** writes a report (HTML), the graph (JSON), or every bookmark (CSV). |
 | **Teach it** | "It missed something I can see." | Right-click the line and choose **Make a rule from this line…**. Choose the parts to match, name and classify the rule, review what it matches, then **Add rule**. **Re-read now** applies it to the open client and restarts Triage. There is no YAML to write yourself. |
 

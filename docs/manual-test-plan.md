@@ -889,15 +889,17 @@ candidates the ordering is the thing most likely to be wrong.
 
 1. Reconstruct `192.0.2.231` from the shopfront excerpt.
 
-**Pass:** every session is in a faint blue box labelled `Session k of 69 ·
-n activities · time`. No caption carries a darker square behind it. No two
-boxes touch.
+**Pass:** every session is in a faint blue box headed by a name in bold,
+the name of one of the activities in it, with `Session k of 69 · n activities
+· time` under it. No caption carries a darker square behind it. No two boxes
+touch.
 
-2. Rest the pointer on a box's label, then on the empty ground inside a box.
+2. Rest the pointer on a box's heading, then on the empty ground inside a box.
 
-**Pass:** on the label, a tip says a session is one visit from this address,
+**Pass:** on the heading, a tip says a session is one visit from this address,
 with no pause inside it longer than 30 minutes, the same user agent
-throughout, and 8 hours at most. On the empty ground, no tip.
+throughout, and 8 hours at most, and ends `Double-click the title to rename
+this session.` On the empty ground, no tip.
 
 3. Drag an activity well to the right of its row, then press Ctrl+Z.
 
@@ -916,6 +918,33 @@ back the drag from step 3.
 6. Switch to **Behaviour**.
 
 **Pass:** no boxes there, whichever way the preference is set.
+
+7. Back on **Trace**, with the boxes on, right-click the empty ground inside
+   the first box and choose **Rename session…**. Type `Scanner looking
+   around` and press Enter.
+
+**Pass:** the window says which session and logarc's own name. After Enter
+the box is headed `Scanner looking around` with a pencil before it, and
+nothing else moves. Resting on the heading, the tip begins `Named by you.
+logarc's name:` and the name the box had before.
+
+8. Right-click the paper outside every box.
+
+**Pass:** **Rename session…** is there, greyed out.
+
+9. Close the case and open it again, then reconstruct `192.0.2.231`.
+
+**Pass:** the first box is still `Scanner looking around`, with its pencil.
+
+10. Double-click that heading and press **Use logarc's name**.
+
+**Pass:** the box has its old name back, with no pencil.
+
+11. Copy the case folder somewhere read-only (a folder whose permissions refuse
+    writes), open the copy, and rename a session.
+
+**Pass:** the window stays open and says `Could not save the name: the case
+folder cannot be written to.` The heading does not change.
 
 ---
 
@@ -1312,7 +1341,7 @@ rule.
 | 19 | An IIS log reads from its own header; its directives are not quarantined | | |
 | 20 | A pattern reads a syslog-wrapped log; a year-less time format is refused | | |
 | 21 | The fourteen shipped formats read as a list you can choose from | | |
-| 22 | Sessions are boxed and explained; the boxes follow a drag and can be turned off | | |
+| 22 | Sessions are boxed, named and explained; a name can be changed, survives reopening, and goes back; the boxes follow a drag and can be turned off | | |
 | 23 | The evidence filters, says how much it kept, fades the canvas, and resets per client | | |
 | 24 | The client box finds clients by their requests, moves the range for a time, and opens a client filtered | | |
 | 25 | Bookmarks save from each place, wear ribbons, list by category, reopen past the range, export, reach a second window, and survive an unreadable file | | |

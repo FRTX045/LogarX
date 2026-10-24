@@ -220,14 +220,28 @@ fitted to the window. The *Wrap long traces* preference turns the fold off when
 the straight timeline is worth more than legible captions; the graph is then
 panned rather than fitted, opening on its first activity.
 
-Each session sits in a box of its own, labelled with its number, how many
-activities it holds and when it ran, such as `Session 2 of 69 · 2 activities ·
-09 Mar 01:55–02:26`. That gives the session count in the header something on the
-canvas to point to. Rest the pointer on a label to see what makes a session:
-no pause inside it longer than 30 minutes, the same user agent throughout, and
-8 hours at most. A box follows its activities when they are dragged. The
-*Outline each session* preference turns the boxes off, and nothing moves when
-it does.
+Each session sits in a box of its own, headed by a name: the name of its most
+important activity, picked the way an activity picks its own name. The most
+severe comes first, then an attack over ordinary use, then the one with the
+most requests. Under the name is its number, how many activities it holds and
+when it ran, such as `Session 2 of 69 · 2 activities · 09 Mar 01:55–02:26`.
+That gives the session count in the header something on the canvas to point
+to. Rest the pointer on the heading to see what makes a session: no pause
+inside it longer than 30 minutes, the same user agent throughout, and 8 hours
+at most.
+
+To give a session a name of your own, right-click anywhere inside its box and
+choose **Rename session…**, or double-click its heading. **Use logarc's name**
+in that window puts logarc's name back. A name you gave carries a pencil, and
+the heading's tip begins with logarc's own name, so nobody takes your words for
+something the log says. Names are kept in `session-names.json` in the case
+folder, beside your bookmarks and outside the manifest, so they come back when
+the case is opened again, on any machine the folder is copied to. A name
+belongs to the session that starts at the same log line: a time filter that
+cuts that line off shows logarc's name until the filter is cleared.
+
+A box follows its activities when they are dragged. The *Outline each session*
+preference turns the boxes off, and nothing moves when it does.
 
 ![The behaviour map: 557 requests folded into two activity types](images/screenshot-behaviour.png)
 

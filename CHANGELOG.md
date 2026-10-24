@@ -12,6 +12,18 @@ which will be the first tag.
 
 ### Added
 
+- **Every session is named.** A session's box is headed by the name of its most
+  important activity, picked as an activity picks its own (most severe, then an
+  attack over ordinary use, then the most requests), with its old label,
+  `Session 2 of 69 · 2 activities · 09 Mar 01:55–02:26`, underneath. On the
+  shopfront log and the 917-client evaluation build, all 2,504 sessions came out
+  with a name. Right-click inside a box and choose *Rename session…*, or
+  double-click its heading, to name it yourself; a name you gave carries a pencil,
+  its tip starts with logarc's own name, and *Use logarc's name* puts that back.
+  Names are kept in `session-names.json` in the case folder, outside the
+  manifest, keyed by the session's client and first log line, so a time filter
+  that cuts that line off shows logarc's name until it is cleared. The closest
+  two boxes on the shopfront log now stand 48 units apart, from 84.
 - **An icon for every kind of activity, inside its circle.** Each activity on the
   graph, Trace and Behaviour alike, carries an icon for its kind — fourteen
   kinds, every rule names one, so none is drawn without — in white or near-black
