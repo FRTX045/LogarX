@@ -71,6 +71,7 @@ if TYPE_CHECKING:
 
     from PyQt6.QtGui import QMouseEvent, QResizeEvent
 
+    from logarc.core.activity import ActivityCategory
     from logarc.core.graph import ActivityGraph, GraphNode
     from logarc.sessionize.segmenter import SessionPolicy
 
@@ -688,6 +689,10 @@ class ActivityCanvas(QGraphicsView):
     have to grey out when there is nothing left for them to do, and the canvas
     is the only thing that knows."""
 
+    graph_changed = pyqtSignal()
+    """A graph, or the waiting message, has just gone up. The legend lists the
+    kinds on show, and this is how it hears there are new ones."""
+
     expand_requested = pyqtSignal()
     """The corner button was pressed. What full screen *means* is the window's
     business; the canvas only owns the button, because the canvas is what knows
@@ -948,6 +953,17 @@ class ActivityCanvas(QGraphicsView):
     @property
     def icons(self) -> IconChoice:
         return self._icons
+
+    @property
+    def kinds_on_show(self) -> tuple[ActivityCategory, ...]:
+        """The kinds of the activities drawn now, each once."""
+        if self._graph is None:
+            return ()
+        return tuple(
+            dict.fromkeys(
+                node.category for node in self._graph.nodes if node.node_id in self._nodes
+            )
+        )
 
     def set_icons(self, choice: IconChoice) -> None:
         """Draw every activity's icon by `choice` from now on.
@@ -1360,6 +1376,7 @@ class ActivityCanvas(QGraphicsView):
         laid_out = _spread(layout_graph(graph, wrap=self._wrap), graph)
         if not laid_out:
             self._show_message("No activity to show for this client.")
+            self.graph_changed.emit()
             return
         self._base = laid_out
 
@@ -1376,6 +1393,7 @@ class ActivityCanvas(QGraphicsView):
         finally:
             self._drawing = False
         self._draw_ribbons()
+        self.graph_changed.emit()
 
     def _draw(self, graph: ActivityGraph, positions: dict[str, Point]) -> None:
         """Put the arrows down, then the activities on top of them, then a box
@@ -1526,6 +1544,7 @@ class ActivityCanvas(QGraphicsView):
         self._graph = None
         self._forget_drawing()
         self._show_message(text)
+        self.graph_changed.emit()
 
     def _forget_drawing(self) -> None:
         """Clear the scene and everything that pointed into it.

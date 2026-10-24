@@ -217,3 +217,11 @@ def test_the_unknown_icon_note() -> None:
     assert unknown_icon_note(["skul", "file:x.svg"]) == (
         "Icons skul and file:x.svg are not ones logarc knows, so their kinds' icons are drawn."
     )
+
+
+def test_a_kind_takes_the_readers_icon_then_its_own() -> None:
+    from logarc.gui.icon_set import IconChoice
+
+    choice = IconChoice(kinds={ActivityCategory.INJECTION: "bug"}, rules={"x": "skull"})
+    assert choice.kind_candidates(ActivityCategory.INJECTION) == ("bug", "syringe")
+    assert choice.kind_candidates(ActivityCategory.SSRF) == ("server",)

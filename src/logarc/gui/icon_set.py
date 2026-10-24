@@ -101,12 +101,19 @@ class IconChoice:
         icon for its kind, then the kind's own. Only the naming rule counts: a
         rule that merely matched inside the activity did not make it what it is.
         """
-        found = (
-            self.rules.get(node.named_by),
-            self.kinds.get(node.category),
-            DEFAULT_ICONS[node.category],
+        return tuple(
+            dict.fromkeys(
+                value
+                for value in (self.rules.get(node.named_by), *self.kind_candidates(node.category))
+                if value
+            )
         )
-        return tuple(dict.fromkeys(value for value in found if value))
+
+    def kind_candidates(self, kind: ActivityCategory) -> tuple[str, ...]:
+        """The icons a whole kind could be shown with, as the legend shows it."""
+        return tuple(
+            dict.fromkeys(value for value in (self.kinds.get(kind), DEFAULT_ICONS[kind]) if value)
+        )
 
 
 @cache

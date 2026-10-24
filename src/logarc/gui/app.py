@@ -331,6 +331,7 @@ class MainWindow(QMainWindow):
         self._canvas = ActivityCanvas()
         self._canvas.set_icons(self._icon_choice())
         self._legend = LegendBar()
+        self._canvas.graph_changed.connect(self._show_kinds)
         self._evidence = EvidencePanel()
         self._evidence.filter_changed.connect(self._filter_changed)
         self._clients.client_chosen.connect(self._reconstruct)
@@ -989,6 +990,11 @@ class MainWindow(QMainWindow):
         # the case read with the old ones still waits for Re-read: an icon is
         # not a finding.
         self._canvas.set_icons(self._icon_choice())
+        self._show_kinds()
+
+    def _show_kinds(self) -> None:
+        """The legend's kinds: those on the canvas now, in the icons in force."""
+        self._legend.show_kinds(self._canvas.kinds_on_show, self._canvas.icons)
 
     def _icon_choice(self) -> IconChoice:
         """The icons in force: the reader's for each kind, and their rules'."""
