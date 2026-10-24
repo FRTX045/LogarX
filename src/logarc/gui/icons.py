@@ -34,6 +34,7 @@ __all__ = [
     "icon_file_problem",
     "icon_pixmap",
     "ink_for",
+    "path_pixmap",
     "read_kind_icons",
     "write_kind_icons",
 ]
@@ -173,6 +174,11 @@ def icon_pixmap(value: str, colour: str, size: int = ICON_PIXELS) -> QPixmap | N
         elif path is not None:  # pragma: no branch - set whenever icon is None
             _drawn[key] = _from_file(path, size)
     return _drawn[key]
+
+
+def path_pixmap(path: Path, size: int = ICON_PIXELS) -> QPixmap | None:
+    """An image of the reader's that is not in their folder yet, drawn as it would be."""
+    return _from_file(path, size)
 
 
 def first_drawable(candidates: Sequence[str], colour: str, size: int = ICON_PIXELS) -> QPixmap:
