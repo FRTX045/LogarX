@@ -89,8 +89,8 @@ from logarc.gui.format_notice import drift_notice
 from logarc.gui.formats_and_rules import FormatsAndRules
 from logarc.gui.full_screen import FullScreen
 from logarc.gui.help import open_user_guide, show_about, show_shortcuts
-from logarc.gui.icon_set import IconChoice, rule_icons
-from logarc.gui.icons import read_kind_icons
+from logarc.gui.icon_set import KIND_NAMES, IconChoice, rule_icons
+from logarc.gui.icons import Picked, adopt, read_kind_icons, write_kind_icons
 from logarc.gui.notice_bar import NoticeBanner, warn_about_dead_files
 from logarc.gui.panels import ClientTable, LegendBar
 from logarc.gui.preferences import PreferencesDialog
@@ -135,10 +135,11 @@ from logarc.triage.scan import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Mapping, Sequence
     from datetime import date, datetime
 
     from logarc.analysis import AnalysisResult
+    from logarc.core.activity import ActivityCategory
     from logarc.core.evidence import EvidenceRef
     from logarc.core.graph import GraphNode
     from logarc.evidence import EvidenceLine
@@ -2134,10 +2135,37 @@ class MainWindow(QMainWindow):
         nothing itself, which is what makes Cancel mean *nothing happened*
         rather than *something to be undone*.
         """
-        dialog = PreferencesDialog(self._prefs, self)
+        dialog = PreferencesDialog(self._prefs, self, icons=read_kind_icons(_settings().value))
         if dialog.exec() != int(QDialog.DialogCode.Accepted.value):
             return
         self._apply_preferences(dialog.chosen())
+        self._apply_icons(dialog.chosen_icons())
+
+    def _apply_icons(self, chosen: Mapping[ActivityCategory, Picked]) -> None:
+        """Keep the icons chosen for kinds, and draw with them.
+
+        A file of the reader's is copied into their icons folder only now. One
+        that cannot be (moved or deleted since it was picked) leaves its kind
+        with the icon it had, not its default, and the status line says so.
+        """
+        before = read_kind_icons(_settings().value)
+        kept: dict[ActivityCategory, str] = {}
+        for kind, picked in chosen.items():
+            try:
+                value = adopt(picked)
+            except OSError:
+                name = picked.name if isinstance(picked, Path) else str(picked)
+                self._status.setText(
+                    f"{name} could not be copied into your icons folder, "
+                    f"so {KIND_NAMES[kind]} keeps the icon it had."
+                )
+                colour_text(self._status, THEME.alert)
+                value = before.get(kind)
+            if value:
+                kept[kind] = value
+        write_kind_icons(_settings(), kept)
+        self._canvas.set_icons(self._icon_choice())
+        self._show_kinds()
 
     def _apply_preferences(self, chosen: dict[str, prefs.Value]) -> None:
         """Put every setting in force and write them all down.

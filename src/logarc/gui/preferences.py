@@ -39,9 +39,14 @@ from PyQt6.QtWidgets import (
 )
 
 from logarc.gui import prefs
+from logarc.gui.icon_grid import KindIconGrid
 from logarc.gui.theme import GAP, ROOM, settle_buttons
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from logarc.core.activity import ActivityCategory
+    from logarc.gui.icons import Picked
     from logarc.gui.prefs import Setting, Value
 
 __all__ = ["PreferencesDialog"]
@@ -51,6 +56,9 @@ _WIDTH = 560
 #: Every choice box the same width, so the column of them reads as a column.
 _CHOICE_WIDTH = 240
 
+#: The tab the icons for kinds sit on.
+_ICONS_UNDER = "Graph"
+
 
 class PreferencesDialog(QDialog):
     """The settings the window keeps between launches."""
@@ -59,11 +67,15 @@ class PreferencesDialog(QDialog):
         self,
         values: dict[str, Value],
         parent: QWidget | None = None,
+        *,
+        icons: Mapping[ActivityCategory, str] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Preferences")
         self.setMinimumWidth(_WIDTH)
         self._controls: dict[str, QCheckBox | QComboBox] = {}
+        # An icon for each kind, under the Graph settings: what the graph draws.
+        self.icons = KindIconGrid(icons or {})
 
         column = QVBoxLayout(self)
         column.setContentsMargins(ROOM, ROOM, ROOM, ROOM)
@@ -114,6 +126,8 @@ class PreferencesDialog(QDialog):
             page.addLayout(form)
         for switch in switches:
             page.addWidget(switch)
+        if group == _ICONS_UNDER:
+            page.addWidget(self.icons)
         page.addStretch(1)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -155,12 +169,17 @@ class PreferencesDialog(QDialog):
                 values[setting.key] = control.isChecked()
         return values
 
+    def chosen_icons(self) -> dict[ActivityCategory, Picked]:
+        """The kinds whose icon the reader changed, and to what: as the grid shows them."""
+        return self.icons.values()
+
     def restore_defaults(self) -> None:
-        """Fill the controls with what the settings start as.
+        """Fill the controls with what the settings start as, the icons included.
 
         Filled, not applied. Whether the window ever hears about it is still
         the reader's decision, taken with OK.
         """
+        self.icons.restore_defaults()
         for setting, value in ((s, s.default) for s in prefs.EVERY):
             control = self._controls[setting.key]
             if isinstance(control, QComboBox):

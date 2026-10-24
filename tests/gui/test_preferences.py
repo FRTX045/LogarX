@@ -24,11 +24,17 @@ from PyQt6.QtWidgets import (
     QTabWidget,
 )
 
+from logarc.core.activity import ActivityCategory
 from logarc.gui import prefs
+from logarc.gui._qt import required
 from logarc.gui.density import Density
 from logarc.gui.folding import FoldRule
+from logarc.gui.icon_grid import KindIconGrid
+from logarc.gui.icon_set import KIND_NAMES
+from logarc.gui.icons import first_drawable
 from logarc.gui.preferences import PreferencesDialog
 from logarc.gui.theme import ui_font
+from logarc.style import THEME
 
 
 def _opened(values: dict[str, bool | Density] | None = None) -> PreferencesDialog:
@@ -131,7 +137,9 @@ def test_larger_text_scrolls_without_clipping_the_confirmation_buttons(
         qt_app.processEvents()
         viewport = scroll.viewport()
         assert viewport is not None
-        last = dialog._controls["view/ask_unsaved_arrangement"]
+        # The last thing on the Graph tab: the icons for kinds sit under its
+        # switches, so the bottom of the scroll is their Default icons button.
+        last = dialog.icons.default_button
         rect = QRect(last.mapTo(viewport, QPoint()), last.size())
         assert viewport.rect().contains(rect.topLeft())
         assert rect.bottom() <= viewport.rect().bottom()
@@ -266,3 +274,83 @@ def test_the_band_choices_keep_their_names(qt_app: QApplication) -> None:
 
     assert isinstance(control, QComboBox)
     assert [control.itemText(i) for i in range(control.count())] == ["Coarse", "Medium", "Fine"]
+
+
+# -- icons for kinds -------------------------------------------------------
+
+
+def _icons_dialog(
+    icons: dict[ActivityCategory, str] | None = None,
+) -> tuple[PreferencesDialog, KindIconGrid]:
+    dialog = PreferencesDialog(prefs.defaults(), icons=icons or {})
+    return dialog, dialog.icons
+
+
+def _answers(monkeypatch: pytest.MonkeyPatch, grid: KindIconGrid, answer: object) -> None:
+    monkeypatch.setattr(grid, "_pick", lambda kind: answer)
+
+
+def test_the_graph_tab_offers_an_icon_for_every_kind(qt_app: QApplication) -> None:
+    dialog, grid = _icons_dialog()
+    assert [button.text() for button in grid.buttons.values()] == list(KIND_NAMES.values())
+    graph = [dialog.tabs.tabText(i) for i in range(dialog.tabs.count())].index("Graph")
+    assert required(dialog.tabs.widget(graph), "page").isAncestorOf(grid)
+    words = [label.text() for label in grid.findChildren(QLabel)]
+    assert "Icons" in words
+    assert "One for each kind of activity, drawn on the graph. Click one to change it." in words
+    assert grid.default_button.text() == "Default icons"
+
+
+def test_picking_an_icon_for_a_kind_is_handed_back(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dialog, grid = _icons_dialog()
+    _answers(monkeypatch, grid, "bug")
+    grid.buttons[ActivityCategory.INJECTION].click()
+    assert dialog.chosen_icons() == {ActivityCategory.INJECTION: "bug"}
+
+
+def test_cancelling_the_picker_changes_nothing(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dialog, grid = _icons_dialog({ActivityCategory.INJECTION: "bug"})
+    _answers(monkeypatch, grid, ...)
+    grid.buttons[ActivityCategory.INJECTION].click()
+    assert dialog.chosen_icons() == {ActivityCategory.INJECTION: "bug"}
+
+
+def test_picking_the_default_forgets_the_choice(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dialog, grid = _icons_dialog({ActivityCategory.INJECTION: "bug"})
+    _answers(monkeypatch, grid, None)
+    grid.buttons[ActivityCategory.INJECTION].click()
+    assert dialog.chosen_icons() == {}
+
+
+def test_default_icons_puts_every_kind_back(qt_app: QApplication) -> None:
+    dialog, grid = _icons_dialog({ActivityCategory.INJECTION: "bug", ActivityCategory.SSRF: "zap"})
+    grid.default_button.click()
+    assert dialog.chosen_icons() == {}
+
+
+def test_restore_defaults_puts_the_icons_back_too(qt_app: QApplication) -> None:
+    dialog, _grid = _icons_dialog({ActivityCategory.INJECTION: "bug"})
+    dialog.restore_defaults()
+    assert dialog.chosen_icons() == {}
+
+
+def test_a_kinds_button_shows_its_icon(qt_app: QApplication) -> None:
+    _dialog, grid = _icons_dialog({ActivityCategory.INJECTION: "bug"})
+    button = grid.buttons[ActivityCategory.INJECTION]
+    size = button.iconSize()
+    shown = button.icon().pixmap(size).toImage()
+    assert shown == first_drawable(["bug"], THEME.ink, size.width()).toImage()
+
+
+def test_a_missing_file_choice_shows_the_kinds_default(qt_app: QApplication) -> None:
+    _dialog, grid = _icons_dialog({ActivityCategory.INJECTION: "file:gone.svg"})
+    button = grid.buttons[ActivityCategory.INJECTION]
+    size = button.iconSize()
+    shown = button.icon().pixmap(size).toImage()
+    assert shown == first_drawable(["syringe"], THEME.ink, size.width()).toImage()
