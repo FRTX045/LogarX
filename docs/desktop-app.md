@@ -13,8 +13,9 @@ exporting the canvas as a **PNG**, which is a picture rather than a
 serialisation of the reconstruction, and narrowing a reconstruction to a
 **stretch of time**. Both are described below.
 
-Window state — preferences, saved layouts, the recent-case list — is the
-window's own and has no command-line equivalent by nature.
+Window state — preferences, saved layouts, the recent-case list, the panel
+sizes and the window's own size and place — is the window's own and has no
+command-line equivalent by nature.
 
 Interface text zooms like most applications: **View → Zoom in** (Ctrl++ or
 Ctrl+=), **Zoom out** (Ctrl+-) and **Reset zoom** (Ctrl+0), or Ctrl and the
@@ -40,7 +41,8 @@ visible below it.
 
 Optional text starts closed. **Details**, above the evidence, shows the time
 range, matching rules and OWASP mapping, and **Legend** explains the graph's
-colors, outlines and sizes. Each opens and closes on its own. Counts, active
+colors, outlines and sizes, and names the kinds of activity on the graph in
+front of you, each with its icon. Each opens and closes on its own. Counts, active
 filters, provisional scan state and source warnings stay visible. Everything
 else explains itself on hover: the Triage queues, column headings, buttons,
 and every preference.
@@ -89,7 +91,7 @@ and respects existing environment settings. For a larger cursor, launch with
 |---|---|
 | **Case** | New from logs… (Ctrl+N) · Open… (Ctrl+O) · Open recent… (Ctrl+Shift+O) · Formats and rules… · Run CRS scan · Exit |
 | **Edit** | Undo move (Ctrl+Z) · Save layout (Ctrl+S) · Reset layout (Ctrl+Shift+R) · Bookmark… (Ctrl+D) · Preferences… (Ctrl+,) |
-| **View** | Trace · Behaviour · Timeline · Fit to window · Zoom in (Ctrl++) · Zoom out (Ctrl+-) · Reset zoom (Ctrl+0) · Full screen (F11) |
+| **View** | Trace · Behaviour · Timeline · Fit to window · Zoom in (Ctrl++) · Zoom out (Ctrl+-) · Reset zoom (Ctrl+0) · Reset panel sizes · Full screen (F11) |
 | **Export** | Report (HTML)… · Graph (JSON)… · Image (PNG)… · Bookmarks (CSV)… |
 | **Help** | User guide (F1) · Keyboard shortcuts · About logarc |
 
@@ -237,6 +239,34 @@ to the other forty-five times.
 Neither view links across a session boundary. A gap long enough to end a session
 is a break in the story, not a transition within it.
 
+### Icons
+
+Inside every circle is an icon for the kind of activity it is: a syringe for
+injection, a radar dish for reconnaissance, a key for a credential attack, a
+globe for ordinary browsing. A graph reads at a glance before its captions do.
+The circle's colour still says how serious the activity was and its outline
+whether it worked; the icon says only what kind of thing it was, and the
+caption stays the source of truth. Rest the pointer on a circle and the first
+lines name the activity and its kind.
+
+There are fourteen kinds, every rule names one of them, and each has its icon,
+so no activity is drawn without one. The icons are
+[Lucide](https://lucide.dev)'s, all 1,533 of them shipped with logarc.
+
+![Preferences, Graph tab: an icon for each kind](images/screenshot-icons.png)
+
+To change the icon of a whole kind, open **Edit → Preferences… → Graph** and,
+under **Icons**, click the kind. Pick another from the gallery, searching it by
+name or by what it shows (`lock`, `needle`, `cart`), or choose **From file…**
+for an SVG or PNG image of your own, up to 1 MB. Your image keeps its own
+colours, and it is copied into an `icons` folder beside your rules when you
+press OK, so moving the original later changes nothing. **Default** in the
+picker goes back to the kind's own icon; **Default icons** puts every kind
+back. A rule of your own can have an icon of its own too, chosen in
+[Add a rule](#adding-a-rule-without-yaml) or written as `icon:` in its YAML
+([Writing rules](writing-rules.md)): it is drawn for every activity that rule
+names, in place of its kind's.
+
 **View → Full screen** gives the graph the whole window.
 
 ![The graph alone](images/screenshot-graph.png)
@@ -373,6 +403,14 @@ ring come along, **Ctrl+Z** takes the last move back, and **Edit → Save
 layout** keeps it for the next time this client is opened.
 **Edit → Reset layout** returns to the computed one and forgets what was saved.
 
+The panels keep the sizes you drag them to — the client list, the graph and the
+evidence beside each other, the evidence table over its details, and the queue
+over its reasons in **Where to start** — and the window keeps its size and
+place, from one start to the next. A window closed in full screen opens as it
+was before full screen. **View → Reset panel sizes** puts the panels back to
+the sizes logarc opens with, after asking; Cancel is the default, and the
+window keeps its own size.
+
 **A saved layout is a record of what you were reading.** It is filed under
 the case, the client, the view and the wrap setting, and the coordinates it holds
 are keyed by activity id — which for a trace carries the client's address in
@@ -496,6 +534,9 @@ true, or any of them, as you choose. The decoded fields are listed first and
 are usually the ones to use; *as logged* fields test what was literally sent.
 Upper and lower case match alike in every test. Confidence, an OWASP category
 and references are under **More**, and left empty they are not written.
+**Icon** shows what the graph will draw for an activity the rule names, the
+kind's icon until you choose another with **Change…**; an image of your own is
+copied into your icons folder when the rule is added.
 
 About half a second after you stop typing, the rule is checked and the window
 says what is missing or wrong, the id the rule will be saved with, and what it
