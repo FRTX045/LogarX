@@ -99,6 +99,7 @@ from logarc.gui.progress_card import IngestCard
 from logarc.gui.quarantine_notice import notice_for
 from logarc.gui.recent import RecentCase
 from logarc.gui.rules_view import packs_refused_notice, rules_changed_notice
+from logarc.gui.session_name_keeper import SessionNameKeeper
 from logarc.gui.site_hosts import SiteHostsOffer
 from logarc.gui.splitter import PanelSplitter
 from logarc.gui.text_size import MAX_POINTS, MIN_POINTS, stepped
@@ -450,6 +451,14 @@ class MainWindow(QMainWindow):
             showing=self._showing_now,
         )
         self._full_screen = FullScreen(self, self._canvas, cover=self._what_to_cover)
+        self._session_names = SessionNameKeeper(
+            canvas=self._canvas,
+            parent=self,
+            case_path=lambda: self._case_path,
+            result=lambda: self._result,
+            say=self._idle,
+        )
+        self._canvas.rename_requested.connect(self._session_names.rename)
         self._arrangement_bar.save_requested.connect(self._arrangements_kept.save)
         self._arrangement_bar.reset_requested.connect(self._arrangements_kept.reset)
 
@@ -774,8 +783,21 @@ class MainWindow(QMainWindow):
         # Qt would run neither.
         self._bookmark_node_action = QAction("Bookmark this activity…", self)
         self._bookmark_node_action.triggered.connect(self._bookmark_node)
+        # First, because a right-click inside a box is as often about the visit
+        # as about the activity under it. Live only when the menu opened over a
+        # session's box, which the canvas says just before the menu is built.
+        self._rename_session_action = QAction("Rename session…", self)
+        self._rename_session_action.setEnabled(False)
+        self._rename_session_action.triggered.connect(self._rename_session)
+        self._canvas.menu_opening.connect(
+            lambda: self._rename_session_action.setEnabled(self._canvas.menu_session is not None)
+        )
+        about_the_visit = QAction(self._canvas)
+        about_the_visit.setSeparator(True)
         self._canvas.addActions(
             [
+                self._rename_session_action,
+                about_the_visit,
                 self._bookmark_node_action,
                 required(self._who_else_menu.menuAction(), "action"),
                 about_this,
@@ -2035,6 +2057,9 @@ class MainWindow(QMainWindow):
             graph,
             positions=self._arrangements_kept.saved_positions(),
             session_policy=self._result.policy.session,
+            session_names=(
+                self._session_names.names_for_drawing() if graph.kind is GraphKind.TRACE else {}
+            ),
         )
         self._mark_graph()
         self._arrangements_kept.refresh()
@@ -2631,6 +2656,12 @@ class MainWindow(QMainWindow):
 
     def _bookmark_activity_from_button(self) -> None:
         self._bookmark_activity(anchor=self._under(self._evidence.bookmark_button))
+
+    def _rename_session(self) -> None:
+        """The canvas's right-click entry: the session the menu opened over."""
+        session = self._canvas.menu_session
+        if session is not None:
+            self._session_names.rename(session)
 
     def _bookmark_node(self) -> None:
         """The canvas's right-click entry: the activity under the pointer, now selected."""
