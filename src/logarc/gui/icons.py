@@ -173,7 +173,11 @@ def icon_pixmap(value: str, colour: str, size: int = ICON_PIXELS) -> QPixmap | N
             _drawn[key] = _from_svg(QSvgRenderer(QByteArray(svg.encode())), size)
         elif path is not None:  # pragma: no branch - set whenever icon is None
             _drawn[key] = _from_file(path, size)
-    return _drawn[key]
+    kept = _drawn[key]
+    # A copy, not the cache's own: callers set a device pixel ratio on what they
+    # are given, and changed in place the cached icon would come out that way
+    # everywhere it is drawn next. Qt shares the pixels until one is changed.
+    return None if kept is None else QPixmap(kept)
 
 
 def path_pixmap(path: Path, size: int = ICON_PIXELS) -> QPixmap | None:

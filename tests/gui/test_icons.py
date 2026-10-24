@@ -224,3 +224,15 @@ def test_kind_icons_round_trip_and_ignore_strangers(qt_app: QApplication, tmp_pa
 @pytest.mark.parametrize("stored", [3, ["zap"], None])
 def test_a_stored_value_that_is_not_text_is_ignored(stored: object) -> None:
     assert read_kind_icons({"icons/injection": stored}.get) == {}
+
+
+def test_changing_a_drawn_pixmap_does_not_change_the_next_one(qt_app: QApplication) -> None:
+    """Every caller is handed the cache's pixmap. The legend and the picker set
+    a device pixel ratio on theirs, and on a 125% screen the legend's 20 px kind
+    icons share a key with the Preferences grid and Add rule's chip: changed in
+    place, the cached icon came out shrunk wherever it was drawn next."""
+    first = required(icon_pixmap("zap", "#ffffff", 20))
+    first.setDevicePixelRatio(1.25)
+    again = required(icon_pixmap("zap", "#ffffff", 20))
+    assert again.devicePixelRatio() == 1.0
+    assert first_drawable(["zap"], "#ffffff", 20).devicePixelRatio() == 1.0
