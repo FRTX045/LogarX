@@ -14,9 +14,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
-from dragging import drag
+from dragging import drag, mouse
 from on_canvas import node_item
-from PyQt6.QtCore import QPoint, QPointF
+from PyQt6.QtCore import QEvent, QPoint, QPointF
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import QApplication, QGraphicsPixmapItem
 from test_session_boxes import activity, chained
@@ -177,20 +177,52 @@ def test_changing_icons_moves_nothing(qt_app: QApplication) -> None:
     assert canvas.can_undo == undo
 
 
-def test_dragging_by_the_icon_moves_the_activity(qt_app: QApplication) -> None:
-    """The icon covers the middle of the circle, which is where a reader grabs it."""
+@pytest.mark.parametrize("zoom", [None, 1.0, 1.2, 1.5])
+def test_dragging_by_the_icon_moves_the_activity(qt_app: QApplication, zoom: float | None) -> None:
+    """The icon covers the middle of the circle, which is where a reader grabs it.
+
+    At several zooms, not only the one a graph opens at: that one rests on the
+    platform's fonts, and the icon is drawn in strokes with gaps between them.
+    """
     canvas = drawn()
+    if zoom is not None:
+        canvas.resetTransform()
+        canvas.scale(zoom, zoom)
+        canvas.centerOn(node_item(canvas, PROBE).scenePos())
     selected: list[str] = []
     canvas.node_selected.connect(selected.append)
     circle = node_item(canvas, PROBE)
-    at = canvas.viewport().mapFrom(canvas, canvas.mapFromScene(circle.scenePos()))
-    assert canvas.itemAt(at) is canvas.icon_of(PROBE), "premise: the press lands on the icon"
+    at = on_the_icon(canvas, PROBE)
     was = QPointF(circle.pos())
 
-    moved = drag(canvas, PROBE, QPoint(50, 40))
+    mouse(canvas, QEvent.Type.MouseButtonPress, at, held=True)
+    mouse(canvas, QEvent.Type.MouseMove, at + QPoint(50, 40), held=True)
+    mouse(canvas, QEvent.Type.MouseButtonRelease, at + QPoint(50, 40), held=False)
+    moved = canvas.mapToScene(at + QPoint(50, 40)) - canvas.mapToScene(at)
 
     assert (circle.pos() - (was + moved)).manhattanLength() < 1
     assert selected == [PROBE]
+
+
+def on_the_icon(canvas: ActivityCanvas, node_id: str) -> QPoint:
+    """The point nearest an activity's centre where its icon is drawn.
+
+    Not the centre itself: the syringe is drawn in strokes, its barrel hollow,
+    and the press would fall through a gap onto the circle at most zooms. That
+    still drags, so a test pressing there passed while testing nothing about
+    the icon on any machine whose fonts set that zoom.
+    """
+    icon = canvas.icon_of(node_id)
+    centre = canvas.viewport().mapFrom(
+        canvas, canvas.mapFromScene(node_item(canvas, node_id).scenePos())
+    )
+    for reach in range(12):
+        for dx in range(-reach, reach + 1):
+            for dy in range(-reach, reach + 1):
+                at = centre + QPoint(dx, dy)
+                if max(abs(dx), abs(dy)) == reach and canvas.itemAt(at) is icon:
+                    return at
+    raise AssertionError("premise: the icon is drawn within 12 pixels of the centre")
 
 
 def test_the_tooltip_names_the_kind(qt_app: QApplication) -> None:
