@@ -8,6 +8,7 @@ Tools for working on logarc. Nothing here is part of the application.
 | [`hooks/`](hooks/) | Git hooks: stop a commit CI would reject, keep `dist/` built. |
 | [`regen-crs-corpus.sh`](regen-crs-corpus.sh) | Rewrite the CRS corpus record from a complete clone. |
 | [`measure/`](measure/) | Measure the CRS sidecar: replay time, start-up time, memory, how responsive the window stays. |
+| [`lucide_data.py`](lucide_data.py) | Write `src/logarc/gui/lucide.json`, the icon set the application ships, from a Lucide release. Its docstring says where the two inputs come from. |
 
 ## Git hooks
 
