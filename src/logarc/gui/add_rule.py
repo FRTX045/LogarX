@@ -16,10 +16,13 @@ from __future__ import annotations
 
 import threading
 from datetime import UTC
+from pathlib import Path
 from textwrap import indent
+from types import EllipsisType
 from typing import TYPE_CHECKING, Final
 
-from PyQt6.QtCore import QTimer, pyqtSignal
+from PyQt6.QtCore import QSize, QTimer, pyqtSignal
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -45,6 +48,9 @@ from logarc.core.activity import ActivityCategory, Severity
 from logarc.detect.rules import RulePackError, load_pack_text
 from logarc.detect.ruleset import PackText, RuleSet, build_rules
 from logarc.gui._qt import required
+from logarc.gui.icon_picker import IconPicker
+from logarc.gui.icon_set import DEFAULT_ICONS, FILE_PREFIX, KIND_NAMES, file_name_of
+from logarc.gui.icons import Picked, adopt_icon_file, first_drawable, path_pixmap
 from logarc.gui.rule_form_view import (
     CASE_NOTE,
     CATEGORY_LABELS,
@@ -92,6 +98,9 @@ _ROW: Final = 26
 _EXAMPLES: Final = 5
 _EXAMPLE_COLUMNS: Final = ("Line", "Client", "When", "Request", "Status")
 _CHOOSE: Final = "Choose…"
+
+#: How big the rule's icon is drawn beside what it is.
+_ICON_SHOWN: Final = 20
 
 
 def _caption(text: str = "") -> QLabel:
@@ -212,6 +221,22 @@ class AddRuleDialog(QDialog):
         self._severity.addItem(_CHOOSE, None)
         for severity in Severity:
             self._severity.addItem(severity.name.lower(), severity.name)
+        # The rule's own icon, if the reader gives it one. A file of theirs
+        # stays a path until the rule is added, so nothing is copied for a
+        # rule that never is.
+        self._icon: Picked = None
+        self.icon_chip = QPushButton()
+        self.icon_chip.setObjectName("iconChip")
+        self.icon_chip.setFlat(True)
+        self.icon_chip.setAutoDefault(False)
+        self.icon_chip.setIconSize(QSize(_ICON_SHOWN, _ICON_SHOWN))
+        self.icon_chip.setToolTip("What the graph draws inside an activity this rule names.")
+        self.icon_chip.clicked.connect(self._change_icon)
+        self.icon_button = QPushButton("Change…")
+        self.icon_button.setObjectName("changeIcon")
+        self.icon_button.setAutoDefault(False)
+        self.icon_button.clicked.connect(self._change_icon)
+        self._category.currentIndexChanged.connect(self._show_icon)
         self._mode = QComboBox()
         self._mode.addItem("all", "all")
         self._mode.addItem("any", "any")
@@ -359,6 +384,13 @@ class AddRuleDialog(QDialog):
             part.addWidget(box)
             kinds.addLayout(part, stretch)
         column.addLayout(kinds)
+        icon_row = QHBoxLayout()
+        icon_row.addWidget(_heading("Icon"))
+        icon_row.addWidget(self.icon_chip)
+        icon_row.addWidget(self.icon_button)
+        icon_row.addStretch(1)
+        column.addLayout(icon_row)
+        self._show_icon()
         mode = QHBoxLayout()
         mode.addWidget(QLabel("A request matches when"))
         mode.addWidget(self._mode)
@@ -462,7 +494,54 @@ class AddRuleDialog(QDialog):
             confidence=self._confidence.text(),
             owasp=self._owasp.text(),
             references=self._references.text(),
+            icon=_value_of(self._icon),
         )
+
+    # -- the icon --------------------------------------------------------------
+
+    def _kind(self) -> ActivityCategory | None:
+        chosen = self._category.currentData()
+        return None if chosen is None else ActivityCategory(chosen)
+
+    def _pick_icon(self) -> Picked | EllipsisType:
+        """Ask the picker; `...` when the reader cancelled it."""
+        kind = self._kind()
+        picker = IconPicker(
+            title=f"Icon for {self._name.text().strip() or 'this rule'}",
+            current=self._icon,
+            default=DEFAULT_ICONS[kind or ActivityCategory.UNKNOWN],
+            parent=self,
+        )
+        if picker.exec() != int(IconPicker.DialogCode.Accepted.value):
+            return ...
+        return picker.choice
+
+    def _change_icon(self) -> None:
+        picked = self._pick_icon()
+        if isinstance(picked, EllipsisType):
+            return
+        self._icon = picked
+        self._show_icon()
+        self._schedule()
+
+    def _show_icon(self) -> None:
+        """The chip: the rule's own icon and its name, or its kind's and "Same as"."""
+        kind = self._kind()
+        own = DEFAULT_ICONS[kind or ActivityCategory.UNKNOWN]
+        picked = self._icon
+        if picked is None:
+            text = f"Same as {KIND_NAMES[kind]}" if kind is not None else "Same as the kind"
+            drawn = first_drawable([own], THEME.ink, _ICON_SHOWN)
+        elif isinstance(picked, Path):
+            text = picked.name
+            drawn = path_pixmap(picked, _ICON_SHOWN) or first_drawable(
+                [own], THEME.ink, _ICON_SHOWN
+            )
+        else:
+            text = file_name_of(picked) or picked
+            drawn = first_drawable([picked, own], THEME.ink, _ICON_SHOWN)
+        self.icon_chip.setText(text)
+        self.icon_chip.setIcon(QIcon(drawn))
 
     def _target(self) -> rules_library.Target:
         name = self._into.currentText()
@@ -533,6 +612,14 @@ class AddRuleDialog(QDialog):
 
     def add(self) -> bool:
         """Write the rule into the chosen pack. True when it was written."""
+        if isinstance(source := self._icon, Path):
+            # Copied now, as the rule goes in, and under the name the copy
+            # really got: a clash is numbered, and the rule must say which.
+            try:
+                self._icon = adopt_icon_file(source)
+            except OSError as exc:
+                return self._refuse(f"{source.name} could not be copied: {exc.strerror}.")
+            self._show_icon()
         if not self._check():
             return False
         target = self._target()
@@ -645,3 +732,13 @@ class AddRuleDialog(QDialog):
         if self._finds_stop is not None:
             self._finds_stop.set()
             self._finds_stop = None
+
+
+def _value_of(picked: Picked) -> str:
+    """What a rule's `icon:` says for `picked`: a file not copied yet by the
+    name it will be copied under, nothing at all for "same as the kind"."""
+    if picked is None:
+        return ""
+    if isinstance(picked, Path):
+        return FILE_PREFIX + picked.name
+    return picked

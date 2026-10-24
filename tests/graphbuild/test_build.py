@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 from logarc.core.activity import ActivityCategory, ActivityLabel, Outcome, Severity
@@ -228,3 +229,51 @@ def test_serialised_timestamps_are_iso_utc() -> None:
     graph = build_trace_graph([episode(ActivityCategory.INJECTION)], client_ip="1.2.3.4")
 
     assert graph.to_dict()["nodes"][0]["start"].endswith("+00:00")
+
+
+# -- which rule named a node ----------------------------------------------
+
+
+def _named(base: Episode, rule_id: str, *also: str) -> Episode:
+    """`base`, named after `rule_id`, with `also` matching in it too."""
+    return replace(
+        base,
+        activity=replace(base.activity, rule_id=rule_id),
+        rule_ids=tuple(sorted({rule_id, *also})),
+    )
+
+
+def test_a_trace_node_knows_the_rule_that_named_it() -> None:
+    """`rule_ids` is every rule that matched in the episode, sorted, so it cannot
+    say which one the episode is named after; the icon of a reader's own rule
+    needs exactly that."""
+    named = _named(episode(ActivityCategory.INJECTION), "sqli_union_probe", "browse")
+
+    (node,) = build_trace_graph([named], client_ip="1.2.3.4").nodes
+
+    assert node.named_by == "sqli_union_probe"
+    assert node.rule_ids == ("browse", "sqli_union_probe")
+
+
+def test_a_behaviour_node_is_named_by_its_worst_episode() -> None:
+    episodes = [
+        _named(episode(ActivityCategory.INJECTION, index=1, severity=Severity.LOW), "xss_probe"),
+        _named(
+            episode(ActivityCategory.INJECTION, index=2, minutes=10, severity=Severity.CRITICAL),
+            "sqli_union_probe",
+        ),
+        _named(episode(ActivityCategory.INJECTION, index=3, minutes=20), "lfi_probe"),
+    ]
+
+    (node,) = build_behaviour_map(episodes, client_ip="1.2.3.4").nodes
+
+    assert node.named_by == "sqli_union_probe"
+    assert node.label == episodes[1].label, "named by the episode its label comes from"
+
+
+def test_named_by_is_not_exported() -> None:
+    """The exported graph stays as it was: nothing about icons leaves the window."""
+    named = _named(episode(ActivityCategory.INJECTION), "sqli_union_probe")
+    (node,) = build_trace_graph([named], client_ip="1.2.3.4").nodes
+
+    assert "named_by" not in node.to_dict()

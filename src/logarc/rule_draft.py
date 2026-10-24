@@ -108,6 +108,8 @@ class Draft:
     confidence: str = ""
     owasp: str = ""
     references: str = ""
+    icon: str = ""
+    """What the window draws for an activity this rule names; empty for its kind's icon."""
 
 
 def rule_id_for(name: str, taken: Collection[str]) -> str:
@@ -152,6 +154,8 @@ def rule_block(draft: Draft, rule_id: str) -> str:
         f"  category: {draft.category.value}",
         f"  severity: {draft.severity.name.lower()}",
     ]
+    if draft.icon:
+        lines.append(f"  icon: {_quoted(draft.icon)}")
     if draft.confidence.strip():
         lines.append(f"  confidence: {_number(draft.confidence)}")
     if draft.owasp.strip():

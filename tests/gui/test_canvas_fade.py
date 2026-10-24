@@ -17,6 +17,7 @@ from on_canvas import node_item
 from PyQt6.QtWidgets import QApplication, QGraphicsItem
 from test_session_boxes import trace
 
+from logarc.gui._qt import required
 from logarc.gui.canvas import FADED, ActivityCanvas
 
 FIRST, SECOND, THIRD = "1.2.3.4#1/1", "1.2.3.4#1/2", "1.2.3.4#1/3"
@@ -121,3 +122,16 @@ def test_the_ring_on_a_faded_activity_stays_bright(qt_app: QApplication) -> None
 
     assert canvas._halo is not None
     assert canvas._halo.opacity() == 1.0
+
+
+def test_a_faded_activity_fades_its_icon(qt_app: QApplication) -> None:
+    """The icon is a child of its activity with no words on it. Fading once took
+    every child for a caption and unpacked its words, which an icon does not
+    have: the filter raised inside a slot and took the window with it."""
+    canvas = drawn(matching=frozenset({SECOND}))
+
+    assert required(canvas.icon_of(FIRST), "icon").effectiveOpacity() == pytest.approx(FADED)
+    assert required(canvas.icon_of(SECOND), "icon").effectiveOpacity() == 1.0
+
+    canvas.set_matching(None)
+    assert required(canvas.icon_of(FIRST), "icon").effectiveOpacity() == 1.0

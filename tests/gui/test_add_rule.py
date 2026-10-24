@@ -15,6 +15,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from PyQt6.QtCore import QCoreApplication, QEvent
+from PyQt6.QtGui import QImage
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QPushButton
 
@@ -30,8 +31,11 @@ from logarc.detect.ruleset import built_in_packs
 from logarc.evidence import EvidenceLine
 from logarc.gui import add_rule as add_rule_module
 from logarc.gui.add_rule import AddRuleDialog
+from logarc.gui.icon_set import icons_dir
+from logarc.gui.icons import first_drawable
 from logarc.rule_draft import Condition, Test, rule_block
 from logarc.rule_finds import Find, FindsProgress
+from logarc.style import THEME
 
 SHOPFRONT_LOG = Path(__file__).parents[1] / "data" / "apache-shopfront" / "excerpt.log"
 BUILT_IN = built_in_packs()
@@ -483,3 +487,128 @@ def test_view_yaml_still_gives_the_text_when_the_pack_cannot_take_it(
     _button(dialog, "viewYaml").click()
     assert dialog._yaml_view.toPlainText() == rule_block(dialog.draft(), "cart_emptied")
     dialog.shutdown()
+
+
+# -- an icon of its own ----------------------------------------------------
+
+SQUARE = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">'
+    '<rect x="1" y="1" width="8" height="8" fill="#00ff00"/></svg>'
+)
+
+
+def _picks(monkeypatch: pytest.MonkeyPatch, dialog: AddRuleDialog, *answers: object) -> None:
+    queue = list(answers)
+    monkeypatch.setattr(dialog, "_pick_icon", lambda: queue.pop(0))
+
+
+def _shown(dialog: AddRuleDialog) -> QImage:
+    size = dialog.icon_chip.iconSize()
+    return dialog.icon_chip.icon().pixmap(size).toImage()
+
+
+def test_the_icon_row_follows_the_kind_until_one_is_chosen(qt_app: QApplication) -> None:
+    dialog = _dialog()
+    assert dialog.icon_chip.text() == "Same as the kind"
+    assert dialog.icon_button.text() == "Change…"
+
+    _fill(dialog, category=ActivityCategory.API_CALL)
+    assert dialog.icon_chip.text() == "Same as API call"
+    width = dialog.icon_chip.iconSize().width()
+    assert _shown(dialog) == first_drawable(["braces"], THEME.ink, width).toImage()
+    dialog.shutdown()
+
+
+def test_add_rule_writes_the_chosen_icon(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dialog = _dialog()
+    _picks(monkeypatch, dialog, "skull")
+    dialog.icon_button.click()
+    _fill(dialog)
+
+    assert dialog.icon_chip.text() == "skull"
+    assert dialog.draft().icon == "skull"
+    assert dialog.add()
+    text = (rules_library.rules_dir() / f"{rules_library.DEFAULT_PACK}.yaml").read_text(
+        encoding="utf-8"
+    )
+    (rule,) = load_pack_text("t.yaml", text)
+    assert rule.icon == "skull"
+
+
+def test_the_chip_opens_the_picker_too(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dialog = _dialog()
+    _picks(monkeypatch, dialog, "skull")
+    dialog.icon_chip.click()
+    assert dialog.draft().icon == "skull"
+    dialog.shutdown()
+
+
+def test_default_in_the_picker_clears_the_icon(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dialog = _dialog()
+    _fill(dialog, category=ActivityCategory.API_CALL)
+    _picks(monkeypatch, dialog, "skull", None)
+    dialog.icon_button.click()
+    dialog.icon_button.click()
+    assert dialog.draft().icon == ""
+    assert dialog.icon_chip.text() == "Same as API call"
+    dialog.shutdown()
+
+
+def test_cancelling_the_picker_keeps_the_icon(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dialog = _dialog()
+    _picks(monkeypatch, dialog, "skull", ...)
+    dialog.icon_button.click()
+    dialog.icon_button.click()
+    assert dialog.draft().icon == "skull"
+    dialog.shutdown()
+
+
+def test_a_chosen_file_is_copied_only_when_the_rule_is_added(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    logo = tmp_path / "logo.svg"
+    logo.write_text(SQUARE, encoding="utf-8")
+    dialog = _dialog()
+    _picks(monkeypatch, dialog, logo)
+    dialog.icon_button.click()
+    _fill(dialog)
+    assert dialog.icon_chip.text() == "logo.svg"
+    assert not icons_dir().exists(), "nothing copied while the form is being filled in"
+
+    assert dialog.add()
+
+    assert (icons_dir() / "logo.svg").read_text(encoding="utf-8") == SQUARE
+    text = (rules_library.rules_dir() / f"{rules_library.DEFAULT_PACK}.yaml").read_text(
+        encoding="utf-8"
+    )
+    (rule,) = load_pack_text("t.yaml", text)
+    assert rule.icon == "file:logo.svg"
+
+
+def test_a_copy_numbered_on_a_clash_is_the_one_written(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    icons_dir().mkdir(parents=True)
+    (icons_dir() / "logo.svg").write_text("<svg/>", encoding="utf-8")
+    logo = tmp_path / "logo.svg"
+    logo.write_text(SQUARE, encoding="utf-8")
+    dialog = _dialog()
+    _picks(monkeypatch, dialog, logo)
+    dialog.icon_button.click()
+    _fill(dialog)
+
+    assert dialog.add()
+
+    text = (rules_library.rules_dir() / f"{rules_library.DEFAULT_PACK}.yaml").read_text(
+        encoding="utf-8"
+    )
+    (rule,) = load_pack_text("t.yaml", text)
+    assert rule.icon == "file:logo-2.svg"

@@ -228,6 +228,11 @@ class _RuleBase(BaseModel):
     confidence: Annotated[float, Field(ge=0.0, le=1.0)] = 1.0
     owasp: str | None = None
     references: tuple[str, ...] = ()
+    icon: str | None = None
+    """What the window draws for an activity this rule names: a Lucide name or
+    `file:` and an image in the reader's icons folder. Presentation only, so it
+    is left out of `RuleEngine.fingerprint`, and a name nothing answers to is
+    the window's note to make, not a reason to refuse the pack."""
     source_pack: str = ""
 
     @field_validator("severity", mode="before")

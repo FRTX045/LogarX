@@ -267,3 +267,19 @@ def test_a_pattern_too_large_to_compile_is_a_problem(pattern: str) -> None:
     draft = _draft(Condition("path", Test.REGEX, pattern))
 
     assert problems(draft) == ("Condition 1: the pattern is too large to use.",)
+
+
+def test_an_icon_is_written_after_the_severity() -> None:
+    block = rule_block(_draft(icon="skull"), "probe")
+    assert block.splitlines()[3:5] == ["  severity: high", '  icon: "skull"']
+    assert _loaded(block).icon == "skull"
+
+
+def test_no_icon_writes_no_line() -> None:
+    block = rule_block(_draft(), "probe")
+    assert "icon:" not in block
+    assert _loaded(block).icon is None
+
+
+def test_a_file_icon_loads_back_exactly() -> None:
+    assert _loaded(rule_block(_draft(icon="file:my logo.svg"), "probe")).icon == "file:my logo.svg"

@@ -12,10 +12,10 @@ import threading
 import traceback
 from datetime import timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 from PyQt6 import sip
-from PyQt6.QtCore import QEvent, QPoint, QSettings, Qt, QTimer
+from PyQt6.QtCore import QByteArray, QEvent, QPoint, QSettings, Qt, QTimer
 from PyQt6.QtGui import (
     QAction,
     QActionGroup,
@@ -89,6 +89,8 @@ from logarc.gui.format_notice import drift_notice
 from logarc.gui.formats_and_rules import FormatsAndRules
 from logarc.gui.full_screen import FullScreen
 from logarc.gui.help import open_user_guide, show_about, show_shortcuts
+from logarc.gui.icon_set import KIND_NAMES, IconChoice, rule_icons
+from logarc.gui.icons import Picked, adopt, read_kind_icons, write_kind_icons
 from logarc.gui.notice_bar import NoticeBanner, warn_about_dead_files
 from logarc.gui.panels import ClientTable, LegendBar
 from logarc.gui.preferences import PreferencesDialog
@@ -133,16 +135,17 @@ from logarc.triage.scan import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Mapping, Sequence
     from datetime import date, datetime
 
     from logarc.analysis import AnalysisResult
+    from logarc.core.activity import ActivityCategory
     from logarc.core.evidence import EvidenceRef
     from logarc.core.graph import GraphNode
     from logarc.evidence import EvidenceLine
     from logarc.storage.base import TimeSlot
 
-__all__ = ["MainWindow", "main"]
+__all__ = ["OPENING_PANELS", "MainWindow", "main"]
 
 #: Where the window remembers how it was left. The reader's preferences are
 #: catalogued in `gui.prefs`, which owns their keys; what is named here is the
@@ -169,6 +172,17 @@ _CRS_KEY = "crs/after-ingest"
 #: itself is per case and saved with it — what a reader suppresses is the
 #: question, not an answer.
 _SITE_HOSTS_KEY = "site-hosts/after-ingest"
+
+#: The window's shape, kept when it closes: its own geometry, and the state of
+#: each of its three splitters. All under `window/`, which a test clears.
+_GEOMETRY_KEY = "window/geometry"
+_PANELS_KEY = "window/panels"
+_TRIAGE_SPLIT_KEY = "window/triage_split"
+_EVIDENCE_SPLIT_KEY = "window/evidence_split"
+
+#: The widths of the client list, the graph and the evidence panel when the
+#: window opens, and after Reset panel sizes.
+OPENING_PANELS: Final = (480, 520, 400)
 
 #: The two views, in the order the tab bar shows them. One list rather than a
 #: pair of indices spelled out at each end, so a tab and the view it selects
@@ -327,7 +341,9 @@ class MainWindow(QMainWindow):
         # an open offer is work the reader would never see.
         self._scan_held = False
         self._canvas = ActivityCanvas()
+        self._canvas.set_icons(self._icon_choice())
         self._legend = LegendBar()
+        self._canvas.graph_changed.connect(self._show_kinds)
         self._evidence = EvidencePanel()
         self._evidence.filter_changed.connect(self._filter_changed)
         self._clients.client_chosen.connect(self._reconstruct)
@@ -398,6 +414,8 @@ class MainWindow(QMainWindow):
         self._zoom_note_timer.timeout.connect(self._zoom_note.clear)
         status_bar.addPermanentWidget(self._zoom_note)
         status_bar.addPermanentWidget(self._cancel)
+        # Last, once every panel exists: the shape the reader left it in.
+        self._restore_shape()
 
     # -- construction ------------------------------------------------------
 
@@ -585,7 +603,7 @@ class MainWindow(QMainWindow):
         splitter.setChildrenCollapsible(False)
         # 480 rather than 440: a search adds a Match column, and at 440 it left
         # Last cut to `15…`. The reader can still drag it narrower.
-        splitter.setSizes([480, 520, 400])
+        splitter.setSizes(list(OPENING_PANELS))
         return splitter
 
     def _build_menu(self) -> None:
@@ -709,6 +727,15 @@ class MainWindow(QMainWindow):
         running = QApplication.instance()
         if isinstance(running, QApplication):
             CtrlWheel(running, self, skip=self._canvas).stepped.connect(self._zoom_text)
+        view_menu.addSeparator()
+        # "Panel sizes", not "layout": in this window a layout is where the
+        # activities sit on the graph (Edit > Save layout).
+        self._reset_panels_action = self._add(
+            view_menu, "Reset &panel sizes", self.reset_panel_sizes
+        )
+        self._reset_panels_action.setStatusTip(
+            "Put the panels back to the sizes logarc opens with."
+        )
         view_menu.addSeparator()
         self._fullscreen_action = self._add(view_menu, "F&ull screen", self._fullscreen_from_menu)
         self._fullscreen_action.setCheckable(True)
@@ -982,6 +1009,19 @@ class MainWindow(QMainWindow):
         self._rules_refused = library.refused
         self._rules_stale = False
         self._say_rules()
+        # The icons the reader's rules name follow their rules at once, though
+        # the case read with the old ones still waits for Re-read: an icon is
+        # not a finding.
+        self._canvas.set_icons(self._icon_choice())
+        self._show_kinds()
+
+    def _show_kinds(self) -> None:
+        """The legend's kinds: those on the canvas now, in the icons in force."""
+        self._legend.show_kinds(self._canvas.kinds_on_show, self._canvas.icons)
+
+    def _icon_choice(self) -> IconChoice:
+        """The icons in force: the reader's for each kind, and their rules'."""
+        return IconChoice(kinds=read_kind_icons(_settings().value), rules=rule_icons(self._rules))
 
     def _show_ingest_progress(self, snapshot: object) -> None:
         if self._ingest_card is not None and isinstance(snapshot, Progress):
@@ -2117,10 +2157,37 @@ class MainWindow(QMainWindow):
         nothing itself, which is what makes Cancel mean *nothing happened*
         rather than *something to be undone*.
         """
-        dialog = PreferencesDialog(self._prefs, self)
+        dialog = PreferencesDialog(self._prefs, self, icons=read_kind_icons(_settings().value))
         if dialog.exec() != int(QDialog.DialogCode.Accepted.value):
             return
         self._apply_preferences(dialog.chosen())
+        self._apply_icons(dialog.chosen_icons())
+
+    def _apply_icons(self, chosen: Mapping[ActivityCategory, Picked]) -> None:
+        """Keep the icons chosen for kinds, and draw with them.
+
+        A file of the reader's is copied into their icons folder only now. One
+        that cannot be (moved or deleted since it was picked) leaves its kind
+        with the icon it had, not its default, and the status line says so.
+        """
+        before = read_kind_icons(_settings().value)
+        kept: dict[ActivityCategory, str] = {}
+        for kind, picked in chosen.items():
+            try:
+                value = adopt(picked)
+            except OSError:
+                name = picked.name if isinstance(picked, Path) else str(picked)
+                self._status.setText(
+                    f"{name} could not be copied into your icons folder, "
+                    f"so {KIND_NAMES[kind]} keeps the icon it had."
+                )
+                colour_text(self._status, THEME.alert)
+                value = before.get(kind)
+            if value:
+                kept[kind] = value
+        write_kind_icons(_settings(), kept)
+        self._canvas.set_icons(self._icon_choice())
+        self._show_kinds()
 
     def _apply_preferences(self, chosen: dict[str, prefs.Value]) -> None:
         """Put every setting in force and write them all down.
@@ -2938,10 +3005,78 @@ class MainWindow(QMainWindow):
         )
 
     def closeEvent(self, event: QCloseEvent | None) -> None:  # noqa: N802
+        self._remember_shape()
         self._load_generation += 1
         self._triage.shutdown()
         self._awaiting = None
         super().closeEvent(event)
+
+    # -- the window's shape ------------------------------------------------
+
+    def _splitters(self) -> dict[str, QSplitter]:
+        return {
+            _PANELS_KEY: self._splitter,
+            _TRIAGE_SPLIT_KEY: self._triage.split,
+            _EVIDENCE_SPLIT_KEY: self._evidence.split,
+        }
+
+    def _remember_shape(self) -> None:
+        """Keep the window's size and place and every panel size, for next time.
+
+        On close only, as most applications do: a crash loses one session's
+        dragging, nothing more. Closed in full screen, the window is kept as it
+        was just before, or it would open in full screen next time.
+        """
+        stored = _settings()
+        before = self._full_screen.geometry_before if self._full_screen.on else None
+        stored.setValue(_GEOMETRY_KEY, before if before is not None else self.saveGeometry())
+        for key, splitter in self._splitters().items():
+            stored.setValue(key, splitter.saveState())
+
+    def _restore_shape(self) -> None:
+        """Put back what `_remember_shape` kept. Anything missing, or that Qt cannot
+        read (another version's, or damaged), leaves that part as it opens.
+
+        Qt moves a window kept on a screen that is no longer attached onto one
+        that is.
+        """
+        stored = _settings()
+        geometry = stored.value(_GEOMETRY_KEY)
+        if isinstance(geometry, QByteArray):
+            self.restoreGeometry(geometry)
+        for key, splitter in self._splitters().items():
+            state = stored.value(key)
+            if isinstance(state, QByteArray):
+                splitter.restoreState(state)
+
+    def reset_panel_sizes(self) -> bool:
+        """Put the panels back to the sizes they open with, if the reader says so.
+
+        Asked first, with Cancel the default, so a stray Enter changes nothing.
+        The window's own size and place are kept, as the question says. True
+        when the panels were reset.
+        """
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle("Reset panel sizes")
+        box.setText("Put the panels back to the sizes logarc opens with?")
+        box.setInformativeText(
+            "The widths you dragged are forgotten. The window keeps its own size."
+        )
+        reset = box.addButton("Reset", QMessageBox.ButtonRole.AcceptRole)
+        cancel = box.addButton(QMessageBox.StandardButton.Cancel)
+        box.setDefaultButton(cancel)
+        box.setEscapeButton(cancel)
+        box.exec()
+        if box.clickedButton() is not reset:
+            return False
+        self._splitter.setSizes(list(OPENING_PANELS))
+        self._triage.reset_split()
+        self._evidence.reset_split()
+        stored = _settings()
+        for key in self._splitters():
+            stored.remove(key)
+        return True
 
     # -- status ------------------------------------------------------------
 

@@ -12,6 +12,25 @@ which will be the first tag.
 
 ### Added
 
+- **An icon for every kind of activity, inside its circle.** Each activity on the
+  graph, Trace and Behaviour alike, carries an icon for its kind — fourteen
+  kinds, every rule names one, so none is drawn without — in white or near-black
+  against its severity colour, and the legend names the kinds on the graph with
+  their icons. A kind's icon can be changed in *Preferences → Graph → Icons*,
+  from a searchable gallery of Lucide's 1,533 icons (ISC; see NOTICE) or an SVG
+  or PNG of your own up to 1 MB, copied into an `icons` folder beside your
+  rules. A rule of your own can carry its own icon, chosen in *Add a rule* or
+  written as `icon:`; an icon is left out of the ruleset fingerprint, so it
+  re-reads nothing, and a name nothing answers to is a note in the YAML editor,
+  never a refusal. Drawing a 600-activity trace went from 223 ms to 251 ms.
+
+- **The window remembers its panel sizes.** The three panels, the evidence table
+  over its details and the Where to start queue over its reasons keep the sizes
+  they were dragged to, and the window its size, place and maximised state, from
+  one start to the next; a window closed in full screen opens as it was before.
+  *View → Reset panel sizes* puts the panels back, after asking, with Cancel the
+  default.
+
 - **Detection rules in the window.** *Case → Log formats…* became **Case → Formats
   and rules…**, with a second tab, *Detection rules: what does a line mean?* It
   lists the 13 built-in packs and your own. Your packs are YAML, kept in your

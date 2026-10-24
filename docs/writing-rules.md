@@ -77,6 +77,18 @@ unchanged in findings and exports; the loader does not translate editions.
 Keep the edition in the value because category numbers change between editions.
 The pack's `version: 1` is its schema version, not an OWASP edition.
 
+`icon` is optional too, and changes nothing about detection: it is left out of
+the ruleset fingerprint, so changing it re-reads nothing. It names what the
+window draws inside an activity this rule names, in place of its kind's icon:
+a [Lucide](https://lucide.dev) icon by name (`icon: skull`), or `file:` and the
+name of an image in the `icons` folder beside your rules (`icon: file:shop.svg`),
+which the window's picker copies there for you. The name must be a bare file
+name; one with a folder in it is not looked up. A name nothing answers to is
+not an error: the pack still loads and saves, the YAML editor says so beside
+the rule count, and the activity is drawn with its kind's icon. Built-in rules
+name no icon; their kind's icon can be changed for the whole kind in
+Preferences.
+
 ## Three kinds of rule
 
 ### Signature rules — one request is enough

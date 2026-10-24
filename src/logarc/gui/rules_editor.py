@@ -41,6 +41,7 @@ from logarc.detect.ruleset import PackText, RuleSet, build_rules, built_in_packs
 from logarc.gui._qt import required
 from logarc.gui.add_rule import AddRuleDialog
 from logarc.gui.columns import ColumnWidths
+from logarc.gui.icon_set import unknown_icon_note, unknown_icons
 from logarc.gui.rules_view import (
     NEW_PACK_TEXT,
     ask_text,
@@ -456,6 +457,10 @@ class RulesEditor(QWidget):
         self._mark(None)
         self._status.setStyleSheet("")
         said = read_summary(rules)
+        # A note, not a refusal: an icon is cosmetic, and a misspelt one costs
+        # the reader a default icon, never the pack.
+        if note := unknown_icon_note(unknown_icons(rules)):
+            said = f"{said} {note}"
         self._status.setText(said if name else f"{said} Name the pack to save it.")
         self._save.setEnabled(bool(name))
         self._count(self._finds, rules)

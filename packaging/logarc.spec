@@ -36,6 +36,10 @@ datas = [
         for pack in _packs
     ),
     (str(PROJECT / "LICENSE"), "."),
+    # The icon set the graph draws from, and the notice its licence asks to go
+    # wherever it does: Lucide's ISC terms are in NOTICE.
+    (str(PROJECT / "src" / "logarc" / "gui" / "lucide.json"), "logarc/gui"),
+    (str(PROJECT / "NOTICE"), "."),
 ]
 
 # `logarc.__version__` reads its own package metadata, and that metadata is

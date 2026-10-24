@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import QByteArray, Qt, QTimer
 from PyQt6.QtGui import QGuiApplication
 
 from logarc.gui.display import is_wsl
@@ -47,6 +47,11 @@ class FullScreen:
         self._action: QAction | None = None
         self._on = False
         self._was_maximised = False
+        self.geometry_before: QByteArray | None = None
+        """The window's geometry just before it went full screen, while it is.
+
+        What the window saves if it closes in full screen: Qt's own geometry
+        would record full screen and open in it next time."""
 
         # What was hidden on the way in, so only that is shown on the way out.
         # A reader who turned the traffic band off in Preferences must not find
@@ -76,6 +81,7 @@ class FullScreen:
 
         if on:
             self._was_maximised = self._window.isMaximized()
+            self.geometry_before = self._window.saveGeometry()
             self._covered = [w for w in self._cover() if w is not None and not w.isHidden()]
             for widget in self._covered:
                 widget.hide()
@@ -95,6 +101,7 @@ class FullScreen:
             for widget in self._covered:
                 widget.show()
             self._covered = []
+            self.geometry_before = None
             if self._was_maximised:
                 self._window.showMaximized()
             else:

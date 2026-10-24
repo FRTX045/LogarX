@@ -31,6 +31,8 @@ from logarc.gui.client_filter import match_caption, matches
 from logarc.gui.columns import SHORT_TEXT, ColumnWidths, ShortWhenNarrow
 from logarc.gui.filter_box import FilterBox
 from logarc.gui.flow import FlowLayout
+from logarc.gui.icon_set import KIND_NAMES
+from logarc.gui.icons import first_drawable
 from logarc.gui.ribbon import Mark, ribbon_icon, ribbon_tip
 from logarc.gui.theme import PAD, TIGHT, caption_font, colour_text, mono_font, on_font_change
 from logarc.search import ANY_DAY, Scope, is_time, parse
@@ -47,6 +49,8 @@ if TYPE_CHECKING:
 
     from PyQt6.QtGui import QMouseEvent
 
+    from logarc.core.activity import ActivityCategory
+    from logarc.gui.icon_set import IconChoice
     from logarc.storage.base import ClientMatchPage, IpSummary, IpSummaryPage
 
 __all__ = ["ClientTable", "LegendBar"]
@@ -868,6 +872,10 @@ _SOLID_RANGE = (1.5, 4.0)
 _ENTRY_GAP = 6
 _PAIR_GAP = 3
 
+#: How big a kind's icon is drawn in the key: the outcome sample's size less
+#: its ring, so an icon and a circle beside it read as the same scale.
+_KIND_ICON = 16
+
 
 def _outline_sample(colour: str, style: str, width: float) -> QPixmap:
     """One outcome, drawn as the ring alone, in the colour the canvas draws it.
@@ -944,6 +952,11 @@ class LegendBar(QWidget):
             self.flow.addWidget(self._entry(swatch, item.label))
 
         column.addLayout(self.flow)
+        # The third group, the kinds on the graph, changes with the graph and is
+        # filled by `show_kinds`.
+        self._kind_widgets: list[QWidget] = []
+        self._kind_names: tuple[str, ...] = ()
+        self._kind_pixmaps: list[QPixmap] = []
 
         # Still on its own line, and still wrapped. Moving it into the flow was
         # tried and reverted: shortened to `Size = request count, by square
@@ -963,6 +976,50 @@ class LegendBar(QWidget):
         policy = self.sizePolicy()
         policy.setHeightForWidth(True)
         self.setSizePolicy(policy)
+
+    def show_kinds(self, kinds: Sequence[ActivityCategory], choice: IconChoice) -> None:
+        """Name the kinds of activity in `kinds`, each with the icon `choice` gives it.
+
+        Only the kinds on the graph, not all fourteen: the key teaches the icons
+        in view and stays short. Each once, in the kinds' own order, so the same
+        two kinds read the same way on every graph. None at all, no heading.
+        """
+        for widget in self._kind_widgets:
+            self.flow.removeWidget(widget)
+            widget.setParent(None)
+            widget.deleteLater()
+        self._kind_widgets = []
+        self._kind_pixmaps = []
+        present = set(kinds)
+        shown = [kind for kind in KIND_NAMES if kind in present]
+        self._kind_names = tuple(KIND_NAMES[kind] for kind in shown)
+        if not shown:
+            return
+        heading = self._label("Kind")
+        self.flow.addWidget(heading)
+        self._kind_widgets.append(heading)
+        ratio = self.devicePixelRatioF()
+        for kind in shown:
+            pixmap = first_drawable(
+                choice.kind_candidates(kind), THEME.ink, round(_KIND_ICON * ratio)
+            )
+            pixmap.setDevicePixelRatio(ratio)
+            sample = QLabel()
+            sample.setFixedSize(_KIND_ICON, _KIND_ICON)
+            sample.setPixmap(pixmap)
+            self._kind_pixmaps.append(pixmap)
+            entry = self._entry(sample, KIND_NAMES[kind])
+            self.flow.addWidget(entry)
+            self._kind_widgets.append(entry)
+        self.updateGeometry()
+
+    def kinds(self) -> tuple[str, ...]:
+        """The kinds the key names now."""
+        return self._kind_names
+
+    def kind_icons(self) -> list[QPixmap]:
+        """The icons drawn beside them, in the same order."""
+        return list(self._kind_pixmaps)
 
     def _entry(self, swatch: QLabel, label: str) -> QWidget:
         """A swatch and its word as one thing the flow cannot take apart."""
