@@ -58,6 +58,7 @@ __all__ = [
     "PAPER_STRIPE",
     "PIN_COLOUR",
     "PIN_MARK",
+    "RENAME_HINT",
     "SELECTION_COLOUR",
     "SELECTION_TINT",
     "SELECTION_WIDTH",
@@ -81,6 +82,9 @@ __all__ = [
     "outcome_legend",
     "plural",
     "session_caption",
+    "session_heading_tip",
+    "session_name",
+    "session_place",
     "session_rule",
     "severity_colour",
     "severity_legend",
@@ -772,6 +776,59 @@ def session_caption(index: int, total: int, nodes: Sequence[GraphNode]) -> str:
         f" · {plural(len(nodes), 'activity', 'activities')}"
         f" · {_session_span(start, end)}"
     )
+
+
+def session_place(index: int, total: int, nodes: Sequence[GraphNode]) -> str:
+    """Which visit, and when: `Session 1 of 7 · 09 Mar 09:06\u201309:08`.
+
+    The box's label without its count of activities, for the window that
+    renames a session, where the count says nothing about which one it is.
+    """
+    start = min(node.start for node in nodes)
+    end = max(node.end for node in nodes)
+    return f"Session {index:,} of {total:,} · {_session_span(start, end)}"
+
+
+def session_name(nodes: Sequence[GraphNode]) -> str:
+    """logarc's name for a session: the label of its most important activity.
+
+    Most severe first, then a hostile kind over a benign one, which is the
+    order an episode picks its own label by (`episode.builder._representative`),
+    so a session and its activities agree about what mattered. Then the most
+    requests, and on a full tie the earliest, which `nodes` lists first.
+
+    `Unnamed session` for a blank label. Never seen on 2,504 sessions measured;
+    it keeps a blank heading off the canvas should a rule ever have no name.
+    """
+    lead: GraphNode | None = None
+    for node in nodes:
+        if lead is None or (node.severity, node.category.is_hostile, node.request_count) > (
+            lead.severity,
+            lead.category.is_hostile,
+            lead.request_count,
+        ):
+            lead = node
+    label = lead.label.strip() if lead is not None else ""
+    return label or "Unnamed session"
+
+
+#: The last line of a session heading's tip, so the way to rename is found
+#: where the name is read.
+RENAME_HINT: Final = "Double-click the title to rename this session."
+
+
+def session_heading_tip(rule: str, logarc_name: str, *, renamed: bool) -> str:
+    """What resting the pointer on a session's heading says.
+
+    For a name the reader gave, logarc's own name comes first: a reader's
+    words on the canvas must never be taken for something the log says. Then
+    what a session is, `rule`, when the canvas was told; then how to rename.
+    """
+    parts = [f"Named by you. logarc's name: {logarc_name}"] if renamed else []
+    if rule:
+        parts.append(rule)
+    parts.append(RENAME_HINT)
+    return "\n\n".join(parts)
 
 
 def _session_span(start: datetime, end: datetime) -> str:

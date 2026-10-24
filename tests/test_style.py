@@ -22,6 +22,7 @@ from logarc.style import (
     LIGHT,
     PAPER,
     PAPER_STRIPE,
+    RENAME_HINT,
     SELECTION_COLOUR,
     SELECTION_TINT,
     SESSION_GROUND,
@@ -39,6 +40,9 @@ from logarc.style import (
     outcome_legend,
     plural,
     session_caption,
+    session_heading_tip,
+    session_name,
+    session_place,
     session_rule,
     severity_colour,
     severity_legend,
@@ -733,3 +737,85 @@ def test_bookmark_categories_read_on_every_surface_and_apart_from_each_other() -
         assert apart(colour, THEME.alert) >= 0.1, colour
     for one, other in combinations(CATEGORY_COLOURS, 2):
         assert apart(one, other) >= 0.1, (one, other)
+
+
+# -- a session's name --------------------------------------------------------
+
+
+def _activity(
+    label: str,
+    severity: Severity = Severity.INFO,
+    *,
+    category: ActivityCategory = ActivityCategory.BROWSING,
+    requests: int = 1,
+    minute: int = 0,
+) -> GraphNode:
+    moment = START + timedelta(minutes=minute)
+    return replace(
+        node(severity=severity, category=category, requests=requests, label=label),
+        start=moment,
+        end=moment,
+    )
+
+
+def test_a_session_is_named_after_its_most_severe_activity() -> None:
+    nodes = [_activity("Page View"), _activity("Webshell", Severity.HIGH, minute=1)]
+
+    assert session_name(nodes) == "Webshell"
+
+
+def test_at_equal_severity_a_hostile_kind_names_the_session() -> None:
+    """The order an episode picks its own label by: severity, then which side."""
+    benign = _activity("Crawler Traffic", Severity.LOW, category=ActivityCategory.CRAWLING)
+    hostile = _activity(
+        "Configuration File Probe", Severity.LOW, category=ActivityCategory.RECONNAISSANCE, minute=1
+    )
+
+    assert session_name([benign, hostile]) == "Configuration File Probe"
+
+
+def test_then_the_one_with_more_requests() -> None:
+    assert session_name([_activity("A", requests=2), _activity("B", requests=9, minute=1)]) == "B"
+
+
+def test_a_full_tie_goes_to_the_earliest() -> None:
+    assert session_name([_activity("First", minute=1), _activity("Second", minute=2)]) == "First"
+
+
+def test_a_blank_label_is_an_unnamed_session() -> None:
+    """Never seen on 2,504 sessions; it keeps a blank heading off the canvas."""
+    assert session_name([_activity("   ")]) == "Unnamed session"
+
+
+def test_the_place_is_the_number_and_the_time() -> None:
+    nodes = [
+        _spell(datetime(2026, 3, 9, 9, 6, tzinfo=UTC), datetime(2026, 3, 9, 9, 7, tzinfo=UTC)),
+        _spell(datetime(2026, 3, 9, 9, 7, tzinfo=UTC), datetime(2026, 3, 9, 9, 8, tzinfo=UTC)),
+    ]
+
+    assert session_place(1, 7, nodes) == "Session 1 of 7 · 09 Mar 09:06\u201309:08"
+
+
+def test_a_tip_for_logarcs_name_is_the_rule_then_the_hint() -> None:
+    assert session_heading_tip("RULE", "X", renamed=False) == "RULE\n\n" + RENAME_HINT
+
+
+def test_a_tip_for_a_readers_name_says_so_first() -> None:
+    assert session_heading_tip("RULE", "Config probe", renamed=True) == (
+        "Named by you. logarc's name: Config probe\n\nRULE\n\n" + RENAME_HINT
+    )
+
+
+def test_a_tip_without_rules_keeps_the_rest() -> None:
+    assert session_heading_tip("", "X", renamed=False) == RENAME_HINT
+    assert RENAME_HINT == "Double-click the title to rename this session."
+
+
+def test_severity_comes_before_which_side_a_kind_is_on() -> None:
+    """A benign kind can be the more severe: `Scripted Client` is crawling."""
+    scripted = _activity("Scripted Client", Severity.MEDIUM, category=ActivityCategory.CRAWLING)
+    probe = _activity(
+        "Configuration File Probe", Severity.LOW, category=ActivityCategory.RECONNAISSANCE, minute=1
+    )
+
+    assert session_name([probe, scripted]) == "Scripted Client"

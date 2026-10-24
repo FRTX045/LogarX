@@ -20,7 +20,7 @@ from logarc.core.graph import GraphKind
 if TYPE_CHECKING:
     from logarc.core.graph import ActivityGraph, GraphNode
 
-__all__ = ["COLUMN", "ROW", "Point", "layout_graph", "sessions_in"]
+__all__ = ["COLUMN", "ROW", "Point", "layout_graph", "session_of", "sessions_in"]
 
 #: Spacing in abstract units. Renderers scale from here.
 #:
@@ -97,9 +97,14 @@ def sessions_in(graph: ActivityGraph) -> tuple[tuple[GraphNode, ...], ...]:
     """
     groups: dict[str, list[GraphNode]] = {}
     for node in graph.nodes:
-        session = node.episode_ids[0].split("/")[0] if node.episode_ids else ""
-        groups.setdefault(session, []).append(node)
+        groups.setdefault(session_of(node), []).append(node)
     return tuple(tuple(group) for group in groups.values())
+
+
+def session_of(node: GraphNode) -> str:
+    """The id of the session an activity belongs to: its episode id up to the
+    slash, window tag included. Empty for an activity with no episode id."""
+    return node.episode_ids[0].split("/")[0] if node.episode_ids else ""
 
 
 def _wrap_width(count: int) -> int:
