@@ -3132,3 +3132,9 @@ def test_union_select_must_be_whole_words(engine: RuleEngine, target: str) -> No
 )
 def test_union_select_whole_words_are_still_caught(engine: RuleEngine, target: str) -> None:
     assert "sqli_union_select" in fired_rules(engine, target)
+
+
+def test_no_built_in_rule_sets_an_icon() -> None:
+    """A built-in rule takes its kind's icon, which the reader can change for
+    the whole kind; one set here could not be changed by anybody."""
+    assert [rule.id for rule in default_rules() if rule.icon is not None] == []

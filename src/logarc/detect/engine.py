@@ -424,10 +424,15 @@ class RuleEngine:
 
     @cached_property
     def fingerprint(self) -> str:
-        """A digest of the ruleset, recorded so a report can name what produced it."""
+        """A digest of the ruleset, recorded so a report can name what produced it.
+
+        Of what detects, and nothing else. A rule's `icon` is left out with its
+        pack's name: the digest also keys Triage's scan cache, and a change of
+        icon re-scanning every client would be a cost for nothing a scan reads.
+        """
         digest = hashlib.sha256()
         for rule in sorted(self.rules, key=lambda item: item.id):
-            digest.update(rule.model_dump_json(exclude={"source_pack"}).encode())
+            digest.update(rule.model_dump_json(exclude={"source_pack", "icon"}).encode())
         return digest.hexdigest()
 
     def label_events(

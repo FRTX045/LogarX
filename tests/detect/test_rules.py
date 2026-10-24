@@ -501,3 +501,33 @@ def test_the_validator_s_own_prefix_is_not_passed_on(tmp_path: Path) -> None:
 
     assert "Value error" not in str(raised.value)
     assert "a condition needs exactly one of" in str(raised.value)
+
+
+#: `SIGNATURE_PACK` with an icon named on its rule.
+ICON_PACK = SIGNATURE_PACK.replace("    severity: high\n", "    severity: high\n    icon: skull\n")
+
+#: `SIGNATURE_PACK`'s fingerprint before rules could name an icon, taken from
+#: the code as it was. Equal to it with the field present and with an icon
+#: named is the proof that an icon is no part of detection.
+FINGERPRINT_BEFORE_ICONS = "005efefb08b39db814ecbf56b285c25d2c5ae29effee5fee33f6d6fd5f7b8316"
+
+
+def test_a_rule_may_name_an_icon() -> None:
+    (rule,) = load_pack_text("mine.yaml", ICON_PACK)
+    assert rule.icon == "skull"
+
+
+def test_a_rule_names_no_icon_unless_it_says_so() -> None:
+    (rule,) = load_pack_text("mine.yaml", SIGNATURE_PACK)
+    assert rule.icon is None
+
+
+def test_an_icon_moves_no_fingerprint() -> None:
+    """The fingerprint keys the Triage cache and is recorded in every report:
+    counted, a new field would re-scan every case once, and each change of
+    icon would again."""
+    from logarc.detect.engine import RuleEngine
+
+    plain = RuleEngine(load_pack_text("a.yaml", SIGNATURE_PACK)).fingerprint
+    iconic = RuleEngine(load_pack_text("a.yaml", ICON_PACK)).fingerprint
+    assert plain == iconic == FINGERPRINT_BEFORE_ICONS

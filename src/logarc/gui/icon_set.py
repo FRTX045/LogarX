@@ -19,11 +19,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from logarc.core.activity import ActivityCategory
+from logarc.detect.rules import RulePackError, load_pack_text
 from logarc.gui.rule_form_view import CATEGORY_LABELS
 from logarc.parsers.library import logarc_home
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
+
+    from logarc.detect.rules import Rule
+    from logarc.detect.ruleset import RuleSet
 
 __all__ = [
     "DEFAULT_ICONS",
@@ -35,7 +39,10 @@ __all__ = [
     "icons_dir",
     "is_known",
     "lucide",
+    "rule_icons",
     "search",
+    "unknown_icon_note",
+    "unknown_icons",
 ]
 
 LUCIDE_VERSION: Final = "0.452.0"
@@ -138,3 +145,38 @@ def is_known(value: str) -> bool:
         return True
     name = file_name_of(value)
     return name is not None and (icons_dir() / name).is_file()
+
+
+def rule_icons(ruleset: RuleSet) -> dict[str, str]:
+    """Each of the reader's rules that names an icon, by id.
+
+    Read from the packs' text, so it needs no engine. A pack that does not load
+    contributes nothing: its rules are not in force either.
+    """
+    icons: dict[str, str] = {}
+    for pack in ruleset.packs:
+        try:
+            rules = load_pack_text(f"{pack.name}.yaml", pack.text)
+        except RulePackError:
+            continue
+        icons.update({rule.id: rule.icon for rule in rules if rule.icon})
+    return icons
+
+
+def unknown_icons(rules: Sequence[Rule]) -> list[str]:
+    """The icons `rules` name that nothing answers to, each once, in rule order."""
+    seen: dict[str, None] = {}
+    for rule in rules:
+        if rule.icon and not is_known(rule.icon):
+            seen.setdefault(rule.icon)
+    return list(seen)
+
+
+def unknown_icon_note(values: Sequence[str]) -> str:
+    """One sentence saying which icons are unknown and what is drawn instead."""
+    if not values:
+        return ""
+    if len(values) == 1:
+        return f"Icon {values[0]} is not one logarc knows, so its kind's icon is drawn."
+    listed = ", ".join(values[:-1]) + f" and {values[-1]}"
+    return f"Icons {listed} are not ones logarc knows, so their kinds' icons are drawn."

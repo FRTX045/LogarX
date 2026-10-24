@@ -738,3 +738,21 @@ def test_text_the_editor_shows_differently_is_not_unsaved(
 
     assert asked == []
     assert len(opened) == 1
+
+
+def test_an_unknown_icon_is_a_note_not_a_refusal(qt_app: QApplication) -> None:
+    """A misspelt icon is cosmetic. The pack still saves, and the check line says
+    what will be drawn instead, in its ordinary colour."""
+    editor = RulesEditor()
+    editor._name.setText("mine")
+    editor._yaml.setPlainText(
+        CART_NEVER.replace("    severity: info\n", "    severity: info\n    icon: skul\n")
+    )
+    editor._check()
+
+    assert editor._save.isEnabled()
+    assert editor._status.text() == (
+        "1 rule read: 1 about a single request. "
+        "Icon skul is not one logarc knows, so its kind's icon is drawn."
+    )
+    assert editor._status.styleSheet() == ""

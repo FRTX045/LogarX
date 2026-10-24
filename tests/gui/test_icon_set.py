@@ -156,3 +156,64 @@ def test_the_builder_frames_and_records(tmp_path: Path) -> None:
     assert data["source"] == "lucide-static@0.452.0"
     assert data["sha256"]["tags.json"] == hashlib.sha256(tags.read_bytes()).hexdigest()
     assert data["sha256"]["icon-nodes.json"] == hashlib.sha256(nodes.read_bytes()).hexdigest()
+
+
+MINE = """\
+version: 1
+rules:
+  - id: mine_rule
+    name: Mine
+    category: injection
+    severity: high
+    icon: skull
+    match:
+      any:
+        - {field: path, contains: "/mine"}
+  - id: plain_rule
+    name: Plain
+    category: browsing
+    severity: info
+    match:
+      any:
+        - {field: path, contains: "/plain"}
+"""
+
+
+def test_rule_icons_reads_the_readers_packs() -> None:
+    from logarc.detect.ruleset import PackText, RuleSet
+    from logarc.gui.icon_set import rule_icons
+
+    assert rule_icons(RuleSet((PackText("mine", MINE),))) == {"mine_rule": "skull"}
+
+
+def test_a_pack_that_does_not_load_gives_no_icons() -> None:
+    from logarc.detect.ruleset import PackText, RuleSet
+    from logarc.gui.icon_set import rule_icons
+
+    broken = PackText("broken", "version: 1\nrules: [nonsense")
+    assert rule_icons(RuleSet((broken, PackText("mine", MINE)))) == {"mine_rule": "skull"}
+
+
+def test_unknown_icons_are_named_once_each_in_rule_order() -> None:
+    from logarc.detect.rules import load_pack_text
+    from logarc.gui.icon_set import unknown_icons
+
+    text = MINE.replace("icon: skull", "icon: skul").replace(
+        "    severity: info\n", "    severity: info\n    icon: file:../x.svg\n"
+    )
+    rules = load_pack_text("mine.yaml", text) + load_pack_text(
+        "again.yaml", text.replace("_rule", "_2")
+    )
+    assert unknown_icons(rules) == ["skul", "file:../x.svg"]
+
+
+def test_the_unknown_icon_note() -> None:
+    from logarc.gui.icon_set import unknown_icon_note
+
+    assert unknown_icon_note([]) == ""
+    assert unknown_icon_note(["skul"]) == (
+        "Icon skul is not one logarc knows, so its kind's icon is drawn."
+    )
+    assert unknown_icon_note(["skul", "file:x.svg"]) == (
+        "Icons skul and file:x.svg are not ones logarc knows, so their kinds' icons are drawn."
+    )
