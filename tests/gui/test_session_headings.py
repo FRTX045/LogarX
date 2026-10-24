@@ -16,10 +16,11 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
-from on_canvas import box_detail, box_name, has_pencil, node_items, session_boxes
-from PyQt6.QtGui import QColor
+from on_canvas import box_detail, box_name, has_pencil, node_item, node_items, session_boxes
+from PyQt6.QtCore import QEvent, QPointF, Qt
+from PyQt6.QtGui import QColor, QContextMenuEvent, QMouseEvent
 from PyQt6.QtWidgets import QApplication
-from test_session_boxes import activity, chained, drawn, trace
+from test_session_boxes import activity, behaviour_map, chained, drawn, held, trace
 
 from logarc.gui.canvas import ActivityCanvas
 from logarc.sessionize.segmenter import SessionPolicy
@@ -184,3 +185,173 @@ def test_the_heading_sits_inside_its_box(qt_app: QApplication) -> None:
         outline = box.shape.sceneBoundingRect()
         for tag in ("session-name", "session-detail", "pencil"):
             assert outline.contains(part(box, tag).sceneBoundingRect()), tag
+
+
+# -- which session the pointer is on -----------------------------------------
+
+
+def open_menu_at(canvas: ActivityCanvas, spot: QPointF) -> None:
+    """A right-click at `spot`, in scene units, without a menu running a loop."""
+    canvas.setContextMenuPolicy(Qt.ContextMenuPolicy.PreventContextMenu)
+    at = canvas.mapFromScene(spot)
+    QApplication.sendEvent(
+        canvas.viewport(),
+        QContextMenuEvent(QContextMenuEvent.Reason.Mouse, at, canvas.viewport().mapToGlobal(at)),
+    )
+
+
+def double_click_at(canvas: ActivityCanvas, spot: QPointF) -> None:
+    at = QPointF(canvas.mapFromScene(spot))
+    QApplication.sendEvent(
+        canvas.viewport(),
+        QMouseEvent(
+            QEvent.Type.MouseButtonDblClick,
+            at,
+            canvas.viewport().mapToGlobal(at),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        ),
+    )
+
+
+def shown(graph) -> ActivityCanvas:  # type: ignore[no-untyped-def]
+    canvas = ActivityCanvas()
+    canvas.resize(600, 480)
+    canvas.show()
+    canvas.show_graph(graph)
+    return canvas
+
+
+def test_a_menu_on_an_activity_names_its_session(qt_app: QApplication) -> None:
+    canvas = shown(trace(1, 2))
+    spot = node_item(canvas, "1.2.3.4#2/2").scenePos()
+    canvas.centerOn(spot)
+
+    open_menu_at(canvas, spot)
+
+    assert canvas.menu_session == "1.2.3.4#2"
+    canvas.close()
+
+
+def test_a_menu_on_the_ground_inside_a_box_names_its_session(qt_app: QApplication) -> None:
+    canvas = shown(trace(1, 2))
+    (_, box) = session_boxes(canvas)
+    outline = box.shape.sceneBoundingRect()
+    spot = QPointF(outline.right() - 6, outline.bottom() - 6)
+    canvas.centerOn(spot)
+    assert canvas.itemAt(canvas.mapFromScene(spot)) is box.shape, "premise: bare box ground"
+
+    open_menu_at(canvas, spot)
+
+    assert canvas.menu_session == "1.2.3.4#2"
+    canvas.close()
+
+
+def test_a_menu_on_a_heading_names_its_session(qt_app: QApplication) -> None:
+    canvas = shown(trace(1, 2))
+    first = session_boxes(canvas)[0]
+    spot = first.label.sceneBoundingRect().center()
+    canvas.centerOn(spot)
+
+    open_menu_at(canvas, spot)
+
+    assert canvas.menu_session == "1.2.3.4#1"
+    canvas.close()
+
+
+def test_a_menu_outside_every_box_names_none(qt_app: QApplication) -> None:
+    canvas = shown(trace(1, 2))
+    open_menu_at(canvas, session_boxes(canvas)[0].label.sceneBoundingRect().center())
+    assert canvas.menu_session == "1.2.3.4#1", "premise: it was set"
+    outline = session_boxes(canvas)[0].shape.sceneBoundingRect()
+    spot = QPointF(outline.left() - 40, outline.top() - 40)
+    canvas.centerOn(spot)
+
+    open_menu_at(canvas, spot)
+
+    assert canvas.menu_session is None
+    canvas.close()
+
+
+def test_a_behaviour_map_or_boxes_off_name_none(qt_app: QApplication) -> None:
+    canvas = shown(behaviour_map())
+    spot = node_items(canvas)[0].scenePos()
+    open_menu_at(canvas, spot)
+    assert canvas.menu_session is None
+
+    canvas.show_graph(trace(2))
+    canvas.set_sessions(False)
+    spot = node_items(canvas)[0].scenePos()
+    canvas.centerOn(spot)
+    open_menu_at(canvas, spot)
+    assert canvas.menu_session is None
+    canvas.close()
+
+
+def test_an_activity_answers_for_its_own_session_wherever_it_was_dragged(
+    qt_app: QApplication,
+) -> None:
+    """Dragged into another session's box, the activity is still its own
+    session's; the ground the two boxes now share answers for the one on top,
+    the box drawn last."""
+    canvas = shown(trace(2, 2))
+    target = canvas._box_of["1.2.3.4#2/1"].shape.sceneBoundingRect().center()
+    moved = node_item(canvas, "1.2.3.4#1/2")
+    moved.setPos(target)
+    canvas.centerOn(target)
+
+    open_menu_at(canvas, moved.scenePos())
+    assert canvas.menu_session == "1.2.3.4#1"
+
+    first, second = session_boxes(canvas)
+    spot = QPointF(held(moved).right() + 4, held(moved).bottom() + 4)
+    assert first.shape.sceneBoundingRect().contains(spot), "premise: inside the dragged box"
+    assert second.shape.sceneBoundingRect().contains(spot), "premise: and the one it reached"
+    assert not isinstance(canvas.itemAt(canvas.mapFromScene(spot)), type(moved)), "premise"
+    open_menu_at(canvas, spot)
+    assert canvas.menu_session == "1.2.3.4#2"
+    canvas.close()
+
+
+def test_the_menu_signal_comes_after_the_session_is_known(qt_app: QApplication) -> None:
+    canvas = shown(trace(1, 2))
+    heard: list[str | None] = []
+    canvas.menu_opening.connect(lambda: heard.append(canvas.menu_session))
+    spot = session_boxes(canvas)[1].label.sceneBoundingRect().center()
+    canvas.centerOn(spot)
+
+    open_menu_at(canvas, spot)
+
+    assert heard == ["1.2.3.4#2"]
+    canvas.close()
+
+
+def test_double_clicking_a_heading_asks_to_rename_its_session(qt_app: QApplication) -> None:
+    canvas = shown(trace(1, 2))
+    asked: list[str] = []
+    canvas.rename_requested.connect(asked.append)
+    spot = session_boxes(canvas)[1].label.sceneBoundingRect().center()
+    canvas.centerOn(spot)
+
+    double_click_at(canvas, spot)
+
+    assert asked == ["1.2.3.4#2"]
+    canvas.close()
+
+
+def test_double_clicking_an_activity_or_the_ground_asks_nothing(qt_app: QApplication) -> None:
+    canvas = shown(trace(1, 2))
+    asked: list[str] = []
+    canvas.rename_requested.connect(asked.append)
+    spot = node_item(canvas, "1.2.3.4#2/1").scenePos()
+    canvas.centerOn(spot)
+    double_click_at(canvas, spot)
+
+    outline = session_boxes(canvas)[1].shape.sceneBoundingRect()
+    ground = QPointF(outline.right() - 6, outline.bottom() - 6)
+    canvas.centerOn(ground)
+    double_click_at(canvas, ground)
+
+    assert asked == []
+    canvas.close()

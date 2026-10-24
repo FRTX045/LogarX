@@ -16,10 +16,11 @@ import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Final
 
-from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, pyqtSignal
+from PyQt6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import (
     QBrush,
     QColor,
+    QContextMenuEvent,
     QFont,
     QFontMetricsF,
     QIcon,
@@ -72,6 +73,7 @@ from logarc.style import (
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
+    from PyQt6.QtCore import QPoint
     from PyQt6.QtGui import QMouseEvent, QResizeEvent
 
     from logarc.core.activity import ActivityCategory
@@ -715,6 +717,15 @@ class ActivityCanvas(QGraphicsView):
     business; the canvas only owns the button, because the canvas is what knows
     when it has been resized and the button has to follow."""
 
+    menu_opening = pyqtSignal()
+    """A right-click menu is about to open; `menu_session` already says which
+    session it was opened over. The menu is built from the window's actions,
+    and this is the moment to switch theirs on or off."""
+
+    rename_requested = pyqtSignal(str)
+    """A session's heading was double-clicked; the session's id. Renaming it is
+    the window's business: the canvas knows boxes, not case folders."""
+
     def __init__(self) -> None:
         super().__init__()
         self._scene = QGraphicsScene(self)
@@ -778,6 +789,8 @@ class ActivityCanvas(QGraphicsView):
         # an id carries the client and the time filter, so a name for another
         # client or another stretch of time names nothing here.
         self._session_names: dict[str, str] = {}
+        # Which session the last right-click menu was opened over, if any.
+        self._menu_session: str | None = None
         # The activities a filter on the evidence reaches, or None when there is
         # no filter. Every other activity is drawn faded.
         self._matching: frozenset[str] | None = None
@@ -896,6 +909,35 @@ class ActivityCanvas(QGraphicsView):
     def wrap(self) -> bool:
         """Whether a long trace is folded onto further rows."""
         return self._wrap
+
+    @property
+    def menu_session(self) -> str | None:
+        """The session the last right-click menu was opened over, or None."""
+        return self._menu_session
+
+    def session_at(self, point: QPoint) -> str | None:
+        """The id of the session at `point`, in viewport coordinates, or None.
+
+        An activity answers for its own session, wherever it has been dragged.
+        Anywhere else inside a box answers for that box, and where a drag has
+        made two boxes overlap, for the one drawn last, which is the one on
+        top. None with no boxes drawn: a behaviour map, or boxes switched off.
+        """
+        if not self._boxes:
+            return None
+        item = self.itemAt(point)
+        while item is not None and not isinstance(item, _NodeItem):
+            item = item.parentItem()
+        if isinstance(item, _NodeItem):
+            own = self._box_of.get(item.node_id)
+            return own.session_id if own is not None else None
+        spot = self.mapToScene(point)
+        for box in reversed(self._boxes):
+            if box.label.sceneBoundingRect().contains(spot) or box.shape.contains(
+                box.shape.mapFromScene(spot)
+            ):
+                return box.session_id
+        return None
 
     @property
     def sessions(self) -> bool:
@@ -1862,6 +1904,31 @@ class ActivityCanvas(QGraphicsView):
         self._edges_by_node.setdefault(target.node_id, []).append(art)
 
     # -- interaction -------------------------------------------------------
+
+    def viewportEvent(self, event: QEvent | None) -> bool:  # noqa: N802 - Qt's naming
+        """Note which session a right-click menu opens over, before it opens.
+
+        Here rather than in `contextMenuEvent`: the window gives the canvas
+        `ActionsContextMenu`, and Qt then builds the menu without calling that.
+        The event still passes through here first, mouse and keyboard alike.
+        """
+        if isinstance(event, QContextMenuEvent):
+            self._menu_session = self.session_at(event.pos())
+            self.menu_opening.emit()
+        return super().viewportEvent(event)
+
+    def mouseDoubleClickEvent(self, event: QMouseEvent | None) -> None:  # noqa: N802 - Qt's naming
+        """A double-click on a session's heading asks to rename that session."""
+        if event is not None:
+            item = self.itemAt(event.position().toPoint())
+            while item is not None and item.parentItem() is not None:
+                item = item.parentItem()
+            for box in self._boxes:
+                if item is box.label:
+                    self.rename_requested.emit(box.session_id)
+                    event.accept()
+                    return
+        super().mouseDoubleClickEvent(event)
 
     def mousePressEvent(self, event: QMouseEvent | None) -> None:  # noqa: N802 - Qt's naming
         super().mousePressEvent(event)
