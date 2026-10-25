@@ -27,6 +27,11 @@ every ordinary line and is about ten times quicker than `strptime`.
 Conditional prefixes (``%400,501...``) are parsed and ignored: they control
 whether Apache *writes* the field, which we cannot recover after the fact, and
 the field is already optional on our side.
+
+How far a field reaches is read from what surrounds it in the format. Quotes
+delimit one, spaces and all; so do literal brackets, and a field in brackets
+may be empty (`[%{upstream}e]` reads `[]`). Anything else is one run of
+non-blank characters.
 """
 
 from __future__ import annotations
@@ -142,6 +147,12 @@ _DIRECTIVE_RE: Final = re.compile(
 #: escaping. Apache escapes `"` and `\`, and renders control bytes as `\xHH`.
 _QUOTED_BODY: Final = r'(?:[^"\\]|\\.)*'
 _BRACKETED_BODY: Final = r"\[[^\]]*\]"
+
+#: A field the format wraps in literal brackets, other than the time: read up
+#: to the closing bracket, as a quoted field is read up to its quote. It may be
+#: empty — ingress-nginx writes `[$proxy_alternative_upstream_name]` as `[]` on
+#: nearly every line, and a bare body would refuse all of them.
+_IN_BRACKETS_BODY: Final = r"[^\]]*"
 
 #: A bare field must consume at least one character. If it could match nothing,
 #: a line with a field omitted would still satisfy the pattern and auto-detection
@@ -286,6 +297,8 @@ def _body_pattern(token: _Field, prev: str, nxt: str) -> str:
         return _QUOTED_BODY
     if token.directive == "t" and token.arg:
         return _time_pattern(token.arg)
+    if token.directive != "t" and prev.endswith("[") and nxt.startswith("]"):
+        return _IN_BRACKETS_BODY
     if token.directive == "t" and not (prev.endswith("[") or nxt.startswith("]")):
         return _BRACKETED_BODY
     if token.directive == "q":

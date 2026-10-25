@@ -457,3 +457,40 @@ def test_a_number_too_small_to_be_a_real_timestamp_is_not_one() -> None:
     assert read_time(1) is None
     assert read_time("1") is None
     assert read_time(1_714_554_045) is not None
+
+
+# ---------------------------------------------------------------------------
+# Fields in brackets, and fields that hold lists
+# ---------------------------------------------------------------------------
+#
+# Both are what Kubernetes ingress-nginx writes by default: the upstream's name
+# in brackets, `[]` when there is no alternative, and its address, length,
+# time and status as lists once a request is retried or redirected.
+
+BRACKETED = '%h %t [%{upstream}e] "%r" %>s %b'
+
+
+def test_a_bracketed_field_may_be_empty() -> None:
+    """ingress-nginx writes `[$proxy_alternative_upstream_name]`, which is `[]`
+    on nearly every line. A bare body needs one character, so the line was
+    refused — the format would read only the canary requests."""
+    parser = LogFormatParser(BRACKETED)
+
+    event = parser.parse_line(
+        '203.0.113.5 [01/May/2024:09:00:45 +0000] [] "GET / HTTP/1.1" 200 5', REF
+    )
+
+    assert event is not None
+    assert "env_upstream" not in event.extra
+
+
+def test_a_bracketed_field_reads_up_to_its_closing_bracket() -> None:
+    """The brackets delimit the field the way quotes do, spaces included."""
+    parser = LogFormatParser(BRACKETED)
+
+    event = parser.parse_line(
+        '203.0.113.5 [01/May/2024:09:00:45 +0000] [a b] "GET / HTTP/1.1" 200 5', REF
+    )
+
+    assert event is not None
+    assert event.extra["env_upstream"] == "a b"
