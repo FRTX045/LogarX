@@ -29,6 +29,81 @@ if TYPE_CHECKING:
 
 REF = EvidenceRef(source_file_id="f", line_no=1)
 
+#: AWS's own example entries for an Application Load Balancer, from its access
+#: log reference, each joined into the one line AWS says it is ("the example
+#: text appears on multiple lines only to make them easier to read"). There is
+#: no ALB to capture from here, so these are the real lines this file has.
+ALB_EXAMPLES: dict[str, str] = {
+    "http": (
+        "http 2018-07-02T22:23:00.186641Z app/my-loadbalancer/50dc6c495c0c9188"
+        ' 192.168.131.39:2817 10.0.0.1:80 0.000 0.001 0.000 200 200 34 366 "GET'
+        ' http://www.example.com:80/ HTTP/1.1" "curl/7.46.0" - -'
+        " arn:aws:elasticloadbalancing:us-east-2:123456789012:targetgroup/my-targets"
+        "/73e2d6bc24d8a067"
+        ' "Root=1-58337262-36d228ad5d99923122bbe354" "-" "-" 0 2018-07-02T22:22:48.364000Z'
+        ' "forward" "-" "-" "10.0.0.1:80" "200" "-" "-" TID_1234abcd5678ef90 "-" "-" "-"'
+    ),
+    "https": (
+        "https 2018-07-02T22:23:00.186641Z app/my-loadbalancer/50dc6c495c0c9188"
+        ' 192.168.131.39:2817 10.0.0.1:80 0.086 0.048 0.037 200 200 0 57 "GET'
+        ' https://www.example.com:443/ HTTP/1.1" "curl/7.46.0" ECDHE-RSA-AES128-GCM-SHA256'
+        " TLSv1.2"
+        " arn:aws:elasticloadbalancing:us-east-2:123456789012:targetgroup/my-targets"
+        "/73e2d6bc24d8a067"
+        ' "Root=1-58337281-1d84f3d73c47ec4e58577259" "www.example.com"'
+        ' "arn:aws:acm:us-east-2:123456789012:certificate/12345678-1234-1234-1234-123456789012"'
+        ' 1 2018-07-02T22:22:48.364000Z "authenticate,forward" "-" "-" "10.0.0.1:80" "200"'
+        ' "-" "-" TID_1234abcd5678ef90 "m.example.com" "-" "TransformSuccess"'
+    ),
+    "h2": (
+        "h2 2018-07-02T22:23:00.186641Z app/my-loadbalancer/50dc6c495c0c9188 10.0.1.252:48160"
+        ' 10.0.0.66:9000 0.000 0.002 0.000 200 200 5 257 "GET https://10.0.2.105:773/'
+        ' HTTP/2.0" "curl/7.46.0" ECDHE-RSA-AES128-GCM-SHA256 TLSv1.2'
+        " arn:aws:elasticloadbalancing:us-east-2:123456789012:targetgroup/my-targets"
+        "/73e2d6bc24d8a067"
+        ' "Root=1-58337327-72bd00b0343d75b906739c42" "-" "-" 1 2018-07-02T22:22:48.364000Z'
+        ' "redirect" "https://example.com:80/" "-" "10.0.0.66:9000" "200" "-" "-"'
+        ' TID_1234abcd5678ef90 "-" "-" "-"'
+    ),
+    "ws": (
+        "ws 2018-07-02T22:23:00.186641Z app/my-loadbalancer/50dc6c495c0c9188 10.0.0.140:40914"
+        ' 10.0.1.192:8010 0.001 0.003 0.000 101 101 218 587 "GET http://10.0.0.30:80/'
+        ' HTTP/1.1" "-" - -'
+        " arn:aws:elasticloadbalancing:us-east-2:123456789012:targetgroup/my-targets"
+        "/73e2d6bc24d8a067"
+        ' "Root=1-58337364-23a8c76965a2ef7629b185e3" "-" "-" 1 2018-07-02T22:22:48.364000Z'
+        ' "forward" "-" "-" "10.0.1.192:8010" "101" "-" "-" TID_1234abcd5678ef90 "-" "-" "-"'
+    ),
+    "wss": (
+        "wss 2018-07-02T22:23:00.186641Z app/my-loadbalancer/50dc6c495c0c9188"
+        ' 10.0.0.140:44244 10.0.0.171:8010 0.000 0.001 0.000 101 101 218 786 "GET'
+        ' https://10.0.0.30:443/ HTTP/1.1" "-" ECDHE-RSA-AES128-GCM-SHA256 TLSv1.2'
+        " arn:aws:elasticloadbalancing:us-west-2:123456789012:targetgroup/my-targets"
+        "/73e2d6bc24d8a067"
+        ' "Root=1-58337364-23a8c76965a2ef7629b185e3" "-" "-" 1 2018-07-02T22:22:48.364000Z'
+        ' "forward" "-" "-" "10.0.0.171:8010" "101" "-" "-" TID_1234abcd5678ef90 "-" "-" "-"'
+    ),
+    "lambda": (
+        "http 2018-11-30T22:23:00.186641Z app/my-loadbalancer/50dc6c495c0c9188"
+        ' 192.168.131.39:2817 - 0.000 0.001 0.000 200 200 34 366 "GET'
+        ' http://www.example.com:80/ HTTP/1.1" "curl/7.46.0" - -'
+        " arn:aws:elasticloadbalancing:us-east-2:123456789012:targetgroup/my-targets"
+        "/73e2d6bc24d8a067"
+        ' "Root=1-58337364-23a8c76965a2ef7629b185e3" "-" "-" 0 2018-11-30T22:22:48.364000Z'
+        ' "forward" "-" "-" "-" "-" "-" "-" TID_1234abcd5678ef90 "-" "-" "-"'
+    ),
+    "lambda failed": (
+        "http 2018-11-30T22:23:00.186641Z app/my-loadbalancer/50dc6c495c0c9188"
+        ' 192.168.131.39:2817 - 0.000 0.001 0.000 502 - 34 366 "GET'
+        ' http://www.example.com:80/ HTTP/1.1" "curl/7.46.0" - -'
+        " arn:aws:elasticloadbalancing:us-east-2:123456789012:targetgroup/my-targets"
+        "/73e2d6bc24d8a067"
+        ' "Root=1-58337364-23a8c76965a2ef7629b185e3" "-" "-" 0 2018-11-30T22:22:48.364000Z'
+        ' "forward" "-" "LambdaInvalidResponse" "-" "-" "-" "-" TID_1234abcd5678ef90 "-" "-"'
+        ' "-"'
+    ),
+}
+
 #: One real line per built-in, and what reading it has to yield. Several lines
 #: where the format needs a header to know its own columns.
 SAMPLES: dict[str, tuple[list[str], dict[str, object]]] = {
@@ -146,6 +221,21 @@ SAMPLES: dict[str, tuple[list[str], dict[str, object]]] = {
             "status": 200,
             "bytes_sent": 365,
             "timestamp": datetime(2026, 10, 25, 18, 41, 15, 351000, tzinfo=UTC),
+        },
+    ),
+    "aws-alb": (
+        [ALB_EXAMPLES["http"]],
+        {
+            "client_ip": "192.168.131.39",
+            "method": "GET",
+            "path": "/",
+            "host": "www.example.com:80",
+            "status": 200,
+            "bytes_sent": 366,
+            "user_agent": "curl/7.46.0",
+            # `request_creation_time`, when the request arrived: the instant
+            # Apache's %t means. The stamp in front is when it was answered.
+            "timestamp": datetime(2018, 7, 2, 22, 22, 48, 364000, tzinfo=UTC),
         },
     ),
     "nginx-json": (
@@ -574,6 +664,12 @@ SAME_REQUEST: dict[str, list[str]] = {
         )
     ],
     "haproxy": SAMPLES["haproxy"][0],
+    # Constructed from AWS's HTTP example: the same entry, for this request.
+    "aws-alb": [
+        ALB_EXAMPLES["http"].replace(
+            "http://www.example.com:80/ ", "http://www.example.com:80/search?q=oak&page=2 "
+        )
+    ],
     "caddy-json": SAMPLES["caddy-json"][0],
     "traefik-json": SAMPLES["traefik-json"][0],
     "cloudflare-json": [
@@ -771,6 +867,114 @@ def test_haproxy_refuses_a_crafted_line_in_linear_time(line: str) -> None:
     """Detection tries every built-in on every line it samples, so a pattern
     that backtracks on a line that is not its own slows every ingest."""
     parser = _parser("haproxy")
+
+    started = time.perf_counter()
+    event = parser.parse_line(line, REF)
+    took = time.perf_counter() - started
+
+    assert event is None
+    assert took < 0.25, f"{took:.2f}s for one line"
+
+
+ALB_STATUS = {
+    "http": 200,
+    "https": 200,
+    "h2": 200,
+    "ws": 101,
+    "wss": 101,
+    "lambda": 200,
+    "lambda failed": 502,
+}
+
+
+@pytest.mark.parametrize("example", list(ALB_EXAMPLES))
+def test_alb_reads_every_example_aws_documents(example: str) -> None:
+    event = _read("aws-alb", ALB_EXAMPLES[example])
+
+    assert event.status == ALB_STATUS[example]
+    assert event.method == "GET"
+    assert event.path == "/"
+
+
+def test_alb_keeps_what_it_says_about_a_request() -> None:
+    """The trace id ties the request to the target's own log; the TLS fields
+    and the actions say how it was handled."""
+    https = _read("aws-alb", ALB_EXAMPLES["https"])
+    failed = _read("aws-alb", ALB_EXAMPLES["lambda failed"])
+
+    assert https.extra["client_port"] == "2817"
+    assert https.extra["target"] == "10.0.0.1:80"
+    assert https.extra["trace_id"] == "Root=1-58337281-1d84f3d73c47ec4e58577259"
+    assert https.extra["domain_name"] == "www.example.com"
+    assert https.extra["ssl_protocol"] == "TLSv1.2"
+    assert https.extra["actions_executed"] == "authenticate,forward"
+    assert failed.extra["error_reason"] == "LambdaInvalidResponse"
+    assert "target_status_code" not in failed.extra
+
+
+def test_alb_splits_an_ipv6_client_at_its_last_colon() -> None:
+    """Constructed from AWS's HTTP example. ALB always writes the port, so
+    the last colon ends the address even when the address is IPv6."""
+    event = _read(
+        "aws-alb", ALB_EXAMPLES["http"].replace("192.168.131.39:2817", "2001:db8::1:2817")
+    )
+
+    assert event.client_ip == "2001:db8::1"
+    assert event.extra["client_port"] == "2817"
+
+
+def test_alb_does_not_invent_a_path_it_did_not_log() -> None:
+    """Constructed from AWS's HTTP example, with the shape ALB writes when it
+    refuses a path (`../../../` was the reported case): host and port, then a
+    dash. Read as a URL that is `/`, a request nobody made."""
+    event = _read(
+        "aws-alb",
+        ALB_EXAMPLES["http"].replace(
+            '"GET http://www.example.com:80/ HTTP/1.1"',
+            '"GET https://shop.example.com:443- HTTP/2.0"',
+        ),
+    )
+
+    assert event.method == "GET"
+    assert event.path is None
+    assert event.extra["url_path_not_logged"] == "https://shop.example.com:443"
+
+
+def test_alb_reads_a_url_with_a_space_in_it() -> None:
+    """Constructed. ALB logs a URI with a raw space, classifying it
+    `SpaceInUri`, so a space does not end the URL."""
+    event = _read(
+        "aws-alb",
+        ALB_EXAMPLES["http"].replace(
+            "http://www.example.com:80/ ", "http://www.example.com:80/a b?q=1 "
+        ),
+    )
+
+    assert (event.path, event.query) == ("/a b", "q=1")
+
+
+def test_alb_ignores_fields_aws_adds_later() -> None:
+    """AWS adds fields at the end and asks parsers to stop after the last one
+    they know. These three are the ones its reference now lists past the
+    examples."""
+    event = _read("aws-alb", ALB_EXAMPLES["http"] + " 10.0.0.5 - -")
+
+    assert event.status == 200
+
+
+ALB_HEAD = (
+    "http 2018-07-02T22:23:00.186641Z app/x 192.168.131.39:2817 10.0.0.1:80 0.000 0.001 0.000"
+    ' 200 200 34 366 "GET http://h:80/'
+)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [ALB_HEAD + "a " * 40000, ALB_HEAD + 'a" "' * 20000, ALB_HEAD + ' HTTP/1.1" "' * 20000],
+    ids=["spaces", "quotes", "request ends"],
+)
+def test_alb_refuses_a_crafted_line_in_linear_time(line: str) -> None:
+    parser = _parser("aws-alb")
 
     started = time.perf_counter()
     event = parser.parse_line(line, REF)

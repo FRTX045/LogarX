@@ -93,6 +93,34 @@ _HAPROXY: Final = (
 )
 
 
+#: An Application Load Balancer's access log, its fields in AWS's order and
+#: shaped as AWS's own Athena regex shapes them. Required through
+#: `request_creation_time` (22), optional through `classification_reason` (29),
+#: and nothing after it is read: AWS adds fields at the end and asks parsers to
+#: stop after the last one they know.
+_AWS_ALB: Final = (
+    r"(?P<type>[a-z][a-z0-9]*) \d{4}-\d\d-\d\dT[\d:.]+Z (?P<elb>\S+)"
+    # Split at the last colon: ALB always writes the port.
+    + r" (?P<client_ip>\S+):(?P<client_port>\d+) (?P<target>\S+)"
+    + r" (?P<request_processing_time>[-.0-9]+) (?P<target_processing_time>[-.0-9]+)"
+    + r" (?P<response_processing_time>[-.0-9]+) (?P<status>-?\d*) (?P<target_status_code>\S+)"
+    + r" (?P<bytes_in>\d+) (?P<bytes_sent>\d+)"
+    # The target is a whole URL by construction, so it is read as one. A URI
+    # may hold a raw space (ALB logs that as `SpaceInUri`). `host:port-` is
+    # what ALB writes for a path it refused: no path, not `/`.
+    + r' "(?P<method>[^ "]*)'
+    + r" (?:(?P<url_path_not_logged>[A-Za-z][A-Za-z0-9+.-]*://[^/ ]*:\d+)-|(?P<url>.*?))"
+    + r' (?P<protocol>- |[^ ]*)" "(?P<user_agent>[^"]*)"'
+    + r" (?P<ssl_cipher>[A-Z0-9_-]+) (?P<ssl_protocol>[A-Za-z0-9.-]+) \S+"
+    + r' "(?P<trace_id>[^"]*)" "(?P<domain_name>[^"]*)" "[^"]*" (?:-?\d+|-)'
+    # `request_creation_time`: when the request arrived, the instant Apache's
+    # `%t` means. The stamp at the front is when it was answered.
+    + r" (?P<timestamp>\d{4}-\d\d-\d\dT[\d:.]+Z)"
+    + r'(?: "(?P<actions_executed>[^"]*)" "[^"]*" "(?P<error_reason>[^"]*)"'
+    + r'(?: "[^"]*" "[^"]*" "(?P<classification>[^"]*)" "(?P<classification_reason>[^"]*)")?)?'
+)
+
+
 def _pattern(
     name: str, description: str, pattern: str, *, time_format: str = "", escapes: str = ""
 ) -> PatternFormatSpec:
@@ -181,6 +209,7 @@ BUILT_INS: Final[tuple[FormatSpec, ...]] = (
         time_format="%d/%b/%Y:%H:%M:%S.%f",
         escapes="haproxy",
     ),
+    _pattern("aws-alb", "AWS Application Load Balancer access logs", _AWS_ALB),
     # -- JSON, one object per line -----------------------------------------
     _json(
         "nginx-json",
