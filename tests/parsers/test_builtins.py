@@ -104,6 +104,75 @@ ALB_EXAMPLES: dict[str, str] = {
     ),
 }
 
+#: Written by Envoy 1.36.13 in Docker on 2026-10-25, its default access log,
+#: copied as it came out. All but `no forwarded-for` with `use_remote_address:
+#: true`, so Envoy appended the address it saw to X-Forwarded-For. Envoy writes a
+#: client's quotes unescaped, which the injection lines below are made of.
+ENVOY_LINES: dict[str, str] = {
+    "edge": (
+        '[2026-10-25T19:12:02.678Z] "GET /search?q=oak&page=2 HTTP/1.1" 200 - 0 405 186 185'
+        ' "198.51.100.4,10.244.0.1" "Mozilla/5.0 (X11; Linux x86_64)"'
+        ' "419bc407-3e55-4fae-ac30-723f79786b15" "127.0.0.1:18084" "10.244.0.20:80"'
+    ),
+    "sqlmap": (
+        '[2026-10-25T19:12:03.107Z] "GET /login?user=admin%27-- HTTP/1.1" 200 - 0 381 179 179'
+        ' "10.244.0.1" "sqlmap/1.8 "probe"" "39f4c08f-5817-42c2-bbaa-acd9c54b74f2"'
+        ' "127.0.0.1:18084" "10.244.0.20:80"'
+    ),
+    "raw quote in the path": (
+        '[2026-10-25T19:27:43.008Z] "GET /p?x="><script>alert(1)</script> HTTP/1.1" 200 - 0'
+        ' 384 21 21 "10.244.0.1" "curl/8.21.0" "98bef13a-ce53-4e89-8873-ccf8edc86934"'
+        ' "127.0.0.1:18084" "10.244.0.20:80"'
+    ),
+    "shellshock": (
+        '[2026-10-25T19:27:43.120Z] "GET /shellshock HTTP/1.1" 200 - 0 375 21 21 "10.244.0.1"'
+        ' "() { :; }; echo "x" "y"" "b286c7ef-df2c-4c14-803c-64cd26d6a3eb" "127.0.0.1:18084"'
+        ' "10.244.0.20:80"'
+    ),
+    "user agent with an address": (
+        '[2026-10-25T19:37:56.023Z] "GET /ua-fake-field HTTP/1.1" 200 - 0 376 21 21'
+        ' "10.244.0.1" "5.6.7.8" "Mozilla/5.0" "153e67df-6360-4fb2-82a9-92d080cfb2ff"'
+        ' "127.0.0.1:18084" "10.244.0.20:80"'
+    ),
+    "forwarded-for with junk": (
+        '[2026-10-25T19:37:56.218Z] "GET /xff-junk HTTP/1.1" 200 - 0 371 21 21 "abc"'
+        ' "def,10.244.0.1" "curl/8.21.0" "6b328d69-b0a6-4a75-a7e4-aff239755daf"'
+        ' "127.0.0.1:18084" "10.244.0.20:80"'
+    ),
+    "user agent with a status block": (
+        '[2026-10-25T20:04:44.853Z] "GET /ua-fake-block HTTP/1.1" 200 - 0 384 21 21'
+        ' "10.244.0.1" "x" 200 - 0 1 2 3 "6.6.6.6" "y" "f07fd799-ed7e-40f6-b9af-5de711cc8782"'
+        ' "127.0.0.1:18084" "10.244.0.20:80"'
+    ),
+    "forwarded-for that ends a field": (
+        '[2026-10-25T19:37:56.136Z] "GET /xff-fake-field HTTP/1.1" 200 - 0 382 21 21'
+        ' "1.2.3.4" "evil,10.244.0.1" "curl/8.21.0" "907dfc12-a757-45b7-a721-7d07bd99a368"'
+        ' "127.0.0.1:18084" "10.244.0.20:80"'
+    ),
+    "user agent with an entry": (
+        '[2026-10-25T19:37:56.077Z] "GET /ua-fake-entry HTTP/1.1" 200 - 0 378 21 21'
+        ' "10.244.0.1" "x,5.6.7.8" "Mozilla/5.0" "e5278e32-23ed-44fb-86cf-93478e9619f9"'
+        ' "127.0.0.1:18084" "10.244.0.20:80"'
+    ),
+    "user agent with a status block and an entry": (
+        '[2026-10-25T20:04:44.910Z] "GET /ua-fake-block-entry HTTP/1.1" 200 - 0 391 22 21'
+        ' "10.244.0.1" "x" 200 - 0 1 2 3 ",6.6.6.6" "y"'
+        ' "e6ccc6e0-3440-4f92-bcc0-adf1f23ad728" "127.0.0.1:18084" "10.244.0.20:80"'
+    ),
+    # Without `use_remote_address`: Envoy logged the client's own
+    # X-Envoy-Original-Path in place of the path, spaces and quotes included.
+    "path the client wrote": (
+        '[2026-10-25T20:06:35.052Z] "GET /x" 200 - 0 1 2 3 "6.6.6.6" "y HTTP/1.1" 200 - 0 377'
+        ' 21 21 "10.0.0.9" "curl/8.21.0" "80ef3dba-fc83-4640-9345-0c11812506eb"'
+        ' "127.0.0.1:18084" "10.244.0.20:80"'
+    ),
+    "no forwarded-for": (
+        '[2026-10-25T18:46:08.933Z] "GET /ready HTTP/1.1" 200 - 0 291 12 11 "-" "curl/8.21.0"'
+        ' "40aca582-0aef-4f21-ab83-2851dd517560" "127.0.0.1:18084" "10.244.0.20:80"'
+    ),
+    "refused": ('[2026-10-25T19:36:01.267Z] "- - HTTP/1.1" 400 DPE 0 11 8 - "-" "-" "-" "-" "-"'),
+}
+
 #: One real line per built-in, and what reading it has to yield. Several lines
 #: where the format needs a header to know its own columns.
 SAMPLES: dict[str, tuple[list[str], dict[str, object]]] = {
@@ -256,6 +325,20 @@ SAMPLES: dict[str, tuple[list[str], dict[str, object]]] = {
             "user_agent": "Mozilla/5.0 (X11; Linux x86_64)",
             "host": "127.0.0.1:18084",
             "timestamp": datetime(2026, 10, 25, 19, 13, 2, 437000, tzinfo=UTC),
+        },
+    ),
+    "envoy": (
+        [ENVOY_LINES["edge"]],
+        {
+            # The last X-Forwarded-For entry: the one Envoy appended.
+            "client_ip": "10.244.0.1",
+            "path": "/search",
+            "query": "q=oak&page=2",
+            "status": 200,
+            "bytes_sent": 405,
+            "user_agent": "Mozilla/5.0 (X11; Linux x86_64)",
+            "host": "127.0.0.1:18084",
+            "timestamp": datetime(2026, 10, 25, 19, 12, 2, 678000, tzinfo=UTC),
         },
     ),
     "nginx-json": (
@@ -685,6 +768,7 @@ SAME_REQUEST: dict[str, list[str]] = {
     ],
     "haproxy": SAMPLES["haproxy"][0],
     "istio": SAMPLES["istio"][0],
+    "envoy": SAMPLES["envoy"][0],
     # Constructed from AWS's HTTP example: the same entry, for this request.
     "aws-alb": [
         ALB_EXAMPLES["http"].replace(
@@ -1068,6 +1152,100 @@ ISTIO_HEAD = '[2026-10-25T19:12:02.330Z] "GET /x HTTP/1.1" 200 - via_upstream - 
 )
 def test_istio_refuses_a_crafted_line_in_linear_time(line: str) -> None:
     parser = _parser("istio")
+
+    started = time.perf_counter()
+    event = parser.parse_line(line, REF)
+    took = time.perf_counter() - started
+
+    assert event is None
+    assert took < 0.25, f"{took:.2f}s for one line"
+
+
+@pytest.mark.parametrize(
+    ("case", "field", "value"),
+    [
+        ("sqlmap", "user_agent", 'sqlmap/1.8 "probe"'),
+        ("shellshock", "user_agent", '() { :; }; echo "x" "y"'),
+        ("raw quote in the path", "query", 'x="><script>alert(1)</script>'),
+    ],
+)
+def test_envoy_reads_the_quotes_it_did_not_escape(case: str, field: str, value: str) -> None:
+    event = _read("envoy", ENVOY_LINES[case])
+
+    assert getattr(event, field) == value
+    assert event.client_ip == "10.244.0.1"
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "user agent with an address",
+        "forwarded-for with junk",
+        "user agent with a status block",
+    ],
+)
+def test_envoy_names_the_client_when_the_line_allows_only_one(case: str) -> None:
+    """A client's quotes can fake a field boundary, but here only one reading
+    leaves X-Forwarded-For ending in an address, and it is the one Envoy
+    appended: a fake address with no comma before it cannot be the last entry
+    of a list."""
+    event = _read("envoy", ENVOY_LINES[case])
+
+    assert event.client_ip == "10.244.0.1"
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "forwarded-for that ends a field",
+        "user agent with an entry",
+        "user agent with a status block and an entry",
+    ],
+)
+def test_envoy_refuses_a_line_that_could_name_two_clients(case: str) -> None:
+    """`"10.244.0.1" "x,5.6.7.8" "Mozilla/5.0"` is what Envoy writes for a
+    client at 10.244.0.1 with that User-Agent, and also for a client at
+    5.6.7.8 that sent X-Forwarded-For `10.244.0.1" "x`. Nothing in the line
+    says which. Read either way, a request could be pinned on an address its
+    sender chose, so it is set aside and counted instead."""
+    assert _parser("envoy").parse_line(ENVOY_LINES[case], REF) is None
+
+
+def test_envoy_refuses_a_path_the_client_wrote_itself() -> None:
+    """A path read as Envoy wrote it would end at the first `"` followed by
+    what looks like a status. This one carries a fake status and a fake
+    X-Forwarded-For; HTTP/1 has no room for a space in a real path, so a
+    request line of more than three words is refused rather than read."""
+    assert _parser("envoy").parse_line(ENVOY_LINES["path the client wrote"], REF) is None
+
+
+@pytest.mark.parametrize("case", ["no forwarded-for", "refused"])
+def test_envoy_refuses_a_line_that_names_no_client(case: str) -> None:
+    """Envoy's default line has no client address of its own. With no
+    X-Forwarded-For — Envoy not at the edge and nothing in front, or a request
+    refused before routing — there is nobody to name."""
+    assert _parser("envoy").parse_line(ENVOY_LINES[case], REF) is None
+
+
+def test_envoy_and_istio_do_not_read_each_others_lines() -> None:
+    assert _parser("envoy").parse_line(SAMPLES["istio"][0][0], REF) is None
+    assert _parser("istio").parse_line(ENVOY_LINES["edge"], REF) is None
+
+
+ENVOY_HEAD = '[2026-10-25T19:12:02.330Z] "GET /x HTTP/1.1" 200 - 0 358 195 193 '
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        ENVOY_HEAD + '"' + "x," * 40000 + '10.0.0.1" "ua"',
+        ENVOY_HEAD + '"10.0.0.1" "' + ",1.2.3.4" * 20000 + '" "r" "h" "u"',
+        ENVOY_HEAD + '"10.0.0.1" "' + 'a" "' * 20000,
+    ],
+    ids=["a long forwarded-for", "addresses in the user agent", "quotes"],
+)
+def test_envoy_refuses_a_crafted_line_in_linear_time(line: str) -> None:
+    parser = _parser("envoy")
 
     started = time.perf_counter()
     event = parser.parse_line(line, REF)

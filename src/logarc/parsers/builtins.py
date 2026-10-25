@@ -159,6 +159,44 @@ _ISTIO: Final = (
 )
 
 
+#: An address as an X-Forwarded-For entry writes it: IPv4 with or without a
+#: port, IPv6 in brackets with or without one, or IPv6 bare (two colons at
+#: least, which no hostname or word has).
+_ADDRESS: Final = (
+    r"(?:\d{1,3}(?:\.\d{1,3}){3}(?::\d{1,5})?"
+    r"|\[[0-9A-Fa-f:.]+\](?::\d{1,5})?"
+    r"|(?=[0-9A-Fa-f.]*:[0-9A-Fa-f.]*:)[0-9A-Fa-f:.]{2,45})"
+)
+
+#: An entry of a list that is an address and is followed by `" "`: the place a
+#: field could end if the line were read that way.
+_SPLIT: Final = rf'\s*{_ADDRESS}" "'
+
+#: Envoy's default access log. It records no client address, so the client is
+#: the last X-Forwarded-For entry: with `use_remote_address: true`, Envoy's
+#: advice for an edge proxy, Envoy appended the address it saw; without it the
+#: last entry is what Envoy itself takes as the client. With no entry at all
+#: there is no client, and the line is refused.
+#:
+#: Envoy writes a client's quotes as they came, in X-Forwarded-For and in the
+#: User-Agent alike, so a client can fake where one ends and the other begins.
+#: The line is read only when exactly one reading leaves X-Forwarded-For
+#: ending in an address after a comma or at its start: X-Forwarded-For takes
+#: entries until the first that is an address followed by `" "`, and the
+#: User-Agent may then hold no comma followed by one. A second such place means
+#: a second possible client — the same bytes are written for either — and the
+#: line is refused rather than pinned on an address its sender may have chosen.
+_ENVOY: Final = (
+    _ENVOY_HEAD
+    + r" (?P<bytes_in>\d+) (?P<bytes_sent>\d+) (?P<duration_ms>\d+|-)"
+    + r" (?P<upstream_service_time>\S+)"
+    + rf' "(?P<req_header_x_forwarded_for>(?:(?!{_SPLIT})[^,]*,)*\s*(?P<client_ip>{_ADDRESS}))"'
+    + rf' "(?P<user_agent>(?:[^,]|,(?!{_SPLIT}))*)" '
+    + _ENVOY_TAIL
+    + r"\s*$"
+)
+
+
 def _pattern(
     name: str, description: str, pattern: str, *, time_format: str = "", escapes: str = ""
 ) -> PatternFormatSpec:
@@ -249,6 +287,11 @@ BUILT_INS: Final[tuple[FormatSpec, ...]] = (
     ),
     _pattern("aws-alb", "AWS Application Load Balancer access logs", _AWS_ALB),
     _pattern("istio", "Istio's Envoy access log, the mesh's default text format", _ISTIO),
+    _pattern(
+        "envoy",
+        "Envoy's default access log; the client is the last X-Forwarded-For entry",
+        _ENVOY,
+    ),
     # -- JSON, one object per line -----------------------------------------
     _json(
         "nginx-json",
