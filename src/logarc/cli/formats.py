@@ -300,6 +300,8 @@ _SEPARATOR_NAMES: Final[dict[str, str]] = {char: name for name, char in _SEPARAT
 #: first several lines are its own header.
 _HEADER_ROOM: Final = 8
 
+_ESCAPES_HELP: Final = "haproxy, to undo HAProxy's #XX escapes before reading."
+
 
 def _separator_from(name: str) -> str:
     try:
@@ -450,6 +452,7 @@ def formats_add_pattern(
         str, typer.Option("--time-format", help="strftime pattern, if the time is unusual.")
     ] = "",
     note: Annotated[str, typer.Option("--note", help="A reminder of what this is for.")] = "",
+    escapes: Annotated[str, typer.Option("--escapes", help=_ESCAPES_HELP)] = "",
     replace: Annotated[
         bool, typer.Option("--replace", help="Overwrite a saved format of the same name.")
     ] = False,
@@ -460,7 +463,9 @@ def formats_add_pattern(
     address. A regex already names its parts, so there is nothing else to say.
     Run `logarc formats check-pattern` against the log first.
     """
-    spec = PatternFormatSpec(name=name, pattern=pattern, time_format=time_format, description=note)
+    spec = PatternFormatSpec(
+        name=name, pattern=pattern, time_format=time_format, description=note, escapes=escapes
+    )
     try:
         spec.check()
     except PatternFormatError as exc:
@@ -476,10 +481,13 @@ def formats_check_pattern(
         str, typer.Option("--time-format", help="strftime pattern, if the time is unusual.")
     ] = "",
     lines: Annotated[int, typer.Option("--lines", min=1, help="How many lines to read.")] = 5,
+    escapes: Annotated[str, typer.Option("--escapes", help=_ESCAPES_HELP)] = "",
 ) -> None:
     """Try a regular expression against a real log and show what it pulls out."""
     try:
-        parser = PatternFormatSpec(name="check", pattern=pattern, time_format=time_format).build()
+        parser = PatternFormatSpec(
+            name="check", pattern=pattern, time_format=time_format, escapes=escapes
+        ).build()
     except PatternFormatError as exc:
         raise fail(str(exc)) from exc
 
@@ -531,6 +539,8 @@ def formats_show(
         spec.time_format
     ):
         table.add_row("Time format", spec.time_format)
+    if isinstance(spec, PatternFormatSpec) and spec.escapes:
+        table.add_row("Escapes", spec.escapes)
     if isinstance(spec, ColumnsFormatSpec):
         table.add_row("Separator", _SEPARATOR_NAMES[spec.separator])
         table.add_row("Columns", ", ".join(spec.columns) if spec.columns else "from the log")

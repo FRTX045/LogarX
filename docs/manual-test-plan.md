@@ -869,7 +869,7 @@ can choose from.
 
 1. `logarc formats`
 
-**Pass:** seventeen rows, each with a plain sentence saying what it reads —
+**Pass:** twenty-one rows, each with a plain sentence saying what it reads —
 "Caddy's default JSON access log", "IIS and anything else writing W3C
 extended". Not a definition; the line under the table says where those are.
 
@@ -880,7 +880,7 @@ extended". Not a definition; the line under the table says where those are.
 3. Take a log from any server you have and ingest it with **no** `--format`.
 
 **Pass:** the Format column of the ingest table names the one it chose, and it
-is the right one. If it is not, that is worth reporting: with seventeen
+is the right one. If it is not, that is worth reporting: with twenty-one
 candidates the ordering is the thing most likely to be wrong.
 
 ---
@@ -1340,7 +1340,7 @@ rule.
 | 18 | A JSON log's mapping is guessed, correctable, and says what the keys are | | |
 | 19 | An IIS log reads from its own header; its directives are not quarantined | | |
 | 20 | A pattern reads a syslog-wrapped log; a year-less time format is refused | | |
-| 21 | The seventeen shipped formats read as a list you can choose from | | |
+| 21 | The twenty-one shipped formats read as a list you can choose from | | |
 | 22 | Sessions are boxed, named and explained; a name can be changed, survives reopening, and goes back; the boxes follow a drag and can be turned off | | |
 | 23 | The evidence filters, says how much it kept, fades the canvas, and resets per client | | |
 | 24 | The client box finds clients by their requests, moves the range for a time, and opens a client filtered | | |

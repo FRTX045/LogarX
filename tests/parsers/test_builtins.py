@@ -13,6 +13,9 @@ writes rather than one shaped to fit.
 from __future__ import annotations
 
 import json
+import time
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -21,7 +24,154 @@ from logarc.core.evidence import EvidenceRef
 from logarc.parsers.builtins import BUILT_INS
 from logarc.parsers.registry import available_formats, detect_format, get_spec
 
+if TYPE_CHECKING:
+    from logarc.parsers.base import LogParser
+
 REF = EvidenceRef(source_file_id="f", line_no=1)
+
+#: AWS's own example entries for an Application Load Balancer, from its access
+#: log reference, each joined into the one line AWS says it is ("the example
+#: text appears on multiple lines only to make them easier to read"). There is
+#: no ALB to capture from here, so these are the real lines this file has.
+ALB_EXAMPLES: dict[str, str] = {
+    "http": (
+        "http 2018-07-02T22:23:00.186641Z app/my-loadbalancer/50dc6c495c0c9188"
+        ' 192.168.131.39:2817 10.0.0.1:80 0.000 0.001 0.000 200 200 34 366 "GET'
+        ' http://www.example.com:80/ HTTP/1.1" "curl/7.46.0" - -'
+        " arn:aws:elasticloadbalancing:us-east-2:123456789012:targetgroup/my-targets"
+        "/73e2d6bc24d8a067"
+        ' "Root=1-58337262-36d228ad5d99923122bbe354" "-" "-" 0 2018-07-02T22:22:48.364000Z'
+        ' "forward" "-" "-" "10.0.0.1:80" "200" "-" "-" TID_1234abcd5678ef90 "-" "-" "-"'
+    ),
+    "https": (
+        "https 2018-07-02T22:23:00.186641Z app/my-loadbalancer/50dc6c495c0c9188"
+        ' 192.168.131.39:2817 10.0.0.1:80 0.086 0.048 0.037 200 200 0 57 "GET'
+        ' https://www.example.com:443/ HTTP/1.1" "curl/7.46.0" ECDHE-RSA-AES128-GCM-SHA256'
+        " TLSv1.2"
+        " arn:aws:elasticloadbalancing:us-east-2:123456789012:targetgroup/my-targets"
+        "/73e2d6bc24d8a067"
+        ' "Root=1-58337281-1d84f3d73c47ec4e58577259" "www.example.com"'
+        ' "arn:aws:acm:us-east-2:123456789012:certificate/12345678-1234-1234-1234-123456789012"'
+        ' 1 2018-07-02T22:22:48.364000Z "authenticate,forward" "-" "-" "10.0.0.1:80" "200"'
+        ' "-" "-" TID_1234abcd5678ef90 "m.example.com" "-" "TransformSuccess"'
+    ),
+    "h2": (
+        "h2 2018-07-02T22:23:00.186641Z app/my-loadbalancer/50dc6c495c0c9188 10.0.1.252:48160"
+        ' 10.0.0.66:9000 0.000 0.002 0.000 200 200 5 257 "GET https://10.0.2.105:773/'
+        ' HTTP/2.0" "curl/7.46.0" ECDHE-RSA-AES128-GCM-SHA256 TLSv1.2'
+        " arn:aws:elasticloadbalancing:us-east-2:123456789012:targetgroup/my-targets"
+        "/73e2d6bc24d8a067"
+        ' "Root=1-58337327-72bd00b0343d75b906739c42" "-" "-" 1 2018-07-02T22:22:48.364000Z'
+        ' "redirect" "https://example.com:80/" "-" "10.0.0.66:9000" "200" "-" "-"'
+        ' TID_1234abcd5678ef90 "-" "-" "-"'
+    ),
+    "ws": (
+        "ws 2018-07-02T22:23:00.186641Z app/my-loadbalancer/50dc6c495c0c9188 10.0.0.140:40914"
+        ' 10.0.1.192:8010 0.001 0.003 0.000 101 101 218 587 "GET http://10.0.0.30:80/'
+        ' HTTP/1.1" "-" - -'
+        " arn:aws:elasticloadbalancing:us-east-2:123456789012:targetgroup/my-targets"
+        "/73e2d6bc24d8a067"
+        ' "Root=1-58337364-23a8c76965a2ef7629b185e3" "-" "-" 1 2018-07-02T22:22:48.364000Z'
+        ' "forward" "-" "-" "10.0.1.192:8010" "101" "-" "-" TID_1234abcd5678ef90 "-" "-" "-"'
+    ),
+    "wss": (
+        "wss 2018-07-02T22:23:00.186641Z app/my-loadbalancer/50dc6c495c0c9188"
+        ' 10.0.0.140:44244 10.0.0.171:8010 0.000 0.001 0.000 101 101 218 786 "GET'
+        ' https://10.0.0.30:443/ HTTP/1.1" "-" ECDHE-RSA-AES128-GCM-SHA256 TLSv1.2'
+        " arn:aws:elasticloadbalancing:us-west-2:123456789012:targetgroup/my-targets"
+        "/73e2d6bc24d8a067"
+        ' "Root=1-58337364-23a8c76965a2ef7629b185e3" "-" "-" 1 2018-07-02T22:22:48.364000Z'
+        ' "forward" "-" "-" "10.0.0.171:8010" "101" "-" "-" TID_1234abcd5678ef90 "-" "-" "-"'
+    ),
+    "lambda": (
+        "http 2018-11-30T22:23:00.186641Z app/my-loadbalancer/50dc6c495c0c9188"
+        ' 192.168.131.39:2817 - 0.000 0.001 0.000 200 200 34 366 "GET'
+        ' http://www.example.com:80/ HTTP/1.1" "curl/7.46.0" - -'
+        " arn:aws:elasticloadbalancing:us-east-2:123456789012:targetgroup/my-targets"
+        "/73e2d6bc24d8a067"
+        ' "Root=1-58337364-23a8c76965a2ef7629b185e3" "-" "-" 0 2018-11-30T22:22:48.364000Z'
+        ' "forward" "-" "-" "-" "-" "-" "-" TID_1234abcd5678ef90 "-" "-" "-"'
+    ),
+    "lambda failed": (
+        "http 2018-11-30T22:23:00.186641Z app/my-loadbalancer/50dc6c495c0c9188"
+        ' 192.168.131.39:2817 - 0.000 0.001 0.000 502 - 34 366 "GET'
+        ' http://www.example.com:80/ HTTP/1.1" "curl/7.46.0" - -'
+        " arn:aws:elasticloadbalancing:us-east-2:123456789012:targetgroup/my-targets"
+        "/73e2d6bc24d8a067"
+        ' "Root=1-58337364-23a8c76965a2ef7629b185e3" "-" "-" 0 2018-11-30T22:22:48.364000Z'
+        ' "forward" "-" "LambdaInvalidResponse" "-" "-" "-" "-" TID_1234abcd5678ef90 "-" "-"'
+        ' "-"'
+    ),
+}
+
+#: Written by Envoy 1.36.13 in Docker on 2026-10-25, its default access log,
+#: copied as it came out. All but `no forwarded-for` with `use_remote_address:
+#: true`, so Envoy appended the address it saw to X-Forwarded-For. Envoy writes a
+#: client's quotes unescaped, which the injection lines below are made of.
+ENVOY_LINES: dict[str, str] = {
+    "edge": (
+        '[2026-10-25T19:12:02.678Z] "GET /search?q=oak&page=2 HTTP/1.1" 200 - 0 405 186 185'
+        ' "198.51.100.4,10.244.0.1" "Mozilla/5.0 (X11; Linux x86_64)"'
+        ' "419bc407-3e55-4fae-ac30-723f79786b15" "127.0.0.1:18084" "10.244.0.20:80"'
+    ),
+    "sqlmap": (
+        '[2026-10-25T19:12:03.107Z] "GET /login?user=admin%27-- HTTP/1.1" 200 - 0 381 179 179'
+        ' "10.244.0.1" "sqlmap/1.8 "probe"" "39f4c08f-5817-42c2-bbaa-acd9c54b74f2"'
+        ' "127.0.0.1:18084" "10.244.0.20:80"'
+    ),
+    "raw quote in the path": (
+        '[2026-10-25T19:27:43.008Z] "GET /p?x="><script>alert(1)</script> HTTP/1.1" 200 - 0'
+        ' 384 21 21 "10.244.0.1" "curl/8.21.0" "98bef13a-ce53-4e89-8873-ccf8edc86934"'
+        ' "127.0.0.1:18084" "10.244.0.20:80"'
+    ),
+    "shellshock": (
+        '[2026-10-25T19:27:43.120Z] "GET /shellshock HTTP/1.1" 200 - 0 375 21 21 "10.244.0.1"'
+        ' "() { :; }; echo "x" "y"" "b286c7ef-df2c-4c14-803c-64cd26d6a3eb" "127.0.0.1:18084"'
+        ' "10.244.0.20:80"'
+    ),
+    "user agent with an address": (
+        '[2026-10-25T19:37:56.023Z] "GET /ua-fake-field HTTP/1.1" 200 - 0 376 21 21'
+        ' "10.244.0.1" "5.6.7.8" "Mozilla/5.0" "153e67df-6360-4fb2-82a9-92d080cfb2ff"'
+        ' "127.0.0.1:18084" "10.244.0.20:80"'
+    ),
+    "forwarded-for with junk": (
+        '[2026-10-25T19:37:56.218Z] "GET /xff-junk HTTP/1.1" 200 - 0 371 21 21 "abc"'
+        ' "def,10.244.0.1" "curl/8.21.0" "6b328d69-b0a6-4a75-a7e4-aff239755daf"'
+        ' "127.0.0.1:18084" "10.244.0.20:80"'
+    ),
+    "user agent with a status block": (
+        '[2026-10-25T20:04:44.853Z] "GET /ua-fake-block HTTP/1.1" 200 - 0 384 21 21'
+        ' "10.244.0.1" "x" 200 - 0 1 2 3 "6.6.6.6" "y" "f07fd799-ed7e-40f6-b9af-5de711cc8782"'
+        ' "127.0.0.1:18084" "10.244.0.20:80"'
+    ),
+    "forwarded-for that ends a field": (
+        '[2026-10-25T19:37:56.136Z] "GET /xff-fake-field HTTP/1.1" 200 - 0 382 21 21'
+        ' "1.2.3.4" "evil,10.244.0.1" "curl/8.21.0" "907dfc12-a757-45b7-a721-7d07bd99a368"'
+        ' "127.0.0.1:18084" "10.244.0.20:80"'
+    ),
+    "user agent with an entry": (
+        '[2026-10-25T19:37:56.077Z] "GET /ua-fake-entry HTTP/1.1" 200 - 0 378 21 21'
+        ' "10.244.0.1" "x,5.6.7.8" "Mozilla/5.0" "e5278e32-23ed-44fb-86cf-93478e9619f9"'
+        ' "127.0.0.1:18084" "10.244.0.20:80"'
+    ),
+    "user agent with a status block and an entry": (
+        '[2026-10-25T20:04:44.910Z] "GET /ua-fake-block-entry HTTP/1.1" 200 - 0 391 22 21'
+        ' "10.244.0.1" "x" 200 - 0 1 2 3 ",6.6.6.6" "y"'
+        ' "e6ccc6e0-3440-4f92-bcc0-adf1f23ad728" "127.0.0.1:18084" "10.244.0.20:80"'
+    ),
+    # Without `use_remote_address`: Envoy logged the client's own
+    # X-Envoy-Original-Path in place of the path, spaces and quotes included.
+    "path the client wrote": (
+        '[2026-10-25T20:06:35.052Z] "GET /x" 200 - 0 1 2 3 "6.6.6.6" "y HTTP/1.1" 200 - 0 377'
+        ' 21 21 "10.0.0.9" "curl/8.21.0" "80ef3dba-fc83-4640-9345-0c11812506eb"'
+        ' "127.0.0.1:18084" "10.244.0.20:80"'
+    ),
+    "no forwarded-for": (
+        '[2026-10-25T18:46:08.933Z] "GET /ready HTTP/1.1" 200 - 0 291 12 11 "-" "curl/8.21.0"'
+        ' "40aca582-0aef-4f21-ab83-2851dd517560" "127.0.0.1:18084" "10.244.0.20:80"'
+    ),
+    "refused": ('[2026-10-25T19:36:01.267Z] "- - HTTP/1.1" 400 DPE 0 11 8 - "-" "-" "-" "-" "-"'),
+}
 
 #: One real line per built-in, and what reading it has to yield. Several lines
 #: where the format needs a header to know its own columns.
@@ -125,6 +275,71 @@ SAMPLES: dict[str, tuple[list[str], dict[str, object]]] = {
     "apache-common": (
         ['203.0.113.5 - - [01/May/2024:09:00:45 +0000] "GET /admin/.env HTTP/1.1" 404 0'],
         {"client_ip": "203.0.113.5", "path": "/admin/.env", "status": 404},
+    ),
+    # Written by HAProxy 3.2.26 in Docker on 2026-10-25, `option httplog`,
+    # logging to stdout. Copied as it came out.
+    "haproxy": (
+        [
+            "10.244.0.1:54224 [25/Oct/2026:18:41:15.351] http-in web/srv1 0/0/1/21/22 200 365"
+            ' - - ---- 1/1/0/0/0 0/0 "GET /search?q=oak&page=2 HTTP/1.1"'
+        ],
+        {
+            "client_ip": "10.244.0.1",
+            "path": "/search",
+            "query": "q=oak&page=2",
+            "status": 200,
+            "bytes_sent": 365,
+            "timestamp": datetime(2026, 10, 25, 18, 41, 15, 351000, tzinfo=UTC),
+        },
+    ),
+    "aws-alb": (
+        [ALB_EXAMPLES["http"]],
+        {
+            "client_ip": "192.168.131.39",
+            "method": "GET",
+            "path": "/",
+            "host": "www.example.com:80",
+            "status": 200,
+            "bytes_sent": 366,
+            "user_agent": "curl/7.46.0",
+            # `request_creation_time`, when the request arrived: the instant
+            # Apache's %t means. The stamp in front is when it was answered.
+            "timestamp": datetime(2018, 7, 2, 22, 22, 48, 364000, tzinfo=UTC),
+        },
+    ),
+    # Written by Envoy 1.36.13 in Docker on 2026-10-25, running Istio's own
+    # `EnvoyTextLogFormat` with `use_remote_address: true`. Copied as it came out.
+    "istio": (
+        [
+            '[2026-10-25T19:13:02.437Z] "GET /search?q=oak&page=2 HTTP/1.1" 200 - via_upstream -'
+            ' "-" 0 405 73 73 "198.51.100.4,10.244.0.1" "Mozilla/5.0 (X11; Linux x86_64)"'
+            ' "06caed9c-6b6c-4de8-9ab6-6510698b9224" "127.0.0.1:18084" "10.244.0.20:80" whoami'
+            " 10.244.0.50:49322 10.244.0.50:80 10.244.0.1:39320 - -"
+        ],
+        {
+            "client_ip": "10.244.0.1",
+            "path": "/search",
+            "query": "q=oak&page=2",
+            "status": 200,
+            "bytes_sent": 405,
+            "user_agent": "Mozilla/5.0 (X11; Linux x86_64)",
+            "host": "127.0.0.1:18084",
+            "timestamp": datetime(2026, 10, 25, 19, 13, 2, 437000, tzinfo=UTC),
+        },
+    ),
+    "envoy": (
+        [ENVOY_LINES["edge"]],
+        {
+            # The last X-Forwarded-For entry: the one Envoy appended.
+            "client_ip": "10.244.0.1",
+            "path": "/search",
+            "query": "q=oak&page=2",
+            "status": 200,
+            "bytes_sent": 405,
+            "user_agent": "Mozilla/5.0 (X11; Linux x86_64)",
+            "host": "127.0.0.1:18084",
+            "timestamp": datetime(2026, 10, 25, 19, 12, 2, 678000, tzinfo=UTC),
+        },
     ),
     "nginx-json": (
         [
@@ -379,10 +594,14 @@ def test_every_built_in_says_what_it_is_for() -> None:
         assert spec.description, spec.name
 
 
-def _read(name: str, line: str) -> NormalizedEvent:
+def _parser(name: str) -> LogParser:
     spec = get_spec(name)
     assert spec is not None
-    event = spec.build().parse_line(line, REF)
+    return spec.build()
+
+
+def _read(name: str, line: str) -> NormalizedEvent:
+    event = _parser(name).parse_line(line, REF)
     assert event is not None, f"{name} refused {line!r}"
     return event
 
@@ -547,6 +766,15 @@ SAME_REQUEST: dict[str, list[str]] = {
             }
         )
     ],
+    "haproxy": SAMPLES["haproxy"][0],
+    "istio": SAMPLES["istio"][0],
+    "envoy": SAMPLES["envoy"][0],
+    # Constructed from AWS's HTTP example: the same entry, for this request.
+    "aws-alb": [
+        ALB_EXAMPLES["http"].replace(
+            "http://www.example.com:80/ ", "http://www.example.com:80/search?q=oak&page=2 "
+        )
+    ],
     "caddy-json": SAMPLES["caddy-json"][0],
     "traefik-json": SAMPLES["traefik-json"][0],
     "cloudflare-json": [
@@ -607,3 +835,421 @@ def test_one_request_reads_the_same_whichever_format_wrote_it(name: str) -> None
 
     assert event is not None
     assert (event.method, event.path, event.query) == ("GET", "/search", "q=oak&page=2")
+
+
+# ---------------------------------------------------------------------------
+# The proxies that write the client with its port
+# ---------------------------------------------------------------------------
+
+#: One request, as each envelope HAProxy 3.2.26 writes it (`log stdout format
+#: <name>`), as rsyslog 8.2410.0 files it with each of its two templates, and as
+#: HAProxy's own documentation prints its example (`{1wt.eu} {}` are header
+#: captures). All copied as they came out.
+HAPROXY_ENVELOPES = {
+    "raw": "10.244.0.1:55664 [25/Oct/2026:19:22:39.934] http-in web/srv1 0/0/1/21/22 200 310"
+    ' - - ---- 1/1/0/0/0 0/0 "GET /search?q=oak&page=2 HTTP/1.1"',
+    "short": "<6>10.244.0.1:55694 [25/Oct/2026:19:22:43.207] http-in web/srv1 0/0/0/22/22 200"
+    ' 310 - - ---- 1/1/0/0/0 0/0 "GET /search?q=oak&page=2 HTTP/1.1"',
+    "timed": "<6>2026-10-25T19:22:46.591180+00:00 10.244.0.1:55726 [25/Oct/2026:19:22:46.568]"
+    ' http-in web/srv1 0/0/1/21/22 200 310 - - ---- 1/1/0/0/0 0/0 "GET /search?q=oak&page=2'
+    ' HTTP/1.1"',
+    "iso": "2026-10-25T19:22:49.874209+00:00 10.244.0.1:35942 [25/Oct/2026:19:22:49.852]"
+    ' http-in web/srv1 0/0/0/21/21 200 310 - - ---- 1/1/0/0/0 0/0 "GET /search?q=oak&page=2'
+    ' HTTP/1.1"',
+    "priority": "<134>10.244.0.1:35966 [25/Oct/2026:19:22:53.162] http-in web/srv1 0/0/0/21/21"
+    ' 200 310 - - ---- 1/1/0/0/0 0/0 "GET /search?q=oak&page=2 HTTP/1.1"',
+    "rfc3164": "<134>Oct 25 19:22:56 localhost haproxy[8]: 10.244.0.1:36006"
+    " [25/Oct/2026:19:22:56.470] http-in web/srv1 0/0/0/21/21 200 310 - - ---- 1/1/0/0/0 0/0"
+    ' "GET /search?q=oak&page=2 HTTP/1.1"',
+    "rfc5424": "<134>1 2026-10-25T19:22:59.841123+00:00 - haproxy 8 - - 10.244.0.1:42982"
+    " [25/Oct/2026:19:22:59.819] http-in web/srv1 0/0/0/21/21 200 310 - - ---- 1/1/0/0/0 0/0"
+    ' "GET /search?q=oak&page=2 HTTP/1.1"',
+    "rsyslog traditional": "Oct 25 19:24:14 lg-hap.lg-net haproxy[8]: 10.244.0.1:37202"
+    " [25/Oct/2026:19:24:14.123] http-in web/srv1 0/0/0/21/21 200 310 - - ---- 1/1/0/0/0 0/0"
+    ' "GET /search?q=oak&page=2 HTTP/1.1"',
+    "rsyslog iso": "2026-10-25T19:24:14+00:00 lg-hap.lg-net haproxy[8]: 10.244.0.1:37202"
+    " [25/Oct/2026:19:24:14.123] http-in web/srv1 0/0/0/21/21 200 310 - - ---- 1/1/0/0/0 0/0"
+    ' "GET /search?q=oak&page=2 HTTP/1.1"',
+    "documented": "Feb  6 12:14:14 localhost haproxy[14389]: 10.0.1.2:33317"
+    " [06/Feb/2009:12:14:14.655] http-in static/srv1 10/0/30/69/109 200 2750 - - ----"
+    ' 1/1/1/1/0 0/0 {1wt.eu} {} "GET /index.html HTTP/1.1"',
+}
+
+
+@pytest.mark.parametrize("envelope", list(HAPROXY_ENVELOPES))
+def test_haproxy_reads_every_envelope_it_writes(envelope: str) -> None:
+    """The same line arrives bare on stdout, behind a syslog priority, a stamp,
+    a host and a tag, or in a file rsyslog wrote. All of them are HAProxy's."""
+    event = _read("haproxy", HAPROXY_ENVELOPES[envelope])
+
+    assert event.client_ip in ("10.244.0.1", "10.0.1.2")
+    assert event.method == "GET"
+    assert event.path in ("/search", "/index.html")
+
+
+def test_haproxy_is_detected_behind_a_syslog_envelope() -> None:
+    found = detect_format([HAPROXY_ENVELOPES["rsyslog traditional"]] * 4)
+
+    assert found is not None
+    assert found.name == "haproxy"
+
+
+def test_haproxy_undoes_its_quote_escape() -> None:
+    """HAProxy writes a `"` the client sent as `#22`. Left in place, no rule
+    looking for an injected quote would ever see one."""
+    sqli = _read(
+        "haproxy",
+        "10.244.0.1:54228 [25/Oct/2026:18:41:15.424] http-in web/srv1 0/0/0/22/22 200 319 - -"
+        ' ---- 1/1/0/0/0 0/0 "GET /login?user=admin#22or#221 HTTP/1.1"',
+    )
+    xss = _read(
+        "haproxy",
+        "10.244.0.1:45304 [25/Oct/2026:19:17:26.763] http-in web/srv1 0/0/0/21/21 200 322 - -"
+        ' ---- 1/1/0/0/0 0/0 "GET /p?x=#22><script>alert(1)</script> HTTP/1.1"',
+    )
+
+    assert sqli.query == 'user=admin"or"1'
+    assert xss.query == 'x="><script>alert(1)</script>'
+
+
+def test_haproxy_keeps_its_header_captures_decoded() -> None:
+    """Which captured header is the User-Agent is configuration, not log, so
+    it is not guessed — but what was captured is kept, readable."""
+    event = _read(
+        "haproxy",
+        "10.244.0.1:37128 [25/Oct/2026:19:17:38.517] http-in web/srv1 0/0/1/21/22 200 351 - -"
+        " ---- 1/1/0/0/0 0/0 {127.0.0.1:18085|Mozilla/5.0 (X11; Linux x86_64) #22quoted#22"
+        ' #7Bbrace#7Cbar#7D} {text/plain; charset=utf-8} "GET /search?q=oak&page=2 HTTP/1.1"',
+    )
+
+    assert event.extra["captured_request_headers"] == (
+        '127.0.0.1:18085|Mozilla/5.0 (X11; Linux x86_64) "quoted" {brace|bar}'
+    )
+    assert event.extra["captured_response_headers"] == "text/plain; charset=utf-8"
+    assert event.user_agent is None
+    assert event.query == "q=oak&page=2"
+
+
+def test_haproxy_reads_a_request_line_it_cut_short() -> None:
+    """HAProxy cuts a log line at 1024 bytes by default, closing quote and all.
+    A long query is where an attack usually is, so the line is read as far as
+    it goes. This one is 1023 bytes, as HAProxy wrote it."""
+    line = (
+        "10.244.0.1:45294 [25/Oct/2026:19:17:26.704] http-in web/srv1 0/0/0/21/21 200 1801 - -"
+        ' ---- 1/1/0/0/0 0/0 "GET /search?q=' + "A" * 903
+    )
+
+    event = _read("haproxy", line)
+
+    assert len(line) == 1023
+    assert event.path == "/search"
+    assert event.query == "q=" + "A" * 903
+
+
+def test_haproxy_reads_a_request_it_refused() -> None:
+    """Garbage, a control byte in the path and a client that never finished
+    its request all come out as `<BADREQ>`: no request, but a client, a status
+    and why."""
+    event = _read(
+        "haproxy",
+        "10.244.0.2:35429 [25/Oct/2026:19:17:34.921] http-in http-in/<NOSRV> -1/-1/-1/-1/0 400"
+        ' 0 - - PR-- 1/1/0/0/0 0/0 "<BADREQ>"',
+    )
+
+    assert event.client_ip == "10.244.0.2"
+    assert event.status == 400
+    assert event.method is None
+    assert event.extra["malformed_request_line"] == "<BADREQ>"
+    assert event.extra["termination_state"] == "PR--"
+
+
+@pytest.mark.parametrize(
+    "line",
+    [":" * 80000 + " [", "x " * 40000 + "1.2.3.4:5 [", "<1>1 " + "a " * 40000],
+    ids=["colons", "words", "a long envelope"],
+)
+def test_haproxy_refuses_a_crafted_line_in_linear_time(line: str) -> None:
+    """Detection tries every built-in on every line it samples, so a pattern
+    that backtracks on a line that is not its own slows every ingest."""
+    parser = _parser("haproxy")
+
+    started = time.perf_counter()
+    event = parser.parse_line(line, REF)
+    took = time.perf_counter() - started
+
+    assert event is None
+    assert took < 0.25, f"{took:.2f}s for one line"
+
+
+ALB_STATUS = {
+    "http": 200,
+    "https": 200,
+    "h2": 200,
+    "ws": 101,
+    "wss": 101,
+    "lambda": 200,
+    "lambda failed": 502,
+}
+
+
+@pytest.mark.parametrize("example", list(ALB_EXAMPLES))
+def test_alb_reads_every_example_aws_documents(example: str) -> None:
+    event = _read("aws-alb", ALB_EXAMPLES[example])
+
+    assert event.status == ALB_STATUS[example]
+    assert event.method == "GET"
+    assert event.path == "/"
+
+
+def test_alb_keeps_what_it_says_about_a_request() -> None:
+    """The trace id ties the request to the target's own log; the TLS fields
+    and the actions say how it was handled."""
+    https = _read("aws-alb", ALB_EXAMPLES["https"])
+    failed = _read("aws-alb", ALB_EXAMPLES["lambda failed"])
+
+    assert https.extra["client_port"] == "2817"
+    assert https.extra["target"] == "10.0.0.1:80"
+    assert https.extra["trace_id"] == "Root=1-58337281-1d84f3d73c47ec4e58577259"
+    assert https.extra["domain_name"] == "www.example.com"
+    assert https.extra["ssl_protocol"] == "TLSv1.2"
+    assert https.extra["actions_executed"] == "authenticate,forward"
+    assert failed.extra["error_reason"] == "LambdaInvalidResponse"
+    assert "target_status_code" not in failed.extra
+
+
+def test_alb_splits_an_ipv6_client_at_its_last_colon() -> None:
+    """Constructed from AWS's HTTP example. ALB always writes the port, so
+    the last colon ends the address even when the address is IPv6."""
+    event = _read(
+        "aws-alb", ALB_EXAMPLES["http"].replace("192.168.131.39:2817", "2001:db8::1:2817")
+    )
+
+    assert event.client_ip == "2001:db8::1"
+    assert event.extra["client_port"] == "2817"
+
+
+def test_alb_does_not_invent_a_path_it_did_not_log() -> None:
+    """Constructed from AWS's HTTP example, with the shape ALB writes when it
+    refuses a path (`../../../` was the reported case): host and port, then a
+    dash. Read as a URL that is `/`, a request nobody made."""
+    event = _read(
+        "aws-alb",
+        ALB_EXAMPLES["http"].replace(
+            '"GET http://www.example.com:80/ HTTP/1.1"',
+            '"GET https://shop.example.com:443- HTTP/2.0"',
+        ),
+    )
+
+    assert event.method == "GET"
+    assert event.path is None
+    assert event.extra["url_path_not_logged"] == "https://shop.example.com:443"
+
+
+def test_alb_reads_a_url_with_a_space_in_it() -> None:
+    """Constructed. ALB logs a URI with a raw space, classifying it
+    `SpaceInUri`, so a space does not end the URL."""
+    event = _read(
+        "aws-alb",
+        ALB_EXAMPLES["http"].replace(
+            "http://www.example.com:80/ ", "http://www.example.com:80/a b?q=1 "
+        ),
+    )
+
+    assert (event.path, event.query) == ("/a b", "q=1")
+
+
+def test_alb_ignores_fields_aws_adds_later() -> None:
+    """AWS adds fields at the end and asks parsers to stop after the last one
+    they know. These three are the ones its reference now lists past the
+    examples."""
+    event = _read("aws-alb", ALB_EXAMPLES["http"] + " 10.0.0.5 - -")
+
+    assert event.status == 200
+
+
+ALB_HEAD = (
+    "http 2018-07-02T22:23:00.186641Z app/x 192.168.131.39:2817 10.0.0.1:80 0.000 0.001 0.000"
+    ' 200 200 34 366 "GET http://h:80/'
+)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [ALB_HEAD + "a " * 40000, ALB_HEAD + 'a" "' * 20000, ALB_HEAD + ' HTTP/1.1" "' * 20000],
+    ids=["spaces", "quotes", "request ends"],
+)
+def test_alb_refuses_a_crafted_line_in_linear_time(line: str) -> None:
+    parser = _parser("aws-alb")
+
+    started = time.perf_counter()
+    event = parser.parse_line(line, REF)
+    took = time.perf_counter() - started
+
+    assert event is None
+    assert took < 0.25, f"{took:.2f}s for one line"
+
+
+def test_istio_marks_an_address_envoy_took_from_forwarded_for() -> None:
+    """Without `use_remote_address`, Envoy's own idea of the client comes from
+    X-Forwarded-For, and it writes the port as 0. Captured as it came out."""
+    event = _read(
+        "istio",
+        '[2026-10-25T19:12:33.183Z] "GET /search?q=oak&page=2 HTTP/1.1" 200 - via_upstream - "-"'
+        ' 0 356 201 201 "198.51.100.4" "Mozilla/5.0 (X11; Linux x86_64)"'
+        ' "368c4fba-0ac0-4508-a2f5-3bb2ad38c56e" "127.0.0.1:18084" "10.244.0.20:80" whoami'
+        " 10.244.0.50:37000 10.244.0.50:80 198.51.100.4:0 - -",
+    )
+
+    assert event.client_ip == "198.51.100.4"
+    assert event.extra["client_port"] == "0"
+    assert event.extra["req_header_x_forwarded_for"] == "198.51.100.4"
+
+
+def test_istio_client_survives_a_forged_tail_in_the_user_agent() -> None:
+    """Envoy writes a client's quotes unescaped, so a User-Agent can carry a
+    complete fake set of addresses. The real ones end the line, where nothing
+    the client sends can reach: Envoy sanitises the SNI and refuses a quoted
+    Host. Captured as it came out, over TLS."""
+    event = _read(
+        "istio",
+        '[2026-10-25T19:34:42.505Z] "GET /ua-space HTTP/1.1" 200 - via_upstream - "-" 0 374 21 21'
+        ' "10.244.0.2" "x" "y 6.6.6.6:1 7.7.7.7:2 8.8.8.8:3 - -"'
+        ' "e6eced97-f668-491b-8ab8-186d745d22b0" "shop.example" "10.244.0.20:80" whoami'
+        " 10.244.0.50:40160 10.244.0.50:443 10.244.0.2:48130 shop.example -",
+    )
+
+    assert event.client_ip == "10.244.0.2"
+    assert event.extra["client_port"] == "48130"
+    assert event.extra["requested_server_name"] == "shop.example"
+
+
+def test_istio_reads_a_request_envoy_refused() -> None:
+    """A Host Envoy would not accept: no method, no path, but a client and a
+    status, and why. Captured as it came out."""
+    event = _read(
+        "istio",
+        '[2026-10-25T19:34:41.431Z] "- - HTTP/1.1" 400 DPE http.invalid_authority - "-" 0 11 17 -'
+        ' "-" "-" "-" "-" "-" - - 10.244.0.50:443 10.244.0.2:48110 shop.example -',
+    )
+
+    assert event.client_ip == "10.244.0.2"
+    assert event.status == 400
+    assert (event.method, event.path) == (None, None)
+    assert event.extra["response_code_details"] == "http.invalid_authority"
+
+
+ISTIO_HEAD = '[2026-10-25T19:12:02.330Z] "GET /x HTTP/1.1" 200 - via_upstream - "-" 0 358 195 193 '
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        ISTIO_HEAD + '"-" "' + 'a" "' * 20000,
+        ISTIO_HEAD + '"' + 'a" "' * 20000 + 'b" "c" "d" "e" f g h i j',
+        '[2026-10-25T19:12:02.330Z] "' + '" 200 ' * 20000,
+    ],
+    ids=["quotes", "quotes and a short tail", "request ends"],
+)
+def test_istio_refuses_a_crafted_line_in_linear_time(line: str) -> None:
+    parser = _parser("istio")
+
+    started = time.perf_counter()
+    event = parser.parse_line(line, REF)
+    took = time.perf_counter() - started
+
+    assert event is None
+    assert took < 0.25, f"{took:.2f}s for one line"
+
+
+@pytest.mark.parametrize(
+    ("case", "field", "value"),
+    [
+        ("sqlmap", "user_agent", 'sqlmap/1.8 "probe"'),
+        ("shellshock", "user_agent", '() { :; }; echo "x" "y"'),
+        ("raw quote in the path", "query", 'x="><script>alert(1)</script>'),
+    ],
+)
+def test_envoy_reads_the_quotes_it_did_not_escape(case: str, field: str, value: str) -> None:
+    event = _read("envoy", ENVOY_LINES[case])
+
+    assert getattr(event, field) == value
+    assert event.client_ip == "10.244.0.1"
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "user agent with an address",
+        "forwarded-for with junk",
+        "user agent with a status block",
+    ],
+)
+def test_envoy_names_the_client_when_the_line_allows_only_one(case: str) -> None:
+    """A client's quotes can fake a field boundary, but here only one reading
+    leaves X-Forwarded-For ending in an address, and it is the one Envoy
+    appended: a fake address with no comma before it cannot be the last entry
+    of a list."""
+    event = _read("envoy", ENVOY_LINES[case])
+
+    assert event.client_ip == "10.244.0.1"
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "forwarded-for that ends a field",
+        "user agent with an entry",
+        "user agent with a status block and an entry",
+    ],
+)
+def test_envoy_refuses_a_line_that_could_name_two_clients(case: str) -> None:
+    """`"10.244.0.1" "x,5.6.7.8" "Mozilla/5.0"` is what Envoy writes for a
+    client at 10.244.0.1 with that User-Agent, and also for a client at
+    5.6.7.8 that sent X-Forwarded-For `10.244.0.1" "x`. Nothing in the line
+    says which. Read either way, a request could be pinned on an address its
+    sender chose, so it is set aside and counted instead."""
+    assert _parser("envoy").parse_line(ENVOY_LINES[case], REF) is None
+
+
+def test_envoy_refuses_a_path_the_client_wrote_itself() -> None:
+    """A path read as Envoy wrote it would end at the first `"` followed by
+    what looks like a status. This one carries a fake status and a fake
+    X-Forwarded-For; HTTP/1 has no room for a space in a real path, so a
+    request line of more than three words is refused rather than read."""
+    assert _parser("envoy").parse_line(ENVOY_LINES["path the client wrote"], REF) is None
+
+
+@pytest.mark.parametrize("case", ["no forwarded-for", "refused"])
+def test_envoy_refuses_a_line_that_names_no_client(case: str) -> None:
+    """Envoy's default line has no client address of its own. With no
+    X-Forwarded-For — Envoy not at the edge and nothing in front, or a request
+    refused before routing — there is nobody to name."""
+    assert _parser("envoy").parse_line(ENVOY_LINES[case], REF) is None
+
+
+def test_envoy_and_istio_do_not_read_each_others_lines() -> None:
+    assert _parser("envoy").parse_line(SAMPLES["istio"][0][0], REF) is None
+    assert _parser("istio").parse_line(ENVOY_LINES["edge"], REF) is None
+
+
+ENVOY_HEAD = '[2026-10-25T19:12:02.330Z] "GET /x HTTP/1.1" 200 - 0 358 195 193 '
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        ENVOY_HEAD + '"' + "x," * 40000 + '10.0.0.1" "ua"',
+        ENVOY_HEAD + '"10.0.0.1" "' + ",1.2.3.4" * 20000 + '" "r" "h" "u"',
+        ENVOY_HEAD + '"10.0.0.1" "' + 'a" "' * 20000,
+    ],
+    ids=["a long forwarded-for", "addresses in the user agent", "quotes"],
+)
+def test_envoy_refuses_a_crafted_line_in_linear_time(line: str) -> None:
+    parser = _parser("envoy")
+
+    started = time.perf_counter()
+    event = parser.parse_line(line, REF)
+    took = time.perf_counter() - started
+
+    assert event is None
+    assert took < 0.25, f"{took:.2f}s for one line"

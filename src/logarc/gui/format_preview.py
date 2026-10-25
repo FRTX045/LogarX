@@ -202,8 +202,12 @@ def preview_columns(
     return _read(event)
 
 
-def preview_pattern(pattern: str, time_format: str, sample: str) -> Preview:
-    """Try a regular expression against one pasted line and say what came of it."""
+def preview_pattern(pattern: str, time_format: str, sample: str, escapes: str = "") -> Preview:
+    """Try a regular expression against one pasted line and say what came of it.
+
+    `escapes` is the format's own, which the screen does not show: a preview
+    that left HAProxy's `#22` in place would not be what ingest reads.
+    """
     sample = sample.strip()
     if not pattern.strip():
         return Preview(ok=False, status="Write a regular expression above.")
@@ -211,7 +215,9 @@ def preview_pattern(pattern: str, time_format: str, sample: str) -> Preview:
         return Preview(ok=False, status="Paste one line from your log.")
 
     try:
-        parser = PatternFormatSpec(name="preview", pattern=pattern, time_format=time_format).build()
+        parser = PatternFormatSpec(
+            name="preview", pattern=pattern, time_format=time_format, escapes=escapes
+        ).build()
     except PatternFormatError as exc:
         return Preview(ok=False, status=str(exc))
 

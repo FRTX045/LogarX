@@ -63,7 +63,7 @@ professionals.**
 
 | Step | The question | What logarc does |
 |---|---|---|
-| **Open the log** | "What format is this? Do I need a database?" | **Case → New from logs…** detects the format (seventeen are built in) and reads the log on your machine. Lines it cannot read are counted and reported, never silently dropped. |
+| **Open the log** | "What format is this? Do I need a database?" | **Case → New from logs…** detects the format (twenty-one are built in) and reads the log on your machine. Lines it cannot read are counted and reported, never silently dropped. |
 | **Find a starting point** | "A million lines. Where do I look?" | **Triage** ranks clients in a *Suspicious* and an *Unusual* queue, each with a *Finding* and the reasons behind its place. |
 | **Understand and check** | "What did this address do, in what order, and how did the server answer?" | Each client becomes a graph of activities, grouped into sessions with their times and a name for each, which you can change. A node's outline summarises the response codes it received, and the icon inside it says what kind of activity it was. Click it and the evidence panel lists the requests behind it, decoded, with the raw line kept and repeated lines folded. |
 | **Explain and hand over** | "How do I show this to someone who can act?" | **Ctrl+D** bookmarks a client, an activity or a line, with a note. **Export** writes a report (HTML), the graph (JSON), or every bookmark (CSV). |
@@ -122,7 +122,7 @@ Every screen is described in [docs/desktop-app.md](docs/desktop-app.md).
 
 | | |
 |---|---|
-| **Reads** | Apache, nginx, Kubernetes ingress-nginx, IIS W3C, Caddy, Traefik, Cloudflare, Google Cloud, ECS, CloudFront: seventeen formats built in, plus any format you write yourself |
+| **Reads** | Apache, nginx, Kubernetes ingress-nginx, IIS W3C, Caddy, Traefik, HAProxy, Envoy, Istio, Cloudflare, Google Cloud, AWS ALB, ECS, CloudFront: twenty-one formats built in, plus any format you write yourself |
 | **Finds** | Access-log patterns mapped to selected OWASP Top 10 categories, plus the ordinary traffic between them |
 | **Produces** | An activity graph per client, an HTML or JSON report, and a line-level evidence trail |
 | **Runs** | Offline. Evidence never leaves the machine. |
