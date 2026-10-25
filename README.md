@@ -75,7 +75,8 @@ professionals.**
 
 The story above is illustrative. What follows is real: an Apache log ships with
 the repository, 3,825 lines a real server wrote while real attack tools were
-pointed at it, so no separate dataset download is needed.
+pointed at it, so no separate dataset download is needed. Only the timestamps
+were changed, moved onto a realistic week; the dataset explains how.
 
 ```bash
 git clone https://github.com/FRTX045/logarc.git
@@ -170,9 +171,11 @@ Scored 2026-10-14 as the complete tool, native rules plus OWASP CRS at paranoia
 level 2 (revision `d694d465`, configuration `f4a1c8296441d261`), on 235,732
 requests from the
 [BlackHat-Dataset](https://github.com/FRTX045/BlackHat-Dataset) `apache-shopfront`
-medium build: **accuracy 0.9975, macro F1 0.9525 and 0 false alarms**, with 41
+build `2026-10-06-medium`: **accuracy 0.9975, macro F1 0.9525 and 0 false alarms**, with 41
 attack requests missed. Macro F1 is the lower figure because it weighs every
-category equally, and the smallest categories hold only a handful of requests. [docs/evaluation.md](docs/evaluation.md) has the method, the
+category equally, and the smallest categories hold only a handful of requests.
+That build's full log is not published yet: the dataset's README says how to
+rebuild it, at commit `d2ef291`. [docs/evaluation.md](docs/evaluation.md) has the method, the
 per-category figures and what the numbers do not establish, and
 [docs/limitations.md](docs/limitations.md) what logarc cannot tell you.
 
