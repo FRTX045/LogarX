@@ -55,6 +55,20 @@ BUILT_INS: Final[tuple[FormatSpec, ...]] = (
         VHOST_COMBINED,
         "Apache vhost_combined: combined with the server name and port in front",
     ),
+    # ingress-nginx's `log-format-upstream`, the default it ships. Its nginx
+    # variables in Apache's terms: `$request_length` is `%I`, `$request_time`
+    # is `%T`, and what the controller sets is `%{...}e`. The upstream fields
+    # turn into lists when a request is retried (`a, b`) or sent to an error
+    # page (`a : b`), and `$req_id` is the client's own X-Request-ID when it
+    # sends one — both are why the directive compiler reads lists, and reads a
+    # field that ends the line to its end.
+    _apache(
+        "ingress-nginx",
+        f"{COMBINED} %I %T [%{{proxy_upstream_name}}e] [%{{proxy_alternative_upstream_name}}e]"
+        " %{upstream_addr}e %{upstream_response_length}e %{upstream_response_time}e"
+        " %{upstream_status}e %{req_id}e",
+        "Kubernetes ingress-nginx's default: combined with the upstream it reached",
+    ),
     # Before `apache-combined-io`, and measured rather than guessed: io's two
     # trailing counts are bare fields, which match `"198.51.100.9" 0.123`
     # quotes and all, so an nginx line satisfies both and the earlier one wins.
@@ -64,6 +78,23 @@ BUILT_INS: Final[tuple[FormatSpec, ...]] = (
         "nginx-combined-forwarded",
         f'{COMBINED} "%{{X-Forwarded-For}}i" %T',
         "nginx combined with the forwarded-for header and $request_time",
+    ),
+    # What nginx.org's packages and the official Docker image log by default.
+    # Before `apache-combined-io` for the reason above, on a line of its own:
+    # behind two proxies the forwarded-for is `"a, b"`, and io's two counts
+    # match its halves.
+    _apache(
+        "nginx-main",
+        f'{COMBINED} "%{{X-Forwarded-For}}i"',
+        "nginx's packaged default 'main': combined with the forwarded-for header",
+    ),
+    # Traefik's `common`, its text access log. It drops request headers unless
+    # told to keep them, so by default the Referer and User-Agent are `-`.
+    _apache(
+        "traefik-common",
+        f'{COMBINED} %{{request_count}}e "%{{router_name}}e" "%{{service_url}}e"'
+        " %{duration_ms}ems",
+        "Traefik's default text access log: combined with its router and service",
     ),
     _apache(
         "apache-combined-io",
