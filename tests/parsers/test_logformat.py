@@ -588,10 +588,10 @@ def test_a_crafted_list_is_refused_in_linear_time() -> None:
     request would stall the ingest of a log. Lists take what they can and keep
     it, so this costs one pass."""
     parser = LogFormatParser(
-        '%h %t "%r" %>s %b %{X-Forwarded-For}i %{X-Real-IP}i %{Via}i %{Forwarded}i'
+        '%h %t "%r" %{X-Forwarded-For}i %{X-Real-IP}i %{Via}i %{Forwarded}i %>s %b'
     )
-    # Five plain tokens for four fields: no way of sharing the list reads it.
-    line = f"{HEAD} {'a, ' * 200}v w x y z"
+    # Seven plain tokens for six fields: no way of sharing the list reads it.
+    line = f'203.0.113.5 [01/May/2024:09:00:45 +0000] "GET / HTTP/1.1" {"a, " * 200}v w x y z 200 5'
 
     started = time.perf_counter()
     event = parser.parse_line(line, REF)
@@ -599,3 +599,26 @@ def test_a_crafted_list_is_refused_in_linear_time() -> None:
 
     assert event is None
     assert took < 0.25, f"{took:.2f}s for one line"
+
+
+def test_a_header_that_ends_the_line_reads_to_its_end() -> None:
+    """Nothing follows it to say where it stops, so a space cannot be the end
+    of it. A hand-written format that ends on an unquoted User-Agent was
+    refused on every line a browser sent."""
+    parser = LogFormatParser('%h %t "%r" %>s %b %{User-Agent}i')
+
+    event = parser.parse_line(f"{HEAD} Mozilla/5.0 (X11; Linux x86_64)", REF)
+
+    assert event is not None
+    assert event.user_agent == "Mozilla/5.0 (X11; Linux x86_64)"
+
+
+def test_a_variable_that_ends_the_line_keeps_its_spaces() -> None:
+    """ingress-nginx ends its line with `$req_id`, which is the client's own
+    `X-Request-ID` when one is sent, and nginx does not escape a space. Read
+    as one token, `X-Request-ID: a b` made a request unreadable — anyone could
+    keep their own requests out of a case that way."""
+    event = LogFormatParser(UPSTREAM).parse_line(f"{HEAD} 10.0.0.1:80 3 0.000 200 a b", REF)
+
+    assert event is not None
+    assert event.extra["env_id"] == "a b"

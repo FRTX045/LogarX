@@ -32,8 +32,8 @@ How far a field reaches is read from what surrounds it in the format. Quotes
 delimit one, spaces and all; so do literal brackets, and a field in brackets
 may be empty (`[%{upstream}e]` reads `[]`). An unquoted header or variable
 followed by a space may be a list, `a, b` or `a : b`, the way Apache and nginx
-write repeated headers and retried upstreams. Anything else is one run of
-non-blank characters.
+write repeated headers and retried upstreams; one that ends the line reads to
+the end of it. Anything else is one run of non-blank characters.
 """
 
 from __future__ import annotations
@@ -175,6 +175,14 @@ _OPTIONAL_BARE_BODY: Final = r"\S*"
 #: line was refused, and a forwarded-for header is the client's to write: one
 #: crafted request could stall an ingest. This takes what it can and keeps it.
 _LIST_BODY: Final = r"(?>\S+(?:(?<=,) \S+| : \S+)*)"
+
+#: The same directives when nothing follows them: nothing says where they
+#: stop, so they run to the end of the line, spaces included. ingress-nginx
+#: ends its line on `$req_id`, which is the client's own `X-Request-ID` when it
+#: sends one, and nginx does not escape a space — read as one token, a request
+#: sent with `X-Request-ID: a b` could not be read at all. Atomic for the same
+#: reason the list is, though here it only ever trims trailing blanks.
+_TO_THE_END_BODY: Final = r"(?>\S(?:.*\S)?)"
 
 #: The directives whose value can be a list: request and response headers,
 #: environment variables and notes. A status, a byte count or an address
@@ -324,9 +332,9 @@ def _body_pattern(token: _Field, prev: str, nxt: str) -> str:
     # Only where a space or the end of the line follows. A format that writes
     # its own `, ` after the field, or a unit such as Traefik's `4ms`, means
     # the field ends there, and an atomic list would swallow what it wrote.
-    if token.directive in _LIST_DIRECTIVES and (
-        not nxt or (nxt.startswith(" ") and not nxt.startswith(" : "))
-    ):
+    if token.directive in _LIST_DIRECTIVES and not nxt:
+        return _TO_THE_END_BODY
+    if token.directive in _LIST_DIRECTIVES and nxt.startswith(" ") and not nxt.startswith(" : "):
         return _LIST_BODY
     return _BARE_BODY
 
