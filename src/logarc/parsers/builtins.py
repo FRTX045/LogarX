@@ -121,6 +121,44 @@ _AWS_ALB: Final = (
 )
 
 
+#: What Envoy writes at the front of its default line and of Istio's: the start
+#: time, always UTC, and the request line. Envoy writes a client's quotes as
+#: they came, so the request line is read as exactly three words — HTTP/1 has no
+#: room for a raw space in a path. Read any looser, a `"` in the path could end
+#: the field early and hand what follows to whatever the client wrote next.
+_ENVOY_HEAD: Final = (
+    r'\[(?P<timestamp>\d{4}-\d\d-\d\dT[^\]]+)\] "(?P<request_line>\S+ \S+ \S+)"'
+    r" (?P<status>\d{1,3}) (?P<response_flags>\S+)"
+)
+
+#: The three quoted fields after the User-Agent. Envoy refuses a Host with a
+#: quote in it and writes the upstream itself; a client's X-Request-ID may
+#: carry quotes, which only moves text between it and the User-Agent.
+_ENVOY_TAIL: Final = (
+    r'"(?P<req_header_x_request_id>[^"]*)" "(?P<host>[^"]*)" "(?P<upstream_host>[^"]*)"'
+)
+
+#: Istio's `EnvoyTextLogFormat`, the mesh's default text access log. The client
+#: is `DOWNSTREAM_REMOTE_ADDRESS`, read from the end of the line, where nothing
+#: a client sends can reach: the fields there are Envoy's own, and Envoy
+#: sanitises the SNI (`invalid:5.6.7.8_1_z` for one with a space in it). So a
+#: User-Agent carrying a fake set of addresses cannot move them. Without
+#: `use_remote_address`, Envoy takes that address from X-Forwarded-For and
+#: writes its port as 0, which is kept.
+_ISTIO: Final = (
+    _ENVOY_HEAD
+    + r" (?P<response_code_details>\S+) (?P<connection_termination_details>\S+)"
+    + r' "(?P<upstream_transport_failure_reason>[^"]*)"'
+    + r" (?P<bytes_in>\d+) (?P<bytes_sent>\d+) (?P<duration_ms>\d+|-)"
+    + r" (?P<upstream_service_time>\S+)"
+    + r' "(?P<req_header_x_forwarded_for>[^"]*)" "(?P<user_agent>.*)" '
+    + _ENVOY_TAIL
+    + r' (?P<upstream_cluster>[^\s"]+) (?P<upstream_local_address>[^\s"]+)'
+    + r' (?P<downstream_local_address>[^\s"]+) (?P<client_ip>[^\s"]+)'
+    + r' (?P<requested_server_name>[^\s"]+) (?P<route_name>[^\s"]+)\s*$'
+)
+
+
 def _pattern(
     name: str, description: str, pattern: str, *, time_format: str = "", escapes: str = ""
 ) -> PatternFormatSpec:
@@ -210,6 +248,7 @@ BUILT_INS: Final[tuple[FormatSpec, ...]] = (
         escapes="haproxy",
     ),
     _pattern("aws-alb", "AWS Application Load Balancer access logs", _AWS_ALB),
+    _pattern("istio", "Istio's Envoy access log, the mesh's default text format", _ISTIO),
     # -- JSON, one object per line -----------------------------------------
     _json(
         "nginx-json",

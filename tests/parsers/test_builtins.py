@@ -238,6 +238,26 @@ SAMPLES: dict[str, tuple[list[str], dict[str, object]]] = {
             "timestamp": datetime(2018, 7, 2, 22, 22, 48, 364000, tzinfo=UTC),
         },
     ),
+    # Written by Envoy 1.36.13 in Docker on 2026-10-25, running Istio's own
+    # `EnvoyTextLogFormat` with `use_remote_address: true`. Copied as it came out.
+    "istio": (
+        [
+            '[2026-10-25T19:13:02.437Z] "GET /search?q=oak&page=2 HTTP/1.1" 200 - via_upstream -'
+            ' "-" 0 405 73 73 "198.51.100.4,10.244.0.1" "Mozilla/5.0 (X11; Linux x86_64)"'
+            ' "06caed9c-6b6c-4de8-9ab6-6510698b9224" "127.0.0.1:18084" "10.244.0.20:80" whoami'
+            " 10.244.0.50:49322 10.244.0.50:80 10.244.0.1:39320 - -"
+        ],
+        {
+            "client_ip": "10.244.0.1",
+            "path": "/search",
+            "query": "q=oak&page=2",
+            "status": 200,
+            "bytes_sent": 405,
+            "user_agent": "Mozilla/5.0 (X11; Linux x86_64)",
+            "host": "127.0.0.1:18084",
+            "timestamp": datetime(2026, 10, 25, 19, 13, 2, 437000, tzinfo=UTC),
+        },
+    ),
     "nginx-json": (
         [
             json.dumps(
@@ -664,6 +684,7 @@ SAME_REQUEST: dict[str, list[str]] = {
         )
     ],
     "haproxy": SAMPLES["haproxy"][0],
+    "istio": SAMPLES["istio"][0],
     # Constructed from AWS's HTTP example: the same entry, for this request.
     "aws-alb": [
         ALB_EXAMPLES["http"].replace(
@@ -975,6 +996,78 @@ ALB_HEAD = (
 )
 def test_alb_refuses_a_crafted_line_in_linear_time(line: str) -> None:
     parser = _parser("aws-alb")
+
+    started = time.perf_counter()
+    event = parser.parse_line(line, REF)
+    took = time.perf_counter() - started
+
+    assert event is None
+    assert took < 0.25, f"{took:.2f}s for one line"
+
+
+def test_istio_marks_an_address_envoy_took_from_forwarded_for() -> None:
+    """Without `use_remote_address`, Envoy's own idea of the client comes from
+    X-Forwarded-For, and it writes the port as 0. Captured as it came out."""
+    event = _read(
+        "istio",
+        '[2026-10-25T19:12:33.183Z] "GET /search?q=oak&page=2 HTTP/1.1" 200 - via_upstream - "-"'
+        ' 0 356 201 201 "198.51.100.4" "Mozilla/5.0 (X11; Linux x86_64)"'
+        ' "368c4fba-0ac0-4508-a2f5-3bb2ad38c56e" "127.0.0.1:18084" "10.244.0.20:80" whoami'
+        " 10.244.0.50:37000 10.244.0.50:80 198.51.100.4:0 - -",
+    )
+
+    assert event.client_ip == "198.51.100.4"
+    assert event.extra["client_port"] == "0"
+    assert event.extra["req_header_x_forwarded_for"] == "198.51.100.4"
+
+
+def test_istio_client_survives_a_forged_tail_in_the_user_agent() -> None:
+    """Envoy writes a client's quotes unescaped, so a User-Agent can carry a
+    complete fake set of addresses. The real ones end the line, where nothing
+    the client sends can reach: Envoy sanitises the SNI and refuses a quoted
+    Host. Captured as it came out, over TLS."""
+    event = _read(
+        "istio",
+        '[2026-10-25T19:34:42.505Z] "GET /ua-space HTTP/1.1" 200 - via_upstream - "-" 0 374 21 21'
+        ' "10.244.0.2" "x" "y 6.6.6.6:1 7.7.7.7:2 8.8.8.8:3 - -"'
+        ' "e6eced97-f668-491b-8ab8-186d745d22b0" "shop.example" "10.244.0.20:80" whoami'
+        " 10.244.0.50:40160 10.244.0.50:443 10.244.0.2:48130 shop.example -",
+    )
+
+    assert event.client_ip == "10.244.0.2"
+    assert event.extra["client_port"] == "48130"
+    assert event.extra["requested_server_name"] == "shop.example"
+
+
+def test_istio_reads_a_request_envoy_refused() -> None:
+    """A Host Envoy would not accept: no method, no path, but a client and a
+    status, and why. Captured as it came out."""
+    event = _read(
+        "istio",
+        '[2026-10-25T19:34:41.431Z] "- - HTTP/1.1" 400 DPE http.invalid_authority - "-" 0 11 17 -'
+        ' "-" "-" "-" "-" "-" - - 10.244.0.50:443 10.244.0.2:48110 shop.example -',
+    )
+
+    assert event.client_ip == "10.244.0.2"
+    assert event.status == 400
+    assert (event.method, event.path) == (None, None)
+    assert event.extra["response_code_details"] == "http.invalid_authority"
+
+
+ISTIO_HEAD = '[2026-10-25T19:12:02.330Z] "GET /x HTTP/1.1" 200 - via_upstream - "-" 0 358 195 193 '
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        ISTIO_HEAD + '"-" "' + 'a" "' * 20000,
+        ISTIO_HEAD + '"' + 'a" "' * 20000 + 'b" "c" "d" "e" f g h i j',
+        '[2026-10-25T19:12:02.330Z] "' + '" 200 ' * 20000,
+    ],
+    ids=["quotes", "quotes and a short tail", "request ends"],
+)
+def test_istio_refuses_a_crafted_line_in_linear_time(line: str) -> None:
+    parser = _parser("istio")
 
     started = time.perf_counter()
     event = parser.parse_line(line, REF)
