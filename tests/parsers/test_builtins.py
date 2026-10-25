@@ -13,6 +13,9 @@ writes rather than one shaped to fit.
 from __future__ import annotations
 
 import json
+import time
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -20,6 +23,9 @@ from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
 from logarc.parsers.builtins import BUILT_INS
 from logarc.parsers.registry import available_formats, detect_format, get_spec
+
+if TYPE_CHECKING:
+    from logarc.parsers.base import LogParser
 
 REF = EvidenceRef(source_file_id="f", line_no=1)
 
@@ -125,6 +131,22 @@ SAMPLES: dict[str, tuple[list[str], dict[str, object]]] = {
     "apache-common": (
         ['203.0.113.5 - - [01/May/2024:09:00:45 +0000] "GET /admin/.env HTTP/1.1" 404 0'],
         {"client_ip": "203.0.113.5", "path": "/admin/.env", "status": 404},
+    ),
+    # Written by HAProxy 3.2.26 in Docker on 2026-10-25, `option httplog`,
+    # logging to stdout. Copied as it came out.
+    "haproxy": (
+        [
+            "10.244.0.1:54224 [25/Oct/2026:18:41:15.351] http-in web/srv1 0/0/1/21/22 200 365"
+            ' - - ---- 1/1/0/0/0 0/0 "GET /search?q=oak&page=2 HTTP/1.1"'
+        ],
+        {
+            "client_ip": "10.244.0.1",
+            "path": "/search",
+            "query": "q=oak&page=2",
+            "status": 200,
+            "bytes_sent": 365,
+            "timestamp": datetime(2026, 10, 25, 18, 41, 15, 351000, tzinfo=UTC),
+        },
     ),
     "nginx-json": (
         [
@@ -379,10 +401,14 @@ def test_every_built_in_says_what_it_is_for() -> None:
         assert spec.description, spec.name
 
 
-def _read(name: str, line: str) -> NormalizedEvent:
+def _parser(name: str) -> LogParser:
     spec = get_spec(name)
     assert spec is not None
-    event = spec.build().parse_line(line, REF)
+    return spec.build()
+
+
+def _read(name: str, line: str) -> NormalizedEvent:
+    event = _parser(name).parse_line(line, REF)
     assert event is not None, f"{name} refused {line!r}"
     return event
 
@@ -547,6 +573,7 @@ SAME_REQUEST: dict[str, list[str]] = {
             }
         )
     ],
+    "haproxy": SAMPLES["haproxy"][0],
     "caddy-json": SAMPLES["caddy-json"][0],
     "traefik-json": SAMPLES["traefik-json"][0],
     "cloudflare-json": [
@@ -607,3 +634,147 @@ def test_one_request_reads_the_same_whichever_format_wrote_it(name: str) -> None
 
     assert event is not None
     assert (event.method, event.path, event.query) == ("GET", "/search", "q=oak&page=2")
+
+
+# ---------------------------------------------------------------------------
+# The proxies that write the client with its port
+# ---------------------------------------------------------------------------
+
+#: One request, as each envelope HAProxy 3.2.26 writes it (`log stdout format
+#: <name>`), as rsyslog 8.2410.0 files it with each of its two templates, and as
+#: HAProxy's own documentation prints its example (`{1wt.eu} {}` are header
+#: captures). All copied as they came out.
+HAPROXY_ENVELOPES = {
+    "raw": "10.244.0.1:55664 [25/Oct/2026:19:22:39.934] http-in web/srv1 0/0/1/21/22 200 310"
+    ' - - ---- 1/1/0/0/0 0/0 "GET /search?q=oak&page=2 HTTP/1.1"',
+    "short": "<6>10.244.0.1:55694 [25/Oct/2026:19:22:43.207] http-in web/srv1 0/0/0/22/22 200"
+    ' 310 - - ---- 1/1/0/0/0 0/0 "GET /search?q=oak&page=2 HTTP/1.1"',
+    "timed": "<6>2026-10-25T19:22:46.591180+00:00 10.244.0.1:55726 [25/Oct/2026:19:22:46.568]"
+    ' http-in web/srv1 0/0/1/21/22 200 310 - - ---- 1/1/0/0/0 0/0 "GET /search?q=oak&page=2'
+    ' HTTP/1.1"',
+    "iso": "2026-10-25T19:22:49.874209+00:00 10.244.0.1:35942 [25/Oct/2026:19:22:49.852]"
+    ' http-in web/srv1 0/0/0/21/21 200 310 - - ---- 1/1/0/0/0 0/0 "GET /search?q=oak&page=2'
+    ' HTTP/1.1"',
+    "priority": "<134>10.244.0.1:35966 [25/Oct/2026:19:22:53.162] http-in web/srv1 0/0/0/21/21"
+    ' 200 310 - - ---- 1/1/0/0/0 0/0 "GET /search?q=oak&page=2 HTTP/1.1"',
+    "rfc3164": "<134>Oct 25 19:22:56 localhost haproxy[8]: 10.244.0.1:36006"
+    " [25/Oct/2026:19:22:56.470] http-in web/srv1 0/0/0/21/21 200 310 - - ---- 1/1/0/0/0 0/0"
+    ' "GET /search?q=oak&page=2 HTTP/1.1"',
+    "rfc5424": "<134>1 2026-10-25T19:22:59.841123+00:00 - haproxy 8 - - 10.244.0.1:42982"
+    " [25/Oct/2026:19:22:59.819] http-in web/srv1 0/0/0/21/21 200 310 - - ---- 1/1/0/0/0 0/0"
+    ' "GET /search?q=oak&page=2 HTTP/1.1"',
+    "rsyslog traditional": "Oct 25 19:24:14 lg-hap.lg-net haproxy[8]: 10.244.0.1:37202"
+    " [25/Oct/2026:19:24:14.123] http-in web/srv1 0/0/0/21/21 200 310 - - ---- 1/1/0/0/0 0/0"
+    ' "GET /search?q=oak&page=2 HTTP/1.1"',
+    "rsyslog iso": "2026-10-25T19:24:14+00:00 lg-hap.lg-net haproxy[8]: 10.244.0.1:37202"
+    " [25/Oct/2026:19:24:14.123] http-in web/srv1 0/0/0/21/21 200 310 - - ---- 1/1/0/0/0 0/0"
+    ' "GET /search?q=oak&page=2 HTTP/1.1"',
+    "documented": "Feb  6 12:14:14 localhost haproxy[14389]: 10.0.1.2:33317"
+    " [06/Feb/2009:12:14:14.655] http-in static/srv1 10/0/30/69/109 200 2750 - - ----"
+    ' 1/1/1/1/0 0/0 {1wt.eu} {} "GET /index.html HTTP/1.1"',
+}
+
+
+@pytest.mark.parametrize("envelope", list(HAPROXY_ENVELOPES))
+def test_haproxy_reads_every_envelope_it_writes(envelope: str) -> None:
+    """The same line arrives bare on stdout, behind a syslog priority, a stamp,
+    a host and a tag, or in a file rsyslog wrote. All of them are HAProxy's."""
+    event = _read("haproxy", HAPROXY_ENVELOPES[envelope])
+
+    assert event.client_ip in ("10.244.0.1", "10.0.1.2")
+    assert event.method == "GET"
+    assert event.path in ("/search", "/index.html")
+
+
+def test_haproxy_is_detected_behind_a_syslog_envelope() -> None:
+    found = detect_format([HAPROXY_ENVELOPES["rsyslog traditional"]] * 4)
+
+    assert found is not None
+    assert found.name == "haproxy"
+
+
+def test_haproxy_undoes_its_quote_escape() -> None:
+    """HAProxy writes a `"` the client sent as `#22`. Left in place, no rule
+    looking for an injected quote would ever see one."""
+    sqli = _read(
+        "haproxy",
+        "10.244.0.1:54228 [25/Oct/2026:18:41:15.424] http-in web/srv1 0/0/0/22/22 200 319 - -"
+        ' ---- 1/1/0/0/0 0/0 "GET /login?user=admin#22or#221 HTTP/1.1"',
+    )
+    xss = _read(
+        "haproxy",
+        "10.244.0.1:45304 [25/Oct/2026:19:17:26.763] http-in web/srv1 0/0/0/21/21 200 322 - -"
+        ' ---- 1/1/0/0/0 0/0 "GET /p?x=#22><script>alert(1)</script> HTTP/1.1"',
+    )
+
+    assert sqli.query == 'user=admin"or"1'
+    assert xss.query == 'x="><script>alert(1)</script>'
+
+
+def test_haproxy_keeps_its_header_captures_decoded() -> None:
+    """Which captured header is the User-Agent is configuration, not log, so
+    it is not guessed — but what was captured is kept, readable."""
+    event = _read(
+        "haproxy",
+        "10.244.0.1:37128 [25/Oct/2026:19:17:38.517] http-in web/srv1 0/0/1/21/22 200 351 - -"
+        " ---- 1/1/0/0/0 0/0 {127.0.0.1:18085|Mozilla/5.0 (X11; Linux x86_64) #22quoted#22"
+        ' #7Bbrace#7Cbar#7D} {text/plain; charset=utf-8} "GET /search?q=oak&page=2 HTTP/1.1"',
+    )
+
+    assert event.extra["captured_request_headers"] == (
+        '127.0.0.1:18085|Mozilla/5.0 (X11; Linux x86_64) "quoted" {brace|bar}'
+    )
+    assert event.extra["captured_response_headers"] == "text/plain; charset=utf-8"
+    assert event.user_agent is None
+    assert event.query == "q=oak&page=2"
+
+
+def test_haproxy_reads_a_request_line_it_cut_short() -> None:
+    """HAProxy cuts a log line at 1024 bytes by default, closing quote and all.
+    A long query is where an attack usually is, so the line is read as far as
+    it goes. This one is 1023 bytes, as HAProxy wrote it."""
+    line = (
+        "10.244.0.1:45294 [25/Oct/2026:19:17:26.704] http-in web/srv1 0/0/0/21/21 200 1801 - -"
+        ' ---- 1/1/0/0/0 0/0 "GET /search?q=' + "A" * 903
+    )
+
+    event = _read("haproxy", line)
+
+    assert len(line) == 1023
+    assert event.path == "/search"
+    assert event.query == "q=" + "A" * 903
+
+
+def test_haproxy_reads_a_request_it_refused() -> None:
+    """Garbage, a control byte in the path and a client that never finished
+    its request all come out as `<BADREQ>`: no request, but a client, a status
+    and why."""
+    event = _read(
+        "haproxy",
+        "10.244.0.2:35429 [25/Oct/2026:19:17:34.921] http-in http-in/<NOSRV> -1/-1/-1/-1/0 400"
+        ' 0 - - PR-- 1/1/0/0/0 0/0 "<BADREQ>"',
+    )
+
+    assert event.client_ip == "10.244.0.2"
+    assert event.status == 400
+    assert event.method is None
+    assert event.extra["malformed_request_line"] == "<BADREQ>"
+    assert event.extra["termination_state"] == "PR--"
+
+
+@pytest.mark.parametrize(
+    "line",
+    [":" * 80000 + " [", "x " * 40000 + "1.2.3.4:5 [", "<1>1 " + "a " * 40000],
+    ids=["colons", "words", "a long envelope"],
+)
+def test_haproxy_refuses_a_crafted_line_in_linear_time(line: str) -> None:
+    """Detection tries every built-in on every line it samples, so a pattern
+    that backtracks on a line that is not its own slows every ingest."""
+    parser = _parser("haproxy")
+
+    started = time.perf_counter()
+    event = parser.parse_line(line, REF)
+    took = time.perf_counter() - started
+
+    assert event is None
+    assert took < 0.25, f"{took:.2f}s for one line"

@@ -963,6 +963,23 @@ def test_a_pattern_s_escapes_are_undone_in_its_preview(
     assert dict(result.fields)["Path"] == '/p"x'
 
 
+def test_the_haproxy_built_in_previews_with_its_own_escapes(qt_app: QApplication) -> None:
+    """Trying a built-in against your own log is the first useful thing a
+    reader does here. A preview of HAProxy's line that left `#22` in place
+    would show a format reading the log wrongly."""
+    editor = FormatEditor()
+    editor.select("haproxy")
+
+    editor._sample.setPlainText(
+        "10.244.0.1:45304 [25/Oct/2026:19:17:26.763] http-in web/srv1 0/0/0/21/21 200 322 - -"
+        ' ---- 1/1/0/0/0 0/0 "GET /p?x=#22><script>alert(1)</script> HTTP/1.1"'
+    )
+
+    result = editor.preview()
+    assert result.ok, editor._status.text()
+    assert dict(result.fields)["Query"] == 'x="><script>alert(1)</script>'
+
+
 def test_saving_a_pattern_again_keeps_its_escapes(
     qt_app: QApplication, saved_haproxy_like: PatternFormatSpec
 ) -> None:
