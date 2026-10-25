@@ -669,3 +669,31 @@ def test_a_line_read_before_is_read_the_same_way(
 
     assert event is not None
     assert event.extra[field] == value
+
+
+# -- a path that carries its query ------------------------------------------
+
+
+def test_a_path_and_query_written_together_are_split() -> None:
+    """`%U%q` side by side: the path is a run of non-blanks and takes the query
+    with it, so no rule that reads the query ever saw one."""
+    parser = LogFormatParser('%h %t "%m %U%q %H" %>s %b')
+
+    event = parser.parse_line(
+        '203.0.113.5 [01/May/2024:09:00:45 +0000] "GET /search?q=oak HTTP/1.1" 200 5', REF
+    )
+
+    assert event is not None
+    assert (event.path, event.query) == ("/search", "q=oak")
+
+
+def test_a_path_with_its_query_and_no_query_field_is_split() -> None:
+    """nginx's `$request_uri` is written as `%U`: the path and the query, as sent."""
+    parser = LogFormatParser("%h %t %U %>s %b")
+
+    event = parser.parse_line(
+        "203.0.113.5 [01/May/2024:09:00:45 +0000] /search?q=oak&page=2 200 5", REF
+    )
+
+    assert event is not None
+    assert (event.path, event.query) == ("/search", "q=oak&page=2")

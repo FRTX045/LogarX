@@ -4,13 +4,10 @@ Rather than hardcoding "combined" and "common", this compiles the actual
 directive string an administrator wrote in their Apache config. That covers the
 standard formats and any custom Apache one.
 
-**Apache directives only.** An nginx `log_format` definition is written in
-`$variable` syntax and is rejected outright — `LogFormatError: no directives
-found`. What is true of nginx is a different statement: its default `combined`
-*output* is byte-identical to Apache's, so an nginx access log is read by
-`apache-combined` (measured: detected at confidence 1.0). Reading an nginx log
-works; pasting an nginx format definition does not. The docstring used to claim
-the second, which sent anyone with a custom nginx format to a dead end.
+**An nginx `log_format` is read too.** Written in `$variable` syntax, it is
+translated to the directive it means by `parsers.nginx` before compiling, and
+kept as the reader wrote it. Text with no directive and no `$variable` is still
+refused (`LogFormatError: no directives found`).
 
 Supported directive syntax::
 
@@ -46,6 +43,7 @@ from typing import TYPE_CHECKING, Final
 
 from logarc.core.event import NormalizedEvent
 from logarc.parsers.base import split_request_line
+from logarc.parsers.nginx import NginxFormatError, looks_like_nginx, to_directive
 from logarc.parsers.times import TimeFormatError, check_time_format
 
 if TYPE_CHECKING:
@@ -633,8 +631,16 @@ class LogFormatParser:
 
     def __init__(self, log_format: str, name: str = "custom") -> None:
         self.name = name
+        # Kept as given, nginx or not: it is what the reader wrote, and what a
+        # case records.
         self.log_format = log_format
-        self._compiled = _compile(log_format)
+        directive = log_format
+        if looks_like_nginx(log_format):
+            try:
+                directive = to_directive(log_format)
+            except NginxFormatError as exc:
+                raise LogFormatError(str(exc)) from exc
+        self._compiled = _compile(directive)
 
     @property
     def pattern(self) -> re.Pattern[str]:
@@ -711,6 +717,11 @@ class LogFormatParser:
             method, path, query, protocol = split_request_line(request_line)
             if method is None:
                 extra["malformed_request_line"] = request_line
+        elif path is not None and query is None and "?" in path:
+            # `%U%q` side by side, where the path's run of non-blanks takes the
+            # query too, or nginx's `$request_uri`, which is both. Split where a
+            # request line is split, as `parsers.base.read_target` does.
+            path, _separator, query = path.partition("?")
 
         return NormalizedEvent(
             timestamp=timestamp,

@@ -152,7 +152,8 @@ _SAMPLE_HINTS: Final[dict[str, str]] = {
 #: for one kind and a regular expression for another, and naming it for either
 #: would be wrong half the time.
 _RULE_LABELS: Final[dict[str, str]] = {
-    "logformat": "LogFormat",
+    # Either: an nginx `log_format` is read as the directive it means.
+    "logformat": "LogFormat or log_format",
     "pattern": "Regular expression",
 }
 
@@ -342,7 +343,7 @@ class FormatEditor(QDialog):
         right.addWidget(self._labelled("Name"))
         right.addWidget(self._name)
 
-        self._rule_label = self._labelled("LogFormat")
+        self._rule_label = self._labelled(_RULE_LABELS["logformat"])
         right.addWidget(self._rule_label)
         right.addWidget(self._rule)
 

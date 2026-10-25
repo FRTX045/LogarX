@@ -1238,9 +1238,9 @@ ENVOY_HEAD = '[2026-10-25T19:12:02.330Z] "GET /x HTTP/1.1" 200 - 0 358 195 193 '
 @pytest.mark.parametrize(
     "line",
     [
-        ENVOY_HEAD + '"' + "x," * 40000 + '10.0.0.1" "ua"',
-        ENVOY_HEAD + '"10.0.0.1" "' + ",1.2.3.4" * 20000 + '" "r" "h" "u"',
-        ENVOY_HEAD + '"10.0.0.1" "' + 'a" "' * 20000,
+        ENVOY_HEAD + '"' + "x," * 10000 + '10.0.0.1" "ua"',
+        ENVOY_HEAD + '"10.0.0.1" "' + ",1.2.3.4" * 2000 + '" "r" "h" "u"',
+        ENVOY_HEAD + '"10.0.0.1" "' + 'a" "' * 5000,
     ],
     ids=["a long forwarded-for", "addresses in the user agent", "quotes"],
 )

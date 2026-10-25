@@ -934,6 +934,45 @@ def test_a_saved_pattern_format_fills_the_screen_back_in(qt_app: QApplication) -
     assert editor._note.text() == "the gateway"
 
 
+#: nginx.org's packaged default, pasted from nginx.conf, line breaks and all.
+NGINX_MAIN = (
+    "log_format  main  '$remote_addr - $remote_user [$time_local] \"$request\" '\n"
+    "                  '$status $body_bytes_sent \"$http_referer\" '\n"
+    '                  \'"$http_user_agent" "$http_x_forwarded_for"\';'
+)
+NGINX_LINE = (
+    '10.244.0.1 - - [25/Oct/2026:20:42:30 +0000] "GET /search?q=oak&page=2 HTTP/1.1" 200 260'
+    ' "https://shop.example/" "Mozilla/5.0 (X11; Linux x86_64)" "198.51.100.4"'
+)
+
+
+def test_the_directive_box_says_it_takes_an_nginx_log_format(qt_app: QApplication) -> None:
+    editor = FormatEditor()
+    editor.start_new()
+
+    assert editor._rule_label.text() == "LogFormat or log_format"
+
+
+def test_an_nginx_log_format_is_pasted_tried_and_saved_as_written(
+    qt_app: QApplication,
+) -> None:
+    editor = FormatEditor()
+    editor.start_new()
+    editor._name.setText("site-nginx")
+    editor._sample.setPlainText(NGINX_LINE)
+
+    editor._rule.setText(NGINX_MAIN)
+
+    result = editor.preview()
+    assert result.ok, editor._status.text()
+    assert dict(result.fields)["Client"] == "10.244.0.1"
+    assert dict(result.fields)["Query"] == "q=oak&page=2"
+    assert editor.save(), editor.trouble()
+    saved = load_library()[0]
+    assert isinstance(saved, LogFormatSpec)
+    assert saved.directive == NGINX_MAIN
+
+
 #: HAProxy writes a `"` the client sent as `#22`.
 HASHED_PATTERN = r'(?P<timestamp>\S+) (?P<client_ip>\S+) "(?P<request_line>[^"]*)"'
 HASHED_LINE = '2026-10-25T19:17:26Z 10.244.0.1 "GET /p#22x HTTP/1.1"'
@@ -1096,7 +1135,7 @@ def test_the_labels_are_short(qt_app: QApplication) -> None:
     editor = FormatEditor()
     words = {label.text() for label in editor.findChildren(QLabel)}
 
-    assert {"Formats", "Name", "LogFormat", "Note", "Sample line"} <= words
+    assert {"Formats", "Name", "LogFormat or log_format", "Note", "Sample line"} <= words
     assert editor._guess.text() == "Guess fields"
     assert editor._guess.toolTip()
     assert editor._fields.horizontalHeaderItem(1).text() == "Value"

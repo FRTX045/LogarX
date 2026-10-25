@@ -120,6 +120,9 @@ them needs Python.
 logarc formats check '%h|%t|"%r"|%>s|%b' --log access.log
 logarc formats add office-edge '%h|%t|"%r"|%>s|%b'
 
+# Or paste nginx's log_format, as it is in nginx.conf or just the format.
+logarc formats add site-timed '$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent" rt=$request_time uct="$upstream_connect_time" uht="$upstream_header_time" urt="$upstream_response_time"'
+
 # One JSON object per line: the mapping is proposed for you, nested keys included.
 logarc formats check-json --log gateway.jsonl
 logarc formats add-json gateway --log gateway.jsonl --map client_ip=http_x_real_ip
@@ -150,6 +153,23 @@ port is kept beside the event. A bare IPv6 address is left as written, since
 A pattern for a log that escapes what it writes the way HAProxy does, `#22`
 for `"`, takes `--escapes haproxy`, and the escapes are undone before anything
 reads a field.
+
+An nginx `log_format` can be pasted wherever a directive can: the whole
+statement from `nginx.conf` (`log_format main '...' '...';`, comments and line
+breaks included), its quoted strings, or the format alone. It is kept as you
+wrote it and read as the directive it means. The common variables have one:
+`$remote_addr` is the client, `[$time_local]` and `$time_iso8601` the time,
+`$request` the request, `$http_user_agent` and every other `$http_…` a header,
+`$request_uri` the path and the query. Any other variable, such as
+`$upstream_response_time`, is kept beside the event. Three formats are refused,
+each saying why:
+
+- One that writes JSON (`escape=json`): read its log as a JSON format instead,
+  with `logarc formats add-json NAME --log FILE`, which proposes the mapping from
+  the log itself.
+- One with no `$time_local` or `$time_iso8601`. `$msec` is not read yet.
+- One with no `$remote_addr`. A forwarded-for header is the client's own to write,
+  and is not read as the client.
 
 A time format naming no year is **refused** rather than accepted: `strptime`
 supplies 1900 for a missing year, and a case where every event is dated 1900 is
