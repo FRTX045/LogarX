@@ -95,6 +95,14 @@ or bracket, spaces included, and may be empty. An unquoted header or variable
 If it ends the line, it reads to the end of it. None of this narrows a field:
 a line the plain reading accepts is read exactly as before.
 
+In a JSON, table or pattern format, a field mapped to `path` that also holds the
+query (`/search?q=oak`) is split at the `?`, the way a request line is. A field
+mapped to `url` is a whole URL, such as Google's `requestUrl`, and is read as its
+host, path and query. A client written with a port it cannot be confused with,
+`203.0.113.5:51234` or `[2001:db8::1]:443`, is read as the address alone, and the
+port is kept beside the event. A bare IPv6 address is left as written, since
+`2001:db8::1:443` could end in a port or in its own last group.
+
 A time format naming no year is **refused** rather than accepted: `strptime`
 supplies 1900 for a missing year, and a case where every event is dated 1900 is
 exactly the kind of number this tool exists not to emit.

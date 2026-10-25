@@ -26,11 +26,14 @@ __all__ = ["JOIN", "MAPPABLE", "REQUIRED", "guess_mapping", "normalise"]
 #: Every field of ours a name may be mapped to. `request_line` is here for the
 #: logs that write `GET /a HTTP/1.1` whole; it is split into method, path,
 #: query and protocol exactly as `%r` is, so the same traffic reconstructs the
-#: same way whichever kind of format read it.
+#: same way whichever kind of format read it. `url` is for the logs that write
+#: a whole URL, scheme and host included — Google's `requestUrl` — and is read
+#: as host, path and query (`parsers.base.read_target`).
 MAPPABLE: Final[tuple[str, ...]] = (
     "timestamp",
     "client_ip",
     "request_line",
+    "url",
     "method",
     "path",
     "query",
@@ -59,8 +62,9 @@ _CANDIDATES: Final[dict[str, tuple[str, ...]]] = {
     "client_ip": ("remote_addr", "client_ip", "clientip", "c_ip", "remote_ip", "src_ip",
                   "source_ip", "ip"),
     "request_line": ("request", "request_line", "cs_request"),
+    "url": ("url", "request_url", "requesturl", "full_url"),
     "method": ("request_method", "cs_method", "method", "http_method", "verb"),
-    "path": ("request_uri", "cs_uri_stem", "uri_stem", "uri", "path", "url", "http_path"),
+    "path": ("request_uri", "cs_uri_stem", "uri_stem", "uri", "path", "http_path"),
     "query": ("query_string", "cs_uri_query", "uri_query", "query", "args"),
     "protocol": ("server_protocol", "cs_version", "protocol", "http_version"),
     "status": ("status", "sc_status", "status_code", "response_status", "http_status", "code"),

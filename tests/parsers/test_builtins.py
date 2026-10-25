@@ -147,58 +147,57 @@ SAMPLES: dict[str, tuple[list[str], dict[str, object]]] = {
             "user_agent": "curl/8.4.0",
         },
     ),
+    # Written by Caddy 2.11.7 and Traefik 3.7.16 (`--accesslog.format=json`,
+    # User-Agent kept) on 2026-10-25, and copied as they came out. Both hold the
+    # query inside the path field, which the earlier hand-made samples did not.
     "caddy-json": (
         [
-            json.dumps(
-                {
-                    "level": "info",
-                    "ts": 1714554045.123,
-                    "logger": "http.log.access",
-                    "msg": "handled request",
-                    "request": {
-                        "remote_ip": "203.0.113.5",
-                        "proto": "HTTP/2.0",
-                        "method": "GET",
-                        "host": "shop.example.com",
-                        "uri": "/admin/.env",
-                        "headers": {"User-Agent": ["curl/8.4.0"]},
-                    },
-                    "status": 404,
-                    "size": 0,
-                }
-            )
+            '{"level":"info","ts":1792912714.3353026,"logger":"http.log.access.log0",'
+            '"msg":"handled request","request":{"remote_ip":"172.17.0.1",'
+            '"remote_port":"58800","client_ip":"172.17.0.1","proto":"HTTP/1.1",'
+            '"method":"GET","host":"127.0.0.1:18090","uri":"/search?q=oak&page=2",'
+            '"headers":{"User-Agent":["curl/8.4.0"],"Accept":["*/*"],'
+            '"Referer":["http://example.com/"]}},"bytes_read":0,"user_id":"",'
+            '"duration":0.000093507,"size":2,"status":200,"resp_headers":'
+            '{"Server":["Caddy"],"Content-Type":["text/plain; charset=utf-8"]}}'
         ],
         {
-            "client_ip": "203.0.113.5",
-            "path": "/admin/.env",
-            "status": 404,
-            "host": "shop.example.com",
+            "client_ip": "172.17.0.1",
+            "path": "/search",
+            "query": "q=oak&page=2",
+            "status": 200,
+            "host": "127.0.0.1:18090",
             "user_agent": "curl/8.4.0",
+            "referer": "http://example.com/",
         },
     ),
     "traefik-json": (
         [
-            json.dumps(
-                {
-                    "ClientHost": "203.0.113.5",
-                    "DownstreamContentSize": 0,
-                    "DownstreamStatus": 404,
-                    "RequestHost": "shop.example.com",
-                    "RequestMethod": "GET",
-                    "RequestPath": "/admin/.env",
-                    "RequestProtocol": "HTTP/1.1",
-                    "StartUTC": "2024-05-01T09:00:45.123456789Z",
-                    "request_User-Agent": "curl/8.4.0",
-                }
-            )
+            '{"ClientAddr":"10.244.0.1:44624","ClientHost":"10.244.0.1","ClientPort":"44624",'
+            '"ClientUsername":"-","DownstreamContentSize":382,"DownstreamStatus":200,'
+            '"Duration":21730853,"OriginContentSize":382,"OriginDuration":21698943,'
+            '"OriginStatus":200,"Overhead":31910,"RequestAddr":"127.0.0.1:18082",'
+            '"RequestContentSize":0,"RequestCount":5,"RequestHost":"127.0.0.1",'
+            '"RequestMethod":"GET","RequestPath":"/search?q=oak\\u0026page=2",'
+            '"RequestPort":"18082","RequestProtocol":"HTTP/1.1","RequestScheme":"http",'
+            '"RetryAttempts":0,"RouterName":"web@file","ServiceAddr":"10.244.0.20:80",'
+            '"ServiceName":"whoami@file","ServiceURL":"http://10.244.0.20:80",'
+            '"StartLocal":"2026-10-25T07:19:18.367248419Z",'
+            '"StartUTC":"2026-10-25T07:19:18.367248419Z","entryPointName":"web",'
+            '"level":"info","msg":"","request_User-Agent":"curl/8.4.0",'
+            '"time":"2026-10-25T07:19:18Z"}'
         ],
         {
-            "client_ip": "203.0.113.5",
-            "path": "/admin/.env",
-            "status": 404,
-            "host": "shop.example.com",
+            "client_ip": "10.244.0.1",
+            "path": "/search",
+            "query": "q=oak&page=2",
+            "status": 200,
+            "host": "127.0.0.1",
+            "user_agent": "curl/8.4.0",
         },
     ),
+    # Cloudflare's `ClientRequestURI` is "the full path and query string of the
+    # requested URL" (its Logpush field reference), so the sample carries both.
     "cloudflare-json": (
         [
             json.dumps(
@@ -206,7 +205,7 @@ SAMPLES: dict[str, tuple[list[str], dict[str, object]]] = {
                     "ClientIP": "203.0.113.5",
                     "ClientRequestHost": "shop.example.com",
                     "ClientRequestMethod": "GET",
-                    "ClientRequestURI": "/admin/.env",
+                    "ClientRequestURI": "/admin/.env?debug=1",
                     "ClientRequestReferer": "",
                     "ClientRequestUserAgent": "curl/8.4.0",
                     "EdgeResponseBytes": 0,
@@ -218,10 +217,14 @@ SAMPLES: dict[str, tuple[list[str], dict[str, object]]] = {
         {
             "client_ip": "203.0.113.5",
             "path": "/admin/.env",
+            "query": "debug=1",
             "status": 404,
             "user_agent": "curl/8.4.0",
         },
     ),
+    # Google's `requestUrl` is "the scheme (http, https), the host name, the path
+    # and the query portion", and `remoteIp` "can include port information"; the
+    # two values here are the examples Google's LogEntry reference gives.
     "gcp-http-json": (
         [
             json.dumps(
@@ -230,19 +233,21 @@ SAMPLES: dict[str, tuple[list[str], dict[str, object]]] = {
                     "severity": "WARNING",
                     "httpRequest": {
                         "requestMethod": "GET",
-                        "requestUrl": "/admin/.env",
+                        "requestUrl": "http://example.com/some/info?color=red",
                         "status": 404,
                         "responseSize": "0",
                         "userAgent": "curl/8.4.0",
-                        "remoteIp": "203.0.113.5",
+                        "remoteIp": "10.0.0.1:80",
                         "protocol": "HTTP/1.1",
                     },
                 }
             )
         ],
         {
-            "client_ip": "203.0.113.5",
-            "path": "/admin/.env",
+            "client_ip": "10.0.0.1",
+            "host": "example.com",
+            "path": "/some/info",
+            "query": "color=red",
             "status": 404,
             "user_agent": "curl/8.4.0",
         },
@@ -519,3 +524,86 @@ def test_docker_logs_of_the_nginx_image_still_detect_nginx_main() -> None:
     assert found is not None
     assert found.name == "nginx-main"
     assert all(found.parser.parse_line(line, REF) is None for line in NGINX_IMAGE_START)
+
+
+#: One request, `GET /search?q=oak&page=2`, as each format that carries a path
+#: and a query writes it. Caddy's and Traefik's are their real lines above.
+SAME_REQUEST: dict[str, list[str]] = {
+    "apache-combined": [
+        '203.0.113.5 - - [25/Oct/2026:07:19:18 +0000] "GET /search?q=oak&page=2 HTTP/1.1"'
+        ' 200 2 "-" "curl/8.4.0"'
+    ],
+    "traefik-common": [
+        '203.0.113.5 - - [25/Oct/2026:07:19:18 +0000] "GET /search?q=oak&page=2 HTTP/1.1"'
+        ' 200 2 "-" "curl/8.4.0" 5 "web@file" "http://10.244.0.20:80" 21ms'
+    ],
+    "nginx-json": [
+        json.dumps(
+            {
+                "time_local": "25/Oct/2026:07:19:18 +0000",
+                "remote_addr": "203.0.113.5",
+                "request": "GET /search?q=oak&page=2 HTTP/1.1",
+                "status": "200",
+            }
+        )
+    ],
+    "caddy-json": SAMPLES["caddy-json"][0],
+    "traefik-json": SAMPLES["traefik-json"][0],
+    "cloudflare-json": [
+        json.dumps(
+            {
+                "ClientIP": "203.0.113.5",
+                "ClientRequestMethod": "GET",
+                "ClientRequestURI": "/search?q=oak&page=2",
+                "EdgeResponseStatus": 200,
+                "EdgeStartTimestamp": "2026-10-25T07:19:18Z",
+            }
+        )
+    ],
+    "gcp-http-json": [
+        json.dumps(
+            {
+                "timestamp": "2026-10-25T07:19:18Z",
+                "httpRequest": {
+                    "requestMethod": "GET",
+                    "requestUrl": "https://shop.example.com/search?q=oak&page=2",
+                    "status": 200,
+                    "remoteIp": "203.0.113.5",
+                },
+            }
+        )
+    ],
+    "ecs-http": [
+        json.dumps(
+            {
+                "@timestamp": "2026-10-25T07:19:18Z",
+                "client": {"ip": "203.0.113.5"},
+                "url": {"path": "/search", "query": "q=oak&page=2"},
+                "http": {"request": {"method": "GET"}, "response": {"status_code": 200}},
+            }
+        )
+    ],
+    "iis-w3c": [
+        "#Fields: date time cs-method cs-uri-stem cs-uri-query c-ip sc-status",
+        "2026-10-25 07:19:18 GET /search q=oak&page=2 203.0.113.5 200",
+    ],
+    "cloudfront": [
+        "#Version: 1.0",
+        "\t".join(["#Fields: date", "time", "c-ip", "cs-method", "cs-uri-stem", "cs-uri-query"]),
+        "\t".join(["2026-10-25", "07:19:18", "203.0.113.5", "GET", "/search", "q=oak&page=2"]),
+    ],
+}
+
+
+@pytest.mark.parametrize("name", list(SAME_REQUEST))
+def test_one_request_reads_the_same_whichever_format_wrote_it(name: str) -> None:
+    """The promise `parsers.base` makes. Broken, it is silent: four of these
+    once read `/search?q=oak&page=2` as all path, and no query rule saw it."""
+    lines = SAME_REQUEST[name]
+    spec = get_spec(name)
+    assert spec is not None
+    parser = spec.resolved(lines).build()
+    event = parser.parse_line([row for row in lines if not parser.is_metadata(row)][-1], REF)
+
+    assert event is not None
+    assert (event.method, event.path, event.query) == ("GET", "/search", "q=oak&page=2")

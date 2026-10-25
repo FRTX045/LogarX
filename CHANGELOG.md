@@ -994,6 +994,28 @@ which will be the first tag.
 
 ### Fixed
 
+- **Caddy, Traefik, Cloudflare and Google Cloud JSON logs read their queries.**
+  Caddy's `request.uri`, Traefik's `RequestPath` and Cloudflare's
+  `ClientRequestURI` hold the query inside the path, and Google's `requestUrl`
+  holds a whole URL. These four built-ins read all of it as the path, so no rule
+  that reads the query ever saw one. The cost, measured on the shopfront excerpt's
+  own traffic with its queries left in the path:
+  - 4 SSRF attempts read as ordinary requests or as path traversal;
+  - 6 requests changed category in all;
+  - 135 rule matches were lost.
+
+  The earlier test samples carried a bare path, so nothing noticed. Now:
+  - A mapped path is split at its `?`, as a request line is.
+  - A new mappable field, `url`, reads a whole URL as host, path and query, and
+    `gcp-http-json` uses it.
+  - A client written with an unambiguous port (`10.0.0.1:80`, which Google's
+    `remoteIp` may be) is read as the address, so one visitor stays one client.
+  - Caddy and Traefik now record the Referer.
+  - The Caddy and Traefik samples are now lines those servers wrote, captured
+    in Docker.
+
+  A test reads one request in ten formats and requires the same path and query
+  from each.
 - **A search no longer cuts the client list's Last date.** A search adds a
   Match column, and at the default window the client panel had no room for
   it: Last read `15…` on every row. The panel now opens at 480 px instead of

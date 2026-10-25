@@ -289,3 +289,49 @@ def test_a_line_with_no_client_address_is_refused() -> None:
     spec = PatternFormatSpec(name="dash", pattern=r"(?P<timestamp>\S+) (?P<client_ip>\S+)")
 
     assert spec.build().parse_line("2024-05-01T09:00:45Z -", REF) is None
+
+
+# -- where the path ends, and the client's port ------------------------------
+
+TIME = r"^(?P<timestamp>\d{4} \w+\s+\d+ \d\d:\d\d:\d\d) \S+ \S+: client=(?P<client_ip>\S+) "
+
+
+def _read(pattern: str, rest: str):
+    spec = PatternFormatSpec(name="p", pattern=TIME + pattern, time_format="%Y %b %d %H:%M:%S")
+    return spec.build().parse_line(f"2024 May  1 09:00:45 gw01 proxy[1234]: {rest}", REF)
+
+
+def test_a_path_group_that_carries_its_query_is_split() -> None:
+    """A reader's path group, written as one run of non-blanks, takes the
+    query along with it; read as one path, no rule that reads the query would
+    ever see it."""
+    event = _read(r"url=(?P<path>\S+)", "client=203.0.113.77 url=/admin/0.php?id=1")
+
+    assert event is not None
+    assert (event.path, event.query) == ("/admin/0.php", "id=1")
+
+
+def test_a_url_group_is_read_as_its_host_path_and_query() -> None:
+    event = _read(r"url=(?P<url>\S+)", "client=203.0.113.77 url=https://shop.example.com/a?b=c")
+
+    assert event is not None
+    assert (event.host, event.path, event.query) == ("shop.example.com", "/a", "b=c")
+
+
+def test_a_client_group_written_with_a_port_is_the_address_alone() -> None:
+    event = _read(r"url=(?P<path>\S+)", "client=203.0.113.77:51234 url=/")
+
+    assert event is not None
+    assert event.client_ip == "203.0.113.77"
+    assert event.extra["client_port"] == "51234"
+
+
+def test_a_port_group_of_the_readers_own_is_not_overwritten() -> None:
+    event = _read(
+        r"port=(?P<client_port>\d+) url=(?P<path>\S+)",
+        "client=[2001:db8::1]:443 port=9 url=/",
+    )
+
+    assert event is not None
+    assert event.client_ip == "2001:db8::1"
+    assert event.extra["client_port"] == "9"
