@@ -12,6 +12,38 @@ which will be the first tag.
 
 ### Added
 
+- **HAProxy, AWS ALB, Envoy and Istio are read without naming a format.** Four
+  built-ins, twenty-one in all. All four write the client with its port. Each
+  takes the port off only where the format always writes one, so a bare IPv6
+  address is never cut. The test lines come from the real servers, in Docker,
+  on 2026-10-25: HAProxy 3.2.26 in all seven envelopes it writes and in both
+  file shapes rsyslog 8.2410.0 gives it, and Envoy 1.36.13 with its default
+  format and with Istio's. There is no ALB to capture from, so ALB's are AWS's
+  own documented entries.
+  - **HAProxy** writes a `"` the client sent as `#22`. A pattern format can now
+    undo that (`escapes`, or `--escapes haproxy` on the command line), so an
+    injected quote reaches the rules. HAProxy cuts a line at 1024 bytes by
+    default, closing quote and all; such a line is read as far as it goes.
+  - **ALB**'s request is a whole URL, read as host, path and query. The time is
+    when the request arrived (`request_creation_time`), not when it was
+    answered. A path ALB did not log (`https://host:443-`) is read as no path,
+    not as `/`.
+  - **Envoy** writes a client's quotes unescaped. That lets a client fake where
+    one field ends, and two different requests can write the same line. Its
+    default line has no client address, so the client is the last
+    X-Forwarded-For entry. A line is read only when it allows a single reading.
+    Of the injection lines captured, three read with the true client and four
+    are refused rather than pinned on an address the sender chose. A line with
+    no X-Forwarded-For has no client, and is refused too.
+  - **Istio**'s client is read from the end of the line, where nothing a
+    client sends can reach. A port of 0 marks an address Envoy took from
+    X-Forwarded-For.
+
+  A request line of dashes, Envoy's `- - HTTP/1.1` for a request it refused,
+  now reads as no method and no path in any pattern format. None of the four
+  patterns can be made slow by a crafted line. Made to backtrack, one crafted
+  line took 5.5 s, 25 s, or did not finish in two minutes. As written, the
+  slowest seen is 21 ms, for a 32 KB Envoy line.
 - **nginx's own default, Kubernetes ingress-nginx and Traefik are read without
   naming a format.** Three built-ins, seventeen in all: `nginx-main` (nginx.org's
   packages and the official Docker image, combined plus the forwarded-for header),

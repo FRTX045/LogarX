@@ -18,11 +18,12 @@ worse than an absent one: absent, the reader writes their own; wrong, they get
 a case that looks complete. `tests/parsers/test_builtins.py` refuses to let a
 format be added here without one.
 
-Not included, deliberately: the formats that write the client as `address:port`
-— AWS ALB, Envoy, HAProxy. Stripping the port is not safe without deciding what
-to do about IPv6, where the colons are part of the address, and a wrong answer
-turns every connection from one client into a client of its own. Those logs are
-still readable with a pattern of the reader's own.
+The proxies at the end of the text group — HAProxy, AWS ALB, Istio, Envoy —
+write the client with its port, and are patterns rather than directives. Each
+one reads its port off where the format guarantees one is written, so an IPv6
+address written bare is never cut. Envoy needed more than that: it writes a
+client's quotes unescaped, and its default line has no client address of its
+own. How that is read safely is at `_ENVOY`.
 """
 
 from __future__ import annotations
