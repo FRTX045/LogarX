@@ -378,11 +378,14 @@ rules:
   # ## What this cannot do, said plainly
   #
   # It needs the Host header, and **`apache-combined` does not record one** —
-  # nor does `apache-common` or `nginx-combined-forwarded`. On those logs
+  # nor does any format built on it (`apache-common`, `apache-combined-io`,
+  # `nginx-main`, `nginx-combined-forwarded`, `ingress-nginx`,
+  # `traefik-common`), nor `nginx-json` or `gcp-http-json`, nor IIS unless
+  # `cs-host` has been switched on, which by default it is not. On those logs
   # `referer_offsite` has no answer, reads 0, and this rule never fires. That is
   # deliberate: a rule with no evidence must be silent, not optimistic. It works
-  # on the vhost Apache formats, every JSON format here (Caddy, Cloudflare,
-  # nginx, ECS, GCP, Traefik) and `iis-w3c`, all of which carry the host.
+  # on the vhost Apache formats, `caddy-json`, `traefik-json`,
+  # `cloudflare-json`, `ecs-http` and `cloudfront`, all of which carry the host.
   - id: session_fixation
     name: Session Fixation
     category: credential_attack
