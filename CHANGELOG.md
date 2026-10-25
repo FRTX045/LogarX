@@ -12,6 +12,16 @@ which will be the first tag.
 
 ### Added
 
+- **An nginx `log_format` can be pasted as it is.** Wherever a directive is
+  accepted (the window's format editor, `logarc formats add` and `check`), the
+  whole statement from `nginx.conf`, its quoted strings, or the format alone is
+  read as the directive it means, and kept as written. The editor's box is now
+  labelled "LogFormat or log_format". Tested on lines nginx 1.30.6 wrote in three
+  formats: the packaged `main`, read exactly as the `nginx-main` built-in reads
+  it, field for field; the widely copied timing format; and an ISO-time format
+  with `$host` and `$request_uri`. A format whose log is JSON is sent to the
+  JSON kind, which proposes the mapping from the log. A format with no time,
+  or with no `$remote_addr`, is refused, saying why.
 - **nginx's own default, Kubernetes ingress-nginx and Traefik are read without
   naming a format.** Three built-ins, seventeen in all: `nginx-main` (nginx.org's
   packages and the official Docker image, combined plus the forwarded-for header),
@@ -994,6 +1004,10 @@ which will be the first tag.
 
 ### Fixed
 
+- **A directive with `%U%q` side by side reads its query.** The path is a run of
+  non-blank characters, so it took the query with it, and no rule that reads the
+  query saw one. A path that holds a `?`, in a format with no query of its own
+  and no request line, is now split there, as #83 split it in the other kinds.
 - **Caddy, Traefik, Cloudflare and Google Cloud JSON logs read their queries.**
   Caddy's `request.uri`, Traefik's `RequestPath` and Cloudflare's
   `ClientRequestURI` hold the query inside the path, and Google's `requestUrl`
