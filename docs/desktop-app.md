@@ -470,7 +470,7 @@ back on for a stretch too narrow to drag onto.
 
 ## Log formats
 
-![The format library: seventeen built in, and one of the reader's own](images/screenshot-log-formats.png)
+![The format library: twenty-one built in, and one of the reader's own](images/screenshot-log-formats.png)
 
 The *Log formats* tab of **Case → Formats and rules…** lists yours under
 **CUSTOM** and the ones that ship under **BUILT-IN**, and neither can be

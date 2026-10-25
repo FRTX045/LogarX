@@ -210,6 +210,11 @@ class FormatEditor(QDialog):
         self._trouble = ""
         self._library_trouble = ""
         self._kind = "logformat"
+        # A pattern's `escapes`, which has no control of its own: only a
+        # built-in or a format written on the command line carries one. Kept
+        # from the format on screen so its preview reads what ingest will, and
+        # so saving it again does not drop what nothing here shows.
+        self._escapes = ""
 
         self._formats = QListWidget()
         self._formats.setMaximumWidth(220)
@@ -518,7 +523,9 @@ class FormatEditor(QDialog):
         if self._kind == "json":
             return preview_mapping(self.mapping(), self._time_format.text().strip(), sample)
         if self._kind == "pattern":
-            return preview_pattern(self._rule.text(), self._time_format.text().strip(), sample)
+            return preview_pattern(
+                self._rule.text(), self._time_format.text().strip(), sample, self._escapes
+            )
         return preview(self._rule.text(), sample)
 
     # -- moving around the list ------------------------------------------
@@ -576,6 +583,7 @@ class FormatEditor(QDialog):
 
     def _blank(self, kind: str) -> None:
         self._editing = None
+        self._escapes = ""
         self._trouble = ""
         self._name.clear()
         self._rule.clear()
@@ -636,6 +644,7 @@ class FormatEditor(QDialog):
             # Registered from a factory: there is code behind the name and no
             # definition to show, let alone edit.
             self._editing = None
+            self._escapes = ""
             self._show_kind("logformat")
             self._name.setText(name)
             self._rule.clear()
@@ -645,6 +654,7 @@ class FormatEditor(QDialog):
             return
 
         self._editing = name if self._is_saved(name) else None
+        self._escapes = spec.escapes if isinstance(spec, PatternFormatSpec) else ""
         self._show_kind(spec.kind)
         self._name.setText(spec.name)
         self._note.setText(spec.description)
@@ -751,7 +761,11 @@ class FormatEditor(QDialog):
             )
         if self._kind == "pattern":
             return PatternFormatSpec(
-                name=name, pattern=self._rule.text(), time_format=when, description=note
+                name=name,
+                pattern=self._rule.text(),
+                time_format=when,
+                description=note,
+                escapes=self._escapes,
             )
         return LogFormatSpec(name=name, directive=self._rule.text(), description=note)
 

@@ -166,6 +166,32 @@ def test_a_pattern_format_survives_the_round_trip_through_json() -> None:
     assert spec_from_dict(json.loads(json.dumps(spec_to_dict(PROXY)))) == PROXY
 
 
+def test_a_pattern_without_escapes_writes_no_escapes_key() -> None:
+    """Every definition written before the option existed has to read back
+    exactly as it did, and an older logarc has to keep reading what this one
+    writes for it — so the key appears only when it says something."""
+    from logarc.parsers.spec import spec_to_dict
+
+    assert "escapes" not in spec_to_dict(PROXY)
+
+
+def test_a_pattern_with_escapes_survives_the_round_trip() -> None:
+    import json
+
+    from logarc.parsers.spec import spec_from_dict, spec_to_dict
+
+    spec = PatternFormatSpec(name="hap", pattern=PATTERN, escapes="haproxy")
+
+    assert spec_from_dict(json.loads(json.dumps(spec_to_dict(spec)))) == spec
+
+
+def test_an_unknown_escapes_value_is_refused_naming_the_known_one() -> None:
+    spec = PatternFormatSpec(name="hap", pattern=PATTERN, escapes="nginx")
+
+    with pytest.raises(PatternFormatError, match="haproxy"):
+        spec.check()
+
+
 def test_a_pattern_format_is_complete_without_a_file() -> None:
     """Unlike a table format, nothing about it is declared in the log."""
     assert PROXY.resolved(["anything"]) == PROXY
@@ -285,6 +311,22 @@ def test_a_request_line_group_that_will_not_split_is_kept_as_evidence() -> None:
     assert event.extra["malformed_request_line"] == "\x16\x03"
 
 
+def test_a_request_line_of_dashes_names_no_method_or_path() -> None:
+    """Envoy writes a request it refused before routing as `- - HTTP/1.1`.
+    Read as written, that is a request for the path `-` by the method `-`."""
+    spec = PatternFormatSpec(
+        name="req",
+        pattern=r'(?P<timestamp>\S+) (?P<client_ip>\S+) "(?P<request_line>[^"]*)"',
+    )
+
+    event = spec.build().parse_line('2026-10-25T19:34:41Z 10.244.0.2 "- - HTTP/1.1"', REF)
+
+    assert event is not None
+    assert (event.method, event.path) == (None, None)
+    assert event.protocol == "HTTP/1.1"
+    assert event.extra["malformed_request_line"] == "- - HTTP/1.1"
+
+
 def test_a_line_with_no_client_address_is_refused() -> None:
     spec = PatternFormatSpec(name="dash", pattern=r"(?P<timestamp>\S+) (?P<client_ip>\S+)")
 
@@ -335,3 +377,47 @@ def test_a_port_group_of_the_readers_own_is_not_overwritten() -> None:
     assert event is not None
     assert event.client_ip == "2001:db8::1"
     assert event.extra["client_port"] == "9"
+
+
+# -- a log that escapes what it writes ----------------------------------------
+
+#: HAProxy's shape, cut down: a request line and a header capture, both of which
+#: it writes with `"` as `#22`, `#` as `#23` and `{ | }` as `#7B #7C #7D`.
+HASHED = r'(?P<timestamp>\S+) (?P<client_ip>\S+) \{(?P<captured>[^}]*)\} "(?P<request_line>[^"]*)"'
+HASHED_LINE = (
+    "2026-10-25T19:17:38Z 10.244.0.1 {Mozilla #22quoted#22 #7Ba#7Cb#7D #E2#82#AC} "
+    '"GET /p?x=#22><script>#23top HTTP/1.1"'
+)
+
+
+def test_haproxy_escapes_are_undone_in_every_group() -> None:
+    """A `"` the client sent arrives as `#22`, and a rule looking for `">`
+    would never see it. HAProxy writes `#` itself as `#23`, so undoing them is
+    exact."""
+    spec = PatternFormatSpec(name="hap", pattern=HASHED, escapes="haproxy")
+
+    event = spec.build().parse_line(HASHED_LINE, REF)
+
+    assert event is not None
+    assert event.query == 'x="><script>#top'
+    assert event.extra["captured"] == 'Mozilla "quoted" {a|b} €'
+
+
+def test_escapes_are_left_alone_unless_asked() -> None:
+    spec = PatternFormatSpec(name="plain", pattern=HASHED)
+
+    event = spec.build().parse_line(HASHED_LINE, REF)
+
+    assert event is not None
+    assert event.query == "x=#22><script>#23top"
+
+
+def test_an_escaped_byte_that_is_not_utf8_is_kept_rather_than_lost() -> None:
+    spec = PatternFormatSpec(name="hap", pattern=HASHED, escapes="haproxy")
+
+    event = spec.build().parse_line(
+        '2026-10-25T19:17:38Z 10.244.0.1 {caf#E9} "GET / HTTP/1.1"', REF
+    )
+
+    assert event is not None
+    assert event.extra["captured"] == "caf\u00e9"

@@ -973,6 +973,77 @@ def test_an_nginx_log_format_is_pasted_tried_and_saved_as_written(
     assert saved.directive == NGINX_MAIN
 
 
+#: HAProxy writes a `"` the client sent as `#22`.
+HASHED_PATTERN = r'(?P<timestamp>\S+) (?P<client_ip>\S+) "(?P<request_line>[^"]*)"'
+HASHED_LINE = '2026-10-25T19:17:26Z 10.244.0.1 "GET /p#22x HTTP/1.1"'
+
+
+@pytest.fixture
+def saved_haproxy_like() -> PatternFormatSpec:
+    spec = PatternFormatSpec(name="hap", pattern=HASHED_PATTERN, escapes="haproxy")
+    save_library([spec])
+    register_saved_formats()
+    return spec
+
+
+def test_a_pattern_s_escapes_are_undone_in_its_preview(
+    qt_app: QApplication, saved_haproxy_like: PatternFormatSpec
+) -> None:
+    """The option has no control of its own, so the preview is the only place
+    the reader sees it at work. Previewed without it, `#22` would look like a
+    format that reads the log wrongly."""
+    editor = FormatEditor()
+    editor.select("hap")
+
+    editor._sample.setPlainText(HASHED_LINE)
+
+    result = editor.preview()
+    assert result.ok, editor._status.text()
+    assert dict(result.fields)["Path"] == '/p"x'
+
+
+def test_the_haproxy_built_in_previews_with_its_own_escapes(qt_app: QApplication) -> None:
+    """Trying a built-in against your own log is the first useful thing a
+    reader does here. A preview of HAProxy's line that left `#22` in place
+    would show a format reading the log wrongly."""
+    editor = FormatEditor()
+    editor.select("haproxy")
+
+    editor._sample.setPlainText(
+        "10.244.0.1:45304 [25/Oct/2026:19:17:26.763] http-in web/srv1 0/0/0/21/21 200 322 - -"
+        ' ---- 1/1/0/0/0 0/0 "GET /p?x=#22><script>alert(1)</script> HTTP/1.1"'
+    )
+
+    result = editor.preview()
+    assert result.ok, editor._status.text()
+    assert dict(result.fields)["Query"] == 'x="><script>alert(1)</script>'
+
+
+def test_saving_a_pattern_again_keeps_its_escapes(
+    qt_app: QApplication, saved_haproxy_like: PatternFormatSpec
+) -> None:
+    """Nothing on screen shows the option, so nothing on screen may drop it."""
+    editor = FormatEditor()
+    editor.select("hap")
+    editor._note.setText("the load balancer")
+
+    assert editor.save(), editor.trouble()
+    assert load_library()[0].escapes == "haproxy"
+
+
+def test_a_new_pattern_does_not_inherit_the_last_one_s_escapes(
+    qt_app: QApplication, saved_haproxy_like: PatternFormatSpec
+) -> None:
+    editor = FormatEditor()
+    editor.select("hap")
+    editor.start_new_pattern()
+    editor._name.setText("other")
+    editor._rule.setText(HASHED_PATTERN)
+
+    assert editor.save(), editor.trouble()
+    assert {spec.name: spec.escapes for spec in load_library()}["other"] == ""
+
+
 def test_manage_formats_opens_the_formats_and_rules_dialog(
     qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
 ) -> None:
