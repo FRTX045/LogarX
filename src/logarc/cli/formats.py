@@ -73,7 +73,7 @@ def formats(ctx: typer.Context) -> None:
     table.add_column("What it reads")
     for entry in registered_formats():
         # What it is for, not what it says. With three formats the definitions
-        # fitted; with fourteen they are a wall of mappings nine lines deep,
+        # fitted; with seventeen they are a wall of mappings nine lines deep,
         # and a list exists to help someone pick. `formats show` is where the
         # definition lives, and the line under this table points at it.
         note = entry.spec.description if entry.spec is not None else ""

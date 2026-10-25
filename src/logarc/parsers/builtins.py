@@ -104,7 +104,7 @@ BUILT_INS: Final[tuple[FormatSpec, ...]] = (
     _apache(
         "apache-combined",
         COMBINED,
-        "Apache combined. nginx's default output is byte-identical to it",
+        "Apache combined. nginx's built-in 'combined' is byte-identical to it",
     ),
     _apache(
         "apache-vhost-common",

@@ -12,6 +12,29 @@ which will be the first tag.
 
 ### Added
 
+- **nginx's own default, Kubernetes ingress-nginx and Traefik are read without
+  naming a format.** Three built-ins, seventeen in all: `nginx-main` (nginx.org's
+  packages and the official Docker image, combined plus the forwarded-for header),
+  `ingress-nginx` (its default `upstreaminfo`) and `traefik-common` (Traefik's
+  default text log). All three were refused before. Their test lines were written
+  by the servers themselves, in Docker, on 2026-10-25: nginx 1.30.6, Traefik
+  3.7.16, and nginx running ingress-nginx's own log format, including a retried
+  and a redirected request. For ingress-nginx the directive compiler learned
+  three things, each general:
+  - a field in brackets may be empty, `[]`;
+  - an unquoted header or variable may be a list, `a, b` or `a : b`;
+  - one that ends the line reads to the end of it.
+
+  The last closes a hole the capture showed. ingress-nginx logs the client's own
+  `X-Request-ID`, spaces and all, so a request sent with `X-Request-ID: a b`
+  could not be read. Lists are matched without backtracking: made to backtrack,
+  four list fields took 12.4 s to refuse one crafted line, and as written a
+  6 KB one takes 0.6 ms. None of it narrows a field: where the widened reading
+  refuses a line, the plain one is tried, so every line read before is read the
+  same way. The six existing Apache-style built-ins compile to exactly the
+  patterns they did. [docs/log-formats.md](docs/log-formats.md) now
+  lists what writes each format. It also says what to expect from Traefik, which
+  keeps no request headers by default, and from `docker logs`.
 - **Every session is named.** A session's box is headed by the name of its most
   important activity, picked as an activity picks its own (most severe, then an
   attack over ordinary use, then the most requests), with its old label,
