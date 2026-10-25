@@ -143,11 +143,11 @@ def _format_of(text: str) -> tuple[str, str]:
         # Quoted strings alone, as copied from a config: only when every piece
         # is one. A format of the site's own may start with a quote of its own.
         try:
-            tokens = _config_tokens(stripped)
+            pieces = _config_tokens(stripped)
         except NginxFormatError:
-            tokens = []
-        if tokens and all(quoted for _value, quoted in tokens):
-            return "".join(value for value, _quoted in tokens), "default"
+            pieces = []
+        if pieces and all(quoted for _value, quoted in pieces):
+            return "".join(value for value, _quoted in pieces), "default"
     return stripped, "default"
 
 
