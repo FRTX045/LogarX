@@ -285,6 +285,22 @@ def test_a_request_line_group_that_will_not_split_is_kept_as_evidence() -> None:
     assert event.extra["malformed_request_line"] == "\x16\x03"
 
 
+def test_a_request_line_of_dashes_names_no_method_or_path() -> None:
+    """Envoy writes a request it refused before routing as `- - HTTP/1.1`.
+    Read as written, that is a request for the path `-` by the method `-`."""
+    spec = PatternFormatSpec(
+        name="req",
+        pattern=r'(?P<timestamp>\S+) (?P<client_ip>\S+) "(?P<request_line>[^"]*)"',
+    )
+
+    event = spec.build().parse_line('2026-10-25T19:34:41Z 10.244.0.2 "- - HTTP/1.1"', REF)
+
+    assert event is not None
+    assert (event.method, event.path) == (None, None)
+    assert event.protocol == "HTTP/1.1"
+    assert event.extra["malformed_request_line"] == "- - HTTP/1.1"
+
+
 def test_a_line_with_no_client_address_is_refused() -> None:
     spec = PatternFormatSpec(name="dash", pattern=r"(?P<timestamp>\S+) (?P<client_ip>\S+)")
 

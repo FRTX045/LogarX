@@ -136,6 +136,9 @@ class PatternParser:
 
         if (request_line := _clean(found.get("request_line"))) is not None:
             method, path, query, protocol = split_request_line(request_line)
+            # Envoy writes a request it refused before routing as `- - HTTP/1.1`:
+            # no method and no path, not a request for `-`.
+            method, path = _clean(method), _clean(path)
             if method is None:
                 extra["malformed_request_line"] = request_line
 
