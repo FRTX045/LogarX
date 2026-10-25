@@ -1,6 +1,7 @@
 """Tests for the Apache LogFormat directive compiler."""
 
 import re
+import time
 from datetime import UTC, datetime
 
 import pytest
@@ -494,3 +495,107 @@ def test_a_bracketed_field_reads_up_to_its_closing_bracket() -> None:
 
     assert event is not None
     assert event.extra["env_upstream"] == "a b"
+
+
+HEAD = '203.0.113.5 [01/May/2024:09:00:45 +0000] "GET / HTTP/1.1" 200 5'
+
+
+def test_a_bare_header_may_hold_a_list() -> None:
+    """Behind two proxies the forwarded-for header is two addresses, and Apache
+    and nginx both write a repeated header joined by `, `. Unquoted, that was a
+    space a bare field could not cross, and every proxied line was refused."""
+    parser = LogFormatParser('%h %t "%r" %>s %b %{X-Forwarded-For}i')
+
+    event = parser.parse_line(f"{HEAD} 198.51.100.4, 10.0.0.2", REF)
+
+    assert event is not None
+    assert event.extra["req_header_x_forwarded_for"] == "198.51.100.4, 10.0.0.2"
+
+
+UPSTREAM = '%h %t "%r" %>s %b %{addr}e %{len}e %{time}e %{status}e %{id}e'
+
+
+@pytest.mark.parametrize(
+    ("tail", "addr", "length", "took", "status"),
+    [
+        # Retried: nginx joins the servers it tried with `, `.
+        (
+            "10.0.0.1:80, 10.0.0.2:80 0, 612 0.000, 0.004 502, 200 abc",
+            "10.0.0.1:80, 10.0.0.2:80",
+            "0, 612",
+            "0.000, 0.004",
+            "502, 200",
+        ),
+        # Redirected internally to another group: the groups are joined by ` : `.
+        (
+            "10.0.0.1:80 : 10.0.0.9:80 0 : 612 0.001 : 0.004 404 : 200 abc",
+            "10.0.0.1:80 : 10.0.0.9:80",
+            "0 : 612",
+            "0.001 : 0.004",
+            "404 : 200",
+        ),
+    ],
+)
+def test_lists_line_up_field_by_field(
+    tail: str, addr: str, length: str, took: str, status: str
+) -> None:
+    """The lines an incident leaves: the upstream failed and nginx tried again.
+    Each list has one entry per attempt, so the fields have to line up."""
+    event = LogFormatParser(UPSTREAM).parse_line(f"{HEAD} {tail}", REF)
+
+    assert event is not None
+    assert event.extra["env_addr"] == addr
+    assert event.extra["env_len"] == length
+    assert event.extra["env_time"] == took
+    assert event.extra["env_status"] == status
+    assert event.extra["env_id"] == "abc"
+
+
+def test_a_simple_directive_is_still_one_token() -> None:
+    """Lists are for what a header or the server's own variable can hold, not
+    for a status or a byte count."""
+    parser = LogFormatParser('%h %t "%r" %>s %b')
+
+    assert parser.parse_line(f"{HEAD}, 6", REF) is None
+
+
+def test_a_comma_written_after_a_field_still_separates_it() -> None:
+    """A list only runs on where a space follows the field. A format that puts
+    its own `, ` after one reads exactly as it did."""
+    parser = LogFormatParser('%h %t "%r" %>s %b %{a}e, %{b}e')
+
+    event = parser.parse_line(f"{HEAD} x, y", REF)
+
+    assert event is not None
+    assert event.extra["env_a"] == "x"
+    assert event.extra["env_b"] == "y"
+
+
+def test_a_unit_written_after_a_field_still_ends_it() -> None:
+    """Traefik writes its duration as `4ms`."""
+    parser = LogFormatParser('%h %t "%r" %>s %b %{d}ems')
+
+    event = parser.parse_line(f"{HEAD} 4ms", REF)
+
+    assert event is not None
+    assert event.extra["env_d"] == "4"
+
+
+def test_a_crafted_list_is_refused_in_linear_time() -> None:
+    """The forwarded-for header is the client's to write. With several list
+    fields side by side, a list that could give its items back to its
+    neighbour would try every way of sharing two hundred of them, and one
+    request would stall the ingest of a log. Lists take what they can and keep
+    it, so this costs one pass."""
+    parser = LogFormatParser(
+        '%h %t "%r" %>s %b %{X-Forwarded-For}i %{X-Real-IP}i %{Via}i %{Forwarded}i'
+    )
+    # Five plain tokens for four fields: no way of sharing the list reads it.
+    line = f"{HEAD} {'a, ' * 200}v w x y z"
+
+    started = time.perf_counter()
+    event = parser.parse_line(line, REF)
+    took = time.perf_counter() - started
+
+    assert event is None
+    assert took < 0.25, f"{took:.2f}s for one line"

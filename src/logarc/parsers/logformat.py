@@ -30,7 +30,9 @@ the field is already optional on our side.
 
 How far a field reaches is read from what surrounds it in the format. Quotes
 delimit one, spaces and all; so do literal brackets, and a field in brackets
-may be empty (`[%{upstream}e]` reads `[]`). Anything else is one run of
+may be empty (`[%{upstream}e]` reads `[]`). An unquoted header or variable
+followed by a space may be a list, `a, b` or `a : b`, the way Apache and nginx
+write repeated headers and retried upstreams. Anything else is one run of
 non-blank characters.
 """
 
@@ -162,6 +164,22 @@ _BARE_BODY: Final = r"\S+"
 #: `%q` is the exception: it is genuinely empty when a request has no query
 #: string, and Apache writes no placeholder for it.
 _OPTIONAL_BARE_BODY: Final = r"\S*"
+
+#: A header or a server variable, unquoted, may be a list: Apache and nginx
+#: join a repeated header with `, `, and nginx joins the upstreams it tried the
+#: same way, and the groups of an internal redirect with ` : `. So the field
+#: runs on past a space while its last item ends in a comma, or across a ` : `.
+#:
+#: Atomic, and that is not a detail. A list that could give items back would
+#: let two neighbouring list fields share theirs every possible way before a
+#: line was refused, and a forwarded-for header is the client's to write: one
+#: crafted request could stall an ingest. This takes what it can and keeps it.
+_LIST_BODY: Final = r"(?>\S+(?:(?<=,) \S+| : \S+)*)"
+
+#: The directives whose value can be a list: request and response headers,
+#: environment variables and notes. A status, a byte count or an address
+#: cannot be.
+_LIST_DIRECTIVES: Final[frozenset[str]] = frozenset({"i", "o", "e", "n"})
 
 #: UTC offsets already worked out, keyed on the five characters that spell one
 #: (`+0000`, `-0330`). Unbounded by type and bounded in fact: there are fewer
@@ -303,6 +321,13 @@ def _body_pattern(token: _Field, prev: str, nxt: str) -> str:
         return _BRACKETED_BODY
     if token.directive == "q":
         return _OPTIONAL_BARE_BODY
+    # Only where a space or the end of the line follows. A format that writes
+    # its own `, ` after the field, or a unit such as Traefik's `4ms`, means
+    # the field ends there, and an atomic list would swallow what it wrote.
+    if token.directive in _LIST_DIRECTIVES and (
+        not nxt or (nxt.startswith(" ") and not nxt.startswith(" : "))
+    ):
+        return _LIST_BODY
     return _BARE_BODY
 
 
