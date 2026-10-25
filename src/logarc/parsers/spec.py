@@ -314,15 +314,19 @@ class PatternFormatSpec:
 
     kind: ClassVar[str] = "pattern"
 
-    #: What `to_payload` writes. See `JsonFormatSpec.PAYLOAD_KEYS`.
+    #: What `to_payload` may write. See `JsonFormatSpec.PAYLOAD_KEYS`.
     PAYLOAD_KEYS: ClassVar[frozenset[str]] = frozenset(
-        {"name", "pattern", "time_format", "description"}
+        {"name", "pattern", "time_format", "description", "escapes"}
     )
 
     name: str
     pattern: str
     time_format: str = ""
     description: str = ""
+    #: How the log escapes what it writes, undone before anything reads it:
+    #: `""` for not at all, `"haproxy"` for HAProxy's `#XX`. See
+    #: `parsers.pattern.ESCAPES`.
+    escapes: str = ""
 
     @property
     def fields(self) -> tuple[tuple[str, str], ...]:
@@ -334,7 +338,9 @@ class PatternFormatSpec:
         return self.pattern
 
     def build(self) -> LogParser:
-        return PatternParser(self.pattern, name=self.name, time_format=self.time_format)
+        return PatternParser(
+            self.pattern, name=self.name, time_format=self.time_format, escapes=self.escapes
+        )
 
     def resolved(self, sample: Sequence[str]) -> PatternFormatSpec:
         """This definition is complete on its own. See `ColumnsFormatSpec`."""
@@ -347,12 +353,17 @@ class PatternFormatSpec:
         self.build()
 
     def to_payload(self) -> dict[str, Any]:
-        return {
+        payload = {
             "name": self.name,
             "pattern": self.pattern,
             "time_format": self.time_format,
             "description": self.description,
         }
+        # Only when it says something: an older logarc refuses a key it does
+        # not know, and every definition without escapes must stay readable.
+        if self.escapes:
+            payload["escapes"] = self.escapes
+        return payload
 
     @classmethod
     def from_payload(cls, payload: Mapping[str, Any]) -> PatternFormatSpec:
@@ -361,6 +372,7 @@ class PatternFormatSpec:
             pattern=_text(payload, "pattern"),
             time_format=_text(payload, "time_format", required=False),
             description=_text(payload, "description", required=False),
+            escapes=_text(payload, "escapes", required=False),
         )
 
 

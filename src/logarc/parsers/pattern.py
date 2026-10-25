@@ -21,7 +21,7 @@ who wants to skip a prefix says so with `.*`.
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from logarc.core.event import NormalizedEvent
 from logarc.parsers.base import read_target, split_client, split_request_line
@@ -31,11 +31,37 @@ from logarc.parsers.times import TimeFormatError, check_time_format, read_time
 if TYPE_CHECKING:
     from logarc.core.evidence import EvidenceRef
 
-__all__ = ["PatternFormatError", "PatternParser"]
+__all__ = ["ESCAPES", "PatternFormatError", "PatternParser"]
+
+#: The ways a log may escape what it writes, as `PatternFormatSpec.escapes`
+#: names them. `haproxy`: every byte outside 32-126, and `#` and `"` (and in
+#: header captures `{ | }`), written as `#` and two hex digits.
+ESCAPES: Final[tuple[str, ...]] = ("", "haproxy")
+
+_HASH_RUN: Final = re.compile(r"(?:#[0-9A-Fa-f]{2})+")
 
 
 class PatternFormatError(ValueError):
     """Raised when a pattern cannot be compiled or cannot yield an event."""
+
+
+def _bytes_back(run: re.Match[str]) -> str:
+    """A run of `#XX` as the bytes it stands for.
+
+    A run, not each escape alone: a UTF-8 character outside ASCII is several
+    bytes, and decoded one at a time `€` would come back as three Latin-1
+    characters. Bytes that are not UTF-8 are kept as Latin-1, which loses none.
+    """
+    raw = bytes.fromhex(run.group().replace("#", ""))
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return raw.decode("latin-1")
+
+
+def _unhash(text: str) -> str:
+    """Undo HAProxy's escaping. Exact, because it writes `#` itself as `#23`."""
+    return _HASH_RUN.sub(_bytes_back, text) if "#" in text else text
 
 
 def _clean(raw: str | None) -> str | None:
@@ -63,11 +89,20 @@ class PatternParser:
     parser can be shared across ingest workers.
     """
 
-    def __init__(self, pattern: str, *, name: str = "pattern", time_format: str = "") -> None:
+    def __init__(
+        self, pattern: str, *, name: str = "pattern", time_format: str = "", escapes: str = ""
+    ) -> None:
         try:
             self._pattern = re.compile(pattern)
         except re.error as exc:
             raise PatternFormatError(f"this pattern will not compile: {exc}") from exc
+
+        if escapes not in ESCAPES:
+            known = ", ".join(repr(value) for value in ESCAPES if value)
+            raise PatternFormatError(
+                f"escapes {escapes!r} is not one logarc knows; it knows {known}, or none at all"
+            )
+        self._unescape = escapes == "haproxy"
 
         named = set(self._pattern.groupindex)
         if not named:
@@ -108,6 +143,10 @@ class PatternParser:
         if match is None:
             return None
         found = match.groupdict()
+        if self._unescape:
+            # Before anything reads a group, so a rule sees the `"` the client
+            # sent rather than `#22`, and `-` is still recognised as absent.
+            found = {group: _unhash(text) if text else text for group, text in found.items()}
 
         timestamp = read_time(found.get("timestamp"), self._time_format)
         if timestamp is None:

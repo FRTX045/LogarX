@@ -726,3 +726,51 @@ def test_show_describes_a_pattern_format() -> None:
     assert result.exit_code == 0
     assert "pattern" in result.stdout
     assert "%Y %b %d %H:%M:%S" in result.stdout
+
+
+#: HAProxy writes a `"` the client sent as `#22`.
+HASHED_LINES = ['2026-10-25T19:17:26Z 10.244.0.1 "GET /p#22x HTTP/1.1"']
+HASHED_PATTERN = r'(?P<timestamp>\S+) (?P<client_ip>\S+) "(?P<request_line>[^"]*)"'
+
+
+def test_a_pattern_can_be_saved_with_haproxy_escapes() -> None:
+    result = runner.invoke(
+        app, ["formats", "add-pattern", "hap", HASHED_PATTERN, "--escapes", "haproxy"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert load_library()[0].escapes == "haproxy"
+
+
+def test_an_unknown_escapes_value_is_refused_before_it_is_saved() -> None:
+    result = runner.invoke(
+        app, ["formats", "add-pattern", "hap", HASHED_PATTERN, "--escapes", "nginx"]
+    )
+
+    assert result.exit_code != 0
+    assert "haproxy" in result.output
+    assert load_library() == []
+
+
+def test_check_pattern_undoes_escapes_when_asked(tmp_path: Path) -> None:
+    log = tmp_path / "haproxy.log"
+    log.write_text("\n".join(HASHED_LINES) + "\n", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["formats", "check-pattern", HASHED_PATTERN, "--log", str(log), "--escapes", "haproxy"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert '/p"x' in result.stdout
+    assert "#22" not in result.stdout
+
+
+def test_show_prints_a_pattern_s_escapes() -> None:
+    runner.invoke(app, ["formats", "add-pattern", "hap", HASHED_PATTERN, "--escapes", "haproxy"])
+
+    result = runner.invoke(app, ["formats", "show", "hap"])
+
+    assert result.exit_code == 0
+    assert "Escapes" in result.stdout
+    assert "haproxy" in result.stdout
