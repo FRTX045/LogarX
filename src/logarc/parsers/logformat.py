@@ -711,6 +711,11 @@ class LogFormatParser:
             method, path, query, protocol = split_request_line(request_line)
             if method is None:
                 extra["malformed_request_line"] = request_line
+        elif path is not None and query is None and "?" in path:
+            # `%U%q` side by side, where the path's run of non-blanks takes the
+            # query too, or nginx's `$request_uri`, which is both. Split where a
+            # request line is split, as `parsers.base.read_target` does.
+            path, _separator, query = path.partition("?")
 
         return NormalizedEvent(
             timestamp=timestamp,
