@@ -124,6 +124,9 @@ BUILT_INS: Final[tuple[FormatSpec, ...]] = (
         referer="http_referer",
         user_agent="http_user_agent",
     ),
+    # Caddy's `request.uri`, Traefik's `RequestPath` and Cloudflare's
+    # `ClientRequestURI` hold the query too; a mapped path is split at its `?`
+    # (`parsers.base.read_target`), so they map to `path` and read like `%r`.
     _json(
         "caddy-json",
         "Caddy's default JSON access log",
@@ -135,6 +138,7 @@ BUILT_INS: Final[tuple[FormatSpec, ...]] = (
         status="status",
         bytes_sent="size",
         host="request.host",
+        referer="request.headers.Referer",
         user_agent="request.headers.User-Agent",
     ),
     _json(
@@ -148,6 +152,7 @@ BUILT_INS: Final[tuple[FormatSpec, ...]] = (
         status="DownstreamStatus",
         bytes_sent="DownstreamContentSize",
         host="RequestHost",
+        referer="request_Referer",
         user_agent="request_User-Agent",
     ),
     _json(
@@ -169,7 +174,9 @@ BUILT_INS: Final[tuple[FormatSpec, ...]] = (
         timestamp="timestamp",
         client_ip="httpRequest.remoteIp",
         method="httpRequest.requestMethod",
-        path="httpRequest.requestUrl",
+        # A whole URL — "the scheme, the host name, the path and the query" —
+        # read as host, path and query rather than as one long path.
+        url="httpRequest.requestUrl",
         protocol="httpRequest.protocol",
         status="httpRequest.status",
         bytes_sent="httpRequest.responseSize",
