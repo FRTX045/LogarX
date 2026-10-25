@@ -378,7 +378,7 @@ def test_a_json_format_is_listed_beside_the_others(json_log: Path) -> None:
 
 
 def test_the_list_does_not_print_every_mapping_in_full(json_log: Path) -> None:
-    """With three formats the definitions fitted. With fourteen they are a wall
+    """With three formats the definitions fitted. With seventeen they are a wall
     of mappings nine lines deep, and a list exists to help someone pick — the
     definition is what `formats show` is for."""
     runner.invoke(

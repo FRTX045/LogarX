@@ -1,6 +1,7 @@
 """Tests for the Apache LogFormat directive compiler."""
 
 import re
+import time
 from datetime import UTC, datetime
 
 import pytest
@@ -457,3 +458,214 @@ def test_a_number_too_small_to_be_a_real_timestamp_is_not_one() -> None:
     assert read_time(1) is None
     assert read_time("1") is None
     assert read_time(1_714_554_045) is not None
+
+
+# ---------------------------------------------------------------------------
+# Fields in brackets, and fields that hold lists
+# ---------------------------------------------------------------------------
+#
+# Both are what Kubernetes ingress-nginx writes by default: the upstream's name
+# in brackets, `[]` when there is no alternative, and its address, length,
+# time and status as lists once a request is retried or redirected.
+
+BRACKETED = '%h %t [%{upstream}e] "%r" %>s %b'
+
+
+def test_a_bracketed_field_may_be_empty() -> None:
+    """ingress-nginx writes `[$proxy_alternative_upstream_name]`, which is `[]`
+    on nearly every line. A bare body needs one character, so the line was
+    refused — the format would read only the canary requests."""
+    parser = LogFormatParser(BRACKETED)
+
+    event = parser.parse_line(
+        '203.0.113.5 [01/May/2024:09:00:45 +0000] [] "GET / HTTP/1.1" 200 5', REF
+    )
+
+    assert event is not None
+    assert "env_upstream" not in event.extra
+
+
+def test_a_bracketed_field_reads_up_to_its_closing_bracket() -> None:
+    """The brackets delimit the field the way quotes do, spaces included."""
+    parser = LogFormatParser(BRACKETED)
+
+    event = parser.parse_line(
+        '203.0.113.5 [01/May/2024:09:00:45 +0000] [a b] "GET / HTTP/1.1" 200 5', REF
+    )
+
+    assert event is not None
+    assert event.extra["env_upstream"] == "a b"
+
+
+HEAD = '203.0.113.5 [01/May/2024:09:00:45 +0000] "GET / HTTP/1.1" 200 5'
+
+
+def test_a_bare_header_may_hold_a_list() -> None:
+    """Behind two proxies the forwarded-for header is two addresses, and Apache
+    and nginx both write a repeated header joined by `, `. Unquoted, that was a
+    space a bare field could not cross, and every proxied line was refused."""
+    parser = LogFormatParser('%h %t "%r" %>s %b %{X-Forwarded-For}i')
+
+    event = parser.parse_line(f"{HEAD} 198.51.100.4, 10.0.0.2", REF)
+
+    assert event is not None
+    assert event.extra["req_header_x_forwarded_for"] == "198.51.100.4, 10.0.0.2"
+
+
+UPSTREAM = '%h %t "%r" %>s %b %{addr}e %{len}e %{time}e %{status}e %{id}e'
+
+
+@pytest.mark.parametrize(
+    ("tail", "addr", "length", "took", "status"),
+    [
+        # Retried: nginx joins the servers it tried with `, `.
+        (
+            "10.0.0.1:80, 10.0.0.2:80 0, 612 0.000, 0.004 502, 200 abc",
+            "10.0.0.1:80, 10.0.0.2:80",
+            "0, 612",
+            "0.000, 0.004",
+            "502, 200",
+        ),
+        # Redirected internally to another group: the groups are joined by ` : `.
+        (
+            "10.0.0.1:80 : 10.0.0.9:80 0 : 612 0.001 : 0.004 404 : 200 abc",
+            "10.0.0.1:80 : 10.0.0.9:80",
+            "0 : 612",
+            "0.001 : 0.004",
+            "404 : 200",
+        ),
+    ],
+)
+def test_lists_line_up_field_by_field(
+    tail: str, addr: str, length: str, took: str, status: str
+) -> None:
+    """The lines an incident leaves: the upstream failed and nginx tried again.
+    Each list has one entry per attempt, so the fields have to line up."""
+    event = LogFormatParser(UPSTREAM).parse_line(f"{HEAD} {tail}", REF)
+
+    assert event is not None
+    assert event.extra["env_addr"] == addr
+    assert event.extra["env_len"] == length
+    assert event.extra["env_time"] == took
+    assert event.extra["env_status"] == status
+    assert event.extra["env_id"] == "abc"
+
+
+def test_a_simple_directive_is_still_one_token() -> None:
+    """Lists are for what a header or the server's own variable can hold, not
+    for a status or a byte count."""
+    parser = LogFormatParser('%h %t "%r" %>s %b')
+
+    assert parser.parse_line(f"{HEAD}, 6", REF) is None
+
+
+def test_a_comma_written_after_a_field_still_separates_it() -> None:
+    """A list only runs on where a space follows the field. A format that puts
+    its own `, ` after one reads exactly as it did."""
+    parser = LogFormatParser('%h %t "%r" %>s %b %{a}e, %{b}e')
+
+    event = parser.parse_line(f"{HEAD} x, y", REF)
+
+    assert event is not None
+    assert event.extra["env_a"] == "x"
+    assert event.extra["env_b"] == "y"
+
+
+def test_a_unit_written_after_a_field_still_ends_it() -> None:
+    """Traefik writes its duration as `4ms`."""
+    parser = LogFormatParser('%h %t "%r" %>s %b %{d}ems')
+
+    event = parser.parse_line(f"{HEAD} 4ms", REF)
+
+    assert event is not None
+    assert event.extra["env_d"] == "4"
+
+
+def test_a_crafted_list_is_refused_in_linear_time() -> None:
+    """The forwarded-for header is the client's to write. With several list
+    fields side by side, a list that could give its items back to its
+    neighbour would try every way of sharing two hundred of them, and one
+    request would stall the ingest of a log. Lists take what they can and keep
+    it, so this costs one pass."""
+    parser = LogFormatParser(
+        '%h %t "%r" %{X-Forwarded-For}i %{X-Real-IP}i %{Via}i %{Forwarded}i %>s %b'
+    )
+    # Seven plain tokens for six fields: no way of sharing the list reads it.
+    line = f'203.0.113.5 [01/May/2024:09:00:45 +0000] "GET / HTTP/1.1" {"a, " * 200}v w x y z 200 5'
+
+    started = time.perf_counter()
+    event = parser.parse_line(line, REF)
+    took = time.perf_counter() - started
+
+    assert event is None
+    assert took < 0.25, f"{took:.2f}s for one line"
+
+
+def test_a_header_that_ends_the_line_reads_to_its_end() -> None:
+    """Nothing follows it to say where it stops, so a space cannot be the end
+    of it. A hand-written format that ends on an unquoted User-Agent was
+    refused on every line a browser sent."""
+    parser = LogFormatParser('%h %t "%r" %>s %b %{User-Agent}i')
+
+    event = parser.parse_line(f"{HEAD} Mozilla/5.0 (X11; Linux x86_64)", REF)
+
+    assert event is not None
+    assert event.user_agent == "Mozilla/5.0 (X11; Linux x86_64)"
+
+
+def test_a_variable_that_ends_the_line_keeps_its_spaces() -> None:
+    """ingress-nginx ends its line with `$req_id`, which is the client's own
+    `X-Request-ID` when one is sent, and nginx does not escape a space. Read
+    as one token, `X-Request-ID: a b` made a request unreadable — anyone could
+    keep their own requests out of a case that way."""
+    event = LogFormatParser(UPSTREAM).parse_line(f"{HEAD} 10.0.0.1:80 3 0.000 200 a b", REF)
+
+    assert event is not None
+    assert event.extra["env_id"] == "a b"
+
+
+def test_a_field_written_against_the_next_one_still_shares_the_line() -> None:
+    """With nothing between two fields, the first is not the end of the line
+    and must not read to it. The widened reading itself has to manage this,
+    not only the old one it falls back to."""
+    parser = LogFormatParser('%h %t "%r" %>s %b %{a}e%{b}e')
+    line = f"{HEAD} xy"
+
+    event = parser.parse_line(line, REF)
+
+    assert parser.pattern.match(line) is not None
+    assert event is not None
+    assert event.extra["env_a"] + event.extra["env_b"] == "xy"
+
+
+@pytest.mark.parametrize(
+    ("directive", "line", "field", "value"),
+    [
+        # A forwarded-for the client ended with a comma, and a field after it:
+        # read as a list it swallows the next field, so the line would go.
+        (
+            '%h %t "%r" %>s %b %{X-Forwarded-For}i %{X-Real-IP}i',
+            f"{HEAD} 1.2.3.4, 9.9.9.9",
+            "req_header_x_real_ip",
+            "9.9.9.9",
+        ),
+        # A bracket inside a bracketed value. Up to the first `]` it is not.
+        (
+            BRACKETED,
+            '203.0.113.5 [01/May/2024:09:00:45 +0000] [a]b] "GET / HTTP/1.1" 200 5',
+            "env_upstream",
+            "a]b",
+        ),
+    ],
+)
+def test_a_line_read_before_is_read_the_same_way(
+    directive: str, line: str, field: str, value: str
+) -> None:
+    """Brackets, lists and the end of the line widen what a field may hold.
+    They must never narrow it: whatever the plain reading accepted, a client
+    can write on purpose, and a line it can make unreadable is a request it
+    can keep out of a case."""
+    event = LogFormatParser(directive).parse_line(line, REF)
+
+    assert event is not None
+    assert event.extra[field] == value
