@@ -9,11 +9,24 @@ same way whichever kind of format read it.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol
+import re
+from typing import TYPE_CHECKING, Final, Protocol
 
 if TYPE_CHECKING:
     from logarc.core.event import NormalizedEvent
     from logarc.core.evidence import EvidenceRef
+
+#: The front of an absolute URL: a scheme, then `://`. RFC 3986's scheme grammar.
+_ABSOLUTE: Final = re.compile(r"[A-Za-z][A-Za-z0-9+.\-]*://")
+
+#: A client written with a port that cannot be part of the address: IPv4 then a
+#: port, or IPv6 in brackets with or without one. A bare IPv6 address is not
+#: here on purpose — `2001:db8::1:443` ends either in a port or in its own last
+#: group, and nothing in the text says which.
+_PORTED_CLIENT: Final = re.compile(
+    r"(?P<v4>\d{1,3}(?:\.\d{1,3}){3}):(?P<v4port>\d{1,5})"
+    r"|\[(?P<v6>[0-9A-Fa-f:.]+(?:%[\w.\-]+)?)\](?::(?P<v6port>\d{1,5}))?"
+)
 
 
 class LogParser(Protocol):
@@ -69,6 +82,56 @@ def split_request_line(raw: str) -> tuple[str | None, str | None, str | None, st
 
     path, separator, query = target.partition("?")
     return method, path, (query if separator else None), protocol
+
+
+def read_target(
+    path: str | None, query: str | None, url: str | None, host: str | None
+) -> tuple[str | None, str | None, str | None]:
+    """The path, query and host a request was for, from whichever a format gave.
+
+    Two things a format may hand over as a "path" are more than one. Caddy's
+    `request.uri`, Traefik's `RequestPath` and Cloudflare's `ClientRequestURI`
+    carry the query as well, so a path with a `?` and no query of its own is
+    split there — where `split_request_line` splits a `%r`. And Google's
+    `requestUrl` is a whole URL, so a `url` gives up its host (when the format
+    names no host of its own) and is then read as a path.
+
+    A *path* that is absolute stays absolute. A client that sends
+    `GET http://evil.example/ HTTP/1.1` is probing for a proxy, Caddy logs it
+    as sent, an Apache log keeps it the same way, and the same request has to
+    read the same whichever format wrote it. Only a field that *is* a URL by
+    definition is taken apart.
+    """
+    if path is None and url is not None:
+        path = url
+        if (front := _ABSOLUTE.match(url)) is not None:
+            rest = url[front.end() :]
+            cut = min((at for at in (rest.find("/"), rest.find("?")) if at >= 0), default=len(rest))
+            authority, path = rest[:cut], rest[cut:]
+            if not path.startswith("/"):
+                path = f"/{path}"
+            if host is None and authority:
+                host = authority.rpartition("@")[2]
+    if path is not None and query is None and "?" in path:
+        path, _separator, query = path.partition("?")
+    return path, query, host
+
+
+def split_client(written: str) -> tuple[str, str | None]:
+    """The client's address, and its port when the address came with one.
+
+    Google's `remoteIp` "can include port information". Kept whole, each new
+    port would be a new client and one visitor would read as many. Only a port
+    that cannot be part of the address is taken off: see `_PORTED_CLIENT`.
+    """
+    if ":" not in written:
+        return written, None
+    found = _PORTED_CLIENT.fullmatch(written)
+    if found is None:
+        return written, None
+    if found["v4"] is not None:
+        return found["v4"], found["v4port"]
+    return found["v6"], found["v6port"]
 
 
 def skips(parser: LogParser, line: str) -> bool:

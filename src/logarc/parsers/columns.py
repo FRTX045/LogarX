@@ -26,7 +26,7 @@ import csv
 from typing import TYPE_CHECKING, Final
 
 from logarc.core.event import NormalizedEvent
-from logarc.parsers.base import split_request_line
+from logarc.parsers.base import read_target, split_client, split_request_line
 from logarc.parsers.fieldnames import JOIN, MAPPABLE, REQUIRED
 from logarc.parsers.times import TimeFormatError, check_time_format, read_time
 
@@ -227,20 +227,24 @@ class ColumnsParser:
         timestamp = read_time(cell("timestamp"), self._time_format)
         if timestamp is None:
             return None
-        client_ip = _clean(cell("client_ip"))
-        if client_ip is None:
+        written = _clean(cell("client_ip"))
+        if written is None:
             return None
+        client_ip, client_port = split_client(written)
 
         method = _clean(cell("method"))
-        path = _clean(cell("path"))
-        query = _clean(cell("query"))
         protocol = _clean(cell("protocol"))
+        path, query, host = read_target(
+            _clean(cell("path")), _clean(cell("query")), _clean(cell("url")), _clean(cell("host"))
+        )
 
         extra = {
             column: text
             for column, position in self._index.items()
             if column not in self._claimed and (text := _clean(cells[position])) is not None
         }
+        if client_port is not None:
+            extra.setdefault("client_port", client_port)
 
         if (request_line := _clean(cell("request_line"))) is not None:
             method, path, query, protocol = split_request_line(request_line)
@@ -259,6 +263,6 @@ class ColumnsParser:
             bytes_sent=_as_int(cell("bytes_sent")),
             referer=_clean(cell("referer")),
             user_agent=_clean(cell("user_agent")),
-            host=_clean(cell("host")),
+            host=host,
             extra=extra,
         )

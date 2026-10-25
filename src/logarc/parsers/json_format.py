@@ -19,7 +19,7 @@ import json
 from typing import TYPE_CHECKING, Any
 
 from logarc.core.event import NormalizedEvent
-from logarc.parsers.base import split_request_line
+from logarc.parsers.base import read_target, split_client, split_request_line
 from logarc.parsers.fieldnames import MAPPABLE, REQUIRED
 from logarc.parsers.fieldnames import guess_mapping as guess_from_names
 from logarc.parsers.times import TimeFormatError, check_time_format, read_time
@@ -155,24 +155,31 @@ class JsonParser:
         timestamp = read_time(leaves.get(self._mapping["timestamp"]), self._time_format)
         if timestamp is None:
             return None
-        client_ip = _as_text(leaves.get(self._mapping["client_ip"]))
-        if client_ip is None:
+        written = _as_text(leaves.get(self._mapping["client_ip"]))
+        if written is None:
             return None
+        client_ip, client_port = split_client(written)
 
         def mapped(field: str) -> Any:
             key = self._mapping.get(field)
             return leaves.get(key) if key is not None else None
 
         method = _as_text(mapped("method"))
-        path = _as_text(mapped("path"))
-        query = _as_text(mapped("query"))
         protocol = _as_text(mapped("protocol"))
+        path, query, host = read_target(
+            _as_text(mapped("path")),
+            _as_text(mapped("query")),
+            _as_text(mapped("url")),
+            _as_text(mapped("host")),
+        )
 
         extra = {
             key: text
             for key, value in leaves.items()
             if key not in self._mapped_keys and (text := _as_text(value)) is not None
         }
+        if client_port is not None:
+            extra.setdefault("client_port", client_port)
 
         if (request_line := _as_text(mapped("request_line"))) is not None:
             method, path, query, protocol = split_request_line(request_line)
@@ -191,6 +198,6 @@ class JsonParser:
             bytes_sent=_as_int(mapped("bytes_sent")),
             referer=_as_text(mapped("referer")),
             user_agent=_as_text(mapped("user_agent")),
-            host=_as_text(mapped("host")),
+            host=host,
             extra=extra,
         )

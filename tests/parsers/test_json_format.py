@@ -459,3 +459,116 @@ def test_an_empty_time_string_refuses_the_line() -> None:
     """A pipeline that writes `""` rather than omitting the key. Without a time
     there is no event, the same as if the key were absent."""
     assert MAPPED.build().parse_line(line(time="   "), REF) is None
+
+
+# -- where the path ends, and the client's port ------------------------------
+
+SPLIT = JsonFormatSpec(
+    name="split",
+    fields=(("timestamp", "ts"), ("client_ip", "ip"), ("method", "verb"), ("path", "uri")),
+)
+
+URL = JsonFormatSpec(
+    name="url",
+    fields=(("timestamp", "ts"), ("client_ip", "ip"), ("method", "verb"), ("url", "requestUrl")),
+)
+
+
+def request(**fields: object) -> str:
+    return json.dumps({"ts": "2024-05-01T09:00:45Z", "ip": "203.0.113.5", "verb": "GET", **fields})
+
+
+def test_a_path_that_carries_its_query_is_split_where_a_request_line_is() -> None:
+    """Caddy's `request.uri`, Traefik's `RequestPath` and Cloudflare's
+    `ClientRequestURI` hold the query as well. Left inside the path it is a
+    query no query rule reads: on the shopfront excerpt that hid four SSRF
+    attempts and 135 rule matches."""
+    event = SPLIT.build().parse_line(request(uri="/search?q=oak&page=2"), REF)
+
+    assert event is not None
+    assert (event.path, event.query) == ("/search", "q=oak&page=2")
+
+
+def test_an_absolute_target_is_kept_as_it_was_sent() -> None:
+    """A proxy probe sends the whole URL, Caddy logs it that way, and an Apache
+    log keeps it too. It is a signal in itself, so only the query comes off."""
+    event = SPLIT.build().parse_line(request(uri="http://evil.example/probe?x=1"), REF)
+
+    assert event is not None
+    assert (event.path, event.query) == ("http://evil.example/probe", "x=1")
+
+
+def test_a_mapped_query_is_never_replaced_by_one_found_in_the_path() -> None:
+    spec = JsonFormatSpec(name="both", fields=(*SPLIT.fields, ("query", "args")))
+
+    event = spec.build().parse_line(request(uri="/a?b", args="c=d"), REF)
+
+    assert event is not None
+    assert (event.path, event.query) == ("/a?b", "c=d")
+
+
+def test_a_whole_url_is_read_as_its_host_path_and_query() -> None:
+    """Google's `requestUrl` is "the scheme (http, https), the host name, the
+    path and the query portion", and this is the example Google gives."""
+    event = URL.build().parse_line(
+        request(requestUrl="http://example.com/some/info?color=red"), REF
+    )
+
+    assert event is not None
+    assert (event.host, event.path, event.query) == ("example.com", "/some/info", "color=red")
+
+
+def test_a_url_with_nothing_after_its_host_is_the_root() -> None:
+    event = URL.build().parse_line(request(requestUrl="https://example.com:8443"), REF)
+
+    assert event is not None
+    assert (event.host, event.path, event.query) == ("example.com:8443", "/", None)
+
+
+def test_a_mapped_host_outranks_the_one_inside_the_url() -> None:
+    spec = JsonFormatSpec(name="url-host", fields=(*URL.fields, ("host", "h")))
+
+    event = spec.build().parse_line(
+        request(requestUrl="http://10.0.0.5/a", h="shop.example.com"), REF
+    )
+
+    assert event is not None
+    assert (event.host, event.path) == ("shop.example.com", "/a")
+
+
+def test_a_url_that_is_not_absolute_is_read_like_a_path() -> None:
+    event = URL.build().parse_line(request(requestUrl="/a?b=c"), REF)
+
+    assert event is not None
+    assert (event.host, event.path, event.query) == (None, "/a", "b=c")
+
+
+def test_a_url_key_is_guessed_as_a_url() -> None:
+    """ECS writes `url.original` and Google `requestUrl`. Read as a path, a
+    whole URL would keep its scheme and host in front of every path rule."""
+    assert dict(guess_mapping({"requestUrl": "http://example.com/"}))["url"] == "requestUrl"
+    assert dict(guess_mapping({"url": {"original": "/a?b=c"}}))["url"] == "url.original"
+
+
+@pytest.mark.parametrize(
+    ("written", "address", "port"),
+    [
+        ("10.0.0.1:80", "10.0.0.1", "80"),
+        ("[2001:db8::1]:443", "2001:db8::1", "443"),
+        ("[2001:db8::1]", "2001:db8::1", None),
+        # Bare IPv6 could end in a port or in its own last group: never split.
+        ("2001:db8::1:443", "2001:db8::1:443", None),
+        ("::ffff:203.0.113.5", "::ffff:203.0.113.5", None),
+        ("203.0.113.5", "203.0.113.5", None),
+    ],
+)
+def test_a_client_written_with_a_port_is_the_address_alone(
+    written: str, address: str, port: str | None
+) -> None:
+    """Google's `remoteIp` "can include port information". Kept whole, every
+    new port is a new client, and one visitor splits into many."""
+    event = SPLIT.build().parse_line(request(ip=written, uri="/"), REF)
+
+    assert event is not None
+    assert event.client_ip == address
+    assert event.extra.get("client_port") == port

@@ -414,3 +414,54 @@ def test_a_missing_column_for_a_required_field_is_still_refused() -> None:
             columns=("date", "time", "who"),
             fields=(("timestamp", "date+time"), ("client_ip", "c-ip")),
         ).build()
+
+
+# -- where the path ends, and the client's port ------------------------------
+
+CSV_ROWS = [
+    "time,ip,verb,uri,code",
+    "2024-05-01T09:00:45Z,203.0.113.5:51234,GET,/search?q=oak,200",
+]
+
+
+def _csv(*fields: tuple[str, str]) -> ColumnsFormatSpec:
+    return resolved(
+        ColumnsFormatSpec(
+            name="csv",
+            separator=",",
+            fields=(("timestamp", "time"), ("client_ip", "ip"), ("method", "verb"), *fields),
+        ),
+        CSV_ROWS,
+    )
+
+
+def test_a_path_column_that_carries_its_query_is_split() -> None:
+    event = _csv(("path", "uri")).build().parse_line(CSV_ROWS[1], REF)
+
+    assert event is not None
+    assert (event.path, event.query) == ("/search", "q=oak")
+
+
+def test_a_url_column_is_read_as_its_host_path_and_query() -> None:
+    rows = [CSV_ROWS[0], "2024-05-01T09:00:45Z,203.0.113.5,GET,http://shop.example.com/a?b=c,200"]
+    spec = resolved(
+        ColumnsFormatSpec(
+            name="csv",
+            separator=",",
+            fields=(("timestamp", "time"), ("client_ip", "ip"), ("url", "uri")),
+        ),
+        rows,
+    )
+
+    event = spec.build().parse_line(rows[1], REF)
+
+    assert event is not None
+    assert (event.host, event.path, event.query) == ("shop.example.com", "/a", "b=c")
+
+
+def test_a_client_column_written_with_a_port_is_the_address_alone() -> None:
+    event = _csv(("path", "uri")).build().parse_line(CSV_ROWS[1], REF)
+
+    assert event is not None
+    assert event.client_ip == "203.0.113.5"
+    assert event.extra["client_port"] == "51234"

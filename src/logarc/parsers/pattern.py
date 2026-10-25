@@ -24,7 +24,7 @@ import re
 from typing import TYPE_CHECKING
 
 from logarc.core.event import NormalizedEvent
-from logarc.parsers.base import split_request_line
+from logarc.parsers.base import read_target, split_client, split_request_line
 from logarc.parsers.fieldnames import MAPPABLE, REQUIRED
 from logarc.parsers.times import TimeFormatError, check_time_format, read_time
 
@@ -112,20 +112,27 @@ class PatternParser:
         timestamp = read_time(found.get("timestamp"), self._time_format)
         if timestamp is None:
             return None
-        client_ip = _clean(found.get("client_ip"))
-        if client_ip is None:
+        written = _clean(found.get("client_ip"))
+        if written is None:
             return None
+        client_ip, client_port = split_client(written)
 
         method = _clean(found.get("method"))
-        path = _clean(found.get("path"))
-        query = _clean(found.get("query"))
         protocol = _clean(found.get("protocol"))
+        path, query, host = read_target(
+            _clean(found.get("path")),
+            _clean(found.get("query")),
+            _clean(found.get("url")),
+            _clean(found.get("host")),
+        )
 
         extra = {
             group: text
             for group in self._extra_groups
             if (text := _clean(found.get(group))) is not None
         }
+        if client_port is not None:
+            extra.setdefault("client_port", client_port)
 
         if (request_line := _clean(found.get("request_line"))) is not None:
             method, path, query, protocol = split_request_line(request_line)
@@ -144,6 +151,6 @@ class PatternParser:
             bytes_sent=_as_int(found.get("bytes_sent")),
             referer=_clean(found.get("referer")),
             user_agent=_clean(found.get("user_agent")),
-            host=_clean(found.get("host")),
+            host=host,
             extra=extra,
         )
