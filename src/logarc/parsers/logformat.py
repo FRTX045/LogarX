@@ -33,7 +33,8 @@ delimit one, spaces and all; so do literal brackets, and a field in brackets
 may be empty (`[%{upstream}e]` reads `[]`). An unquoted header or variable
 followed by a space may be a list, `a, b` or `a : b`, the way Apache and nginx
 write repeated headers and retried upstreams; one that ends the line reads to
-the end of it. Anything else is one run of non-blank characters.
+the end of it. Anything else is one run of non-blank characters. None of this
+narrows a field: a line the plain reading accepts is read exactly as before.
 """
 
 from __future__ import annotations
@@ -312,30 +313,36 @@ def _tokenize(log_format: str) -> list[_Literal | _Field]:
     return tokens
 
 
-def _body_pattern(token: _Field, prev: str, nxt: str) -> str:
+def _body_pattern(token: _Field, prev: str, nxt: str, *, last: bool, widened: bool) -> str:
     """Choose the regex body for a field from how it is delimited in the format.
 
     A field wrapped in literal quotes may contain spaces; a bare one may not.
     Getting this from the format string rather than from a hardcoded list is
     what lets custom formats work without special cases.
+
+    `widened` adds what brackets, lists and the end of the line allow. Without
+    it this is the plain reading, which a format falls back to: see
+    `_CompiledFormat.fallback`.
     """
     if prev.endswith('"') and nxt.startswith('"'):
         return _QUOTED_BODY
     if token.directive == "t" and token.arg:
         return _time_pattern(token.arg)
-    if token.directive != "t" and prev.endswith("[") and nxt.startswith("]"):
+    if widened and token.directive != "t" and prev.endswith("[") and nxt.startswith("]"):
         return _IN_BRACKETS_BODY
     if token.directive == "t" and not (prev.endswith("[") or nxt.startswith("]")):
         return _BRACKETED_BODY
     if token.directive == "q":
         return _OPTIONAL_BARE_BODY
-    # Only where a space or the end of the line follows. A format that writes
-    # its own `, ` after the field, or a unit such as Traefik's `4ms`, means
-    # the field ends there, and an atomic list would swallow what it wrote.
-    if token.directive in _LIST_DIRECTIVES and not nxt:
-        return _TO_THE_END_BODY
-    if token.directive in _LIST_DIRECTIVES and nxt.startswith(" ") and not nxt.startswith(" : "):
-        return _LIST_BODY
+    if widened and token.directive in _LIST_DIRECTIVES:
+        # Only where a space or the end of the line follows. A format that
+        # writes its own `, ` after the field, or a unit such as Traefik's
+        # `4ms`, or another field straight after it, means the field ends
+        # there, and an atomic list would swallow what came next.
+        if last:
+            return _TO_THE_END_BODY
+        if nxt.startswith(" ") and not nxt.startswith(" : "):
+            return _LIST_BODY
     return _BARE_BODY
 
 
@@ -377,6 +384,21 @@ class _CompiledFormat:
     extra_slots: tuple[tuple[str, int], ...]
     """Groups with no place in the canonical schema, as (field name, index)."""
 
+    fallback: re.Pattern[str] | None = None
+    """The plain reading, tried when `pattern` refuses a line; `None` when the
+    two are the same.
+
+    Brackets, lists and the end of the line let a field hold more, and that
+    must never cost a line the plain reading accepted. It could: a
+    forwarded-for the client ended with a comma would run on into the next
+    field, and `[a]b]` stops at the first bracket. Both are the client's to
+    write, so either would let a request keep itself out of a case. Wherever
+    both readings accept a line they read it the same way — the plain one
+    takes one token per field, and a widened field that took more would leave
+    a later one with none — so trying the widened one first changes nothing
+    the plain one already read. The groups are the same in both, so `slots`
+    serves either."""
+
     time_format: str | None = None
     """The strftime pattern from a `%{...}t`, when the format used one.
 
@@ -415,30 +437,35 @@ def _compile(log_format: str) -> _CompiledFormat:
         raise LogFormatError(f"no directives found in log format: {log_format!r}")
 
     parts: list[str] = []
+    plain: list[str] = []
     quoted: set[str] = set()
     seen: dict[str, int] = {}
     for index, token in enumerate(tokens):
         if isinstance(token, _Literal):
             parts.append(re.escape(token.text))
+            plain.append(re.escape(token.text))
             continue
 
         preceding = tokens[index - 1] if index else None
         following = tokens[index + 1] if index + 1 < len(tokens) else None
         prev = preceding.text if isinstance(preceding, _Literal) else ""
         nxt = following.text if isinstance(following, _Literal) else ""
+        last = following is None
 
         # A format may legitimately repeat a directive; group names must stay unique.
         count = seen.get(token.name, 0)
         seen[token.name] = count + 1
         group = token.name if count == 0 else f"{token.name}__{count}"
 
-        body = _body_pattern(token, prev, nxt)
+        body = _body_pattern(token, prev, nxt, last=last, widened=True)
         if body is _QUOTED_BODY:
             quoted.add(group)
         parts.append(f"(?P<{group}>{body})")
+        plain.append(f"(?P<{group}>{_body_pattern(token, prev, nxt, last=last, widened=False)})")
 
     try:
         pattern = re.compile("^" + "".join(parts) + r"\s*$")
+        fallback = re.compile("^" + "".join(plain) + r"\s*$")
     except re.error as exc:  # pragma: no cover - defensive; _field_name rejects bad names
         raise LogFormatError(f"could not compile log format {log_format!r}: {exc}") from exc
 
@@ -454,6 +481,7 @@ def _compile(log_format: str) -> _CompiledFormat:
         extra_slots=tuple(
             (name, index) for name, index in index_of.items() if name not in _PROMOTED
         ),
+        fallback=None if fallback.pattern == pattern.pattern else fallback,
         time_format=custom_time or None,
     )
 
@@ -610,7 +638,9 @@ class LogFormatParser:
 
     @property
     def pattern(self) -> re.Pattern[str]:
-        """The compiled regex. Exposed for diagnostics and tests."""
+        """The compiled regex, the widened reading. Exposed for diagnostics and
+        tests; a line it refuses may still be read by the plain one (see
+        `_CompiledFormat.fallback`)."""
         return self._compiled.pattern
 
     def is_metadata(self, line: str) -> bool:
@@ -627,6 +657,8 @@ class LogFormatParser:
         """
         compiled = self._compiled
         match = compiled.pattern.match(line)
+        if match is None and compiled.fallback is not None:
+            match = compiled.fallback.match(line)
         if match is None:
             return None
 

@@ -622,3 +622,50 @@ def test_a_variable_that_ends_the_line_keeps_its_spaces() -> None:
 
     assert event is not None
     assert event.extra["env_id"] == "a b"
+
+
+def test_a_field_written_against_the_next_one_still_shares_the_line() -> None:
+    """With nothing between two fields, the first is not the end of the line
+    and must not read to it. The widened reading itself has to manage this,
+    not only the old one it falls back to."""
+    parser = LogFormatParser('%h %t "%r" %>s %b %{a}e%{b}e')
+    line = f"{HEAD} xy"
+
+    event = parser.parse_line(line, REF)
+
+    assert parser.pattern.match(line) is not None
+    assert event is not None
+    assert event.extra["env_a"] + event.extra["env_b"] == "xy"
+
+
+@pytest.mark.parametrize(
+    ("directive", "line", "field", "value"),
+    [
+        # A forwarded-for the client ended with a comma, and a field after it:
+        # read as a list it swallows the next field, so the line would go.
+        (
+            '%h %t "%r" %>s %b %{X-Forwarded-For}i %{X-Real-IP}i',
+            f"{HEAD} 1.2.3.4, 9.9.9.9",
+            "req_header_x_real_ip",
+            "9.9.9.9",
+        ),
+        # A bracket inside a bracketed value. Up to the first `]` it is not.
+        (
+            BRACKETED,
+            '203.0.113.5 [01/May/2024:09:00:45 +0000] [a]b] "GET / HTTP/1.1" 200 5',
+            "env_upstream",
+            "a]b",
+        ),
+    ],
+)
+def test_a_line_read_before_is_read_the_same_way(
+    directive: str, line: str, field: str, value: str
+) -> None:
+    """Brackets, lists and the end of the line widen what a field may hold.
+    They must never narrow it: whatever the plain reading accepted, a client
+    can write on purpose, and a line it can make unreadable is a request it
+    can keep out of a case."""
+    event = LogFormatParser(directive).parse_line(line, REF)
+
+    assert event is not None
+    assert event.extra[field] == value
