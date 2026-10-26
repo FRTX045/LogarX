@@ -1641,6 +1641,36 @@ def test_an_exported_graph_keeps_the_bounded_sample(
     window.close()
 
 
+def test_an_export_covers_the_range_on_screen_and_names_it(
+    qt_app: QApplication, campaign: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A report handed to another investigator has to cover the stretch of time
+    the analyst was reading, and say which stretch that was. Reconstructed over
+    the whole case instead, it disagrees with the screen it was exported from."""
+    import json
+
+    written = tmp_path / "graph.json"
+    monkeypatch.setattr(
+        "PyQt6.QtWidgets.QFileDialog.getSaveFileName",
+        lambda *args, **kwargs: (str(written), ""),
+    )
+    window = _reconstructed(qt_app, campaign)
+    whole = window._result.request_count
+    narrow = TimeWindow(START, START + timedelta(seconds=20))
+    window._apply_window(narrow)
+    settled(qt_app)
+    assert window._result is not None
+    assert window._result.request_count < whole, "premise: the range drops requests"
+
+    window._export("json")
+    settled(qt_app)
+
+    exported = json.loads(written.read_text(encoding="utf-8"))
+    assert exported["request_count"] == window._result.request_count
+    assert exported["window"] == narrow.tag
+    window.close()
+
+
 def test_the_evidence_table_drops_a_size_column_it_has_no_sizes_for(
     qt_app: QApplication, campaign: Path
 ) -> None:

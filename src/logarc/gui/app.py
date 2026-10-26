@@ -2933,6 +2933,7 @@ class MainWindow(QMainWindow):
 
         target = Path(chosen)
         client_ip = self._result.client_ip
+        window = self._result.window
         case_path = self._case_path
         crs = self._crs
         rules = self._rules
@@ -2950,11 +2951,16 @@ class MainWindow(QMainWindow):
             # writing what is on screen would grow a deliverable by the size of
             # the log it came from.
             #
-            # The same pipeline, on the same case, at the same policy but for
-            # this one number: the graph written is the graph drawn, and only
-            # its list of references is shorter.
+            # The same pipeline, on the same case, over the same range at the
+            # same policy but for this one number: the graph written is the
+            # graph drawn, and only its list of references is shorter.
             bounded = reconstruct_client(
-                case_path, client_ip, crs, evidence_sample=DEFAULT_EVIDENCE_SAMPLE, rules=rules
+                case_path,
+                client_ip,
+                crs,
+                evidence_sample=DEFAULT_EVIDENCE_SAMPLE,
+                window=window,
+                rules=rules,
             )
             with Case.open(case_path) as case:
                 # A request bookmark's own line goes in the report beside its
