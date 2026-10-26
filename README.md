@@ -211,7 +211,7 @@ OWASP CRS sidecar are covered in [docs/installing.md](docs/installing.md).
 | [docs/installing.md](docs/installing.md) | Installing, the packaged Windows build, and OWASP CRS |
 | [docs/desktop-app.md](docs/desktop-app.md) | The desktop application, screen by screen |
 | [docs/detection.md](docs/detection.md) | What it detects, and what its OWASP Top 10 annotations do and do not claim |
-| [docs/log-formats.md](docs/log-formats.md) | The seventeen built-in formats, and writing your own |
+| [docs/log-formats.md](docs/log-formats.md) | The twenty-one built-in formats, and writing your own |
 | [docs/evaluation.md](docs/evaluation.md) | How accuracy is measured, the numbers, and their limits |
 | [docs/limitations.md](docs/limitations.md) | What logarc cannot tell you, and why |
 | [docs/architecture.md](docs/architecture.md) | How it separates one action from the next, layers and data flow |
