@@ -1,6 +1,6 @@
 # ADR-0003: Deterministic three-level segmentation
 
-- **Status:** Accepted
+- **Status:** Accepted; amended 2026-10-27, see *Amendment* at the end
 - **Date:** 2026-08-08
 
 ## Context
@@ -57,3 +57,13 @@ known limitation to be measured in evaluation and reported, not hidden.
 **Follow-up.** Default thresholds (30 min / 5 min / 60 s) are literature-derived starting points.
 They will be tuned against ground truth during evaluation, and the final values reported as a
 finding rather than presented as self-evident.
+
+## Amendment, 2026-10-27: where the thresholds are recorded
+
+**The thresholds are recorded in each analysis export, not in the case manifest.** The decision
+above said every value used is recorded in the manifest and that results are reproducible from the
+manifest alone. Neither held: `case.json` records the sources, the version that created the case
+and the per-case settings, while the session and activity thresholds, the ruleset fingerprint and
+the version that ran the analysis are written into every JSON and HTML export. The segmentation is
+unchanged and still deterministic; reproducing a result needs the source logs, the manifest and the
+export together, as [docs/architecture.md](../architecture.md#forensic-integrity) sets out.

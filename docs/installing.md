@@ -103,7 +103,7 @@ keeps that earlier result. To turn it off:
 
 | Where | How |
 |---|---|
-| The window | Edit → Preferences → Analysis → *Run OWASP CRS after a scan* |
+| The window | Edit → Preferences → General → *Run OWASP CRS after a scan* |
 | One `ingest` | `--no-crs` (and `--crs` asks for it whatever the machine says) |
 | A whole machine, both | `LOGARC_CRS=off` |
 
@@ -121,7 +121,8 @@ logarc enrich --case ./case-shop --paranoia 3   # run again, at another level
 `setup-crs` fetches the ruleset at the revision this project measures against
 (`d694d465951ee06347214f1291ae096e40700001`), builds the sidecar, and replays a
 known SQL injection to prove the two work together. It is the one time logarc
-reaches for the network, and only because it was asked to. The manual steps are
+reaches for the network, and only because it was asked to. (In the window,
+**Help → User guide** opens the online guide in your browser.) The manual steps are
 in [crs/README.md](../crs/README.md).
 
 Without the sidecar, a scan says once that CRS was not run and carries on: the

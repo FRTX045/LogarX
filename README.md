@@ -134,7 +134,12 @@ Every screen is described in [docs/desktop-app.md](docs/desktop-app.md).
 
 ### No network, no account, no API key
 
-logarc makes no outbound connections. Its runtime dependencies are pyarrow,
+Reading a log, analysing it and reporting on it make no outbound connections.
+The one command that reaches the network is `logarc setup-crs`, run once and by
+choice in a source checkout to fetch the CRS ruleset and build the sidecar; the
+packaged application has nothing to set up. **Help → User guide** opens the
+online guide in your browser, which is the browser's request, not logarc's. Its
+runtime dependencies are pyarrow,
 duckdb, pyyaml, pydantic, typer and rich, and the desktop application adds
 PyQt6: no cloud SDK, no model, no telemetry.
 The OWASP CRS step, on by default, runs a local Go binary against a local copy
