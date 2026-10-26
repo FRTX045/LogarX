@@ -3509,3 +3509,35 @@ def test_a_client_opened_from_elsewhere_is_named_when_it_is_not_listed(
     assert window._clients._caption.text().endswith("Current client: 10.0.0.5 (not in this list).")
     window.close()
     settled(qt_app)
+
+
+def test_the_lines_an_export_carries_keep_their_verification(tmp_path: Path) -> None:
+    """The evidence reader notices a source that changed under the case. The
+    lines handed to a report or a bookmark export keep what it noticed."""
+    log = tmp_path / "access.log"
+    log.write_text(_line(0, "/") + "\n", encoding="utf-8")
+    with Case.create(tmp_path / "case") as case:
+        case.ingest([log])
+    log.write_text(_line(0, "/") + "\n" + _line(1, "/more") + "\n", encoding="utf-8")
+    ref = EvidenceRef("access.log", 1)
+
+    with Case.open(tmp_path / "case") as case:
+        (line,) = app._raw_lines(case, [ref]).values()
+
+    assert not line.verified
+    assert "changed size" in (line.warning or "")
+
+
+def test_an_export_keeps_a_line_it_cannot_read_and_why(tmp_path: Path) -> None:
+    log = tmp_path / "access.log"
+    log.write_text(_line(0, "/") + "\n", encoding="utf-8")
+    with Case.create(tmp_path / "case") as case:
+        case.ingest([log])
+    log.unlink()
+    ref = EvidenceRef("access.log", 1)
+
+    with Case.open(tmp_path / "case") as case:
+        (line,) = app._raw_lines(case, [ref]).values()
+
+    assert line.text is None
+    assert line.warning

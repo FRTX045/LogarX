@@ -213,9 +213,14 @@ _JUST_BEFORE = timedelta(microseconds=1)
 _WIDENED = "Range set to All time to show the bookmark."
 
 
-def _raw_lines(case: Case, refs: Sequence[EvidenceRef]) -> dict[EvidenceRef, str]:
-    """The log lines behind `refs`, as written; one that cannot be read is left out."""
-    return {line.ref: line.text for line in case.read_evidence(refs) if line.text is not None}
+def _raw_lines(case: Case, refs: Sequence[EvidenceRef]) -> dict[EvidenceRef, EvidenceLine]:
+    """The log lines behind `refs`, as the evidence reader found them.
+
+    Whole lines rather than their text, and the unreadable ones too, so whatever
+    writes them out can say when a source changed under the case or could not
+    be read at all, rather than print the line alone or leave it out unexplained.
+    """
+    return {line.ref: line for line in case.read_evidence(refs)}
 
 
 def _crs_applied(crs: CrsEvidence) -> str:

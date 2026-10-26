@@ -113,3 +113,18 @@ def test_one_line_left_over_is_counted_in_the_singular(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     assert "1 more line in this activity" in result.output
+
+
+def test_a_changed_source_is_named_with_what_was_found(case: Path, tmp_path: Path) -> None:
+    """The reader's own account, sizes and all, not a fixed phrase: the same
+    flag is raised when the source could not be checked at all, and that is not
+    a change."""
+    log = tmp_path / "access.log"
+    log.write_text(log.read_text(encoding="utf-8") + "extra\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["evidence", "--case", str(case), "--ip", "203.0.113.5"])
+
+    assert result.exit_code == 0, result.output
+    printed = " ".join(result.output.split())
+    assert "not verified" in printed
+    assert "has changed size since ingest" in printed

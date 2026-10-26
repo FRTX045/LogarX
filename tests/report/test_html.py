@@ -24,6 +24,7 @@ from logarc.case import Case
 from logarc.core.activity import ActivityCategory, Outcome, Severity
 from logarc.core.evidence import EvidenceRef
 from logarc.core.window import TimeWindow
+from logarc.evidence import EvidenceLine
 from logarc.graphbuild.layout import Point
 from logarc.report.html import render_report
 from logarc.style import severity_colour
@@ -472,8 +473,12 @@ def test_the_report_lists_the_clients_bookmarks_before_provenance(campaign: Case
     result = analyse_ip(campaign.store, ATTACKER)
     raw = 'a "GET /p?id=1%20UNION" 200'
 
+    ref = EvidenceRef("access.log", 28)
     page = render_report(
-        result, campaign.manifest, shelf=_marks(), lines={EvidenceRef("access.log", 28): raw}
+        result,
+        campaign.manifest,
+        shelf=_marks(),
+        lines={ref: EvidenceLine(ref=ref, source_path="access.log", text=raw, verified=True)},
     )
 
     assert page.index("<h2>Bookmarks</h2>") < page.index("<h2>Provenance</h2>")
@@ -506,3 +511,40 @@ def test_no_bookmarks_for_this_client_means_no_section(campaign: Case) -> None:
 
     assert "<h2>Bookmarks</h2>" not in render_report(result, campaign.manifest)
     assert "<h2>Bookmarks</h2>" not in render_report(result, campaign.manifest, shelf=only_another)
+
+
+def test_a_bookmarked_line_from_a_changed_source_says_so(campaign: Case) -> None:
+    """The evidence reader noticed the file moved under the case. A report that
+    printed the line and dropped that would present it beside the ingest hash
+    as though it were the line the hash covers."""
+    result = analyse_ip(campaign.store, ATTACKER)
+    ref = EvidenceRef("access.log", 28)
+    note = "access.log has changed size since ingest (255 bytes then, 273 now)"
+    changed = EvidenceLine(ref=ref, source_path="access.log", text="a line", note=note)
+
+    page = render_report(result, campaign.manifest, shelf=_marks(), lines={ref: changed})
+
+    assert html.escape(note) in page
+    assert "Not verified" in page
+
+
+def test_a_verified_line_carries_no_warning(campaign: Case) -> None:
+    result = analyse_ip(campaign.store, ATTACKER)
+    ref = EvidenceRef("access.log", 28)
+    sound = EvidenceLine(ref=ref, source_path="access.log", text="a line", verified=True)
+
+    page = render_report(result, campaign.manifest, shelf=_marks(), lines={ref: sound})
+
+    assert "Not verified" not in page
+
+
+def test_a_bookmarked_line_that_cannot_be_read_is_explained(campaign: Case) -> None:
+    """Left out without a word, the bookmark reads as one that never pointed at
+    a line at all."""
+    result = analyse_ip(campaign.store, ATTACKER)
+    ref = EvidenceRef("access.log", 28)
+    gone = EvidenceLine(ref=ref, source_path="access.log", note="access.log is not available")
+
+    page = render_report(result, campaign.manifest, shelf=_marks(), lines={ref: gone})
+
+    assert "Not available: access.log is not available" in page

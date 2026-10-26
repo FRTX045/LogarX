@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from logarc.analysis import AnalysisResult
     from logarc.bookmarks import Shelf
     from logarc.core.evidence import EvidenceRef
+    from logarc.evidence import EvidenceLine
     from logarc.storage.case import CaseManifest
 
 __all__ = ["FORMATS", "Format", "named", "write_reconstruction"]
@@ -94,7 +95,7 @@ def write_reconstruction(
     kind: str,
     target: Path,
     shelf: Shelf | None = None,
-    lines: Mapping[EvidenceRef, str] | None = None,
+    lines: Mapping[EvidenceRef, EvidenceLine] | None = None,
 ) -> Path:
     """Write `result` to `target` in the format `kind` names, and say where.
 

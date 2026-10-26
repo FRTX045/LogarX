@@ -580,9 +580,13 @@ def evidence(
         )
         for line in lines[item.episode_id]:
             if line.available:
-                marker = "" if line.verified else " [yellow](source changed since ingest)[/yellow]"
+                marker = "" if line.verified else " [yellow](not verified)[/yellow]"
                 console.print(f"  [dim]{line.ref}[/dim]{marker}")
                 console.print(f"    {line.text}", highlight=False)
+                if line.warning is not None:
+                    # The reader's own account: not being able to check a source
+                    # is not the same finding as the source having changed.
+                    console.print(f"    {line.warning}", style="yellow", markup=False)
             else:
                 console.print(f"  [dim]{line.ref}[/dim] [yellow]unavailable[/yellow]")
                 if line.note:
