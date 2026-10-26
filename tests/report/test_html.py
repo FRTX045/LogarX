@@ -548,3 +548,17 @@ def test_a_bookmarked_line_that_cannot_be_read_is_explained(campaign: Case) -> N
     page = render_report(result, campaign.manifest, shelf=_marks(), lines={ref: gone})
 
     assert "Not available: access.log is not available" in page
+
+
+def test_the_report_names_both_versions_that_made_it(campaign: Case) -> None:
+    """The version that created the case and the one that analysed it can
+    differ: a case outlives the release it was read with."""
+    from dataclasses import replace
+
+    result = replace(analyse_ip(campaign.store, ATTACKER), analysed_with="9.9.9")
+    manifest = replace(campaign.manifest, tool_version="0.1.0")
+
+    page = render_report(result, manifest)
+
+    assert "<td>Analysed with</td>" in page and "9.9.9" in page
+    assert "<td>Case created with</td>" in page and "0.1.0" in page
