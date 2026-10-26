@@ -80,7 +80,10 @@ recognised.
 
 **It runs after every scan, without asking.** The window replays each new case
 through CRS on a card that can be stopped, keeping what it found so far, and
-`logarc ingest` does the same once the log is read. To turn it off:
+`logarc ingest` does the same once the log is read. A stopped run is recorded
+as one: the window, `analyze`, `evaluate` and every exported report say how many
+requests CRS read, and stopping a rerun over a case already checked in full
+keeps that earlier result. To turn it off:
 
 | Where | How |
 |---|---|

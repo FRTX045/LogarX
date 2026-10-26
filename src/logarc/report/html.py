@@ -102,6 +102,11 @@ def _summary(result: AnalysisResult) -> str:
         # anyone has ever exported is noise, and it would push the finding that
         # matters one place further along the row.
         cards.append(("Time range", spoken(result.window)))
+    if result.crs_coverage is not None:
+        # On the front, not only in the provenance: the requests CRS never
+        # reached look exactly like requests it read and passed.
+        replayed, requests = result.crs_coverage
+        cards.append(("CRS coverage", f"Partial: {replayed:,} of {requests:,} requests"))
     return "".join(
         f'<div class="card"><div class="card-label">{label}</div>'
         f'<div class="card-value">{value}</div></div>'
@@ -322,6 +327,10 @@ def _provenance(result: AnalysisResult, manifest: CaseManifest | None) -> str:
     rows = [("Ruleset fingerprint", result.ruleset_fingerprint)]
     if result.rules_in_force:
         rows.append(("Rules", result.rules_in_force))
+    rows.append(("CRS configuration", result.crs_fingerprint or "not consulted"))
+    if result.crs_coverage is not None:
+        replayed, requests = result.crs_coverage
+        rows.append(("CRS coverage", f"stopped after {replayed:,} of {requests:,} requests"))
     if manifest is not None:
         rows.append(("Case", manifest.case_id))
         rows.append(("Tool version", manifest.tool_version))

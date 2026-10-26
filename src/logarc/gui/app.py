@@ -78,7 +78,7 @@ from logarc.gui.canvas import ActivityCanvas
 from logarc.gui.case_chooser import CaseChooser
 from logarc.gui.client_filter import awaiting_scan, is_whole_address
 from logarc.gui.crs import CrsCard, CrsUnavailable
-from logarc.gui.crs_notice import stale_crs_notice
+from logarc.gui.crs_notice import partial_crs_notice, stale_crs_notice
 from logarc.gui.density import Density, buckets_for
 from logarc.gui.disclosure import Disclosure
 from logarc.gui.display import configure_display
@@ -216,6 +216,16 @@ _WIDENED = "Range set to All time to show the bookmark."
 def _raw_lines(case: Case, refs: Sequence[EvidenceRef]) -> dict[EvidenceRef, str]:
     """The log lines behind `refs`, as written; one that cannot be read is left out."""
     return {line.ref: line.text for line in case.read_evidence(refs) if line.text is not None}
+
+
+def _crs_applied(crs: CrsEvidence) -> str:
+    """How the status line says what CRS contributed to the case just opened."""
+    if crs.fingerprint is None:
+        return ""
+    if crs.coverage is None:
+        return ", CRS applied"
+    replayed, requests = crs.coverage
+    return f", CRS applied to {replayed:,} of {requests:,} requests"
 
 
 def _crs_config_now(site_hosts: Sequence[str]) -> SidecarConfig | None:
@@ -634,7 +644,8 @@ class MainWindow(QMainWindow):
         )
         self._crs_action = self._add(case_menu, "Run &CRS scan", self._run_crs_now)
         self._crs_action.setStatusTip(
-            "Replay this case through OWASP CRS now. Stopping keeps what it found."
+            "Replay this case through OWASP CRS now. Stopping keeps what it found, "
+            "unless the case was already checked in full."
         )
         case_menu.addSeparator()
         # No shortcut. `StandardKey.Quit` has no binding on Windows and Qt
@@ -1303,7 +1314,12 @@ class MainWindow(QMainWindow):
         # Requests flagged, not detections found: one request can match several
         # CRS rules, and the larger number would read as the more alarming
         # result while describing the same traffic.
-        stopped = " Stopped early." if outcome.stopped else ""
+        if outcome.kept_earlier:
+            stopped = " Stopped early, so the case keeps its earlier complete CRS results."
+        elif outcome.stopped:
+            stopped = " Stopped early."
+        else:
+            stopped = ""
         self._idle(
             f"CRS read {outcome.replayed:,} "
             f"{plural(outcome.replayed, 'request')} and flagged "
@@ -1443,21 +1459,22 @@ class MainWindow(QMainWindow):
             drifted = drift_notice(drifted_sources(manifest.sources))
             # Here too: it reads the CRS configuration files and the ruleset's
             # revision, and checks the sidecar is there to run again.
-            older = stale_crs_notice(
-                manifest.config if view.crs.fingerprint is not None else None,
-                _crs_config_now(manifest.config.get(Case.SITE_HOSTS_KEY) or ()),
+            crs_now = _crs_config_now(manifest.config.get(Case.SITE_HOSTS_KEY) or ())
+            older = partial_crs_notice(view.crs.coverage) or stale_crs_notice(
+                manifest.config if view.crs.fingerprint is not None else None, crs_now
             )
+            rerun = crs_now is not None
             # The reader's rules, read here for the reason the format library is:
             # they are files on disk. Every reading of this case is handed them.
             library = rules_library.in_force()
-            return view, snapshot, notice, drifted, older, library
+            return view, snapshot, notice, drifted, older, rerun, library
 
         self._busy(f"Opening {path}…")
 
         def done(loaded: Any) -> None:
             if generation != self._load_generation:
                 return
-            view, snapshot, notice, drifted, older, library = loaded
+            view, snapshot, notice, drifted, older, rerun, library = loaded
             summaries = view.listed
             self._remember_case(snapshot)
             self._name_the_window(path)
@@ -1497,9 +1514,10 @@ class MainWindow(QMainWindow):
             # a button that opens a directory holding nothing to do with this.
             self._format_notice.show_notice(drifted)
             # Looked up when pressed, not bound now, so the button always runs
-            # what the window would run from the Case menu.
+            # what the window would run from the Case menu. Not offered where
+            # CRS cannot run, where it would be a button that only fails.
             self._older_crs.show_notice(
-                older, action=("Run CRS again", lambda: self._run_crs_now())
+                older, action=("Run CRS again", lambda: self._run_crs_now()) if rerun else None
             )
             self._take_rules(library)
             self._heading.setText("")
@@ -1516,8 +1534,7 @@ class MainWindow(QMainWindow):
             self._idle(
                 # Not "listed": the table holds the busiest few hundred of
                 # them, and the caption beside it is where that is said.
-                f"{path} — {plural(view.whole.clients, 'client')}"
-                + (", CRS applied" if view.crs.fingerprint else "")
+                f"{path} — {plural(view.whole.clients, 'client')}" + _crs_applied(view.crs)
             )
             # Last, after the window has finished loading, never before. A modal
             # raised mid-load sits over a half-drawn case, so the reader has to

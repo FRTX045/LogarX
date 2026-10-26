@@ -460,3 +460,39 @@ def test_an_index_written_in_layout_ten_is_rebuilt(tmp_path, monkeypatch):
     current = scan.scan_case(case.root)
     assert not current.cached
     assert current.path != old.path
+
+
+def test_a_scan_says_when_its_crs_evidence_covers_part_of_the_case(tmp_path):
+    from logarc.triage.scan import scan_case
+
+    with Case.create(tmp_path / "case") as case:
+        case.store.write(events("192.0.2.1", 2))
+        case.store.finalize()
+        root = case.root
+    (root / "crs.jsonl").write_text("", encoding="utf-8")
+    with Case.open(root) as case:
+        case.manifest.config.update(crs_replayed=1, crs_requests=2, crs_complete=False)
+        case.manifest.save(case.root)
+
+    assert scan_case(root).crs_partial
+    assert scan_case(root).crs_partial, "and a cached scan says so too"
+
+
+def test_asking_about_coverage_loads_no_detections(tmp_path, monkeypatch):
+    """The scan streams CRS records through a disk table. Reading the whole
+    index into memory to ask whether the run finished would undo that on every
+    call, cached ones included."""
+    from logarc.triage.scan import scan_case
+
+    with Case.create(tmp_path / "case") as case:
+        case.store.write(events("192.0.2.1", 2))
+        case.store.finalize()
+        root = case.root
+    (root / "crs.jsonl").write_text("", encoding="utf-8")
+
+    def refuse(*_args, **_kwargs):
+        raise AssertionError("the whole detection index was loaded")
+
+    monkeypatch.setattr("logarc.detect.crs.store.load_detections", refuse)
+    assert not scan_case(root).crs_partial
+    assert scan_case(root).cached

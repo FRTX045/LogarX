@@ -219,3 +219,15 @@ def test_exploit_study_reports_orderings_identity_and_the_pre_exclusion_queue(tm
     assert targeted["ip"] == "192.0.2.10"
     assert set(targeted["ranks"]) == {"policy3", "exploit_first", "category_only", "app"}
     assert targeted["exploit_rules"]
+
+
+def test_a_stopped_crs_run_is_not_a_complete_product_evaluation(tmp_path):
+    from logarc.evaluation.triage_study import evaluate_case
+
+    case, source, truth = fixture_case(tmp_path)
+    with Case.open(case) as opened:
+        opened.manifest.config.update(crs_replayed=0, crs_requests=1, crs_complete=False)
+        opened.manifest.save(opened.root)
+
+    with pytest.raises(ValueError, match="finished"):
+        evaluate_case(case, source, truth, include_model=False)

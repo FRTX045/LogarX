@@ -196,7 +196,12 @@ class CrsCard(_Spoken):
         stack.addWidget(_titled("Running OWASP CRS", THEME.accent))
         stack.addWidget(self._bar)
         stack.addWidget(self._counts)
-        stack.addWidget(_quiet("Stopping keeps everything found so far."))
+        stack.addWidget(
+            _quiet(
+                "Stopping keeps everything found so far, unless the case was "
+                "already checked in full: then it keeps that."
+            )
+        )
         stack.addWidget(self._buttons)
 
     def bar(self) -> QProgressBar:

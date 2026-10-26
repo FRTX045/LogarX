@@ -222,6 +222,7 @@
     ],
     "weighted_f1": 0.9744170111345198
   },
+  "crs_coverage": null,
   "crs_fingerprint": null,
   "granularity": "category",
   "policy": {

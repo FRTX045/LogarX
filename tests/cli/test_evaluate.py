@@ -195,3 +195,35 @@ def test_scoring_without_crs_says_so_in_the_report(
     runner.invoke(app, ["evaluate", "-c", str(case), "-t", str(truth), "-o", str(out), "--no-crs"])
 
     assert json.loads(out.read_text(encoding="utf-8"))["crs_fingerprint"] is None
+
+
+def test_evaluate_records_a_partial_crs_run(excerpt: tuple[Path, Path], tmp_path: Path) -> None:
+    """A score built on a stopped CRS run is not a complete-product measurement,
+    and the numbers written for a paper have to say so."""
+    from logarc.case import Case
+    from logarc.detect.crs.store import write_detections
+
+    log, truth = excerpt
+    case = tmp_path / "case"
+    runner.invoke(app, ["ingest", str(log), "--case", str(case)])
+    with Case.open(case) as opened:
+        write_detections(opened.root, [])
+        opened.manifest.config.update(
+            {
+                "crs_fingerprint": "0123456789abcdef",
+                "crs_replayed": 10,
+                "crs_requests": 3825,
+                "crs_complete": False,
+            }
+        )
+        opened.manifest.save(opened.root)
+    out = tmp_path / "evaluation.json"
+
+    result = runner.invoke(
+        app, ["evaluate", "--case", str(case), "--truth", str(truth), "--out", str(out)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "CRS stopped part way" in " ".join(result.output.split())
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["crs_coverage"] == {"replayed": 10, "requests": 3825}

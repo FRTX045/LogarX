@@ -128,6 +128,11 @@ class AnalysisResult:
     says which, so a reader of a report does not need the ruleset to decode it.
     Empty when the engine was built from a bare list of rules."""
 
+    crs_coverage: tuple[int, int] | None = None
+    """`(replayed, requests)` when the CRS run behind `crs_fingerprint` was
+    stopped part way, else `None`. Requests it never reached cannot carry a CRS
+    finding, so a report built from it has to say how far CRS got."""
+
     @property
     def request_count(self) -> int:
         return sum(session.request_count for session in self.sessions)
@@ -187,6 +192,13 @@ class AnalysisResult:
             "ruleset_fingerprint": self.ruleset_fingerprint,
             "rules_in_force": self.rules_in_force,
             "crs_fingerprint": self.crs_fingerprint,
+            # Always present, `None` for a complete run or none, for the reason
+            # `site_hosts` below is.
+            "crs_coverage": (
+                {"replayed": self.crs_coverage[0], "requests": self.crs_coverage[1]}
+                if self.crs_coverage is not None
+                else None
+            ),
             # Always present, empty when unanswered. A missing key would read as
             # a report written before this existed rather than as a question
             # nobody answered, and those mean different things to a reader
@@ -224,6 +236,7 @@ def analyse_ip(
     policy: AnalysisPolicy | None = None,
     crs: DetectionIndex | None = None,
     crs_fingerprint: str | None = None,
+    crs_coverage: tuple[int, int] | None = None,
     window: TimeWindow | None = None,
 ) -> AnalysisResult:
     """Reconstruct what one client did.
@@ -274,4 +287,5 @@ def analyse_ip(
         crs_fingerprint=crs_fingerprint,
         site_hosts=tuple(sorted(engine.site_hosts)),
         rules_in_force=engine.described,
+        crs_coverage=crs_coverage,
     )
