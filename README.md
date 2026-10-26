@@ -13,9 +13,9 @@ readable account of what each client did. Instead of thousands of lines, you get
 each client's requests grouped into **activities**, connected in the order they
 happened, and every one of them opens the exact log lines it was built from.
 
-![The logarc window: the client list, one client's trace with each session in a box headed by its name, and the 46 log lines behind the selected SQL injection](docs/images/screenshot-trace.png)
+![logarc opening a log, ranking its clients, drawing one attacker's three visits as a chain, showing the log line behind a webshell, and folding a second client's sixty activities into two](docs/images/demo.gif)
 
-<sub>sqlmap against a shop, in the last of three sessions. The selected activity is 46 requests: 30 `UNION ALL SELECT`, 11 always-true conditions, one column count, and four known only by sqlmap's user agent. The server answered every one with HTTP 200. The panel on the right is the evidence: line numbers, statuses, and the raw line exactly as Apache wrote it.</sub>
+<sub>Open a log and logarc ranks who to look at first. The top client becomes a chain across three visits: a wordlist that finds `/admin`, a password guessed on the thirteenth try, an upload that is really a PHP shell, and a return to use it, with the exact log line behind each step. A second client's sixty back-and-forth requests fold into two activities in the behaviour map. The traffic is synthetic, written for this demo.</sub>
 
 ---
 
@@ -109,6 +109,10 @@ Then, in the window:
    clients the scan saw injection activity on.
 6. **Ctrl+D** bookmarks what you are looking at. **Export → Report (HTML)…**
    writes a standalone report.
+
+![The logarc window: the client list, one client's trace with each session in a box headed by its name, and the 46 log lines behind the selected SQL injection](docs/images/screenshot-trace.png)
+
+<sub>Step 4 on this log: sqlmap against the shop, in the last of three sessions. The selected activity is 46 requests: 30 `UNION ALL SELECT`, 11 always-true conditions, one column count, and four known only by sqlmap's user agent. The server answered every one with HTTP 200. The panel on the right is the evidence: line numbers, statuses, and the raw line exactly as Apache wrote it.</sub>
 
 ![557 requests folded into two activity types, with the wordlist behind the selected one](docs/images/screenshot-behaviour.png)
 
