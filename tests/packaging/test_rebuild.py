@@ -159,6 +159,7 @@ def test_verification_rejects_a_qt_runtime_that_cannot_load(
         "check_no_command_line",
         "check_crs",
         "check_icons",
+        "check_licences",
     ):
         monkeypatch.setattr(rebuild, name, lambda bundle: None)
     monkeypatch.setattr(
@@ -568,6 +569,7 @@ def test_the_icon_check_is_one_of_the_checks(
         "check_no_command_line",
         "check_qt_runtime",
         "check_crs",
+        "check_licences",
     ):
         monkeypatch.setattr(rebuild, name, lambda bundle: None)
     monkeypatch.setattr(rebuild, "check_icons", lambda bundle: "no icons")
@@ -742,3 +744,73 @@ def test_the_documented_build_setup_installs_what_the_build_runs(rebuild: Module
     script = (ROOT / "packaging" / "rebuild.py").read_text(encoding="utf-8")
     (hint,) = re.findall(r'pyinstaller not found - pip install -e "\.\[([\w,]+)\]"', script)
     assert set(hint.split(",")) >= {"gui", "package", "dev"}
+
+
+# -- the licences of what the bundle ships --------------------------------------
+
+
+def _licensed(tmp_path: Path, *names: str, index: tuple[str, ...] | None = None) -> Path:
+    root = tmp_path / "bundle" / "_internal" / "licenses"
+    for name in names:
+        (root / name).mkdir(parents=True)
+        (root / name / "LICENSE").write_text(f"{name} terms\n", encoding="utf-8")
+    root.mkdir(parents=True, exist_ok=True)
+    listed = names if index is None else index
+    (root / "INDEX.txt").write_text("".join(f"{name}\n" for name in listed), encoding="utf-8")
+    return tmp_path / "bundle"
+
+
+_CORE = ("python/python", "python/pyqt6", "python/pyqt6-qt6")
+
+
+def test_a_bundle_carrying_every_indexed_licence_passes(
+    rebuild: ModuleType, tmp_path: Path
+) -> None:
+    bundle = _licensed(tmp_path, *_CORE, "python/pyyaml", "native/libffi")
+
+    assert rebuild.check_licences(bundle) is None
+
+
+def test_a_bundle_without_qt_s_licence_is_refused(rebuild: ModuleType, tmp_path: Path) -> None:
+    """Qt is the largest thing the bundle redistributes, and its notice was the
+    one the readiness review found missing."""
+    problem = rebuild.check_licences(_licensed(tmp_path, "python/python", "python/pyqt6"))
+
+    assert problem is not None and "pyqt6-qt6" in problem
+
+
+def test_a_bundle_with_no_licence_index_is_refused(rebuild: ModuleType, tmp_path: Path) -> None:
+    problem = rebuild.check_licences(tmp_path / "bundle")
+
+    assert problem is not None and "index" in problem
+
+
+def test_an_indexed_folder_missing_from_the_bundle_is_refused(
+    rebuild: ModuleType, tmp_path: Path
+) -> None:
+    """Any package, not only the ones named here: the index is what the build
+    collected, so the check covers all of it."""
+    bundle = _licensed(tmp_path, *_CORE, index=(*_CORE, "native/libffi"))
+
+    problem = rebuild.check_licences(bundle)
+
+    assert problem is not None and "native/libffi" in problem
+
+
+def test_the_licence_check_is_one_of_the_checks(
+    rebuild: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in (
+        "check_executable",
+        "check_rule_packs",
+        "check_metadata",
+        "check_no_browser_engine",
+        "check_no_command_line",
+        "check_qt_runtime",
+        "check_crs",
+        "check_icons",
+    ):
+        monkeypatch.setattr(rebuild, name, lambda bundle: None)
+    monkeypatch.setattr(rebuild, "check_licences", lambda bundle: "no licences")
+
+    assert rebuild.verify(tmp_path) == ["no licences"]

@@ -116,6 +116,25 @@ analysis = Analysis(
     optimize=0,
 )
 
+# The licences of everything collected above, Qt, CPython and the native
+# libraries CPython links included, under licenses/. Read from what was
+# collected rather than from the dependency list, so the command line kept out
+# of the bundle brings no notice for code it does not contain; `licences.datas()`
+# raises for anything shipped without a licence, which stops the build here.
+import licences  # noqa: E402
+
+try:
+    analysis.datas += [
+        ((PurePosixPath(dest) / Path(source).name).as_posix(), source, "DATA")
+        for source, dest in licences.datas(
+            scripts=(entry[1] for entry in analysis.scripts),
+            pure=(entry[0] for entry in analysis.pure),
+            binaries=(entry[0] for entry in analysis.binaries),
+        )
+    ]
+except licences.LicenceError as exc:
+    raise SystemExit(str(exc)) from exc
+
 pyz = PYZ(analysis.pure)
 
 executable = EXE(

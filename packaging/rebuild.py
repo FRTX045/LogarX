@@ -556,6 +556,26 @@ def check_icons(bundle: Path) -> str | None:
     return None
 
 
+#: Notices a bundle must carry whatever else it collects: CPython's, and Qt's and
+#: its bindings', which are the largest code the bundle redistributes.
+_REQUIRED_LICENCES: Final = ("python/python", "python/pyqt6", "python/pyqt6-qt6")
+
+
+def check_licences(bundle: Path) -> str | None:
+    """Every notice folder `packaging/licences.py` indexed is in the bundle and
+    holds a file, and the index names CPython's and Qt's."""
+    root = bundle / "_internal" / "licenses"
+    index = root / "INDEX.txt"
+    if not index.is_file():
+        return "no licence index - the licences of what the bundle ships were not collected"
+    listed = index.read_text(encoding="utf-8").split()
+    missing = [name for name in _REQUIRED_LICENCES if name not in listed]
+    empty = [name for name in listed if not any(p.is_file() for p in (root / name).rglob("*"))]
+    if missing or empty:
+        return "licences not bundled: " + ", ".join([*missing, *empty])
+    return None
+
+
 def verify(bundle: Path) -> list[str]:
     checks = (
         check_executable,
@@ -566,6 +586,7 @@ def verify(bundle: Path) -> list[str]:
         check_qt_runtime,
         check_icons,
         check_crs,
+        check_licences,
     )
     return [problem for check in checks if (problem := check(bundle)) is not None]
 
@@ -746,7 +767,7 @@ def _rebuild() -> int:
         f"{stamp}  {started[0]}  ok  {size_mb(LIVE):.0f} MB\n"
         "tests green; rule packs bundled; version metadata bundled; no QtWebEngine; "
         "no command line; Qt runtime loads; icons draw; "
-        "CRS sidecar bundled and catches 942100\n",
+        "CRS sidecar bundled and catches 942100; licences of what it ships bundled\n",
         encoding="utf-8",
     )
     MARKER.unlink(missing_ok=True)

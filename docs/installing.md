@@ -50,8 +50,21 @@ pytest-xdist, before it builds anything; a red suite stops the build.
 Produces `dist/logarc/` (~270 MB), which runs without Python installed, and
 with CRS enrichment working: the script builds the CRS sidecar and bundles it
 with the ruleset and the licences of everything compiled into it, so the build
-needs Go and the ruleset clone described under *OWASP CRS* below. One
-folder rather than one file: a one-file build unpacks the whole bundle to
+needs Go and the ruleset clone described under *OWASP CRS* below. The
+licences of what it ships go under `_internal/licenses/`: each Python package,
+Qt and CPython included, and each native library CPython links, such as libffi,
+OpenSSL and expat, taken from the conda package that installed it. The build
+reads which those are from what PyInstaller collected, and stops on anything
+it cannot find a licence for. It builds from a conda Python; elsewhere nothing
+records where a DLL came from, and the build stops on the first one.
+
+**Not covered yet: the third-party code inside Qt.** Qt's own libraries and
+plugins carry components under licences of their own (libwebp in the WebP image
+plugin, for one), and the Qt wheel ships only Qt's LGPL text. Their attributions
+have to be gathered from Qt's sources for the bundled version before the folder
+is distributed.
+
+One folder rather than one file: a one-file build unpacks the whole bundle to
 `%TEMP%` on every launch, which with Qt and Arrow in it costs seconds each time
 and leaves copies of the tool behind.
 
