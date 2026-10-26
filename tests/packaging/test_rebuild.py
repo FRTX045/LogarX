@@ -725,3 +725,20 @@ def test_metadata_that_is_not_installed_at_all_is_installed(
 
     assert rebuild.refresh_metadata() == (True, "")
     assert len(commands) == 1
+
+
+def test_the_documented_build_setup_installs_what_the_build_runs(rebuild: ModuleType) -> None:
+    """The script runs the suite with pytest-xdist before it builds anything, so a
+    setup without the test toolchain fails at its first step. Its own hint for a
+    missing PyInstaller names the same extras."""
+    import re
+
+    guide = (ROOT / "docs" / "installing.md").read_text(encoding="utf-8")
+    block = guide[guide.index("## A packaged Windows build") :]
+    (extras,) = re.findall(r'pip install -e "\.\[([\w,]+)\]"', block.split("```")[1])
+    assert set(extras.split(",")) >= {"gui", "package", "dev"}
+    assert "rebuild.py" in block.split("```")[1]
+
+    script = (ROOT / "packaging" / "rebuild.py").read_text(encoding="utf-8")
+    (hint,) = re.findall(r'pyinstaller not found - pip install -e "\.\[([\w,]+)\]"', script)
+    assert set(hint.split(",")) >= {"gui", "package", "dev"}

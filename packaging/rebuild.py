@@ -250,7 +250,7 @@ def build() -> tuple[bool, str]:
     if not pyinstaller.exists():
         found = shutil.which("pyinstaller")
         if not found:
-            return False, 'pyinstaller not found - pip install -e ".[gui,package]"'
+            return False, 'pyinstaller not found - pip install -e ".[gui,package,dev]"'
         pyinstaller = Path(found)
 
     shutil.rmtree(STAGING, ignore_errors=True)

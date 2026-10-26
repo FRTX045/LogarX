@@ -40,9 +40,12 @@ pip install -e ".[dev]"      # add the test and lint toolchain
 ## A packaged Windows build
 
 ```bash
-pip install -e ".[gui,package]"
+pip install -e ".[gui,package,dev]"
 python packaging/rebuild.py
 ```
+
+`dev` as well, because the script runs the test suite, across every core with
+pytest-xdist, before it builds anything; a red suite stops the build.
 
 Produces `dist/logarc/` (~270 MB), which runs without Python installed, and
 with CRS enrichment working: the script builds the CRS sidecar and bundles it
