@@ -353,6 +353,7 @@ def tree(rebuild: ModuleType, bundles: Path, monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(rebuild, "GIT_DIR", repo / ".git")
     monkeypatch.setattr(rebuild, "STATUS", bundles / "dist" / "BUILD-STATUS.txt")
     monkeypatch.setattr(rebuild, "MARKER", repo / ".git" / "logarc-build-failed")
+    monkeypatch.setattr(rebuild, "refresh_metadata", lambda: (True, ""))
     monkeypatch.setattr(rebuild.crs_bundle, "build_sidecar", lambda: None)
     monkeypatch.setattr(rebuild.crs_bundle, "prepare", lambda: [])
     monkeypatch.setattr(rebuild, "build", build)
@@ -571,3 +572,156 @@ def test_the_icon_check_is_one_of_the_checks(
         monkeypatch.setattr(rebuild, name, lambda bundle: None)
     monkeypatch.setattr(rebuild, "check_icons", lambda bundle: "no icons")
     assert rebuild.verify(tmp_path) == ["no icons"]
+
+
+# -- the version a build is of --------------------------------------------------
+
+
+def _with_version(tmp_path: Path, version: str) -> Path:
+    bundle = tmp_path / "bundle"
+    info = bundle / "_internal" / f"logarc-{version}.dist-info"
+    info.mkdir(parents=True)
+    (info / "METADATA").write_text(f"Name: logarc\nVersion: {version}\n", encoding="utf-8")
+    return bundle
+
+
+def _declaring(rebuild: ModuleType, tmp_path: Path, monkeypatch, version: str) -> None:
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text(f'[project]\nname = "logarc"\nversion = "{version}"\n', encoding="utf-8")
+    monkeypatch.setattr(rebuild, "PYPROJECT", pyproject)
+
+
+def test_the_version_is_the_one_the_source_declares(
+    rebuild: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _declaring(rebuild, tmp_path, monkeypatch, "0.3.0.dev0")
+
+    assert rebuild.source_version() == "0.3.0.dev0"
+
+
+def test_a_bundle_is_checked_against_the_source_not_the_install(
+    rebuild: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stale editable install and the bundle built from it agree with each
+    other, so comparing those two passed a bundle stamping every case with a
+    version the source left behind."""
+    _declaring(rebuild, tmp_path, monkeypatch, "0.3.0.dev0")
+    monkeypatch.setattr(rebuild.metadata, "version", lambda name: "0.2.0")
+
+    problem = rebuild.check_metadata(_with_version(tmp_path, "0.2.0"))
+
+    assert problem is not None
+    assert "0.2.0" in problem
+    assert "0.3.0.dev0" in problem
+
+
+def test_a_bundle_of_the_declared_version_passes(
+    rebuild: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _declaring(rebuild, tmp_path, monkeypatch, "0.3.0.dev0")
+
+    assert rebuild.check_metadata(_with_version(tmp_path, "0.3.0.dev0")) is None
+
+
+def test_current_metadata_is_left_alone(
+    rebuild: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _declaring(rebuild, tmp_path, monkeypatch, "0.3.0.dev0")
+    monkeypatch.setattr(rebuild.metadata, "version", lambda name: "0.3.0.dev0")
+    commands = []
+    monkeypatch.setattr(rebuild.subprocess, "run", lambda args, **kw: commands.append(args))
+
+    assert rebuild.refresh_metadata() == (True, "")
+    assert commands == []
+
+
+def test_stale_metadata_is_reinstalled_before_anything_is_built(
+    rebuild: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PyInstaller bundles the dist-info pip wrote at install time, and an
+    editable install keeps the version it was installed with."""
+    from subprocess import CompletedProcess
+
+    _declaring(rebuild, tmp_path, monkeypatch, "0.3.0.dev0")
+    monkeypatch.setattr(rebuild.metadata, "version", lambda name: "0.2.0")
+    commands = []
+
+    def run(args, **kwargs):
+        commands.append(args)
+        return CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(rebuild.subprocess, "run", run)
+
+    assert rebuild.refresh_metadata() == (True, "")
+    (command,) = commands
+    assert command[0] == str(rebuild.PYTHON), "the venv the build and the suite use"
+    assert command[1:4] == ["-m", "pip", "install"]
+    assert "--no-deps" in command
+    assert command[-2:] == ["-e", str(rebuild.ROOT)]
+
+
+def test_a_reinstall_that_fails_stops_the_build(
+    rebuild: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from subprocess import CompletedProcess
+
+    _declaring(rebuild, tmp_path, monkeypatch, "0.3.0.dev0")
+    monkeypatch.setattr(rebuild.metadata, "version", lambda name: "0.2.0")
+    monkeypatch.setattr(
+        rebuild.subprocess,
+        "run",
+        lambda args, **kwargs: CompletedProcess(args, 1, "", "Could not find hatchling"),
+    )
+
+    ok, detail = rebuild.refresh_metadata()
+
+    assert not ok
+    assert "hatchling" in detail
+
+
+def test_metadata_is_brought_up_to_date_before_anything_else(
+    rebuild: ModuleType, tree: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    order: list[str] = []
+    monkeypatch.setattr(
+        rebuild, "refresh_metadata", lambda: (order.append("metadata"), (True, ""))[1]
+    )
+    monkeypatch.setattr(rebuild.crs_bundle, "build_sidecar", lambda: order.append("sidecar"))
+    _while_testing(rebuild, monkeypatch, lambda: order.append("tests"))
+
+    assert rebuild._rebuild() == 0
+    assert order == ["metadata", "sidecar", "tests"]
+
+
+def test_metadata_that_cannot_be_refreshed_stops_the_run(
+    rebuild: ModuleType, tree: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tested: list[bool] = []
+    monkeypatch.setattr(rebuild, "refresh_metadata", lambda: (False, "Could not find hatchling"))
+    _while_testing(rebuild, monkeypatch, lambda: tested.append(True))
+
+    assert rebuild._rebuild() != 0
+    assert tested == []
+    assert "hatchling" in rebuild.STATUS.read_text(encoding="utf-8")
+
+
+def test_metadata_that_is_not_installed_at_all_is_installed(
+    rebuild: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from subprocess import CompletedProcess
+
+    def missing(name: str) -> str:
+        raise rebuild.metadata.PackageNotFoundError(name)
+
+    _declaring(rebuild, tmp_path, monkeypatch, "0.3.0.dev0")
+    monkeypatch.setattr(rebuild.metadata, "version", missing)
+    commands = []
+
+    def run(args, **kwargs):
+        commands.append(args)
+        return CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(rebuild.subprocess, "run", run)
+
+    assert rebuild.refresh_metadata() == (True, "")
+    assert len(commands) == 1
