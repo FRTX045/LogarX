@@ -218,3 +218,86 @@ def test_a_runtime_hook_s_package_is_credited_in_the_bundle(
     entries = licences.datas(scripts=[hook], pure=[], binaries=[], prefix=_prefix(tmp_path, {}))
 
     assert "licenses/python/pyyaml" in {dest for _source, dest in entries}
+
+
+def _qt_attributions(tmp_path: Path, version: str) -> Path:
+    folder = tmp_path / "qt-attributions"
+    (folder / "licenses").mkdir(parents=True)
+    (folder / "THIRD-PARTY-NOTICES.txt").write_text("HarfBuzz\n", encoding="utf-8")
+    (folder / "licenses" / "qtbase-harfbuzz-COPYING").write_text("MIT\n", encoding="utf-8")
+    (folder / "VERSION").write_text(f"{version}\n", encoding="utf-8")
+    return folder
+
+
+def test_qt_s_third_party_notices_travel_with_qt(
+    licences: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Qt wheel ships only Qt's own LGPL text. HarfBuzz, FreeType, libpng
+    and the rest compiled into it are recorded by Qt itself, fetched into the
+    repository, and bundled beside it."""
+    from importlib import metadata
+
+    version = metadata.version("PyQt6-Qt6")
+    monkeypatch.setattr(licences, "QT_ATTRIBUTIONS", _qt_attributions(tmp_path, version))
+
+    entries = licences.datas(
+        scripts=[], pure=["PyQt6.QtCore"], binaries=[], prefix=_prefix(tmp_path, {})
+    )
+
+    destinations = {dest for _source, dest in entries}
+    assert {"licenses/qt", "licenses/qt/licenses"} <= destinations
+    (index,) = [source for source, _dest in entries if Path(source).name == "INDEX.txt"]
+    assert "qt" in Path(index).read_text(encoding="utf-8").split()
+
+
+def test_notices_recorded_for_another_qt_version_stop_the_build(
+    licences: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A Qt upgrade changes what Qt compiles in, so last version's list is not
+    this version's."""
+    monkeypatch.setattr(licences, "QT_ATTRIBUTIONS", _qt_attributions(tmp_path, "0.0.1"))
+
+    with pytest.raises(licences.LicenceError, match="fetch_qt_attributions"):
+        licences.datas(scripts=[], pure=["PyQt6.QtCore"], binaries=[], prefix=_prefix(tmp_path, {}))
+
+
+def test_the_committed_qt_notices_are_for_the_qt_installed_here() -> None:
+    """The ones in the repository, not a stand-in: a Qt upgrade without a
+    refetch fails here before it fails a build."""
+    from importlib import metadata
+
+    recorded = (ROOT / "packaging" / "qt-attributions" / "VERSION").read_text(encoding="utf-8")
+
+    assert recorded.strip() == metadata.version("PyQt6-Qt6")
+
+
+@pytest.mark.parametrize(
+    "dest",
+    [
+        "PyQt6/Qt6/plugins/imageformats/qsvg.dll",
+        "PyQt6/Qt6/plugins/imageformats/qjpeg.dll",
+        "PyQt6/Qt6/plugins/imageformats/qgif.dll",
+        "PyQt6/Qt6/plugins/imageformats/qwebp.dll",
+        "PyQt6/Qt6/plugins/imageformats/qtiff.dll",
+        "PyQt6/Qt6/plugins/platforms/qwindows.dll",
+        "PyQt6/Qt6/bin/Qt6Gui.dll",
+    ],
+)
+def test_qt_a_reader_s_icons_can_need_is_kept(licences: ModuleType, dest: str) -> None:
+    """An SVG icon can embed a raster image in any of these formats, and Qt SVG
+    decodes it through the image plugins."""
+    assert not licences.unused_qt(dest)
+
+
+@pytest.mark.parametrize(
+    "dest",
+    [
+        "PyQt6\\Qt6\\bin\\Qt6Pdf.dll",
+        "PyQt6/Qt6/bin/Qt6Network.dll",
+        "PyQt6/Qt6/bin/opengl32sw.dll",
+        "PyQt6/Qt6/plugins/imageformats/qpdf.dll",
+        "PyQt6/Qt6/plugins/generic/qtuiotouchplugin.dll",
+    ],
+)
+def test_qt_the_application_never_uses_is_left_out(licences: ModuleType, dest: str) -> None:
+    assert licences.unused_qt(dest)

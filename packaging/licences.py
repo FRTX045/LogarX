@@ -32,6 +32,41 @@ from typing import Final
 
 ROOT: Final = Path(__file__).resolve().parents[1]
 
+#: Qt's own record of the third-party code it compiles in, which the Qt wheel
+#: does not carry: fetched from Qt's sources by `fetch_qt_attributions.py` and
+#: committed, so the build needs no network.
+QT_ATTRIBUTIONS: Final = ROOT / "packaging" / "qt-attributions"
+_QT: Final = "pyqt6-qt6"
+
+#: Qt the application never uses, left out of the bundle because each piece
+#: brings third-party code of its own: PDFium with Qt PDF and its image plugin,
+#: Mesa with the software OpenGL renderer, and Qt Network, which only Qt PDF
+#: and the TUIO touch plugin link. Every other image plugin stays: a reader's
+#: SVG icon can embed a raster image in any format, and Qt SVG decodes it
+#: through these plugins. An icon whose embedded image Qt cannot read, a PDF
+#: among them here, is refused when it is chosen (`logarc.gui.icons`), rather
+#: than drawn without that image.
+_UNUSED_QT_FILES: Final = frozenset(
+    {
+        "bin/Qt6Pdf.dll",
+        "bin/Qt6Network.dll",
+        "bin/opengl32sw.dll",
+        "plugins/imageformats/qpdf.dll",
+    }
+)
+_UNUSED_QT_FOLDERS: Final = ("plugins/generic/",)
+
+
+def unused_qt(dest: str) -> bool:
+    """Whether a collected file is Qt the application never uses, by its path
+    in the bundle (`PyQt6/Qt6/plugins/imageformats/qwebp.dll`)."""
+    path = dest.replace("\\", "/")
+    if not path.startswith("PyQt6/Qt6/"):
+        return False
+    inside = path.removeprefix("PyQt6/Qt6/")
+    return inside in _UNUSED_QT_FILES or inside.startswith(_UNUSED_QT_FOLDERS)
+
+
 #: Where the generated index is written before the spec bundles it.
 STAGE: Final = ROOT / "build" / "licences"
 
@@ -182,6 +217,27 @@ def native(binaries: Iterable[str], *, prefix: Path) -> tuple[dict[str, Path], l
     return packages, sorted(unaccounted)
 
 
+def _qt_notices(distribution: metadata.Distribution) -> list[tuple[str, str]]:
+    """Qt's third-party notices, for the Qt version the bundle ships."""
+    version_file = QT_ATTRIBUTIONS / "VERSION"
+    recorded = version_file.read_text(encoding="utf-8").strip() if version_file.is_file() else None
+    if recorded != distribution.version:
+        raise LicenceError(
+            f"Qt's third-party notices are recorded for Qt {recorded}, and the bundle ships "
+            f"{distribution.version}; run packaging/fetch_qt_attributions.py"
+        )
+    return [
+        (
+            str(path),
+            (
+                PurePosixPath(DEST, "qt") / path.parent.relative_to(QT_ATTRIBUTIONS).as_posix()
+            ).as_posix(),
+        )
+        for path in sorted(QT_ATTRIBUTIONS.rglob("*"))
+        if path.is_file()
+    ]
+
+
 def datas(
     *,
     scripts: Iterable[str],
@@ -210,6 +266,9 @@ def datas(
                 (str(source), (PurePosixPath(DEST, "python", key) / inside.parent).as_posix())
             )
         folders.append(f"python/{key}")
+        if key == _QT:
+            entries.extend(_qt_notices(distribution))
+            folders.append("qt")
 
     packages, unaccounted = native(binaries, prefix=prefix)
     for package, licences in sorted(packages.items()):

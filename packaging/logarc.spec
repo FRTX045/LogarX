@@ -116,12 +116,16 @@ analysis = Analysis(
     optimize=0,
 )
 
-# The licences of everything collected above, Qt, CPython and the native
+# Qt the application never uses is dropped first, so neither it nor its notices
+# ship; `licences.unused_qt` says which and why. Then the licences of everything
+# collected above, Qt, CPython and the native
 # libraries CPython links included, under licenses/. Read from what was
 # collected rather than from the dependency list, so the command line kept out
 # of the bundle brings no notice for code it does not contain; `licences.datas()`
 # raises for anything shipped without a licence, which stops the build here.
 import licences  # noqa: E402
+
+analysis.binaries = [entry for entry in analysis.binaries if not licences.unused_qt(entry[0])]
 
 try:
     analysis.datas += [
