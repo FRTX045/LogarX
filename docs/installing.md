@@ -67,9 +67,7 @@ version into `packaging/qt-attributions/`, which is committed and bundled under
 stops while the recorded version differs from the installed one. Qt the
 application never uses, Qt PDF and the software OpenGL renderer, is left out of
 the bundle along with the third-party code it would bring. The image plugins
-all stay, because an SVG icon can embed a raster image in any of their formats;
-an icon with an image Qt cannot read, such as a PDF, is refused when it is
-chosen, and says why.
+all stay, because an SVG icon can embed a raster image in any of their formats.
 
 One folder rather than one file: a one-file build unpacks the whole bundle to
 `%TEMP%` on every launch, which with Qt and Arrow in it costs seconds each time

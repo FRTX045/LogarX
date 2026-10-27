@@ -10,21 +10,11 @@ in every place: by the next icon in line, never by an error.
 from __future__ import annotations
 
 import re
-import sys
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Final, TypeAlias
 
-from PyQt6.QtCore import (
-    QByteArray,
-    QMessageLogContext,
-    QRectF,
-    QSettings,
-    QSizeF,
-    Qt,
-    QtMsgType,
-    qInstallMessageHandler,
-)
+from PyQt6.QtCore import QByteArray, QRectF, QSettings, QSizeF, Qt
 from PyQt6.QtGui import QColor, QImage, QImageReader, QPainter, QPixmap
 from PyQt6.QtSvg import QSvgRenderer
 
@@ -64,27 +54,6 @@ _SYMBOL_CONTRAST: Final = 3.0
 MAX_FILE_BYTES: Final = 1_048_576
 
 _KINDS_OF_FILE: Final = (".svg", ".png")
-
-#: What Qt SVG logs for each way it drops an `<image>`: unreadable, with no
-#: source, or with no size. The rest of the icon still draws, so without
-#: listening for these the image vanishes without a word.
-_IMAGE_FAILED: Final = (
-    "Could not create image from",
-    "Image filename is empty",
-    "image was not greater than 0",
-)
-
-#: An SVG Qt is certain to warn about, read first to prove the warnings are
-#: reaching the listener: logging rules can silence them.
-_CANARY: Final = (
-    b'<svg xmlns="http://www.w3.org/2000/svg"><image href="" width="1" height="1"/></svg>'
-)
-
-#: Whether an SVG may hold an image, for when nothing can be confirmed. Blunt
-#: on purpose, since this is the case that fails closed: the word anywhere,
-#: whatever prefix an element carries, or an entity declaration, which can
-#: expand to one.
-_ANY_IMAGE: Final = re.compile(rb"image|<!ENTITY", re.IGNORECASE)
 
 ICON_KEY_PREFIX: Final = "icons/"
 
@@ -157,11 +126,7 @@ def _from_svg(renderer: QSvgRenderer, size: int) -> QPixmap | None:
 def _from_png(path: Path, size: int) -> QPixmap | None:
     # Through `QImageReader`, whose allocation limit refuses an image that
     # would decode to hundreds of megabytes from a small file.
-    # As PNG and nothing else: read by content, an SVG named `.png` would be
-    # drawn without the checks an SVG gets.
-    reader = QImageReader(str(path), b"png")
-    reader.setDecideFormatFromContent(False)
-    image = reader.read()
+    image = QImageReader(str(path)).read()
     if image.isNull():
         return None
     pixmap = _canvas(size)
@@ -175,10 +140,6 @@ def _from_png(path: Path, size: int) -> QPixmap | None:
 def _from_file(path: Path, size: int) -> QPixmap | None:
     suffix = path.suffix.lower()
     if suffix == ".svg":
-        # Not drawn at all rather than drawn with a hole where an image was, so
-        # an icon saved before it could be checked falls back like a broken one.
-        if _unreadable_images(path):
-            return None
         return _from_svg(QSvgRenderer(str(path)), size)
     if suffix == ".png":
         return _from_png(path, size)
@@ -232,43 +193,6 @@ def first_drawable(candidates: Sequence[str], colour: str, size: int = ICON_PIXE
     return QPixmap()
 
 
-def _unreadable_images(path: Path) -> bool:
-    """Whether Qt SVG, reading `path`, drops an embedded image.
-
-    Asked of Qt rather than worked out here, so the answer is the one drawing
-    gives: a PDF in the packaged application, which leaves Qt PDF out, an
-    image whose file is gone, or bytes no installed plugin reads. When logging
-    rules have silenced Qt's warnings nothing can be confirmed, and an SVG
-    holding any image counts as dropping it.
-    """
-    heard: list[str] = []
-
-    def listen(kind: QtMsgType, context: QMessageLogContext, message: str | None) -> None:
-        if message is not None and any(failure in message for failure in _IMAGE_FAILED):
-            heard.append(message)
-        elif previous is not None:
-            previous(kind, context, message)
-        elif message is not None:
-            # Where Qt's own handler would have put it.
-            print(message, file=sys.stderr)
-
-    previous = qInstallMessageHandler(listen)
-    try:
-        QSvgRenderer(QByteArray(_CANARY))
-        listening = bool(heard)
-        heard.clear()
-        QSvgRenderer(str(path))
-    finally:
-        qInstallMessageHandler(previous)
-    if listening:
-        return bool(heard)
-    try:
-        # Without the NULs UTF-16 and UTF-32 put between letters, which Qt reads.
-        return _ANY_IMAGE.search(path.read_bytes().replace(b"\x00", b"")) is not None
-    except OSError:
-        return True
-
-
 def icon_file_problem(path: Path) -> str:
     """Why `path` cannot be a reader's icon, in one sentence; empty when it can."""
     name = path.name
@@ -280,8 +204,6 @@ def icon_file_problem(path: Path) -> str:
         return f"{name} could not be drawn."
     if too_big:
         return f"{name} is over 1 MB. Pick a smaller image."
-    if path.suffix.lower() == ".svg" and _unreadable_images(path):
-        return f"{name} contains an image logarc cannot draw. Save it as SVG or PNG first."
     if _from_file(path, ICON_PIXELS) is None:
         return f"{name} could not be drawn."
     return ""
