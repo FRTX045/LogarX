@@ -1048,6 +1048,15 @@ which will be the first tag.
   record does not hold for its lines. Cases already on disk are read correctly
   without being ingested again, and a Where to start scan made before is made
   again rather than reused.
+- An interrupted finalization no longer presents an incomplete case as ready.
+  New stores publish completion after writing all partitions and the index,
+  preserve staging for retries, and keep completed data if staging cleanup is
+  interrupted. Ambiguous incomplete legacy stores are refused without deletion.
+
+- Per-IP reconstruction and timelines remain readable after a DuckDB upgrade
+  changes its hash function. New indexes record the assigned partition; older
+  cases are read without guessing their bucket or rewriting their files.
+
 - **CloudFront logs no longer raise false alarms over CloudFront's own
   encoding.** CloudFront percent-encodes what it writes, `%` included, so a
   client's `?next=%2Fadmin` is logged as `%252Fadmin`, and the rule for double
