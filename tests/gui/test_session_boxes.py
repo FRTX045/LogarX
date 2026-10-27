@@ -234,6 +234,36 @@ def test_no_two_boxes_overlap(qt_app: QApplication, wrap: bool, requests: int) -
 
 
 @pytest.mark.parametrize("wrap", [True, False])
+def test_no_caption_lands_on_the_circle_in_the_row_below(qt_app: QApplication, wrap: bool) -> None:
+    """The largest circles with captions on three lines: a wrapped row's
+    circles reach up as far as their radius, and the row above must leave its
+    caption that much room as well as its own circle's."""
+    canvas = ActivityCanvas()
+    canvas.set_wrap(wrap)
+    canvas.show_graph(
+        trace(
+            1,
+            7,
+            1,
+            12,
+            requests=10_000,
+            label="an activity whose name is long enough to need a second line",
+        )
+    )
+
+    circles = [item.sceneBoundingRect() for item in node_items(canvas)]
+    captions = [
+        child.sceneBoundingRect()
+        for item in node_items(canvas)
+        for child in item.childItems()
+        if isinstance(child, QGraphicsRectItem)
+    ]
+    assert len(captions) == len(circles) == 21
+    for caption in captions:
+        assert not any(caption.intersects(circle) for circle in circles)
+
+
+@pytest.mark.parametrize("wrap", [True, False])
 def test_boxes_in_a_column_share_their_left_edge(qt_app: QApplication, wrap: bool) -> None:
     """Each box used to start where its own widest caption did, so a column of
     boxes was ragged by the difference in caption widths: 16 pixels across the

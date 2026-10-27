@@ -47,7 +47,15 @@ from PyQt6.QtWidgets import (
 )
 
 from logarc.core.graph import GraphKind, reciprocal_pairs
-from logarc.graphbuild.layout import COLUMN, ROW, Point, layout_graph, session_of, sessions_in
+from logarc.graphbuild.layout import (
+    COLUMN,
+    ROW,
+    SESSION_GAP,
+    Point,
+    layout_graph,
+    session_of,
+    sessions_in,
+)
 from logarc.gui.arrangement import Move, MoveHistory, Positions
 from logarc.gui.icon_set import KIND_NAMES, IconChoice
 from logarc.gui.icons import ICON_PIXELS, first_drawable, icon_pixmap, ink_for
@@ -163,9 +171,12 @@ def _spread(positions: dict[str, Point], graph: ActivityGraph) -> dict[str, Poin
     the other, and the failure it produces is captions written over each other.
 
     So the constant states the intent and this measures the reality: whatever
-    the font, the columns end up at least a caption wide and the rows at least
-    a caption tall. On a display where the numbers in `layout.py` already
-    suffice this changes nothing, because the factor cannot go below one.
+    the font, the columns end up at least a caption wide, and a trace's rows far
+    enough apart that a caption clears the circle in the row below it, which
+    reaches up by its own radius. Sessions, `SESSION_GAP` rows apart, must also
+    leave room for the box edges and the next box's heading between them. On a
+    display where the numbers in `layout.py` already suffice this changes
+    nothing, because the factor cannot go below one.
     """
     if not positions:
         return positions
@@ -173,23 +184,66 @@ def _spread(positions: dict[str, Point], graph: ActivityGraph) -> dict[str, Poin
     font = QFont()
     font.setPointSizeF(_CAPTION_POINTS / _LEGIBLE_AT)
     metrics = QFontMetricsF(font)
-    widest = tallest = 0.0
+    padding = _TEXT_PADDING / _LEGIBLE_AT
+    widest = tallest = reach = hang = 0.0
     for node in graph.nodes:
+        style = style_for(node)
         # Line by line. `summarise` has already broken the caption where it
         # wants it, and the single-argument `boundingRect` measures a newline
         # as a character rather than as a break — which reports one long line
         # and a stretch factor of 1.0, leaving the overlap it was meant to fix.
         lines = summarise(node).split("\n")
         widest = max(widest, max(metrics.horizontalAdvance(line) for line in lines))
-        tallest = max(tallest, len(lines) * metrics.lineSpacing() + style_for(node).radius)
+        tallest = max(tallest, len(lines) * metrics.lineSpacing() + style.radius)
+        # How far the circle's outline reaches from its centre, and how far
+        # below the centre its caption's patch ends, as `_canvas_text` hangs it.
+        circle = style.radius + style.border.width / 2
+        reach = max(reach, circle)
+        caption = _text_height(summarise(node), font) + padding * 2
+        hang = max(hang, circle + _CAPTION_GAP / _LEGIBLE_AT + caption)
 
     across = max(1.0, (widest + _CAPTION_MARGIN) / COLUMN)
-    down = max(1.0, (tallest + _CAPTION_MARGIN) / ROW)
+    if graph.kind is GraphKind.TRACE:
+        row = hang + _CAPTION_MARGIN + reach
+        between_sessions = hang + _SESSION_PAD * 2 + _heading_height() + reach + _CAPTION_MARGIN
+        down = max(1.0, row / ROW, between_sessions / (SESSION_GAP * ROW))
+    else:
+        # A behaviour map is a ring, not rows: stretched only as far as it
+        # always was, so a big circle does not pull the ring into an oval.
+        down = max(1.0, (tallest + _CAPTION_MARGIN) / ROW)
     if across == 1.0 and down == 1.0:
         return positions
     return {
         node_id: Point(x=point.x * across, y=point.y * down) for node_id, point in positions.items()
     }
+
+
+def _text_height(text: str, font: QFont) -> float:
+    """How tall `text` comes out in `font`, measured as the canvas draws it."""
+    item = QGraphicsSimpleTextItem(text)
+    item.setFont(font)
+    return item.boundingRect().height()
+
+
+def _session_fonts() -> tuple[QFont, QFont]:
+    """A session heading's name font and detail font.
+
+    One definition for `_session_heading`, which writes in them, and `_spread`,
+    which leaves room between sessions for a heading written in them.
+    """
+    name = QFont()
+    name.setPointSizeF(_SESSION_POINTS * _SESSION_NAME_SCALE / _LEGIBLE_AT)
+    name.setWeight(QFont.Weight.DemiBold)
+    detail = QFont()
+    detail.setPointSizeF(_SESSION_POINTS / _LEGIBLE_AT)
+    return name, detail
+
+
+def _heading_height() -> float:
+    """How tall `_session_heading` makes a heading: a line in each of its fonts,
+    padded above, between and below."""
+    name, detail = _session_fonts()
+    return _TEXT_PADDING / _LEGIBLE_AT * 3 + _text_height("Hg", name) + _text_height("Hg", detail)
 
 
 _PEN_STYLES: Final = {
@@ -1727,9 +1781,7 @@ class ActivityCanvas(QGraphicsView):
         title = QGraphicsSimpleTextItem(name, backdrop)
         title.setData(0, "session-name")
         title.setBrush(QBrush(QColor(_SESSION_NAME_INK)))
-        font = QFont()
-        font.setPointSizeF(_SESSION_POINTS * _SESSION_NAME_SCALE / _LEGIBLE_AT)
-        font.setWeight(QFont.Weight.DemiBold)
+        font, small = _session_fonts()
         title.setFont(font)
         line = title.boundingRect().height()
 
@@ -1747,8 +1799,6 @@ class ActivityCanvas(QGraphicsView):
         under = QGraphicsSimpleTextItem(detail, backdrop)
         under.setData(0, "session-detail")
         under.setBrush(QBrush(QColor(_SESSION_INK)))
-        small = QFont()
-        small.setPointSizeF(_SESSION_POINTS / _LEGIBLE_AT)
         under.setFont(small)
         under.setPos(padding, padding + line + padding)
 
