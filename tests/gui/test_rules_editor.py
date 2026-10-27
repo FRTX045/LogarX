@@ -564,6 +564,80 @@ def _answer(monkeypatch: pytest.MonkeyPatch, button: QMessageBox.StandardButton)
     return asked
 
 
+# -- leaving a pack with changes not saved --------------------------------------
+
+
+def _edited_shop(editor: RulesEditor) -> None:
+    rules_library.save_pack("shop", CART_NEVER)
+    editor._reload("shop")
+    _typed(editor, CART_NEVER + "\n# edited\n")
+
+
+def _on_show(editor: RulesEditor) -> str:
+    """The pack the list has selected, and so the one on show."""
+    current = editor._packs.currentItem()
+    assert current is not None
+    return current.text()
+
+
+def test_leaving_an_edited_pack_asks_and_cancel_keeps_it(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    editor = RulesEditor()
+    _edited_shop(editor)
+    asked = _answer(monkeypatch, QMessageBox.StandardButton.Cancel)
+
+    editor.select("injection")
+
+    assert asked == [True]
+    assert editor._yaml.toPlainText().endswith("# edited\n")
+    assert _on_show(editor) == "shop"
+
+
+def test_discarding_an_edited_pack_goes_where_the_reader_clicked(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    editor = RulesEditor()
+    _edited_shop(editor)
+    _answer(monkeypatch, QMessageBox.StandardButton.Discard)
+
+    editor.select("injection")
+
+    assert _on_show(editor) == "injection"
+    assert editor._pages.currentIndex() == 1, "the edited pack is still the one drawn"
+    assert editor._built_name.text() == "injection"
+    assert rules_library.rules_dir().joinpath("shop.yaml").read_text(encoding="utf-8") == (
+        CART_NEVER
+    )
+
+
+def test_saving_an_edited_pack_keeps_it_and_goes_where_the_reader_clicked(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    editor = RulesEditor()
+    _edited_shop(editor)
+    _answer(monkeypatch, QMessageBox.StandardButton.Save)
+
+    editor.select("injection")
+
+    assert _on_show(editor) == "injection"
+    saved = rules_library.rules_dir().joinpath("shop.yaml").read_text(encoding="utf-8")
+    assert saved.endswith("# edited\n")
+
+
+def test_an_edited_pack_is_asked_about_before_starting_a_new_one(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    editor = RulesEditor()
+    _edited_shop(editor)
+    asked = _answer(monkeypatch, QMessageBox.StandardButton.Cancel)
+
+    editor.start_new()
+
+    assert asked == [True]
+    assert editor._name.text() == "shop"
+
+
 def test_add_rule_sits_beside_new_and_import(qt_app: QApplication) -> None:
     editor = RulesEditor()
     editor.show()

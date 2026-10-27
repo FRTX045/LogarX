@@ -14,7 +14,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication, QDialogButtonBox
+from PyQt6.QtWidgets import QApplication, QDialogButtonBox, QMessageBox
 
 from logarc.gui import theme
 from logarc.gui.format_editor import FormatEditor
@@ -149,3 +149,96 @@ def test_a_format_name_wider_than_the_list_never_scrolls_it_sideways(
         assert scroll.maximum() == 0
         (item,) = formats.findItems("nginx-combined-forwarded", Qt.MatchFlag.MatchExactly)
         assert item.toolTip() == "nginx-combined-forwarded"
+
+
+def _answer_both(monkeypatch: pytest.MonkeyPatch, button: QMessageBox.StandardButton) -> list[str]:
+    """Answer either tab's unsaved-changes question with `button`, noting which asked."""
+    from logarc.gui import format_editor, rules_editor
+
+    asked: list[str] = []
+    for module, tab in ((format_editor, "formats"), (rules_editor, "rules")):
+
+        def answer(_parent: object, tab: str = tab) -> QMessageBox.StandardButton:
+            asked.append(tab)
+            return button
+
+        monkeypatch.setattr(module, "_ask_unsaved", answer)
+    return asked
+
+
+def _half_written(dialog: FormatsAndRules) -> None:
+    dialog.formats.start_new()
+    dialog.formats._name.setText("log-cabang")
+
+
+def test_closing_with_a_half_written_format_asks_and_cancel_stays_open(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dialog = FormatsAndRules()
+    dialog.show()
+    _half_written(dialog)
+    asked = _answer_both(monkeypatch, QMessageBox.StandardButton.Cancel)
+
+    dialog.reject()
+
+    assert asked == ["formats"]
+    assert dialog.isVisible()
+    assert dialog.formats._name.text() == "log-cabang"
+    dialog.formats._name.clear()
+    dialog.close()
+
+
+def test_the_formats_tab_s_close_button_asks_and_cancel_leaves_the_tab_drawn(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dialog = FormatsAndRules()
+    dialog.show()
+    _half_written(dialog)
+    _answer_both(monkeypatch, QMessageBox.StandardButton.Cancel)
+    close = next(
+        button
+        for box in dialog.formats.findChildren(QDialogButtonBox)
+        for button in box.buttons()
+        if box.standardButton(button) == QDialogButtonBox.StandardButton.Close
+    )
+
+    close.click()
+
+    assert dialog.isVisible()
+    assert dialog.formats.isVisible()
+    dialog.formats._name.clear()
+    dialog.close()
+
+
+def test_escape_in_a_format_field_asks_and_cancel_leaves_the_tab_drawn(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from PyQt6.QtTest import QTest
+
+    dialog = FormatsAndRules()
+    dialog.show()
+    _half_written(dialog)
+    asked = _answer_both(monkeypatch, QMessageBox.StandardButton.Cancel)
+
+    QTest.keyClick(dialog.formats._name, Qt.Key.Key_Escape)
+
+    assert asked == ["formats"]
+    assert dialog.isVisible()
+    assert dialog.formats.isVisible()
+    dialog.formats._name.clear()
+    dialog.close()
+
+
+def test_closing_with_an_edited_pack_asks_and_discard_closes(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dialog = FormatsAndRules(on_rules=True)
+    dialog.show()
+    dialog.rules.start_new()
+    dialog.rules._name.setText("my-site")
+    asked = _answer_both(monkeypatch, QMessageBox.StandardButton.Discard)
+
+    dialog.reject()
+
+    assert asked == ["rules"]
+    assert not dialog.isVisible()

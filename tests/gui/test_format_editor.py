@@ -17,8 +17,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QMessageBox
 
+from logarc.gui import format_editor as format_editor_module
 from logarc.gui.format_editor import FormatChoice, FormatEditor
 from logarc.parsers.apache import COMBINED
 from logarc.parsers.fieldnames import MAPPABLE
@@ -413,6 +414,98 @@ def test_a_new_format_cannot_take_a_saved_format_s_name(
     assert not editor.save()
     assert "log-kantor" in editor.trouble()
     assert load_library() == [saved_office]
+
+
+# -- unsaved work ------------------------------------------------------------
+
+
+def _answer(monkeypatch: pytest.MonkeyPatch, button: QMessageBox.StandardButton) -> list[bool]:
+    """Answer the unsaved-changes question with `button`, and record each time it is asked."""
+    asked: list[bool] = []
+
+    def answer(_parent: object) -> QMessageBox.StandardButton:
+        asked.append(True)
+        return button
+
+    monkeypatch.setattr(format_editor_module, "_ask_unsaved", answer)
+    return asked
+
+
+def _half_written(editor: FormatEditor) -> None:
+    editor.start_new()
+    editor._name.setText("log-cabang")
+    editor._rule.setText(PIPED)
+
+
+def test_leaving_a_half_written_format_asks_and_cancel_keeps_it(
+    qt_app: QApplication, saved_office: LogFormatSpec, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    editor = FormatEditor()
+    _half_written(editor)
+    asked = _answer(monkeypatch, QMessageBox.StandardButton.Cancel)
+
+    editor.select("log-kantor")
+
+    assert asked == [True]
+    assert (editor._name.text(), editor._rule.text()) == ("log-cabang", PIPED)
+    current = editor._formats.currentItem()
+    assert current is not None
+    assert format_editor_module._is_draft(current)
+
+
+def test_discarding_a_half_written_format_goes_where_the_reader_clicked(
+    qt_app: QApplication, saved_office: LogFormatSpec, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    editor = FormatEditor()
+    _half_written(editor)
+    _answer(monkeypatch, QMessageBox.StandardButton.Discard)
+
+    editor.select("log-kantor")
+
+    assert editor._name.text() == "log-kantor"
+    assert load_library() == [saved_office]
+
+
+def test_saving_a_half_written_format_keeps_it_and_goes_where_the_reader_clicked(
+    qt_app: QApplication, saved_office: LogFormatSpec, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    editor = FormatEditor()
+    _half_written(editor)
+    asked = _answer(monkeypatch, QMessageBox.StandardButton.Save)
+
+    editor.select("log-kantor")
+
+    assert asked == [True]
+    assert editor._name.text() == "log-kantor"
+    assert sorted(spec.name for spec in load_library()) == ["log-cabang", "log-kantor"]
+
+
+def test_an_edit_to_a_saved_format_is_asked_about_before_starting_a_new_one(
+    qt_app: QApplication, saved_office: LogFormatSpec, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    editor = FormatEditor()
+    editor.select("log-kantor")
+    editor._note.setText("the office, edited")
+    asked = _answer(monkeypatch, QMessageBox.StandardButton.Cancel)
+
+    editor.start_new_json()
+
+    assert asked == [True]
+    assert editor._name.text() == "log-kantor"
+    assert editor._note.text() == "the office, edited"
+
+
+def test_nothing_is_asked_when_nothing_was_typed(
+    qt_app: QApplication, saved_office: LogFormatSpec, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    editor = FormatEditor()
+    asked = _answer(monkeypatch, QMessageBox.StandardButton.Cancel)
+
+    editor.select("log-kantor")
+    editor.select("apache-combined")
+    editor.start_new()
+
+    assert asked == []
 
 
 # -- the corners ------------------------------------------------------------
@@ -1137,14 +1230,19 @@ def test_new_of_the_same_kind_keeps_the_untitled_format_being_written(
     assert editor._rule.text() == PIPED
 
 
-def test_new_of_another_kind_starts_that_kind(qt_app: QApplication) -> None:
-    """A different kind is a different form: the fields do not carry across."""
+def test_new_of_another_kind_starts_that_kind(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A different kind is a different form: the fields do not carry across,
+    once the reader has said what to do with what they typed."""
     editor = FormatEditor()
     editor.start_new()
     editor._name.setText("log-kantor")
+    asked = _answer(monkeypatch, QMessageBox.StandardButton.Discard)
 
     editor.start_new_json()
 
+    assert asked == [True]
     assert editor.kind() == "json"
     assert editor._name.text() == ""
 

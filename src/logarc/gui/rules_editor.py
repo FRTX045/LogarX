@@ -75,7 +75,7 @@ def _ask_unsaved(parent: QWidget) -> QMessageBox.StandardButton:
     return QMessageBox.question(
         parent,
         "Unsaved changes",
-        "This pack has changes that are not saved. Save them before adding a rule?",
+        "This pack has changes that are not saved. Save them first?",
         buttons,
         QMessageBox.StandardButton.Save,
     )
@@ -136,6 +136,8 @@ class RulesEditor(QWidget):
         self._library = rules_library.in_force(built_in=self._built_in)
         self._editing: str | None = None
         self._shown: tuple[str, str] = ("", "")
+        #: The list row on show, as its `(kind, name)`, for going back to it.
+        self._at: tuple[str, str | None] | None = None
         self.stale = False
         self._finds_stop: threading.Event | None = None
         self._finds_generation = 0
@@ -386,6 +388,17 @@ class RulesEditor(QWidget):
         if item is None or item.data(_ROLE) is None:
             return
         kind, name = item.data(_ROLE)
+        if self.has_unsaved() and (kind, name) != self._at:
+            if not self.settle():
+                self._go_back()
+                return
+            # Saving rebuilt the list and put the saved pack on show, so where
+            # the reader clicked is found again by what it is. After Discard the
+            # row is still selected, and is opened below.
+            current = self._packs.currentItem()
+            if current is None or current.data(_ROLE) != (kind, name):
+                self._packs.setCurrentRow(self._row_of((kind, name)))
+                return
         self._confirm.hide()
         if kind == "new":
             self._open_new()
@@ -393,6 +406,20 @@ class RulesEditor(QWidget):
             self._open_built_in(name)
         elif kind == "yours":
             self._open_yours(name)
+        self._at = (kind, name)
+
+    def _row_of(self, entry: tuple[str, str | None] | None) -> int:
+        """The list row for `entry`, or the blank pack's when it is gone."""
+        for row in range(self._packs.count()):
+            if required(self._packs.item(row)).data(_ROLE) == entry:
+                return row
+        return self._draft_row()
+
+    def _go_back(self) -> None:
+        """Select the row on show again without opening it: it is already open."""
+        self._packs.blockSignals(True)
+        self._packs.setCurrentRow(self._row_of(self._at))
+        self._packs.blockSignals(False)
 
     def _reload(self, select: str | None) -> None:
         self._library = rules_library.in_force(built_in=self._built_in)
@@ -512,6 +539,9 @@ class RulesEditor(QWidget):
         except (RulePackError, rules_library.RulesLibraryError) as exc:
             self._refuse(in_words(exc) if isinstance(exc, RulePackError) else str(exc), None)
             return False
+        # Saved, so nothing on show is unsaved any more: the list rebuilt below
+        # must not stop to ask about it.
+        self._shown = (self._name.text(), self._yaml.toPlainText())
         self._reload(name)
         self._changed("Saved.")
         return True
@@ -721,6 +751,20 @@ class RulesEditor(QWidget):
         if self._pages.currentIndex() != 0:
             return False
         return (self._name.text(), self._yaml.toPlainText()) != self._shown
+
+    def settle(self) -> bool:
+        """Ask what to do with changes not saved before they are replaced or closed.
+
+        True when it is safe to go on: nothing was unsaved, the reader chose
+        Discard, or Save worked. False when they chose Cancel, or Save was
+        refused, and the work stays on show.
+        """
+        if not self.has_unsaved():
+            return True
+        answer = _ask_unsaved(self)
+        if answer == QMessageBox.StandardButton.Save:
+            return self.save()
+        return answer == QMessageBox.StandardButton.Discard
 
     def _add_rule(self) -> None:
         """Open the Add a rule window, after asking about changes not saved.
