@@ -1036,6 +1036,18 @@ which will be the first tag.
 
 ### Fixed
 
+- **A log with no User-Agent column no longer makes every client
+  reconnaissance.** The rule for a request without a User-Agent read an empty
+  field the same way whether the client sent none or the log format has no such
+  field, and Apache's common format, `vhost_common` and HAProxy without header
+  captures have none on any line. On the small tier rendered in those formats:
+  59,226 of 63,310 innocent requests reported as reconnaissance, accuracy 0.057
+  where the combined log of the same traffic scores 0.997. Each format now says
+  which fields it can record, the case works that out for every file from the
+  format it was ingested with, and a rule condition on a field a file cannot
+  record does not hold for its lines. Cases already on disk are read correctly
+  without being ingested again, and a Where to start scan made before is made
+  again rather than reused.
 - **Cloudflare's own timestamps are read, and one odd timestamp no longer stops
   a whole log.** Logpush writes `EdgeStartTimestamp` in nanoseconds unless told
   otherwise, and an epoch number was only told apart as seconds, milliseconds or

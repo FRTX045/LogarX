@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 from logarc.core.event import NormalizedEvent
 from logarc.parsers.base import read_target, split_client, split_request_line
-from logarc.parsers.fieldnames import MAPPABLE, REQUIRED
+from logarc.parsers.fieldnames import MAPPABLE, REQUIRED, recorded_by
 from logarc.parsers.fieldnames import guess_mapping as guess_from_names
 from logarc.parsers.times import TimeFormatError, check_time_format, read_time
 
@@ -119,6 +119,7 @@ class JsonParser:
             raise JsonFormatError(str(exc)) from exc
 
         self.name = name
+        self.records = recorded_by(self._mapping)
         self._time_format = time_format
         self._mapped_keys = set(self._mapping.values())
 
