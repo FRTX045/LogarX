@@ -465,3 +465,83 @@ def test_a_client_column_written_with_a_port_is_the_address_alone() -> None:
     assert event is not None
     assert event.client_ip == "203.0.113.5"
     assert event.extra["client_port"] == "51234"
+
+
+# -- a log that encodes what it writes --------------------------------------
+
+#: CloudFront percent-encodes spaces, `%` and a list of other characters in what
+#: it writes, so a query the client had already encoded comes out encoded twice.
+#: Constructed in the shape of AWS's standard log reference.
+CLOUDFRONT_ROWS = [
+    "#Version: 1.0",
+    "#Fields: date\ttime\tc-ip\tcs-method\tcs-uri-stem\tsc-status\tcs(Referer)"
+    "\tcs(User-Agent)\tcs-uri-query",
+    "2024-05-01\t09:00:45\t203.0.113.5\tGET\t/%7Eadm\t404"
+    "\thttp://shop.example.com/login?next=%252Fadmin\tMozilla/5.0%20(X11;%20Linux)"
+    "\tnext=%252Fadmin%252Fusers",
+]
+CLOUDFRONT_MAP = (
+    ("timestamp", "date+time"),
+    ("client_ip", "c-ip"),
+    ("method", "cs-method"),
+    ("path", "cs-uri-stem"),
+    ("query", "cs-uri-query"),
+    ("status", "sc-status"),
+    ("referer", "cs(Referer)"),
+    ("user_agent", "cs(User-Agent)"),
+)
+
+
+def _cloudfront(escapes: str, rows: list[str] = CLOUDFRONT_ROWS) -> ColumnsFormatSpec:
+    spec = ColumnsFormatSpec(name="cf", fields=CLOUDFRONT_MAP, separator="\t", escapes=escapes)
+    return resolved(spec, rows)
+
+
+def test_cloudfront_s_encoding_is_undone_once() -> None:
+    """Undone twice, `%252F` would read as `/`: the client's own encoding, which
+    is what a rule about double encoding is looking at, would be gone too."""
+    event = _cloudfront("cloudfront").build().parse_line(CLOUDFRONT_ROWS[2], REF)
+
+    assert event is not None
+    assert event.path == "/~adm"
+    assert event.query == "next=%2Fadmin%2Fusers"
+    assert event.referer == "http://shop.example.com/login?next=%2Fadmin"
+    assert event.user_agent == "Mozilla/5.0 (X11; Linux)"
+
+
+def test_encoding_is_left_alone_unless_the_format_says_so() -> None:
+    event = _cloudfront("").build().parse_line(CLOUDFRONT_ROWS[2], REF)
+
+    assert event is not None
+    assert event.path == "/%7Eadm"
+    assert event.user_agent == "Mozilla/5.0%20(X11;%20Linux)"
+
+
+def test_an_encoded_byte_that_is_not_utf8_is_kept() -> None:
+    row = CLOUDFRONT_ROWS[2].replace("Mozilla/5.0%20(X11;%20Linux)", "caf%E9%20%C3%A9")
+    event = _cloudfront("cloudfront").build().parse_line(row, REF)
+
+    assert event is not None
+    assert event.user_agent == "caf\u00e9 \u00c3\u00a9"
+
+
+def test_the_escapes_travel_with_the_definition() -> None:
+    """A case rebuilds its parser from what it recorded, to read evidence back.
+    Recorded without the escapes, the evidence would read differently from the
+    events built from it."""
+    spec = _cloudfront("cloudfront")
+
+    payload = spec.to_payload()
+
+    assert payload["escapes"] == "cloudfront"
+    assert ColumnsFormatSpec.from_payload(payload) == spec
+
+
+def test_a_definition_without_escapes_writes_no_key_for_them() -> None:
+    """An older logarc refuses a key it does not know."""
+    assert "escapes" not in _cloudfront("").to_payload()
+
+
+def test_an_escape_this_tool_does_not_know_is_refused() -> None:
+    with pytest.raises(ColumnsFormatError, match="cloudfront"):
+        ColumnsFormatSpec(name="cf", fields=CLOUDFRONT_MAP, escapes="iis").check()

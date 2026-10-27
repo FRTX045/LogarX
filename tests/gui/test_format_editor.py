@@ -1190,3 +1190,45 @@ def test_the_format_question_answers_ok_to_enter(qt_app: QApplication) -> None:
     assert ok.isDefault()
     assert not manage.autoDefault()
     choice.close()
+
+
+#: A CloudFront log, as `cloudfront` reads it: tab separated, columns from the
+#: log, and every value percent-encoded with `%` itself among what is encoded.
+CLOUDFRONT_LINES = (
+    "#Version: 1.0\n"
+    "#Fields: date\ttime\tc-ip\tcs-method\tcs-uri-stem\tsc-status\tcs(User-Agent)\tcs-uri-query\n"
+    "2024-05-01\t09:00:45\t203.0.113.5\tGET\t/login\t200\tsqlmap/1.8%20(https://sqlmap.org)"
+    "\tnext=%252Fadmin"
+)
+
+
+def test_the_cloudfront_built_in_previews_with_its_own_escapes(qt_app: QApplication) -> None:
+    """Previewed without them, `%252F` would look like CloudFront's log being
+    read wrongly, and a reader would go and write a format of their own."""
+    editor = FormatEditor()
+    editor.select("cloudfront")
+
+    editor._sample.setPlainText(CLOUDFRONT_LINES)
+
+    result = editor.preview()
+    assert result.ok, editor._status.text()
+    assert dict(result.fields)["Query"] == "next=%2Fadmin"
+    assert dict(result.fields)["User agent"] == "sqlmap/1.8 (https://sqlmap.org)"
+
+
+def test_saving_a_columns_format_again_keeps_its_escapes(qt_app: QApplication) -> None:
+    """Nothing on screen shows the option, so nothing on screen may drop it."""
+    spec = ColumnsFormatSpec(
+        name="cdn",
+        separator="\t",
+        fields=(("timestamp", "date+time"), ("client_ip", "c-ip"), ("path", "cs-uri-stem")),
+        escapes="cloudfront",
+    )
+    save_library([spec])
+    register_saved_formats()
+    editor = FormatEditor()
+    editor.select("cdn")
+    editor._note.setText("the CDN")
+
+    assert editor.save(), editor.trouble()
+    assert load_library()[0].escapes == "cloudfront"

@@ -539,7 +539,7 @@ def formats_show(
         spec.time_format
     ):
         table.add_row("Time format", spec.time_format)
-    if isinstance(spec, PatternFormatSpec) and spec.escapes:
+    if isinstance(spec, (PatternFormatSpec, ColumnsFormatSpec)) and spec.escapes:
         table.add_row("Escapes", spec.escapes)
     if isinstance(spec, ColumnsFormatSpec):
         table.add_row("Separator", _SEPARATOR_NAMES[spec.separator])

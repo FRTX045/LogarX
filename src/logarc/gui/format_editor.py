@@ -519,6 +519,7 @@ class FormatEditor(QDialog):
                 self.separator(),
                 self._time_format.text().strip(),
                 sample,
+                self._escapes,
             )
         if self._kind == "json":
             return preview_mapping(self.mapping(), self._time_format.text().strip(), sample)
@@ -654,7 +655,9 @@ class FormatEditor(QDialog):
             return
 
         self._editing = name if self._is_saved(name) else None
-        self._escapes = spec.escapes if isinstance(spec, PatternFormatSpec) else ""
+        self._escapes = (
+            spec.escapes if isinstance(spec, (PatternFormatSpec, ColumnsFormatSpec)) else ""
+        )
         self._show_kind(spec.kind)
         self._name.setText(spec.name)
         self._note.setText(spec.description)
@@ -754,6 +757,7 @@ class FormatEditor(QDialog):
                 separator=self.separator(),
                 time_format=when,
                 description=note,
+                escapes=self._escapes,
             )
         if self._kind == "json":
             return JsonFormatSpec(

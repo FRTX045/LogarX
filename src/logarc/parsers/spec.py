@@ -23,7 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
-from logarc.parsers.columns import ColumnsParser, check_mapping, declared_columns
+from logarc.parsers.columns import ColumnsParser, check_escapes, check_mapping, declared_columns
 from logarc.parsers.json_format import JsonParser
 from logarc.parsers.logformat import LogFormatParser
 from logarc.parsers.pattern import PatternParser
@@ -215,7 +215,16 @@ class ColumnsFormatSpec:
 
     #: What `to_payload` writes. See `JsonFormatSpec.PAYLOAD_KEYS`.
     PAYLOAD_KEYS: ClassVar[frozenset[str]] = frozenset(
-        {"name", "fields", "columns", "separator", "time_format", "header_row", "description"}
+        {
+            "name",
+            "fields",
+            "columns",
+            "separator",
+            "time_format",
+            "header_row",
+            "description",
+            "escapes",
+        }
     )
 
     name: str
@@ -232,6 +241,10 @@ class ColumnsFormatSpec:
     """The row that named the columns, when a row did. Not read as data."""
 
     description: str = ""
+    #: How the log escapes what it writes, undone before a cell is read: `""`
+    #: for not at all, `"cloudfront"` for CloudFront's percent-encoding. See
+    #: `parsers.columns.ESCAPES`.
+    escapes: str = ""
 
     @property
     def summary(self) -> str:
@@ -245,6 +258,7 @@ class ColumnsFormatSpec:
             separator=self.separator,
             time_format=self.time_format,
             header_row=self.header_row,
+            escapes=self.escapes,
         )
 
     def resolved(self, sample: Sequence[str]) -> ColumnsFormatSpec:
@@ -269,9 +283,10 @@ class ColumnsFormatSpec:
         ask this much. The rest is caught when a log is actually opened.
         """
         check_mapping(self.fields)
+        check_escapes(self.escapes)
 
     def to_payload(self) -> dict[str, Any]:
-        return {
+        payload = {
             "name": self.name,
             "fields": dict(self.fields),
             "columns": list(self.columns),
@@ -280,6 +295,11 @@ class ColumnsFormatSpec:
             "header_row": self.header_row,
             "description": self.description,
         }
+        # Only when it says something, as for `PatternFormatSpec`: an older
+        # logarc refuses a key it does not know.
+        if self.escapes:
+            payload["escapes"] = self.escapes
+        return payload
 
     @classmethod
     def from_payload(cls, payload: Mapping[str, Any]) -> ColumnsFormatSpec:
@@ -299,6 +319,7 @@ class ColumnsFormatSpec:
             time_format=_text(payload, "time_format", required=False),
             header_row=_text(payload, "header_row", required=False),
             description=_text(payload, "description", required=False),
+            escapes=_text(payload, "escapes", required=False),
         )
 
 
