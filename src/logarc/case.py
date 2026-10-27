@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, ClassVar
 from logarc.detect.crs.store import CrsEvidence
 from logarc.detect.engine import _URL_IN_PARAM, RuleEngine, _bare_host
 from logarc.detect.ruleset import NO_EXTRA_RULES, build_rules
-from logarc.evidence import EvidenceLine, read_evidence
+from logarc.evidence import EvidenceLine, _parser_for, read_evidence
 from logarc.ingest.parallel import (
     DEFAULT_WORKERS,
     ingest_file_parallel,
@@ -30,6 +30,8 @@ from logarc.ingest.pipeline import (
 )
 from logarc.ingest.quarantine import Quarantine
 from logarc.ingest.reader import Compression
+from logarc.parsers.base import recorded
+from logarc.parsers.fieldnames import OPTIONAL_FIELDS
 from logarc.parsers.spec import spec_to_dict
 from logarc.storage.case import MANIFEST_NAME, CaseManifest, SourceRecord
 from logarc.storage.event_store import ParquetEventStore
@@ -230,7 +232,30 @@ class Case:
             # one the reader still names.
             crs_host=self.manifest.config.get("crs_host"),
             described=described,
+            unrecorded=self.unrecorded_fields(),
         )
+
+    def unrecorded_fields(self) -> dict[str, frozenset[str]]:
+        """Per source file, the event fields its format cannot record at all.
+
+        Apache's common format has no User-Agent on any line, and read as
+        "every client sent none" every request in such a log was reported as
+        reconnaissance. Worked out from the format each file was ingested with,
+        rebuilt the way its evidence is (`evidence._parser_for`), so old cases
+        are read correctly without being ingested again. A file whose format
+        cannot be rebuilt, or does not say, is read as recording everything,
+        which is how every file was read before.
+        """
+        found: dict[str, frozenset[str]] = {}
+        for record in self.manifest.sources:
+            try:
+                parser = _parser_for(record)
+            except ValueError:
+                parser = None
+            fields = recorded(parser) if parser is not None else None
+            if fields is not None and (missing := frozenset(OPTIONAL_FIELDS) - fields):
+                found[record.file_id] = missing
+        return found
 
     def read_evidence(self, refs: Sequence[EvidenceRef]) -> list[EvidenceLine]:
         """Fetch the raw source lines behind a set of references.

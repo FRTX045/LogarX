@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Final
 
 from logarc.core.event import NormalizedEvent
 from logarc.parsers.base import read_target, split_client, split_request_line
-from logarc.parsers.fieldnames import MAPPABLE, REQUIRED
+from logarc.parsers.fieldnames import MAPPABLE, REQUIRED, recorded_by
 from logarc.parsers.times import TimeFormatError, check_time_format, read_time
 
 if TYPE_CHECKING:
@@ -124,6 +124,7 @@ class PatternParser:
             raise PatternFormatError(str(exc)) from exc
 
         self.name = name
+        self.records = recorded_by(named)
         self._time_format = time_format
         self._extra_groups = tuple(sorted(named - set(MAPPABLE)))
 

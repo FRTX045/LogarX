@@ -1,4 +1,4 @@
-# logarc
+![Logarx logo](docs/images/logarx-outline-open-corner.png)
 
 **Reconstruct what one IP address actually did on a web server, from its access logs.**
 
@@ -68,6 +68,10 @@ professionals.**
 | **Understand and check** | "What did this address do, in what order, and how did the server answer?" | Each client becomes a graph of activities, grouped into sessions with their times and a name for each, which you can change. A node's outline summarises the response codes it received, and the icon inside it says what kind of activity it was. Click it and the evidence panel lists the requests behind it, decoded, with the raw line kept and repeated lines folded. |
 | **Explain and hand over** | "How do I show this to someone who can act?" | **Ctrl+D** bookmarks a client, an activity or a line, with a note. **Export** writes a report (HTML), the graph (JSON), or every bookmark (CSV). |
 | **Teach it** | "It missed something I can see." | Right-click the line and choose **Make a rule from this line…**. Choose the parts to match, name and classify the rule, review what it matches, then **Add rule**. **Re-read now** applies it to the open client and restarts Triage. There is no YAML to write yourself. |
+
+![A webshell's lines naming invoice.php.jpg, the upload before them made into a rule from its log line, and the client read again with that upload named](docs/images/demo-rule.gif)
+
+<sub>The shell's lines name the file, `invoice.php.jpg`; one step back, its upload through the admin page was read as an ordinary file upload. A rule made from that line, previewed against the case before it is added, and the client read again. The traffic is synthetic, written for this demo.</sub>
 
 ---
 

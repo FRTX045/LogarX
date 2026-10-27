@@ -19,9 +19,17 @@ import re
 from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterable, Sequence
 
-__all__ = ["JOIN", "MAPPABLE", "REQUIRED", "guess_mapping", "normalise"]
+__all__ = [
+    "JOIN",
+    "MAPPABLE",
+    "OPTIONAL_FIELDS",
+    "REQUIRED",
+    "guess_mapping",
+    "normalise",
+    "recorded_by",
+]
 
 #: Every field of ours a name may be mapped to. `request_line` is here for the
 #: logs that write `GET /a HTTP/1.1` whole; it is split into method, path,
@@ -48,6 +56,39 @@ MAPPABLE: Final[tuple[str, ...]] = (
 #: Without these there is no event: everything downstream is ordered by time
 #: and grouped by address.
 REQUIRED: Final[tuple[str, ...]] = ("timestamp", "client_ip")
+
+#: The fields of an event a format may or may not record at all, which is a
+#: different thing from a line leaving one empty. Apache's common format has no
+#: User-Agent on any line; a combined line with `-` there is a client that sent
+#: none. Only the second is evidence of anything (`parsers.base.recorded`).
+OPTIONAL_FIELDS: Final[tuple[str, ...]] = (
+    "method",
+    "path",
+    "query",
+    "protocol",
+    "status",
+    "bytes_sent",
+    "referer",
+    "user_agent",
+    "host",
+)
+
+#: What one mapped name of ours fills beyond itself. A request line is split
+#: into four, a whole URL into three, and a path is split at a `?` it holds.
+_FILLS: Final[dict[str, frozenset[str]]] = {
+    "request_line": frozenset({"method", "path", "query", "protocol"}),
+    "url": frozenset({"host", "path", "query"}),
+    "path": frozenset({"path", "query"}),
+}
+
+
+def recorded_by(mapped: Iterable[str]) -> frozenset[str]:
+    """The event fields a format that maps `mapped` can fill."""
+    fields: set[str] = set()
+    for name in mapped:
+        fields |= _FILLS.get(name, {name})
+    return frozenset(fields) & frozenset(OPTIONAL_FIELDS)
+
 
 #: Joins two of their names into one of ours, for the W3C habit of writing the
 #: date and the time in separate columns. A space would be ambiguous — a name
