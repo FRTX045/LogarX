@@ -932,6 +932,13 @@ which will be the first tag.
 
 ### Documentation
 
+- **The evaluation reads the same traffic in every log format.** The small and medium
+  builds, rendered by the dataset into 20 other formats, each scored against its own
+  truth and compared with the Apache original. Leaving out the records no real server
+  would have logged as Apache did, 15 formats score identically to it on every figure and
+  none raises a false alarm. The three without a Referer lose 0.0003 of accuracy. The
+  three without a User-Agent lose their crawlers and the rules that know a tool by its
+  User-Agent (accuracy 0.892 on the medium tier). The rendering is what found #86 to #89.
 - **The headline figures are re-taken on the dataset's 2026-10-06 builds.** The README and
   `docs/evaluation.md` move from the 2026-09-20 build to `2026-10-06-medium`, 235,732 requests:
   accuracy 0.996, macro F1 0.870, attack precision 1.000 and recall 0.994, and no false alarms,
@@ -1067,7 +1074,7 @@ which will be the first tag.
   field the same way whether the client sent none or the log format has no such
   field, and Apache's common format, `vhost_common` and HAProxy without header
   captures have none on any line. On the small tier rendered in those formats:
-  59,226 of 63,310 innocent requests reported as reconnaissance, accuracy 0.057
+  every one of the 59,226 innocent requests reported as reconnaissance, accuracy 0.057
   where the combined log of the same traffic scores 0.997. Each format now says
   which fields it can record, the case works that out for every file from the
   format it was ingested with, and a rule condition on a field a file cannot
