@@ -154,6 +154,7 @@ def preview_columns(
     separator: str,
     time_format: str,
     sample: str,
+    escapes: str = "",
 ) -> Preview:
     """Try a table format against pasted lines and say what came of it.
 
@@ -176,6 +177,7 @@ def preview_columns(
         columns=tuple(columns),
         separator=separator,
         time_format=time_format,
+        escapes=escapes,
     )
     settled = spec.resolved(lines)
     try:

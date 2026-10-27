@@ -774,3 +774,13 @@ def test_show_prints_a_pattern_s_escapes() -> None:
     assert result.exit_code == 0
     assert "Escapes" in result.stdout
     assert "haproxy" in result.stdout
+
+
+def test_show_prints_a_built_in_table_format_s_escapes() -> None:
+    """CloudFront's are undone before anything reads a cell, and a reader
+    looking at the format should be able to see that they are."""
+    result = runner.invoke(app, ["formats", "show", "cloudfront"])
+
+    assert result.exit_code == 0
+    assert "Escapes" in result.stdout
+    assert "cloudfront" in result.stdout.split("Escapes", 1)[1]

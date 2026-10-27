@@ -23,6 +23,7 @@ and nothing downstream would notice.
 from __future__ import annotations
 
 import csv
+import re
 from typing import TYPE_CHECKING, Final
 
 from logarc.core.event import NormalizedEvent
@@ -36,10 +37,12 @@ if TYPE_CHECKING:
     from logarc.core.evidence import EvidenceRef
 
 __all__ = [
+    "ESCAPES",
     "FIELDS_DIRECTIVE",
     "MAPPABLE",
     "ColumnsFormatError",
     "ColumnsParser",
+    "check_escapes",
     "check_mapping",
     "declared_columns",
 ]
@@ -52,6 +55,38 @@ class ColumnsFormatError(ValueError):
 #: How W3C names its columns. Everything else in the header is `#Software`,
 #: `#Version`, `#Date` and the like, which say nothing about the layout.
 FIELDS_DIRECTIVE: Final = "#Fields:"
+
+#: How a table log may escape what it writes, undone before anything reads a
+#: cell. `"cloudfront"` is CloudFront's percent-encoding: spaces, `%` itself and
+#: a list of other characters, so a query the client had already encoded is
+#: encoded again. Left in, `%2F` from the client reads as `%252F`, and a rule
+#: looking for double encoding finds what CloudFront did rather than the client.
+ESCAPES: Final[tuple[str, ...]] = ("", "cloudfront")
+
+_PERCENT_RUN: Final = re.compile(r"(?:%[0-9A-Fa-f]{2})+")
+
+
+def check_escapes(escapes: str) -> None:
+    """Refuse an escaping this tool does not know how to undo."""
+    if escapes not in ESCAPES:
+        known = ", ".join(repr(item) for item in ESCAPES if item)
+        raise ColumnsFormatError(f"escapes {escapes!r} is not one logarc undoes; it knows {known}")
+
+
+def _bytes_back(run: re.Match[str]) -> str:
+    """A run of `%XX` as the bytes it stands for: UTF-8, or Latin-1 when it is
+    not, which loses nothing. A run rather than each escape alone, so a
+    character of several bytes comes back as one."""
+    raw = bytes.fromhex(run.group().replace("%", ""))
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return raw.decode("latin-1")
+
+
+def _unpercent(text: str) -> str:
+    """Undo one layer of percent-encoding. Once: the client's own is evidence."""
+    return _PERCENT_RUN.sub(_bytes_back, text) if "%" in text else text
 
 
 def check_mapping(mapping: Sequence[tuple[str, str]]) -> None:
@@ -146,8 +181,10 @@ class ColumnsParser:
         separator: str = " ",
         time_format: str = "",
         header_row: str = "",
+        escapes: str = "",
     ) -> None:
         check_mapping(mapping)
+        check_escapes(escapes)
         if not columns:
             raise ColumnsFormatError(
                 f"format {name!r} does not know its columns: none were given, and none "
@@ -194,6 +231,7 @@ class ColumnsParser:
         self._columns = tuple(columns)
         self._separator = separator
         self._time_format = time_format
+        self._unescape = escapes == "cloudfront"
         self._claimed = {theirs for _ours, spec in mapping for theirs in spec.split(JOIN)}
         # The row that named the columns, when they came from one. Compared as
         # text rather than remembered as a line number, because a worker given
@@ -217,6 +255,8 @@ class ColumnsParser:
             return None
 
         cells = split_row(line.rstrip("\r\n"), self._separator)
+        if self._unescape:
+            cells = [_unpercent(cell) for cell in cells]
         if len(cells) != len(self._columns):
             # Read by position against the wrong count, every field after the
             # missing one is somebody else's value. Refused loudly instead.

@@ -518,15 +518,18 @@ SAMPLES: dict[str, tuple[list[str], dict[str, object]]] = {
             "#Version: 1.0",
             "#Fields: date\ttime\tx-edge-location\tsc-bytes\tc-ip\tcs-method\tcs(Host)"
             "\tcs-uri-stem\tsc-status\tcs(Referer)\tcs(User-Agent)\tcs-uri-query",
+            # CloudFront percent-encodes what it writes, `%` included, so the
+            # client's own `%27` arrives as `%2527` and a space as `%20`.
             "2024-05-01\t09:00:45\tSFO5-C1\t0\t203.0.113.5\tGET\tshop.example.com"
-            "\t/admin/.env\t404\t-\tcurl/8.4.0\t-",
+            "\t/admin/.env\t404\t-\tsqlmap/1.8%20(https://sqlmap.org)\tid=1%2527",
         ],
         {
             "client_ip": "203.0.113.5",
             "path": "/admin/.env",
+            "query": "id=1%27",
             "status": 404,
             "host": "shop.example.com",
-            "user_agent": "curl/8.4.0",
+            "user_agent": "sqlmap/1.8 (https://sqlmap.org)",
         },
     ),
 }

@@ -402,6 +402,9 @@ BUILT_INS: Final[tuple[FormatSpec, ...]] = (
         name="cloudfront",
         description="AWS CloudFront standard logs: W3C, tab separated",
         separator="\t",
+        # CloudFront percent-encodes what it writes, `%` included, so the
+        # client's own `%2F` arrives as `%252F`. Undone once, before reading.
+        escapes="cloudfront",
         fields=(
             ("timestamp", "date+time"),
             ("client_ip", "c-ip"),

@@ -152,7 +152,11 @@ port is kept beside the event. A bare IPv6 address is left as written, since
 
 A pattern for a log that escapes what it writes the way HAProxy does, `#22`
 for `"`, takes `--escapes haproxy`, and the escapes are undone before anything
-reads a field.
+reads a field. `cloudfront` does the same for CloudFront's percent-encoding, and
+does it once: CloudFront encodes `%` too, so a client's own `%2F` arrives as
+`%252F`, and undone once it reads `%2F` again, which is what the client sent.
+Undone twice it would read `/`, and the rules that look for encoding a client
+used to slip past a filter would be looking at something else.
 
 An nginx `log_format` can be pasted wherever a directive can: the whole
 statement from `nginx.conf` (`log_format main '...' '...';`, comments and line
