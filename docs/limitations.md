@@ -28,6 +28,8 @@ above, and *mixed* in between. So a redirect counts as success, and an activity
 answered only with server errors counts as blocked. An injection attempt answered with HTTP 200
 was answered, not necessarily exploited. The response sizes and the lines
 themselves are what to read next; the label is where to start, not a verdict.
+The window words the three as *served*, *partly served* and *refused*, which say
+what was measured; exports and the command line keep the values above.
 
 ## A client is an IP address, not a person
 

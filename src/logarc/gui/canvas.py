@@ -63,6 +63,7 @@ from logarc.gui.icons import ICON_PIXELS, first_drawable, icon_pixmap, ink_for
 from logarc.gui.ribbon import Mark, ribbon_polygon, ribbon_tip
 from logarc.style import (
     CAPTION_COLOUR,
+    OUTCOME_WORDS,
     PAPER,
     PAPER_EDGE,
     SELECTION_COLOUR,
@@ -2088,7 +2089,7 @@ def _tooltip(node: GraphNode) -> str:
         node.label,
         f"kind: {KIND_NAMES[node.category]}",
         f"{node.request_count:,} requests over {node.distinct_paths:,} path(s)",
-        f"outcome: {node.outcome.value}",
+        f"responses: {OUTCOME_WORDS[node.outcome]}",
         f"severity: {node.severity.name.lower()}",
     ]
     if node.owasp:

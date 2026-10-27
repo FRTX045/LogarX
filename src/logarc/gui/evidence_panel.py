@@ -56,6 +56,7 @@ from logarc.search import Scope
 from logarc.style import (
     EVIDENCE_INK,
     EVIDENCE_MUTED,
+    OUTCOME_WORDS,
     PAPER,
     PAPER_EDGE,
     PAPER_STRIPE,
@@ -728,10 +729,8 @@ class EvidencePanel(QWidget):
         # undone that to gain a few pixels.
         chips = []
         chips.append(_chip(node.severity.name.title(), colour))
-        # The value stays as the taxonomy spells it. Title case here would have
-        # the panel reading `Blocked` beside a canvas caption reading `blocked`
-        # for the same activity: one name for one thing, in one case.
-        chips.append(_chip(f"Outcome: {node.outcome.value}"))
+        # In the canvas caption's words and case: one name for one thing.
+        chips.append(_chip(f"Responses: {OUTCOME_WORDS[node.outcome]}"))
 
         base = self._heading.font().pointSizeF()
         self._heading.setText(

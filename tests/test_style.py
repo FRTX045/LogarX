@@ -159,7 +159,17 @@ def test_a_summary_names_the_activity_and_its_weight() -> None:
 
     assert "SQL Injection" in text
     assert "47" in text
-    assert "mixed" in text.lower()
+    assert "partly served" in text
+
+
+def test_a_summary_says_how_the_server_answered_not_that_an_attack_worked() -> None:
+    """The outcome is read from response codes. Every request answered under 400
+    is what the server did, not proof that an injection achieved anything, and
+    "success" beside "SQL Injection" reads as the second."""
+    text = summarise(node(label="SQL Injection", requests=1, outcome=Outcome.SUCCESS))
+
+    assert "served" in text
+    assert "success" not in text.lower()
 
 
 def test_a_long_label_is_shortened_rather_than_overflowing() -> None:
@@ -247,7 +257,7 @@ def test_the_legend_explains_every_severity_the_taxonomy_has() -> None:
 def test_the_legend_explains_every_outcome() -> None:
     explained = {item.label for item in outcome_legend()}
 
-    assert explained == {outcome.value.title() for outcome in Outcome}
+    assert explained == {"Served", "Partly served", "Refused", "Unknown"}
 
 
 def test_a_legend_entry_carries_what_it_takes_to_draw_the_sample() -> None:
