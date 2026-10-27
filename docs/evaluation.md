@@ -310,9 +310,91 @@ A rebuild from the recipe will not have these digests: the dataset reproduces it
 from a seed, not its bytes (see below). Expect the last decimal to move, and say which build was
 measured.
 
+## The same traffic in every log format — 2026-10-27
+
+Every figure above is from an Apache log. logarc reads 21 built-in formats, and a format
+can lose a field, or write it differently, in a way no test of a single line would show. So
+the small and medium builds were rendered by the dataset into 20 other formats, the same
+requests in each. Every rendered file was scored against its own truth and compared with
+the Apache original.
+
+The rendering is the dataset's: `render` at
+[`1e29c09`](https://github.com/FRTX045/BlackHat-Dataset/blob/main/docs/rendered-formats.md),
+from the builds above. Every file is the Apache capture written in another server's
+columns, never a capture of that server. A field the capture never measured is a declared
+constant. All 41 files of each tier matched its `SHA256SUMS` before scoring
+(`MANIFEST.json` `cc2b1e66…` small, `8cde4712…` medium). The code was `main` at `5449f64`
+with PRs #88 and #89 merged in. Native rules only.
+
+**Some lines no real server would have written as Apache did,** and the dataset flags them:
+37 small and 124 medium that the server would not log at all, and 94 and 294 malformed
+request lines that each server writes its own way: as received, or as its own refusal (IIS
+would log none of them). They are the same records in every format. The table leaves them
+out of every row, the Apache original included, so every row is scored on the same 63,179
+(small) or 235,314 (medium) requests.
+
+| Formats | Caught | Missed | False alarms | Recall | Accuracy | Macro F1 |
+|---|---|---|---|---|---|---|
+| **medium** | | | | | | |
+| Apache original | 16,813 | 42 | 0 | 0.9975 | 0.9975 | 0.8980 |
+| 15 formats, identical to it ¹ | 16,813 | 42 | 0 | 0.9975 | 0.9975 | 0.8980 |
+| No Referer: `envoy`, `istio`, `aws-alb` | 16,813 | 42 | 0 | 0.9975 | 0.9972 | 0.8965 |
+| No User-Agent: `apache-common`, `apache-vhost-common`, `haproxy` | 15,696 | 1,159 | 0 | 0.9312 | 0.8920 | 0.7625 |
+| **small** | | | | | | |
+| Apache original | 3,945 | 45 | 0 | 0.9887 | 0.9972 | 0.8902 |
+| 15 formats, identical to it ¹ | 3,945 | 45 | 0 | 0.9887 | 0.9972 | 0.8902 |
+| No Referer: `envoy`, `istio`, `aws-alb` | 3,945 | 45 | 0 | 0.9887 | 0.9970 | 0.8890 |
+| No User-Agent: `apache-common`, `apache-vhost-common`, `haproxy` | 3,636 | 354 | 0 | 0.9113 | 0.8908 | 0.7552 |
+
+¹ `apache-vhost-combined`, `apache-combined-io`, `nginx-main`, `nginx-combined-forwarded`,
+`ingress-nginx`, `traefik-common`, `nginx-json`, `caddy-json`, `traefik-json`,
+`cloudflare-json`, `gcp-http-json`, `ecs-http`, `iis-w3c`, `cloudfront`, and `haproxy` read
+with its header captures (`haproxy-captures`). Identical means every figure the evaluation
+reports, to the last request.
+
+**No format raises a false alarm.** The rows that differ differ because the log has no
+field, not because logarc misreads one:
+
+- **Without a User-Agent**, nothing says which client is a crawler, so all 22,680 crawler
+  requests in the medium tier read as `browsing`: 0.096 of the 0.106 of accuracy lost. The
+  rules that know a tool by its User-Agent cannot fire, either: `enumeration` falls from 13,849
+  to 12,751, `authentication` from 1,781 to 759, `reconnaissance` from 2,355 to 2,340 and
+  `injection` from 52 to 47. Before #89 these logs did worse. The rule for a missing
+  User-Agent could not tell "the client sent none" from "the format has no such column",
+  and it called every one of the small tier's 59,226 innocent requests reconnaissance.
+- **Without a Referer**, 67 `authentication` requests in the medium tier (16 small) read
+  as `browsing`, because a sign-in is known partly by the page it came from.
+
+**With the flagged records left in,** two more differences show, both from those records:
+`envoy` reads 235,438 of 235,732 lines (63,216 of 63,310 small). The 294 (94) it
+quarantines are exactly the malformed request lines, which Envoy writes as its own refusal
+with `-` for the client, its default format having no other client field, so they cannot
+be attributed. And on those records `gcp-http-json` and `iis-w3c` lose 0.0005 of accuracy
+(0.0006 small), and `aws-alb` 0.0005 (0.0006) more than its missing Referer costs.
+
+The rendering found four defects, all fixed before these runs: Cloudflare's nanosecond
+timestamps stopped the import (#86); ECS logs lost their Referer and Cloudflare logs their
+protocol (#87); CloudFront's own percent-encoding raised 82 false alarms (#88); and the
+missing User-Agent above (#89).
+
+To score one format:
+
+```bash
+python3 tools/render.py datasets/apache-shopfront/2026-10-06-medium   # in the dataset's checkout
+R=datasets/apache-shopfront/2026-10-06-medium/rendered
+(cd $R && sha256sum -c SHA256SUMS)
+logarc ingest $R/nginx-json.log --case ./case --no-crs
+logarc evaluate -c ./case -t $R/nginx-json.truth.jsonl -o every-record.json --no-crs
+```
+
+For the table, score again with a truth file that leaves out the line numbers listed under
+`flagged` in `MANIFEST.json` (offset by the format's `line_no_offset`), and score the Apache
+original with the same records left out. `haproxy` with its captures is
+`--format haproxy-captures` on `haproxy.log`.
+
 ## The previous baseline — 2026-09-21
 
-**Superseded on 2026-10-06 by the section above.** Kept because the corpus defects found against it,
+**Superseded on 2026-10-06 by the current baseline above.** Kept because the corpus defects found against it,
 and what was done about them, are still the reasons the rules are shaped as they are. Everything
 below *this* section was measured on builds whose bytes can no longer be obtained.
 
