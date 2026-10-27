@@ -10,6 +10,13 @@ as releases, and neither has a tag.
 
 ## [Unreleased]
 
+### Changed
+
+- HTML reports share the desktop's font preferences and offer an offline,
+  keyboard-accessible dark/light switch without JavaScript. A clearer report
+  hierarchy, scrollable tables, full activity dates and expandable provenance
+  keep the evidence readable; printing uses a light palette.
+
 ## [1.0.0] — 2026-10-28 — the first release
 
 ### Added

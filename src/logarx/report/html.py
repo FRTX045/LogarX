@@ -19,6 +19,7 @@ from logarx.bookmarks import newest_first
 from logarx.core.activity import Outcome, Severity
 from logarx.core.graph import GraphKind, reciprocal_pairs
 from logarx.graphbuild.layout import layout_graph
+from logarx.report.presentation import DOCUMENT, STYLE
 from logarx.style import edge_label, severity_colour, severity_legend
 from logarx.timerange import spoken
 
@@ -72,9 +73,9 @@ def render_report(
     the raw log line from `lines` under each request, and the evidence reader's
     warning under any line whose source it could not verify.
     """
-    return _DOCUMENT.format(
+    return DOCUMENT.format(
         ip=html.escape(result.client_ip),
-        style=_STYLE,
+        style=STYLE,
         summary=_summary(result),
         legend=_legend(),
         trace=_svg(result.trace),
@@ -241,7 +242,7 @@ def _svg(graph: ActivityGraph) -> str:
         dashed = ' stroke-dasharray="6 3"' if node.outcome is Outcome.BLOCKED else ""
         parts.append(
             f'<g><rect x="{x:.0f}" y="{y:.0f}" width="{_NODE_WIDTH:.0f}" '
-            f'height="{_NODE_HEIGHT:.0f}" rx="10" fill="#ffffff" stroke="{colour}" '
+            f'height="{_NODE_HEIGHT:.0f}" rx="10" fill="var(--surface)" stroke="{colour}" '
             f'stroke-width="2.5"{dashed}/>'
             f'<rect x="{x:.0f}" y="{y:.0f}" width="6" height="{_NODE_HEIGHT:.0f}" '
             f'rx="3" fill="{colour}"/>'
@@ -259,7 +260,7 @@ def _svg(graph: ActivityGraph) -> str:
 
 def _episode_table(result: AnalysisResult) -> str:
     if not result.episodes:
-        return '<p class="empty">No activity reconstructed.</p>'
+        return '<tr><td colspan="8" class="empty">No activity reconstructed.</td></tr>'
 
     rows = []
     for episode in result.episodes:
@@ -270,7 +271,7 @@ def _episode_table(result: AnalysisResult) -> str:
             evidence += f" (+{episode.evidence_total - 5:,} more)"
         rows.append(
             "<tr>"
-            f'<td class="mono">{episode.start:%H:%M:%S}</td>'
+            f'<td class="mono time">{episode.start:%Y-%m-%d}<br>{episode.start:%H:%M:%S}</td>'
             f"<td><strong>{html.escape(episode.label)}</strong><br>"
             f'<span class="muted">{html.escape(episode.category.value)}</span></td>'
             f'<td><span class="pill"><i style="background:{colour}"></i>'
@@ -326,8 +327,12 @@ def _bookmarks(
             "</tr>"
         )
     return (
-        "<h2>Bookmarks</h2><table><thead><tr><th>Category</th><th>Kind</th><th>What</th>"
-        "<th>Note</th><th>Saved</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
+        '<section><div class="section-heading"><h2>Bookmarks</h2></div>'
+        '<div class="table-wrap" tabindex="0" role="region" aria-label="Bookmarks table">'
+        "<table><thead><tr><th>Category</th><th>Kind</th><th>What</th>"
+        "<th>Note</th><th>Saved</th></tr></thead><tbody>"
+        + "".join(rows)
+        + "</tbody></table></div></section>"
     )
 
 
@@ -363,91 +368,3 @@ def _provenance(result: AnalysisResult, manifest: CaseManifest | None) -> str:
 
 def _truncate(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
-
-
-_STYLE: Final = """
-:root { color-scheme: light; }
-* { box-sizing: border-box; }
-body { margin: 0; padding: 2.5rem 1.5rem; background: #f8fafc; color: #0f172a;
-  font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
-main { max-width: 1100px; margin: 0 auto; }
-h1 { font-size: 1.6rem; margin: 0 0 .25rem; }
-h2 { font-size: 1.1rem; margin: 2.5rem 0 .75rem; }
-.subtitle { color: #64748b; margin: 0 0 2rem; }
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .75rem; }
-.card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: .9rem 1rem; }
-.card-label { color: #64748b; font-size: .78rem; text-transform: uppercase;
-  letter-spacing: .04em; }
-.card-value { font-size: 1.35rem; font-weight: 600; margin-top: .2rem; }
-.panel { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
-  padding: 1rem; overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; background: #fff;
-  border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; }
-th, td { text-align: left; padding: .6rem .75rem; border-bottom: 1px solid #f1f5f9;
-  vertical-align: top; }
-th { background: #f1f5f9; font-size: .8rem; text-transform: uppercase;
-  letter-spacing: .04em; color: #475569; }
-tr:last-child td { border-bottom: none; }
-.mono { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
-.small { font-size: .82rem; }
-.muted { color: #64748b; font-size: .85rem; }
-.warn { color: #9a3412; font-size: .85rem; font-weight: 600; margin: 4px 0 0; }
-/* A dot beside the word, not white text on the colour. Three of the five
-   severities failed contrast painted as a solid pill, and the canvas has no
-   such problem because it draws no text on the fill at all — the same
-   encoding, and one less thing a palette change can quietly break. */
-.pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px;
-  padding: .1rem .55rem; font-size: .78rem; background: #f1f5f9; color: #0f172a; }
-.pill i { width: 10px; height: 10px; border-radius: 999px; display: inline-block; }
-.empty { color: #64748b; font-style: italic; }
-.pill i.swatch { border: 1px solid #64748b; }
-td pre { margin: .4rem 0 0; padding: .5rem .7rem; white-space: pre-wrap; word-break: break-all; }
-.node-title { font: 600 14px system-ui, sans-serif; fill: #0f172a; }
-.node-meta { font: 12px system-ui, sans-serif; fill: #64748b; }
-.legend{font-size:12px;color:#475569;margin:0 0 10px}
-.legend b{color:#0f172a;margin-right:6px}
-.key{display:inline-flex;align-items:center;gap:5px;margin-right:12px}
-.key i{width:14px;height:11px;display:inline-block;border-radius:2px}
-.key i.outline{background:#fff;border:2px solid #64748b}
-.key i.outline.dashed{border-style:dashed}
-.edge-label { font: 11px ui-monospace, monospace; fill: #94a3b8; }
-details { margin-top: 2.5rem; }
-pre { background: #0f172a; color: #e2e8f0; padding: 1rem; border-radius: 10px;
-  overflow-x: auto; font-size: .8rem; }
-footer { margin-top: 3rem; color: #94a3b8; font-size: .82rem; }
-"""
-
-_DOCUMENT: Final = """<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>LogarX — activity reconstruction for {ip}</title>
-<style>{style}</style></head>
-<body><main>
-<h1>Activity reconstruction: {ip}</h1>
-<p class="subtitle">Reconstructed from web server access logs. Every activity below
-links back to the log lines that produced it.</p>
-
-<div class="cards">{summary}</div>
-
-<h2>What happened, in order</h2>
-<div class="panel">{legend}{trace}</div>
-
-<h2>How this client behaved</h2>
-<div class="panel">{behaviour}</div>
-
-<h2>Activities</h2>
-<table><thead><tr>
-<th>Time</th><th>Activity</th><th>Severity</th><th>OWASP</th>
-<th>Requests</th><th>Outcome</th><th>Top targets</th><th>Evidence</th>
-</tr></thead><tbody>{episodes}</tbody></table>
-
-{bookmarks}<h2>Provenance</h2>
-<table><thead><tr><th>Item</th><th>Value</th></tr></thead>
-<tbody>{provenance}</tbody></table>
-
-<details><summary>Machine-readable data</summary><pre>{payload}</pre></details>
-
-<footer>Generated by LogarX. Dashed borders mark activities where every request
-was refused.</footer>
-</main></body></html>
-"""
