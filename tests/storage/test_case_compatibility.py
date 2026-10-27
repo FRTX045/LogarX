@@ -74,3 +74,40 @@ def test_old_case_client_timeline_keeps_every_request(legacy_case: Path) -> None
         assert store.activity_over_time(client_ip="192.0.2.99") == []
     finally:
         store.close()
+
+
+def test_new_case_records_the_partition_that_each_client_actually_uses(tmp_path: Path) -> None:
+    store = ParquetEventStore(tmp_path / "indexed")
+    addresses = [IP, "2001:db8::1", "192.0.2.99"]
+    store.write(
+        NormalizedEvent(START, ip, EvidenceRef("access.log", n + 1), method="GET", path="/")
+        for n, ip in enumerate(addresses)
+    )
+    store.finalize()
+    store.close()
+    index = pq.read_table(store.root / "ip_index.parquet")
+    assert "bucket" in index.column_names
+    for row in index.to_pylist():
+        part = store.root / "events" / f"bucket={row['bucket']}" / "data.parquet"
+        assert (
+            row["client_ip"]
+            in pq.ParquetFile(part).read(columns=["client_ip"])["client_ip"].to_pylist()
+        )
+
+
+def test_recorded_partition_survives_a_different_installed_hash(legacy_case: Path) -> None:
+    import pyarrow as pa
+
+    part = next((legacy_case / "events").glob("bucket=*"))
+    bucket = int(part.name.split("=")[1])
+    index_path = legacy_case / "ip_index.parquet"
+    table = pq.read_table(index_path).append_column("bucket", pa.array([bucket], type=pa.uint64()))
+    pq.write_table(table, index_path)
+    store = ParquetEventStore(legacy_case)
+    try:
+        assert len(store.events_for_ip(IP)) == 2
+        assert sum(s.request_count for s in store.activity_over_time(client_ip=IP)) == 2
+        assert store.events_for_ip("192.0.2.99") == []
+        assert store.activity_over_time(client_ip="192.0.2.99") == []
+    finally:
+        store.close()

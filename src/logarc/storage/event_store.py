@@ -154,6 +154,7 @@ class ParquetEventStore:
         self._writer: pq.ParquetWriter | None = None
         self._batch = 0
         self._connection: duckdb.DuckDBPyConnection | None = None
+        self._index_has_bucket: bool | None = None
         #: This store's own folder inside `_scratch`, while it has a connection.
         self._spill: Path | None = None
 
@@ -223,7 +224,8 @@ class ParquetEventStore:
                         count(*) FILTER (WHERE status BETWEEN 400 AND 499) * 1.0 / count(*),
                         0.0
                     )                                         AS client_error_ratio,
-                    coalesce(sum(bytes_sent), 0)              AS bytes_total
+                    coalesce(sum(bytes_sent), 0)              AS bytes_total,
+                    hash(client_ip) % {BUCKETS}               AS bucket
                 FROM read_parquet({staged})
                 GROUP BY client_ip
             ) TO {self._sql_path(self._ip_index)} (FORMAT PARQUET, COMPRESSION zstd)
@@ -313,6 +315,7 @@ class ParquetEventStore:
                 "distinct_paths": pa.array([], pa.int64()),
                 "client_error_ratio": pa.array([], pa.float64()),
                 "bytes_total": pa.array([], pa.int64()),
+                "bucket": pa.array([], pa.uint64()),
             }
         )
         pq.write_table(empty, self._ip_index, compression="zstd")
@@ -340,9 +343,7 @@ class ParquetEventStore:
             return []
 
         clause, bounds = _window_sql(window)
-        # Older cases do not record which hash implementation assigned their
-        # buckets. DuckDB can change it between versions, so recomputing it
-        # here can silently exclude the client's actual partition.
+        predicate, client_parameters = self._client_predicate(client_ip)
         rows = (
             self._connect()
             .execute(
@@ -351,10 +352,10 @@ class ParquetEventStore:
                    bytes_sent, referer, user_agent, host, source_file_id,
                    source_line_no, extra
             FROM read_parquet({self._sql_path(self._events_glob)}, hive_partitioning = true)
-            WHERE client_ip = ?{clause}
+            WHERE {predicate}{clause}
             ORDER BY timestamp, source_line_no
             """,
-                [client_ip, *bounds],
+                [*client_parameters, *bounds],
             )
             .fetchall()
         )
@@ -632,6 +633,30 @@ class ParquetEventStore:
 
     # -- plumbing ----------------------------------------------------------
 
+    def _client_predicate(self, client_ip: str) -> tuple[str, list[object]]:
+        """Use the partition recorded at ingest, never today's hash function.
+
+        Old indexes have no mapping. Reading their partitions with an IP
+        filter is slower but correct, and leaves the case untouched. New ones
+        retain partition pruning across DuckDB upgrades without a migration.
+        """
+        if self._index_has_bucket is None:
+            self._index_has_bucket = "bucket" in pq.read_schema(self._ip_index).names
+        if not self._index_has_bucket:
+            return "client_ip = ?", [client_ip]
+        row = (
+            self._connect()
+            .execute(
+                f"SELECT bucket FROM read_parquet({self._sql_path(self._ip_index)}) "
+                "WHERE client_ip = ?",
+                [client_ip],
+            )
+            .fetchone()
+        )
+        if row is None:
+            return "FALSE", []
+        return "bucket = ? AND client_ip = ?", [int(row[0]), client_ip]
+
     def activity_over_time(
         self, *, buckets: int = 200, client_ip: str | None = None
     ) -> list[TimeSlot]:
@@ -639,10 +664,8 @@ class ParquetEventStore:
         if not self._has_events():
             return []
 
-        # As with reconstruction, never infer an old case's bucket using the
-        # installed DuckDB's potentially different hash implementation.
-        whose = " WHERE client_ip = ?" if client_ip else ""
-        who = [client_ip] if client_ip else []
+        predicate, who = self._client_predicate(client_ip) if client_ip else ("TRUE", [])
+        whose = f" WHERE {predicate}"
 
         connection = self._connect()
         span = connection.execute(

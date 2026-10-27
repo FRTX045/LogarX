@@ -1036,6 +1036,10 @@ which will be the first tag.
 
 ### Fixed
 
+- Per-IP reconstruction and timelines remain readable after a DuckDB upgrade
+  changes its hash function. New indexes record the assigned partition; older
+  cases are read without guessing their bucket or rewriting their files.
+
 - **CloudFront logs no longer raise false alarms over CloudFront's own
   encoding.** CloudFront percent-encodes what it writes, `%` included, so a
   client's `?next=%2Fadmin` is logged as `%252Fadmin`, and the rule for double
