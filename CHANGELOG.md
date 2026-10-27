@@ -1036,6 +1036,15 @@ which will be the first tag.
 
 ### Fixed
 
+- **CloudFront logs no longer raise false alarms over CloudFront's own
+  encoding.** CloudFront percent-encodes what it writes, `%` included, so a
+  client's `?next=%2Fadmin` is logged as `%252Fadmin`, and the rule for double
+  encoding took that as the client's doing. On the small tier rendered as a
+  CloudFront log: 82 innocent requests reported as hostile, 156 rule matches
+  that the Apache log of the same traffic does not have. The `cloudfront`
+  built-in now undoes the encoding once before reading, and a table format can
+  say so for itself (`escapes`, written only when set). All 82 are gone, and
+  every field reads as in the Apache log.
 - **ECS logs keep their Referer, and Cloudflare logs their protocol.** The
   `ecs-http` built-in mapped no Referer at all, though ECS defines
   `http.request.referrer`, so every Referer in an ECS log was dropped: 52,310 of
