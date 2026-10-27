@@ -340,8 +340,9 @@ class ParquetEventStore:
             return []
 
         clause, bounds = _window_sql(window)
-        # Constraining `bucket` lets DuckDB skip whole partition files rather
-        # than opening each one to check its statistics.
+        # Older cases do not record which hash implementation assigned their
+        # buckets. DuckDB can change it between versions, so recomputing it
+        # here can silently exclude the client's actual partition.
         rows = (
             self._connect()
             .execute(
@@ -350,10 +351,10 @@ class ParquetEventStore:
                    bytes_sent, referer, user_agent, host, source_file_id,
                    source_line_no, extra
             FROM read_parquet({self._sql_path(self._events_glob)}, hive_partitioning = true)
-            WHERE bucket = hash(?) % {BUCKETS} AND client_ip = ?{clause}
+            WHERE client_ip = ?{clause}
             ORDER BY timestamp, source_line_no
             """,
-                [client_ip, client_ip, *bounds],
+                [client_ip, *bounds],
             )
             .fetchall()
         )
@@ -638,10 +639,10 @@ class ParquetEventStore:
         if not self._has_events():
             return []
 
-        # Constraining `bucket` as well lets DuckDB skip whole partition files,
-        # the same way a single client's events are read.
-        whose = f" WHERE bucket = hash(?) % {BUCKETS} AND client_ip = ?" if client_ip else ""
-        who = [client_ip, client_ip] if client_ip else []
+        # As with reconstruction, never infer an old case's bucket using the
+        # installed DuckDB's potentially different hash implementation.
+        whose = " WHERE client_ip = ?" if client_ip else ""
+        who = [client_ip] if client_ip else []
 
         connection = self._connect()
         span = connection.execute(
