@@ -19,6 +19,7 @@ window keeps that one.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
@@ -88,6 +89,38 @@ def named(kind: str) -> Format:
     raise ValueError(f"unknown format {kind!r}; choose {choices}")
 
 
+def write_text(
+    target: Path, text: str, *, encoding: str = "utf-8", newline: str | None = None
+) -> None:
+    """Write an exported document to `target`, whole or not at all.
+
+    Every byte the log held that was not UTF-8 is written as that byte,
+    spelled `\\xff` as Apache spells a byte it cannot print: a log line keeps
+    such a byte as a lone surrogate, which no file can be encoded with.
+
+    Written beside `target` first and moved over it once complete, so a write
+    that fails leaves whatever file was there, and never an empty one.
+    """
+    shown = _bytes_spelled(text)
+    partial = target.with_name(f".{target.name}.{os.getpid()}.part")
+    try:
+        with partial.open("w", encoding=encoding, newline=newline) as handle:
+            handle.write(shown)
+        partial.replace(target)
+    except BaseException:
+        partial.unlink(missing_ok=True)
+        raise
+
+
+def _bytes_spelled(text: str) -> str:
+    """`text` with each byte kept as a surrogate spelled as the byte it was."""
+    try:
+        return text.encode("utf-8", "surrogateescape").decode("utf-8", "backslashreplace")
+    except UnicodeEncodeError:
+        # A surrogate that is not a kept byte; spelled as its code point instead.
+        return text.encode("utf-8", "backslashreplace").decode("utf-8")
+
+
 def write_reconstruction(
     result: AnalysisResult,
     manifest: CaseManifest,
@@ -106,9 +139,7 @@ def write_reconstruction(
     """
     fmt = named(kind)
     if fmt.kind == "json":
-        target.write_text(json.dumps(result.to_dict(), indent=2), encoding="utf-8")
+        write_text(target, json.dumps(result.to_dict(), indent=2))
     else:
-        target.write_text(
-            render_report(result, manifest, shelf=shelf, lines=lines), encoding="utf-8"
-        )
+        write_text(target, render_report(result, manifest, shelf=shelf, lines=lines))
     return target

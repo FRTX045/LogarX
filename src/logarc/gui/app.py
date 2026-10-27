@@ -3083,7 +3083,7 @@ class MainWindow(QMainWindow):
             # With a byte-order mark: without one a spreadsheet reads the file in
             # the machine's own code page, and an address or a note in anything
             # but plain English comes out garbled. The rows end themselves.
-            target.write_text(to_csv(shelf, lines), encoding="utf-8-sig", newline="")
+            export.write_text(target, to_csv(shelf, lines), encoding="utf-8-sig", newline="")
             return str(target)
 
         run_job(
