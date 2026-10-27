@@ -24,6 +24,7 @@ from PyQt6.QtGui import (
     QFont,
     QFontMetricsF,
     QIcon,
+    QKeyEvent,
     QPainter,
     QPainterPath,
     QPen,
@@ -245,6 +246,16 @@ def _heading_height() -> float:
     name, detail = _session_fonts()
     return _TEXT_PADDING / _LEGIBLE_AT * 3 + _text_height("Hg", name) + _text_height("Hg", detail)
 
+
+#: The keys that move the ring between activities, and which way each moves it.
+_STEPS: Final[dict[int, str]] = {
+    Qt.Key.Key_Right.value: "next",
+    Qt.Key.Key_Down.value: "next",
+    Qt.Key.Key_Left.value: "previous",
+    Qt.Key.Key_Up.value: "previous",
+    Qt.Key.Key_Home.value: "first",
+    Qt.Key.Key_End.value: "last",
+}
 
 _PEN_STYLES: Final = {
     "solid": Qt.PenStyle.SolidLine,
@@ -801,6 +812,9 @@ class ActivityCanvas(QGraphicsView):
         self.setStyleSheet(f"QGraphicsView {{ border: 1px solid {PAPER_EDGE}; }}")
         self._graph: ActivityGraph | None = None
         self._nodes: dict[str, _NodeItem] = {}
+        # The circles are not in the accessibility tree, so the canvas says
+        # which one is ringed: see `highlight`.
+        self.setAccessibleName("Activity graph")
         self._edge_art: list[_EdgeArt] = []
         self._edges_by_node: dict[str, list[_EdgeArt]] = {}
         self._halo: QGraphicsEllipseItem | None = None
@@ -1395,8 +1409,11 @@ class ActivityCanvas(QGraphicsView):
         item = self._nodes.get(node_id)
         if item is None:
             self._selected = None
+            self.setAccessibleDescription("")
             return
         self._selected = node_id
+        node = self._graph_node(node_id)
+        self.setAccessibleDescription("" if node is None else summarise(node).replace("\n", ", "))
 
         radius = item.rect().width() / 2 + SELECTION_WIDTH + 2.0
         halo = QGraphicsEllipseItem(QRectF(-radius, -radius, radius * 2, radius * 2))
@@ -1708,6 +1725,7 @@ class ActivityCanvas(QGraphicsView):
         self._box_of.clear()
         self._patches.clear()
         self._selected = None
+        self.setAccessibleDescription("")
         self._lit = None
         self._history.clear()
         self._base.clear()
@@ -1989,6 +2007,42 @@ class ActivityCanvas(QGraphicsView):
             item = item.parentItem()
         if isinstance(item, _NodeItem):
             self.node_selected.emit(item.node_id)
+
+    def keyPressEvent(self, event: QKeyEvent | None) -> None:  # noqa: N802 - Qt's naming
+        """Move the ring between activities from the keyboard, as a click does.
+
+        Right and Down go to the next activity in the order the graph draws
+        them, which on a trace is the order they happened; Left and Up to the
+        previous; Home and End to the first and last. Tab is left to move
+        between panels. Every other key is the view's as before.
+        """
+        if event is None:  # pragma: no cover - Qt always supplies one
+            return
+        order = list(self._nodes)
+        key = event.key()
+        if not order or key not in _STEPS:
+            super().keyPressEvent(event)
+            return
+        here = order.index(self._selected) if self._selected in order else None
+        step = _STEPS[key]
+        if step == "first":
+            there = 0
+        elif step == "last":
+            there = len(order) - 1
+        elif here is None:
+            there = 0 if step == "next" else len(order) - 1
+        else:
+            there = here + (1 if step == "next" else -1)
+        event.accept()
+        if not 0 <= there < len(order) or there == here:
+            return
+        self.ensureVisible(self._nodes[order[there]])
+        self.node_selected.emit(order[there])
+
+    def _graph_node(self, node_id: str) -> GraphNode | None:
+        if self._graph is None:
+            return None
+        return next((node for node in self._graph.nodes if node.node_id == node_id), None)
 
     def wheelEvent(self, event: QWheelEvent | None) -> None:  # noqa: N802 - Qt's naming
         if event is None:  # pragma: no cover - Qt always supplies one
