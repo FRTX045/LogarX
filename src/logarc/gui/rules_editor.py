@@ -222,7 +222,9 @@ class RulesEditor(QWidget):
         return table
 
     def _fit_rows(self) -> None:
-        """Rows of `_ROW`, taller only when zoomed text would not fit it."""
+        """Rows of `_ROW`, or taller where the text needs it. Qt also raises a row
+        to its own minimum for the font, which for Segoe UI at the size the
+        window opens at is already above `_ROW`."""
         for table in self._tables:
             height = max(_ROW, table.fontMetrics().height() + 8)
             required(table.verticalHeader()).setDefaultSectionSize(height)

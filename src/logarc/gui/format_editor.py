@@ -95,8 +95,9 @@ __all__ = ["FormatChoice", "FormatEditor"]
 #: `apache-vhost-combined`, which is the longest thing this has to show.
 _WIDTH = 820
 
-#: Tall enough to open with every field of the preview in sight, measured
-#: rather than guessed: eleven rows at `_ROW` plus the fields above them.
+#: The height when the editor is opened on its own. In the window it is a tab of
+#: `FormatsAndRules`, which sets the size, and a preview with more fields than
+#: there is room for scrolls.
 _HEIGHT = 700
 
 _ROW = 26
@@ -334,11 +335,13 @@ class FormatEditor(QDialog):
     # -- assembling --------------------------------------------------------
 
     def _fit_rows(self) -> None:
-        """Tight rows, so all eleven fields are in sight at the opening size.
+        """Rows as tight as the text allows, so as many fields as fit are in sight.
 
-        At Qt's default only seven were, and the four out of view are the ones
-        a custom format most often gets wrong: referer, user agent, host, and
-        the byte count. Taller only when zoomed text would not fit `_ROW`.
+        The fields furthest down are the ones a custom format most often gets
+        wrong: referer, user agent, host, and the byte count. `_ROW` is the
+        floor; text that needs more gets more, and Qt raises a row to its own
+        minimum for the font, which for Segoe UI at the size the window opens at
+        is already above `_ROW`.
         """
         for table in (self._mapping, self._fields):
             height = max(_ROW, table.fontMetrics().height() + 8)
