@@ -21,8 +21,12 @@ from pathlib import Path
 import pytest
 
 from logarc.case import Case
-from logarc.ingest.parallel import can_split
-from logarc.parsers.registry import register_spec, unregister_format
+from logarc.core.event import NormalizedEvent
+from logarc.core.evidence import EvidenceRef
+from logarc.ingest.parallel import _parse_chunk, _Task, can_split
+from logarc.ingest.pipeline import DEFAULT_MAX_LINE_BYTES
+from logarc.ingest.scan import scan_chunks
+from logarc.parsers.registry import get_parser, register_format, register_spec, unregister_format
 from logarc.parsers.spec import LogFormatSpec
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
@@ -161,6 +165,64 @@ def test_the_line_length_bound_holds_on_the_parallel_path_too(tmp_path: Path) ->
     assert one.lines_quarantined == 1
     assert many.lines_quarantined == 1, "the worker path must bound it too"
     assert one.events_parsed == many.events_parsed == 400
+
+
+def test_a_number_too_wide_to_store_costs_a_worker_nothing_either(tmp_path: Path) -> None:
+    """A worker writes its own part of the case, so the store's guard has to
+    hold there as well: twenty digits used to fail that worker's whole batch."""
+    log = write_log(tmp_path / "access.log", 400)
+    with log.open("a", encoding="utf-8") as handle:
+        handle.write(
+            '203.0.113.5 - - [10/Oct/2020:13:55:36 +0000] "GET /wide HTTP/1.1" '
+            '99999999999999999999 99999999999999999999 "-" "x"\n'
+        )
+
+    one, _ = ingest(tmp_path / "seq", log, workers=1)
+    many, _ = ingest(tmp_path / "par", log, workers=3)
+
+    assert len(one) == len(many) == 401
+
+
+def test_a_worker_quarantines_a_line_its_parser_raises_on(tmp_path: Path) -> None:
+    """A worker runs its own loop, not `ingest_file`, so the guard that keeps a
+    parser bug to one line had to be in both.
+
+    Run in this process: a format registered from a factory cannot reach a
+    spawned worker, and a format that can has no bug left to raise with.
+    """
+
+    class Buggy:
+        name = "test-buggy"
+
+        def __init__(self) -> None:
+            self._inner = get_parser("apache-combined")
+
+        def parse_line(self, line: str, ref: EvidenceRef) -> NormalizedEvent | None:
+            if "/page/7 " in line:
+                raise OverflowError("a bug in this parser")
+            return self._inner.parse_line(line, ref)
+
+    log = write_log(tmp_path / "access.log", 20)
+    register_format("test-buggy", Buggy)
+    try:
+        (chunk,) = scan_chunks(log, parts=1).chunks
+        counts = _parse_chunk(
+            _Task(
+                path=log,
+                chunk=chunk,
+                case_root=tmp_path / "case",
+                file_id="access.log",
+                log_format="test-buggy",
+                format_spec=None,
+                shard="00",
+                batch_size=1000,
+                max_line_bytes=DEFAULT_MAX_LINE_BYTES,
+            )
+        )
+    finally:
+        unregister_format("test-buggy")
+
+    assert (counts.events_parsed, counts.lines_quarantined) == (19, 1)
 
 
 @pytest.mark.slow

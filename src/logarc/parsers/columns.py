@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Final
 
 from logarc.core.event import NormalizedEvent
 from logarc.parsers.base import read_target, split_client, split_request_line
-from logarc.parsers.fieldnames import JOIN, MAPPABLE, REQUIRED
+from logarc.parsers.fieldnames import JOIN, MAPPABLE, REQUIRED, recorded_by
 from logarc.parsers.times import TimeFormatError, check_time_format, read_time
 
 if TYPE_CHECKING:
@@ -117,8 +117,17 @@ def split_row(line: str, separator: str) -> list[str]:
     Through `csv` rather than `str.split`, so a comma-separated field holding a
     comma inside quotes comes back whole. W3C quotes nothing, so this costs
     those logs nothing.
+
+    What `csv` refuses — a carriage return outside quotes, a cell past its
+    128 KB limit — is split on the separator instead, which is W3C's own rule.
+    The refusal used to leave the parser as an exception and end the ingest of
+    the whole log. A quoted row this splits wrongly comes back with the wrong
+    number of cells, and the parser refuses that row by its count.
     """
-    return next(csv.reader([line], delimiter=separator, skipinitialspace=False), [])
+    try:
+        return next(csv.reader([line], delimiter=separator, skipinitialspace=False), [])
+    except csv.Error:
+        return line.split(separator)
 
 
 def declared_columns(lines: Sequence[str], separator: str) -> tuple[tuple[str, ...], str]:
@@ -221,6 +230,13 @@ class ColumnsParser:
             raise ColumnsFormatError(str(exc)) from exc
 
         self.name = name
+        # A field mapped to columns this file does not have is one it cannot
+        # fill, as `parse_line` reads them: any one of its columns is enough.
+        self.records = recorded_by(
+            ours
+            for ours, spec in mapping
+            if any(theirs in self._index for theirs in spec.split(JOIN))
+        )
         self._columns = tuple(columns)
         self._separator = separator
         self._time_format = time_format

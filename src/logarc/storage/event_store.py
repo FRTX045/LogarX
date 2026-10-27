@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import uuid
 from contextlib import suppress
@@ -106,6 +107,10 @@ SCHEMA: Final = pa.schema(
 )
 
 
+#: Surrogates outside the `\udc80-\udcff` that `surrogateescape` reads a byte as.
+_LONE_SURROGATE: Final = re.compile("[\ud800-\udc7f\udd00-\udfff]")
+
+
 def _storable(text: str | None) -> str | None:
     """Make a string safe to write to a UTF-8 Parquet column.
 
@@ -116,10 +121,32 @@ def _storable(text: str | None) -> str | None:
 
     Text that is already valid passes through untouched, so this only affects
     input that was malformed to begin with.
+
+    A surrogate no byte could have produced — JSON's ``\\ud800``, which decodes
+    to half a character — is written back as that escape. One such field used
+    to fail the write of its whole batch, and the ingest with it.
     """
     if text is None:
         return None
-    return text.encode("utf-8", "surrogateescape").decode("utf-8", "backslashreplace")
+    try:
+        raw = text.encode("utf-8", "surrogateescape")
+    except UnicodeEncodeError:
+        escaped = _LONE_SURROGATE.sub(lambda found: f"\\u{ord(found[0]):04x}", text)
+        raw = escaped.encode("utf-8", "surrogateescape")
+    return raw.decode("utf-8", "backslashreplace")
+
+
+def _fits(value: int | None, bits: int) -> int | None:
+    """`value`, or unknown if a column `bits` wide cannot hold it.
+
+    A status or byte count is the server's own number, but the line it is read
+    from is the client's. Twenty digits failed the write of the whole batch,
+    and the ingest with it. Only the number is lost, not the request: the line
+    it came from is still the evidence.
+    """
+    if value is None or -(2 ** (bits - 1)) <= value < 2 ** (bits - 1):
+        return value
+    return None
 
 
 class ParquetEventStore:
@@ -149,11 +176,14 @@ class ParquetEventStore:
         self._staging = self.root / "staging"
         self._events = self.root / "events"
         self._ip_index = self.root / "ip_index.parquet"
+        self._finalizing = self.root / ".finalizing"
+        self._finalized = self.root / ".finalized"
         self._scratch = scratch if scratch is not None else self.root / "tmp"
         self._memory_limit = memory_limit
         self._writer: pq.ParquetWriter | None = None
         self._batch = 0
         self._connection: duckdb.DuckDBPyConnection | None = None
+        self._index_has_bucket: bool | None = None
         #: This store's own folder inside `_scratch`, while it has a connection.
         self._spill: Path | None = None
 
@@ -161,12 +191,20 @@ class ParquetEventStore:
 
     @property
     def is_finalized(self) -> bool:
-        return self._events.exists()
+        if not self._events.is_dir() or not self._ip_index.is_file():
+            return False
+        if self._finalized.is_file():
+            return True
+        # Legacy stores have no completion marker. Their final index and the
+        # absence of staged data distinguish a finished write from a partial one.
+        return not self._finalizing.exists() and not any(self._staging.glob("*.parquet"))
 
     def write(self, events: Iterable[NormalizedEvent]) -> None:
         batch = list(events)
         if self.is_finalized:
             raise StoreStateError(f"case at {self.root} is already finalised; cannot write more")
+        if self._finalizing.exists() or self._events.exists() or self._ip_index.exists():
+            raise StoreStateError("cannot append to a store whose finalization has started")
         if not batch:
             return
 
@@ -179,8 +217,8 @@ class ParquetEventStore:
                 "path": [_storable(e.path) for e in batch],
                 "query": [_storable(e.query) for e in batch],
                 "protocol": [_storable(e.protocol) for e in batch],
-                "status": [e.status for e in batch],
-                "bytes_sent": [e.bytes_sent for e in batch],
+                "status": [_fits(e.status, 32) for e in batch],
+                "bytes_sent": [_fits(e.bytes_sent, 64) for e in batch],
                 "referer": [_storable(e.referer) for e in batch],
                 "user_agent": [_storable(e.user_agent) for e in batch],
                 "host": [_storable(e.host) for e in batch],
@@ -198,19 +236,47 @@ class ParquetEventStore:
         pq.write_table(table, path, compression="zstd")
 
     def finalize(self) -> None:
-        """Partition, sort and index the staged events, then drop the staging copy."""
+        """Publish completion only after every partition and the index are written.
+
+        Until the marker is published, staging is left intact. A retry can
+        rebuild this implementation's incomplete outputs from that copy. Legacy
+        partial stores cannot prove their staging survived cleanup intact, so
+        they are refused rather than guessed complete or rebuilt from a subset.
+        """
         if self.is_finalized:
             return
-
+        if (self._events.exists() or self._ip_index.exists()) and not self._finalizing.exists():
+            raise StoreStateError(
+                f"incomplete store at {self.root}; re-ingest the source logs into a new case"
+            )
+        self.root.mkdir(parents=True, exist_ok=True)
+        self._finalizing.touch()
+        if self._events.exists():
+            shutil.rmtree(self._events)
+        self._ip_index.unlink(missing_ok=True)
+        self._index_has_bucket = None
         self._events.mkdir(parents=True, exist_ok=True)
-        if not any(self._staging.glob("*.parquet")):
-            # An empty case is legitimate: a log may contain nothing parseable.
-            self._write_empty_index()
-            return
+        try:
+            if any(self._staging.glob("*.parquet")):
+                connection = self._connect()
+                staged = self._sql_path(self._staging / "*.parquet")
+                self._partition_and_sort(connection, staged)
+                self._write_index(connection, staged)
+            else:
+                # A log may legitimately contain nothing parseable.
+                self._write_empty_index()
+            self._clear_scratch()
+            self._finalized.touch(exist_ok=False)
+        except BaseException:
+            self.close()
+            raise
+        # Completion precedes cleanup. A crash or failed removal here must not
+        # cause a retry to rebuild the case from partially removed staging.
+        with suppress(OSError):
+            self._finalizing.unlink()
+        shutil.rmtree(self._staging, ignore_errors=True)
 
-        connection = self._connect()
-        staged = self._sql_path(self._staging / "*.parquet")
-        self._partition_and_sort(connection, staged)
+    def _write_index(self, connection: duckdb.DuckDBPyConnection, staged: str) -> None:
         connection.execute(f"""
             COPY (
                 SELECT
@@ -223,13 +289,12 @@ class ParquetEventStore:
                         count(*) FILTER (WHERE status BETWEEN 400 AND 499) * 1.0 / count(*),
                         0.0
                     )                                         AS client_error_ratio,
-                    coalesce(sum(bytes_sent), 0)              AS bytes_total
+                    coalesce(sum(bytes_sent), 0)              AS bytes_total,
+                    hash(client_ip) % {BUCKETS}               AS bucket
                 FROM read_parquet({staged})
                 GROUP BY client_ip
             ) TO {self._sql_path(self._ip_index)} (FORMAT PARQUET, COMPRESSION zstd)
         """)
-        shutil.rmtree(self._staging, ignore_errors=True)
-        self._clear_scratch()
 
     def _partition_and_sort(self, connection: duckdb.DuckDBPyConnection, staged: str) -> None:
         """Lay the events out bucketed and sorted, in two bounded passes.
@@ -313,6 +378,7 @@ class ParquetEventStore:
                 "distinct_paths": pa.array([], pa.int64()),
                 "client_error_ratio": pa.array([], pa.float64()),
                 "bytes_total": pa.array([], pa.int64()),
+                "bucket": pa.array([], pa.uint64()),
             }
         )
         pq.write_table(empty, self._ip_index, compression="zstd")
@@ -340,8 +406,7 @@ class ParquetEventStore:
             return []
 
         clause, bounds = _window_sql(window)
-        # Constraining `bucket` lets DuckDB skip whole partition files rather
-        # than opening each one to check its statistics.
+        predicate, client_parameters = self._client_predicate(client_ip)
         rows = (
             self._connect()
             .execute(
@@ -350,10 +415,10 @@ class ParquetEventStore:
                    bytes_sent, referer, user_agent, host, source_file_id,
                    source_line_no, extra
             FROM read_parquet({self._sql_path(self._events_glob)}, hive_partitioning = true)
-            WHERE bucket = hash(?) % {BUCKETS} AND client_ip = ?{clause}
+            WHERE {predicate}{clause}
             ORDER BY timestamp, source_line_no
             """,
-                [client_ip, client_ip, *bounds],
+                [*client_parameters, *bounds],
             )
             .fetchall()
         )
@@ -631,6 +696,30 @@ class ParquetEventStore:
 
     # -- plumbing ----------------------------------------------------------
 
+    def _client_predicate(self, client_ip: str) -> tuple[str, list[object]]:
+        """Use the partition recorded at ingest, never today's hash function.
+
+        Old indexes have no mapping. Reading their partitions with an IP
+        filter is slower but correct, and leaves the case untouched. New ones
+        retain partition pruning across DuckDB upgrades without a migration.
+        """
+        if self._index_has_bucket is None:
+            self._index_has_bucket = "bucket" in pq.read_schema(self._ip_index).names
+        if not self._index_has_bucket:
+            return "client_ip = ?", [client_ip]
+        row = (
+            self._connect()
+            .execute(
+                f"SELECT bucket FROM read_parquet({self._sql_path(self._ip_index)}) "
+                "WHERE client_ip = ?",
+                [client_ip],
+            )
+            .fetchone()
+        )
+        if row is None:
+            return "FALSE", []
+        return "bucket = ? AND client_ip = ?", [int(row[0]), client_ip]
+
     def activity_over_time(
         self, *, buckets: int = 200, client_ip: str | None = None
     ) -> list[TimeSlot]:
@@ -638,10 +727,8 @@ class ParquetEventStore:
         if not self._has_events():
             return []
 
-        # Constraining `bucket` as well lets DuckDB skip whole partition files,
-        # the same way a single client's events are read.
-        whose = f" WHERE bucket = hash(?) % {BUCKETS} AND client_ip = ?" if client_ip else ""
-        who = [client_ip, client_ip] if client_ip else []
+        predicate, who = self._client_predicate(client_ip) if client_ip else ("TRUE", [])
+        whose = f" WHERE {predicate}"
 
         connection = self._connect()
         span = connection.execute(

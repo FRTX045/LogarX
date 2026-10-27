@@ -40,6 +40,7 @@ from logarc.ingest.pipeline import (
     _TOO_LONG,
     DEFAULT_MAX_LINE_BYTES,
     ResolvedFormat,
+    _parsed,
     resolve_format,
 )
 from logarc.ingest.quarantine import Quarantine
@@ -106,8 +107,6 @@ DEFAULT_WORKERS: Final = default_workers()
 #: Spawning a process costs tens of milliseconds on Linux and rather more on
 #: Windows, and a small log is parsed in less than that.
 MIN_PARALLEL_BYTES: Final = 32 << 20  # 32 MB
-
-_UNPARSEABLE: Final = "line does not match the log format"
 
 
 def can_split(path: Path) -> bool:
@@ -201,9 +200,9 @@ def _parse_chunk(task: _Task) -> _Counts:
                     )
                     lines_quarantined += 1
                     continue
-                event = parser.parse_line(text, EvidenceRef(task.file_id, line_no))
-                if event is None:
-                    quarantine.record(task.file_id, line_no, text, reason=_UNPARSEABLE)
+                event = _parsed(parser, text, EvidenceRef(task.file_id, line_no))
+                if isinstance(event, str):
+                    quarantine.record(task.file_id, line_no, text, reason=event)
                     lines_quarantined += 1
                     continue
                 batch.append(event)
