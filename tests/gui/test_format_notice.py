@@ -8,10 +8,10 @@ was ingested, and the wording has to make that the first thing the reader sees.
 
 from __future__ import annotations
 
-from logarc.formats import FormatDrift
-from logarc.gui.format_notice import drift_notice
-from logarc.parsers.apache import COMBINED, COMMON
-from logarc.parsers.spec import LogFormatSpec
+from logarx.formats import FormatDrift
+from logarx.gui.format_notice import drift_notice
+from logarx.parsers.apache import COMBINED, COMMON
+from logarx.parsers.spec import LogFormatSpec
 
 JANUARY = LogFormatSpec(name="log-kantor", directive=COMMON)
 JUNE = LogFormatSpec(name="log-kantor", directive=COMBINED)

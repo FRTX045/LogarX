@@ -1,19 +1,19 @@
 # The demo log
 
-`demo.log` is the file to open when you want to show somebody what logarc does.
+`demo.log` is the file to open when you want to show somebody what LogarX does.
 It is 841 lines of three days' traffic against a fictional shop, and every
 feature the application has is reachable from it.
 
 ```bash
-logarc-dev ingest samples/demo/demo.log --format apache-vhost-combined --case demo-case
-logarc-gui                      # Case -> Open, pick demo-case
+logarx-dev ingest samples/demo/demo.log --format apache-vhost-combined --case demo-case
+logarx-gui                      # Case -> Open, pick demo-case
 ```
 
 Or **Case → New from logs…** in the window and pick `demo.log`. To add OWASP
 CRS to a case made with `--no-crs` (see "CRS" below):
 
 ```bash
-logarc-dev enrich --case demo-case
+logarx-dev enrich --case demo-case
 ```
 
 ## What it covers, measured
@@ -53,7 +53,7 @@ with the request's, and the `session_fixation` rule built on top of that. In
 plain combined they are quietly unreachable, which is the wrong property for a
 file whose entire job is to show what works.
 
-One client also has `%u` populated (the authenticated username). logarc parses
+One client also has `%u` populated (the authenticated username). LogarX parses
 that field and currently throws it away; having a line that carries one makes
 the gap visible rather than theoretical.
 
@@ -119,7 +119,7 @@ real Unix command and CRS is matching a command name followed by an argument.
 Nothing is wrong with CRS; it is doing what a generic ruleset must do without
 knowing this site sells brackets.
 
-**Until 2026-09-22 logarc repeated that accusation, and now it does not.** On
+**Until 2026-09-22 LogarX repeated that accusation, and now it does not.** On
 the 237,278-request medium corpus the same rule accused 22 ordinary product
 searches — `pipe cutter`, `wall plugs` — and named no real attack at all, so it
 is withheld from naming an activity (`_RULE_WITHHELD` in
@@ -141,7 +141,7 @@ at a person's browser and usually arrives from one.
 
 ## Why no truth file
 
-Every other corpus here ships a `.truth.jsonl` and `logarc-dev evaluate` scores
+Every other corpus here ships a `.truth.jsonl` and `logarx-dev evaluate` scores
 against it. This one does not, and should not.
 
 Scoring the rules against traffic written to suit them is marking your own

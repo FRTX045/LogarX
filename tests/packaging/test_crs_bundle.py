@@ -2,7 +2,7 @@
 
 `packaging/crs_bundle.py` decides which files go in and where, and the spec
 refuses to build without them. The layout has to match the one
-`logarc.detect.crs.sidecar` looks in when frozen, or the application ships the
+`logarx.detect.crs.sidecar` looks in when frozen, or the application ships the
 sidecar and still cannot find it — so the mapping is checked against the paths
 that code resolves, not against a second copy of them written here.
 """
@@ -19,14 +19,14 @@ from types import ModuleType
 
 import pytest
 
-from logarc.detect.crs import sidecar
+from logarx.detect.crs import sidecar
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 def _load() -> ModuleType:
     path = ROOT / "packaging" / "crs_bundle.py"
-    spec = importlib.util.spec_from_file_location("logarc_crs_bundle_script", path)
+    spec = importlib.util.spec_from_file_location("logarx_crs_bundle_script", path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -164,11 +164,11 @@ def test_an_unrecorded_revision_stops_the_build(bundle: ModuleType, tmp_path: Pa
 
 def test_go_list_output_names_each_dependency_module_once(bundle: ModuleType) -> None:
     """The sidecar's own module is this project's, already licensed by LICENSE."""
-    own = Path("C:/src/logarc/crs")
+    own = Path("C:/src/logarx/crs")
     output = "\n".join(
         [
             "",
-            f"logarc/crs\t{own}",
+            f"logarx/crs\t{own}",
             "github.com/corazawaf/coraza/v3\tC:/go/pkg/mod/github.com/corazawaf/coraza/v3@v3.3.3",
             "github.com/corazawaf/coraza/v3\tC:/go/pkg/mod/github.com/corazawaf/coraza/v3@v3.3.3",
             "rsc.io/binaryregexp\tC:/go/pkg/mod/rsc.io/binaryregexp@v0.2.0",

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from logarc.core.activity import ActivityCategory as Category
-from logarc.evaluation.metrics import (
+from logarx.core.activity import ActivityCategory as Category
+from logarx.evaluation.metrics import (
     Prediction,
     score_binary,
     score_classification,

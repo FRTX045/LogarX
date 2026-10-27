@@ -11,10 +11,10 @@ from datetime import UTC, datetime
 
 import pytest
 
-from logarc.core.evidence import EvidenceRef
-from logarc.parsers.logformat import LogFormatError, LogFormatParser
-from logarc.parsers.nginx import looks_like_nginx
-from logarc.parsers.registry import get_spec
+from logarx.core.evidence import EvidenceRef
+from logarx.parsers.logformat import LogFormatError, LogFormatParser
+from logarx.parsers.nginx import looks_like_nginx
+from logarx.parsers.registry import get_spec
 
 REF = EvidenceRef(source_file_id="f", line_no=1)
 

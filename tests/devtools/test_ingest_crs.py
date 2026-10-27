@@ -1,16 +1,16 @@
-"""`logarc-dev ingest` replaying the new case through CRS, which it does by default.
+"""`logarx-dev ingest` replaying the new case through CRS, which it does by default.
 
 Decided 2026-10-05: CRS runs after every scan unless somebody says not to —
-`--no-crs` for one run, `LOGARC_CRS=off` for a machine. `--crs` asks for it
+`--no-crs` for one run, `LOGARX_CRS=off` for a machine. `--crs` asks for it
 whatever the machine says.
 
 **The case is finished before CRS starts, and stays finished whatever CRS
 does.** A missing sidecar, one that crashes, a log with nothing in it to
 replay: each is a notice and exit 0, because the ingest the command was asked
-for succeeded. `logarc-dev enrich` is the command that fails when CRS cannot run,
+for succeeded. `logarx-dev enrich` is the command that fails when CRS cannot run,
 since there CRS is the whole job.
 
-`tests/conftest.py` sets `LOGARC_CRS=off` for the suite; the tests here that are
+`tests/conftest.py` sets `LOGARX_CRS=off` for the suite; the tests here that are
 about the default take it back off.
 """
 
@@ -22,12 +22,12 @@ from typing import TYPE_CHECKING
 import pytest
 from typer.testing import CliRunner
 
-from logarc.case import Case
-from logarc.detect.crs import AUTO_ENV, CrsUnavailableError, SidecarConfig
-from logarc.detect.crs.sidecar import BINARY_ENV
-from logarc.detect.crs.store import is_enriched
-from logarc.devtools import main as cli_main
-from logarc.devtools.main import app
+from logarx.case import Case
+from logarx.detect.crs import AUTO_ENV, CrsUnavailableError, SidecarConfig
+from logarx.detect.crs.sidecar import BINARY_ENV
+from logarx.detect.crs.store import is_enriched
+from logarx.devtools import main as cli_main
+from logarx.devtools.main import app
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -43,7 +43,7 @@ LINES = [
 _built = SidecarConfig()
 _unbuilt = not _built.binary.exists() or not (_built.rules / "rules").is_dir()
 needs_sidecar = pytest.mark.skipif(
-    _unbuilt and os.environ.get("LOGARC_REQUIRE_CRS") != "1",
+    _unbuilt and os.environ.get("LOGARX_REQUIRE_CRS") != "1",
     reason="CRS sidecar or ruleset not built; see crs/README.md",
 )
 
@@ -126,12 +126,12 @@ def test_a_missing_sidecar_names_the_one_command_that_sets_it_up(
 
     result = runner.invoke(app, ["ingest", str(log), "--case", str(tmp_path / "case")])
 
-    assert "logarc-dev setup-crs" in _said(result.output)
+    assert "logarx-dev setup-crs" in _said(result.output)
 
 
 @pytest.mark.usefixtures("no_sidecar")
 def test_the_machine_wide_switch_means_crs_is_not_even_tried(log: Path, tmp_path: Path) -> None:
-    """`LOGARC_CRS=off`, set by the suite's conftest. With no sidecar to find,
+    """`LOGARX_CRS=off`, set by the suite's conftest. With no sidecar to find,
     a notice would be the proof it was looked for; there is none."""
     result = runner.invoke(app, ["ingest", str(log), "--case", str(tmp_path / "case")])
 
@@ -195,5 +195,5 @@ def test_crs_failing_part_way_leaves_the_case_and_says_how_to_retry(
     assert "Traceback" not in result.output
     said = _said(result.output)
     assert "CRS did not finish" in said
-    assert "logarc-dev enrich" in said
+    assert "logarx-dev enrich" in said
     assert str(case) in said

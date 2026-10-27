@@ -47,7 +47,7 @@ python packaging/rebuild.py
 `dev` as well, because the script runs the test suite, across every core with
 pytest-xdist, before it builds anything; a red suite stops the build.
 
-Produces `dist/logarc/` (~270 MB), which runs without Python installed, and
+Produces `dist/logarx/` (~270 MB), which runs without Python installed, and
 with CRS enrichment working: the script builds the CRS sidecar and bundles it
 with the ruleset and the licences of everything compiled into it, so the build
 needs Go and the ruleset clone described under *OWASP CRS* below.
@@ -101,7 +101,7 @@ recognised.
 
 **It runs after every scan, without asking.** The window replays each new case
 through CRS on a card that can be stopped, keeping what it found so far, and
-`logarc-dev ingest` does the same once the log is read. A stopped run is recorded
+`logarx-dev ingest` does the same once the log is read. A stopped run is recorded
 as one: the window, `analyze`, `evaluate` and every exported report say how many
 requests CRS read, and stopping a rerun over a case already checked in full
 keeps that earlier result. To turn it off:
@@ -110,22 +110,22 @@ keeps that earlier result. To turn it off:
 |---|---|
 | The window | Edit → Preferences → General → *Run OWASP CRS after a scan* |
 | One `ingest` | `--no-crs` (and `--crs` asks for it whatever the machine says) |
-| A whole machine, both | `LOGARC_CRS=off` |
+| A whole machine, both | `LOGARX_CRS=off` |
 
 Turned off or not, *Case → Run CRS scan* runs it on the open
-case whenever asked, as `logarc-dev enrich` does on the command line.
+case whenever asked, as `logarx-dev enrich` does on the command line.
 
 The packaged Windows build carries the sidecar and the ruleset, so there is
 nothing to install. From source, set them up once:
 
 ```bash
-logarc-dev setup-crs                                # needs git, Go 1.25+ and a connection, once
-logarc-dev enrich --case ./case-shop --paranoia 3   # run again, at another level
+logarx-dev setup-crs                                # needs git, Go 1.25+ and a connection, once
+logarx-dev enrich --case ./case-shop --paranoia 3   # run again, at another level
 ```
 
 `setup-crs` fetches the ruleset at the revision this project measures against
 (`d694d465951ee06347214f1291ae096e40700001`), builds the sidecar, and replays a
-known SQL injection to prove the two work together. It is the one time logarc
+known SQL injection to prove the two work together. It is the one time LogarX
 reaches for the network, and only because it was asked to. (In the window,
 **Help → User guide** opens the online guide in your browser.) The manual steps are
 in [crs/README.md](../crs/README.md).

@@ -1,11 +1,11 @@
 name: Feature request
-description: Something logarc should do that it does not.
+description: Something LogarX should do that it does not.
 labels: ["enhancement"]
 body:
   - type: markdown
     attributes:
       value: |
-        The most useful request starts from a log and a question: what you were trying to find out, and where logarc stopped helping.
+        The most useful request starts from a log and a question: what you were trying to find out, and where LogarX stopped helping.
 
         A detection that misses an attack, or flags harmless traffic, is a bug rather than a feature: use the bug report form with the lines involved.
   - type: textarea
@@ -18,7 +18,7 @@ body:
   - type: textarea
     id: gap
     attributes:
-      label: Where logarc fell short
+      label: Where LogarX fell short
       description: What it showed instead, or what you had to do by hand.
     validations:
       required: true

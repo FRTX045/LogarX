@@ -5,7 +5,7 @@
 ICON_NODES and TAGS are `icon-nodes.json` and `tags.json` from the npm package
 `lucide-static@0.452.0` (for instance from
 https://unpkg.com/lucide-static@0.452.0/icon-nodes.json). OUT is normally
-`src/logarc/gui/lucide.json`.
+`src/logarx/gui/lucide.json`.
 
 Each icon becomes one SVG, its shapes inside Lucide's own frame, so the
 application draws it without knowing anything about Lucide's formats. The two
@@ -74,7 +74,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("icon_nodes", type=Path, help="lucide-static's icon-nodes.json")
     parser.add_argument("tags", type=Path, help="lucide-static's tags.json")
     parser.add_argument(
-        "out", type=Path, help="where to write, normally src/logarc/gui/lucide.json"
+        "out", type=Path, help="where to write, normally src/logarx/gui/lucide.json"
     )
     arguments = parser.parse_args(argv)
     data = build(arguments.icon_nodes, arguments.tags)

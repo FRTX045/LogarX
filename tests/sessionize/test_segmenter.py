@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from logarc.core.event import NormalizedEvent
-from logarc.core.evidence import EvidenceRef
-from logarc.core.window import EVERYTHING, TimeWindow
-from logarc.sessionize.segmenter import SessionPolicy, sessionize
+from logarx.core.event import NormalizedEvent
+from logarx.core.evidence import EvidenceRef
+from logarx.core.window import EVERYTHING, TimeWindow
+from logarx.sessionize.segmenter import SessionPolicy, sessionize
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 

@@ -17,8 +17,8 @@ from on_canvas import node_item
 from PyQt6.QtWidgets import QApplication, QGraphicsItem
 from test_session_boxes import trace
 
-from logarc.gui._qt import required
-from logarc.gui.canvas import FADED, ActivityCanvas
+from logarx.gui._qt import required
+from logarx.gui.canvas import FADED, ActivityCanvas
 
 FIRST, SECOND, THIRD = "1.2.3.4#1/1", "1.2.3.4#1/2", "1.2.3.4#1/3"
 

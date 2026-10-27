@@ -16,9 +16,9 @@ from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QApplication, QFileDialog, QPushButton
 
 from conftest import settled
-from logarc import rules_library
-from logarc.case import Case
-from logarc.gui.app import MainWindow
+from logarx import rules_library
+from logarx.case import Case
+from logarx.gui.app import MainWindow
 
 IP = "203.0.113.5"
 LINES = [
@@ -181,10 +181,10 @@ def test_dirty_save_then_add_then_re_read_leaves_no_strip(
     read with the new rules."""
     from PyQt6.QtWidgets import QMessageBox
 
-    from logarc.core.activity import ActivityCategory, Severity
-    from logarc.gui import rules_editor as rules_editor_module
-    from logarc.gui.formats_and_rules import FormatsAndRules
-    from logarc.rule_draft import Test
+    from logarx.core.activity import ActivityCategory, Severity
+    from logarx.gui import rules_editor as rules_editor_module
+    from logarx.gui.formats_and_rules import FormatsAndRules
+    from logarx.rule_draft import Test
 
     rules_library.save_pack("house", HOUSE.replace("/cgi-bin/quux", "/never"))
     window = _opened(qt_app, root)

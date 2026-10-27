@@ -22,9 +22,9 @@ from PyQt6.QtGui import QColor, QContextMenuEvent, QMouseEvent
 from PyQt6.QtWidgets import QApplication
 from test_session_boxes import activity, behaviour_map, chained, drawn, held, trace
 
-from logarc.gui.canvas import ActivityCanvas
-from logarc.sessionize.segmenter import SessionPolicy
-from logarc.style import THEME, display_safe, session_heading_tip, session_rule
+from logarx.gui.canvas import ActivityCanvas
+from logarx.sessionize.segmenter import SessionPolicy
+from logarx.style import THEME, display_safe, session_heading_tip, session_rule
 
 ENUMERATION = "directory enumeration"
 
@@ -34,7 +34,7 @@ def part(box, tag: str):  # type: ignore[no-untyped-def]
     return found
 
 
-def test_each_box_is_headed_by_logarcs_name(qt_app: QApplication) -> None:
+def test_each_box_is_headed_by_logarxs_name(qt_app: QApplication) -> None:
     canvas = drawn(
         chained(
             (
@@ -66,7 +66,7 @@ def test_the_name_is_ink_and_the_detail_muted(qt_app: QApplication) -> None:
     assert part(box, "session-detail").brush().color() == QColor(THEME.muted)
 
 
-def test_a_readers_name_replaces_logarcs_with_a_pencil(qt_app: QApplication) -> None:
+def test_a_readers_name_replaces_logarxs_with_a_pencil(qt_app: QApplication) -> None:
     canvas = ActivityCanvas()
     canvas.show_graph(trace(1, 3), session_names={"1.2.3.4#2": "Mine"})
 
@@ -76,7 +76,7 @@ def test_a_readers_name_replaces_logarcs_with_a_pencil(qt_app: QApplication) -> 
     assert box_detail(second) == "Session 2 of 2 · 3 activities · 01 May 14:01\u201314:03"
 
 
-def test_a_readers_tip_names_logarcs_name(qt_app: QApplication) -> None:
+def test_a_readers_tip_names_logarxs_name(qt_app: QApplication) -> None:
     policy = SessionPolicy()
     canvas = ActivityCanvas()
     canvas.show_graph(trace(1, 3), session_policy=policy, session_names={"1.2.3.4#2": "Mine"})

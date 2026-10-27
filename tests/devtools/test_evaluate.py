@@ -9,9 +9,9 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from logarc.core.activity import ActivityCategory
-from logarc.devtools.main import app
-from logarc.evaluation.truth import TruthRecord, TruthWriter
+from logarx.core.activity import ActivityCategory
+from logarx.devtools.main import app
+from logarx.evaluation.truth import TruthRecord, TruthWriter
 
 runner = CliRunner()
 
@@ -200,8 +200,8 @@ def test_scoring_without_crs_says_so_in_the_report(
 def test_evaluate_records_a_partial_crs_run(excerpt: tuple[Path, Path], tmp_path: Path) -> None:
     """A score built on a stopped CRS run is not a complete-product measurement,
     and the numbers written for a paper have to say so."""
-    from logarc.case import Case
-    from logarc.detect.crs.store import write_detections
+    from logarx.case import Case
+    from logarx.detect.crs.store import write_detections
 
     log, truth = excerpt
     case = tmp_path / "case"

@@ -1,6 +1,6 @@
 # Security policy
 
-logarc reads access logs. Every byte it parses was written by whoever was talking
+LogarX reads access logs. Every byte it parses was written by whoever was talking
 to the web server, which means an attacker chooses most of its input on purpose.
 A defect here is not only a crash — it can be a way to reach the machine of the
 person investigating the attack.
@@ -19,7 +19,7 @@ usually reading logs from an incident that is still live.
 
 Tell us what you can:
 
-- what logarc does that it should not, and what you expected instead
+- what LogarX does that it should not, and what you expected instead
 - the smallest input that causes it — a log line, a format definition, a rule
 - which version, and how it was installed (source, or the packaged Windows build)
 - whether it needs anything unusual: a particular platform, the OWASP CRS
@@ -46,7 +46,7 @@ We do not run a bug bounty and cannot pay for reports.
 
 ## In scope
 
-Anything that lets a crafted log, format or rule harm the person running logarc:
+Anything that lets a crafted log, format or rule harm the person running LogarX:
 
 - **Code execution** from a log line, a format definition, or a rule pack.
 - **Denial of service** on ordinary input — a regular expression that takes
@@ -55,7 +55,7 @@ Anything that lets a crafted log, format or rule harm the person running logarc:
 - **Writing outside the case directory**, or reading a file the user did not
   point the tool at. Any input that becomes a filename is a candidate.
 - **A case that looks complete and is not.** This one matters more here than in
-  most tools: logarc's entire purpose is to be believed about what a log
+  most tools: LogarX's entire purpose is to be believed about what a log
   contains. Anything that makes evidence silently disappear — lines dropped
   without being quarantined and counted, an episode that omits requests it
   covers, an integrity record that fails to notice a changed source file — is a
@@ -65,17 +65,17 @@ Anything that lets a crafted log, format or rule harm the person running logarc:
 
 ## Out of scope
 
-- **The attacks logarc detects.** SQL injection in a log line is the subject
-  matter. A report that logarc "contains" attack patterns, or that its rule packs
+- **The attacks LogarX detects.** SQL injection in a log line is the subject
+  matter. A report that LogarX "contains" attack patterns, or that its rule packs
   match on payloads, describes the tool working.
 - **Vulnerabilities in OWASP CRS or Coraza.** Those belong upstream:
   [coreruleset](https://github.com/coreruleset/coreruleset),
   [coraza](https://github.com/corazawaf/coraza). We will help route a report if
   it is unclear which side a defect is on.
-- **Anything that needs a modified logarc**, a debugger attached, or a rule pack
+- **Anything that needs a modified LogarX**, a debugger attached, or a rule pack
   the user did not choose to install.
 - **A catastrophic regular expression in a format *you* wrote.** A custom format
-  can carry any pattern, and logarc compiles and runs it. Some patterns take
+  can carry any pattern, and LogarX compiles and runs it. Some patterns take
   exponential time: `(?:\w+\s*)+` — a natural way to write "some words here" —
   was measured running for over 25 seconds on a single 81-character line, and it
   does not stop. Nothing checks a pattern's cost, and this is documented rather
@@ -83,7 +83,7 @@ Anything that lets a crafted log, format or rule harm the person running logarc:
   refused patterns that are fine, and a guard that misses is worse than none.
 
   It is narrower than it looks: saved formats are loaded from your own
-  `~/.logarc/formats.json` at startup and **never from a case**, so opening
+  `~/.logarx/formats.json` at startup and **never from a case**, so opening
   someone else's case does not run their pattern. Treat a format definition from
   someone else the way you would treat their code.
 
@@ -98,7 +98,7 @@ Early development. The current release is **0.2.0**, and **only the current
 than backported. When that stops being a reasonable policy, this section will
 name which releases still receive them.
 
-## What logarc does not do
+## What LogarX does not do
 
 Stated here because it narrows the attack surface, and because someone assessing
 the tool will want it in one place:

@@ -35,11 +35,11 @@ from typing import Any
 
 import pytest
 
-from logarc.case import Case
-from logarc.detect.crs import SidecarConfig
-from logarc.enrich import enrich_case
-from logarc.evaluation.scoring import evaluate as score_case
-from logarc.evaluation.truth import read_truth
+from logarx.case import Case
+from logarx.detect.crs import SidecarConfig
+from logarx.enrich import enrich_case
+from logarx.evaluation.scoring import evaluate as score_case
+from logarx.evaluation.truth import read_truth
 
 DATA = Path(__file__).resolve().parents[1] / "data" / "apache-shopfront"
 LOG = DATA / "excerpt.log"
@@ -47,8 +47,8 @@ TRUTH = DATA / "excerpt.truth.jsonl"
 PUBLISHED = DATA / "excerpt.scores.json"
 
 REGENERATE = (
-    "logarc-dev ingest tests/data/apache-shopfront/excerpt.log --case <tmp> --no-crs && "
-    "logarc-dev evaluate -c <tmp> -t tests/data/apache-shopfront/excerpt.truth.jsonl "
+    "logarx-dev ingest tests/data/apache-shopfront/excerpt.log --case <tmp> --no-crs && "
+    "logarx-dev evaluate -c <tmp> -t tests/data/apache-shopfront/excerpt.truth.jsonl "
     "-o tests/data/apache-shopfront/excerpt.scores.json"
 )
 
@@ -142,9 +142,9 @@ def test_the_ruleset_fingerprint_is_recorded_with_the_scores(measured: dict) -> 
 CRS_PUBLISHED = DATA / "excerpt.scores.crs.json"
 
 CRS_REGENERATE = (
-    "logarc-dev ingest tests/data/apache-shopfront/excerpt.log --case <tmp> --no-crs && "
-    "logarc-dev enrich --case <tmp> && "
-    "logarc-dev evaluate -c <tmp> -t tests/data/apache-shopfront/excerpt.truth.jsonl "
+    "logarx-dev ingest tests/data/apache-shopfront/excerpt.log --case <tmp> --no-crs && "
+    "logarx-dev enrich --case <tmp> && "
+    "logarx-dev evaluate -c <tmp> -t tests/data/apache-shopfront/excerpt.truth.jsonl "
     "-o tests/data/apache-shopfront/excerpt.scores.crs.json"
 )
 
@@ -179,7 +179,7 @@ def test_the_native_run_names_no_crs_at_all() -> None:
 #: reads, written the same way so the two cannot drift apart.
 _crs_unbuilt = not SidecarConfig().binary.exists() or not (SidecarConfig().rules / "rules").is_dir()
 crs_needed = pytest.mark.skipif(
-    _crs_unbuilt and os.environ.get("LOGARC_REQUIRE_CRS") != "1",
+    _crs_unbuilt and os.environ.get("LOGARX_REQUIRE_CRS") != "1",
     reason="CRS sidecar or ruleset not built; see crs/README.md",
 )
 

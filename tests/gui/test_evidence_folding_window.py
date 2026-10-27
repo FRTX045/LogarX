@@ -23,15 +23,15 @@ from test_bookmarks_window import make_case, reconstruct, show, sign_in
 from test_case_search_window import SWEEPER, opened
 
 from conftest import settled
-from logarc.case import Case
-from logarc.gui import prefs
-from logarc.gui.folding import FoldRule
+from logarx.case import Case
+from logarx.gui import prefs
+from logarx.gui.folding import FoldRule
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-    from logarc.gui.app import MainWindow
+    from logarx.gui.app import MainWindow
 
 
 @pytest.fixture

@@ -12,11 +12,11 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from PyQt6.QtWidgets import QApplication, QLabel
 
-from logarc.core.activity import ActivityCategory
-from logarc.gui.icon_set import IconChoice
-from logarc.gui.icons import first_drawable
-from logarc.gui.panels import LegendBar
-from logarc.style import THEME
+from logarx.core.activity import ActivityCategory
+from logarx.gui.icon_set import IconChoice
+from logarx.gui.icons import first_drawable
+from logarx.gui.panels import LegendBar
+from logarx.style import THEME
 
 INJECTION, BROWSING = ActivityCategory.INJECTION, ActivityCategory.BROWSING
 

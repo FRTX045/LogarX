@@ -10,15 +10,15 @@ from __future__ import annotations
 
 import pytest
 
-from logarc.core.evidence import EvidenceRef
-from logarc.parsers.pattern import PatternFormatError
-from logarc.parsers.spec import PatternFormatSpec
+from logarx.core.evidence import EvidenceRef
+from logarx.parsers.pattern import PatternFormatError
+from logarx.parsers.spec import PatternFormatSpec
 
 REF = EvidenceRef(source_file_id="f", line_no=1)
 
-#: A syslog-wrapped proxy line: nothing else in logarc can read this. Written
+#: A syslog-wrapped proxy line: nothing else in LogarX can read this. Written
 #: with the year, as RFC 5424 syslog does — without one nothing can date it,
-#: and logarc refuses the format rather than putting every event in 1900.
+#: and LogarX refuses the format rather than putting every event in 1900.
 SYSLOG = (
     "2024 May  1 09:00:45 gw01 proxy[1234]: "
     "client=203.0.113.77 method=GET url=/admin/0.php?id=1 status=404 took=15ms"
@@ -161,16 +161,16 @@ def test_a_pattern_with_no_groups_at_all_says_how_to_name_them() -> None:
 def test_a_pattern_format_survives_the_round_trip_through_json() -> None:
     import json
 
-    from logarc.parsers.spec import spec_from_dict, spec_to_dict
+    from logarx.parsers.spec import spec_from_dict, spec_to_dict
 
     assert spec_from_dict(json.loads(json.dumps(spec_to_dict(PROXY)))) == PROXY
 
 
 def test_a_pattern_without_escapes_writes_no_escapes_key() -> None:
     """Every definition written before the option existed has to read back
-    exactly as it did, and an older logarc has to keep reading what this one
+    exactly as it did, and an older LogarX has to keep reading what this one
     writes for it — so the key appears only when it says something."""
-    from logarc.parsers.spec import spec_to_dict
+    from logarx.parsers.spec import spec_to_dict
 
     assert "escapes" not in spec_to_dict(PROXY)
 
@@ -178,7 +178,7 @@ def test_a_pattern_without_escapes_writes_no_escapes_key() -> None:
 def test_a_pattern_with_escapes_survives_the_round_trip() -> None:
     import json
 
-    from logarc.parsers.spec import spec_from_dict, spec_to_dict
+    from logarx.parsers.spec import spec_from_dict, spec_to_dict
 
     spec = PatternFormatSpec(name="hap", pattern=PATTERN, escapes="haproxy")
 

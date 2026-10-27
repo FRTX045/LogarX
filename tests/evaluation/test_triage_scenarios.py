@@ -1,7 +1,7 @@
 from triage_scenario import write_workload
 
-from logarc.case import Case
-from logarc.triage.scan import read_profiles, scan_case
+from logarx.case import Case
+from logarx.triage.scan import read_profiles, scan_case
 
 
 def test_mixed_source_roles_include_missing_fields_without_relabeling_them_as_anomalies(tmp_path):

@@ -40,7 +40,7 @@ def log(tmp_path: Path) -> Path:
 
 
 def _ingest(log: Path, tmp_path: Path, **env: str) -> tuple[int, bytes]:
-    """`logarc-dev ingest` in its own process, stdout on a file, into a case
+    """`logarx-dev ingest` in its own process, stdout on a file, into a case
     whose path is written in Chinese, which the command prints back. Returns
     the exit code and the bytes written."""
     environment = {
@@ -55,8 +55,8 @@ def _ingest(log: Path, tmp_path: Path, **env: str) -> tuple[int, bytes]:
             [
                 sys.executable,
                 "-c",
-                "import sys; from logarc.devtools.main import app; "
-                "sys.argv[0] = 'logarc-dev'; app()",
+                "import sys; from logarx.devtools.main import app; "
+                "sys.argv[0] = 'logarx-dev'; app()",
                 "ingest",
                 str(log),
                 "--case",

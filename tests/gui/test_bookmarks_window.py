@@ -25,18 +25,18 @@ from PyQt6.QtWidgets import QApplication, QFileDialog, QTableWidget
 from test_case_search_window import BROWSER, PROBER, START, SWEEPER, opened, search
 
 from conftest import settled
-from logarc import bookmarks
-from logarc.bookmarks import Kind, said_for_activity, said_for_request
-from logarc.case import Case
-from logarc.core.evidence import EvidenceRef
-from logarc.core.window import EVERYTHING, TimeWindow
-from logarc.gui.app import MainWindow
+from logarx import bookmarks
+from logarx.bookmarks import Kind, said_for_activity, said_for_request
+from logarx.case import Case
+from logarx.core.evidence import EvidenceRef
+from logarx.core.window import EVERYTHING, TimeWindow
+from logarx.gui.app import MainWindow
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-    from logarc.core.graph import GraphNode
+    from logarx.core.graph import GraphNode
 
 
 def _line(

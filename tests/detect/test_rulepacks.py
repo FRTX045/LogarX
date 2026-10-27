@@ -13,12 +13,12 @@ from datetime import UTC, datetime, timedelta
 import pytest
 import yaml
 
-from logarc.core.activity import ActivityCategory, Severity
-from logarc.core.event import NormalizedEvent
-from logarc.core.evidence import EvidenceRef
-from logarc.detect.engine import LabelledEvent, RuleEngine
-from logarc.detect.rulepacks import DEFAULT_RULEPACK_DIR, default_rules
-from logarc.detect.rules import load_rules
+from logarx.core.activity import ActivityCategory, Severity
+from logarx.core.event import NormalizedEvent
+from logarx.core.evidence import EvidenceRef
+from logarx.detect.engine import LabelledEvent, RuleEngine
+from logarx.detect.rulepacks import DEFAULT_RULEPACK_DIR, default_rules
+from logarx.detect.rules import load_rules
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 
@@ -1790,7 +1790,7 @@ def test_the_action_guard_and_the_ladder_name_the_same_crawlers() -> None:
     one list."""
     import re
 
-    from logarc.detect.engine import _CRAWLER_HINTS
+    from logarx.detect.engine import _CRAWLER_HINTS
 
     pack = DEFAULT_RULEPACK_DIR / "action" / "global.yaml"
     guards: set[frozenset[str]] = set()

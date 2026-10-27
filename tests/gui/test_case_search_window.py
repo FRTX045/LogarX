@@ -21,14 +21,14 @@ from PyQt6.QtTest import QTest
 from tables import column_of
 
 from conftest import fired, settled
-from logarc import caseview
-from logarc.case import Case
-from logarc.core.event import NormalizedEvent
-from logarc.core.evidence import EvidenceRef
-from logarc.core.window import TimeWindow
-from logarc.gui.app import MainWindow
-from logarc.gui.client_filter import awaiting_scan
-from logarc.gui.panels import ClientTable
+from logarx import caseview
+from logarx.case import Case
+from logarx.core.event import NormalizedEvent
+from logarx.core.evidence import EvidenceRef
+from logarx.core.window import TimeWindow
+from logarx.gui.app import MainWindow
+from logarx.gui.client_filter import awaiting_scan
+from logarx.gui.panels import ClientTable
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence

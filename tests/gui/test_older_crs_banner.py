@@ -21,12 +21,12 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 from PyQt6.QtWidgets import QApplication, QPushButton
 
 from conftest import settled
-from logarc.case import Case
-from logarc.detect.crs import SidecarConfig
-from logarc.detect.crs.store import write_detections
-from logarc.enrich import crs_config
-from logarc.gui import app as app_module
-from logarc.gui.app import MainWindow
+from logarx.case import Case
+from logarx.detect.crs import SidecarConfig
+from logarx.detect.crs.store import write_detections
+from logarx.enrich import crs_config
+from logarx.gui import app as app_module
+from logarx.gui.app import MainWindow
 
 LINES = [
     '203.0.113.5 - - [10/Oct/2020:13:55:36 +0000] "GET / HTTP/1.1" 200 2326 "-" "curl/8.0"',

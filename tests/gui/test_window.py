@@ -30,29 +30,29 @@ from tables import cell, column_of
 
 from colours import contrast
 from conftest import fired, settled
-from logarc.analysis import analyse_ip
-from logarc.case import Case
-from logarc.caseview import read_case, reconstruct_client
-from logarc.core.activity import ActivityCategory, Outcome, Severity
-from logarc.core.evidence import EvidenceRef
-from logarc.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
-from logarc.core.window import TimeWindow
-from logarc.detect.crs import CrsDetection, write_detections
-from logarc.gui import app
-from logarc.gui.app import MainWindow
-from logarc.gui.arrangement_keeper import LAYOUT_KEY
-from logarc.gui.canvas import MIN_FIT_SCALE, ActivityCanvas
-from logarc.gui.evidence_panel import EvidencePanel
-from logarc.gui.notice_bar import NoticeBanner
-from logarc.gui.panels import ClientTable, seen_day
-from logarc.gui.progress import Progress
-from logarc.gui.progress_card import IngestCard
-from logarc.gui.quarantine_notice import notice_for
-from logarc.parsers.registry import register_spec, unregister_format
-from logarc.parsers.spec import JsonFormatSpec
-from logarc.storage.base import IpSummary
-from logarc.storage.case import CaseManifest, SourceRecord
-from logarc.style import NOTICE_TINT, THEME, format_bytes
+from logarx.analysis import analyse_ip
+from logarx.case import Case
+from logarx.caseview import read_case, reconstruct_client
+from logarx.core.activity import ActivityCategory, Outcome, Severity
+from logarx.core.evidence import EvidenceRef
+from logarx.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
+from logarx.core.window import TimeWindow
+from logarx.detect.crs import CrsDetection, write_detections
+from logarx.gui import app
+from logarx.gui.app import MainWindow
+from logarx.gui.arrangement_keeper import LAYOUT_KEY
+from logarx.gui.canvas import MIN_FIT_SCALE, ActivityCanvas
+from logarx.gui.evidence_panel import EvidencePanel
+from logarx.gui.notice_bar import NoticeBanner
+from logarx.gui.panels import ClientTable, seen_day
+from logarx.gui.progress import Progress
+from logarx.gui.progress_card import IngestCard
+from logarx.gui.quarantine_notice import notice_for
+from logarx.parsers.registry import register_spec, unregister_format
+from logarx.parsers.spec import JsonFormatSpec
+from logarx.storage.base import IpSummary
+from logarx.storage.case import CaseManifest, SourceRecord
+from logarx.style import NOTICE_TINT, THEME, format_bytes
 
 NEWLINE = chr(10)
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
@@ -162,7 +162,7 @@ def _line(seconds: int, target: str, *, status: int = 200, size: int = 512) -> s
 
 @pytest.fixture
 def enriched(campaign: Path, tmp_path: Path) -> Path:
-    """A copy of the campaign case that `logarc-dev enrich` has been run over."""
+    """A copy of the campaign case that `logarx-dev enrich` has been run over."""
     import shutil
 
     root = tmp_path / "enriched"
@@ -222,7 +222,7 @@ def test_an_unenriched_case_credits_nothing(campaign: Path) -> None:
 def test_the_window_constructs(qt_app: QApplication) -> None:
     window = MainWindow()
 
-    assert window.windowTitle().startswith("logarc")
+    assert window.windowTitle().startswith("LogarX")
     window.close()
 
 
@@ -266,7 +266,7 @@ def test_the_legend_does_not_dictate_how_wide_the_window_must_be(
     A key is a set of small independent items. It should take as many rows as
     it needs and demand no more width than its widest single entry.
     """
-    from logarc.gui.panels import LegendBar
+    from logarx.gui.panels import LegendBar
 
     assert LegendBar().minimumSizeHint().width() < 320
 
@@ -275,7 +275,7 @@ def test_the_legend_uses_more_rows_when_it_is_given_less_width(
     qt_app: QApplication,
 ) -> None:
     """Wrapping, not clipping — every entry stays readable at any width."""
-    from logarc.gui.panels import LegendBar
+    from logarx.gui.panels import LegendBar
 
     bar = LegendBar()
 
@@ -303,8 +303,8 @@ def test_the_client_header_leaves_room_for_the_sort_indicator(qt_app: QApplicati
     Height is what the widget can be asked for; that the chevron then lands
     inside it is checked by eye against `ui-review/02-case-open.png`.
     """
-    from logarc.gui._qt import required
-    from logarc.gui.panels import ClientTable
+    from logarx.gui._qt import required
+    from logarx.gui.panels import ClientTable
 
     table = ClientTable()
     table.resize(440, 600)
@@ -323,8 +323,8 @@ def test_a_swatch_and_the_word_it_explains_cannot_be_split_across_rows(
     and at 1500px it did: the `Unknown` swatch ended one row and the word sat
     alone on the next. A colour on one line and its meaning on another is the
     one thing a key cannot do."""
-    from logarc.gui.panels import LegendBar
-    from logarc.style import outcome_legend, severity_legend
+    from logarx.gui.panels import LegendBar
+    from logarx.style import outcome_legend, severity_legend
 
     # Held, not discarded: a temporary bar takes its children with it and every
     # item would report an empty widget for reasons that have nothing to do with
@@ -476,7 +476,7 @@ def _summaries(*addresses: str) -> list[object]:
     reading them out of a generated case would let a change to the generator
     quietly empty the assertions.
     """
-    from logarc.storage.base import IpSummary
+    from logarx.storage.base import IpSummary
 
     return [
         IpSummary(
@@ -1006,8 +1006,8 @@ def test_the_number_on_an_arrow_is_not_read_past(qt_app: QApplication) -> None:
     to it. `muted` is 8.9:1: readable, and still one step below a caption, which
     is right — the activity is the subject and the transition is the detail.
     """
-    from logarc.gui import canvas as canvas_module
-    from logarc.style import CAPTION_COLOUR, THEME
+    from logarx.gui import canvas as canvas_module
+    from logarx.style import CAPTION_COLOUR, THEME
 
     assert contrast(canvas_module._LABEL_COLOUR, THEME.chrome) >= 8.0
     assert canvas_module._LABEL_SIZE >= 7.5
@@ -1265,7 +1265,7 @@ def test_choosing_a_row_shows_that_request_in_full(qt_app: QApplication, campaig
 
 
 def test_html_looking_raw_evidence_is_displayed_as_literal_text(qt_app: QApplication) -> None:
-    from logarc.gui.evidence_view import Detail
+    from logarx.gui.evidence_view import Detail
 
     raw = '<b>literal evidence</b>  "GET /<img> HTTP/1.1"'
     panel = EvidencePanel()
@@ -1283,7 +1283,7 @@ def test_the_detail_follows_the_row_after_the_table_is_sorted(
     highlighted — which is worse than showing nothing."""
     from PyQt6.QtCore import Qt as QtNS
 
-    from logarc.gui.evidence_view import COLUMNS
+    from logarx.gui.evidence_view import COLUMNS
 
     node, lines = _injection_evidence(campaign)
     panel = EvidencePanel()
@@ -1463,7 +1463,7 @@ def test_the_busiest_matching_activity_is_the_one_carried_across(
     three trace nodes. The ring lands on the one that dominated what was being
     read — and on the same one every run, because a forensic tool that ringed a
     different node on each pass would invite doubt about what else moved."""
-    from logarc.caseview import node_for_episodes
+    from logarx.caseview import node_for_episodes
 
     with Case.open(recurring) as case:
         result = analyse_ip(case.store, CLIENT)
@@ -1481,7 +1481,7 @@ def test_an_activity_with_no_counterpart_leaves_nothing_ringed(
     """The other half of carrying a selection across: when the new graph has no
     node for it, the answer is no ring and an empty panel — not the previous
     graph's evidence left sitting beside a graph that does not show it."""
-    from logarc.caseview import node_for_episodes
+    from logarx.caseview import node_for_episodes
 
     with Case.open(recurring) as case:
         result = analyse_ip(case.store, CLIENT)
@@ -1610,7 +1610,7 @@ def test_a_merged_activity_shows_every_episode_not_just_the_first(
     trimmed tuple the graph carries, so nothing about the exported graph has to
     change for the panel to show the whole activity.
     """
-    from logarc.gui.evidence_view import COLUMNS
+    from logarx.gui.evidence_view import COLUMNS
 
     window = _reconstructed(qt_app, recurring)
     merged = max(window._result.behaviour.nodes, key=lambda item: item.episode_count)
@@ -1662,7 +1662,7 @@ def test_an_exported_graph_keeps_the_bounded_sample(
     """
     import json
 
-    from logarc.episode.builder import DEFAULT_EVIDENCE_SAMPLE
+    from logarx.episode.builder import DEFAULT_EVIDENCE_SAMPLE
 
     written = tmp_path / "graph.json"
     monkeypatch.setattr(
@@ -1722,9 +1722,9 @@ def test_the_evidence_table_drops_a_size_column_it_has_no_sizes_for(
     sizes, until the reader shows it from the heading's menu; shown, it still
     stays out of the way of an activity with no size to put in it.
     """
-    from logarc.core.event import NormalizedEvent
-    from logarc.evidence import EvidenceLine
-    from logarc.gui.evidence_view import COLUMNS
+    from logarx.core.event import NormalizedEvent
+    from logarx.evidence import EvidenceLine
+    from logarx.gui.evidence_view import COLUMNS
 
     node, sized = _injection_evidence(campaign)
     ref = EvidenceRef("access.log", 1)
@@ -1755,9 +1755,9 @@ def test_a_payload_cannot_forge_a_row_or_render_as_markup(
     """Everything in this table came out of a request. A decoded newline would
     draw over the row beneath it; a tooltip taken as rich text would render an
     attacker's markup inside the panel their case is read from."""
-    from logarc.core.event import NormalizedEvent
-    from logarc.evidence import EvidenceLine
-    from logarc.gui.evidence_view import COLUMNS
+    from logarx.core.event import NormalizedEvent
+    from logarx.evidence import EvidenceLine
+    from logarx.gui.evidence_view import COLUMNS
 
     node, _ = _injection_evidence(campaign)
     ref = EvidenceRef("access.log", 1)
@@ -1793,7 +1793,7 @@ def test_the_evidence_detail_does_not_depend_on_the_system_theme(
     """The panel writes dark text. If it also inherited the window background,
     a machine themed dark renders the evidence dark-on-dark — the one panel an
     investigator cannot do without, invisible, with nothing to indicate why."""
-    from logarc.style import EVIDENCE_INK, PAPER
+    from logarx.style import EVIDENCE_INK, PAPER
 
     # Held in a name: chaining off the constructor lets Python drop the panel
     # before the palette is read, and Qt deletes the widget underneath it.
@@ -1833,7 +1833,7 @@ def test_a_cell_shows_its_text_and_still_sorts_on_its_number(
     its 4xx ratio shows `0` where it formats `0%` — because whole numbers look
     the same either way.
     """
-    from logarc.gui.evidence_view import COLUMNS
+    from logarx.gui.evidence_view import COLUMNS
 
     node, lines = _injection_evidence(campaign)
     panel = EvidencePanel()
@@ -1857,7 +1857,7 @@ def test_sorting_by_size_puts_the_largest_response_on_top(
     order is what the reader sees."""
     from PyQt6.QtCore import Qt as QtNS
 
-    from logarc.gui.evidence_view import COLUMNS
+    from logarx.gui.evidence_view import COLUMNS
 
     node, lines = _injection_evidence(campaign)
     panel = EvidencePanel()
@@ -1877,7 +1877,7 @@ def test_the_evidence_table_does_not_depend_on_the_system_theme(
     """The detail pane is pinned to a pale ground for a reason; the table above
     it is read the same way and needs the same treatment, or a dark theme puts
     muted grey on dark grey."""
-    from logarc.style import EVIDENCE_INK, PAPER
+    from logarx.style import EVIDENCE_INK, PAPER
 
     panel = EvidencePanel()
     palette = panel._table.palette()
@@ -1906,7 +1906,7 @@ def test_the_framed_evidence_surface_is_still_paper_when_it_is_painted(
     from PyQt6.QtCore import QPoint
     from PyQt6.QtGui import QColor
 
-    from logarc.style import PAPER
+    from logarx.style import PAPER
 
     node, lines = _injection_evidence(campaign)
 
@@ -2033,8 +2033,8 @@ def test_every_outcome_sample_actually_draws_something(qt_app: QApplication) -> 
     """
     from PyQt6.QtWidgets import QLabel
 
-    from logarc.gui.panels import LegendBar
-    from logarc.style import THEME, outcome_legend
+    from logarx.gui.panels import LegendBar
+    from logarx.style import THEME, outcome_legend
 
     bar = LegendBar()
     samples = [
@@ -2169,7 +2169,7 @@ def test_a_launch_opens_on_the_chooser_rather_than_the_last_case(
     """What the chooser was picked for. Reopening the last case straight away
     is useful, and it is also a way to never see the list that was the point of
     building it — so it is offered, not assumed."""
-    from logarc.gui.recent import RecentCase, Startup, now, startup_action
+    from logarx.gui.recent import RecentCase, Startup, now, startup_action
 
     entry = RecentCase(str(campaign), "case", now(), 10, ("access.log",))
 
@@ -2202,9 +2202,9 @@ def test_a_pin_survives_closing_the_chooser_without_opening_anything(
 ) -> None:
     """Tidying the list is a thing you do on its own. A pin that only stuck when
     a case happened to be opened afterwards would look like it had not worked."""
-    from logarc.gui import app as app_module
-    from logarc.gui import recent
-    from logarc.gui.case_chooser import CaseChooser
+    from logarx.gui import app as app_module
+    from logarx.gui import recent
+    from logarx.gui.case_chooser import CaseChooser
 
     app._settings().clear()
     window = MainWindow()
@@ -2237,8 +2237,8 @@ def test_forgetting_every_case_removes_the_key_rather_than_emptying_it(
     goes, not that an empty value gets stored in it. Storing one would satisfy
     every visible symptom and leave the record on the machine.
     """
-    from logarc.gui import app as app_module
-    from logarc.gui.case_chooser import CaseChooser
+    from logarx.gui import app as app_module
+    from logarx.gui.case_chooser import CaseChooser
 
     app._settings().clear()
     window = MainWindow()
@@ -2267,9 +2267,9 @@ def test_forgetting_some_cases_keeps_the_rest_on_the_machine(
     qt_app: QApplication, campaign: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The other half: a partial removal is stored, not treated as a wipe."""
-    from logarc.gui import app as app_module
-    from logarc.gui import recent
-    from logarc.gui.case_chooser import CaseChooser
+    from logarx.gui import app as app_module
+    from logarx.gui import recent
+    from logarx.gui.case_chooser import CaseChooser
 
     app._settings().clear()
     window = MainWindow()
@@ -2381,7 +2381,7 @@ def test_the_banner_shows_one_sentence_not_the_whole_paragraph(
     banner = NoticeBanner()
     banner.show_notice(notice)
 
-    assert "logarc formats" not in banner.text()
+    assert "LogarX formats" not in banner.text()
     assert "not one of its 11,268 lines parsed" in banner.text()
 
 
@@ -2755,7 +2755,7 @@ def test_a_real_ingest_reports_progress_that_only_goes_forwards(
     that the case opened is not only the point of an ingest, it is what proves
     the waiting reaches that far.
     """
-    from logarc.gui import app as app_module
+    from logarx.gui import app as app_module
 
     good = (
         '203.0.113.5 - - [10/Oct/2020:13:55:36 +0000] "GET /?q=1 HTTP/1.1" 200 2326 "-" "curl/8.0"'
@@ -2821,7 +2821,7 @@ def test_a_failed_ingest_takes_the_card_down_with_it(
 ) -> None:
     """A card left standing after a failure says the read is still going while
     nothing is running — worse than never having shown one."""
-    from logarc.gui import app as app_module
+    from logarx.gui import app as app_module
 
     missing = tmp_path / "not-a-log.log"
     missing.write_text("nothing here parses as a log line\n" * 20, encoding="utf-8")
@@ -2991,8 +2991,8 @@ def test_choosing_the_case_already_open_does_not_read_it_again(
     screen — the reconstruction being read is thrown away and the canvas goes
     back to inviting a client to be picked.
     """
-    from logarc.gui import app as app_module
-    from logarc.gui.case_chooser import CaseChooser
+    from logarx.gui import app as app_module
+    from logarx.gui.case_chooser import CaseChooser
 
     app._settings().clear()
     window = MainWindow()
@@ -3028,11 +3028,11 @@ def test_choosing_the_case_already_open_says_so(
     qt_app: QApplication, campaign: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Doing nothing quietly is indistinguishable from a control that is
-    broken. It has to say why nothing happened — and `logarc-dev enrich` can add
+    broken. It has to say why nothing happened — and `logarx-dev enrich` can add
     CRS evidence to an open case from a terminal, so a reader who came here to
     pick that up needs to know they did not."""
-    from logarc.gui import app as app_module
-    from logarc.gui.case_chooser import CaseChooser
+    from logarx.gui import app as app_module
+    from logarx.gui.case_chooser import CaseChooser
 
     app._settings().clear()
     window = MainWindow()
@@ -3055,8 +3055,8 @@ def test_choosing_a_different_case_still_reads_it(
     qt_app: QApplication, campaign: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The guard must not be a blanket refusal to load anything twice."""
-    from logarc.gui import app as app_module
-    from logarc.gui.case_chooser import CaseChooser
+    from logarx.gui import app as app_module
+    from logarx.gui.case_chooser import CaseChooser
 
     good = (
         '203.0.113.5 - - [10/Oct/2020:13:55:36 +0000] "GET /?q=1 HTTP/1.1" 200 2326 "-" "curl/8.0"'
@@ -3459,7 +3459,7 @@ def test_a_settings_value_nobody_can_read_still_opens_the_case(
 
 def _ranked_case(root: Path, count: int = 6) -> Path:
     """`10.0.0.0` is the busiest, `10.0.0.{count - 1}` the quietest, one request apart."""
-    from logarc.core.event import NormalizedEvent
+    from logarx.core.event import NormalizedEvent
 
     events = [
         NormalizedEvent(
@@ -3482,9 +3482,9 @@ def _ranked_case(root: Path, count: int = 6) -> Path:
 
 @pytest.fixture
 def three_per_page(monkeypatch: pytest.MonkeyPatch) -> None:
-    import logarc.caseview
+    import logarx.caseview
 
-    monkeypatch.setattr(logarc.caseview, "CLIENT_LIMIT", 3)
+    monkeypatch.setattr(logarx.caseview, "CLIENT_LIMIT", 3)
     monkeypatch.setattr(ClientTable, "PAGE_SIZE", 3)
 
 

@@ -11,10 +11,10 @@ from __future__ import annotations
 
 import pytest
 
-from logarc.parsers.base import recorded
-from logarc.parsers.fieldnames import OPTIONAL_FIELDS, recorded_by
-from logarc.parsers.registry import get_spec
-from logarc.parsers.spec import ColumnsFormatSpec, JsonFormatSpec, PatternFormatSpec
+from logarx.parsers.base import recorded
+from logarx.parsers.fieldnames import OPTIONAL_FIELDS, recorded_by
+from logarx.parsers.registry import get_spec
+from logarx.parsers.spec import ColumnsFormatSpec, JsonFormatSpec, PatternFormatSpec
 
 EVERYTHING = frozenset(OPTIONAL_FIELDS)
 

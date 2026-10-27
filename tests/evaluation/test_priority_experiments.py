@@ -5,7 +5,7 @@ from test_triage_evaluation import population
 
 
 def test_candidates_have_bounded_severity_and_keep_quiet_clients():
-    from logarc.evaluation.priorities import suspicious_candidates
+    from logarx.evaluation.priorities import suspicious_candidates
 
     base = population()[0]
     single = replace(base, client_ip="single", severity=4, hostile_requests=1, requests=1)
@@ -19,8 +19,8 @@ def test_candidates_have_bounded_severity_and_keep_quiet_clients():
 
 
 def test_shipped_order_and_share_experiment_preserve_support_fraction_and_ties():
-    from logarc.evaluation.priorities import suspicious_candidates
-    from logarc.triage.profile import rank_profiles
+    from logarx.evaluation.priorities import suspicious_candidates
+    from logarx.triage.profile import rank_profiles
 
     base = population()[0]
     profiles = [
@@ -35,7 +35,7 @@ def test_shipped_order_and_share_experiment_preserve_support_fraction_and_ties()
 
 
 def test_uniform_population_has_no_unusual_findings_or_ip_tiebreak_positions():
-    from logarc.evaluation.priorities import audit_unusual, unusual_candidates
+    from logarx.evaluation.priorities import audit_unusual, unusual_candidates
 
     base = population()[0]
     profiles = [replace(base, client_ip=str(i)) for i in range(100)]
@@ -44,7 +44,7 @@ def test_uniform_population_has_no_unusual_findings_or_ip_tiebreak_positions():
 
 
 def test_complete_vector_ties_cross_budgets_but_single_feature_ties_need_not():
-    from logarc.evaluation.priorities import audit_unusual
+    from logarx.evaluation.priorities import audit_unusual
 
     profiles = population()
     profiles[-1] = replace(profiles[0], client_ip=profiles[-1].client_ip)
@@ -55,7 +55,7 @@ def test_complete_vector_ties_cross_budgets_but_single_feature_ties_need_not():
 
 
 def test_gate_rejects_head_gain_that_loses_quiet_attacks():
-    from logarc.evaluation.priorities import promotion_gate
+    from logarx.evaluation.priorities import promotion_gate
 
     baseline = {
         str(seed): {"yield10": 0.5, "yield25": 0.6, "yield50": 0.8, "quiet50": 0.2, "hits10": 5}
@@ -73,7 +73,7 @@ def test_gate_rejects_head_gain_that_loses_quiet_attacks():
 
 
 def test_bonus_parts_are_capped_as_frozen():
-    from logarc.evaluation.priorities import bonus_parts
+    from logarx.evaluation.priorities import bonus_parts
 
     base = population()[0]
     assert bonus_parts(replace(base, distinct_rule_pairs=5, sequence_sessions=3))[:2] == (3, 1)
@@ -85,7 +85,7 @@ def test_bonus_parts_are_capped_as_frozen():
 def test_c2_caps_only_the_logarithmic_support_term():
     import pytest
 
-    from logarc.evaluation.priorities import c1_score, c2_score
+    from logarx.evaluation.priorities import c1_score, c2_score
 
     base = replace(
         population()[0],
@@ -105,8 +105,8 @@ def test_c2_caps_only_the_logarithmic_support_term():
 
 
 def test_bonuses_let_a_low_support_client_pass_a_bare_one():
-    from logarc.evaluation.priorities import graded_orderings
-    from logarc.triage.profile import rank_profiles
+    from logarx.evaluation.priorities import graded_orderings
+    from logarx.triage.profile import rank_profiles
 
     base = population()[0]
     quiet = replace(
@@ -140,7 +140,7 @@ def test_bonuses_let_a_low_support_client_pass_a_bare_one():
 def test_orderings_that_rank_different_clients_are_refused():
     import pytest
 
-    from logarc.evaluation.priorities import assert_same_ranked
+    from logarx.evaluation.priorities import assert_same_ranked
 
     assert_same_ranked({"policy3": ["a", "b"], "c1": ["b", "a"]})
     with pytest.raises(ValueError, match="same clients"):
@@ -150,7 +150,7 @@ def test_orderings_that_rank_different_clients_are_refused():
 def graded(order, grades):
     from test_graded import truth_of
 
-    from logarc.evaluation.graded import graded_scores
+    from logarx.evaluation.graded import graded_scores
 
     return graded_scores(order, truth_of(grades))
 
@@ -166,7 +166,7 @@ def head(*targeted, benign_first=0):
 
 
 def test_development_selection_follows_the_frozen_order():
-    from logarc.evaluation.graded import choose_graded
+    from logarx.evaluation.graded import choose_graded
 
     def dev(c1, c2):
         return {"d": {"c1": graded(c1, POPULATION), "c2": graded(c2, POPULATION)}}
@@ -178,7 +178,7 @@ def test_development_selection_follows_the_frozen_order():
 
 
 def test_the_gate_promotes_a_challenger_that_passes_all_three_checks():
-    from logarc.evaluation.graded import graded_gate
+    from logarx.evaluation.graded import graded_gate
 
     baseline = {"h": graded(head("t0", "t1", benign_first=8), POPULATION)}
     challenger = {"h": graded(head("t0", "t1", "t2", benign_first=5), POPULATION)}
@@ -188,7 +188,7 @@ def test_the_gate_promotes_a_challenger_that_passes_all_three_checks():
 
 
 def test_the_gate_refuses_a_challenger_whose_head_does_not_improve():
-    from logarc.evaluation.graded import graded_gate
+    from logarx.evaluation.graded import graded_gate
 
     same = graded(head("t0", "t1"), POPULATION)
     result = graded_gate({"h": same}, {"h": same}, {"h": frozenset()})
@@ -197,7 +197,7 @@ def test_the_gate_refuses_a_challenger_whose_head_does_not_improve():
 
 
 def test_the_gate_refuses_a_low_support_client_leaving_its_tier():
-    from logarc.evaluation.graded import graded_gate
+    from logarx.evaluation.graded import graded_gate
 
     benign = [f"b{i}" for i in range(60)]
     baseline = {"h": graded(head("t0", "t1", benign_first=7), POPULATION)}
@@ -211,7 +211,7 @@ def test_the_gate_refuses_a_low_support_client_leaving_its_tier():
 
 
 def test_the_gate_refuses_more_benign_clients_at_the_head_of_any_build():
-    from logarc.evaluation.graded import graded_gate
+    from logarx.evaluation.graded import graded_gate
 
     baseline = {
         "h1": graded(head("t0", "t1", benign_first=8), POPULATION),
@@ -233,7 +233,7 @@ def exploit_fixture(tmp_path):
     loud client that only probes, profiled by one engine."""
     import test_profiles as helpers
 
-    from logarc.triage.profile import NOT_EXPLOIT_EVIDENCE, TARGETED, profile_client
+    from logarx.triage.profile import NOT_EXPLOIT_EVIDENCE, TARGETED, profile_client
 
     engine = helpers.fixture_rules(
         tmp_path,
@@ -252,7 +252,7 @@ def exploit_fixture(tmp_path):
 
 
 def test_exploit_orderings_place_each_tier_and_the_application_agrees(tmp_path):
-    from logarc.evaluation.priorities import assert_same_ranked, exploit_orderings
+    from logarx.evaluation.priorities import assert_same_ranked, exploit_orderings
 
     profiles, category_rules, eligible = exploit_fixture(tmp_path)
     orders = exploit_orderings(profiles, category_rules=category_rules, eligible_rules=eligible)
@@ -265,7 +265,7 @@ def test_exploit_orderings_place_each_tier_and_the_application_agrees(tmp_path):
 
 
 def test_exploit_orderings_require_both_rule_sets(tmp_path):
-    from logarc.evaluation.priorities import exploit_orderings
+    from logarx.evaluation.priorities import exploit_orderings
 
     profiles, category_rules, eligible = exploit_fixture(tmp_path)
     with pytest.raises(TypeError):
@@ -277,10 +277,10 @@ def test_exploit_orderings_require_both_rule_sets(tmp_path):
 def test_exploit_orderings_place_a_crs_level_one_client_first_as_the_application_does(tmp_path):
     import test_profiles as helpers
 
-    from logarc.detect.engine import RuleEngine
-    from logarc.detect.rulepacks import default_rules
-    from logarc.evaluation.priorities import exploit_orderings
-    from logarc.triage.profile import profile_client
+    from logarx.detect.engine import RuleEngine
+    from logarx.detect.rulepacks import default_rules
+    from logarx.evaluation.priorities import exploit_orderings
+    from logarx.triage.profile import profile_client
 
     profiles, category_rules, eligible = exploit_fixture(tmp_path)
     detection = helpers.crs_detection(line=1)

@@ -16,9 +16,9 @@ from PyQt6.QtWidgets import QApplication, QDialog
 from tables import cell
 
 from colours import contrast
-from logarc.gui.case_chooser import COLUMNS, CaseChooser
-from logarc.gui.recent import RecentCase
-from logarc.style import PIN_COLOUR, PIN_MARK, THEME
+from logarx.gui.case_chooser import COLUMNS, CaseChooser
+from logarx.gui.recent import RecentCase
+from logarx.style import PIN_COLOUR, PIN_MARK, THEME
 
 WHEN = datetime(2026, 8, 15, 13, 4, tzinfo=UTC)
 
@@ -57,7 +57,7 @@ def test_a_row_action_with_nothing_selected_does_nothing(
     exists — but the same slots are reachable with none, and every one of them
     indexes `self.cases[row]`. Without the guard that is an exception out of a
     context menu; with it, nothing happens, which is the right nothing."""
-    from logarc.gui import case_chooser
+    from logarx.gui import case_chooser
 
     monkeypatch.setattr(case_chooser, "_ask_for_a_name", lambda *_a, **_k: "new name")
     chooser = CaseChooser((case("/a"), case("/b")), exists=lambda _p: True)
@@ -145,8 +145,8 @@ def test_at_its_own_size_every_folder_shows_whole(qt_app: QApplication) -> None:
     until every Folder read `C:…`, and the folder is what tells two cases of
     the same name apart. The dialog asks for the room instead."""
     cases = (
-        case(r"C:\Users\someone\Documents\logarc\cases\shopfront-march", "shopfront-march"),
-        case(r"C:\Users\someone\Documents\logarc\cases\staging-smoke", "staging-smoke"),
+        case(r"C:\Users\someone\Documents\logarx\cases\shopfront-march", "shopfront-march"),
+        case(r"C:\Users\someone\Documents\logarx\cases\staging-smoke", "staging-smoke"),
     )
     chooser = CaseChooser(cases, exists=lambda path: "staging" not in path)
     chooser.resize(chooser.sizeHint())
@@ -254,7 +254,7 @@ def test_renaming_shows_the_new_name_and_leaves_the_case_alone(
 ) -> None:
     """The name belongs to this list. `case.json` is not touched, so a report
     exported before and one after agree about what the case is called."""
-    from logarc.gui import case_chooser
+    from logarx.gui import case_chooser
 
     monkeypatch.setattr(case_chooser, "_ask_for_a_name", lambda *_a, **_k: "acme-breach (jan)")
     chooser = CaseChooser((case(r"D:\a", "case-001"),), exists=lambda _p: True)
@@ -270,7 +270,7 @@ def test_renaming_shows_the_new_name_and_leaves_the_case_alone(
 def test_a_cancelled_rename_changes_nothing(
     qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from logarc.gui import case_chooser
+    from logarx.gui import case_chooser
 
     monkeypatch.setattr(case_chooser, "_ask_for_a_name", lambda *_a, **_k: None)
     chooser = CaseChooser((case(r"D:\a", "case-001"),), exists=lambda _p: True)
@@ -287,7 +287,7 @@ def test_a_name_cannot_smuggle_a_line_break_into_a_row(
 ) -> None:
     """Typed by the reader rather than an attacker, but a cell is still one line
     and a pasted name can carry anything."""
-    from logarc.gui import case_chooser
+    from logarx.gui import case_chooser
 
     monkeypatch.setattr(case_chooser, "_ask_for_a_name", lambda *_a, **_k: "before\nafter")
     chooser = CaseChooser((case(r"D:\a", "a"),), exists=lambda _p: True)

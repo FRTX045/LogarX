@@ -22,9 +22,9 @@ from tables import column_of
 from test_folding import brute_force, line
 from test_narrow_columns import node
 
-from logarc.gui.evidence_panel import EvidencePanel
-from logarc.gui.evidence_view import ARROW_CLOSED
-from logarc.gui.folding import FoldRule
+from logarx.gui.evidence_panel import EvidencePanel
+from logarx.gui.evidence_view import ARROW_CLOSED
+from logarx.gui.folding import FoldRule
 
 
 @pytest.fixture

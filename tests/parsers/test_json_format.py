@@ -12,9 +12,9 @@ import json
 
 import pytest
 
-from logarc.core.evidence import EvidenceRef
-from logarc.parsers.json_format import JsonFormatError, guess_mapping
-from logarc.parsers.spec import JsonFormatSpec, spec_from_dict, spec_to_dict
+from logarx.core.evidence import EvidenceRef
+from logarx.parsers.json_format import JsonFormatError, guess_mapping
+from logarx.parsers.spec import JsonFormatSpec, spec_from_dict, spec_to_dict
 
 REF = EvidenceRef(source_file_id="f", line_no=1)
 
@@ -127,7 +127,7 @@ def test_a_key_the_line_does_not_carry_is_absent_rather_than_fatal() -> None:
 
 def test_a_nested_key_can_be_reached_by_its_path() -> None:
     """Gateways routinely nest. Without this the reader has to pre-process
-    their own evidence before logarc will look at it."""
+    their own evidence before LogarX will look at it."""
     spec = JsonFormatSpec(
         name="nested",
         fields=(("timestamp", "ts"), ("client_ip", "client.ip"), ("status", "response.status")),
@@ -310,8 +310,8 @@ def test_the_mapping_is_written_as_an_object_a_person_can_edit() -> None:
 
 
 def test_a_logformat_spec_still_round_trips_beside_it() -> None:
-    from logarc.parsers.apache import COMBINED
-    from logarc.parsers.spec import LogFormatSpec
+    from logarx.parsers.apache import COMBINED
+    from logarx.parsers.spec import LogFormatSpec
 
     spec = LogFormatSpec(name="site", directive=COMBINED, description="note")
 

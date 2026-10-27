@@ -12,13 +12,13 @@ from textwrap import indent
 
 import pytest
 
-from logarc import rule_draft
-from logarc.core.activity import ActivityCategory, Severity
-from logarc.core.event import NormalizedEvent
-from logarc.core.evidence import EvidenceRef
-from logarc.detect.engine import RuleEngine
-from logarc.detect.rules import MATCH_FIELDS, SignatureRule, load_pack_text
-from logarc.rule_draft import (
+from logarx import rule_draft
+from logarx.core.activity import ActivityCategory, Severity
+from logarx.core.event import NormalizedEvent
+from logarx.core.evidence import EvidenceRef
+from logarx.detect.engine import RuleEngine
+from logarx.detect.rules import MATCH_FIELDS, SignatureRule, load_pack_text
+from logarx.rule_draft import (
     FORM_FIELDS,
     Condition,
     Draft,

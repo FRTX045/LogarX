@@ -2,9 +2,9 @@
 
     python tools/measure/crs_startup.py [--binary EXE] [--rounds N]
 
-The price of each sidecar logarc starts, so it decides whether sidecars can be
+The price of each sidecar logarx starts, so it decides whether sidecars can be
 started per share of requests or must live for a whole run. Measured through
-`run_sidecar`, so it starts the binary exactly as logarc does.
+`run_sidecar`, so it starts the binary exactly as logarx does.
 """
 
 from __future__ import annotations
@@ -17,9 +17,9 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
-from logarc.core.event import NormalizedEvent
-from logarc.core.evidence import EvidenceRef
-from logarc.detect.crs.sidecar import SidecarConfig, run_sidecar
+from logarx.core.event import NormalizedEvent
+from logarx.core.evidence import EvidenceRef
+from logarx.detect.crs.sidecar import SidecarConfig, run_sidecar
 
 REQUEST = NormalizedEvent(
     timestamp=datetime(2024, 5, 1, tzinfo=UTC),

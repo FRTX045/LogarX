@@ -11,8 +11,8 @@ from PyQt6.QtGui import QColor, QEnterEvent, QMouseEvent
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QWidget
 
-from logarc.gui.splitter import PanelSplitter
-from logarc.style import THEME
+from logarx.gui.splitter import PanelSplitter
+from logarx.style import THEME
 
 
 @pytest.fixture(params=[Qt.Orientation.Horizontal, Qt.Orientation.Vertical])

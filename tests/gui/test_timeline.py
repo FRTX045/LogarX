@@ -20,9 +20,9 @@ from PyQt6.QtCore import QEvent, QPoint, QPointF, Qt
 from PyQt6.QtGui import QMouseEvent
 from PyQt6.QtWidgets import QApplication
 
-from logarc.core.window import EVERYTHING, TimeWindow
-from logarc.gui.timeline import Timeline
-from logarc.storage.base import TimeSlot
+from logarx.core.window import EVERYTHING, TimeWindow
+from logarx.gui.timeline import Timeline
+from logarx.storage.base import TimeSlot
 
 FIRST = datetime(2024, 5, 1, 0, 0, tzinfo=UTC)
 LAST = FIRST + timedelta(hours=24)

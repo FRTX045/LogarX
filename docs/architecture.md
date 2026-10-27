@@ -5,7 +5,7 @@
 The research question is: **how do you separate one action from another, and then
 classify it** — at log sizes measured in gigabytes, offline?
 
-logarc answers it with deterministic three-level segmentation and a two-pass
+LogarX answers it with deterministic three-level segmentation and a two-pass
 ingest architecture. Determinism is a deliberate constraint: a forensic finding
 must be explainable and reproducible, so every boundary the tool draws can be
 traced to a stated rule and a recorded threshold.
@@ -155,8 +155,8 @@ depth greater than 1 is itself an evasion signal. Both raw and decoded forms are
 separate match fields.
 
 **OWASP CRS is a third source of signature matches**, run through Coraza in a Go sidecar after
-every scan — by the window and by `logarc-dev ingest`, unless the reader turned it off — and by
-`logarc-dev enrich` on demand, then read from the case thereafter. It supplies the signatures the packs
+every scan — by the window and by `logarx-dev ingest`, unless the reader turned it off — and by
+`logarx-dev enrich` on demand, then read from the case thereafter. It supplies the signatures the packs
 above miss — they catch 961 of the 1,099 access-log-visible cases in CRS's own regression corpus,
 87.4% on 2026-10-05, and fire on none of its 134 certified-harmless ones — and nothing else: CRS is
 stateless per request, so it expresses no behavioural rule, and it emits rule ids and tags rather than an

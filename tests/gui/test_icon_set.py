@@ -14,9 +14,9 @@ from types import ModuleType
 
 import pytest
 
-from logarc.core.activity import ActivityCategory
-from logarc.gui import icon_set
-from logarc.gui.icon_set import (
+from logarx.core.activity import ActivityCategory
+from logarx.gui import icon_set
+from logarx.gui.icon_set import (
     DEFAULT_ICONS,
     KIND_NAMES,
     LUCIDE_VERSION,
@@ -26,7 +26,7 @@ from logarc.gui.icon_set import (
     lucide,
     search,
 )
-from logarc.gui.rule_form_view import CATEGORY_LABELS
+from logarx.gui.rule_form_view import CATEGORY_LABELS
 
 DATA = Path(icon_set.__file__).with_name("lucide.json")
 TOOL = Path(__file__).parents[2] / "tools" / "lucide_data.py"
@@ -122,9 +122,9 @@ def test_a_file_value_is_known_only_while_its_file_exists() -> None:
 
 
 def test_the_reader_icons_live_beside_their_rules(tmp_path: Path) -> None:
-    from logarc.parsers.library import logarc_home
+    from logarx.parsers.library import logarx_home
 
-    assert icons_dir() == logarc_home() / "icons"
+    assert icons_dir() == logarx_home() / "icons"
 
 
 def test_the_builder_frames_and_records(tmp_path: Path) -> None:
@@ -180,23 +180,23 @@ rules:
 
 
 def test_rule_icons_reads_the_readers_packs() -> None:
-    from logarc.detect.ruleset import PackText, RuleSet
-    from logarc.gui.icon_set import rule_icons
+    from logarx.detect.ruleset import PackText, RuleSet
+    from logarx.gui.icon_set import rule_icons
 
     assert rule_icons(RuleSet((PackText("mine", MINE),))) == {"mine_rule": "skull"}
 
 
 def test_a_pack_that_does_not_load_gives_no_icons() -> None:
-    from logarc.detect.ruleset import PackText, RuleSet
-    from logarc.gui.icon_set import rule_icons
+    from logarx.detect.ruleset import PackText, RuleSet
+    from logarx.gui.icon_set import rule_icons
 
     broken = PackText("broken", "version: 1\nrules: [nonsense")
     assert rule_icons(RuleSet((broken, PackText("mine", MINE)))) == {"mine_rule": "skull"}
 
 
 def test_unknown_icons_are_named_once_each_in_rule_order() -> None:
-    from logarc.detect.rules import load_pack_text
-    from logarc.gui.icon_set import unknown_icons
+    from logarx.detect.rules import load_pack_text
+    from logarx.gui.icon_set import unknown_icons
 
     text = MINE.replace("icon: skull", "icon: skul").replace(
         "    severity: info\n", "    severity: info\n    icon: file:../x.svg\n"
@@ -208,19 +208,19 @@ def test_unknown_icons_are_named_once_each_in_rule_order() -> None:
 
 
 def test_the_unknown_icon_note() -> None:
-    from logarc.gui.icon_set import unknown_icon_note
+    from logarx.gui.icon_set import unknown_icon_note
 
     assert unknown_icon_note([]) == ""
     assert unknown_icon_note(["skul"]) == (
-        "Icon skul is not one logarc knows, so its kind's icon is drawn."
+        "Icon skul is not one LogarX knows, so its kind's icon is drawn."
     )
     assert unknown_icon_note(["skul", "file:x.svg"]) == (
-        "Icons skul and file:x.svg are not ones logarc knows, so their kinds' icons are drawn."
+        "Icons skul and file:x.svg are not ones LogarX knows, so their kinds' icons are drawn."
     )
 
 
 def test_a_kind_takes_the_readers_icon_then_its_own() -> None:
-    from logarc.gui.icon_set import IconChoice
+    from logarx.gui.icon_set import IconChoice
 
     choice = IconChoice(kinds={ActivityCategory.INJECTION: "bug"}, rules={"x": "skull"})
     assert choice.kind_candidates(ActivityCategory.INJECTION) == ("bug", "syringe")

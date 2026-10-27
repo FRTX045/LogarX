@@ -3,7 +3,7 @@
 //
 // It contains no attack knowledge of its own: CRS supplies every detection, and
 // this program is transport plus configuration. Input is pre-parsed JSON rather
-// than raw log lines, so logarc's parsers stay the single source of truth for
+// than raw log lines, so logarx's parsers stay the single source of truth for
 // reading a log — this program never sees a log format and does not need to
 // know there are fourteen of them.
 package main
@@ -259,7 +259,7 @@ func main() {
 	// and PL2 reached 90%, while every negative control produced the same
 	// number of hostile episodes at every level from 1 to 4.
 	paranoia := flag.Int("paranoia", 2, "CRS paranoia level")
-	// The stdin protocol the caller speaks. 2 added {"flush": N}. logarc
+	// The stdin protocol the caller speaks. 2 added {"flush": N}. logarx
 	// passes the number, so a binary built before it refuses the flag at once,
 	// Go's flag package exiting on one it does not know, rather than being
 	// sent markers it would read as records and never answer.

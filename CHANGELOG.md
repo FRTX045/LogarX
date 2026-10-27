@@ -1,9 +1,10 @@
 # Changelog
 
-Notable changes to logarc. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
+Notable changes to LogarX, called logarc until 2026-10-28. Entries written
+before the rename keep the old name, as do the decision records. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-logarc has not been released yet. 0.1.0 and 0.2.0 below are development
+LogarX has not been released yet. 0.1.0 and 0.2.0 below are development
 milestones: points the work reached and wrote down, never published as releases,
 and neither has a tag. The version reads `0.3.0.dev0` until the first release,
 which will be the first tag.
@@ -411,6 +412,16 @@ which will be the first tag.
   says to reinstall, instead of pointing at a source install.
 
 ### Changed
+
+- **logarc is now LogarX.** The package is `logarx`, the commands `logarx-gui`
+  and `logarx-dev`, the variables `LOGARX_HOME` and the rest `LOGARX_*`, and the
+  repository `FRTX045/LogarX` (the old address redirects). What a reader had
+  under the old name comes with them: on first start the folder of saved
+  formats, rules and icons is copied to LogarX's, and the window's preferences
+  with it; the old ones are left where they were. Cases and truth files made
+  before still open: a truth file saying `logarc-truth` is read as one. The CRS
+  configuration file keeps its old comment, because its bytes are part of every
+  recorded CRS fingerprint.
 
 - **The command line is developer tooling, named `logarc-dev`** (ADR-0012, step 2).
   The window is how logarc is used. The package moves from `logarc.cli` to
