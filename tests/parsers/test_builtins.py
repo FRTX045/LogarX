@@ -420,12 +420,15 @@ SAMPLES: dict[str, tuple[list[str], dict[str, object]]] = {
                     "ClientIP": "203.0.113.5",
                     "ClientRequestHost": "shop.example.com",
                     "ClientRequestMethod": "GET",
+                    "ClientRequestProtocol": "HTTP/1.1",
                     "ClientRequestURI": "/admin/.env?debug=1",
                     "ClientRequestReferer": "",
                     "ClientRequestUserAgent": "curl/8.4.0",
                     "EdgeResponseBytes": 0,
                     "EdgeResponseStatus": 404,
-                    "EdgeStartTimestamp": "2024-05-01T09:00:45Z",
+                    # Logpush's default `timestamp_format` is `unixnano`. An RFC
+                    # 3339 stamp here hid that the default could not be read.
+                    "EdgeStartTimestamp": 1714554045000000000,
                 }
             )
         ],
@@ -433,6 +436,7 @@ SAMPLES: dict[str, tuple[list[str], dict[str, object]]] = {
             "client_ip": "203.0.113.5",
             "path": "/admin/.env",
             "query": "debug=1",
+            "protocol": "HTTP/1.1",
             "status": 404,
             "user_agent": "curl/8.4.0",
         },
@@ -475,7 +479,7 @@ SAMPLES: dict[str, tuple[list[str], dict[str, object]]] = {
                     "client": {"ip": "203.0.113.5"},
                     "url": {"path": "/admin/.env", "query": "id=1", "domain": "shop.example.com"},
                     "http": {
-                        "request": {"method": "GET"},
+                        "request": {"method": "GET", "referrer": "https://shop.example.com/"},
                         "response": {"status_code": 404, "body": {"bytes": 0}},
                     },
                     "user_agent": {"original": "curl/8.4.0"},
@@ -488,6 +492,7 @@ SAMPLES: dict[str, tuple[list[str], dict[str, object]]] = {
             "query": "id=1",
             "status": 404,
             "host": "shop.example.com",
+            "referer": "https://shop.example.com/",
             "user_agent": "curl/8.4.0",
         },
     ),

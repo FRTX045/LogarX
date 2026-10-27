@@ -343,6 +343,7 @@ BUILT_INS: Final[tuple[FormatSpec, ...]] = (
         client_ip="ClientIP",
         method="ClientRequestMethod",
         path="ClientRequestURI",
+        protocol="ClientRequestProtocol",
         status="EdgeResponseStatus",
         bytes_sent="EdgeResponseBytes",
         host="ClientRequestHost",
@@ -375,6 +376,9 @@ BUILT_INS: Final[tuple[FormatSpec, ...]] = (
         status="http.response.status_code",
         bytes_sent="http.response.body.bytes",
         host="url.domain",
+        # ECS spells it the RFC's way. `http.version` is not mapped: it holds
+        # `1.1`, where every other format's protocol reads `HTTP/1.1`.
+        referer="http.request.referrer",
         user_agent="user_agent.original",
     ),
     # -- Tables that name their own columns --------------------------------

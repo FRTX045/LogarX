@@ -1045,6 +1045,12 @@ which will be the first tag.
   built-in now undoes the encoding once before reading, and a table format can
   say so for itself (`escapes`, written only when set). All 82 are gone, and
   every field reads as in the Apache log.
+- **ECS logs keep their Referer, and Cloudflare logs their protocol.** The
+  `ecs-http` built-in mapped no Referer at all, though ECS defines
+  `http.request.referrer`, so every Referer in an ECS log was dropped: 52,310 of
+  them in the small tier rendered as ECS, and with them the rules that read where
+  a request came from. `cloudflare-json` left `ClientRequestProtocol` unread. Both
+  found by reading the same traffic in each format.
 - **Cloudflare's own timestamps are read, and one odd timestamp no longer stops
   a whole log.** Logpush writes `EdgeStartTimestamp` in nanoseconds unless told
   otherwise, and an epoch number was only told apart as seconds, milliseconds or
