@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import uuid
 from contextlib import suppress
@@ -106,6 +107,10 @@ SCHEMA: Final = pa.schema(
 )
 
 
+#: Surrogates outside the `\udc80-\udcff` that `surrogateescape` reads a byte as.
+_LONE_SURROGATE: Final = re.compile("[\ud800-\udc7f\udd00-\udfff]")
+
+
 def _storable(text: str | None) -> str | None:
     """Make a string safe to write to a UTF-8 Parquet column.
 
@@ -116,10 +121,32 @@ def _storable(text: str | None) -> str | None:
 
     Text that is already valid passes through untouched, so this only affects
     input that was malformed to begin with.
+
+    A surrogate no byte could have produced — JSON's ``\\ud800``, which decodes
+    to half a character — is written back as that escape. One such field used
+    to fail the write of its whole batch, and the ingest with it.
     """
     if text is None:
         return None
-    return text.encode("utf-8", "surrogateescape").decode("utf-8", "backslashreplace")
+    try:
+        raw = text.encode("utf-8", "surrogateescape")
+    except UnicodeEncodeError:
+        escaped = _LONE_SURROGATE.sub(lambda found: f"\\u{ord(found[0]):04x}", text)
+        raw = escaped.encode("utf-8", "surrogateescape")
+    return raw.decode("utf-8", "backslashreplace")
+
+
+def _fits(value: int | None, bits: int) -> int | None:
+    """`value`, or unknown if a column `bits` wide cannot hold it.
+
+    A status or byte count is the server's own number, but the line it is read
+    from is the client's. Twenty digits failed the write of the whole batch,
+    and the ingest with it. Only the number is lost, not the request: the line
+    it came from is still the evidence.
+    """
+    if value is None or -(2 ** (bits - 1)) <= value < 2 ** (bits - 1):
+        return value
+    return None
 
 
 class ParquetEventStore:
@@ -179,8 +206,8 @@ class ParquetEventStore:
                 "path": [_storable(e.path) for e in batch],
                 "query": [_storable(e.query) for e in batch],
                 "protocol": [_storable(e.protocol) for e in batch],
-                "status": [e.status for e in batch],
-                "bytes_sent": [e.bytes_sent for e in batch],
+                "status": [_fits(e.status, 32) for e in batch],
+                "bytes_sent": [_fits(e.bytes_sent, 64) for e in batch],
                 "referer": [_storable(e.referer) for e in batch],
                 "user_agent": [_storable(e.user_agent) for e in batch],
                 "host": [_storable(e.host) for e in batch],

@@ -253,6 +253,10 @@ def score_parser(parser: LogParser, lines: Sequence[str]) -> float:
     as lines the parser failed to read, a short sample of such a log scores far
     below the threshold and the format written for it is passed over — which is
     how `iis-w3c` failed to be detected on an IIS log.
+
+    A parser that raises on a line has not accepted it. Detection tries every
+    registered format, so one format's bug used to end detection for all of
+    them, and the ingest with it.
     """
     considered = 0
     accepted = 0
@@ -260,7 +264,13 @@ def score_parser(parser: LogParser, lines: Sequence[str]) -> float:
         if not line.strip() or skips(parser, line):
             continue
         considered += 1
-        if parser.parse_line(line, _DETECTION_REF) is not None:
+        try:
+            event = parser.parse_line(line, _DETECTION_REF)
+        except MemoryError:
+            raise
+        except Exception:
+            continue
+        if event is not None:
             accepted += 1
     return accepted / considered if considered else 0.0
 
