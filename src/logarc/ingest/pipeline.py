@@ -196,6 +196,13 @@ def ingest_file(
             lines_read += 1
             if lines_read % PROGRESS_STRIDE == 0:
                 report()
+                # Asked here as well as after each batch: a log whose every line
+                # is refused writes no batch, and was never asked at all. What
+                # was accepted is written first, as after a batch.
+                if should_cancel and should_cancel():
+                    if batch:
+                        store.write(batch)
+                    raise IngestCancelled(path, lines_read)
             # Blank lines are padding, not damage: they are neither parsed nor
             # quarantined, so the two counts plus blanks account for every line.
             # A line the format calls its own bookkeeping — a W3C `#Fields:`

@@ -198,6 +198,45 @@ def test_what_was_read_before_a_cancel_is_kept(tmp_path: Path, case: Path) -> No
     assert max(event.evidence.line_no for event in kept) <= 5
 
 
+def test_a_cancel_is_heard_while_every_line_is_refused(tmp_path: Path, case: Path) -> None:
+    """The wrong format chosen refuses every line, and a check made only after a
+    batch of parsed events was never made: Cancel did nothing to the end."""
+    path = tmp_path / "access.log"
+    path.write_text("not a log line\n" * 10_000, encoding="utf-8")
+    store = ParquetEventStore(case)
+    asked = 0
+
+    def stop() -> bool:
+        nonlocal asked
+        asked += 1
+        return True
+
+    with Quarantine(case) as quarantine, pytest.raises(IngestCancelled) as raised:
+        ingest_file(path, store, quarantine, log_format="apache-combined", should_cancel=stop)
+
+    assert asked >= 1
+    assert raised.value.lines_read <= PROGRESS_STRIDE
+
+
+def test_events_read_before_a_cancel_between_batches_are_kept(tmp_path: Path, case: Path) -> None:
+    path = tmp_path / "access.log"
+    path.write_text("\n".join(LINES) + "\n" + "not a log line\n" * 5_000, encoding="utf-8")
+    store = ParquetEventStore(case)
+
+    with Quarantine(case) as quarantine, pytest.raises(IngestCancelled):
+        ingest_file(
+            path,
+            store,
+            quarantine,
+            log_format="apache-combined",
+            batch_size=1_000,
+            should_cancel=lambda: True,
+        )
+    store.finalize()
+
+    assert store.events_for_ip("203.0.113.5")
+
+
 def test_an_explicit_format_overrides_detection(log: Path, case: Path) -> None:
     store = ParquetEventStore(case)
     with Quarantine(case) as quarantine:
