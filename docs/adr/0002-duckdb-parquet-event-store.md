@@ -29,6 +29,15 @@ recomputing it. Older indexes have no bucket column: their reads filter by IP
 across the partitions, using Parquet statistics but without bucket pruning.
 This costs some read performance and requires no changes to existing cases.
 
+Finalization writes `.finalizing` before producing event files and publishes
+`.finalized` only after the sorted partitions and index have been written and
+the database connection closed. Staging is removed after publication, so an
+interrupted cleanup cannot turn a later retry into a partial rebuild. Failed
+new writes can be retried from intact staging; incomplete legacy outputs are
+refused and must be re-ingested into a new case. Completed legacy stores need
+no marker or migration. These checks cover interrupted processing and write
+errors; they do not promise recovery from filesystem corruption or power loss.
+
 Both live behind `storage.base.EventStore`, so the backend is replaceable.
 
 ## Rationale

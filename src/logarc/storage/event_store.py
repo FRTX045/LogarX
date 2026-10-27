@@ -149,6 +149,8 @@ class ParquetEventStore:
         self._staging = self.root / "staging"
         self._events = self.root / "events"
         self._ip_index = self.root / "ip_index.parquet"
+        self._finalizing = self.root / ".finalizing"
+        self._finalized = self.root / ".finalized"
         self._scratch = scratch if scratch is not None else self.root / "tmp"
         self._memory_limit = memory_limit
         self._writer: pq.ParquetWriter | None = None
@@ -162,12 +164,20 @@ class ParquetEventStore:
 
     @property
     def is_finalized(self) -> bool:
-        return self._events.exists()
+        if not self._events.is_dir() or not self._ip_index.is_file():
+            return False
+        if self._finalized.is_file():
+            return True
+        # Legacy stores have no completion marker. Their final index and the
+        # absence of staged data distinguish a finished write from a partial one.
+        return not self._finalizing.exists() and not any(self._staging.glob("*.parquet"))
 
     def write(self, events: Iterable[NormalizedEvent]) -> None:
         batch = list(events)
         if self.is_finalized:
             raise StoreStateError(f"case at {self.root} is already finalised; cannot write more")
+        if self._finalizing.exists() or self._events.exists() or self._ip_index.exists():
+            raise StoreStateError("cannot append to a store whose finalization has started")
         if not batch:
             return
 
@@ -199,19 +209,47 @@ class ParquetEventStore:
         pq.write_table(table, path, compression="zstd")
 
     def finalize(self) -> None:
-        """Partition, sort and index the staged events, then drop the staging copy."""
+        """Publish completion only after every partition and the index are written.
+
+        Until the marker is published, staging is left intact. A retry can
+        rebuild this implementation's incomplete outputs from that copy. Legacy
+        partial stores cannot prove their staging survived cleanup intact, so
+        they are refused rather than guessed complete or rebuilt from a subset.
+        """
         if self.is_finalized:
             return
-
+        if (self._events.exists() or self._ip_index.exists()) and not self._finalizing.exists():
+            raise StoreStateError(
+                f"incomplete store at {self.root}; re-ingest the source logs into a new case"
+            )
+        self.root.mkdir(parents=True, exist_ok=True)
+        self._finalizing.touch()
+        if self._events.exists():
+            shutil.rmtree(self._events)
+        self._ip_index.unlink(missing_ok=True)
+        self._index_has_bucket = None
         self._events.mkdir(parents=True, exist_ok=True)
-        if not any(self._staging.glob("*.parquet")):
-            # An empty case is legitimate: a log may contain nothing parseable.
-            self._write_empty_index()
-            return
+        try:
+            if any(self._staging.glob("*.parquet")):
+                connection = self._connect()
+                staged = self._sql_path(self._staging / "*.parquet")
+                self._partition_and_sort(connection, staged)
+                self._write_index(connection, staged)
+            else:
+                # A log may legitimately contain nothing parseable.
+                self._write_empty_index()
+            self._clear_scratch()
+            self._finalized.touch(exist_ok=False)
+        except BaseException:
+            self.close()
+            raise
+        # Completion precedes cleanup. A crash or failed removal here must not
+        # cause a retry to rebuild the case from partially removed staging.
+        with suppress(OSError):
+            self._finalizing.unlink()
+        shutil.rmtree(self._staging, ignore_errors=True)
 
-        connection = self._connect()
-        staged = self._sql_path(self._staging / "*.parquet")
-        self._partition_and_sort(connection, staged)
+    def _write_index(self, connection: duckdb.DuckDBPyConnection, staged: str) -> None:
         connection.execute(f"""
             COPY (
                 SELECT
@@ -230,8 +268,6 @@ class ParquetEventStore:
                 GROUP BY client_ip
             ) TO {self._sql_path(self._ip_index)} (FORMAT PARQUET, COMPRESSION zstd)
         """)
-        shutil.rmtree(self._staging, ignore_errors=True)
-        self._clear_scratch()
 
     def _partition_and_sort(self, connection: duckdb.DuckDBPyConnection, staged: str) -> None:
         """Lay the events out bucketed and sorted, in two bounded passes.

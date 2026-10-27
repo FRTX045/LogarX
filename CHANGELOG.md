@@ -1036,6 +1036,11 @@ which will be the first tag.
 
 ### Fixed
 
+- An interrupted finalization no longer presents an incomplete case as ready.
+  New stores publish completion after writing all partitions and the index,
+  preserve staging for retries, and keep completed data if staging cleanup is
+  interrupted. Ambiguous incomplete legacy stores are refused without deletion.
+
 - Per-IP reconstruction and timelines remain readable after a DuckDB upgrade
   changes its hash function. New indexes record the assigned partition; older
   cases are read without guessing their bucket or rewriting their files.
