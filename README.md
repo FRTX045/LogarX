@@ -219,6 +219,34 @@ OWASP CRS sidecar are covered in [docs/installing.md](docs/installing.md).
 
 ---
 
+## Log formats it reads
+
+Twenty-one formats are recognised on their own, from the first lines of a log.
+Nothing has to be configured.
+
+| Server | Formats |
+|---|---|
+| Apache | `combined`, `common`, `vhost_combined`, `vhost_common`, and `combined` with mod_logio's byte counts |
+| nginx | `combined`, the `main` format of nginx.org's packages and Docker image, `combined` with the forwarded-for header and request time, and the widely copied JSON template |
+| Kubernetes ingress-nginx | its default, `upstreaminfo` |
+| Traefik | the default text log, and JSON |
+| Caddy | the default JSON access log |
+| HAProxy | `option httplog`, bare or in any syslog envelope |
+| Envoy and Istio | their default access logs |
+| IIS | W3C extended |
+| AWS | Application Load Balancer and CloudFront |
+| Cloudflare | Logpush HTTP requests |
+| Google Cloud | load balancer request logs |
+| Elastic | Elastic Common Schema, as Filebeat and the Elastic Agent write it |
+
+Servers that write Apache's `combined` line, such as OpenLiteSpeed and Express's
+morgan, are read as it. Any other log is a format you write once, in
+**Case → Formats and rules…**: an Apache `LogFormat` directive, an nginx
+`log_format` pasted as it is, a JSON mapping, a table with its columns, or a
+regular expression. [docs/log-formats.md](docs/log-formats.md) has the details.
+
+---
+
 ## Documentation
 
 | | |
