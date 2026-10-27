@@ -976,6 +976,18 @@ which will be the first tag.
   raises on a line now costs that line only — quarantined, with the reason
   naming the exception — so the next bug of this kind loses one line rather
   than the log. Running out of memory still stops the import.
+- **A long User-Agent no longer costs the shellshock rule seconds.** Its pattern
+  was searched from every `() {` in turn, each to the end of the field, so its
+  cost grew with the square of the length: 24.5 seconds for one 320 KB
+  User-Agent, and a log of such lines would take hours to read. It now commits
+  to the first `() {`, which is the only one that can match where a later one
+  would: 0.46 seconds for the whole rule set on the same line. Same verdict on
+  a million generated strings and on 2.48 million real Referers and
+  User-Agents, and every CRS family scores as before.
+- **A client address holding markup is shown as written.** The heading above
+  the graph is rich text, and a format that reads the client from a
+  forwarded-for header takes the address from the request. A client could
+  write `<span>` there and the heading drew it, hiding text and adding its own.
 - **The CRS sidecar is built on Coraza v3.8.1**, from v3.7.0, which closes the twelve Coraza
   advisories and one `golang.org/x/net` advisory GitHub reported for it (libinjection-go moves to
   v0.3.3 and `x/net` to v0.58.0 with it). The sidecar replays only the request line and three

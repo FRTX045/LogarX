@@ -8,6 +8,7 @@ Those are the failures that would otherwise be found by opening the app.
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from datetime import UTC, datetime, timedelta
@@ -23,7 +24,7 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 from dragging import drag
 from on_canvas import node_item, node_items
 from PyQt6.QtCore import QPoint
-from PyQt6.QtGui import QFontMetrics, QPalette
+from PyQt6.QtGui import QFontMetrics, QPalette, QTextDocument
 from PyQt6.QtWidgets import QApplication, QSplitter, QStyle
 from tables import cell, column_of
 
@@ -47,6 +48,8 @@ from logarc.gui.panels import ClientTable, seen_day
 from logarc.gui.progress import Progress
 from logarc.gui.progress_card import IngestCard
 from logarc.gui.quarantine_notice import notice_for
+from logarc.parsers.registry import register_spec, unregister_format
+from logarc.parsers.spec import JsonFormatSpec
 from logarc.storage.base import IpSummary
 from logarc.storage.case import CaseManifest, SourceRecord
 from logarc.style import NOTICE_TINT, THEME, format_bytes
@@ -1535,6 +1538,43 @@ def _reconstructed(qt_app: QApplication, case: Path) -> MainWindow:
     settled(qt_app)
     assert window._result is not None
     return window
+
+
+def test_a_client_address_carrying_markup_is_shown_as_written(
+    qt_app: QApplication, tmp_path: Path
+) -> None:
+    """The heading is rich text, and the address in it comes from the log. A
+    format that reads the client from a forwarded-for header takes it from the
+    request, so a client could write `<span ...>` there and the heading drew it:
+    found while auditing the tool as a target, hiding text and adding its own."""
+    client = '203.0.113.5<span style="font-size:1px">x</span> (verified)'
+    log = tmp_path / "access.json"
+    log.write_text(
+        "\n".join(
+            json.dumps(
+                {"time": f"2024-05-01T09:00:0{n}Z", "xff": client, "request": "GET / HTTP/1.1"}
+            )
+            for n in range(3)
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    spec = JsonFormatSpec(
+        name="behind-lb",
+        fields=(("timestamp", "time"), ("client_ip", "xff"), ("request_line", "request")),
+    )
+    register_spec(spec)
+    try:
+        with Case.create(tmp_path / "case") as case:
+            case.ingest([log], log_format="behind-lb")
+        window = _reconstructed(qt_app, tmp_path / "case")
+    finally:
+        unregister_format("behind-lb")
+
+    shown = QTextDocument()
+    shown.setHtml(window._heading.text())
+    assert shown.toPlainText().startswith(client)
+    window.close()
 
 
 def test_an_activity_that_fits_is_shown_whole(qt_app: QApplication, campaign: Path) -> None:
