@@ -1,4 +1,4 @@
-# logarc
+![Logarx logo](docs/images/logarx-outline-open-corner.png)
 
 **Reconstruct what one IP address actually did on a web server, from its access logs.**
 
