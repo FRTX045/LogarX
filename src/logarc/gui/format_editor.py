@@ -898,7 +898,11 @@ class FormatEditor(QDialog):
         """
         if self._editing is None:
             return
-        save_library([spec for spec in _saved() if spec.name != self._editing])
+        try:
+            save_library([spec for spec in _saved() if spec.name != self._editing])
+        except FormatLibraryError as exc:
+            self._refuse(str(exc))
+            return
         self._editing = None
         # `_reload` reconciles the registry with the file, which is what takes
         # the deleted format out of every list that was offering it.

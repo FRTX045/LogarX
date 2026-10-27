@@ -588,6 +588,48 @@ def test_a_library_that_will_not_take_a_write_is_reported_not_raised(
     assert "could not be written" in editor.trouble()
 
 
+def _library_refuses_writes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make the real write of the library file fail the way a read-only folder does."""
+    from pathlib import Path
+
+    write = Path.write_text
+
+    def refuse(path: Path, *args: object, **kwargs: object) -> int:
+        if path == library_path():
+            raise PermissionError(13, "Access is denied", str(path))
+        return write(path, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(Path, "write_text", refuse)
+
+
+def test_a_save_the_filesystem_refuses_is_reported_and_the_work_kept(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    editor = FormatEditor()
+    editor.start_new()
+    editor._name.setText("log-kantor")
+    editor._rule.setText(PIPED)
+    _library_refuses_writes(monkeypatch)
+
+    assert not editor.save()
+    assert "could not be written" in editor.trouble()
+    assert (editor._name.text(), editor._rule.text()) == ("log-kantor", PIPED)
+
+
+def test_a_delete_the_filesystem_refuses_is_reported_and_the_format_kept(
+    qt_app: QApplication, saved_office: LogFormatSpec, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    editor = FormatEditor()
+    editor.select("log-kantor")
+    _library_refuses_writes(monkeypatch)
+
+    editor.delete()
+
+    assert "could not be written" in editor.trouble()
+    assert "log-kantor" in editor.listed()
+    assert editor._name.text() == "log-kantor"
+
+
 def test_the_manage_button_reopens_the_chooser_on_what_was_written(
     qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
 ) -> None:
