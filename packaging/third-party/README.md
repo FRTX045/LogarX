@@ -37,8 +37,9 @@ Needs the network. `rebuild.py` stops while `qt/VERSION` differs from the
 PyQt6-Qt6 version installed, so a Qt upgrade cannot ship the previous version's
 notices.
 
-## Not covered yet
-
-Qt PDF, Qt Network and the software OpenGL renderer ship in the bundle, and the
-third-party code they carry (PDFium, the Public Suffix List and libpsl, and
-Mesa) has no notice here.
+Qt PDF and the software OpenGL renderer (`opengl32sw.dll`) are built outside
+the repositories Qt's records cover, so the same script fetches their notices
+from their own sources: PDFium and the libraries it links, from the Chromium
+snapshot the installed Qt's `qtwebengine` pins, and Mesa and LLVM at the versions
+the DLL's own strings name (`OPENGL32SW` in the script; check them when Qt is
+upgraded).

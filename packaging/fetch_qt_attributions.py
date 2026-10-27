@@ -40,8 +40,9 @@ OUT: Final = ROOT / "packaging" / "third-party" / "qt"
 #: TGA, WBMP and ICNS image plugins from qtimageformats.
 REPOSITORIES: Final = ("qtbase", "qtsvg", "qtimageformats")
 
-#: The Qt modules the bundle ships, as `QDocModule` names them.
-SHIPPED: Final = frozenset({"qtcore", "qtgui", "qtwidgets", "qtsvg", "qtimageformats"})
+#: The Qt modules the bundle ships, as `QDocModule` names them. Qt Network is
+#: among them: PyInstaller collects it with the rest of the Qt wheel.
+SHIPPED: Final = frozenset({"qtcore", "qtgui", "qtwidgets", "qtnetwork", "qtsvg", "qtimageformats"})
 
 #: Folders whose records are for platforms or tooling the Windows bundle never
 #: contains, whatever module they name.
@@ -58,6 +59,36 @@ _ELSEWHERE: Final = (
     "src/3rdparty/forkfd/",
     "src/plugins/platforms/cocoa/",
 )
+
+
+#: Shipped in the Qt wheel but built outside the repositories above, so no
+#: `qt_attribution.json` there records them. `opengl32sw.dll`, the software
+#: OpenGL renderer, is Mesa's llvmpipe with LLVM linked in, at the versions its
+#: own strings name; Qt publishes no record for it. Each entry: name, version,
+#: licence, where its text is, the file it is written to.
+OPENGL32SW: Final = (
+    (
+        "Mesa 3D Graphics Library (llvmpipe), as opengl32sw.dll",
+        "11.2.2",
+        "MIT for the core library; the page lists the licence of each component",
+        "https://gitlab.freedesktop.org/mesa/mesa/-/raw/mesa-11.2.2/docs/license.html",
+        "mesa-11.2.2-license.html",
+    ),
+    (
+        "LLVM, linked into opengl32sw.dll",
+        "3.6.2",
+        "University of Illinois/NCSA Open Source License",
+        "https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-3.6.2/llvm/LICENSE.TXT",
+        "llvm-3.6.2-LICENSE.txt",
+    ),
+)
+
+#: The libraries PDFium links from Chromium's own third_party folder, outside
+#: PDFium's tree, as its build names them.
+PDFIUM_FROM_CHROMIUM: Final = ("freetype", "libjpeg_turbo", "libpng", "zlib", "abseil-cpp", "icu")
+
+#: The file names a licence or notice goes by in PDFium's tree.
+_LICENCE_FILE: Final = re.compile(r"(?i)^(license|licence|copying|notice|patents)([._-].*)?$")
 
 
 class QtAttributionError(RuntimeError):
@@ -134,6 +165,96 @@ def _line(label: str, value: Any) -> str:
     return f"{label}: {text}\n"
 
 
+def _tree(repository: str, ref: str) -> dict[str, Any]:
+    url = f"https://api.github.com/repos/qt/{repository}/git/trees/{ref}"
+    return dict(json.loads(_get(url)))
+
+
+def _child(tree: dict[str, Any], name: str) -> dict[str, Any]:
+    return dict(next(entry for entry in tree["tree"] if entry["path"] == name))
+
+
+def pdfium_licences(paths: list[str]) -> list[str]:
+    """The licence files in PDFium's tree: its own, and each third-party
+    library's, however deep. Tests and their fonts are not shipped."""
+    return [
+        path
+        for path in paths
+        if _LICENCE_FILE.match(PurePosixPath(path).name)
+        and not path.startswith(("testing/", "third_party/test"))
+    ]
+
+
+def fetch_pdfium(tag: str) -> tuple[list[str], str]:
+    """PDFium, which Qt PDF is built on, from the Chromium snapshot `tag`'s
+    qtwebengine pins: its licence and those of the third-party code in it."""
+    snapshot = _child(
+        _tree("qtwebengine", _child(_tree("qtwebengine", tag), "src")["sha"]), "3rdparty"
+    )
+    tree = _tree("qtwebengine-chromium", snapshot["sha"])
+    for part in ("chromium", "third_party"):
+        tree = _tree("qtwebengine-chromium", _child(tree, part)["sha"])
+    chromium_third_party = tree
+    tree = _tree("qtwebengine-chromium", _child(tree, "pdfium")["sha"])
+    whole = _tree("qtwebengine-chromium", f"{tree['sha']}?recursive=1")
+    raw = (
+        f"https://raw.githubusercontent.com/qt/qtwebengine-chromium/{snapshot['sha']}"
+        "/chromium/third_party/pdfium"
+    )
+    found = pdfium_licences([entry["path"] for entry in whole["tree"] if entry["type"] == "blob"])
+    if not found:
+        raise QtAttributionError("PDFium: no licence text found in its tree")
+    files = []
+    for path in found:
+        target = "pdfium-" + "-".join(PurePosixPath(path).parts)
+        (OUT / "licenses" / target).write_bytes(_get(f"{raw}/{path}"))
+        files.append(f"licenses/{target}")
+    for library in PDFIUM_FROM_CHROMIUM:
+        folder = _tree(
+            "qtwebengine-chromium", _child(chromium_third_party, library)["sha"] + "?recursive=1"
+        )
+        near = [
+            entry["path"]
+            for entry in folder["tree"]
+            if entry["type"] == "blob"
+            and entry["path"].count("/") <= 1
+            and _LICENCE_FILE.match(PurePosixPath(entry["path"]).name)
+        ]
+        if not near:
+            raise QtAttributionError(f"{library}, which PDFium links: no licence text found")
+        base = (
+            f"https://raw.githubusercontent.com/qt/qtwebengine-chromium/{snapshot['sha']}"
+            f"/chromium/third_party/{library}"
+        )
+        for path in near:
+            target = f"pdfium-chromium-{library}-" + "-".join(PurePosixPath(path).parts)
+            (OUT / "licenses" / target).write_bytes(_get(f"{base}/{path}"))
+            files.append(f"licenses/{target}")
+    notice = (
+        "PDFium, the third-party code in its tree, and the Chromium libraries it links\n"
+        + "Used in: Qt PDF, which renders PDF images and documents\n"
+        + "Licence: BSD 3-clause for PDFium; each third-party library's own licence\n"
+        + _line("Licence text", files)
+        + f"Recorded in: qt/qtwebengine-chromium {snapshot['sha']} chromium/third_party/pdfium\n"
+    )
+    return [notice], f"qt/qtwebengine {tag}, Chromium snapshot {snapshot['sha']}"
+
+
+def fetch_opengl32sw() -> list[str]:
+    """Mesa and LLVM, as `opengl32sw.dll` carries them; see `OPENGL32SW`."""
+    notices = []
+    for name, version, licence, url, target in OPENGL32SW:
+        (OUT / "licenses" / target).write_bytes(_get(url))
+        notices.append(
+            f"{name}\n"
+            + _line("Version", version)
+            + _line("Licence", licence)
+            + _line("Licence text", [f"licenses/{target}"])
+            + f"Recorded in: {url}\n"
+        )
+    return notices
+
+
 def fetch(tag: str) -> list[str]:
     """Write the attributions for `tag` into `OUT`; return what it says."""
     if OUT.exists():
@@ -173,11 +294,14 @@ def fetch(tag: str) -> list[str]:
                     + _line("Licence text", files or None)
                     + f"Recorded in: qt/{repository} {entry['path']}\n"
                 )
+    pdfium, pinned = fetch_pdfium(tag)
+    notices += pdfium + fetch_opengl32sw()
+    sources.append(pinned)
     header = (
         f"Third-party components of the Qt {tag.removeprefix('v')} libraries this bundle ships\n"
-        "(Qt Core, Qt GUI, Qt Widgets, Qt SVG and the Qt Image Formats plugins), as Qt's own\n"
-        "qt_attribution.json records "
-        "list them. Qt itself is under the LGPL; its text is in ../python.txt, under PyQt6-Qt6.\n\n"
+        "(Qt Core, Qt GUI, Qt Widgets, Qt Network, Qt SVG, the Qt Image Formats plugins, Qt PDF\n"
+        "and the software OpenGL renderer), as Qt's own qt_attribution.json records list them,\n"
+        "and for Qt PDF and the renderer, which no such record covers, from their own sources. Qt itself is under the LGPL; its text is in ../python.txt, under PyQt6-Qt6.\n\n"
         + "".join(f"Source: {line}\n" for line in sources)
         + "\n"
     )
