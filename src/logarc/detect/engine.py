@@ -27,7 +27,7 @@ from logarc.detect.rules import Condition, SequenceRule, SignatureRule, WindowRu
 from logarc.normalize.decode import NormalizedText, canonical_path, normalize
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
 
     from logarc.core.event import NormalizedEvent
     from logarc.detect.crs import CrsDetection, DetectionIndex
@@ -160,6 +160,34 @@ _UNREADABLE: Final = ActivityLabel(
 )
 
 
+#: The event field each matchable field is read from. A condition on a field
+#: whose source the request's log does not record cannot hold: Apache's common
+#: format has no User-Agent, and "no User-Agent" read off it would describe the
+#: format rather than the client (`parsers.base.recorded`).
+FIELD_SOURCES: Final[dict[str, str]] = {
+    "method": "method",
+    "path": "path",
+    "query": "query",
+    "target": "path",
+    "referer": "referer",
+    "user_agent": "user_agent",
+    "protocol": "protocol",
+    "host": "host",
+    "extension": "path",
+    "path_decoded": "path",
+    "query_decoded": "query",
+    "target_decoded": "path",
+    "referer_decoded": "referer",
+    "user_agent_decoded": "user_agent",
+    "status": "status",
+    "bytes_sent": "bytes_sent",
+    "decode_depth": "path",
+    "had_null": "path",
+    "referer_offsite": "referer",
+    "query_url_offsite": "query",
+}
+
+
 class RequestView:
     """One request, with its normalised forms computed once and reused.
 
@@ -167,9 +195,15 @@ class RequestView:
     against every rule, so it is cached per request rather than per rule.
     """
 
-    __slots__ = ("__dict__", "event", "site_hosts")
+    __slots__ = ("__dict__", "event", "site_hosts", "unrecorded")
 
-    def __init__(self, event: NormalizedEvent, *, site_hosts: frozenset[str] = frozenset()) -> None:
+    def __init__(
+        self,
+        event: NormalizedEvent,
+        *,
+        site_hosts: frozenset[str] = frozenset(),
+        unrecorded: frozenset[str] = frozenset(),
+    ) -> None:
         self.event = event
         self.site_hosts = site_hosts
         """The hosts the reader said are their own, already reduced.
@@ -177,6 +211,9 @@ class RequestView:
         Empty means unanswered, and unanswered is not a guess in either
         direction — see `query_url_offsite`.
         """
+        self.unrecorded = unrecorded
+        """The event fields this request's log cannot record at all. Empty when
+        that is not known, which reads every field as the log's to fill."""
 
     @cached_property
     def _path(self) -> NormalizedText:
@@ -371,8 +408,16 @@ class RuleEngine:
         site_hosts: Iterable[str] = (),
         crs_host: str | None = None,
         described: str = "",
+        unrecorded: Mapping[str, frozenset[str]] | None = None,
     ) -> None:
         self.rules = list(rules)
+        self.unrecorded: Mapping[str, frozenset[str]] = {
+            source: frozenset(fields) for source, fields in (unrecorded or {}).items() if fields
+        }
+        """Per source file, the event fields its log cannot record
+        (`Case.engine_for`). A condition on one of them does not hold for a
+        request from that file. Like `site_hosts`, an answer about the case
+        rather than the rules, so not part of `fingerprint`."""
         self._signatures = [rule for rule in self.rules if isinstance(rule, SignatureRule)]
         self._windows = [rule for rule in self.rules if isinstance(rule, WindowRule)]
         self._sequences = [rule for rule in self.rules if isinstance(rule, SequenceRule)]
@@ -453,8 +498,15 @@ class RuleEngine:
         self._apply_windows(labelled)
         return labelled
 
+    def _view(self, event: NormalizedEvent) -> RequestView:
+        return RequestView(
+            event,
+            site_hosts=self.site_hosts,
+            unrecorded=self.unrecorded.get(event.evidence.source_file_id, frozenset()),
+        )
+
     def _label_one(self, event: NormalizedEvent, crs: DetectionIndex | None) -> LabelledEvent:
-        view = RequestView(event, site_hosts=self.site_hosts)
+        view = self._view(event)
         matches = [rule for rule in self._signatures if _matches(rule, view)]
         detections = _detections_for(crs, event)
 
@@ -498,7 +550,7 @@ class RuleEngine:
         # One view per request for the whole pass. Every window rule tests the
         # same requests, and a view built per rule would normalise each one
         # again for every rule that looks at it.
-        views = [RequestView(item.event, site_hosts=self.site_hosts) for item in labelled]
+        views = [self._view(item.event) for item in labelled]
         # Per request, the categories a window that labelled it leads over. They
         # are set aside when the primary label is chosen and stay in `all_labels`.
         outranked: dict[int, set[ActivityCategory]] = {}
@@ -862,6 +914,8 @@ def _block_holds(block: MatchBlock, view: RequestView) -> bool:
 
 
 def _condition_holds(condition: Condition, view: RequestView) -> bool:
+    if view.unrecorded and FIELD_SOURCES[condition.field_name] in view.unrecorded:
+        return False
     value = view.value(condition.field_name)
 
     if (pattern := condition.compiled) is not None:

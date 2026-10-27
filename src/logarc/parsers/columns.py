@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Final
 
 from logarc.core.event import NormalizedEvent
 from logarc.parsers.base import read_target, split_client, split_request_line
-from logarc.parsers.fieldnames import JOIN, MAPPABLE, REQUIRED
+from logarc.parsers.fieldnames import JOIN, MAPPABLE, REQUIRED, recorded_by
 from logarc.parsers.times import TimeFormatError, check_time_format, read_time
 
 if TYPE_CHECKING:
@@ -221,6 +221,13 @@ class ColumnsParser:
             raise ColumnsFormatError(str(exc)) from exc
 
         self.name = name
+        # A field mapped to columns this file does not have is one it cannot
+        # fill, as `parse_line` reads them: any one of its columns is enough.
+        self.records = recorded_by(
+            ours
+            for ours, spec in mapping
+            if any(theirs in self._index for theirs in spec.split(JOIN))
+        )
         self._columns = tuple(columns)
         self._separator = separator
         self._time_format = time_format

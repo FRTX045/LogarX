@@ -124,6 +124,13 @@ sees none of that. The raw forms are kept so a rule can deliberately target what
 was literally sent — `decode_depth` above 1 is itself worth a rule, since
 double-encoding is not something a browser does by accident.
 
+**A condition on a field the log does not record never holds.** Apache's common
+format has no User-Agent column, so `{field: user_agent, equals: ""}` does not
+match its lines: an empty field there says nothing about the client. It still
+matches a combined line with `-`, where the client sent none. Each file's format
+says what it records, and the decoded and derived fields go with the field they
+are read from (`user_agent_decoded` with `user_agent`, `extension` with `path`).
+
 Regexes are compiled case-insensitively, once at load time.
 
 ### Window rules — one request tells you nothing

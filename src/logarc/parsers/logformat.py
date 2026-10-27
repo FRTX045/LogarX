@@ -43,6 +43,7 @@ from typing import TYPE_CHECKING, Final
 
 from logarc.core.event import NormalizedEvent
 from logarc.parsers.base import split_request_line
+from logarc.parsers.fieldnames import recorded_by
 from logarc.parsers.nginx import NginxFormatError, looks_like_nginx, to_directive
 from logarc.parsers.times import TimeFormatError, check_time_format
 
@@ -216,6 +217,22 @@ _PROMOTED: Final[frozenset[str]] = frozenset(
         "req_header_referer",
         "req_header_user_agent",
     }
+)
+
+#: Which of our mappable names each promoted group fills, for `records`. The
+#: path is split at a `?` it holds (`parse_line`), so `%U` alone records a query.
+_RECORDS_AS: Final[tuple[tuple[str, str], ...]] = (
+    ("request_line", "request_line"),
+    ("method", "method"),
+    ("url_path", "path"),
+    ("query_string", "query"),
+    ("protocol", "protocol"),
+    ("status", "status"),
+    ("bytes_clf", "bytes_sent"),
+    ("bytes_sent", "bytes_sent"),
+    ("server_name", "host"),
+    ("req_header_referer", "referer"),
+    ("req_header_user_agent", "user_agent"),
 )
 
 
@@ -641,6 +658,8 @@ class LogFormatParser:
             except NginxFormatError as exc:
                 raise LogFormatError(str(exc)) from exc
         self._compiled = _compile(directive)
+        written = set(self._compiled.pattern.groupindex)
+        self.records = recorded_by(ours for theirs, ours in _RECORDS_AS if theirs in written)
 
     @property
     def pattern(self) -> re.Pattern[str]:

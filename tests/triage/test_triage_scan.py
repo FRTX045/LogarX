@@ -462,6 +462,28 @@ def test_an_index_written_in_layout_ten_is_rebuilt(tmp_path, monkeypatch):
     assert current.path != old.path
 
 
+def test_a_change_in_what_a_file_records_is_a_scan_of_its_own(tmp_path, monkeypatch):
+    """A scan cached while a common-format log was read as clients without a
+    User-Agent holds every one of them as reconnaissance. Served again, the
+    fix would not reach a case the reader had already scanned."""
+    from logarc.triage.scan import scan_case
+
+    with Case.create(tmp_path / "case") as case:
+        case.store.write(events("192.0.2.1", 3))
+        case.store.finalize()
+        root = case.root
+    first = scan_case(root)
+    assert scan_case(root).cached
+
+    monkeypatch.setattr(
+        Case, "unrecorded_fields", lambda self: {"access.log": frozenset({"user_agent"})}
+    )
+    again = scan_case(root)
+
+    assert not again.cached
+    assert again.path != first.path
+
+
 def test_a_scan_says_when_its_crs_evidence_covers_part_of_the_case(tmp_path):
     from logarc.triage.scan import scan_case
 
