@@ -69,6 +69,10 @@ professionals.**
 | **Explain and hand over** | "How do I show this to someone who can act?" | **Ctrl+D** bookmarks a client, an activity or a line, with a note. **Export** writes a report (HTML), the graph (JSON), or every bookmark (CSV). |
 | **Teach it** | "It missed something I can see." | Right-click the line and choose **Make a rule from this line…**. Choose the parts to match, name and classify the rule, review what it matches, then **Add rule**. **Re-read now** applies it to the open client and restarts Triage. There is no YAML to write yourself. |
 
+![A webshell's lines naming invoice.php.jpg, the upload before them made into a rule from its log line, and the client read again with that upload named](docs/images/demo-rule.gif)
+
+<sub>The shell's lines name the file, `invoice.php.jpg`; one step back, its upload through the admin page was read as an ordinary file upload. A rule made from that line, previewed against the case before it is added, and the client read again. The traffic is synthetic, written for this demo.</sub>
+
 ---
 
 ## Try it
