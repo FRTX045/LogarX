@@ -4,11 +4,11 @@ The Qt wheel carries Qt's own LGPL text and nothing about the components Qt
 compiles in: HarfBuzz, FreeType, libpng, zlib, PCRE2 and the rest. Qt records
 each of them in a `qt_attribution.json` beside its source, so this reads those
 records from Qt's sources at the version installed here and writes what the
-bundle has to carry into `packaging/qt-attributions/`, which is committed:
+bundle has to carry into `packaging/third-party/qt/`, which is committed:
 
     .venv\\Scripts\\python.exe packaging\\fetch_qt_attributions.py
 
-Run it again when the PyQt6-Qt6 version changes. `licences.py` refuses a
+Run it again when the PyQt6-Qt6 version changes. `rebuild.py` refuses a
 bundle whose Qt version differs from the one recorded here, so a Qt upgrade
 cannot ship the previous version's notices. Needs the network; the build does
 not.
@@ -32,7 +32,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Final
 
 ROOT: Final = Path(__file__).resolve().parents[1]
-OUT: Final = ROOT / "packaging" / "qt-attributions"
+OUT: Final = ROOT / "packaging" / "third-party" / "qt"
 
 #: The Qt repositories the shipped libraries and plugins are built from:
 #: Core, Gui, Widgets and the platform, style, JPEG and GIF plugins from
@@ -177,7 +177,7 @@ def fetch(tag: str) -> list[str]:
         f"Third-party components of the Qt {tag.removeprefix('v')} libraries this bundle ships\n"
         "(Qt Core, Qt GUI, Qt Widgets, Qt SVG and the Qt Image Formats plugins), as Qt's own\n"
         "qt_attribution.json records "
-        "list them. Qt itself is under the LGPL; its text is in ../python/pyqt6-qt6.\n\n"
+        "list them. Qt itself is under the LGPL; its text is in ../python.txt, under PyQt6-Qt6.\n\n"
         + "".join(f"Source: {line}\n" for line in sources)
         + "\n"
     )
