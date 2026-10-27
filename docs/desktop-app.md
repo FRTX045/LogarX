@@ -4,18 +4,10 @@
 logarc-gui
 ```
 
-Everything here drives the same `logarc.case` and `logarc.analysis` functions the
-command line drives. The window contains no analysis of its own — what it adds is
-a way to read a reconstruction, click a node, and see the log lines behind it.
-
-Two results it can produce that the CLI cannot, and both are deliberate:
-exporting the canvas as a **PNG**, which is a picture rather than a
-serialisation of the reconstruction, and narrowing a reconstruction to a
-**stretch of time**. Both are described below.
-
-Window state — preferences, saved layouts, the recent-case list, the panel
-sizes and the window's own size and place — is the window's own and has no
-command-line equivalent by nature.
+Everything here drives the `logarc.case` and `logarc.analysis` functions, the
+same ones the developer tools measure. The window contains no analysis of its
+own — what it adds is a way to read a reconstruction, click a node, and see the
+log lines behind it.
 
 Interface text zooms like most applications: **View → Zoom in** (Ctrl++ or
 Ctrl+=), **Zoom out** (Ctrl+-) and **Reset zoom** (Ctrl+0), or Ctrl and the

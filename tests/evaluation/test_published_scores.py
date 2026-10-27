@@ -47,8 +47,8 @@ TRUTH = DATA / "excerpt.truth.jsonl"
 PUBLISHED = DATA / "excerpt.scores.json"
 
 REGENERATE = (
-    "logarc ingest tests/data/apache-shopfront/excerpt.log --case <tmp> --no-crs && "
-    "logarc evaluate -c <tmp> -t tests/data/apache-shopfront/excerpt.truth.jsonl "
+    "logarc-dev ingest tests/data/apache-shopfront/excerpt.log --case <tmp> --no-crs && "
+    "logarc-dev evaluate -c <tmp> -t tests/data/apache-shopfront/excerpt.truth.jsonl "
     "-o tests/data/apache-shopfront/excerpt.scores.json"
 )
 
@@ -142,9 +142,9 @@ def test_the_ruleset_fingerprint_is_recorded_with_the_scores(measured: dict) -> 
 CRS_PUBLISHED = DATA / "excerpt.scores.crs.json"
 
 CRS_REGENERATE = (
-    "logarc ingest tests/data/apache-shopfront/excerpt.log --case <tmp> --no-crs && "
-    "logarc enrich --case <tmp> && "
-    "logarc evaluate -c <tmp> -t tests/data/apache-shopfront/excerpt.truth.jsonl "
+    "logarc-dev ingest tests/data/apache-shopfront/excerpt.log --case <tmp> --no-crs && "
+    "logarc-dev enrich --case <tmp> && "
+    "logarc-dev evaluate -c <tmp> -t tests/data/apache-shopfront/excerpt.truth.jsonl "
     "-o tests/data/apache-shopfront/excerpt.scores.crs.json"
 )
 

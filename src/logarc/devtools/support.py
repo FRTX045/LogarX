@@ -23,7 +23,7 @@ def safe_output() -> None:
 
     On Windows Python encodes redirected output in the locale's code page —
     cp1252 here — and refuses everything outside it. A log line is whatever the
-    client sent, so `logarc evidence … > evidence.txt` stopped half way on a
+    client sent, so evidence redirected to a file stopped half way on a
     User-Agent in Chinese; and `NUL` reports itself as a terminal, so Rich drew
     its braille spinner into cp1252 and every command with progress failed on
     `> NUL`.

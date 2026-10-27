@@ -46,7 +46,7 @@ dev = [
 ]
 
 [project.scripts]
-logarc = "logarc.cli.main:app"
+logarc-dev = "logarc.devtools.main:app"
 
 # Installed by the `gui` extra. Kept as a separate entry point so the CLI never
 # imports Qt: a headless server should be able to ingest a log without a
@@ -186,7 +186,7 @@ sigterm = true
 #
 # `bench_worker` is a `python -m` entry point that `benchmark` runs in a
 # subprocess, so coverage never sees it execute and reports 0%. It is exercised
-# by five tests in tests/cli/test_benchmark_command.py, which run real benchmarks
+# by five tests in tests/devtools/test_benchmark_command.py, which run real benchmarks
 # and would fail if it broke — a standing 0% invited someone to "fix" it with a
 # test that adds nothing.
 #

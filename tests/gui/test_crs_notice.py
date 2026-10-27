@@ -67,7 +67,7 @@ def test_without_crs_here_there_is_nothing_to_offer(tmp_path: Path) -> None:
 
 
 def test_a_case_checked_at_another_paranoia_level_says_nothing(tmp_path: Path) -> None:
-    """`logarc enrich --paranoia 3` is a choice, not an old version. Running
+    """`logarc-dev enrich --paranoia 3` is a choice, not an old version. Running
     it again from the window would quietly undo it at the default level."""
     then = _config(tmp_path, paranoia=3).as_config()
 

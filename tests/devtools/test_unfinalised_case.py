@@ -15,7 +15,7 @@ import pytest
 from typer.testing import CliRunner
 
 from logarc.case import Case
-from logarc.cli.main import app
+from logarc.devtools.main import app
 
 runner = CliRunner()
 
@@ -32,9 +32,6 @@ def unfinalised(tmp_path: Path) -> Path:
 @pytest.mark.parametrize(
     ("command", "extra"),
     [
-        ("list-ips", []),
-        ("analyze", ["--ip", "203.0.113.5"]),
-        ("evidence", ["--ip", "203.0.113.5"]),
         ("enrich", []),
     ],
 )
@@ -48,17 +45,3 @@ def test_a_command_explains_an_unfinished_case(
         f"{command} crashed instead of explaining: {result.exception!r}"
     )
     assert "finalis" in " ".join(result.output.split()), f"{command} said nothing useful"
-
-
-def test_exporting_an_unfinished_case_explains_itself(unfinalised: Path, tmp_path: Path) -> None:
-    result = runner.invoke(
-        app,
-        [
-            "export", "--case", str(unfinalised), "--ip", "203.0.113.5",
-            "--format", "json", "--out", str(tmp_path / "out.json"),
-        ],
-    )  # fmt: skip
-
-    assert result.exit_code == 1
-    assert result.exception is None or isinstance(result.exception, SystemExit)
-    assert "finalis" in " ".join(result.output.split())

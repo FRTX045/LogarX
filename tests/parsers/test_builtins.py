@@ -596,7 +596,7 @@ def test_a_more_specific_format_comes_before_the_one_it_extends() -> None:
 
 
 def test_every_built_in_says_what_it_is_for() -> None:
-    """`logarc formats` lists them all; a name with no description leaves the
+    """The format editor lists them all; a name with no description leaves the
     reader guessing which of them is theirs."""
     for spec in BUILT_INS:
         assert spec.description, spec.name

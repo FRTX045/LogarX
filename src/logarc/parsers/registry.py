@@ -8,7 +8,7 @@ vhost line begins with a `host:port` token that `combined` cannot match.
 The registry is open. `LogParser` being a Protocol only makes a new format
 *expressible*; it takes a way to register one to make it reachable, otherwise
 the extension point is a preset list with extra steps. Anything satisfying the
-protocol can be added here and is then available to `logarc ingest --format`,
+protocol can be added here and is then available to the window and `logarc-dev ingest --format`,
 to auto-detection, and to the window's format chooser, without a change
 anywhere else. See docs/adding-a-parser.md.
 
@@ -96,7 +96,7 @@ class FormatEntry:
     name: str
     factory: Callable[[], LogParser]
     description: str = ""
-    """Shown by `logarc formats`. The LogFormat directive, where there is one."""
+    """Shown in the format editor. The LogFormat directive, where there is one."""
 
     spec: FormatSpec | None = None
     """The definition, for a format registered from one. See `get_spec`."""

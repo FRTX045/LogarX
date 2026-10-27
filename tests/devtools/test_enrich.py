@@ -15,7 +15,7 @@ import pytest
 from typer.testing import CliRunner
 
 from logarc.case import Case
-from logarc.cli.main import app
+from logarc.devtools.main import app
 
 runner = CliRunner()
 
@@ -83,8 +83,8 @@ def test_a_sidecar_that_crashes_is_reported_with_what_it_said(
 ) -> None:
     """CRS is the whole job here, so its own output is printed under the one
     line that says what happened: it is what a report of the fault needs."""
-    from logarc.cli import main as cli_main
     from logarc.detect.crs import CrsUnavailableError
+    from logarc.devtools import main as cli_main
 
     def crash(*_args: object, **_kwargs: object) -> object:
         raise CrsUnavailableError(
@@ -126,26 +126,3 @@ def _stopped_part_way(root: Path, *, replayed: int, requests: int) -> Path:
         )
         case.manifest.save(case.root)
     return root
-
-
-def test_analyze_says_when_crs_read_only_part_of_the_case(ingested_case: Path) -> None:
-    """On every run, as "CRS not consulted" is: a request CRS never reached
-    looks the same as one it read and passed."""
-    _stopped_part_way(ingested_case, replayed=0, requests=1)
-
-    result = runner.invoke(app, ["analyze", "--case", str(ingested_case), "--ip", "203.0.113.5"])
-
-    assert result.exit_code == 0, result.output
-    printed = " ".join(result.output.split())
-    assert "CRS stopped part way" in printed
-    assert "0 of 1 requests" in printed
-    assert "CRS not consulted" not in printed
-
-
-def test_analyze_says_nothing_about_a_complete_run(ingested_case: Path) -> None:
-    _stopped_part_way(ingested_case, replayed=1, requests=1)
-
-    result = runner.invoke(app, ["analyze", "--case", str(ingested_case), "--ip", "203.0.113.5"])
-
-    assert result.exit_code == 0, result.output
-    assert "part way" not in result.output

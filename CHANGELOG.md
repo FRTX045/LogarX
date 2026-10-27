@@ -412,6 +412,14 @@ which will be the first tag.
 
 ### Changed
 
+- **The command line is developer tooling, named `logarc-dev`** (ADR-0012, step 2).
+  The window is how logarc is used. The package moves from `logarc.cli` to
+  `logarc.devtools`, and keeps the seven commands the project builds cases and
+  measures itself with: `ingest`, `enrich`, `evaluate`, `score-crs`, `benchmark`,
+  `convert-csic` and `setup-crs`. `list-ips`, `analyze`, `evidence`, `export`,
+  `site-hosts` and the `formats` group are removed: each repeated something the
+  window does. A message a user can see names the window's menu, not a command;
+  the documents follow.
 - **The window reads like one desktop application.** The dark theme is lifted
   to a warm graphite so the window meets its title bar, and one stylesheet draws
   every control: check boxes with a visible box, one filled default button per

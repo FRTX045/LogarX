@@ -11,7 +11,7 @@ def _console_width_follows_each_invocation(monkeypatch: pytest.MonkeyPatch) -> N
 
     Rich reads `COLUMNS` once, when a console is built, and keeps it — so the
     width of these module-level consoles is whatever the test process happened
-    to have when `logarc.cli` was first imported, and a later `invoke(env=...)`
+    to have when `logarc.devtools` was first imported, and a later `invoke(env=...)`
     cannot change it. Serially that is nothing, and the width is read again on
     every print. Under pytest-xdist on Linux it is 80: something in the
     controller imports `readline`, GNU readline exports `COLUMNS=80` into the
@@ -29,7 +29,7 @@ def _console_width_follows_each_invocation(monkeypatch: pytest.MonkeyPatch) -> N
     15 CLI tests failed under `-n 4` on 2026-10-05. Importing inside the fixture
     leaves the first import where the test modules put it, under capture.
     """
-    from logarc.cli import support
+    from logarc.devtools import support
 
     for console in (support.console, support.errors):
         monkeypatch.setattr(console, "_width", None)

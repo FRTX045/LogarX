@@ -105,7 +105,7 @@ is not an answer.
 Before adding a rule, and again after, run both scoreboards:
 
 ```bash
-logarc score-crs --family 933        # a corpus this project did not write
+logarc-dev score-crs --family 933        # a corpus this project did not write
 pytest tests/evaluation              # the committed scores, guarded against drift
 ```
 

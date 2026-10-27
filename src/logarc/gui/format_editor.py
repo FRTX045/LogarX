@@ -800,7 +800,7 @@ class FormatEditor(QDialog):
         """Rebuild the list, grouped, and land on something sensible.
 
         Reconciles the registry with the library file first, so the list agrees
-        with what is on disk however it got there — `logarc formats add`, a
+        with what is on disk however it got there — another window, a
         second window, or an editor. `register_saved_formats` removes what a
         previous call installed as well as adding, so a format deleted
         elsewhere stops being offered rather than lingering under a live name.

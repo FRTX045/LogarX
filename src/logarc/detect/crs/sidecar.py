@@ -333,7 +333,7 @@ class SidecarConfig:
             raise CrsUnavailableError(
                 f"CRS sidecar not found at {self.binary}.\n"
                 f"Set CRS up with:\n"
-                f"  logarc setup-crs\n"
+                f"  logarc-dev setup-crs\n"
                 f"which fetches the pinned ruleset and builds the sidecar, once (it needs git "
                 f"and Go 1.25+). Or build it by hand:\n"
                 f"  cd {_crs_dir()} && go build -o {self.binary.name} .\n"
@@ -344,7 +344,7 @@ class SidecarConfig:
         if not (self.rules / "rules").is_dir():
             raise CrsUnavailableError(
                 f"CRS ruleset not found at {self.rules}. Set it up with:\n"
-                f"  logarc setup-crs\n"
+                f"  logarc-dev setup-crs\n"
                 f"which fetches the revision this project measures against. Or clone it by hand:\n"
                 f"  git clone https://github.com/coreruleset/coreruleset.git {self.rules}"
             )
@@ -785,7 +785,7 @@ class _Sidecar:
             return CrsUnavailableError(
                 f"crs-sidecar at {self._binary} is older than this logarc, so it cannot "
                 f"be sent requests one share after another.\n"
-                f"Rebuild it with: logarc setup-crs\n"
+                f"Rebuild it with: logarc-dev setup-crs\n"
                 f"or set {BINARY_ENV} to a current build. It said: {said.splitlines()[0]}"
             )
         first = said.splitlines()[0].strip() if said else "no output"

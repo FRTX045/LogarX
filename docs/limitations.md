@@ -57,8 +57,8 @@ traffic, raise alerts or block anything.
 The window is the only way a user works with logarc
 ([ADR-0012](adr/0012-the-window-is-the-product.md)). The packaged application
 has no supported headless workflow, so it is not a batch job for a server. A
-source checkout keeps a command line as developer tooling, which ADR-0012
-reduces and renames at the first release.
+source checkout keeps `logarc-dev` as developer tooling, to build cases and
+measure the project, and nothing a user needs is only there.
 
 ## The raw lines stay where they were
 

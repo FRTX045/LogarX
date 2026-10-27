@@ -96,7 +96,7 @@ echo stop > C:\tmp\mem.txt.stop
 python tools\measure\memsum.py C:\tmp\mem.txt
 ```
 
-A case is a directory made by the application or by `logarc ingest`. Close
+A case is a directory made by the application or by `logarc-dev ingest`. Close
 other heavy programs while measuring, and compare builds within one run of
 `crs_replay.py`, not across runs: the rotation is what makes two builds'
 figures comparable.

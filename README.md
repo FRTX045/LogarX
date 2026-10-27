@@ -139,7 +139,7 @@ Every screen is described in [docs/desktop-app.md](docs/desktop-app.md).
 ### No network, no account, no API key
 
 Reading a log, analysing it and reporting on it make no outbound connections.
-The one command that reaches the network is `logarc setup-crs`, run once and by
+The one command that reaches the network is `logarc-dev setup-crs`, run once and by
 choice in a source checkout to fetch the CRS ruleset and build the sidecar; the
 packaged application has nothing to set up. **Help → User guide** opens the
 online guide in your browser, which is the browser's request, not logarc's. Its
@@ -208,7 +208,7 @@ packaged for Windows, and runs on Linux.
 
 ```bash
 pip install -e ".[gui]"      # the tool and the desktop application
-pip install -e "."           # the command line alone
+pip install -e "."           # the engine and developer tools alone
 pip install -e ".[dev]"      # add the test and lint toolchain
 ```
 
