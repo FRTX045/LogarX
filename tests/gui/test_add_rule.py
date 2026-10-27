@@ -17,7 +17,7 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 from PyQt6.QtCore import QCoreApplication, QEvent
 from PyQt6.QtGui import QImage
 from PyQt6.QtTest import QTest
-from PyQt6.QtWidgets import QApplication, QPushButton
+from PyQt6.QtWidgets import QApplication, QPushButton, QWidget
 
 from conftest import fired, settled
 from logarc import rules_library
@@ -612,3 +612,103 @@ def test_a_copy_numbered_on_a_clash_is_the_one_written(
     )
     (rule,) = load_pack_text("t.yaml", text)
     assert rule.icon == "file:logo-2.svg"
+
+
+# -- the window's size -------------------------------------------------------------
+
+LONG_QUERY = "q=" + "%27%20UNION%20SELECT%20username%2Cpassword%20FROM%20users--%20" * 5
+
+
+def _long_line() -> EvidenceLine:
+    from datetime import UTC, datetime
+
+    ref = EvidenceRef("access.log", 42)
+    event = NormalizedEvent(
+        timestamp=datetime(2026, 8, 23, tzinfo=UTC),
+        client_ip="203.0.113.5",
+        evidence=ref,
+        method="GET",
+        path="/search",
+        query=LONG_QUERY,
+        status=200,
+        user_agent="curl/8.4.0",
+    )
+    return EvidenceLine(ref, "access.log", text="...", note=None, event=event)
+
+
+def _hovered(box: QWidget) -> str:
+    """A widget's tooltip as Qt shows it: read as HTML, the way it reads markup."""
+    from PyQt6.QtGui import QTextDocument
+
+    read = QTextDocument()
+    read.setHtml(box.toolTip())
+    return read.toPlainText()
+
+
+def _within_the_screen(dialog: AddRuleDialog, button: QPushButton) -> None:
+    """The window fits the screen's work area, and `button` is inside the window."""
+    screen = dialog.screen()
+    assert screen is not None
+    area = screen.availableGeometry()
+    assert dialog.width() <= area.width()
+    assert dialog.height() <= area.height()
+    corner = button.mapTo(dialog, button.rect().bottomRight())
+    assert dialog.rect().contains(corner)
+
+
+def test_a_long_request_keeps_the_window_on_the_screen(qt_app: QApplication) -> None:
+    """A part's value is a checkbox label, which never wraps: a long query made the
+    window as wide as the query. It is shortened, and the whole of it is on hover."""
+    dialog = _dialog(line=_long_line())
+    dialog.show()
+    QApplication.processEvents()
+
+    _within_the_screen(dialog, dialog.findChild(QPushButton, "continue"))
+    (query,) = [box for part, box in dialog._part_boxes if part.field == "query_decoded"]
+    assert len(query.text()) < len(LONG_QUERY)
+    assert _hovered(query) == query_part_value(dialog)
+
+    dialog._continue()
+    QApplication.processEvents()
+    _within_the_screen(dialog, dialog.findChild(QPushButton, "addRule"))
+    dialog.close()
+
+
+def query_part_value(dialog: AddRuleDialog) -> str:
+    (value,) = [part.value for part, _box in dialog._part_boxes if part.field == "query_decoded"]
+    return value
+
+
+def test_many_conditions_keep_the_buttons_on_the_screen(qt_app: QApplication) -> None:
+    dialog = _dialog()
+    for _ in range(29):
+        dialog.add_condition()
+    dialog.show()
+    QApplication.processEvents()
+
+    _within_the_screen(dialog, dialog.findChild(QPushButton, "addRule"))
+    dialog.close()
+
+
+def test_a_shortened_part_s_tooltip_spells_out_markup_literally(qt_app: QApplication) -> None:
+    """Qt reads a tooltip that looks like HTML as HTML, and a request is often
+    built to look like it. The whole value on hover must be the value."""
+    from datetime import UTC, datetime
+
+    from logarc.style import display_safe
+
+    ref = EvidenceRef("access.log", 7)
+    query = "q=<script>alert(document.cookie)</script>&next=" + "a" * 80
+    event = NormalizedEvent(
+        timestamp=datetime(2026, 8, 23, tzinfo=UTC),
+        client_ip="203.0.113.5",
+        evidence=ref,
+        method="GET",
+        path="/search",
+        query=query,
+        status=200,
+    )
+    dialog = _dialog(line=EvidenceLine(ref, "access.log", text="...", note=None, event=event))
+    (part, box) = next((p, b) for p, b in dialog._part_boxes if p.field == "query_decoded")
+
+    assert _hovered(box) == display_safe(part.value)
