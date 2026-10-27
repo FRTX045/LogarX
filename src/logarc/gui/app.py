@@ -6,6 +6,7 @@ window to display, and case/range guards discard answers no longer requested.
 
 from __future__ import annotations
 
+import html
 import multiprocessing
 import sys
 import threading
@@ -2030,7 +2031,9 @@ class MainWindow(QMainWindow):
             # word of a sentence.
             self._heading.setText(
                 f'<span style="font-family:{_MONO_CSS};color:{THEME.identity}">'
-                f"<b>{result.client_ip}</b></span>"
+                # Escaped: a format reading the client from a forwarded-for
+                # header takes it from the request, and the client wrote that.
+                f"<b>{html.escape(result.client_ip)}</b></span>"
                 # Normal weight, explicitly: the label itself is set in the
                 # heading face, which is DemiBold, and without this the counts
                 # carry the same emphasis as the address they belong to.
