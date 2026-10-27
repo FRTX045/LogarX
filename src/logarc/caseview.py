@@ -182,5 +182,6 @@ def reconstruct_client(
             policy=AnalysisPolicy(episode=EpisodePolicy(evidence_sample=evidence_sample)),
             crs=crs.index,
             crs_fingerprint=crs.fingerprint,
+            crs_coverage=crs.coverage,
             window=window,
         )

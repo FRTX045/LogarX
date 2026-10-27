@@ -87,6 +87,17 @@ def test_a_source_that_changed_since_ingest_is_flagged(case: Case, tmp_path: Pat
     assert line.text == LINES[0]
     assert not line.verified
     assert "changed" in (line.note or "")
+    assert line.warning == line.note
+
+
+def test_a_line_that_could_not_be_checked_still_carries_a_warning() -> None:
+    """Unverified with no account of why is still unverified. Whatever writes
+    the line out has something to say beside it."""
+    from logarc.evidence import EvidenceLine
+
+    line = EvidenceLine(ref=EvidenceRef("access.log", 1), source_path="a.log", text="x")
+
+    assert line.warning
 
 
 def test_an_unchanged_source_is_marked_verified(case: Case) -> None:
@@ -94,6 +105,7 @@ def test_an_unchanged_source_is_marked_verified(case: Case) -> None:
 
     assert line.verified
     assert line.note is None
+    assert line.warning is None
 
 
 def test_a_compressed_source_is_read_too(tmp_path: Path) -> None:

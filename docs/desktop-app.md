@@ -408,7 +408,8 @@ The HTML report lists the exported client's bookmarks, with their notes and,
 for a log line, the line itself. **Export → Bookmarks (CSV)…** writes every
 bookmark in the case to a CSV file: category, kind, client, what, note, when
 saved, and for a log line or an activity its file and line number and the line
-itself.
+itself. Both say so beside a line whose log file has changed size since the case
+read it, because that line may not be the one the finding was built from.
 
 ---
 

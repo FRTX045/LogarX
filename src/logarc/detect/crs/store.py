@@ -22,15 +22,27 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
 __all__ = [
+    "COMPLETE_KEY",
     "CRS_FILE",
+    "REPLAYED_KEY",
+    "REQUESTS_KEY",
     "CrsEvidence",
     "DetectionIndex",
     "is_enriched",
     "load_detections",
+    "recorded_coverage",
     "write_detections",
 ]
 
 CRS_FILE: Final = "crs.jsonl"
+
+#: Where the manifest's config records how the last enrichment ended: whether it
+#: finished, the requests it replayed, and the requests the case held. Finishing
+#: is recorded rather than worked out from the two counts, because the total is
+#: the manifest's figure and nothing here checks it against the store.
+COMPLETE_KEY: Final = "crs_complete"
+REPLAYED_KEY: Final = "crs_replayed"
+REQUESTS_KEY: Final = "crs_requests"
 
 
 def is_enriched(case_root: Path) -> bool:
@@ -42,6 +54,20 @@ def is_enriched(case_root: Path) -> bool:
     would announce a failure every time CRS correctly found no attacks.
     """
     return (Path(case_root) / CRS_FILE).exists()
+
+
+def recorded_coverage(config: Mapping[str, Any]) -> tuple[int, int] | None:
+    """`(replayed, requests)` if the enrichment `config` records was stopped part
+    way, else `None`.
+
+    Reads the manifest only, so a caller asking whether a case's CRS run
+    finished does not load every detection to find out. A case enriched before
+    completion was recorded reads as complete: nothing is left that could say
+    otherwise.
+    """
+    if config.get(COMPLETE_KEY) is not False:
+        return None
+    return int(config.get(REPLAYED_KEY) or 0), int(config.get(REQUESTS_KEY) or 0)
 
 
 #: Detections for one request, keyed as `EvidenceRef` identifies it.
@@ -104,6 +130,19 @@ class CrsEvidence:
     """The CRS configuration credited with the result, or `None` if CRS took no
     part in it."""
 
+    coverage: tuple[int, int] | None = None
+    """`(replayed, requests)` when the enrichment was stopped part way, else
+    `None`, as `recorded_coverage` reads it.
+
+    The requests it never reached carry no detection, which is also what a
+    request CRS read and passed carries, so without this a partial check reads
+    as a clean one.
+    """
+
+    @property
+    def partial(self) -> bool:
+        return self.coverage is not None
+
     @classmethod
     def of(cls, case_root: Path, config: Mapping[str, Any]) -> CrsEvidence:
         """Read what a case on disk carries.
@@ -121,4 +160,5 @@ class CrsEvidence:
         return cls(
             index=load_detections(root) or None,
             fingerprint=str(fingerprint) if fingerprint is not None else None,
+            coverage=recorded_coverage(config),
         )

@@ -74,6 +74,14 @@ class EvidenceLine:
     def available(self) -> bool:
         return self.text is not None
 
+    @property
+    def warning(self) -> str | None:
+        """What has to travel beside this line wherever it is written out, or
+        None when its source is still the size it was at ingest."""
+        if self.verified:
+            return None
+        return self.note or "the source could not be checked against the case"
+
 
 def read_evidence(manifest: CaseManifest, refs: Sequence[EvidenceRef]) -> list[EvidenceLine]:
     """Resolve `refs` to source lines, in the order given.

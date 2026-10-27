@@ -40,15 +40,38 @@ pip install -e ".[dev]"      # add the test and lint toolchain
 ## A packaged Windows build
 
 ```bash
-pip install -e ".[gui,package]"
+pip install -e ".[gui,package,dev]"
 python packaging/rebuild.py
 ```
+
+`dev` as well, because the script runs the test suite, across every core with
+pytest-xdist, before it builds anything; a red suite stops the build.
 
 Produces `dist/logarc/` (~270 MB), which runs without Python installed, and
 with CRS enrichment working: the script builds the CRS sidecar and bundles it
 with the ruleset and the licences of everything compiled into it, so the build
-needs Go and the ruleset clone described under *OWASP CRS* below. One
-folder rather than one file: a one-file build unpacks the whole bundle to
+needs Go and the ruleset clone described under *OWASP CRS* below. The
+licences of what it ships go under `_internal/licenses/`: each Python package,
+Qt and CPython included, and each native library CPython links, such as libffi,
+OpenSSL and expat, taken from the conda package that installed it. The build
+reads which those are from what PyInstaller collected, and stops on anything
+it cannot find a licence for. It builds from a conda Python; elsewhere nothing
+records where a DLL came from, and the build stops on the first one.
+
+Qt compiles in third-party code of its own (HarfBuzz, FreeType, libpng, zlib,
+PCRE2 and more), and the Qt wheel ships only Qt's LGPL text. Qt records each of
+those components beside its source, so `packaging/fetch_qt_attributions.py`
+reads the records for the shipped Qt modules from Qt's sources at the installed
+version into `packaging/qt-attributions/`, which is committed and bundled under
+`_internal/licenses/qt/`. Run it again after upgrading PyQt6-Qt6: the build
+stops while the recorded version differs from the installed one.
+
+**Not covered yet: Qt PDF, Qt Network and the software OpenGL renderer.** They
+ship in the bundle, and the third-party code they carry (PDFium, the Public
+Suffix List and libpsl, and Mesa) has no notice there. Gather those before the
+folder is distributed.
+
+One folder rather than one file: a one-file build unpacks the whole bundle to
 `%TEMP%` on every launch, which with Qt and Arrow in it costs seconds each time
 and leaves copies of the tool behind.
 
@@ -80,11 +103,14 @@ recognised.
 
 **It runs after every scan, without asking.** The window replays each new case
 through CRS on a card that can be stopped, keeping what it found so far, and
-`logarc ingest` does the same once the log is read. To turn it off:
+`logarc ingest` does the same once the log is read. A stopped run is recorded
+as one: the window, `analyze`, `evaluate` and every exported report say how many
+requests CRS read, and stopping a rerun over a case already checked in full
+keeps that earlier result. To turn it off:
 
 | Where | How |
 |---|---|
-| The window | Edit → Preferences → Analysis → *Run OWASP CRS after a scan* |
+| The window | Edit → Preferences → General → *Run OWASP CRS after a scan* |
 | One `ingest` | `--no-crs` (and `--crs` asks for it whatever the machine says) |
 | A whole machine, both | `LOGARC_CRS=off` |
 
@@ -102,7 +128,8 @@ logarc enrich --case ./case-shop --paranoia 3   # run again, at another level
 `setup-crs` fetches the ruleset at the revision this project measures against
 (`d694d465951ee06347214f1291ae096e40700001`), builds the sidecar, and replays a
 known SQL injection to prove the two work together. It is the one time logarc
-reaches for the network, and only because it was asked to. The manual steps are
+reaches for the network, and only because it was asked to. (In the window,
+**Help → User guide** opens the online guide in your browser.) The manual steps are
 in [crs/README.md](../crs/README.md).
 
 Without the sidecar, a scan says once that CRS was not run and carries on: the

@@ -1641,6 +1641,36 @@ def test_an_exported_graph_keeps_the_bounded_sample(
     window.close()
 
 
+def test_an_export_covers_the_range_on_screen_and_names_it(
+    qt_app: QApplication, campaign: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A report handed to another investigator has to cover the stretch of time
+    the analyst was reading, and say which stretch that was. Reconstructed over
+    the whole case instead, it disagrees with the screen it was exported from."""
+    import json
+
+    written = tmp_path / "graph.json"
+    monkeypatch.setattr(
+        "PyQt6.QtWidgets.QFileDialog.getSaveFileName",
+        lambda *args, **kwargs: (str(written), ""),
+    )
+    window = _reconstructed(qt_app, campaign)
+    whole = window._result.request_count
+    narrow = TimeWindow(START, START + timedelta(seconds=20))
+    window._apply_window(narrow)
+    settled(qt_app)
+    assert window._result is not None
+    assert window._result.request_count < whole, "premise: the range drops requests"
+
+    window._export("json")
+    settled(qt_app)
+
+    exported = json.loads(written.read_text(encoding="utf-8"))
+    assert exported["request_count"] == window._result.request_count
+    assert exported["window"] == narrow.tag
+    window.close()
+
+
 def test_the_evidence_table_drops_a_size_column_it_has_no_sizes_for(
     qt_app: QApplication, campaign: Path
 ) -> None:
@@ -3479,3 +3509,35 @@ def test_a_client_opened_from_elsewhere_is_named_when_it_is_not_listed(
     assert window._clients._caption.text().endswith("Current client: 10.0.0.5 (not in this list).")
     window.close()
     settled(qt_app)
+
+
+def test_the_lines_an_export_carries_keep_their_verification(tmp_path: Path) -> None:
+    """The evidence reader notices a source that changed under the case. The
+    lines handed to a report or a bookmark export keep what it noticed."""
+    log = tmp_path / "access.log"
+    log.write_text(_line(0, "/") + "\n", encoding="utf-8")
+    with Case.create(tmp_path / "case") as case:
+        case.ingest([log])
+    log.write_text(_line(0, "/") + "\n" + _line(1, "/more") + "\n", encoding="utf-8")
+    ref = EvidenceRef("access.log", 1)
+
+    with Case.open(tmp_path / "case") as case:
+        (line,) = app._raw_lines(case, [ref]).values()
+
+    assert not line.verified
+    assert "changed size" in (line.warning or "")
+
+
+def test_an_export_keeps_a_line_it_cannot_read_and_why(tmp_path: Path) -> None:
+    log = tmp_path / "access.log"
+    log.write_text(_line(0, "/") + "\n", encoding="utf-8")
+    with Case.create(tmp_path / "case") as case:
+        case.ingest([log])
+    log.unlink()
+    ref = EvidenceRef("access.log", 1)
+
+    with Case.open(tmp_path / "case") as case:
+        (line,) = app._raw_lines(case, [ref]).values()
+
+    assert line.text is None
+    assert line.warning

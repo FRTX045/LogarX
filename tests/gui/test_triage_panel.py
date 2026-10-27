@@ -852,3 +852,22 @@ def test_running_the_scan_again_keeps_the_rules_it_was_started_with(qt_app, tmp_
     settled(qt_app)
 
     assert handed == [rules, rules]
+
+
+def test_crs_from_part_of_the_case_is_said_as_such(qt_app, tmp_path):
+    """The queue ranks on what CRS found, and a stopped run found nothing in the
+    requests it never reached."""
+    from logarc.gui.triage import TriagePanel
+
+    root = make_case(tmp_path)
+    (root / "crs.jsonl").write_text("", encoding="utf-8")
+    with Case.open(root) as case:
+        case.manifest.config.update(crs_replayed=0, crs_requests=1, crs_complete=False)
+        case.manifest.save(case.root)
+
+    panel = TriagePanel()
+    panel.show_result(scan_case(root))
+    settled(qt_app)
+
+    assert "CRS evidence from part of the case" in panel.notice.text()
+    panel.close()

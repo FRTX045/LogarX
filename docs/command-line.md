@@ -40,11 +40,15 @@ logarc-gui
 
 Step 3 prints this:
 
-![logarc analyze reduces 48 requests to 3 activities, the last 46 requests of successful SQL injection](images/cli-analyze.png)
+![logarc analyze reduces 48 requests to 3 activities, the last 46 requests of SQL injection answered with status 200](images/cli-analyze.png)
 
-Forty-eight requests, three sessions, three activities — and the one that matters,
+Forty-eight requests, three sessions, three activities, and the one that matters,
 46 requests of SQL injection, is named, dated, mapped to OWASP, and marked
-`success` rather than `blocked`. The first line says CRS was not consulted;
+`success` rather than `blocked`. That outcome means the server answered them
+with statuses below 400, not that the injection worked, and an access log alone
+cannot show that it did. The response sizes and the lines themselves are what
+to read next;
+[limitations.md](limitations.md#a-status-code-is-not-an-outcome) explains the label. The first line says CRS was not consulted;
 [installing.md](installing.md#owasp-crs) sets it up.
 
 Step 4 shows why you can believe it:

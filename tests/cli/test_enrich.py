@@ -108,3 +108,44 @@ def test_a_case_that_is_not_a_case_is_reported(tmp_path: Path) -> None:
 
     assert result.exit_code == 1
     assert "Traceback" not in result.output
+
+
+def _stopped_part_way(root: Path, *, replayed: int, requests: int) -> Path:
+    """`root` as a stopped CRS run leaves it, without needing the sidecar."""
+    from logarc.detect.crs.store import write_detections
+
+    with Case.open(root) as case:
+        write_detections(case.root, [])
+        case.manifest.config.update(
+            {
+                "crs_fingerprint": "0123456789abcdef",
+                "crs_replayed": replayed,
+                "crs_requests": requests,
+                "crs_complete": replayed == requests,
+            }
+        )
+        case.manifest.save(case.root)
+    return root
+
+
+def test_analyze_says_when_crs_read_only_part_of_the_case(ingested_case: Path) -> None:
+    """On every run, as "CRS not consulted" is: a request CRS never reached
+    looks the same as one it read and passed."""
+    _stopped_part_way(ingested_case, replayed=0, requests=1)
+
+    result = runner.invoke(app, ["analyze", "--case", str(ingested_case), "--ip", "203.0.113.5"])
+
+    assert result.exit_code == 0, result.output
+    printed = " ".join(result.output.split())
+    assert "CRS stopped part way" in printed
+    assert "0 of 1 requests" in printed
+    assert "CRS not consulted" not in printed
+
+
+def test_analyze_says_nothing_about_a_complete_run(ingested_case: Path) -> None:
+    _stopped_part_way(ingested_case, replayed=1, requests=1)
+
+    result = runner.invoke(app, ["analyze", "--case", str(ingested_case), "--ip", "203.0.113.5"])
+
+    assert result.exit_code == 0, result.output
+    assert "part way" not in result.output

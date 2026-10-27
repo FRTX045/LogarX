@@ -134,7 +134,12 @@ Every screen is described in [docs/desktop-app.md](docs/desktop-app.md).
 
 ### No network, no account, no API key
 
-logarc makes no outbound connections. Its runtime dependencies are pyarrow,
+Reading a log, analysing it and reporting on it make no outbound connections.
+The one command that reaches the network is `logarc setup-crs`, run once and by
+choice in a source checkout to fetch the CRS ruleset and build the sidecar; the
+packaged application has nothing to set up. **Help → User guide** opens the
+online guide in your browser, which is the browser's request, not logarc's. Its
+runtime dependencies are pyarrow,
 duckdb, pyyaml, pydantic, typer and rich, and the desktop application adds
 PyQt6: no cloud SDK, no model, no telemetry.
 The OWASP CRS step, on by default, runs a local Go binary against a local copy
@@ -179,7 +184,13 @@ build `2026-10-06-medium`: **accuracy 0.9975, macro F1 0.9525 and 0 false alarms
 attack requests missed. Macro F1 is the lower figure because it weighs every
 category equally, and the smallest categories hold only a handful of requests.
 That build's full log is not published yet: the dataset's README says how to
-rebuild it, at commit `d2ef291`. [docs/evaluation.md](docs/evaluation.md) has the method, the
+rebuild it, at commit `d2ef291`, and a rebuild gets the same plan of requests,
+not the same bytes. Until it is published those figures are recorded
+measurements a reader cannot rerun. What anyone can rerun from this repository
+is the committed 3,825-request excerpt, which the test suite scores with CRS
+wherever the sidecar and ruleset are built, and CI always does:
+accuracy 0.9749, macro F1 0.9592 and 0 false alarms with CRS, 21 attack requests
+missed. [docs/evaluation.md](docs/evaluation.md) has the method, the
 per-category figures and what the numbers do not establish, and
 [docs/limitations.md](docs/limitations.md) what logarc cannot tell you.
 

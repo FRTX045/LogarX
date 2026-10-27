@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from logarc.bookmarks import Shelf
     from logarc.core.evidence import EvidenceRef
     from logarc.core.graph import ActivityGraph, GraphEdge
+    from logarc.evidence import EvidenceLine
     from logarc.storage.case import CaseManifest
 
 __all__ = ["render_report"]
@@ -63,12 +64,13 @@ def render_report(
     manifest: CaseManifest | None = None,
     *,
     shelf: Shelf | None = None,
-    lines: Mapping[EvidenceRef, str] | None = None,
+    lines: Mapping[EvidenceRef, EvidenceLine] | None = None,
 ) -> str:
     """Render a complete report for one client as a single HTML document.
 
     `shelf` is the case's bookmarks; the ones on this client are listed, with
-    the raw log line from `lines` under each request.
+    the raw log line from `lines` under each request, and the evidence reader's
+    warning under any line whose source it could not verify.
     """
     return _DOCUMENT.format(
         ip=html.escape(result.client_ip),
@@ -102,6 +104,11 @@ def _summary(result: AnalysisResult) -> str:
         # anyone has ever exported is noise, and it would push the finding that
         # matters one place further along the row.
         cards.append(("Time range", spoken(result.window)))
+    if result.crs_coverage is not None:
+        # On the front, not only in the provenance: the requests CRS never
+        # reached look exactly like requests it read and passed.
+        replayed, requests = result.crs_coverage
+        cards.append(("CRS coverage", f"Partial: {replayed:,} of {requests:,} requests"))
     return "".join(
         f'<div class="card"><div class="card-label">{label}</div>'
         f'<div class="card-value">{value}</div></div>'
@@ -279,7 +286,7 @@ def _episode_table(result: AnalysisResult) -> str:
 
 
 def _bookmarks(
-    result: AnalysisResult, shelf: Shelf | None, lines: Mapping[EvidenceRef, str]
+    result: AnalysisResult, shelf: Shelf | None, lines: Mapping[EvidenceRef, EvidenceLine]
 ) -> str:
     """The reader's own marks on this client, newest first; nothing when there are none.
 
@@ -301,7 +308,13 @@ def _bookmarks(
             html.escape(mark.said) or f'<span class="muted">{html.escape(mark.kind.value)}</span>'
         )
         if raw is not None:
-            what += f"<pre>{html.escape(raw)}</pre>"
+            if raw.text is not None:
+                what += f"<pre>{html.escape(raw.text)}</pre>"
+            # Under the line, in the report itself: printed alone it would sit
+            # beside the ingest hash as though it were the line the hash covers.
+            if raw.warning is not None:
+                said = "Not verified" if raw.text is not None else "Not available"
+                what += f'<p class="warn">{said}: {html.escape(raw.warning)}</p>'
         rows.append(
             "<tr>"
             f'<td><span class="pill"><i class="swatch" style="background:'
@@ -322,6 +335,10 @@ def _provenance(result: AnalysisResult, manifest: CaseManifest | None) -> str:
     rows = [("Ruleset fingerprint", result.ruleset_fingerprint)]
     if result.rules_in_force:
         rows.append(("Rules", result.rules_in_force))
+    rows.append(("CRS configuration", result.crs_fingerprint or "not consulted"))
+    if result.crs_coverage is not None:
+        replayed, requests = result.crs_coverage
+        rows.append(("CRS coverage", f"stopped after {replayed:,} of {requests:,} requests"))
     if manifest is not None:
         rows.append(("Case", manifest.case_id))
         rows.append(("Tool version", manifest.tool_version))
@@ -374,6 +391,7 @@ tr:last-child td { border-bottom: none; }
 .mono { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
 .small { font-size: .82rem; }
 .muted { color: #64748b; font-size: .85rem; }
+.warn { color: #9a3412; font-size: .85rem; font-weight: 600; margin: 4px 0 0; }
 /* A dot beside the word, not white text on the colour. Three of the five
    severities failed contrast painted as a solid pill, and the canvas has no
    such problem because it draws no text on the fill at all — the same

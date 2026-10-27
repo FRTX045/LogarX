@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from logarc.detect.crs import SidecarConfig
-from logarc.gui.crs_notice import stale_crs_notice
+from logarc.gui.crs_notice import partial_crs_notice, stale_crs_notice
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -72,3 +72,18 @@ def test_a_case_checked_at_another_paranoia_level_says_nothing(tmp_path: Path) -
     then = _config(tmp_path, paranoia=3).as_config()
 
     assert stale_crs_notice(then, _config(tmp_path)) is None
+
+
+def test_a_complete_crs_run_says_nothing() -> None:
+    assert partial_crs_notice(None) is None
+
+
+def test_a_stopped_crs_run_says_how_far_it_got() -> None:
+    """The requests it never reached carry no CRS finding, which is also what a
+    request it read and passed carries. Only the case can tell them apart."""
+    notice = partial_crs_notice((2, 4))
+
+    assert notice is not None
+    assert "part" in notice.headline
+    assert "2 of 4 requests" in notice.detail
+    assert not notice.is_blocking

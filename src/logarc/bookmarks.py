@@ -42,6 +42,7 @@ from logarc.style import CATEGORY_COLOURS, display_safe, format_requests, plural
 if TYPE_CHECKING:
     from logarc.core.event import NormalizedEvent
     from logarc.core.graph import GraphNode
+    from logarc.evidence import EvidenceLine
 
 __all__ = [
     "DEFAULT",
@@ -619,7 +620,18 @@ def said_for_search(query: str, clients: int | None, requests: int | None) -> st
 
 # -- every bookmark as a CSV ----------------------------------------------------------
 
-_CSV_HEAD: Final = ("category", "kind", "client", "what", "note", "saved", "line", "log line")
+#: The warning goes last, so a sheet built on the earlier columns still reads.
+_CSV_HEAD: Final = (
+    "category",
+    "kind",
+    "client",
+    "what",
+    "note",
+    "saved",
+    "line",
+    "log line",
+    "log line warning",
+)
 #: What a spreadsheet reads as the start of a formula. A note or a log line is
 #: text a reader or an attacker wrote, and must stay text when the file is opened.
 _FORMULA_STARTS: Final = frozenset({"=", "+", "-", "@", "\t", "\r"})
@@ -629,14 +641,19 @@ def _cell(text: str) -> str:
     return f"'{text}" if text[:1] in _FORMULA_STARTS else text
 
 
-def to_csv(shelf: Shelf, lines: Mapping[EvidenceRef, str]) -> str:
-    """Every bookmark, one row each, by category and newest first within one."""
+def to_csv(shelf: Shelf, lines: Mapping[EvidenceRef, EvidenceLine]) -> str:
+    """Every bookmark, one row each, by category and newest first within one.
+
+    A line whose source the evidence reader could not verify is written with its
+    warning beside it, never alone.
+    """
     out = io.StringIO()
     writer = csv.writer(out, lineterminator="\r\n")
     writer.writerow(_CSV_HEAD)
     for category in shelf.categories:
         members = newest_first(b for b in shelf.bookmarks if b.category == category.name)
         for b in members:
+            raw = lines.get(b.line) if b.line is not None else None
             row = (
                 b.category,
                 b.kind.value,
@@ -645,7 +662,8 @@ def to_csv(shelf: Shelf, lines: Mapping[EvidenceRef, str]) -> str:
                 b.note,
                 _time_text(b.saved),
                 str(b.line) if b.line is not None else "",
-                lines.get(b.line, "") if b.line is not None else "",
+                (raw.text or "") if raw is not None else "",
+                (raw.warning or "") if raw is not None else "",
             )
             writer.writerow([_cell(value) for value in row])
     return out.getvalue()

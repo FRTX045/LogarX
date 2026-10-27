@@ -13,6 +13,12 @@ as a complete one is the worst outcome available there. Enrichment only ever
 this stops by letting the event stream end, which is exactly what allows
 `run_sidecar` to return the detections it has already collected. Raising would
 throw them away, and the dialog promises otherwise.
+
+**A stopped run is recorded as one.** The manifest keeps that it stopped, and
+how many requests were replayed out of how many, so every later analysis can say
+that CRS read only part of the case. And a stopped run never replaces a complete one: it would
+swap a whole case's findings for a fraction of them, so the earlier result
+stays and the outcome says so.
 """
 
 from __future__ import annotations
@@ -23,7 +29,15 @@ from typing import TYPE_CHECKING
 
 from logarc.case import Case
 from logarc.detect.crs.sidecar import SidecarConfig, primary_site_host, run_sidecar
-from logarc.detect.crs.store import write_detections
+from logarc.detect.crs.store import (
+    COMPLETE_KEY,
+    CRS_FILE,
+    REPLAYED_KEY,
+    REQUESTS_KEY,
+    is_enriched,
+    recorded_coverage,
+    write_detections,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Sequence
@@ -71,6 +85,10 @@ class EnrichOutcome:
     """The configuration that ran, which is not always the one passed in: the
     case's own host replaces the caller's. Report this one."""
 
+    kept_earlier: bool = False
+    """The run was stopped over a case already enriched in full, so nothing it
+    found was written and the case keeps that earlier result."""
+
     @property
     def rate(self) -> float:
         return self.replayed / self.seconds if self.seconds else 0.0
@@ -111,6 +129,12 @@ def enrich_case(
 
     with Case.open(root) as opened:
         config = crs_config(opened.site_hosts, config)
+        recorded = opened.manifest.config
+        complete_before = (
+            is_enriched(opened.root)
+            and recorded.get("crs_fingerprint") is not None
+            and recorded_coverage(recorded) is None
+        )
 
         total = opened.manifest.total_events_parsed
         stream = opened.store.all_events()
@@ -137,9 +161,16 @@ def enrich_case(
         detections = run_sidecar(watched(_from(first, stream)), config=config)
         seconds = perf_counter() - started
 
-        path = write_detections(opened.root, detections)
-        opened.manifest.config.update(config.as_config())
-        opened.manifest.save(opened.root)
+        kept_earlier = stopped and complete_before
+        if kept_earlier:
+            path = opened.root / CRS_FILE
+        else:
+            path = write_detections(opened.root, detections)
+            opened.manifest.config.update(config.as_config())
+            opened.manifest.config[COMPLETE_KEY] = not stopped
+            opened.manifest.config[REPLAYED_KEY] = replayed
+            opened.manifest.config[REQUESTS_KEY] = total
+            opened.manifest.save(opened.root)
 
     if report is not None and replayed % every != 0:
         # The last partial block, so a bar finishes where the work did rather
@@ -154,6 +185,7 @@ def enrich_case(
         stopped=stopped,
         seconds=seconds,
         config=config,
+        kept_earlier=kept_earlier,
     )
 
 

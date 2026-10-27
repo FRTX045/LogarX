@@ -159,6 +159,7 @@ def test_verification_rejects_a_qt_runtime_that_cannot_load(
         "check_no_command_line",
         "check_crs",
         "check_icons",
+        "check_licences",
     ):
         monkeypatch.setattr(rebuild, name, lambda bundle: None)
     monkeypatch.setattr(
@@ -353,6 +354,7 @@ def tree(rebuild: ModuleType, bundles: Path, monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(rebuild, "GIT_DIR", repo / ".git")
     monkeypatch.setattr(rebuild, "STATUS", bundles / "dist" / "BUILD-STATUS.txt")
     monkeypatch.setattr(rebuild, "MARKER", repo / ".git" / "logarc-build-failed")
+    monkeypatch.setattr(rebuild, "refresh_metadata", lambda: (True, ""))
     monkeypatch.setattr(rebuild.crs_bundle, "build_sidecar", lambda: None)
     monkeypatch.setattr(rebuild.crs_bundle, "prepare", lambda: [])
     monkeypatch.setattr(rebuild, "build", build)
@@ -567,7 +569,258 @@ def test_the_icon_check_is_one_of_the_checks(
         "check_no_command_line",
         "check_qt_runtime",
         "check_crs",
+        "check_licences",
     ):
         monkeypatch.setattr(rebuild, name, lambda bundle: None)
     monkeypatch.setattr(rebuild, "check_icons", lambda bundle: "no icons")
     assert rebuild.verify(tmp_path) == ["no icons"]
+
+
+# -- the version a build is of --------------------------------------------------
+
+
+def _with_version(tmp_path: Path, version: str) -> Path:
+    bundle = tmp_path / "bundle"
+    info = bundle / "_internal" / f"logarc-{version}.dist-info"
+    info.mkdir(parents=True)
+    (info / "METADATA").write_text(f"Name: logarc\nVersion: {version}\n", encoding="utf-8")
+    return bundle
+
+
+def _declaring(rebuild: ModuleType, tmp_path: Path, monkeypatch, version: str) -> None:
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text(f'[project]\nname = "logarc"\nversion = "{version}"\n', encoding="utf-8")
+    monkeypatch.setattr(rebuild, "PYPROJECT", pyproject)
+
+
+def test_the_version_is_the_one_the_source_declares(
+    rebuild: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _declaring(rebuild, tmp_path, monkeypatch, "0.3.0.dev0")
+
+    assert rebuild.source_version() == "0.3.0.dev0"
+
+
+def test_a_bundle_is_checked_against_the_source_not_the_install(
+    rebuild: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stale editable install and the bundle built from it agree with each
+    other, so comparing those two passed a bundle stamping every case with a
+    version the source left behind."""
+    _declaring(rebuild, tmp_path, monkeypatch, "0.3.0.dev0")
+    monkeypatch.setattr(rebuild.metadata, "version", lambda name: "0.2.0")
+
+    problem = rebuild.check_metadata(_with_version(tmp_path, "0.2.0"))
+
+    assert problem is not None
+    assert "0.2.0" in problem
+    assert "0.3.0.dev0" in problem
+
+
+def test_a_bundle_of_the_declared_version_passes(
+    rebuild: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _declaring(rebuild, tmp_path, monkeypatch, "0.3.0.dev0")
+
+    assert rebuild.check_metadata(_with_version(tmp_path, "0.3.0.dev0")) is None
+
+
+def test_current_metadata_is_left_alone(
+    rebuild: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _declaring(rebuild, tmp_path, monkeypatch, "0.3.0.dev0")
+    monkeypatch.setattr(rebuild.metadata, "version", lambda name: "0.3.0.dev0")
+    commands = []
+    monkeypatch.setattr(rebuild.subprocess, "run", lambda args, **kw: commands.append(args))
+
+    assert rebuild.refresh_metadata() == (True, "")
+    assert commands == []
+
+
+def test_stale_metadata_is_reinstalled_before_anything_is_built(
+    rebuild: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PyInstaller bundles the dist-info pip wrote at install time, and an
+    editable install keeps the version it was installed with."""
+    from subprocess import CompletedProcess
+
+    _declaring(rebuild, tmp_path, monkeypatch, "0.3.0.dev0")
+    monkeypatch.setattr(rebuild.metadata, "version", lambda name: "0.2.0")
+    commands = []
+
+    def run(args, **kwargs):
+        commands.append(args)
+        return CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(rebuild.subprocess, "run", run)
+
+    assert rebuild.refresh_metadata() == (True, "")
+    (command,) = commands
+    assert command[0] == str(rebuild.PYTHON), "the venv the build and the suite use"
+    assert command[1:4] == ["-m", "pip", "install"]
+    assert "--no-deps" in command
+    assert command[-2:] == ["-e", str(rebuild.ROOT)]
+
+
+def test_a_reinstall_that_fails_stops_the_build(
+    rebuild: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from subprocess import CompletedProcess
+
+    _declaring(rebuild, tmp_path, monkeypatch, "0.3.0.dev0")
+    monkeypatch.setattr(rebuild.metadata, "version", lambda name: "0.2.0")
+    monkeypatch.setattr(
+        rebuild.subprocess,
+        "run",
+        lambda args, **kwargs: CompletedProcess(args, 1, "", "Could not find hatchling"),
+    )
+
+    ok, detail = rebuild.refresh_metadata()
+
+    assert not ok
+    assert "hatchling" in detail
+
+
+def test_metadata_is_brought_up_to_date_before_anything_else(
+    rebuild: ModuleType, tree: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    order: list[str] = []
+    monkeypatch.setattr(
+        rebuild, "refresh_metadata", lambda: (order.append("metadata"), (True, ""))[1]
+    )
+    monkeypatch.setattr(rebuild.crs_bundle, "build_sidecar", lambda: order.append("sidecar"))
+    _while_testing(rebuild, monkeypatch, lambda: order.append("tests"))
+
+    assert rebuild._rebuild() == 0
+    assert order == ["metadata", "sidecar", "tests"]
+
+
+def test_metadata_that_cannot_be_refreshed_stops_the_run(
+    rebuild: ModuleType, tree: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tested: list[bool] = []
+    monkeypatch.setattr(rebuild, "refresh_metadata", lambda: (False, "Could not find hatchling"))
+    _while_testing(rebuild, monkeypatch, lambda: tested.append(True))
+
+    assert rebuild._rebuild() != 0
+    assert tested == []
+    assert "hatchling" in rebuild.STATUS.read_text(encoding="utf-8")
+
+
+def test_metadata_that_is_not_installed_at_all_is_installed(
+    rebuild: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from subprocess import CompletedProcess
+
+    def missing(name: str) -> str:
+        raise rebuild.metadata.PackageNotFoundError(name)
+
+    _declaring(rebuild, tmp_path, monkeypatch, "0.3.0.dev0")
+    monkeypatch.setattr(rebuild.metadata, "version", missing)
+    commands = []
+
+    def run(args, **kwargs):
+        commands.append(args)
+        return CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(rebuild.subprocess, "run", run)
+
+    assert rebuild.refresh_metadata() == (True, "")
+    assert len(commands) == 1
+
+
+def test_the_documented_build_setup_installs_what_the_build_runs(rebuild: ModuleType) -> None:
+    """The script runs the suite with pytest-xdist before it builds anything, so a
+    setup without the test toolchain fails at its first step. Its own hint for a
+    missing PyInstaller names the same extras."""
+    import re
+
+    guide = (ROOT / "docs" / "installing.md").read_text(encoding="utf-8")
+    block = guide[guide.index("## A packaged Windows build") :]
+    (extras,) = re.findall(r'pip install -e "\.\[([\w,]+)\]"', block.split("```")[1])
+    assert set(extras.split(",")) >= {"gui", "package", "dev"}
+    assert "rebuild.py" in block.split("```")[1]
+
+    script = (ROOT / "packaging" / "rebuild.py").read_text(encoding="utf-8")
+    (hint,) = re.findall(r'pyinstaller not found - pip install -e "\.\[([\w,]+)\]"', script)
+    assert set(hint.split(",")) >= {"gui", "package", "dev"}
+
+
+# -- the licences of what the bundle ships --------------------------------------
+
+
+def _licensed(tmp_path: Path, *names: str, index: tuple[str, ...] | None = None) -> Path:
+    root = tmp_path / "bundle" / "_internal" / "licenses"
+    for name in names:
+        (root / name).mkdir(parents=True)
+        (root / name / "LICENSE").write_text(f"{name} terms\n", encoding="utf-8")
+    root.mkdir(parents=True, exist_ok=True)
+    listed = names if index is None else index
+    (root / "INDEX.txt").write_text("".join(f"{name}\n" for name in listed), encoding="utf-8")
+    return tmp_path / "bundle"
+
+
+_CORE = ("python/python", "python/pyqt6", "python/pyqt6-qt6", "qt")
+
+
+def test_a_bundle_carrying_every_indexed_licence_passes(
+    rebuild: ModuleType, tmp_path: Path
+) -> None:
+    bundle = _licensed(tmp_path, *_CORE, "python/pyyaml", "native/libffi")
+
+    assert rebuild.check_licences(bundle) is None
+
+
+def test_a_bundle_without_qt_s_licence_is_refused(rebuild: ModuleType, tmp_path: Path) -> None:
+    """Qt is the largest thing the bundle redistributes, and its notice was the
+    one the readiness review found missing."""
+    problem = rebuild.check_licences(_licensed(tmp_path, "python/python", "python/pyqt6"))
+
+    assert problem is not None and "pyqt6-qt6" in problem
+
+
+def test_a_bundle_with_no_licence_index_is_refused(rebuild: ModuleType, tmp_path: Path) -> None:
+    problem = rebuild.check_licences(tmp_path / "bundle")
+
+    assert problem is not None and "index" in problem
+
+
+def test_an_indexed_folder_missing_from_the_bundle_is_refused(
+    rebuild: ModuleType, tmp_path: Path
+) -> None:
+    """Any package, not only the ones named here: the index is what the build
+    collected, so the check covers all of it."""
+    bundle = _licensed(tmp_path, *_CORE, index=(*_CORE, "native/libffi"))
+
+    problem = rebuild.check_licences(bundle)
+
+    assert problem is not None and "native/libffi" in problem
+
+
+def test_the_licence_check_is_one_of_the_checks(
+    rebuild: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in (
+        "check_executable",
+        "check_rule_packs",
+        "check_metadata",
+        "check_no_browser_engine",
+        "check_no_command_line",
+        "check_qt_runtime",
+        "check_crs",
+        "check_icons",
+    ):
+        monkeypatch.setattr(rebuild, name, lambda bundle: None)
+    monkeypatch.setattr(rebuild, "check_licences", lambda bundle: "no licences")
+
+    assert rebuild.verify(tmp_path) == ["no licences"]
+
+
+def test_a_bundle_without_qt_s_third_party_notices_is_refused(
+    rebuild: ModuleType, tmp_path: Path
+) -> None:
+    bundle = _licensed(tmp_path, "python/python", "python/pyqt6", "python/pyqt6-qt6")
+
+    problem = rebuild.check_licences(bundle)
+
+    assert problem is not None and "qt" in problem

@@ -133,6 +133,24 @@ def _reconstruct(opened: Case, ip: str, rules: list[Path] | None) -> AnalysisRes
         engine=opened.rule_engine(extra_packs=rules or ()),
         crs=crs.index,
         crs_fingerprint=crs.fingerprint,
+        crs_coverage=crs.coverage,
+    )
+
+
+def _say_crs_coverage(coverage: tuple[int, int] | None, case: Path) -> None:
+    """Warn that CRS read only part of `case`, when it did.
+
+    On every run, as "CRS not consulted" is. The requests a stopped run never
+    reached carry no CRS finding, which is also what a request CRS read and
+    passed carries, so a result that does not say so overstates its coverage.
+    """
+    if coverage is None:
+        return
+    replayed, requests = coverage
+    console.print(
+        f"[yellow]CRS stopped part way[/yellow]: it read {replayed:,} of {requests:,} "
+        "requests, and the rest carry no CRS findings. Run "
+        f"[bold]logarc enrich --case {case}[/bold] again to cover them."
     )
 
 
@@ -484,6 +502,7 @@ def analyze(
             "[yellow]CRS not consulted[/yellow] — signature coverage is the bundled rules "
             f"alone. Run [bold]logarc enrich --case {case}[/bold] to add it."
         )
+    _say_crs_coverage(result.crs_coverage, case)
 
     if not result.episodes:
         console.print(f"[yellow]No activity found for {ip} in this case.[/yellow]")
@@ -561,9 +580,13 @@ def evidence(
         )
         for line in lines[item.episode_id]:
             if line.available:
-                marker = "" if line.verified else " [yellow](source changed since ingest)[/yellow]"
+                marker = "" if line.verified else " [yellow](not verified)[/yellow]"
                 console.print(f"  [dim]{line.ref}[/dim]{marker}")
                 console.print(f"    {line.text}", highlight=False)
+                if line.warning is not None:
+                    # The reader's own account: not being able to check a source
+                    # is not the same finding as the source having changed.
+                    console.print(f"    {line.warning}", style="yellow", markup=False)
             else:
                 console.print(f"  [dim]{line.ref}[/dim] [yellow]unavailable[/yellow]")
                 if line.note:
@@ -650,10 +673,13 @@ def evaluate(
                 policy=policy,
                 crs=crs.index,
                 crs_fingerprint=crs.fingerprint,
+                crs_coverage=crs.coverage,
                 on_client=lambda client: status.update(f"Scoring {client}…"),
             )
     except USER_ERRORS as exc:
         raise fail(str(exc)) from exc
+
+    _say_crs_coverage(report.crs_coverage, case)
 
     if not report.binary.total:
         console.print("[yellow]Nothing to score: no truth line matched a stored event.[/yellow]")
