@@ -55,7 +55,15 @@ from logarc.gui.format_preview import (
     preview_mapping,
     preview_pattern,
 )
-from logarc.gui.theme import GAP, ROOM, caption_font, colour_text, on_font_change, settle_buttons
+from logarc.gui.theme import (
+    GAP,
+    LIST_WIDTH,
+    ROOM,
+    caption_font,
+    colour_text,
+    on_font_change,
+    settle_buttons,
+)
 from logarc.parsers.columns import FIELDS_DIRECTIVE, declared_columns
 from logarc.parsers.fieldnames import MAPPABLE
 from logarc.parsers.fieldnames import guess_mapping as guess_from_names
@@ -168,6 +176,13 @@ def _is_draft(item: QListWidgetItem) -> bool:
     return bool(item.data(_DRAFT_ROLE))
 
 
+def _named_item(name: str) -> QListWidgetItem:
+    """A format's row in the list, carrying its whole name for when the row cuts it short."""
+    item = QListWidgetItem(name)
+    item.setToolTip(name)
+    return item
+
+
 def _saved() -> list[FormatSpec]:
     """The library, or an empty one when it cannot be read.
 
@@ -217,7 +232,12 @@ class FormatEditor(QDialog):
         self._escapes = ""
 
         self._formats = QListWidget()
-        self._formats.setMaximumWidth(220)
+        self._formats.setMaximumWidth(LIST_WIDTH)
+        # A name wider than the list is shortened in the middle, where two
+        # formats of one family differ least, rather than scrolled to; the
+        # whole name is each item's tooltip.
+        self._formats.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._formats.setTextElideMode(Qt.TextElideMode.ElideMiddle)
         self._formats.currentItemChanged.connect(self._on_item)
         self._headings: set[int] = set()
         self._draft_kind = "logformat"
@@ -828,10 +848,12 @@ class FormatEditor(QDialog):
         italic.setItalic(True)
         draft.setFont(italic)
         self._formats.addItem(draft)
-        self._formats.addItems(saved)
+        for name in saved:
+            self._formats.addItem(_named_item(name))
         self._headings.add(self._formats.count())
         self._formats.addItem(self._heading_item(_BUILT_IN_HEADING))
-        self._formats.addItems(built_in)
+        for name in built_in:
+            self._formats.addItem(_named_item(name))
         self._formats.blockSignals(False)
 
         if current in available_formats():

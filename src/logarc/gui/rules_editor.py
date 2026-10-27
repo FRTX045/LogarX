@@ -50,7 +50,7 @@ from logarc.gui.rules_view import (
     in_words,
     read_summary,
 )
-from logarc.gui.theme import GAP, ROOM, caption_font, mono_font, on_font_change
+from logarc.gui.theme import GAP, LIST_WIDTH, ROOM, caption_font, mono_font, on_font_change
 from logarc.gui.workers import run_job
 from logarc.rule_finds import FindsCancelled, FindsProgress, count_finds
 from logarc.style import THEME, plural, severity_text_colour
@@ -145,7 +145,7 @@ class RulesEditor(QWidget):
         # otherwise reach it: rows measured without the item padding are placed
         # closer than they are drawn, and a highlight spills onto its neighbours.
         self._packs.ensurePolished()
-        self._packs.setMaximumWidth(220)
+        self._packs.setMaximumWidth(LIST_WIDTH)
         self._packs.currentRowChanged.connect(self._on_row)
 
         # -- your pack
