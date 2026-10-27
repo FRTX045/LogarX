@@ -50,21 +50,19 @@ pytest-xdist, before it builds anything; a red suite stops the build.
 Produces `dist/logarc/` (~270 MB), which runs without Python installed, and
 with CRS enrichment working: the script builds the CRS sidecar and bundles it
 with the ruleset and the licences of everything compiled into it, so the build
-needs Go and the ruleset clone described under *OWASP CRS* below. The
-licences of what it ships go under `_internal/licenses/`: each Python package,
-Qt and CPython included, and each native library CPython links, such as libffi,
-OpenSSL and expat, taken from the conda package that installed it. The build
-reads which those are from what PyInstaller collected, and stops on anything
-it cannot find a licence for. It builds from a conda Python; elsewhere nothing
-records where a DLL came from, and the build stops on the first one.
+needs Go and the ruleset clone described under *OWASP CRS* below.
 
-Qt compiles in third-party code of its own (HarfBuzz, FreeType, libpng, zlib,
-PCRE2 and more), and the Qt wheel ships only Qt's LGPL text. Qt records each of
-those components beside its source, so `packaging/fetch_qt_attributions.py`
-reads the records for the shipped Qt modules from Qt's sources at the installed
-version into `packaging/qt-attributions/`, which is committed and bundled under
-`_internal/licenses/qt/`. Run it again after upgrading PyQt6-Qt6: the build
-stops while the recorded version differs from the installed one.
+The licences of what it ships go under `_internal/licenses/`: each Python
+package, Qt and PyInstaller included, CPython and the native libraries it links,
+such as libffi, OpenSSL and expat, and the third-party code compiled into Qt
+(HarfBuzz, FreeType, libpng, zlib, PCRE2 and more). They are committed in
+`packaging/third-party/` and copied in as they are, so **after adding or
+upgrading a dependency, or upgrading Qt, refresh them** as
+[packaging/third-party/README.md](../packaging/third-party/README.md) describes:
+`pip-licenses` for the Python packages, and
+`packaging/fetch_qt_attributions.py` for Qt. The build stops while the Qt
+notices are for a different Qt version from the one installed, and does not
+otherwise check that the list is current.
 
 **Not covered yet: Qt PDF, Qt Network and the software OpenGL renderer.** They
 ship in the bundle, and the third-party code they carry (PDFium, the Public

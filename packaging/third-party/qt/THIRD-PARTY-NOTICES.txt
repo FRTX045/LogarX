@@ -1,6 +1,6 @@
 Third-party components of the Qt 6.11.1 libraries this bundle ships
 (Qt Core, Qt GUI, Qt Widgets, Qt SVG and the Qt Image Formats plugins), as Qt's own
-qt_attribution.json records list them. Qt itself is under the LGPL; its text is in ../python/pyqt6-qt6.
+qt_attribution.json records list them. Qt itself is under the LGPL; its text is in ../python.txt, under PyQt6-Qt6.
 
 Source: qt/qtbase v6.11.1 59c81a3c2247b821b9b84b4eb8d939b77e07e276
 Source: qt/qtsvg v6.11.1 2596f43da2dc72d2afecc084355b0f5f87922a6c
