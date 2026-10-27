@@ -319,6 +319,15 @@ class ClientTable(QWidget):
         self.search_bookmark.setStyleSheet(f"color:{THEME.accent}; padding:0 4px;")
         self.search_bookmark.clicked.connect(self.bookmark_search_requested.emit)
         self.search_bookmark.hide()
+        # Under the caption that says the client being read is not listed, and
+        # only then: one click searches for its address, so it is listed and
+        # selected. Nothing changes the reader's search until they ask.
+        self.show_open = QPushButton("Show in list")
+        self.show_open.setFlat(True)
+        self.show_open.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.show_open.setStyleSheet(f"color:{THEME.accent}; padding:0 4px;")
+        self.show_open.clicked.connect(lambda: self.set_query(self._open or ""))
+        self.show_open.hide()
         layout = QVBoxLayout(self)
         # Not flush against the frame. At zero the caption and the first column
         # both start at x=0, and the window edge cut the leading character off
@@ -328,6 +337,7 @@ class ClientTable(QWidget):
         layout.addWidget(self._filter)
         layout.addWidget(self._caption)
         layout.addWidget(self.search_bookmark, 0, Qt.AlignmentFlag.AlignLeft)
+        layout.addWidget(self.show_open, 0, Qt.AlignmentFlag.AlignLeft)
         layout.addWidget(self._table)
         paging = QHBoxLayout()
         paging.addWidget(self._previous)
@@ -745,6 +755,11 @@ class ClientTable(QWidget):
 
     def _refresh_caption(self) -> None:
         self.search_bookmark.setVisible(self.answered_search() is not None)
+        listed = self._open is None or any(
+            (cell := self._table.item(row, _ADDRESS)) is not None and cell.text() == self._open
+            for row in range(self._table.rowCount())
+        )
+        self.show_open.setVisible(not listed)
         if self._message is not None:
             text, colour = self._message
             self._caption.setText(text)
@@ -756,10 +771,6 @@ class ClientTable(QWidget):
         reordered = (
             header.sortIndicatorSection() != self._natural_order()
             or header.sortIndicatorOrder() != Qt.SortOrder.DescendingOrder
-        )
-        listed = self._open is None or any(
-            (cell := self._table.item(row, _ADDRESS)) is not None and cell.text() == self._open
-            for row in range(self._table.rowCount())
         )
         if self._counted is not None and not self._searching and self._matching is not None:
             self._caption.setText(

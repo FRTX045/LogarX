@@ -162,6 +162,30 @@ def test_an_open_client_outside_the_list_is_named_not_added(partial: ClientTable
     assert chosen == [], "marking the open client must not start a reconstruction"
 
 
+def test_an_open_client_outside_the_list_can_be_shown_in_it(partial: ClientTable) -> None:
+    """Opened from Triage, a client can be beyond the busiest page. One click
+    lists it, by its address, and selects it; nothing happens until then."""
+    asked: list[tuple[str, int]] = []
+    partial.page_requested.connect(lambda query, offset: asked.append((query, offset)))
+    partial.set_open_client("10.0.9.9")
+    assert not partial.show_open.isHidden()
+    assert asked == []
+
+    partial.show_open.click()
+    assert asked == [("10.0.9.9", 0)]
+
+    partial.show_page(IpSummaryPage((summary("10.0.9.9", 2),), 1, 0), "10.0.9.9")
+    selected = partial._table.item(partial._table.currentRow(), 0)
+    assert selected is not None
+    assert selected.text() == "10.0.9.9"
+    assert partial.show_open.isHidden()
+
+
+def test_an_open_client_in_the_list_offers_nothing_more(partial: ClientTable) -> None:
+    partial.set_open_client("10.0.0.2")
+    assert partial.show_open.isHidden()
+
+
 def test_a_page_sorted_another_way_says_so(partial: ClientTable) -> None:
     partial._table.sortItems(column_of(partial._table, "Client"), Qt.SortOrder.AscendingOrder)
     assert "sorted within this page" in partial._caption.text()
