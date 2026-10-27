@@ -17,6 +17,7 @@ from logarc.case import Case
 from logarc.core.evidence import EvidenceRef
 from logarc.core.window import EVERYTHING, TimeWindow
 from logarc.detect.crs.sidecar import CrsDetection
+from logarc.detect.crs.store import recorded_coverage
 from logarc.detect.ruleset import NO_EXTRA_RULES, RuleSet
 from logarc.search import labels_for_activity
 from logarc.sessionize.segmenter import SessionPolicy
@@ -53,6 +54,10 @@ class TriageResult:
     crs_present: bool
     cached: bool = False
     seconds: float = 0
+    crs_partial: bool = False
+    """The CRS evidence comes from a run stopped part way. Read from the case on
+    every call rather than kept in the index, whose identity already includes
+    the config that says it."""
 
 
 @dataclass(frozen=True)
@@ -316,6 +321,7 @@ def scan_case(
         # reconstruction of that same client, and the queue is only useful
         # while the two agree.
         engine = case.rule_engine(rules)
+        crs_partial = crs_path.exists() and recorded_coverage(case.manifest.config) is not None
         identity = {
             "sources": [asdict(source) for source in case.manifest.sources],
             "config": case.manifest.config,
@@ -356,6 +362,7 @@ def scan_case(
                     data["crs_present"],
                     True,
                     monotonic() - started,
+                    crs_partial,
                 )
             except (sqlite3.Error, ValueError, KeyError, TypeError):
                 pass
@@ -448,7 +455,13 @@ def scan_case(
                 )
             staging.replace(destination)
     return TriageResult(
-        destination, len(profiles), eligible, crs_path.exists(), False, monotonic() - started
+        destination,
+        len(profiles),
+        eligible,
+        crs_path.exists(),
+        False,
+        monotonic() - started,
+        crs_partial,
     )
 
 

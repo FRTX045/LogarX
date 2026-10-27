@@ -49,6 +49,7 @@ from logarc.core.event import NormalizedEvent
 from logarc.core.evidence import EvidenceRef
 from logarc.core.graph import GraphNode
 from logarc.core.window import TimeWindow
+from logarc.evidence import EvidenceLine
 
 SAVED = datetime(2026, 10, 19, 14, 2, 11, tzinfo=UTC)
 
@@ -467,10 +468,22 @@ def test_the_csv_has_one_row_per_bookmark_newest_first_in_each_category() -> Non
     newer = activity_mark(line=line, note="lockout held", id="new")
     other = client_mark("10.0.0.2", category="Scanners", id="scan")
     shelf = add(add(add(EMPTY, older), other), newer)
-    table = rows(to_csv(shelf, {line: '1.2.3.4 - - "POST /login" 401'}))
-    assert table[0] == ["category", "kind", "client", "what", "note", "saved", "line", "log line"]
+    raw = '1.2.3.4 - - "POST /login" 401'
+    sound = EvidenceLine(ref=line, source_path="excerpt.log", text=raw, verified=True)
+    table = rows(to_csv(shelf, {line: sound}))
+    assert table[0] == [
+        "category",
+        "kind",
+        "client",
+        "what",
+        "note",
+        "saved",
+        "line",
+        "log line",
+        "log line warning",
+    ]
     assert [row[2] for row in table[1:]] == ["192.0.2.23", "10.0.0.1", "10.0.0.2"]
-    assert table[1][6:] == ["excerpt.log:2014", '1.2.3.4 - - "POST /login" 401']
+    assert table[1][6:] == ["excerpt.log:2014", raw, ""]
     assert table[1][5] == "2026-10-19T14:02:11Z"
 
 
@@ -479,3 +492,26 @@ def test_a_note_that_looks_like_a_formula_cannot_run_in_a_spreadsheet() -> None:
         shelf = add(EMPTY, client_mark("10.0.0.1", note=f'{start}HYPERLINK("x")'))
         row = rows(to_csv(shelf, {}))[1]
         assert row[4] == f"'{start}HYPERLINK(" + '"x")'
+
+
+def test_a_line_from_a_changed_source_is_exported_with_its_warning() -> None:
+    """Beside the line rather than instead of it: the text is still what the
+    file holds now, and the reader decides what that is worth."""
+    line = EvidenceRef("excerpt.log", 2014)
+    note = "excerpt.log has changed size since ingest (255 bytes then, 273 now)"
+    changed = EvidenceLine(ref=line, source_path="excerpt.log", text="a line", note=note)
+    shelf = add(EMPTY, activity_mark(line=line, id="new"))
+
+    row = rows(to_csv(shelf, {line: changed}))[1]
+
+    assert row[7:] == ["a line", note]
+
+
+def test_a_line_that_cannot_be_read_is_exported_with_the_reason() -> None:
+    line = EvidenceRef("excerpt.log", 2014)
+    gone = EvidenceLine(ref=line, source_path="excerpt.log", note="excerpt.log is not available")
+    shelf = add(EMPTY, activity_mark(line=line, id="new"))
+
+    row = rows(to_csv(shelf, {line: gone}))[1]
+
+    assert row[7:] == ["", "excerpt.log is not available"]

@@ -120,7 +120,7 @@ class EpisodePolicy:
     evidence_sample: int = DEFAULT_EVIDENCE_SAMPLE
 
     def as_config(self) -> dict[str, object]:
-        """The form recorded in the case manifest."""
+        """The form recorded in each analysis export."""
         return {
             "episode_max_gap_seconds": int(self.max_gap.total_seconds()),
             "absorb_noise": self.absorb_noise,

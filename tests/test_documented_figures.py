@@ -148,3 +148,33 @@ def test_the_documented_demo_log_size_is_the_real_one() -> None:
         assert int(found.group(1)) == lines, (
             f"{name} states {found.group(1)} lines near '{found.group(0)}'; the log has {lines}"
         )
+
+
+# --------------------------------------------------------------------------
+# The excerpt figures a reader can rerun
+
+#: The sentence in the README quoting the committed excerpt's CRS scores.
+EXCERPT_SENTENCE = (
+    r"committed ([\d,]+)-request excerpt.*?accuracy ([\d.]+), macro F1 ([\d.]+) and "
+    r"(\d+) false alarms with CRS, (\d+) attack requests\s+missed"
+)
+
+
+def test_the_readme_quotes_the_excerpt_scores_that_are_committed() -> None:
+    """Offered as the figures anyone can rerun, so they have to be the ones the
+    suite reruns."""
+    import json
+
+    scores = json.loads(
+        (ROOT / "tests/data/apache-shopfront/excerpt.scores.crs.json").read_text(encoding="utf-8")
+    )
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    found = re.search(EXCERPT_SENTENCE, readme, re.DOTALL)
+    assert found, f"README.md: no sentence matched /{EXCERPT_SENTENCE}/; reworded? update this test"
+
+    requests, accuracy, macro_f1, false_alarms, missed = found.groups()
+    assert int(requests.replace(",", "")) == scores["binary"]["total"]
+    assert accuracy == f"{scores['classification']['accuracy']:.4f}"
+    assert macro_f1 == f"{scores['classification']['macro_f1']:.4f}"
+    assert int(false_alarms) == scores["binary"]["false_positives"]
+    assert int(missed) == scores["binary"]["false_negatives"]

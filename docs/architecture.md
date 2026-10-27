@@ -198,10 +198,11 @@ library in `parsers/library.py` is read only by the CLI and the window, never by
 the engine. See
 [ADR-0010](adr/0010-a-log-format-is-data-that-travels-with-the-work.md).
 
-**Adding a detection.** Write YAML in `detect/rulepacks/`. No Python. Rule packs are versioned and
-hashed into the case manifest, so a report states exactly which ruleset produced it — as is the CRS
-revision and paranoia level when a case was enriched, and an analysis that ran without CRS says so
-on every run rather than quietly reporting less.
+**Adding a detection.** Write YAML in `detect/rulepacks/`. No Python. Rule packs are hashed into
+the ruleset fingerprint that every analysis export records, so a report states exactly which
+ruleset produced it. The case manifest records the CRS revision, paranoia level, host and a
+fingerprint of the rest of its configuration when a case was enriched, and an analysis that ran without CRS says so on every run rather than
+quietly reporting less.
 
 **Replacing storage.** Implement `storage.base.EventStore`.
 
@@ -217,10 +218,19 @@ CRS-only labels retain their existing lack of an OWASP annotation.
 ## Forensic integrity
 
 - Input files are opened read-only and never modified. SHA-256 is recorded at ingest.
-- `case.json` records source files with hashes and sizes, ingest time, tool version, rule-pack
-  versions and hashes, and every configuration threshold used.
+- `case.json` records source files with hashes, sizes and the format each was read with, ingest
+  time, tool version, and the per-case settings analysis depends on: the site's own host names,
+  and, once CRS has run, its revision, paranoia level and host, a fingerprint of the rest of its
+  configuration, and how far it got.
+- Each analysis export records the ruleset fingerprint, the rules in force and the session and
+  activity thresholds; none of these is kept in `case.json`.
 - Each `Episode` carries `(source_file_id, source_line_no)` references, so every node in the graph
   resolves to exact raw log lines.
 - Malformed lines are quarantined and counted, never silently dropped.
 
-Together these mean a finding can be reproduced from the manifest alone.
+Together these mean a finding can be reproduced from the source logs and the case manifest, with the
+ruleset its fingerprint identifies and any custom rule packs it used, at the thresholds the export
+records, and, when CRS contributed, with the case's `crs.jsonl`. That file holds what CRS found, so
+reproducing the analysis does not need CRS again; replaying CRS itself needs the same sidecar,
+ruleset and configuration files, which the manifest identifies by revision and fingerprint rather
+than stores. No one of these is enough on its own.

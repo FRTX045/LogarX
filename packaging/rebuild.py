@@ -46,6 +46,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import tomllib
 import traceback
 from importlib import metadata
 from pathlib import Path
@@ -62,6 +63,8 @@ ROOT = Path(__file__).resolve().parents[1]
 GIT_DIR = ROOT / ".git"
 
 SPEC = ROOT / "packaging" / "logarc.spec"
+PYPROJECT = ROOT / "pyproject.toml"
+PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
 DIST = ROOT / "dist"
 LIVE = DIST / "logarc"
 STAGING = DIST / ".staging"
@@ -170,6 +173,42 @@ def fail(reason: str, detail: str = "") -> int:
     return 1
 
 
+def source_version() -> str:
+    """The version `pyproject.toml` declares, which is the version a build is of."""
+    with PYPROJECT.open("rb") as handle:
+        return str(tomllib.load(handle)["project"]["version"])
+
+
+def refresh_metadata() -> tuple[bool, str]:
+    """Reinstall logarc's metadata when it lags the version the source declares.
+
+    PyInstaller bundles the dist-info pip wrote at install time, and an
+    editable install keeps the version it was installed with, so a bump in
+    `pyproject.toml` reaches neither the bundle nor the cases it stamps until
+    the package is installed again. `--no-deps` because only the metadata is
+    stale; pip fetches the build backend, so this one step needs the network.
+    """
+    declared = source_version()
+    try:
+        installed: str | None = metadata.version("logarc")
+    except metadata.PackageNotFoundError:
+        installed = None
+    if installed == declared:
+        return True, ""
+    say(f"installed metadata says {installed}, the source says {declared}: reinstalling")
+    result = subprocess.run(
+        [str(PYTHON), "-m", "pip", "install", "--no-deps", "-e", str(ROOT)],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if result.returncode != 0:
+        return False, ((result.stdout or "") + (result.stderr or ""))[-2000:]
+    return True, ""
+
+
 def run_tests() -> tuple[bool, str]:
     """Red stops the build. `git pull` fires this hook too, and work arriving
     from someone else is the work least likely to have been verified."""
@@ -180,7 +219,7 @@ def run_tests() -> tuple[bool, str]:
     # fifth of the time.
     result = subprocess.run(
         [
-            str(ROOT / ".venv" / "Scripts" / "python.exe"),
+            str(PYTHON),
             "-m",
             "pytest",
             "--no-cov",
@@ -211,7 +250,7 @@ def build() -> tuple[bool, str]:
     if not pyinstaller.exists():
         found = shutil.which("pyinstaller")
         if not found:
-            return False, 'pyinstaller not found - pip install -e ".[gui,package]"'
+            return False, 'pyinstaller not found - pip install -e ".[gui,package,dev]"'
         pyinstaller = Path(found)
 
     shutil.rmtree(STAGING, ignore_errors=True)
@@ -279,7 +318,9 @@ def check_rule_packs(bundle: Path) -> str | None:
 
 
 def check_metadata(bundle: Path) -> str | None:
-    """Where the case manifest gets the version it records."""
+    """Where the case manifest gets the version it records, checked against the
+    source rather than the install, which a stale bundle was built from and so
+    agrees with."""
     found = list((bundle / "_internal").glob("logarc-*.dist-info/METADATA"))
     if not found:
         return "no logarc dist-info - every case would be stamped 0.0.0.dev0"
@@ -289,10 +330,7 @@ def check_metadata(bundle: Path) -> str | None:
         re.MULTILINE,
     )
     bundled = match.group(1).strip() if match else "?"
-    try:
-        expected = metadata.version("logarc")
-    except metadata.PackageNotFoundError:
-        return None
+    expected = source_version()
     if bundled != expected:
         return f"bundled version {bundled} does not match the source {expected}"
     return None
@@ -518,6 +556,26 @@ def check_icons(bundle: Path) -> str | None:
     return None
 
 
+#: Notices a bundle must carry whatever else it collects: CPython's, and Qt's and
+#: its bindings', which are the largest code the bundle redistributes.
+_REQUIRED_LICENCES: Final = ("python/python", "python/pyqt6", "python/pyqt6-qt6", "qt")
+
+
+def check_licences(bundle: Path) -> str | None:
+    """Every notice folder `packaging/licences.py` indexed is in the bundle and
+    holds a file, and the index names CPython's and Qt's."""
+    root = bundle / "_internal" / "licenses"
+    index = root / "INDEX.txt"
+    if not index.is_file():
+        return "no licence index - the licences of what the bundle ships were not collected"
+    listed = index.read_text(encoding="utf-8").split()
+    missing = [name for name in _REQUIRED_LICENCES if name not in listed]
+    empty = [name for name in listed if not any(p.is_file() for p in (root / name).rglob("*"))]
+    if missing or empty:
+        return "licences not bundled: " + ", ".join([*missing, *empty])
+    return None
+
+
 def verify(bundle: Path) -> list[str]:
     checks = (
         check_executable,
@@ -528,6 +586,7 @@ def verify(bundle: Path) -> list[str]:
         check_qt_runtime,
         check_icons,
         check_crs,
+        check_licences,
     )
     return [problem for check in checks if (problem := check(bundle)) is not None]
 
@@ -633,6 +692,11 @@ def main() -> int:
 def _rebuild() -> int:
     """Test, build, check, swap — stopping at the first thing that is wrong."""
     started = tree_state()
+    # First: the tests and the bundle both read the installed version.
+    refreshed, detail = refresh_metadata()
+    if not refreshed:
+        return fail("logarc's installed metadata could not be brought up to date", detail)
+
     # Before the tests, whose CRS contract tests run this binary: built after
     # them, a merge that changed `crs/` was tested against the build before it.
     say("building the CRS sidecar the suite and the bundle will use")
@@ -703,7 +767,7 @@ def _rebuild() -> int:
         f"{stamp}  {started[0]}  ok  {size_mb(LIVE):.0f} MB\n"
         "tests green; rule packs bundled; version metadata bundled; no QtWebEngine; "
         "no command line; Qt runtime loads; icons draw; "
-        "CRS sidecar bundled and catches 942100\n",
+        "CRS sidecar bundled and catches 942100; licences of what it ships bundled\n",
         encoding="utf-8",
     )
     MARKER.unlink(missing_ok=True)

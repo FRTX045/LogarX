@@ -303,7 +303,12 @@ class TriagePanel(QWidget):
         self._result = result
         self.cancel.hide()
         self.retry.hide()
-        crs = "CRS evidence included" if result.crs_present else "CRS not applied"
+        if not result.crs_present:
+            crs = "CRS not applied"
+        elif result.crs_partial:
+            crs = "CRS evidence from part of the case"
+        else:
+            crs = "CRS evidence included"
         self.notice.setText(f"Scanned {result.clients:,} clients · {crs}")
         colour_text(self.notice, THEME.muted)
         self._reset_page()

@@ -1,8 +1,8 @@
 """Level 1 segmentation: splitting a client's events into sessions.
 
-Three boundary conditions, all deterministic and all recorded in the case
-manifest so a result can be reproduced. See ADR-0003 for why this is not done
-statistically.
+Three boundary conditions, all deterministic, with the thresholds recorded in
+each analysis export so a result can be reproduced. See ADR-0003 for why this
+is not done statistically.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ class SessionPolicy:
     split_on_user_agent_change: bool = True
 
     def as_config(self) -> dict[str, object]:
-        """The form recorded in the case manifest."""
+        """The form recorded in each analysis export."""
         return {
             "idle_timeout_seconds": int(self.idle_timeout.total_seconds()),
             "max_duration_seconds": int(self.max_duration.total_seconds()),

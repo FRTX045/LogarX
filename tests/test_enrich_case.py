@@ -236,3 +236,162 @@ def test_a_rerun_tells_crs_the_case_s_own_site() -> None:
     assert crs_config(("shop.test",)).host == "shop.test"
     assert crs_config(()).host == SidecarConfig().host
     assert crs_config(("shop.test",), SidecarConfig(paranoia=3)).paranoia == 3
+
+
+# -- a stopped run says it was one ---------------------------------------------
+
+
+def stop_after(count: int):
+    """A `should_stop` that lets `count` requests through."""
+    asked = 0
+
+    def should_stop() -> bool:
+        nonlocal asked
+        asked += 1
+        return asked > count
+
+    return should_stop
+
+
+def test_a_stopped_run_is_remembered_as_partial(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Requests CRS never read look exactly like requests it read and passed. A
+    case reopened later has to know which kind it holds, or a partial check
+    reads as a clean one."""
+    monkeypatch.setattr("logarc.enrich.run_sidecar", replaying_everything)
+    case_dir = a_case(tmp_path)
+
+    enrich_case(case_dir, should_stop=stop_after(2))
+
+    with Case.open(case_dir) as case:
+        crs = case.crs_evidence()
+    assert crs.fingerprint is not None
+    assert crs.coverage == (2, 4)
+
+
+def test_a_finished_run_is_remembered_as_complete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("logarc.enrich.run_sidecar", replaying_everything)
+    case_dir = a_case(tmp_path)
+
+    enrich_case(case_dir)
+
+    with Case.open(case_dir) as case:
+        assert case.crs_evidence().coverage is None
+        assert case.manifest.config["crs_replayed"] == 4
+        assert case.manifest.config["crs_requests"] == 4
+        assert case.manifest.config["crs_complete"] is True
+
+
+def test_stopping_a_rerun_keeps_the_complete_result_it_would_replace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Enrichment only adds to a case. A rerun stopped after one request would
+    otherwise swap four requests' worth of findings for one."""
+    monkeypatch.setattr("logarc.enrich.run_sidecar", replaying_everything)
+    case_dir = a_case(tmp_path)
+    enrich_case(case_dir)
+    with Case.open(case_dir) as case:
+        before = dict(case.manifest.config)
+
+    outcome = enrich_case(case_dir, should_stop=stop_after(1))
+
+    assert outcome.stopped is True
+    assert outcome.kept_earlier is True
+    with Case.open(case_dir) as case:
+        crs = case.crs_evidence()
+        assert case.manifest.config == before, "the earlier run's record is left as it was"
+    assert crs.coverage is None
+    assert crs.index is not None
+    assert len(crs.index) == 4
+
+
+def test_stopping_a_rerun_of_a_partial_result_replaces_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Nothing complete is at stake, so the newer run stands, and says how far
+    it got."""
+    monkeypatch.setattr("logarc.enrich.run_sidecar", replaying_everything)
+    case_dir = a_case(tmp_path)
+    enrich_case(case_dir, should_stop=stop_after(1))
+
+    outcome = enrich_case(case_dir, should_stop=stop_after(3))
+
+    assert outcome.kept_earlier is False
+    with Case.open(case_dir) as case:
+        assert case.crs_evidence().coverage == (3, 4)
+
+
+def test_partial_coverage_reaches_the_analysis_and_its_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Said in every deliverable built from the case, not only on the day the
+    run was stopped."""
+    from logarc.caseview import reconstruct_client
+    from logarc.report.html import render_report
+
+    monkeypatch.setattr("logarc.enrich.run_sidecar", replaying_everything)
+    case_dir = a_case(tmp_path)
+    enrich_case(case_dir, should_stop=stop_after(2))
+    with Case.open(case_dir) as case:
+        crs = case.crs_evidence()
+
+    result = reconstruct_client(case_dir, "203.0.113.5", crs)
+
+    assert result.crs_coverage == (2, 4)
+    assert result.to_dict()["crs_coverage"] == {"replayed": 2, "requests": 4}
+    page = render_report(result)
+    assert "CRS coverage" in page
+    assert "2 of 4 requests" in page
+
+
+def test_complete_coverage_is_stated_as_such(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Present and empty, as `site_hosts` is: a missing key would read as a
+    report written before the question existed."""
+    from logarc.caseview import reconstruct_client
+
+    monkeypatch.setattr("logarc.enrich.run_sidecar", replaying_everything)
+    case_dir = a_case(tmp_path)
+    enrich_case(case_dir)
+    with Case.open(case_dir) as case:
+        crs = case.crs_evidence()
+
+    payload = reconstruct_client(case_dir, "203.0.113.5", crs).to_dict()
+
+    assert "crs_coverage" in payload
+    assert payload["crs_coverage"] is None
+
+
+def test_completion_is_what_was_recorded_not_what_the_counts_suggest(tmp_path: Path) -> None:
+    """The total comes from the manifest, and a manifest that disagreed with
+    the store would otherwise turn a stopped run into a finished one, or the
+    reverse."""
+    from logarc.detect.crs.store import CrsEvidence, write_detections
+
+    write_detections(tmp_path, [])
+    stopped = {"crs_fingerprint": "f", "crs_replayed": 4, "crs_requests": 4}
+    finished = {"crs_fingerprint": "f", "crs_replayed": 2, "crs_requests": 4}
+
+    assert CrsEvidence.of(tmp_path, {**stopped, "crs_complete": False}).coverage == (4, 4)
+    assert CrsEvidence.of(tmp_path, {**finished, "crs_complete": True}).coverage is None
+    assert CrsEvidence.of(tmp_path, finished).coverage is None, "unrecorded reads as complete"
+
+
+def test_a_rerun_does_not_hold_the_earlier_detections_while_it_replays(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Whether the earlier run finished is in the manifest. Loading its whole
+    index to find out would hold it in memory beside the new one."""
+    monkeypatch.setattr("logarc.enrich.run_sidecar", replaying_everything)
+    case_dir = a_case(tmp_path)
+    enrich_case(case_dir)
+
+    def refuse(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("the earlier detection index was loaded")
+
+    monkeypatch.setattr("logarc.detect.crs.store.load_detections", refuse)
+    assert enrich_case(case_dir, should_stop=stop_after(1)).kept_earlier

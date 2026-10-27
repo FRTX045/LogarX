@@ -10,6 +10,7 @@ from typing import Any
 
 from logarc.case import Case
 from logarc.core.activity import ActivityCategory
+from logarc.detect.crs.store import COMPLETE_KEY
 from logarc.evaluation.graded import client_truth, graded_scores, low_support
 from logarc.evaluation.priorities import (
     assert_same_ranked,
@@ -69,6 +70,8 @@ def _verified(root: Path, source: Path, truth_path: Path) -> _Verified:
         raise ValueError("complete-product evaluation requires recorded CRS paranoia level 2")
     if not all(manifest.config.get(key) for key in ("crs_revision", "crs_fingerprint")):
         raise ValueError("CRS revision and configuration fingerprint are required")
+    if manifest.config.get(COMPLETE_KEY) is False:
+        raise ValueError("complete-product evaluation requires a CRS run that finished")
     truth = read_truth(truth_path)
     records = {item.line_no: item for item in truth.records}
     if truth.source_file_id != record.file_id or len(records) != len(truth.records):

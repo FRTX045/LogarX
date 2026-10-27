@@ -184,3 +184,39 @@ def test_crs_that_can_run_here_is_told_the_case_s_site(monkeypatch: pytest.Monke
 
     assert config is not None
     assert config.host == "shop.test"
+
+
+def test_a_case_crs_checked_only_in_part_puts_the_strip_up(
+    qt_app: QApplication, tmp_path: Path, crs_here: SidecarConfig
+) -> None:
+    """Current CRS, stopped part way: not older, and still not the whole case."""
+    stopped = {**crs_here.as_config(), "crs_replayed": 1, "crs_requests": 2, "crs_complete": False}
+
+    window = _opened(qt_app, _case(tmp_path, stopped))
+
+    assert window._older_crs.isVisible()
+    assert "part" in window._older_crs.text()
+    assert _run_again(window).isVisible()
+
+
+def test_a_partial_case_is_named_even_where_crs_cannot_run_again(
+    qt_app: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The coverage is a fact about the case, true on any computer. Only the
+    offer to run CRS again depends on this one."""
+    monkeypatch.setattr(app_module, "_crs_config_now", lambda hosts: None)
+    stopped = {
+        **SidecarConfig().as_config(),
+        "crs_replayed": 1,
+        "crs_requests": 2,
+        "crs_complete": False,
+    }
+
+    window = _opened(qt_app, _case(tmp_path, stopped))
+
+    assert window._older_crs.isVisible()
+    assert not [
+        button
+        for button in window._older_crs.findChildren(QPushButton)
+        if button.text() == "Run CRS again" and button.isVisible()
+    ]

@@ -2,7 +2,17 @@
 
 How the tool is checked, what the numbers say, and what they do not.
 
-Every figure here is reproducible from the commands shown, against the builds named below.
+Two kinds of figure appear here, and they are not equally checkable.
+
+- **Reproducible by anyone from this repository:** the figures for the committed
+  3,825-request excerpt under `tests/data/apache-shopfront/`, pinned by its own `SHA256SUMS`.
+  Its scores, native and with CRS, are committed beside it.
+  `tests/evaluation/test_published_scores.py` reruns the native scores on every test run, and
+  the CRS scores wherever the sidecar and ruleset are built; CI requires them.
+- **Recorded measurements of builds that are not published:** the headline figures and every
+  baseline below. They are what the commands shown produced against the builds named, whose
+  checksums are recorded, but a reader cannot rerun them until those bytes are published, and a
+  rebuild from the dataset's recipe reproduces its plan of requests, not its bytes.
 See [ADR-0011](adr/0011-a-real-server-log-is-the-headline-corpus.md) for why it is measured on a
 real server's log, and [ADR-0005](adr/0005-measuring-accuracy-against-generated-ground-truth.md)
 for the scoring method it kept.
@@ -549,7 +559,7 @@ evaluation output for the committed 3,825-line excerpt, beside the log and the
 truth it was scored against:
 
 ```bash
-logarc ingest tests/data/apache-shopfront/excerpt.log --case /tmp/c
+logarc ingest tests/data/apache-shopfront/excerpt.log --case /tmp/c --no-crs
 logarc evaluate -c /tmp/c -t tests/data/apache-shopfront/excerpt.truth.jsonl
 ```
 
@@ -742,7 +752,8 @@ should block that request. A tool reconstructing what an address did should say
 it browsed to `/contact` and arrived from a poisoned search link.
 
 The tables below are the two pinned dataset builds, which are **not** committed
-— 22 MB and 80 MB — and remain re-derivable only with the download.
+(22 MB and 80 MB) and whose bytes can no longer be obtained, so they are recorded
+measurements rather than figures a reader can rerun.
 
 
 Measured 2026-09-08, ruleset `e81ace93…` (33 rules), CRS `d694d465` at paranoia level 2,

@@ -62,6 +62,11 @@ class EvaluationReport:
     figure that says *CRS* moved.
     """
 
+    crs_coverage: tuple[int, int] | None = field(default=None, kw_only=True)
+    """`(replayed, requests)` when that CRS run was stopped part way, else
+    `None`. A score built on part of a CRS run is not a measurement of the
+    complete tool, and the numbers written for a paper have to say so."""
+
     classification: ClassificationReport | None
     """Per-activity figures, or None when the truth only knew attack-or-not.
 
@@ -95,6 +100,11 @@ class EvaluationReport:
             "granularity": self.granularity,
             "ruleset_fingerprint": self.ruleset_fingerprint,
             "crs_fingerprint": self.crs_fingerprint,
+            "crs_coverage": (
+                {"replayed": self.crs_coverage[0], "requests": self.crs_coverage[1]}
+                if self.crs_coverage is not None
+                else None
+            ),
             "policy": self.policy,
             "totals": {
                 "clients": self.clients,
@@ -155,6 +165,7 @@ def evaluate(
     policy: AnalysisPolicy | None = None,
     crs: DetectionIndex | None = None,
     crs_fingerprint: str | None = None,
+    crs_coverage: tuple[int, int] | None = None,
     on_client: Callable[[str], None] | None = None,
 ) -> EvaluationReport:
     """Reconstruct every client the truth knows about, and score the result.
@@ -216,6 +227,7 @@ def evaluate(
         granularity=truth.granularity,
         ruleset_fingerprint=engine.fingerprint,
         crs_fingerprint=crs_fingerprint,
+        crs_coverage=crs_coverage,
         policy=policy.as_config(),
         # A source that only knows attack-or-not carries stand-in categories,
         # and a per-activity table built from those would look like a result

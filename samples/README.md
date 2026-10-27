@@ -1,6 +1,13 @@
 # Sample logs
 
-Real logs, with the answer key. Everything under `samples/apache-shopfront/` is
+Two logs here work from a fresh clone: `demo/demo.log`, written to show every
+feature, and a 3,825-line excerpt of a real build, committed under
+`tests/data/apache-shopfront/` with its answer key and its scores. The
+[quick start](#quick-start-on-what-is-in-the-repository) below uses them. The
+rest of this page is about the full builds the excerpt was cut from, which are
+not in the repository.
+
+The full builds are real logs, with the answer key. Everything under `samples/apache-shopfront/` is
 a build of the BlackHat-Dataset `apache-shopfront` project: a real Apache 2.4
 serving a real PHP shop, driven by scripted shoppers and crawlers, a real
 Chromium for some sessions, real security tools and six scripted attack
@@ -12,12 +19,42 @@ build — the log, its truth file and the manifest together — and the numbers
 in [docs/evaluation.md](../docs/evaluation.md) are tied to the exact bytes, so
 they are pinned by checksum rather than versioned.
 
+## Quick start, on what is in the repository
+
+The two logs that are committed, so they work from a fresh clone:
+`samples/demo/demo.log` to see what the tool does, and the 3,825-line excerpt of
+a real build under `tests/data/apache-shopfront/`, with its answer key, to check
+how well it does it.
+
+```powershell
+logarc ingest samples\demo\demo.log --format apache-vhost-combined --case .\case-demo
+logarc list-ips --case .\case-demo --sort requests --limit 20
+logarc analyze  --case .\case-demo --ip <address>
+logarc evidence --case .\case-demo --ip <address>
+```
+
+In the application: **Case → New from logs…**, pick a log, pick an
+empty folder, then click a client in the table.
+
+## Checking the answers
+
+```powershell
+logarc ingest   tests\data\apache-shopfront\excerpt.log --case .\case-excerpt --no-crs
+logarc enrich   --case .\case-excerpt
+logarc evaluate --case .\case-excerpt --truth tests\data\apache-shopfront\excerpt.truth.jsonl
+```
+
+`enrich` replays the case through OWASP CRS; the headline figures include it, so
+a run without it is a comparison rather than a result. The scores this prints
+are committed beside the excerpt, and the same commands work on any build you
+obtain. What the builds printed is in [docs/evaluation.md](../docs/evaluation.md).
+
 ## The builds
 
 | Folder | Lines | Span | What it is for |
 |---|---:|---|---|
-| `apache-shopfront/2026-09-07-medium/` | 243,908 | 7 days | The headline evaluation. |
-| `apache-shopfront/2026-08-23-small/` | 66,305 | 1 day | Fast checks and demos. |
+| `apache-shopfront/2026-09-07-medium/` | 243,908 | 7 days | A past headline evaluation; the current one is `2026-10-06-medium`, in [docs/evaluation.md](../docs/evaluation.md). |
+| `apache-shopfront/2026-08-23-small/` | 66,305 | 1 day | Past fast checks; use the excerpt and `demo/` below instead. |
 
 Both are **unobtainable** as of 2026-09-18 — see "Getting them" below before
 going looking for them.
@@ -30,8 +67,9 @@ checksum, because a demonstration has to work the moment somebody opens it.
 
 It is 841 lines and reaches all 107 detection rules, which the logs above do not:
 they are real traffic, so they contain what real traffic contains and nothing
-else. Use `demo/` to show what the tool can do. Use the builds above to find
-out how well it does it — and never the other way round, because scoring rules
+else. Use `demo/` to show what the tool can do. Use the committed excerpt, or a
+build where you have one, to find out how well it does it, and never the other
+way round, because scoring rules
 against traffic written to suit them means nothing. `demo/` ships no truth file
 for that reason.
 
@@ -77,29 +115,6 @@ bytes**: the campaigns react to a live server, and requests interleave
 differently on every run. A regenerated build scores close to the pinned one,
 not identically, and the evaluation doc says so rather than implying an
 equality it cannot deliver.
-
-## Quick start
-
-```powershell
-logarc ingest samples\apache-shopfront\2026-08-23-small\access.log --case .\case-demo
-logarc list-ips --case .\case-demo --sort requests --limit 20
-logarc analyze  --case .\case-demo --ip <address>
-logarc evidence --case .\case-demo --ip <address>
-```
-
-In the application: **Case → New from logs…**, pick a log, pick an
-empty folder, then click a client in the table.
-
-## Checking the answers
-
-```powershell
-logarc enrich   --case .\case-demo
-logarc evaluate --case .\case-demo --truth samples\apache-shopfront\2026-08-23-small\truth.jsonl
-```
-
-`enrich` replays the case through OWASP CRS; the headline figures include it, so
-a run without it is a comparison rather than a result. What this prints on each
-build is in [docs/evaluation.md](../docs/evaluation.md).
 
 **Watch the false-alarm rate.** A missed attack leaves an investigator where
 they started; a false positive sends them to write up something that never
