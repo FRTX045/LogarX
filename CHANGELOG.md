@@ -962,6 +962,32 @@ which will be the first tag.
 
 ### Security
 
+- **One crafted line no longer stops a whole log being read.** A line went to
+  the quarantine only when its parser declined it; anything that *raised* —
+  in reading the line, in detecting the format, or in writing the events —
+  ended the import with nothing stored. An audit of logarc as a target found
+  four ways to do that from a single line a client controls: a status or byte
+  count of twenty digits, which no column can hold; a JSON `\ud800`, which
+  decodes to half a character; an epoch number of 400 digits, too large for a
+  float; and a carriage return or a 128 KB cell in an IIS or CloudFront row.
+  Each is now read: the oversized number is stored as unknown with the request
+  kept, the half character as the escape that wrote it, the epoch as no time
+  (its line quarantined), the row split as W3C splits it. And a parser that
+  raises on a line now costs that line only — quarantined, with the reason
+  naming the exception — so the next bug of this kind loses one line rather
+  than the log. Running out of memory still stops the import.
+- **A long User-Agent no longer costs the shellshock rule seconds.** Its pattern
+  was searched from every `() {` in turn, each to the end of the field, so its
+  cost grew with the square of the length: 24.5 seconds for one 320 KB
+  User-Agent, and a log of such lines would take hours to read. It now commits
+  to the first `() {`, which is the only one that can match where a later one
+  would: 0.46 seconds for the whole rule set on the same line. Same verdict on
+  a million generated strings and on 2.48 million real Referers and
+  User-Agents, and every CRS family scores as before.
+- **A client address holding markup is shown as written.** The heading above
+  the graph is rich text, and a format that reads the client from a
+  forwarded-for header takes the address from the request. A client could
+  write `<span>` there and the heading drew it, hiding text and adding its own.
 - **The CRS sidecar is built on Coraza v3.8.1**, from v3.7.0, which closes the twelve Coraza
   advisories and one `golang.org/x/net` advisory GitHub reported for it (libinjection-go moves to
   v0.3.3 and `x/net` to v0.58.0 with it). The sidecar replays only the request line and three
@@ -1036,6 +1062,18 @@ which will be the first tag.
 
 ### Fixed
 
+- **A log with no User-Agent column no longer makes every client
+  reconnaissance.** The rule for a request without a User-Agent read an empty
+  field the same way whether the client sent none or the log format has no such
+  field, and Apache's common format, `vhost_common` and HAProxy without header
+  captures have none on any line. On the small tier rendered in those formats:
+  59,226 of 63,310 innocent requests reported as reconnaissance, accuracy 0.057
+  where the combined log of the same traffic scores 0.997. Each format now says
+  which fields it can record, the case works that out for every file from the
+  format it was ingested with, and a rule condition on a field a file cannot
+  record does not hold for its lines. Cases already on disk are read correctly
+  without being ingested again, and a Where to start scan made before is made
+  again rather than reused.
 - An interrupted finalization no longer presents an incomplete case as ready.
   New stores publish completion after writing all partitions and the index,
   preserve staging for retries, and keep completed data if staging cleanup is

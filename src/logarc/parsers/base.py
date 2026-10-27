@@ -62,6 +62,17 @@ class LogParser(Protocol):
         """
         ...
 
+    @property
+    def records(self) -> frozenset[str]:
+        """Which of `fieldnames.OPTIONAL_FIELDS` this format can fill at all.
+
+        Not which a given line filled: a combined line with `-` for the
+        User-Agent records one, and its client sent none. Apache's common
+        format records none, and nothing about its clients follows from that.
+        Read through `recorded`, which answers for a parser that predates this.
+        """
+        ...
+
 
 def split_request_line(raw: str) -> tuple[str | None, str | None, str | None, str | None]:
     """Split ``GET /a?b=c HTTP/1.1`` into method, path, query and protocol.
@@ -144,3 +155,14 @@ def skips(parser: LogParser, line: str) -> bool:
     """
     answer = getattr(parser, "is_metadata", None)
     return bool(answer(line)) if answer is not None else False
+
+
+def recorded(parser: LogParser) -> frozenset[str] | None:
+    """The fields `parser` can fill, or `None` when it does not say.
+
+    `None` rather than a guess, for a parser registered by a script before
+    `records` existed: nothing is then known to be missing from its log, which
+    is how every log was read before.
+    """
+    answer = getattr(parser, "records", None)
+    return frozenset(answer) if answer is not None else None

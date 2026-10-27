@@ -86,17 +86,18 @@ def _in_utc(parsed: datetime) -> datetime:
 def _from_epoch(number: float) -> datetime | None:
     if abs(number) < _EPOCH_FLOOR:
         return None
-    if abs(number) > _NANOS_ABOVE:
-        number /= 1_000_000_000
-    elif abs(number) > _MICROS_ABOVE:
-        number /= 1_000_000
-    elif abs(number) > _MILLIS_ABOVE:
-        number /= 1000
     # Added to the epoch rather than handed to `fromtimestamp`, which raises
     # past the year 3000 on Windows and not on Linux. A number past what
     # `datetime` can hold, or not a number at all, is not a time: one such line
-    # raising here used to end the ingest of the whole log.
+    # raising here used to end the ingest of the whole log. The division is
+    # inside too, because an integer too large for a float raises there first.
     try:
+        if abs(number) > _NANOS_ABOVE:
+            number /= 1_000_000_000
+        elif abs(number) > _MICROS_ABOVE:
+            number /= 1_000_000
+        elif abs(number) > _MILLIS_ABOVE:
+            number /= 1000
         return _EPOCH + timedelta(seconds=number)
     except (OverflowError, ValueError):
         return None

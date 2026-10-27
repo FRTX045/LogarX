@@ -15,12 +15,20 @@ rules:
     severity: critical
     confidence: 0.95
     references: ["CVE-2014-6271"]
+    # Committed to the first `() {` on a line, in an atomic group. Searched from
+    # every `() {` in turn, each to the end of the field, it was quadratic: 24.5
+    # seconds for one 320 KB User-Agent. A later `() {` can only match where the
+    # first one would, so on one line the verdict is the same, and a decoded
+    # field is one line: normalising folds every newline into a space. Checked
+    # against the old pattern on a million generated strings (17,083 matches,
+    # no disagreement without a newline) and on the 2.48 million Referers and
+    # User-Agents of the dataset tiers.
     match:
       any:
         - field: user_agent_decoded
-          regex: '\(\s*\)\s*\{.*;\s*\}\s*;'
+          regex: &shellshock '(?m)^(?>.*?\(\s*\)\s*\{).*;\s*\}\s*;'
         - field: referer_decoded
-          regex: '\(\s*\)\s*\{.*;\s*\}\s*;'
+          regex: *shellshock
 
   # Shell globs standing in for the letters of a path, so a filter looking for
   # `/etc/passwd` or `/bin/bash` never sees either: `/etc/pa[s]swd`,

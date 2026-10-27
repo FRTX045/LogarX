@@ -126,6 +126,26 @@ def test_a_registered_format_takes_part_in_auto_detection() -> None:
     assert found.name == "test-json"
 
 
+class RaisingParser:
+    """A parser with a bug: it raises on every line instead of declining it."""
+
+    name = "test-raising"
+
+    def parse_line(self, line: str, ref: EvidenceRef) -> NormalizedEvent | None:
+        raise OverflowError("a bug in this parser")
+
+
+def test_a_parser_that_raises_on_a_line_has_not_accepted_it() -> None:
+    """Detection tries every registered format on the sample, so one format's
+    bug used to end detection for all of them — and with it the ingest."""
+    register_format("test-raising", RaisingParser)
+
+    found = detect_format(COMBINED_LINES)
+
+    assert found is not None
+    assert found.name == "apache-combined"
+
+
 def test_registering_over_an_existing_name_is_refused() -> None:
     """Silently shadowing a built-in would change what an existing case means."""
     with pytest.raises(ValueError, match="apache-combined"):

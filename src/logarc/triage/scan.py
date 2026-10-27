@@ -326,6 +326,9 @@ def scan_case(
             "sources": [asdict(source) for source in case.manifest.sources],
             "config": case.manifest.config,
             "rules": engine.fingerprint,
+            # What each file cannot record changes what the rules find, and is
+            # not in their fingerprint: it is the case's, not the rules'.
+            "unrecorded": {source: sorted(fields) for source, fields in engine.unrecorded.items()},
             "crs": _digest(crs_path),
             "window": asdict(window),
             "session": session_policy.as_config(),
