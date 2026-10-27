@@ -34,7 +34,7 @@ gui = ["PyQt6>=6.6"]
 evaluation = ["scikit-learn>=1.5,<2"]
 # Kept out of `dev` on purpose: CI runs the tests, it does not build the
 # desktop bundle, and PyInstaller is a slow install to pay for on every job.
-package = ["pyinstaller>=6.6"]
+package = ["pyinstaller>=6.6", "pip-licenses>=5.0"]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
