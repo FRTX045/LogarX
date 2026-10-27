@@ -84,7 +84,10 @@ Anything that lets a crafted log, format or rule harm the person running logarc:
 
   It is narrower than it looks: saved formats are loaded from your own
   `~/.logarc/formats.json` at startup and **never from a case**, so opening
-  someone else's case does not run their pattern. Treat a format definition from
+  someone else's case does not run their pattern. A case does carry a copy of
+  the format it was read with; a copy that is a regular expression is used only
+  when your logarc holds the same definition, built in or saved, and otherwise
+  its lines are shown without their fields. Treat a format definition from
   someone else the way you would treat their code.
 
 - **The packaged Windows build being unsigned.** Known, and not a finding: the

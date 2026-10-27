@@ -26,9 +26,8 @@ from typing import TYPE_CHECKING
 
 from logarc.core.evidence import EvidenceRef
 from logarc.ingest.reader import LogSourceError, open_log
-from logarc.parsers.logformat import LogFormatError
-from logarc.parsers.registry import UnknownFormatError, get_parser
-from logarc.parsers.spec import FormatSpecError, spec_from_dict
+from logarc.parsers.registry import UnknownFormatError, get_parser, get_spec
+from logarc.parsers.spec import PatternFormatSpec, spec_from_dict
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -147,13 +146,22 @@ def _parser_for(record: SourceRecord) -> LogParser | None:
     registered by handing over a factory has no definition to store, which is
     the plugin the older wording described.
 
+    A case's own regular expression is the exception, and is never run: a case
+    is a folder anyone can hand over, and a pattern can be written to take hours
+    on one short line. A stored `pattern` is used only when this logarc holds the
+    same definition word for word, as a built-in or in the reader's library, and
+    otherwise the lines come back without their fields.
+
     Returns `None` rather than raising when neither works. The line is still
     shown; only its fields are missing.
     """
     if record.format_spec is not None:
         try:
-            return spec_from_dict(record.format_spec).build()
-        except (FormatSpecError, LogFormatError):
+            spec = spec_from_dict(record.format_spec)
+            if isinstance(spec, PatternFormatSpec) and not _held_here(spec):
+                return None
+            return spec.build()
+        except ValueError:
             # A definition from a newer logarc, or one that no longer compiles.
             # Both leave the line readable, which is the guarantee that matters.
             return None
@@ -161,6 +169,14 @@ def _parser_for(record: SourceRecord) -> LogParser | None:
         return get_parser(record.log_format)
     except (UnknownFormatError, KeyError):
         return None
+
+
+def _held_here(spec: PatternFormatSpec) -> bool:
+    """Whether this logarc holds `spec` itself, under its name, word for word."""
+    try:
+        return get_spec(spec.name) == spec
+    except (UnknownFormatError, KeyError):
+        return False
 
 
 def _scan(
