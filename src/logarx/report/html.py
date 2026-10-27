@@ -17,10 +17,10 @@ from typing import TYPE_CHECKING, Final
 
 from logarx.bookmarks import newest_first
 from logarx.core.activity import Outcome, Severity
-from logarx.core.graph import GraphKind, reciprocal_pairs
-from logarx.graphbuild.layout import layout_graph
+from logarx.core.graph import GraphKind
+from logarx.report.graph import render_graph as _svg
 from logarx.report.presentation import DOCUMENT, STYLE
-from logarx.style import edge_label, severity_colour, severity_legend
+from logarx.style import SIZE_NOTE, edge_label, outcome_border, severity_colour, severity_legend
 from logarx.timerange import spoken
 
 if TYPE_CHECKING:
@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from logarx.analysis import AnalysisResult
     from logarx.bookmarks import Shelf
     from logarx.core.evidence import EvidenceRef
-    from logarx.core.graph import ActivityGraph, GraphEdge
+    from logarx.core.graph import GraphEdge
     from logarx.evidence import EvidenceLine
     from logarx.storage.case import CaseManifest
 
@@ -49,15 +49,6 @@ _OUTCOME_NOTE: Final[dict[Outcome, str]] = {
     Outcome.MIXED: "some requests served",
     Outcome.UNKNOWN: "outcome unknown",
 }
-
-_NODE_WIDTH: Final = 180.0
-_NODE_HEIGHT: Final = 74.0
-_MARGIN: Final = 60.0
-
-#: How far apart the two halves of a reciprocal pair are pushed, in SVG units.
-#: Applied to the control points rather than the ends, so both arrows still meet
-#: the boxes they join.
-_PAIR_BOW: Final = 40.0
 
 
 def render_report(
@@ -122,7 +113,7 @@ def _legend() -> str:
 
     A report is read by someone who never opened the application and cannot ask
     it. Left unexplained, the encoding that makes the graph worth drawing —
-    colour is severity, a dashed outline means refused, size is volume — is
+    colour is severity, the outline is outcome, size is volume — is
     decoration the reader has to guess at.
 
     Built from the tables the SVG is drawn from, so it cannot name a colour the
@@ -134,16 +125,13 @@ def _legend() -> str:
         for item in severity_legend()
     )
     outcomes = "".join(
-        f'<span class="key"><i class="outline'
-        f'{" dashed" if outcome is Outcome.BLOCKED else ""}"></i>'
-        f"{html.escape(note)}</span>"
+        f'<span class="key"><i class="outline" style="border-style:{outcome_border(outcome).style};'
+        f'border-width:{outcome_border(outcome).width}px"></i>{html.escape(note)}</span>'
         for outcome, note in _OUTCOME_NOTE.items()
     )
     return (
-        f'<p class="legend"><b>Severity</b> {severities}'
-        f"<b>Outcome</b> {outcomes}"
-        '<span class="key">Box size is fixed here; the request count is printed '
-        "inside each one.</span></p>"
+        f'<div class="legend"><b>Severity</b> {severities}'
+        f'<b>Outcome</b> {outcomes}<span class="key">{SIZE_NOTE}</span></div>'
     )
 
 
@@ -161,101 +149,6 @@ def _edge_label(kind: GraphKind, edge: GraphEdge) -> str:
     same reason the severity colours are taken from there rather than restated.
     """
     return edge_label(kind, weight=edge.weight, gap_seconds=edge.gap_seconds)
-
-
-def _svg(graph: ActivityGraph) -> str:
-    if not graph.nodes:
-        return '<p class="empty">No activity to draw.</p>'
-
-    positions = layout_graph(graph)
-    xs = [point.x for point in positions.values()]
-    ys = [point.y for point in positions.values()]
-    offset_x = _MARGIN - min(xs)
-    offset_y = _MARGIN - min(ys)
-    width = max(xs) - min(xs) + _NODE_WIDTH + 2 * _MARGIN
-    height = max(ys) - min(ys) + _NODE_HEIGHT + 2 * _MARGIN
-
-    # Resolved once for the graph: the answer cannot change while drawing it,
-    # and asking per edge would be quadratic in the edge count.
-    paired = reciprocal_pairs(graph)
-
-    parts = [
-        f'<svg viewBox="0 0 {width:.0f} {height:.0f}" '
-        f'style="max-width:100%;height:auto" role="img">',
-        '<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" '
-        'markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
-        '<path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/></marker></defs>',
-    ]
-
-    for edge in graph.edges:
-        start, end = positions.get(edge.source), positions.get(edge.target)
-        if start is None or end is None:  # pragma: no cover - edges follow nodes
-            continue
-        # Anchored on the side each box faces the other from. A trace wraps onto
-        # further rows and those rows alternate direction, so an edge may run
-        # right to left; anchoring both ends as though it always ran left to
-        # right sends the line back across the two boxes it connects.
-        if end.x > start.x:
-            x1 = start.x + offset_x + _NODE_WIDTH
-            x2 = end.x + offset_x
-        elif end.x < start.x:
-            x1 = start.x + offset_x
-            x2 = end.x + offset_x + _NODE_WIDTH
-        else:  # directly below: leave from the middle rather than either side
-            x1 = x2 = start.x + offset_x + _NODE_WIDTH / 2
-        y1 = start.y + offset_y + _NODE_HEIGHT / 2
-        y2 = end.y + offset_y + _NODE_HEIGHT / 2
-        thickness = min(1 + edge.weight * 0.6, 6)
-        if edge.source == edge.target:
-            parts.append(
-                f'<path d="M{x1:.0f},{y1 - 20:.0f} c 40,-30 40,30 0,20" fill="none" '
-                f'stroke="#94a3b8" stroke-width="{thickness:.1f}" marker-end="url(#arrow)"/>'
-            )
-            continue
-        midpoint = (x1 + x2) / 2
-        # An edge each way between the same two boxes is one cubic traced
-        # backwards, so the second drawn lands exactly on the first and its
-        # label is written over the first's. Pushing the control points aside in
-        # the direction of travel separates them symmetrically, without either
-        # edge needing to know the other exists. The sign comes from the
-        # endpoints rather than from the order the graph lists its edges, so two
-        # renders of one case do not differ.
-        bow = _PAIR_BOW if frozenset((edge.source, edge.target)) in paired else 0.0
-        bow *= 1.0 if (x2, y2) > (x1, y1) else -1.0
-        parts.append(
-            f'<path d="M{x1:.0f},{y1:.0f} C{midpoint:.0f},{y1 + bow:.0f} '
-            f'{midpoint:.0f},{y2 + bow:.0f} {x2:.0f},{y2:.0f}" fill="none" stroke="#94a3b8" '
-            f'stroke-width="{thickness:.1f}" marker-end="url(#arrow)"/>'
-        )
-        if label := _edge_label(graph.kind, edge):
-            # Three quarters of the way out to the control points, which is
-            # close to where a cubic actually passes at its midpoint.
-            parts.append(
-                f'<text x="{midpoint:.0f}" y="{(y1 + y2) / 2 + bow * 0.75 - 6:.0f}" '
-                f'class="edge-label" text-anchor="middle">{html.escape(label)}</text>'
-            )
-
-    for node in graph.nodes:
-        point = positions[node.node_id]
-        x, y = point.x + offset_x, point.y + offset_y
-        colour = severity_colour(node.severity)
-        dashed = ' stroke-dasharray="6 3"' if node.outcome is Outcome.BLOCKED else ""
-        parts.append(
-            f'<g><rect x="{x:.0f}" y="{y:.0f}" width="{_NODE_WIDTH:.0f}" '
-            f'height="{_NODE_HEIGHT:.0f}" rx="10" fill="var(--surface)" stroke="{colour}" '
-            f'stroke-width="2.5"{dashed}/>'
-            f'<rect x="{x:.0f}" y="{y:.0f}" width="6" height="{_NODE_HEIGHT:.0f}" '
-            f'rx="3" fill="{colour}"/>'
-            f'<text x="{x + 16:.0f}" y="{y + 26:.0f}" class="node-title">'
-            f"{html.escape(_truncate(node.label, 22))}</text>"
-            f'<text x="{x + 16:.0f}" y="{y + 46:.0f}" class="node-meta">'
-            f"{node.request_count:,} requests</text>"
-            f'<text x="{x + 16:.0f}" y="{y + 62:.0f}" class="node-meta">'
-            f"{html.escape(_OUTCOME_NOTE[node.outcome])}</text></g>"
-        )
-
-    parts.append("</svg>")
-    return "".join(parts)
 
 
 def _episode_table(result: AnalysisResult) -> str:
@@ -329,7 +222,7 @@ def _bookmarks(
     return (
         '<section><div class="section-heading"><h2>Bookmarks</h2></div>'
         '<div class="table-wrap" tabindex="0" role="region" aria-label="Bookmarks table">'
-        "<table><thead><tr><th>Category</th><th>Kind</th><th>What</th>"
+        '<table class="bookmarks"><thead><tr><th>Category</th><th>Kind</th><th>What</th>'
         "<th>Note</th><th>Saved</th></tr></thead><tbody>"
         + "".join(rows)
         + "</tbody></table></div></section>"
@@ -364,7 +257,3 @@ def _provenance(result: AnalysisResult, manifest: CaseManifest | None) -> str:
         f'<tr><td>{html.escape(label)}</td><td class="mono small">{html.escape(value)}</td></tr>'
         for label, value in rows
     )
-
-
-def _truncate(text: str, limit: int) -> str:
-    return text if len(text) <= limit else text[: limit - 1] + "…"

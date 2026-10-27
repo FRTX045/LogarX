@@ -12,6 +12,11 @@ as releases, and neither has a tag.
 
 ### Changed
 
+- HTML reconstruction graphs now use request-sized circles, shared severity
+  colours and outcome outlines, bundled category icons, captions and named
+  session boxes. Both graph views have distinct SVG markers and readable
+  scrolling layouts, with a corrected legend matching the desktop.
+
 - HTML reports share the desktop's font preferences and offer an offline,
   keyboard-accessible dark/light switch without JavaScript. A clearer report
   hierarchy, scrollable tables, full activity dates and expandable provenance
