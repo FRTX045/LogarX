@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import gc
 import os
+import sys
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -24,6 +25,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from PyQt6.QtCore import QSettings, QThreadPool, QTimer
+from PyQt6.QtGui import QFontDatabase, QGuiApplication
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication
 
@@ -51,7 +53,29 @@ def qt_app() -> QApplication:
     if _application is None:
         found = QApplication.instance()
         _application = found if isinstance(found, QApplication) else QApplication([])
+        _load_real_fonts()
     return _application
+
+
+def _load_real_fonts() -> None:
+    """Give offscreen Qt on Windows the fonts the window is drawn in.
+
+    It has no font database there and measures every character as a box, so
+    geometry asserted against it describes no screen: captions come out twice as
+    wide and a quarter shorter than in the window. Loading Segoe UI, the family
+    the theme asks for first, makes them measure as they draw. Linux reads its
+    fonts through fontconfig and needs nothing. `test_real_fonts.py` checks it.
+    """
+    if sys.platform != "win32" or QGuiApplication.platformName() != "offscreen":
+        return
+    fonts = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"
+    for path in [
+        *sorted(fonts.glob("segoeui*.ttf")),
+        fonts / "seguisb.ttf",
+        fonts / "SegUIVar.ttf",
+    ]:
+        if path.exists():
+            QFontDatabase.addApplicationFont(str(path))
 
 
 def settled(qt_app: QApplication, timeout: float = 30.0) -> None:
