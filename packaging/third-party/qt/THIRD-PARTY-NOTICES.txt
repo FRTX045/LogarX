@@ -1,10 +1,12 @@
 Third-party components of the Qt 6.11.1 libraries this bundle ships
-(Qt Core, Qt GUI, Qt Widgets, Qt SVG and the Qt Image Formats plugins), as Qt's own
-qt_attribution.json records list them. Qt itself is under the LGPL; its text is in ../python.txt, under PyQt6-Qt6.
+(Qt Core, Qt GUI, Qt Widgets, Qt Network, Qt SVG, the Qt Image Formats plugins, Qt PDF
+and the software OpenGL renderer), as Qt's own qt_attribution.json records list them,
+and for Qt PDF and the renderer, which no such record covers, from their own sources. Qt itself is under the LGPL; its text is in ../python.txt, under PyQt6-Qt6.
 
 Source: qt/qtbase v6.11.1 59c81a3c2247b821b9b84b4eb8d939b77e07e276
 Source: qt/qtsvg v6.11.1 2596f43da2dc72d2afecc084355b0f5f87922a6c
 Source: qt/qtimageformats v6.11.1 77f35e5694885844c3eb3a737769b5ed290b8ccc
+Source: qt/qtwebengine v6.11.1, Chromium snapshot 58c11ad487f8a237cf0ac71cc3e818b52db150df
 
 D3D12 Memory Allocator
 Version: f128d39b7a95b4235bd228d231646278dc6c24b2
@@ -111,6 +113,25 @@ Licence: libpng License and PNG Reference Library version 2
 Copyright: Copyright (c) 1995-2026 The PNG Reference Library Authors; Copyright (c) 2000-2026 Cosmin Truta; Copyright (c) 1998-2018 Glenn Randers-Pehrson; Copyright (c) 1996-1997 Andreas Dilger; Copyright (c) 1995-1996 Guy Eric Schalnat, Group 42, Inc.; Copyright (c) 2000-2017 Simon-Pierre Cadieux; Copyright (c) 2000-2017 Eric S. Raymond; Copyright (c) 2000-2017 Mans Rullgard; Copyright (c) 2000-2017 Gilles Vollant; Copyright (c) 2000-2017 James Yu; Copyright (c) 2000-2017 Mandar Sahastrabuddhe; Copyright (c) 1998-2000 Tom Lane; Copyright (c) 1998-2000 Willem van Schaik; Copyright (c) 1996-1997 John Bowler; Copyright (c) 1996-1997 Kevin Bracey; Copyright (c) 1996-1997 Sam Bushell; Copyright (c) 1996-1997 Magnus Holmgren; Copyright (c) 1996-1997 Greg Roelofs; Copyright (c) 1996-1997 Tom Tanner; Copyright (c) 1995-1996 Dave Martindale; Copyright (c) 1995-1996 Paul Schmidt; Copyright (c) 1995-1996 Tim Wegner
 Licence text: licenses/qtbase-src-3rdparty-libpng-LICENSE
 Recorded in: qt/qtbase src/3rdparty/libpng/qt_attribution.json
+
+The Public Suffix List
+Version: 2026-01-16_13-11-47_UTC
+Used in: Used in Qt Network to avoid setting "supercookies" in the cookie jar
+supported by Qt (by the QNetworkCookieJar class).
+Licence: Mozilla Public License 2.0
+Copyright: The list was originally provided by Jo Hermans <jo.hermans@gmail.com>.
+It is now maintained on github (https://github.com/publicsuffix/list).
+Licence text: licenses/qtbase-src-3rdparty-libpsl-PSL-LICENSE.txt
+Recorded in: qt/qtbase src/3rdparty/libpsl/qt_attribution.json
+
+libpsl - C library to handle the Public Suffix List
+Version: 664f3dc85259ec65e30248a61fa1c45b7b0e4c3f
+Used in: Used to compress the embedded copy of publicsuffix list and
+to lookup entries in it.
+Licence: BSD 3-clause "New" or "Revised" License
+Copyright: Copyright 2014-2016 The Chromium Authors. All rights reserved.
+Licence text: licenses/qtbase-src-3rdparty-libpsl-src-LICENSE.chromium
+Recorded in: qt/qtbase src/3rdparty/libpsl/qt_attribution.json
 
 MD4
 Used in: Used in Qt Core (QCryptographicHash).
@@ -343,3 +364,21 @@ Licence: BSD 3-clause "New" or "Revised" License
 Copyright: Copyright (c) 2010, Google Inc. All rights reserved.
 Licence text: licenses/qtimageformats-src-3rdparty-libwebp-COPYING
 Recorded in: qt/qtimageformats src/3rdparty/libwebp/qt_attribution.json
+
+PDFium, the third-party code in its tree, and the Chromium libraries it links
+Used in: Qt PDF, which renders PDF images and documents
+Licence: BSD 3-clause for PDFium; each third-party library's own licence
+Licence text: licenses/pdfium-LICENSE; licenses/pdfium-third_party-NotoSansCJK-LICENSE; licenses/pdfium-third_party-agg23-copying; licenses/pdfium-third_party-bigint-LICENSE; licenses/pdfium-third_party-fp16-LICENSE; licenses/pdfium-third_party-highway-LICENSE; licenses/pdfium-third_party-lcms-LICENSE; licenses/pdfium-third_party-libopenjpeg-LICENSE; licenses/pdfium-third_party-libtiff-LICENSE.md; licenses/pdfium-chromium-freetype-src-LICENSE.TXT; licenses/pdfium-chromium-libjpeg_turbo-LICENSE.md; licenses/pdfium-chromium-libpng-LICENSE; licenses/pdfium-chromium-zlib-LICENSE; licenses/pdfium-chromium-abseil-cpp-LICENSE; licenses/pdfium-chromium-icu-LICENSE; licenses/pdfium-chromium-icu-license.html; licenses/pdfium-chromium-icu-scripts-LICENSE
+Recorded in: qt/qtwebengine-chromium 58c11ad487f8a237cf0ac71cc3e818b52db150df chromium/third_party/pdfium
+
+Mesa 3D Graphics Library (llvmpipe), as opengl32sw.dll
+Version: 11.2.2
+Licence: MIT for the core library; the page lists the licence of each component
+Licence text: licenses/mesa-11.2.2-license.html
+Recorded in: https://gitlab.freedesktop.org/mesa/mesa/-/raw/mesa-11.2.2/docs/license.html
+
+LLVM, linked into opengl32sw.dll
+Version: 3.6.2
+Licence: University of Illinois/NCSA Open Source License
+Licence text: licenses/llvm-3.6.2-LICENSE.txt
+Recorded in: https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-3.6.2/llvm/LICENSE.TXT

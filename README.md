@@ -6,7 +6,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Runs offline](https://img.shields.io/badge/runs-offline-informational)](#no-network-no-account-no-api-key)
-[![Status: pre-release](https://img.shields.io/badge/status-pre--release-orange)](CHANGELOG.md)
+[![Release: v1.0.0](https://img.shields.io/badge/release-v1.0.0-brightgreen)](https://github.com/FRTX045/LogarX/releases/latest)
 
 LogarX is a desktop application that turns a web server's access log into a
 readable account of what each client did. Instead of thousands of lines, you get
@@ -212,9 +212,10 @@ pip install -e "."           # the engine and developer tools alone
 pip install -e ".[dev]"      # add the test and lint toolchain
 ```
 
-No prebuilt release is available yet; run from source using the steps above. A
-Windows build that runs without Python can be made from a checkout with
-`python packaging/rebuild.py`, and a ready-made one comes with the first release. Linux display libraries, the packaged build and the
+**On Windows, download the application** from
+[Releases](https://github.com/FRTX045/LogarX/releases/latest): unzip it and run
+`logarx.exe`. Nothing else is needed, Python included. To build the same thing
+from a checkout, run `python packaging/rebuild.py`. Linux display libraries, the packaged build and the
 OWASP CRS sidecar are covered in [docs/installing.md](docs/installing.md).
 
 ---

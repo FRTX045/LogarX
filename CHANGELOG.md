@@ -4,15 +4,22 @@ Notable changes to LogarX, called logarc until 2026-10-28. Entries written
 before the rename keep the old name, as do the decision records. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-LogarX has not been released yet. 0.1.0 and 0.2.0 below are development
-milestones: points the work reached and wrote down, never published as releases,
-and neither has a tag. The version reads `0.3.0.dev0` until the first release,
-which will be the first tag.
+1.0.0 is the first release and the first tag. 0.1.0 and 0.2.0 below are
+development milestones: points the work reached and wrote down, never published
+as releases, and neither has a tag.
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-10-28 — the first release
+
 ### Added
 
+- **The Windows application carries the notices of everything Qt brings in.**
+  Qt Network, Qt PDF and the software OpenGL renderer ship in the bundle, and
+  the code they carry had no notice there: the Public Suffix List and libpsl;
+  PDFium with the libraries in its tree and the Chromium ones it links; Mesa
+  and LLVM. `packaging/fetch_qt_attributions.py` now fetches them all, PDFium
+  from the Chromium snapshot the installed Qt pins.
 - **An nginx `log_format` can be pasted as it is.** Wherever a directive is
   accepted (the window's format editor, `logarc formats add` and `check`), the
   whole statement from `nginx.conf`, its quoted strings, or the format alone is
@@ -1925,6 +1932,7 @@ and draws it as an activity graph.
 
 <!-- Reference links for the version headings above. `0.1.0` was never tagged,
      so it points at the history rather than at a release that does not exist. -->
-[Unreleased]: https://github.com/FRTX045/logarc/compare/44d7bcbe3c23ee10eba3331cfa5fd9ed4e992c24...main
+[Unreleased]: https://github.com/FRTX045/LogarX/compare/v1.0.0...main
+[1.0.0]: https://github.com/FRTX045/LogarX/releases/tag/v1.0.0
 [0.2.0]: https://github.com/FRTX045/logarc/tree/44d7bcbe3c23ee10eba3331cfa5fd9ed4e992c24
 [0.1.0]: https://github.com/FRTX045/logarc/tree/0622b7ddb57e95ef81cc520f0dd459d872eec9d4

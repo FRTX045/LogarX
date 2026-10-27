@@ -29,7 +29,7 @@ body:
     attributes:
       label: Version
       description: The version in the window's title bar, or in Help → About.
-      placeholder: 0.3.0.dev0
+      placeholder: 1.0.0
     validations:
       required: true
   - type: dropdown
