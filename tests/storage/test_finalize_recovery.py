@@ -6,9 +6,9 @@ from unittest.mock import patch
 
 import pytest
 
-from logarc.core.event import NormalizedEvent
-from logarc.core.evidence import EvidenceRef
-from logarc.storage.event_store import ParquetEventStore, StoreStateError
+from logarx.core.event import NormalizedEvent
+from logarx.core.evidence import EvidenceRef
+from logarx.storage.event_store import ParquetEventStore, StoreStateError
 
 IP = "192.0.2.31"
 

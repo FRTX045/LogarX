@@ -15,15 +15,15 @@ import pytest
 from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtWidgets import QApplication, QMessageBox, QWidget
 
-from logarc import bookmarks
-from logarc.bookmarks import DEFAULT, FILE_NAME, UNREADABLE_NAME, Kind
-from logarc.core.activity import ActivityCategory, Outcome, Severity
-from logarc.core.evidence import EvidenceRef
-from logarc.core.graph import ActivityGraph, GraphKind, GraphNode
-from logarc.core.window import EVERYTHING, TimeWindow
-from logarc.gui import bookmark_keeper
-from logarc.gui.bookmark_keeper import BookmarkKeeper, Draft
-from logarc.gui.bookmarks_tab import BookmarksTab
+from logarx import bookmarks
+from logarx.bookmarks import DEFAULT, FILE_NAME, UNREADABLE_NAME, Kind
+from logarx.core.activity import ActivityCategory, Outcome, Severity
+from logarx.core.evidence import EvidenceRef
+from logarx.core.graph import ActivityGraph, GraphKind, GraphNode
+from logarx.core.window import EVERYTHING, TimeWindow
+from logarx.gui import bookmark_keeper
+from logarx.gui.bookmark_keeper import BookmarkKeeper, Draft
+from logarx.gui.bookmarks_tab import BookmarksTab
 
 AT = datetime(2026, 3, 10, 19, 12, 18, tzinfo=UTC)
 LINE = EvidenceRef("excerpt.log", 2014)

@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import pytest
 
-from logarc.core.activity import ActivityCategory, Severity
-from logarc.detect.rules import load_pack_text
-from logarc.gui.rules_view import NEW_PACK_TEXT
-from logarc.pack_append import CannotAppend, appended
-from logarc.rule_draft import Condition, Draft, Test, rule_block
+from logarx.core.activity import ActivityCategory, Severity
+from logarx.detect.rules import load_pack_text
+from logarx.gui.rules_view import NEW_PACK_TEXT
+from logarx.pack_append import CannotAppend, appended
+from logarx.rule_draft import Condition, Draft, Test, rule_block
 
 BLOCK = rule_block(
     Draft(

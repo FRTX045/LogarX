@@ -18,16 +18,16 @@ from unittest import mock
 import pytest
 
 from colours import contrast
-from logarc.analysis import analyse_ip
-from logarc.bookmarks import EMPTY, Bookmark, Kind, Shelf, add, remove
-from logarc.case import Case
-from logarc.core.activity import ActivityCategory, Outcome, Severity
-from logarc.core.evidence import EvidenceRef
-from logarc.core.window import TimeWindow
-from logarc.evidence import EvidenceLine
-from logarc.graphbuild.layout import Point
-from logarc.report.html import render_report
-from logarc.style import severity_colour
+from logarx.analysis import analyse_ip
+from logarx.bookmarks import EMPTY, Bookmark, Kind, Shelf, add, remove
+from logarx.case import Case
+from logarx.core.activity import ActivityCategory, Outcome, Severity
+from logarx.core.evidence import EvidenceRef
+from logarx.core.window import TimeWindow
+from logarx.evidence import EvidenceLine
+from logarx.graphbuild.layout import Point
+from logarx.report.html import render_report
+from logarx.style import severity_colour
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 ATTACKER = "203.0.113.66"
@@ -171,8 +171,8 @@ def test_an_edge_that_runs_backwards_leaves_from_the_left_of_its_node(tmp_path: 
     the *left* of its source. Anchoring every line to the right edge regardless
     would draw it back across both nodes it connects.
     """
-    from logarc.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
-    from logarc.report.html import _NODE_WIDTH, _svg
+    from logarx.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
+    from logarx.report.html import _NODE_WIDTH, _svg
 
     def node(node_id: str) -> GraphNode:
         return GraphNode(
@@ -203,7 +203,7 @@ def test_an_edge_that_runs_backwards_leaves_from_the_left_of_its_node(tmp_path: 
     )
     positions = {"right": Point(x=440.0, y=0.0), "left": Point(x=0.0, y=0.0)}
 
-    with mock.patch("logarc.report.html.layout_graph", return_value=positions):
+    with mock.patch("logarx.report.html.layout_graph", return_value=positions):
         svg = _svg(graph)
 
     # Anchored on the cubic, not on any `<path>`: the arrowhead in `<defs>` is
@@ -222,8 +222,8 @@ def test_two_transitions_between_the_same_pair_are_drawn_apart(tmp_path: Path) -
     two labels written on the same point. The report is the copy with no pan or
     zoom to work around it.
     """
-    from logarc.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
-    from logarc.report.html import _svg
+    from logarx.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
+    from logarx.report.html import _svg
 
     def node(node_id: str) -> GraphNode:
         return GraphNode(
@@ -256,7 +256,7 @@ def test_two_transitions_between_the_same_pair_are_drawn_apart(tmp_path: Path) -
     )
     positions = {"enumeration": Point(x=0.0, y=0.0), "injection": Point(x=440.0, y=0.0)}
 
-    with mock.patch("logarc.report.html.layout_graph", return_value=positions):
+    with mock.patch("logarx.report.html.layout_graph", return_value=positions):
         svg = _svg(graph)
 
     # Control points, not endpoints: reversing an edge already swaps the ends,
@@ -276,8 +276,8 @@ def test_every_outcome_has_words_to_print_it_in() -> None:
     leaves the building. The same table also fills the report's key, so an
     unlisted outcome would be drawn on the graph and absent from the legend
     explaining it."""
-    from logarc.core.activity import Outcome
-    from logarc.report.html import _OUTCOME_NOTE
+    from logarx.core.activity import Outcome
+    from logarx.report.html import _OUTCOME_NOTE
 
     assert set(_OUTCOME_NOTE) == set(Outcome)
 
@@ -294,9 +294,9 @@ def test_an_arrow_is_labelled_the_same_on_paper_as_on_screen(tmp_path: Path) -> 
     Asserted against the rendered document rather than against a helper, so it
     keeps holding however the report chooses to produce the text.
     """
-    from logarc.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
-    from logarc.report.html import _svg
-    from logarc.style import edge_label
+    from logarx.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
+    from logarx.report.html import _svg
+    from logarx.style import edge_label
 
     def node(node_id: str) -> GraphNode:
         return GraphNode(
@@ -331,7 +331,7 @@ def test_an_arrow_is_labelled_the_same_on_paper_as_on_screen(tmp_path: Path) -> 
     )
     positions = {name: Point(x=index * 400.0, y=0.0) for index, name in enumerate(names)}
 
-    with mock.patch("logarc.report.html.layout_graph", return_value=positions):
+    with mock.patch("logarx.report.html.layout_graph", return_value=positions):
         svg = _svg(graph)
 
     drawn = re.findall(r'class="edge-label"[^>]*>([^<]+)</text>', svg)
@@ -347,8 +347,8 @@ def test_the_report_writes_how_often_a_transition_was_seen(campaign: Case) -> No
     line thickness, which a reader cannot turn back into a number. A report is
     read by someone who never opened the application, so it is the copy that
     most needs the arrow to say what it means."""
-    from logarc.core.graph import GraphEdge, GraphKind
-    from logarc.report.html import _edge_label
+    from logarx.core.graph import GraphEdge, GraphKind
+    from logarx.report.html import _edge_label
 
     assert "x2" in _edge_label(GraphKind.BEHAVIOUR, GraphEdge("a", "b", weight=2, gap_seconds=9.0))
     assert "x" not in _edge_label(GraphKind.BEHAVIOUR, GraphEdge("a", "b", weight=1, gap_seconds=9))
@@ -359,7 +359,7 @@ def test_the_report_paints_a_finding_the_colour_the_window_paints_it(campaign: C
     """Screen and paper must agree about what a severity looks like.
 
     The two renderers are deliberately separate — ADR-0006 keeps a browser
-    engine out of the application — but `logarc.style` says on its own face
+    engine out of the application — but `logarx.style` says on its own face
     that its judgements are "reused by the HTML report", and the report had
     quietly grown a second table. Every colour in it differed, so a critical
     finding was one red on screen and another in the file handed to someone who

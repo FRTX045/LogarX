@@ -56,13 +56,13 @@ jobs:
       # mistakes and invents fake ones about subclassing Any.
       - run: pip install -e ".[dev,gui]"
       - name: Type check
-        run: mypy src/logarc
+        run: mypy src/logarx
       # Not redundant. mypy analyses for the platform it runs on, so a branch
       # guarded by `sys.platform == "win32"` is skipped here and checked there.
       # Checking one platform passes code the other rejects — which is exactly
       # how the Windows-only memory probe reached main broken.
       - name: Type check as Windows
-        run: mypy --platform win32 src/logarc
+        run: mypy --platform win32 src/logarx
 
   test:
     runs-on: ${{ matrix.os }}
@@ -105,7 +105,7 @@ jobs:
             https://github.com/coreruleset/coreruleset.git vendor/coreruleset
           git -C vendor/coreruleset checkout --detach "$CRS_COMMIT"
 
-      # `logarc` looks for crs-sidecar.exe on Windows and crs-sidecar elsewhere,
+      # `logarx` looks for crs-sidecar.exe on Windows and crs-sidecar elsewhere,
       # because a Windows interpreter cannot spawn an ELF. Built on both runners
       # rather than Linux only: this project ships a Windows desktop application,
       # so Windows is where the binary most needs to be known to work.
@@ -150,10 +150,10 @@ jobs:
         env:
           # Turns the contract tests' skip into a failure. Without it a build
           # step that broke would land us back where we started, silently.
-          LOGARC_REQUIRE_CRS: "1"
+          LOGARX_REQUIRE_CRS: "1"
         run: >
           pytest --ignore=tests/gui
-          --cov=logarc --cov-report=term-missing --cov-report=xml
+          --cov=logarx --cov-report=term-missing --cov-report=xml
           --cov-fail-under=0
 
       # No retry. Until 2026-10-17 this step ran the window's tests a second
@@ -168,8 +168,8 @@ jobs:
       - name: Test the window
         env:
           QT_QPA_PLATFORM: offscreen
-          LOGARC_REQUIRE_CRS: "1"
-        run: pytest tests/gui --cov=logarc --cov-append --cov-report=term-missing --cov-report=xml
+          LOGARX_REQUIRE_CRS: "1"
+        run: pytest tests/gui --cov=logarx --cov-append --cov-report=term-missing --cov-report=xml
 
       # Coverage was measured on every run and then thrown away: `coverage.xml`
       # was written and nothing ever read it, so the only way to learn the

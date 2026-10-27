@@ -13,14 +13,14 @@ from PyQt6.QtGui import QResizeEvent
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QMainWindow
 
-from logarc.gui import window_controls
-from logarc.gui.window_controls import WindowControls
+from logarx.gui import window_controls
+from logarx.gui.window_controls import WindowControls
 
 
 @pytest.fixture
 def frame(qt_app: QApplication) -> Iterator[tuple[QMainWindow, WindowControls]]:
     window = QMainWindow()
-    window.setWindowTitle("logarc")
+    window.setWindowTitle("LogarX")
     window.resize(900, 500)
     window.menuBar().addMenu("Case").addAction("Open case…")
     controls = WindowControls(window)

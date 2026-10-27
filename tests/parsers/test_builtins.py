@@ -1,4 +1,4 @@
-"""Every format logarc ships with, against a real line of the log it is named for.
+"""Every format LogarX ships with, against a real line of the log it is named for.
 
 A built-in that does not read the logs it is named for is worse than an absent
 one. Absent, the reader writes their own and finds out in the editor; wrong,
@@ -19,13 +19,13 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from logarc.core.event import NormalizedEvent
-from logarc.core.evidence import EvidenceRef
-from logarc.parsers.builtins import BUILT_INS
-from logarc.parsers.registry import available_formats, detect_format, get_spec
+from logarx.core.event import NormalizedEvent
+from logarx.core.evidence import EvidenceRef
+from logarx.parsers.builtins import BUILT_INS
+from logarx.parsers.registry import available_formats, detect_format, get_spec
 
 if TYPE_CHECKING:
-    from logarc.parsers.base import LogParser
+    from logarx.parsers.base import LogParser
 
 REF = EvidenceRef(source_file_id="f", line_no=1)
 

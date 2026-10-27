@@ -18,9 +18,9 @@ from PyQt6.QtCore import QByteArray
 from PyQt6.QtWidgets import QApplication, QMessageBox
 from test_window import _laid_out
 
-from logarc.gui import app
-from logarc.gui._qt import required
-from logarc.gui.app import OPENING_PANELS, MainWindow
+from logarx.gui import app
+from logarx.gui._qt import required
+from logarx.gui.app import OPENING_PANELS, MainWindow
 
 DRAGGED = [300, 700, 400]
 
@@ -168,7 +168,7 @@ def test_reset_asks_and_cancel_is_the_default(
 
     assert said == [
         (
-            "Put the panels back to the sizes logarc opens with?",
+            "Put the panels back to the sizes LogarX opens with?",
             "The widths you dragged are forgotten. The window keeps its own size.",
             QMessageBox.StandardButton.Cancel,
         )

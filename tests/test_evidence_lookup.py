@@ -13,10 +13,10 @@ from pathlib import Path
 
 import pytest
 
-from logarc.case import Case
-from logarc.core.evidence import EvidenceRef
-from logarc.parsers.registry import register_spec, unregister_format
-from logarc.parsers.spec import LogFormatSpec
+from logarx.case import Case
+from logarx.core.evidence import EvidenceRef
+from logarx.parsers.registry import register_spec, unregister_format
+from logarx.parsers.spec import LogFormatSpec
 
 LINES = [
     '203.0.113.5 - - [10/Oct/2020:13:55:36 +0000] "GET / HTTP/1.1" 200 2326 "-" "curl/8.0"',
@@ -93,7 +93,7 @@ def test_a_source_that_changed_since_ingest_is_flagged(case: Case, tmp_path: Pat
 def test_a_line_that_could_not_be_checked_still_carries_a_warning() -> None:
     """Unverified with no account of why is still unverified. Whatever writes
     the line out has something to say beside it."""
-    from logarc.evidence import EvidenceLine
+    from logarx.evidence import EvidenceLine
 
     line = EvidenceLine(ref=EvidenceRef("access.log", 1), source_path="a.log", text="x")
 

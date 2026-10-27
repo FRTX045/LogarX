@@ -1,4 +1,4 @@
-# What logarc detects
+# What LogarX detects
 
 Eight hostile categories and five kinds of ordinary use, because **a graph of
 attacks alone loses the thread between them** — it cannot tell a scanner that
@@ -26,7 +26,7 @@ Adding a detection needs no Python — the rules are YAML. See
 ## About OWASP Top 10 coverage
 
 Bundled rules use [OWASP Top 10:2025](https://top10.owasp.org/2025/).
-OWASP classifies vulnerability risks; logarc classifies behaviour visible in
+OWASP classifies vulnerability risks; LogarX classifies behaviour visible in
 access logs and attaches an optional OWASP annotation. These six categories
 are represented, but representation does not mean complete detection coverage:
 

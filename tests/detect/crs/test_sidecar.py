@@ -18,10 +18,10 @@ from pathlib import Path
 import pytest
 from fake_sidecar import FakeCrs
 
-import logarc.detect.crs.sidecar as sidecar_module
-from logarc.core.event import NormalizedEvent
-from logarc.core.evidence import EvidenceRef
-from logarc.detect.crs.sidecar import (
+import logarx.detect.crs.sidecar as sidecar_module
+from logarx.core.event import NormalizedEvent
+from logarx.core.evidence import EvidenceRef
+from logarx.detect.crs.sidecar import (
     AUTO_ENV,
     BINARY_ENV,
     CrsDetection,
@@ -34,7 +34,7 @@ from logarc.detect.crs.sidecar import (
     run_sidecar,
     runs_by_default,
 )
-from logarc.detect.crs.store import (
+from logarx.detect.crs.store import (
     CRS_FILE,
     CrsEvidence,
     is_enriched,
@@ -141,7 +141,7 @@ def test_the_packaged_application_is_not_told_to_run_go_build(
     The packaged Windows build ships the sidecar inside it, and its user has no
     Go toolchain and no `crs/` directory to build in. If the sidecar is missing
     from a bundle, that copy of the application is damaged, so the message says
-    so and points at reinstalling. It still must not read as "logarc is broken":
+    so and points at reinstalling. It still must not read as "LogarX is broken":
     everything else works without CRS.
     """
     monkeypatch.setattr(sys, "frozen", True, raising=False)
@@ -181,7 +181,7 @@ def test_a_source_checkout_still_finds_the_repository_copy(
     config = SidecarConfig()
 
     assert config.binary.parent.name == "crs"
-    assert (config.binary.parent.parent / "src" / "logarc").is_dir()
+    assert (config.binary.parent.parent / "src" / "logarx").is_dir()
     assert config.rules.parts[-2:] == ("vendor", "coreruleset")
 
 
@@ -210,7 +210,7 @@ def test_a_source_checkout_missing_crs_is_pointed_at_setup_crs(
     with pytest.raises(CrsUnavailableError) as raised:
         config.check()
 
-    assert "logarc-dev setup-crs" in str(raised.value)
+    assert "logarx-dev setup-crs" in str(raised.value)
 
 
 def test_the_binary_name_follows_the_interpreter_not_the_build_host() -> None:
@@ -465,7 +465,7 @@ def test_a_case_is_streamed_rather_than_gathered_before_the_first_call(
     started late saw the next batch's first event already pulled.
     """
     batch = 50
-    monkeypatch.setattr("logarc.detect.crs.sidecar._BATCH", batch)
+    monkeypatch.setattr("logarx.detect.crs.sidecar._BATCH", batch)
     pulled = 0
     pulled_at_first_call: list[int] = []
     records_sent: list[int] = []
@@ -581,7 +581,7 @@ def test_crs_runs_on_a_new_case_unless_somebody_says_otherwise(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """On by default, in the window and on the command line alike. The switch
-    is only consulted for the run nobody asked for: `logarc-dev enrich` and the
+    is only consulted for the run nobody asked for: `logarx-dev enrich` and the
     window's own menu item still run CRS when they are told to."""
     monkeypatch.delenv(AUTO_ENV, raising=False)
 

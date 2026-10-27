@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "logarc"
+name = "logarx"
 version = "0.3.0.dev0"
 description = "Forensic reconstruction of per-IP web activity from server access logs, rendered as an activity graph"
 readme = "README.md"
@@ -46,19 +46,19 @@ dev = [
 ]
 
 [project.scripts]
-logarc-dev = "logarc.devtools.main:app"
+logarx-dev = "logarx.devtools.main:app"
 
 # Installed by the `gui` extra. Kept as a separate entry point so the CLI never
 # imports Qt: a headless server should be able to ingest a log without a
 # windowing toolkit on it.
 [project.gui-scripts]
-logarc-gui = "logarc.gui.app:main"
+logarx-gui = "logarx.gui.app:main"
 
 [project.urls]
-Repository = "https://github.com/FRTX045/logarc"
+Repository = "https://github.com/FRTX045/LogarX"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/logarc"]
+packages = ["src/logarx"]
 
 # ---------------------------------------------------------------------------
 # Lint / format
@@ -93,7 +93,7 @@ ignore = [
 # These two deliberately contain lookalike characters. Detecting them is the
 # point of the code, and describing them is the point of the docstring, so the
 # confusable-character warnings are exactly backwards here.
-"src/logarc/normalize/decode.py" = ["RUF002"]
+"src/logarx/normalize/decode.py" = ["RUF002"]
 "tests/normalize/test_decode.py" = ["RUF001"]
 
 # ---------------------------------------------------------------------------
@@ -115,12 +115,12 @@ show_error_codes = true
 # because it looks like a result.
 [[tool.mypy.overrides]]
 module = [
-    "logarc.core.*",
-    "logarc.detect.*",
-    "logarc.episode.*",
-    "logarc.evaluation.*",
-    "logarc.triage.*",
-    "logarc.sessionize.*",
+    "logarx.core.*",
+    "logarx.detect.*",
+    "logarx.episode.*",
+    "logarx.evaluation.*",
+    "logarx.triage.*",
+    "logarx.sessionize.*",
 ]
 strict = true
 
@@ -156,7 +156,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["src/logarc"]
+source = ["src/logarx"]
 branch = true
 # Follow the ingest workers into their own processes.
 #
@@ -202,7 +202,7 @@ sigterm = true
 # gestures through real widgets, so most of what these modules do is reachable
 # without a screen after all.
 omit = [
-    "src/logarc/evaluation/bench_worker.py",
+    "src/logarx/evaluation/bench_worker.py",
 ]
 
 # What the GUI numbers do not say, so that nobody reads them as saying it.

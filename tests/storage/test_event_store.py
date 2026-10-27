@@ -8,10 +8,10 @@ from pathlib import Path
 
 import pytest
 
-from logarc.core.event import NormalizedEvent
-from logarc.core.evidence import EvidenceRef
-from logarc.core.window import EVERYTHING, TimeWindow
-from logarc.storage.event_store import ParquetEventStore, StoreStateError
+from logarx.core.event import NormalizedEvent
+from logarx.core.evidence import EvidenceRef
+from logarx.core.window import EVERYTHING, TimeWindow
+from logarx.storage.event_store import ParquetEventStore, StoreStateError
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 

@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from logarc.case import Case
-from logarc.evaluation.truth import GroundTruth, read_truth
+from logarx.case import Case
+from logarx.evaluation.truth import GroundTruth, read_truth
 
 # Evaluation tests reuse the profile helpers in tests/triage.
 sys.path.insert(0, str(Path(__file__).parent.parent / "triage"))

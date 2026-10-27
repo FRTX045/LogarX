@@ -14,11 +14,11 @@ import pytest
 from PyQt6.QtWidgets import QApplication
 
 from conftest import settled
-from logarc.gui import app as app_module
-from logarc.gui.app import MainWindow
-from logarc.parsers.library import save_library
-from logarc.parsers.registry import register_saved_formats
-from logarc.parsers.spec import LogFormatSpec
+from logarx.gui import app as app_module
+from logarx.gui.app import MainWindow
+from logarx.parsers.library import save_library
+from logarx.parsers.registry import register_saved_formats
+from logarx.parsers.spec import LogFormatSpec
 
 #: Pipe-separated: detection cannot read it, so a case with events in it is
 #: proof the chosen format was the one used.

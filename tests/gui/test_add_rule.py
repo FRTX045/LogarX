@@ -20,22 +20,22 @@ from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QPushButton
 
 from conftest import fired, settled
-from logarc import rules_library
-from logarc.case import Case
-from logarc.core.activity import ActivityCategory, Severity
-from logarc.core.event import NormalizedEvent
-from logarc.core.evidence import EvidenceRef
-from logarc.detect.engine import RuleEngine
-from logarc.detect.rules import load_pack_text
-from logarc.detect.ruleset import built_in_packs
-from logarc.evidence import EvidenceLine
-from logarc.gui import add_rule as add_rule_module
-from logarc.gui.add_rule import AddRuleDialog
-from logarc.gui.icon_set import icons_dir
-from logarc.gui.icons import first_drawable
-from logarc.rule_draft import Condition, Test, rule_block
-from logarc.rule_finds import Find, FindsProgress
-from logarc.style import THEME
+from logarx import rules_library
+from logarx.case import Case
+from logarx.core.activity import ActivityCategory, Severity
+from logarx.core.event import NormalizedEvent
+from logarx.core.evidence import EvidenceRef
+from logarx.detect.engine import RuleEngine
+from logarx.detect.rules import load_pack_text
+from logarx.detect.ruleset import built_in_packs
+from logarx.evidence import EvidenceLine
+from logarx.gui import add_rule as add_rule_module
+from logarx.gui.add_rule import AddRuleDialog
+from logarx.gui.icon_set import icons_dir
+from logarx.gui.icons import first_drawable
+from logarx.rule_draft import Condition, Test, rule_block
+from logarx.rule_finds import Find, FindsProgress
+from logarx.style import THEME
 
 SHOPFRONT_LOG = Path(__file__).parents[1] / "data" / "apache-shopfront" / "excerpt.log"
 BUILT_IN = built_in_packs()

@@ -19,12 +19,12 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from PyQt6.QtWidgets import QApplication
 
-from logarc.gui.format_editor import FormatChoice, FormatEditor
-from logarc.parsers.apache import COMBINED
-from logarc.parsers.fieldnames import MAPPABLE
-from logarc.parsers.library import FormatLibraryError, library_path, load_library, save_library
-from logarc.parsers.registry import register_format, register_saved_formats, unregister_format
-from logarc.parsers.spec import (
+from logarx.gui.format_editor import FormatChoice, FormatEditor
+from logarx.parsers.apache import COMBINED
+from logarx.parsers.fieldnames import MAPPABLE
+from logarx.parsers.library import FormatLibraryError, library_path, load_library, save_library
+from logarx.parsers.registry import register_format, register_saved_formats, unregister_format
+from logarx.parsers.spec import (
     ColumnsFormatSpec,
     JsonFormatSpec,
     LogFormatSpec,
@@ -286,7 +286,7 @@ def test_the_dialog_opens_on_something_rather_than_a_blank_right_hand_side(
 def test_the_two_kinds_of_format_are_kept_apart_in_the_list(
     qt_app: QApplication, saved_office: LogFormatSpec
 ) -> None:
-    """One ships with logarc and cannot be edited, the other is the reader's
+    """One ships with LogarX and cannot be edited, the other is the reader's
     and can. Told apart only by what happens when you click them, the reader
     finds that out by being refused."""
     editor = FormatEditor()
@@ -448,7 +448,7 @@ def test_a_library_that_will_not_take_a_write_is_reported_not_raised(
 ) -> None:
     """A read-only config directory, a full disk. The screen has to say so
     where the reader is looking, not raise into the crash handler."""
-    from logarc.gui import format_editor as module
+    from logarx.gui import format_editor as module
 
     def refuse(*_args: object, **_kwargs: object) -> None:
         raise FormatLibraryError("the library could not be written")
@@ -469,7 +469,7 @@ def test_the_manage_button_reopens_the_chooser_on_what_was_written(
 ) -> None:
     """The chooser offers formats; the editor writes them. A format written
     without leaving the ingest flow has to be choosable in the list behind."""
-    from logarc.gui import formats_and_rules
+    from logarx.gui import formats_and_rules
 
     def write_one(self: formats_and_rules.FormatsAndRules) -> int:
         save_library([LogFormatSpec(name="log-kantor", directive=PIPED)])
@@ -586,7 +586,7 @@ def test_a_saved_json_format_fills_the_mapping(
     assert editor._note.text() == "the API gateway"
 
 
-def test_the_mapping_offers_a_row_for_every_field_logarc_records(
+def test_the_mapping_offers_a_row_for_every_field_logarx_records(
     qt_app: QApplication,
 ) -> None:
     """Fixed rows rather than an add-a-row list: which fields can be mapped is
@@ -1049,7 +1049,7 @@ def test_manage_formats_opens_the_formats_and_rules_dialog(
 ) -> None:
     """The ingest flow's way to the formats is the same dialog as the Case
     menu's, on its formats tab."""
-    from logarc.gui import formats_and_rules
+    from logarx.gui import formats_and_rules
 
     opened_on: list[str] = []
 

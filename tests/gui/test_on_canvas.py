@@ -21,10 +21,10 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 from on_canvas import edge_between, node_item, node_items
 from PyQt6.QtWidgets import QApplication
 
-from logarc.core.activity import ActivityCategory, Outcome, Severity
-from logarc.core.evidence import EvidenceRef
-from logarc.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
-from logarc.gui.canvas import ActivityCanvas
+from logarx.core.activity import ActivityCategory, Outcome, Severity
+from logarx.core.evidence import EvidenceRef
+from logarx.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
+from logarx.gui.canvas import ActivityCanvas
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 

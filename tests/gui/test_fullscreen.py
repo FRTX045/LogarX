@@ -29,11 +29,11 @@ from PyQt6.QtGui import QKeyEvent
 from PyQt6.QtWidgets import QApplication
 
 from colours import contrast
-from logarc.core.activity import ActivityCategory, Outcome, Severity
-from logarc.core.evidence import EvidenceRef
-from logarc.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
-from logarc.gui.app import MainWindow
-from logarc.gui.canvas import (
+from logarx.core.activity import ActivityCategory, Outcome, Severity
+from logarx.core.evidence import EvidenceRef
+from logarx.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
+from logarx.gui.app import MainWindow
+from logarx.gui.canvas import (
     _EXPAND_ICON,
     _EXPAND_SIDE,
     MIN_FIT_SCALE,
@@ -210,7 +210,7 @@ def test_the_button_can_be_seen_against_the_paper_it_sits_on() -> None:
     in the code said so: the ground it was reasoned about was never the ground
     behind it.
     """
-    from logarc.gui import canvas as canvas_module
+    from logarx.gui import canvas as canvas_module
 
     assert contrast(canvas_module._EXPAND_EDGE, PAPER) >= 3.0, (
         "the edge of a control has to carry 3:1 against what is behind it"
@@ -235,7 +235,7 @@ def test_the_button_draws_its_own_mark(qt_app: QApplication) -> None:
 def test_the_mark_is_drawn_in_the_ink_it_was_measured_with(qt_app: QApplication) -> None:
     """Measuring `_EXPAND_INK` proves nothing if the pen reaches for something
     else. Only fully covered pixels are read — the rest are antialiasing."""
-    from logarc.gui import canvas as canvas_module
+    from logarx.gui import canvas as canvas_module
 
     image = canvas_module._expand_mark(canvas_module._EXPAND_INK).toImage()
     opaque = {
@@ -579,7 +579,7 @@ def test_restore_unmaps_only_the_unsafe_wsl_wayland_transition(
     wsl: bool,
     maximized: bool,
 ) -> None:
-    from logarc.gui import full_screen
+    from logarx.gui import full_screen
 
     monkeypatch.setattr(full_screen, "is_wsl", lambda: wsl)
     monkeypatch.setattr(full_screen.QGuiApplication, "platformName", lambda: backend)

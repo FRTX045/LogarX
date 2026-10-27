@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from logarc.ingest.quarantine import DIRECTORY_NAME, FILE_NAME, Quarantine
+from logarx.ingest.quarantine import DIRECTORY_NAME, FILE_NAME, Quarantine
 
 
 def test_nothing_is_written_when_no_lines_are_quarantined(tmp_path: Path) -> None:

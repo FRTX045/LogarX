@@ -16,9 +16,9 @@ from __future__ import annotations
 
 import pytest
 
-from logarc.core.evidence import EvidenceRef
-from logarc.parsers.columns import ColumnsFormatError
-from logarc.parsers.spec import ColumnsFormatSpec
+from logarx.core.evidence import EvidenceRef
+from logarx.parsers.columns import ColumnsFormatError
+from logarx.parsers.spec import ColumnsFormatSpec
 
 REF = EvidenceRef(source_file_id="f", line_no=1)
 
@@ -295,7 +295,7 @@ def test_a_field_that_is_not_in_the_schema_is_refused_by_name() -> None:
 def test_a_columns_format_survives_the_round_trip_through_json() -> None:
     import json
 
-    from logarc.parsers.spec import spec_from_dict, spec_to_dict
+    from logarx.parsers.spec import spec_from_dict, spec_to_dict
 
     spec = resolved(W3C, IIS)
 
@@ -573,7 +573,7 @@ def test_the_escapes_travel_with_the_definition() -> None:
 
 
 def test_a_definition_without_escapes_writes_no_key_for_them() -> None:
-    """An older logarc refuses a key it does not know."""
+    """An older LogarX refuses a key it does not know."""
     assert "escapes" not in _cloudfront("").to_payload()
 
 

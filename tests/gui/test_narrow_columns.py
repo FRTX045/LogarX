@@ -31,15 +31,15 @@ from PyQt6.QtWidgets import (
 )
 from tables import column_of
 
-from logarc.core.activity import ActivityCategory, Outcome, Severity
-from logarc.core.event import NormalizedEvent
-from logarc.core.evidence import EvidenceRef
-from logarc.core.graph import GraphNode
-from logarc.evidence import EvidenceLine
-from logarc.gui.columns import SHORT_TEXT, ColumnWidths, ShortWhenNarrow
-from logarc.gui.evidence_panel import EvidencePanel
-from logarc.gui.panels import ClientTable
-from logarc.storage.base import IpSummary
+from logarx.core.activity import ActivityCategory, Outcome, Severity
+from logarx.core.event import NormalizedEvent
+from logarx.core.evidence import EvidenceRef
+from logarx.core.graph import GraphNode
+from logarx.evidence import EvidenceLine
+from logarx.gui.columns import SHORT_TEXT, ColumnWidths, ShortWhenNarrow
+from logarx.gui.evidence_panel import EvidencePanel
+from logarx.gui.panels import ClientTable
+from logarx.storage.base import IpSummary
 
 START = datetime(2026, 3, 10, 19, 12, 18, tzinfo=UTC)
 

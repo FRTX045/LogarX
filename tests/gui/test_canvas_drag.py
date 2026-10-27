@@ -26,11 +26,11 @@ from PyQt6.QtCore import QEvent, QPoint, QPointF, QRectF, Qt
 from PyQt6.QtGui import QColor, QPainterPath
 from PyQt6.QtWidgets import QApplication
 
-from logarc.core.activity import ActivityCategory, Outcome, Severity
-from logarc.core.evidence import EvidenceRef
-from logarc.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
-from logarc.gui.canvas import _EDGE_COLOUR, ActivityCanvas, _edge_shape, _EdgeArt
-from logarc.style import SELECTION_COLOUR
+from logarx.core.activity import ActivityCategory, Outcome, Severity
+from logarx.core.evidence import EvidenceRef
+from logarx.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
+from logarx.gui.canvas import _EDGE_COLOUR, ActivityCanvas, _edge_shape, _EdgeArt
+from logarx.style import SELECTION_COLOUR
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 

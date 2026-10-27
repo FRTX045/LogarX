@@ -22,10 +22,10 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QApplication, QDialog, QMenu
 
-from logarc.gui import prefs
-from logarc.gui.app import MainWindow
-from logarc.gui.density import Density
-from logarc.gui.preferences import PreferencesDialog
+from logarx.gui import prefs
+from logarx.gui.app import MainWindow
+from logarx.gui.density import Density
+from logarx.gui.preferences import PreferencesDialog
 
 
 def _menu(window: MainWindow, name: str) -> QMenu:
@@ -180,7 +180,7 @@ def test_export_names_the_file_each_entry_writes(qt_app: QApplication) -> None:
 def test_there_is_a_help_menu(qt_app: QApplication) -> None:
     window = MainWindow()
 
-    assert _entries(_menu(window, "Help")) == ["User guide", "Keyboard shortcuts", "About logarc"]
+    assert _entries(_menu(window, "Help")) == ["User guide", "Keyboard shortcuts", "About LogarX"]
     window.close()
 
 

@@ -1,13 +1,13 @@
-"""`logarc-dev setup-crs`: the command line's half of `logarc.detect.crs.setup`."""
+"""`logarx-dev setup-crs`: the command line's half of `logarx.detect.crs.setup`."""
 
 from __future__ import annotations
 
 import pytest
 from typer.testing import CliRunner
 
-from logarc.detect.crs.setup import SetupError
-from logarc.devtools import main as cli_main
-from logarc.devtools.main import app
+from logarx.detect.crs.setup import SetupError
+from logarx.devtools import main as cli_main
+from logarx.devtools.main import app
 
 runner = CliRunner()
 

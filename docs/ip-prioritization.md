@@ -204,7 +204,7 @@ Limits of what is known:
 
 ## Storage and execution
 
-`logarc.triage` has no Qt dependency. Profiling shares session boundaries and
+`logarx.triage` has no Qt dependency. Profiling shares session boundaries and
 request labels with reconstruction, without constructing every client's graphs.
 A grouped store iterator reads clients chronologically in partition order. A
 spawned process owns the scan; the GUI thread handles neither detection nor
@@ -232,7 +232,7 @@ The `evaluation` dependency extra adds scikit-learn for the evaluation harness.
 The desktop application uses deterministic statistics and does not import the
 model. No new CLI command or public model control is added.
 
-`logarc.evaluation.triage.isolation_order` compares Isolation Forest against
+`logarx.evaluation.triage.isolation_order` compares Isolation Forest against
 the statistical queue using clients with at least 20 requests and a population
 of at least 100. It excludes IP identities, detection labels, and ground truth.
 It records feature order, median imputation, missingness indicators, logarithmic

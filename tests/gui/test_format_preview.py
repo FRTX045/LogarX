@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import json
 
-from logarc.gui.format_preview import preview, preview_columns, preview_mapping
-from logarc.parsers.apache import COMBINED
+from logarx.gui.format_preview import preview, preview_columns, preview_mapping
+from logarx.parsers.apache import COMBINED
 
 COMBINED_LINE = (
     '203.0.113.45 - - [10/Oct/2000:13:55:36 +0000] "GET /a?b=c HTTP/1.1" 200 2326 "-" "curl/8.0"'

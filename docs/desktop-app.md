@@ -1,10 +1,10 @@
 # The desktop application
 
 ```bash
-logarc-gui
+logarx-gui
 ```
 
-Everything here drives the `logarc.case` and `logarc.analysis` functions, the
+Everything here drives the `logarx.case` and `logarx.analysis` functions, the
 same ones the developer tools measure. The window contains no analysis of its
 own — what it adds is a way to read a reconstruction, click a node, and see the
 log lines behind it.
@@ -17,7 +17,7 @@ for a moment. The size is saved on this machine and used at the next start.
 Tables, column headings, captions, monospace IP text and the evidence panel all
 follow it, each keeping its step above or below the body text.
 
-The size logarc starts with, and Reset zoom returns to, fits the available
+The size LogarX starts with, and Reset zoom returns to, fits the available
 desktop workspace after system display scaling: 12 pt for a typical
 1920×1080 workspace, 11 pt for short or more heavily scaled workspaces, and
 14 pt for larger workspaces such as 2560×1440 at 100% scaling. A larger system
@@ -73,7 +73,7 @@ does not force that backend. Explicit `QT_QPA_PLATFORM` settings remain respecte
 
 The WSL launcher requests a 32 px cursor. This default applies to this application
 and respects existing environment settings. For a larger cursor, launch with
-`XCURSOR_SIZE=48 logarc-gui`.
+`XCURSOR_SIZE=48 logarx-gui`.
 
 ---
 
@@ -85,7 +85,7 @@ and respects existing environment settings. For a larger cursor, launch with
 | **Edit** | Undo move (Ctrl+Z) · Save layout (Ctrl+S) · Reset layout (Ctrl+Shift+R) · Bookmark… (Ctrl+D) · Preferences… (Ctrl+,) |
 | **View** | Trace · Behaviour · Timeline · Fit to window · Zoom in (Ctrl++) · Zoom out (Ctrl+-) · Reset zoom (Ctrl+0) · Reset panel sizes · Full screen (F11) |
 | **Export** | Report (HTML)… · Graph (JSON)… · Image (PNG)… · Bookmarks (CSV)… |
-| **Help** | User guide (F1) · Keyboard shortcuts · About logarc |
+| **Help** | User guide (F1) · Keyboard shortcuts · About LogarX |
 
 `Edit` rather than `View` for the layout entries, because Ctrl+Z is the
 first thing anyone looks for there. **Help → Keyboard shortcuts** lists every
@@ -121,7 +121,7 @@ id that every exported report prints.
 
 **That list is kept on the machine you are working at.** It records which cases
 were opened here — their folders, when, and how much was in them — under
-`HKCU\Software\logarc` on Windows, beside the view preferences. That is a record
+`HKCU\Software\logarx` on Windows, beside the view preferences. That is a record
 of what was investigated, not merely of how the window looked, so it has to be
 removable: **Ctrl+A** then **Remove from list** takes every entry, and an emptied
 list removes the registry key rather than storing an empty one in it.
@@ -223,15 +223,15 @@ inside it longer than 30 minutes, the same user agent throughout, and 8 hours
 at most.
 
 To give a session a name of your own, right-click anywhere inside its box and
-choose **Rename session…**, or double-click its heading. **Use logarc's name**
-in that window puts logarc's name back. A name you gave carries a pencil, and
-the heading's tip begins with logarc's own name, so nobody takes your words for
+choose **Rename session…**, or double-click its heading. **Use LogarX's name**
+in that window puts LogarX's name back. A name you gave carries a pencil, and
+the heading's tip begins with LogarX's own name, so nobody takes your words for
 something the log says. Names are kept in `session-names.json` in the case
 folder, beside your bookmarks and outside the manifest, so they come back when
 the case is opened again, on any machine the folder is copied to. A name
 belongs to the session that holds the log line it was given at, the first line
 of that session as it stood: a time filter that cuts that line off shows
-logarc's name until the filter is cleared, and a name given while a filter was
+LogarX's name until the filter is cleared, and a name given while a filter was
 on stays with the whole visit once it is cleared.
 
 A box follows its activities when they are dragged. The *Outline each session*
@@ -259,7 +259,7 @@ lines name the activity and its kind.
 
 There are fourteen kinds, every rule names one of them, and each has its icon,
 so no activity is drawn without one. The icons are
-[Lucide](https://lucide.dev)'s, all 1,533 of them shipped with logarc.
+[Lucide](https://lucide.dev)'s, all 1,533 of them shipped with LogarX.
 
 ![Preferences, Graph tab: an icon for each kind](images/screenshot-icons.png)
 
@@ -417,7 +417,7 @@ evidence beside each other, the evidence table over its details, and the queue
 over its reasons in **Where to start** — and the window keeps its size and
 place, from one start to the next. A window closed in full screen opens as it
 was before full screen. **View → Reset panel sizes** puts the panels back to
-the sizes logarc opens with, after asking; Cancel is the default, and the
+the sizes LogarX opens with, after asking; Cancel is the default, and the
 window keeps its own size.
 
 **A saved layout is a record of what you were reading.** It is filed under
@@ -492,13 +492,13 @@ a JSON log or a table, **Guess fields** fills the mapping from the sample line.
 
 The second tab of **Case → Formats and rules…** holds the rules that say what a
 line *means*. The first tab decides whether a line can be read at all. On the
-left are yours, under **CUSTOM**, and then the 13 packs that ship with logarc,
+left are yours, under **CUSTOM**, and then the 13 packs that ship with LogarX,
 under **BUILT-IN**, named by file (actions, access, files, injection, recon,
 ssrf, java, nodejs, perl, php, python, shell, windows).
 
 **Your packs** are YAML, in the format [writing-rules.md](writing-rules.md)
 describes. They live in your settings, beside your saved formats
-(`%APPDATA%\logarc\rules\`, one `<name>.yaml` each, or under `LOGARC_HOME` when
+(`%APPDATA%\logarx\rules\`, one `<name>.yaml` each, or under `LOGARX_HOME` when
 that is set), so every case you open is read with them. **New**, under the
 list, starts from an empty pack with a commented example. **Import…** copies a
 pack in under its file name: `My Rules.yaml` becomes `My-Rules`. A name holds
@@ -622,5 +622,5 @@ The window is verified by hand against
 one whose evidence appeared is a judgement about what a person sees.
 
 The decisions that determine whether a graph *misinforms* are kept out of Qt, in
-`logarc.style`, and tested directly. A finding is the same colour in the window
+`logarx.style`, and tested directly. A finding is the same colour in the window
 and in the exported report because both read the same table.

@@ -10,10 +10,10 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from logarc.formats import drifted_sources
-from logarc.parsers.apache import COMBINED, COMMON
-from logarc.parsers.spec import LogFormatSpec, spec_to_dict
-from logarc.storage.case import SourceRecord
+from logarx.formats import drifted_sources
+from logarx.parsers.apache import COMBINED, COMMON
+from logarx.parsers.spec import LogFormatSpec, spec_to_dict
+from logarx.storage.case import SourceRecord
 
 JANUARY = LogFormatSpec(name="log-kantor", directive=COMMON)
 JUNE = LogFormatSpec(name="log-kantor", directive=COMBINED)
@@ -59,8 +59,8 @@ def test_a_source_with_no_stored_definition_is_not_reported() -> None:
     assert drifted_sources([older], library=[JUNE]) == []
 
 
-def test_a_stored_definition_this_logarc_cannot_read_is_not_reported() -> None:
-    """Written by a newer logarc. Nothing can be said about whether it drifted,
+def test_a_stored_definition_this_logarx_cannot_read_is_not_reported() -> None:
+    """Written by a newer LogarX. Nothing can be said about whether it drifted,
     and the evidence path already handles the line itself."""
     from_the_future = replace(SOURCE, format_spec={"version": 99, "kind": "logformat"})
 
@@ -78,7 +78,7 @@ def test_every_drifted_source_is_reported_not_only_the_first() -> None:
 def test_the_saved_library_is_read_when_none_is_given() -> None:
     """How the GUI and the CLI actually call it: they hold the manifest, and
     the library is whatever the user has saved right now."""
-    from logarc.parsers.library import save_library
+    from logarx.parsers.library import save_library
 
     save_library([JUNE])
 

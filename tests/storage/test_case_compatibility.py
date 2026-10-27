@@ -7,10 +7,10 @@ import duckdb
 import pyarrow.parquet as pq
 import pytest
 
-from logarc.core.event import NormalizedEvent
-from logarc.core.evidence import EvidenceRef
-from logarc.core.window import TimeWindow
-from logarc.storage.event_store import BUCKETS, ParquetEventStore
+from logarx.core.event import NormalizedEvent
+from logarx.core.evidence import EvidenceRef
+from logarx.core.window import TimeWindow
+from logarx.storage.event_store import BUCKETS, ParquetEventStore
 
 START = datetime(2026, 1, 1, tzinfo=UTC)
 IP = "192.0.2.31"

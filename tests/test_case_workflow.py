@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from logarc.case import Case, CaseError
-from logarc.core.evidence import EvidenceRef
-from logarc.ingest.pipeline import IngestCancelled
+from logarx.case import Case, CaseError
+from logarx.core.evidence import EvidenceRef
+from logarx.ingest.pipeline import IngestCancelled
 
 LINES = [
     '203.0.113.5 - - [10/Oct/2020:13:55:36 +0000] "GET / HTTP/1.1" 200 2326 "-" "curl/8.0"',
@@ -51,7 +51,7 @@ def test_the_manifest_records_every_ingested_source(tmp_path: Path) -> None:
 def test_relative_source_evidence_survives_a_different_launch_directory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workers: int
 ) -> None:
-    monkeypatch.setattr("logarc.ingest.parallel.MIN_PARALLEL_BYTES", 0)
+    monkeypatch.setattr("logarx.ingest.parallel.MIN_PARALLEL_BYTES", 0)
     log = write_log(tmp_path / "logs" / "access.log")
     monkeypatch.chdir(tmp_path)
     case_root = tmp_path / "case"
@@ -302,7 +302,7 @@ def test_the_window_s_reconstruction_honours_the_case_s_domains(tmp_path: Path) 
     function the window calls rather than through the window, because the
     defect is in which engine is built and not in anything Qt draws.
     """
-    from logarc.caseview import reconstruct_client
+    from logarx.caseview import reconstruct_client
 
     case_dir = tmp_path / "case"
     lines = [
@@ -323,7 +323,7 @@ def test_the_window_s_reconstruction_honours_the_case_s_domains(tmp_path: Path) 
 
 
 def _crs_931130_on_line_one():
-    from logarc.detect.crs.sidecar import CrsDetection
+    from logarx.detect.crs.sidecar import CrsDetection
 
     detection = CrsDetection(
         source_file_id="rfi.log",

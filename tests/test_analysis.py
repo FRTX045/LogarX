@@ -13,13 +13,13 @@ from pathlib import Path
 
 import pytest
 
-from logarc.analysis import AnalysisPolicy, analyse_ip
-from logarc.case import Case
-from logarc.core.activity import ActivityCategory, Outcome
-from logarc.core.window import EVERYTHING, TimeWindow
-from logarc.detect.engine import RuleEngine
-from logarc.detect.rulepacks import default_rules
-from logarc.episode.builder import EpisodePolicy
+from logarx.analysis import AnalysisPolicy, analyse_ip
+from logarx.case import Case
+from logarx.core.activity import ActivityCategory, Outcome
+from logarx.core.window import EVERYTHING, TimeWindow
+from logarx.detect.engine import RuleEngine
+from logarx.detect.rulepacks import default_rules
+from logarx.episode.builder import EpisodePolicy
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 ATTACKER = "203.0.113.66"

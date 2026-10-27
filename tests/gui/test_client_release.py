@@ -21,8 +21,8 @@ from PyQt6.QtGui import QMouseEvent
 from PyQt6.QtWidgets import QApplication
 from tables import cell
 
-from logarc.gui.panels import ClientTable
-from logarc.storage.base import IpSummary
+from logarx.gui.panels import ClientTable
+from logarx.storage.base import IpSummary
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 

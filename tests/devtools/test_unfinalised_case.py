@@ -14,8 +14,8 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from logarc.case import Case
-from logarc.devtools.main import app
+from logarx.case import Case
+from logarx.devtools.main import app
 
 runner = CliRunner()
 

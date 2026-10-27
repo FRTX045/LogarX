@@ -20,14 +20,14 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 
 from conftest import fired, settled
-from logarc.case import Case
-from logarc.core.event import NormalizedEvent
-from logarc.core.evidence import EvidenceRef
-from logarc.core.graph import GraphKind
-from logarc.core.window import TimeWindow
-from logarc.gui import app
-from logarc.gui.app import MainWindow
-from logarc.gui.canvas import FADED
+from logarx.case import Case
+from logarx.core.event import NormalizedEvent
+from logarx.core.evidence import EvidenceRef
+from logarx.core.graph import GraphKind
+from logarx.core.window import TimeWindow
+from logarx.gui import app
+from logarx.gui.app import MainWindow
+from logarx.gui.canvas import FADED
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 
     from PyQt6.QtWidgets import QApplication
 
-    from logarc.core.graph import GraphNode
+    from logarx.core.graph import GraphNode
 
 SWEEPER = "198.51.100.31"
 BROWSER = "192.0.2.1"

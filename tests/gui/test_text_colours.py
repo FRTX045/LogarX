@@ -5,9 +5,9 @@ import threading
 from PyQt6.QtGui import QColor, QPalette
 from PyQt6.QtWidgets import QLabel, QMessageBox
 
-from logarc.gui.app import MainWindow
-from logarc.gui.theme import colour_text
-from logarc.style import THEME
+from logarx.gui.app import MainWindow
+from logarx.gui.theme import colour_text
+from logarx.style import THEME
 
 
 def test_role_changes_preserve_disabled_text(qt_app):

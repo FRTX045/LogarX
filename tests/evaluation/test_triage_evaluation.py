@@ -2,8 +2,8 @@ from dataclasses import replace
 
 import pytest
 
-from logarc.core.evidence import EvidenceRef
-from logarc.triage.profile import ClientProfile
+from logarx.core.evidence import EvidenceRef
+from logarx.triage.profile import ClientProfile
 
 
 def population():
@@ -37,7 +37,7 @@ def population():
 
 
 def test_budget_metrics_do_not_invent_recall_for_no_positives():
-    from logarc.evaluation.triage import budget_scores
+    from logarx.evaluation.triage import budget_scores
 
     scores = budget_scores(["a", "b", "c"], {"a": True, "b": False, "c": True}, budgets=(1, 2, 10))
     assert scores[0].precision == 1
@@ -50,7 +50,7 @@ def test_budget_metrics_do_not_invent_recall_for_no_positives():
 
 
 def test_short_queue_yield_uses_available_slots_not_returned_count():
-    from logarc.evaluation.triage import budget_scores
+    from logarx.evaluation.triage import budget_scores
 
     scores = budget_scores(["a"], {"a": True, "b": False, "c": True}, budgets=(2, 10))
     assert scores[0].precision == 1
@@ -59,7 +59,7 @@ def test_short_queue_yield_uses_available_slots_not_returned_count():
 
 
 def test_unjudged_clients_are_not_silently_counted_as_benign():
-    from logarc.evaluation.triage import budget_scores
+    from logarx.evaluation.triage import budget_scores
 
     with pytest.raises(ValueError, match="judgment"):
         budget_scores(["a", "b"], {"a": True})
@@ -67,7 +67,7 @@ def test_unjudged_clients_are_not_silently_counted_as_benign():
 
 def test_model_is_reproducible_and_excludes_identity_and_labels():
     pytest.importorskip("sklearn")
-    from logarc.evaluation.triage import isolation_order
+    from logarx.evaluation.triage import isolation_order
 
     profiles = population()
     first = isolation_order(profiles)
@@ -87,7 +87,7 @@ def test_model_is_reproducible_and_excludes_identity_and_labels():
 
 
 def test_model_reports_insufficient_population_without_importing_sklearn():
-    from logarc.evaluation.triage import isolation_order
+    from logarx.evaluation.triage import isolation_order
 
     result = isolation_order(population()[:99])
     assert result.status == "insufficient population"
@@ -95,7 +95,7 @@ def test_model_reports_insufficient_population_without_importing_sklearn():
 
 
 def test_comparison_keeps_security_and_unusual_judgments_separate():
-    from logarc.evaluation.triage import compare_rankings
+    from logarx.evaluation.triage import compare_rankings
 
     profiles = population()
     suspicious = {p.client_ip: False for p in profiles}
@@ -114,7 +114,7 @@ def test_comparison_keeps_security_and_unusual_judgments_separate():
 
 
 def test_population_accounting_exposes_excluded_quiet_attacks_and_missing_statuses():
-    from logarc.evaluation.triage import compare_rankings
+    from logarx.evaluation.triage import compare_rankings
 
     profiles = population()
     quiet = replace(profiles[0], requests=1, hostile_requests=1, severity=4)
@@ -147,7 +147,7 @@ def test_population_accounting_exposes_excluded_quiet_attacks_and_missing_status
 
 def test_model_seed_is_explicit_and_recorded():
     pytest.importorskip("sklearn")
-    from logarc.evaluation.triage import isolation_order
+    from logarx.evaluation.triage import isolation_order
 
     result = isolation_order(population(), random_state=7)
     assert result.metadata["random_state"] == 7
@@ -155,7 +155,7 @@ def test_model_seed_is_explicit_and_recorded():
 
 
 def test_insufficient_statistics_are_unavailable_but_uniform_comparisons_are_complete():
-    from logarc.evaluation.triage import compare_rankings
+    from logarx.evaluation.triage import compare_rankings
 
     def score(profiles):
         return compare_rankings(

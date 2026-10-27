@@ -13,9 +13,9 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from PyQt6.QtWidgets import QApplication, QDialogButtonBox
 
-from logarc.gui.format_editor import FormatEditor
-from logarc.gui.formats_and_rules import FORMATS_TAB, RULES_TAB, FormatsAndRules
-from logarc.gui.rules_editor import RulesEditor
+from logarx.gui.format_editor import FormatEditor
+from logarx.gui.formats_and_rules import FORMATS_TAB, RULES_TAB, FormatsAndRules
+from logarx.gui.rules_editor import RulesEditor
 
 
 def test_the_two_tabs_say_what_each_half_decides(qt_app: QApplication) -> None:
@@ -71,7 +71,7 @@ def test_the_pack_list_rows_do_not_overlap_when_the_dialog_opens_on_formats(
     """The pack list is filled while its tab is hidden. Measured before the
     stylesheet's item padding reached it, its rows were placed closer than they
     are drawn, and the highlight on one spilled onto the rows either side."""
-    from logarc.gui import theme
+    from logarx.gui import theme
 
     sheet = qt_app.styleSheet()
     qt_app.setStyleSheet(theme.controls_sheet(11))

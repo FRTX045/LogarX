@@ -27,8 +27,8 @@ a real build under `tests/data/apache-shopfront/`, with its answer key, to check
 how well it does it.
 
 ```powershell
-logarc-dev ingest samples\demo\demo.log --format apache-vhost-combined --case .\case-demo
-logarc-gui                      # Case -> Open, pick case-demo
+logarx-dev ingest samples\demo\demo.log --format apache-vhost-combined --case .\case-demo
+logarx-gui                      # Case -> Open, pick case-demo
 ```
 
 Or all in the application: **Case → New from logs…**, pick a log, pick an
@@ -37,9 +37,9 @@ empty folder, then click a client in the table.
 ## Checking the answers
 
 ```powershell
-logarc-dev ingest   tests\data\apache-shopfront\excerpt.log --case .\case-excerpt --no-crs
-logarc-dev enrich   --case .\case-excerpt
-logarc-dev evaluate --case .\case-excerpt --truth tests\data\apache-shopfront\excerpt.truth.jsonl
+logarx-dev ingest   tests\data\apache-shopfront\excerpt.log --case .\case-excerpt --no-crs
+logarx-dev enrich   --case .\case-excerpt
+logarx-dev evaluate --case .\case-excerpt --truth tests\data\apache-shopfront\excerpt.truth.jsonl
 ```
 
 `enrich` replays the case through OWASP CRS; the headline figures include it, so
@@ -127,7 +127,7 @@ without needing either of the builds above. Its README says how it was cut.
 
 ## Real-world data with weaker labels
 
-`logarc-dev convert-csic` turns the **CSIC 2010 HTTP dataset** — real traffic against
+`logarx-dev convert-csic` turns the **CSIC 2010 HTTP dataset** — real traffic against
 a real application, labelled normal or anomalous — into an access log this tool
 can read. It is not included here; you have to download it yourself.
 

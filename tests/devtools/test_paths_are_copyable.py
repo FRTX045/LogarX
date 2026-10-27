@@ -17,8 +17,8 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from logarc.devtools import main as cli
-from logarc.devtools.main import app
+from logarx.devtools import main as cli
+from logarx.devtools.main import app
 
 LINE = '203.0.113.5 - - [10/Oct/2020:13:55:36 +0000] "GET /?q=1 HTTP/1.1" 200 2326 "-" "curl/8.0"'
 

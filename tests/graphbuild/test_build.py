@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
-from logarc.core.activity import ActivityCategory, ActivityLabel, Outcome, Severity
-from logarc.core.episode import Episode
-from logarc.core.evidence import EvidenceRef
-from logarc.graphbuild.build import build_behaviour_map, build_trace_graph
+from logarx.core.activity import ActivityCategory, ActivityLabel, Outcome, Severity
+from logarx.core.episode import Episode
+from logarx.core.evidence import EvidenceRef
+from logarx.graphbuild.build import build_behaviour_map, build_trace_graph
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 

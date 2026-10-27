@@ -14,19 +14,54 @@ from pathlib import Path
 
 import pytest
 
-from logarc.parsers.apache import COMBINED, COMMON
-from logarc.parsers.library import (
+from logarx.parsers.apache import COMBINED, COMMON
+from logarx.parsers.library import (
     LIBRARY_NAME,
     FormatLibraryError,
     library_path,
     load_library,
-    logarc_home,
+    logarx_home,
+    move_old_home,
     save_library,
 )
-from logarc.parsers.spec import LogFormatSpec
+from logarx.parsers.spec import LogFormatSpec
 
 OFFICE = LogFormatSpec(name="log-kantor", directive=COMBINED, description="the office")
 GATEWAY = LogFormatSpec(name="gateway", directive=COMMON)
+
+
+# -- the folder the tool kept as logarc, until 2026-10-28 ---------------------
+
+
+def test_the_old_folder_is_copied_to_the_new_one_once(tmp_path: Path) -> None:
+    """Saved formats, rules and icons are the reader's own work, and a rename
+    of the tool is no reason to lose them."""
+    old = tmp_path / "logarc"
+    (old / "rules").mkdir(parents=True)
+    (old / LIBRARY_NAME).write_text("{}", encoding="utf-8")
+    (old / "rules" / "mine.yaml").write_text("rules: []\n", encoding="utf-8")
+
+    assert move_old_home(tmp_path) is True
+
+    new = tmp_path / "LogarX"
+    assert (new / LIBRARY_NAME).read_text(encoding="utf-8") == "{}"
+    assert (new / "rules" / "mine.yaml").exists()
+    assert (old / LIBRARY_NAME).exists(), "the old folder is kept, not moved"
+    assert move_old_home(tmp_path) is False, "only once"
+
+
+def test_a_new_folder_that_exists_is_never_overwritten(tmp_path: Path) -> None:
+    (tmp_path / "logarc").mkdir()
+    (tmp_path / "logarc" / LIBRARY_NAME).write_text("old", encoding="utf-8")
+    (tmp_path / "LogarX").mkdir()
+
+    assert move_old_home(tmp_path) is False
+    assert not (tmp_path / "LogarX" / LIBRARY_NAME).exists()
+
+
+def test_nothing_to_move_is_not_an_error(tmp_path: Path) -> None:
+    assert move_old_home(tmp_path) is False
+    assert not (tmp_path / "LogarX").exists()
 
 
 def test_a_saved_format_comes_back() -> None:
@@ -35,12 +70,12 @@ def test_a_saved_format_comes_back() -> None:
     assert load_library() == [OFFICE, GATEWAY]
 
 
-def test_the_library_lives_under_logarc_home(
+def test_the_library_lives_under_logarx_home(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("LOGARC_HOME", str(tmp_path / "elsewhere"))
+    monkeypatch.setenv("LOGARX_HOME", str(tmp_path / "elsewhere"))
 
-    assert logarc_home() == tmp_path / "elsewhere"
+    assert logarx_home() == tmp_path / "elsewhere"
     assert library_path() == tmp_path / "elsewhere" / LIBRARY_NAME
 
 
@@ -54,7 +89,7 @@ def test_no_library_file_means_no_saved_formats() -> None:
 def test_saving_creates_the_directory_it_needs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("LOGARC_HOME", str(tmp_path / "not" / "yet" / "there"))
+    monkeypatch.setenv("LOGARX_HOME", str(tmp_path / "not" / "yet" / "there"))
 
     save_library([OFFICE])
 
@@ -74,7 +109,7 @@ def test_a_damaged_library_names_the_file_rather_than_reporting_none() -> None:
     assert str(path) in str(raised.value)
 
 
-def test_an_entry_this_logarc_cannot_read_names_the_file() -> None:
+def test_an_entry_this_logarx_cannot_read_names_the_file() -> None:
     path = library_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -89,7 +124,7 @@ def test_an_entry_this_logarc_cannot_read_names_the_file() -> None:
     assert "runes" in str(raised.value)
 
 
-def test_a_library_from_a_newer_logarc_is_refused_by_version() -> None:
+def test_a_library_from_a_newer_logarx_is_refused_by_version() -> None:
     path = library_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"version": 99, "formats": []}), encoding="utf-8")
@@ -142,7 +177,7 @@ def test_the_suite_cannot_reach_the_real_library(tmp_path: Path) -> None:
 def test_without_an_override_the_library_sits_in_the_platform_config_directory(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("LOGARC_HOME", raising=False)
+    monkeypatch.delenv("LOGARX_HOME", raising=False)
 
-    assert logarc_home().name == "logarc"
-    assert logarc_home() != Path("logarc"), "resolved to a bare relative path"
+    assert logarx_home().name == "LogarX"
+    assert logarx_home() != Path("LogarX"), "resolved to a bare relative path"

@@ -1,4 +1,4 @@
-"""Converting the CSIC 2010 traces into something logarc can read."""
+"""Converting the CSIC 2010 traces into something LogarX can read."""
 
 from __future__ import annotations
 
@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from logarc.core.evidence import EvidenceRef
-from logarc.evaluation.csic import CsicError, convert_csic
-from logarc.evaluation.truth import read_truth
-from logarc.parsers.registry import get_parser
+from logarx.core.evidence import EvidenceRef
+from logarx.evaluation.csic import CsicError, convert_csic
+from logarx.evaluation.truth import read_truth
+from logarx.parsers.registry import get_parser
 
 NORMAL = """\
 GET http://localhost:8080/tienda1/index.jsp HTTP/1.1

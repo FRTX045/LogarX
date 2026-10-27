@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from logarc.gui.recent import (
+from logarx.gui.recent import (
     RecentCase,
     Startup,
     dump,

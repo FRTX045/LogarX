@@ -20,11 +20,11 @@ from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QMessageBox, QPushButton
 
 from conftest import fired, settled
-from logarc import rules_library
-from logarc.case import Case
-from logarc.gui import rules_editor as rules_editor_module
-from logarc.gui.rules_editor import RulesEditor
-from logarc.rule_finds import Find, FindsCancelled
+from logarx import rules_library
+from logarx.case import Case
+from logarx.gui import rules_editor as rules_editor_module
+from logarx.gui.rules_editor import RulesEditor
+from logarx.rule_finds import Find, FindsCancelled
 
 SHOPFRONT_LOG = Path(__file__).parents[1] / "data" / "apache-shopfront" / "excerpt.log"
 
@@ -475,8 +475,8 @@ def test_a_count_that_climbs_from_nothing_is_not_left_faint(
     """Seen in the first real screenshot: a cell drawn faint while its rule had
     found nothing yet stayed faint once its lines arrived, so a rule that was on
     and finding things looked switched off."""
-    from logarc.rule_finds import FindsProgress
-    from logarc.style import THEME
+    from logarx.rule_finds import FindsProgress
+    from logarx.style import THEME
 
     def climbing(path, rules, *, cancelled, report):
         report(FindsProgress(1, 2, {rule.id: Find(0, 0) for rule in rules}))
@@ -500,8 +500,8 @@ def test_a_count_that_climbs_from_nothing_is_not_left_faint(
 def test_switching_a_rule_back_on_gives_it_its_colours_back(qt_app: QApplication) -> None:
     """Ticking a rule again repainted its whole row in the plain text colour,
     and its severity lost the colour every other row's keeps."""
-    from logarc.core.activity import Severity
-    from logarc.style import severity_text_colour
+    from logarx.core.activity import Severity
+    from logarx.style import severity_text_colour
 
     editor = RulesEditor()
     editor.select("recon")
@@ -753,6 +753,6 @@ def test_an_unknown_icon_is_a_note_not_a_refusal(qt_app: QApplication) -> None:
     assert editor._save.isEnabled()
     assert editor._status.text() == (
         "1 rule read: 1 about a single request. "
-        "Icon skul is not one logarc knows, so its kind's icon is drawn."
+        "Icon skul is not one LogarX knows, so its kind's icon is drawn."
     )
     assert editor._status.styleSheet() == ""

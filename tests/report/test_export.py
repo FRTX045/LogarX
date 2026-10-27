@@ -14,10 +14,10 @@ from pathlib import Path
 
 import pytest
 
-from logarc.analysis import analyse_ip
-from logarc.case import Case
-from logarc.report.export import FORMATS, named, write_reconstruction
-from logarc.report.html import render_report
+from logarx.analysis import analyse_ip
+from logarx.case import Case
+from logarx.report.export import FORMATS, named, write_reconstruction
+from logarx.report.html import render_report
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 ATTACKER = "203.0.113.66"
