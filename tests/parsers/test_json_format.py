@@ -431,7 +431,7 @@ def test_epoch_nanoseconds_are_told_apart_as_well(written: int | str) -> None:
     assert event.timestamp.hour == 9
 
 
-@pytest.mark.parametrize("written", [1e300, 10**25, "1e300", float("inf"), "nan"])
+@pytest.mark.parametrize("written", [1e300, 10**25, 10**400, "1e300", float("inf"), "nan"])
 def test_a_number_no_clock_could_mean_refuses_the_line_not_the_log(written: object) -> None:
     """One line with a number like this raised out of the parser, and ingest
     stopped there: every other line of the log went with it."""

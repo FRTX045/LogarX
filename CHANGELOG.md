@@ -962,6 +962,20 @@ which will be the first tag.
 
 ### Security
 
+- **One crafted line no longer stops a whole log being read.** A line went to
+  the quarantine only when its parser declined it; anything that *raised* —
+  in reading the line, in detecting the format, or in writing the events —
+  ended the import with nothing stored. An audit of logarc as a target found
+  four ways to do that from a single line a client controls: a status or byte
+  count of twenty digits, which no column can hold; a JSON `\ud800`, which
+  decodes to half a character; an epoch number of 400 digits, too large for a
+  float; and a carriage return or a 128 KB cell in an IIS or CloudFront row.
+  Each is now read: the oversized number is stored as unknown with the request
+  kept, the half character as the escape that wrote it, the epoch as no time
+  (its line quarantined), the row split as W3C splits it. And a parser that
+  raises on a line now costs that line only — quarantined, with the reason
+  naming the exception — so the next bug of this kind loses one line rather
+  than the log. Running out of memory still stops the import.
 - **The CRS sidecar is built on Coraza v3.8.1**, from v3.7.0, which closes the twelve Coraza
   advisories and one `golang.org/x/net` advisory GitHub reported for it (libinjection-go moves to
   v0.3.3 and `x/net` to v0.58.0 with it). The sidecar replays only the request line and three

@@ -117,8 +117,17 @@ def split_row(line: str, separator: str) -> list[str]:
     Through `csv` rather than `str.split`, so a comma-separated field holding a
     comma inside quotes comes back whole. W3C quotes nothing, so this costs
     those logs nothing.
+
+    What `csv` refuses — a carriage return outside quotes, a cell past its
+    128 KB limit — is split on the separator instead, which is W3C's own rule.
+    The refusal used to leave the parser as an exception and end the ingest of
+    the whole log. A quoted row this splits wrongly comes back with the wrong
+    number of cells, and the parser refuses that row by its count.
     """
-    return next(csv.reader([line], delimiter=separator, skipinitialspace=False), [])
+    try:
+        return next(csv.reader([line], delimiter=separator, skipinitialspace=False), [])
+    except csv.Error:
+        return line.split(separator)
 
 
 def declared_columns(lines: Sequence[str], separator: str) -> tuple[tuple[str, ...], str]:

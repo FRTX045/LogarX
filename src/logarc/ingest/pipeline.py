@@ -80,6 +80,27 @@ _UNPARSEABLE: Final = "line does not match the log format"
 _TOO_LONG: Final = "line is longer than the limit and was not parsed"
 
 
+def _parsed(parser: LogParser, text: str, ref: EvidenceRef) -> NormalizedEvent | str:
+    """The line's event, or why it is quarantined instead.
+
+    A parser that raises has not read the line, and has said nothing about the
+    next one. Raised out of here, it ended the ingest of the whole log with
+    nothing stored — one crafted line was enough, and the audit of 2026-10-27
+    found four kinds. The reason names the exception, so a bug in a parser
+    still shows, as quarantined lines rather than as a lost log.
+
+    Running out of memory is not caught: it says the machine is the problem,
+    and the next line would say the same.
+    """
+    try:
+        event = parser.parse_line(text, ref)
+    except MemoryError:
+        raise
+    except Exception as error:
+        return f"{_UNPARSEABLE} (the parser raised {type(error).__name__})"
+    return _UNPARSEABLE if event is None else event
+
+
 class FormatDetectionError(RuntimeError):
     """Raised when a log's format cannot be identified."""
 
@@ -215,9 +236,9 @@ def ingest_file(
                 lines_quarantined += 1
                 continue
 
-            event = parser.parse_line(text, EvidenceRef(file_id, line_no))
-            if event is None:
-                quarantine.record(file_id, line_no, text, reason=_UNPARSEABLE)
+            event = _parsed(parser, text, EvidenceRef(file_id, line_no))
+            if isinstance(event, str):
+                quarantine.record(file_id, line_no, text, reason=event)
                 lines_quarantined += 1
                 continue
 
