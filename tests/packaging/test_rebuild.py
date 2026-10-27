@@ -749,52 +749,65 @@ def test_the_documented_build_setup_installs_what_the_build_runs(rebuild: Module
 # -- the licences of what the bundle ships --------------------------------------
 
 
-def _licensed(tmp_path: Path, *names: str, index: tuple[str, ...] | None = None) -> Path:
+#: What a bundle's licenses/ holds when `packaging/third-party/` reached it.
+_COMMITTED = {
+    "python.txt": "PyYAML\nMIT License\n",
+    "python-extra/numpy/dragon4_LICENSE.txt": "Ryan Juckett\n",
+    "native/openssl/LICENSE.txt": "OpenSSL terms\n",
+    "qt/THIRD-PARTY-NOTICES.txt": "HarfBuzz-NG\n",
+    "qt/VERSION": "6.11.1\n",
+}
+
+
+def _licensed(tmp_path: Path, *, leave_out: str = "", qt: str = "6.11.1") -> Path:
     root = tmp_path / "bundle" / "_internal" / "licenses"
-    for name in names:
-        (root / name).mkdir(parents=True)
-        (root / name / "LICENSE").write_text(f"{name} terms\n", encoding="utf-8")
-    root.mkdir(parents=True, exist_ok=True)
-    listed = names if index is None else index
-    (root / "INDEX.txt").write_text("".join(f"{name}\n" for name in listed), encoding="utf-8")
+    for name, text in _COMMITTED.items():
+        if leave_out and name.startswith(leave_out):
+            continue
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_text(qt + "\n" if name == "qt/VERSION" else text, encoding="utf-8")
     return tmp_path / "bundle"
 
 
-_CORE = ("python/python", "python/pyqt6", "python/pyqt6-qt6", "qt")
+@pytest.fixture
+def ships_qt_6_11_1(rebuild: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(rebuild, "installed_qt", lambda: "6.11.1")
 
 
-def test_a_bundle_carrying_every_indexed_licence_passes(
+@pytest.mark.usefixtures("ships_qt_6_11_1")
+def test_a_bundle_carrying_the_committed_licences_passes(
     rebuild: ModuleType, tmp_path: Path
 ) -> None:
-    bundle = _licensed(tmp_path, *_CORE, "python/pyyaml", "native/libffi")
-
-    assert rebuild.check_licences(bundle) is None
+    assert rebuild.check_licences(_licensed(tmp_path)) is None
 
 
-def test_a_bundle_without_qt_s_licence_is_refused(rebuild: ModuleType, tmp_path: Path) -> None:
-    """Qt is the largest thing the bundle redistributes, and its notice was the
-    one the readiness review found missing."""
-    problem = rebuild.check_licences(_licensed(tmp_path, "python/python", "python/pyqt6"))
-
-    assert problem is not None and "pyqt6-qt6" in problem
-
-
-def test_a_bundle_with_no_licence_index_is_refused(rebuild: ModuleType, tmp_path: Path) -> None:
-    problem = rebuild.check_licences(tmp_path / "bundle")
-
-    assert problem is not None and "index" in problem
-
-
-def test_an_indexed_folder_missing_from_the_bundle_is_refused(
-    rebuild: ModuleType, tmp_path: Path
+@pytest.mark.usefixtures("ships_qt_6_11_1")
+@pytest.mark.parametrize("part", ["python.txt", "python-extra", "native", "qt/THIRD-PARTY"])
+def test_a_bundle_missing_part_of_the_committed_licences_is_refused(
+    rebuild: ModuleType, tmp_path: Path, part: str
 ) -> None:
-    """Any package, not only the ones named here: the index is what the build
-    collected, so the check covers all of it."""
-    bundle = _licensed(tmp_path, *_CORE, index=(*_CORE, "native/libffi"))
+    problem = rebuild.check_licences(_licensed(tmp_path, leave_out=part))
 
-    problem = rebuild.check_licences(bundle)
+    assert problem is not None and part.split("/")[0] in problem
 
-    assert problem is not None and "native/libffi" in problem
+
+@pytest.mark.usefixtures("ships_qt_6_11_1")
+def test_qt_notices_fetched_for_another_qt_are_refused(rebuild: ModuleType, tmp_path: Path) -> None:
+    """A Qt upgrade changes what Qt compiles in, so the last version's list is
+    not this version's. Checked here, where the build runs, rather than in the
+    suite, whose machine may have any Qt installed."""
+    problem = rebuild.check_licences(_licensed(tmp_path, qt="6.10.0"))
+
+    assert problem is not None and "fetch_qt_attributions" in problem
+
+
+def test_the_committed_folder_holds_what_the_check_asks_for(rebuild: ModuleType) -> None:
+    folder = ROOT / "packaging" / "third-party"
+
+    for name in rebuild.LICENCES:
+        path = folder / name
+        assert path.is_file() or any(p.is_file() for p in path.rglob("*")), name
+    assert (folder / "qt" / "VERSION").is_file()
 
 
 def test_the_licence_check_is_one_of_the_checks(
@@ -814,13 +827,3 @@ def test_the_licence_check_is_one_of_the_checks(
     monkeypatch.setattr(rebuild, "check_licences", lambda bundle: "no licences")
 
     assert rebuild.verify(tmp_path) == ["no licences"]
-
-
-def test_a_bundle_without_qt_s_third_party_notices_is_refused(
-    rebuild: ModuleType, tmp_path: Path
-) -> None:
-    bundle = _licensed(tmp_path, "python/python", "python/pyqt6", "python/pyqt6-qt6")
-
-    problem = rebuild.check_licences(bundle)
-
-    assert problem is not None and "qt" in problem

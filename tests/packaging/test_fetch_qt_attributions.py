@@ -101,7 +101,7 @@ def test_a_record_with_no_licence_text_anywhere_stops_the_fetch(fetch: ModuleTyp
 def test_every_committed_qt_notice_carries_its_licence_text() -> None:
     """The bundle ships this file as it is, so a component listed without the
     text of its licence is the omission the fetch exists to prevent."""
-    folder = ROOT / "packaging" / "qt-attributions"
+    folder = ROOT / "packaging" / "third-party" / "qt"
     notices = (folder / "THIRD-PARTY-NOTICES.txt").read_text(encoding="utf-8")
     blocks = [block for block in notices.split("\n\n") if "Recorded in:" in block]
 
@@ -132,7 +132,7 @@ _COMPILED_IN = (
 
 
 def test_the_committed_qt_notices_name_what_is_compiled_in() -> None:
-    notices = (ROOT / "packaging" / "qt-attributions" / "THIRD-PARTY-NOTICES.txt").read_text(
+    notices = (ROOT / "packaging" / "third-party" / "qt" / "THIRD-PARTY-NOTICES.txt").read_text(
         encoding="utf-8"
     )
     names = {block.splitlines()[0] for block in notices.split("\n\n") if "Recorded in:" in block}
