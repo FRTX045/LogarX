@@ -1036,6 +1036,14 @@ which will be the first tag.
 
 ### Fixed
 
+- **Cloudflare's own timestamps are read, and one odd timestamp no longer stops
+  a whole log.** Logpush writes `EdgeStartTimestamp` in nanoseconds unless told
+  otherwise, and an epoch number was only told apart as seconds, milliseconds or
+  microseconds. Read as microseconds it is the year 56,000, the reader raised, and
+  ingest stopped with nothing read. Any epoch number past what a date can hold did
+  the same, from a single line, in every JSON, table or pattern log. Nanoseconds
+  are now read, and such a number refuses its line, which goes to the quarantine
+  like any other. Found by reading the same traffic rendered as a Cloudflare log.
 - **A directive with `%U%q` side by side reads its query.** The path is a run of
   non-blank characters, so it took the query with it, and no rule that reads the
   query saw one. A path that holds a `?`, in a format with no query of its own
