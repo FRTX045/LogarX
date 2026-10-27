@@ -12,7 +12,7 @@ different instants on two machines, and a case may not do that.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
 __all__ = ["TimeFormatError", "check_time_format", "read_time"]
@@ -65,6 +65,11 @@ _FALLBACKS: Final[tuple[str, ...]] = (
 #: last for ever without anything downstream questioning it.
 _MILLIS_ABOVE: Final = 1e11
 _MICROS_ABOVE: Final = 1e14
+#: Cloudflare Logpush's default, `unixnano`. 1e17 nanoseconds is 1973 again,
+#: and 1e17 microseconds is the year 5138.
+_NANOS_ABOVE: Final = 1e17
+
+_EPOCH: Final = datetime(1970, 1, 1, tzinfo=UTC)
 
 #: Below this, a number is not a timestamp at all. 1e8 seconds is March 1973,
 #: before any web server existed, so nothing real is lost — and what is caught
@@ -81,11 +86,20 @@ def _in_utc(parsed: datetime) -> datetime:
 def _from_epoch(number: float) -> datetime | None:
     if abs(number) < _EPOCH_FLOOR:
         return None
-    if abs(number) > _MICROS_ABOVE:
+    if abs(number) > _NANOS_ABOVE:
+        number /= 1_000_000_000
+    elif abs(number) > _MICROS_ABOVE:
         number /= 1_000_000
     elif abs(number) > _MILLIS_ABOVE:
         number /= 1000
-    return datetime.fromtimestamp(number, tz=UTC)
+    # Added to the epoch rather than handed to `fromtimestamp`, which raises
+    # past the year 3000 on Windows and not on Linux. A number past what
+    # `datetime` can hold, or not a number at all, is not a time: one such line
+    # raising here used to end the ingest of the whole log.
+    try:
+        return _EPOCH + timedelta(seconds=number)
+    except (OverflowError, ValueError):
+        return None
 
 
 def _as_number(text: str) -> float | None:

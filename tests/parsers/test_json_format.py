@@ -419,6 +419,34 @@ def test_epoch_microseconds_are_told_apart_too() -> None:
     assert event.timestamp.year == 2024
 
 
+@pytest.mark.parametrize("written", [1714554045123456789, "1714554045123456789"])
+def test_epoch_nanoseconds_are_told_apart_as_well(written: int | str) -> None:
+    """Cloudflare Logpush writes `EdgeStartTimestamp` in nanoseconds unless told
+    otherwise. Read as microseconds that is the year 56,000, which no clock can
+    hold, and the whole log was refused over it."""
+    event = MAPPED.build().parse_line(line(time=written), REF)
+
+    assert event is not None
+    assert event.timestamp.year == 2024
+    assert event.timestamp.hour == 9
+
+
+@pytest.mark.parametrize("written", [1e300, 10**25, "1e300", float("inf"), "nan"])
+def test_a_number_no_clock_could_mean_refuses_the_line_not_the_log(written: object) -> None:
+    """One line with a number like this raised out of the parser, and ingest
+    stopped there: every other line of the log went with it."""
+    assert MAPPED.build().parse_line(line(time=written), REF) is None
+
+
+def test_a_far_future_second_is_read_the_same_on_every_platform() -> None:
+    """Windows' clock stops at the year 3000 and Linux's does not, so the same
+    log used to read on one and raise on the other."""
+    event = MAPPED.build().parse_line(line(time=40_000_000_000), REF)
+
+    assert event is not None
+    assert event.timestamp.year == 3237
+
+
 def test_a_time_the_given_format_does_not_fit_is_not_guessed_at_instead() -> None:
     """The reader said what this field is. Quietly reading it some other way
     would make a pattern that does not work look as though it does."""
