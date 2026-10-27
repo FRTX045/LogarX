@@ -13,7 +13,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from logarc import __version__
 from logarc.core.window import EVERYTHING, TimeWindow
 from logarc.detect.engine import RuleEngine
 from logarc.detect.rulepacks import default_rules
@@ -135,12 +134,6 @@ class AnalysisResult:
     stopped part way, else `None`. Requests it never reached cannot carry a CRS
     finding, so a report built from it has to say how far CRS got."""
 
-    analysed_with: str = __version__
-    """The logarc version that produced this. Not the manifest's `tool_version`,
-    which is the version that created the case: a case outlives the release it
-    was read with, and the engine that reconstructed a client is the one that
-    has to be named for the finding to be reproduced."""
-
     @property
     def request_count(self) -> int:
         return sum(session.request_count for session in self.sessions)
@@ -194,7 +187,6 @@ class AnalysisResult:
         """The machine-readable form, for export and for other tools."""
         return {
             "client_ip": self.client_ip,
-            "analysed_with": self.analysed_with,
             "session_count": len(self.sessions),
             "episode_count": len(self.episodes),
             "request_count": self.request_count,

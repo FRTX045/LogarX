@@ -332,8 +332,7 @@ def _bookmarks(
 
 
 def _provenance(result: AnalysisResult, manifest: CaseManifest | None) -> str:
-    rows = [("Analysed with", f"logarc {result.analysed_with}")]
-    rows.append(("Ruleset fingerprint", result.ruleset_fingerprint))
+    rows = [("Ruleset fingerprint", result.ruleset_fingerprint)]
     if result.rules_in_force:
         rows.append(("Rules", result.rules_in_force))
     rows.append(("CRS configuration", result.crs_fingerprint or "not consulted"))
@@ -342,7 +341,7 @@ def _provenance(result: AnalysisResult, manifest: CaseManifest | None) -> str:
         rows.append(("CRS coverage", f"stopped after {replayed:,} of {requests:,} requests"))
     if manifest is not None:
         rows.append(("Case", manifest.case_id))
-        rows.append(("Case created with", f"logarc {manifest.tool_version}"))
+        rows.append(("Tool version", manifest.tool_version))
         rows.append(("Ingested", manifest.created_at.isoformat()))
         for source in manifest.sources:
             rows.append((f"Source: {source.file_id}", source.original_path))

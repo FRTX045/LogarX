@@ -1,8 +1,8 @@
 """The case manifest: what was ingested, from where, and under what settings.
 
 Half of what makes a finding reproducible. Given the manifest, the original
-files and the analysis export, which names the logarc version, ruleset and
-thresholds that produced it, another investigator can re-run the analysis and
+files and the analysis export, which names the ruleset and thresholds that
+produced it, another investigator can re-run the analysis and
 expect the same result, or show that they cannot, which is equally informative.
 """
 

@@ -63,7 +63,6 @@ finding rather than presented as self-evident.
 **The thresholds are recorded in each analysis export, not in the case manifest.** The decision
 above said every value used is recorded in the manifest and that results are reproducible from the
 manifest alone. Neither held: `case.json` records the sources, the version that created the case
-and the per-case settings, while the session and activity thresholds, the ruleset fingerprint and
-the version that ran the analysis are written into every JSON and HTML export. The segmentation is
-unchanged and still deterministic; reproducing a result needs the source logs, the manifest and the
-export together, as [docs/architecture.md](../architecture.md#forensic-integrity) sets out.
+and the per-case settings, while the session and activity thresholds and the ruleset fingerprint
+are written into every JSON and HTML export. The segmentation is unchanged and still deterministic;
+reproducing a result needs the source logs, the manifest and the export together, as [docs/architecture.md](../architecture.md#forensic-integrity) sets out.

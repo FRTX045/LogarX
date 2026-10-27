@@ -506,13 +506,3 @@ def test_a_report_with_no_answer_says_so_rather_than_omitting_it(campaign: Case)
 
     assert result.site_hosts == ()
     assert result.to_dict()["site_hosts"] == []
-
-
-def test_an_export_names_the_version_that_analysed_it(campaign: Case) -> None:
-    """Not the case's `tool_version`, which is the version that created it: a
-    case outlives the release it was read with."""
-    from logarc import __version__
-
-    payload = analyse_ip(campaign.store, ATTACKER).to_dict()
-
-    assert payload["analysed_with"] == __version__

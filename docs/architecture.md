@@ -222,15 +222,13 @@ CRS-only labels retain their existing lack of an OWASP annotation.
   time, tool version, and the per-case settings analysis depends on: the site's own host names,
   and, once CRS has run, its revision, paranoia level and host, a fingerprint of the rest of its
   configuration, and how far it got.
-- Each analysis export records the logarc version that produced it, the ruleset fingerprint, the
-  rules in force and the session and activity thresholds; none of these is kept in `case.json`.
+- Each analysis export records the ruleset fingerprint, the rules in force and the session and
+  activity thresholds; none of these is kept in `case.json`.
 - Each `Episode` carries `(source_file_id, source_line_no)` references, so every node in the graph
   resolves to exact raw log lines.
 - Malformed lines are quarantined and counted, never silently dropped.
 
-Together these mean a finding can be reproduced from the source logs and the case manifest, run
-through the logarc version that analysed it, which each export records as `analysed_with` (the
-manifest's `tool_version` is the version that created the case, and a case outlives it), with the
+Together these mean a finding can be reproduced from the source logs and the case manifest, with the
 ruleset its fingerprint identifies and any custom rule packs it used, at the thresholds the export
 records, and, when CRS contributed, with the case's `crs.jsonl`. That file holds what CRS found, so
 reproducing the analysis does not need CRS again; replaying CRS itself needs the same sidecar,
