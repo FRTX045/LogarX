@@ -5,4 +5,4 @@ contact_links:
     about: Privately. An issue is public the moment it is filed, and the people running logarc are often reading logs from an incident that is still live.
   - name: Ask a question or share an idea
     url: https://github.com/FRTX045/logarc/discussions
-    about: Questions, ideas and feature requests go to Discussions until contributions open with the first release.
+    about: Questions and open-ended ideas. A feature with a clear use goes in a feature request.

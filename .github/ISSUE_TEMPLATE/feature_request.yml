@@ -1,0 +1,34 @@
+name: Feature request
+description: Something logarc should do that it does not.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The most useful request starts from a log and a question: what you were trying to find out, and where logarc stopped helping.
+
+        A detection that misses an attack, or flags harmless traffic, is a bug rather than a feature: use the bug report form with the lines involved.
+  - type: textarea
+    id: question
+    attributes:
+      label: What you were trying to find out
+      description: The investigation you were doing, and the question the log should have answered.
+    validations:
+      required: true
+  - type: textarea
+    id: gap
+    attributes:
+      label: Where logarc fell short
+      description: What it showed instead, or what you had to do by hand.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help
+      description: Your idea of the change, if you have one. A sketch or a screenshot of where it would go is welcome.
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: Other tools that do this, and what you liked or disliked about them.
