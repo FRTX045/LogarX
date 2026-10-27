@@ -384,6 +384,37 @@ def test_renaming_a_saved_format_renames_it_rather_than_leaving_a_twin(
     assert [spec.name for spec in load_library()] == ["log-kantor-lama"]
 
 
+def test_renaming_onto_another_saved_format_is_refused(
+    qt_app: QApplication, saved_office: LogFormatSpec
+) -> None:
+    """A rename that lands on another saved format's name would delete that
+    format without asking. Refused, and both are kept as they were."""
+    branch = LogFormatSpec(name="log-cabang", directive=COMBINED, description="the branch")
+    save_library([saved_office, branch])
+    register_saved_formats()
+    editor = FormatEditor()
+    editor.select("log-kantor")
+
+    editor._name.setText("log-cabang")
+
+    assert not editor.save()
+    assert "log-cabang" in editor.trouble()
+    assert load_library() == [saved_office, branch]
+
+
+def test_a_new_format_cannot_take_a_saved_format_s_name(
+    qt_app: QApplication, saved_office: LogFormatSpec
+) -> None:
+    editor = FormatEditor()
+    editor.start_new()
+    editor._name.setText("log-kantor")
+    editor._rule.setText(COMBINED)
+
+    assert not editor.save()
+    assert "log-kantor" in editor.trouble()
+    assert load_library() == [saved_office]
+
+
 # -- the corners ------------------------------------------------------------
 
 

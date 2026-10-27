@@ -740,6 +740,11 @@ class FormatEditor(QDialog):
                 f"{name!r} is a built-in format. Built-ins are matched first, so a "
                 "saved format of the same name would never be reached."
             )
+        if name != self._editing and any(item.name == name for item in saved):
+            return self._refuse(
+                f"{name!r} is already a saved format, and saving under its name "
+                "would replace it. Choose another name, or select it to change it."
+            )
 
         spec = self._spec_on_screen(name)
         try:
