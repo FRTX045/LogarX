@@ -494,13 +494,18 @@ def test_format_editor_rows_fit_their_text(themed: QApplication, points: int) ->
 
 
 def test_format_editor_rows_stay_tight_at_ordinary_sizes(themed: QApplication) -> None:
+    """Tight is 26 pixels, unless the text and its padding need more, or Qt's own
+    floor for a header in this font is higher. Qt raises a smaller row to that
+    floor whatever it is asked for: 28 for Segoe UI at 11 points."""
     from logarc.gui.format_editor import FormatEditor
 
     editor = FormatEditor()
     try:
-        rows = editor._fields.verticalHeader()
+        table = editor._fields
+        rows = table.verticalHeader()
         assert rows is not None
-        assert rows.defaultSectionSize() == 26
+        tight = max(26, table.fontMetrics().height() + 8, rows.minimumSectionSize())
+        assert rows.defaultSectionSize() == tight
     finally:
         editor.close()
 
@@ -523,6 +528,7 @@ def test_rule_editor_rows_fit_their_text(themed: QApplication, points: int) -> N
 
 
 def test_rule_editor_rows_stay_tight_at_ordinary_sizes(themed: QApplication) -> None:
+    """Tight as `test_format_editor_rows_stay_tight_at_ordinary_sizes` means it."""
     from logarc.gui.rules_editor import RulesEditor
 
     editor = RulesEditor()
@@ -530,7 +536,8 @@ def test_rule_editor_rows_stay_tight_at_ordinary_sizes(themed: QApplication) -> 
         for table in editor.findChildren(QTableWidget):
             rows = table.verticalHeader()
             assert rows is not None
-            assert rows.defaultSectionSize() == 26
+            tight = max(26, table.fontMetrics().height() + 8, rows.minimumSectionSize())
+            assert rows.defaultSectionSize() == tight
     finally:
         editor.close()
 
