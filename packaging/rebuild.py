@@ -55,7 +55,6 @@ from typing import Final
 # `crs_bundle` sits beside this script, which is run by path, not imported.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import crs_bundle
-import licences
 
 #: This file is `<root>/packaging/rebuild.py`. Derived from `__file__` rather
 #: than the current directory, because a git hook runs this with whatever
@@ -577,20 +576,6 @@ def check_licences(bundle: Path) -> str | None:
     return None
 
 
-def check_unused_qt(bundle: Path) -> str | None:
-    """None of the Qt `licences.unused_qt` leaves out is in the bundle."""
-    internal = bundle / "_internal"
-    qt = internal / "PyQt6" / "Qt6"
-    found = sorted(
-        path.relative_to(internal).as_posix()
-        for path in (qt.rglob("*") if qt.is_dir() else ())
-        if path.is_file() and licences.unused_qt(path.relative_to(internal).as_posix())
-    )
-    if found:
-        return "Qt the application does not use is bundled: " + ", ".join(found)
-    return None
-
-
 def verify(bundle: Path) -> list[str]:
     checks = (
         check_executable,
@@ -602,7 +587,6 @@ def verify(bundle: Path) -> list[str]:
         check_icons,
         check_crs,
         check_licences,
-        check_unused_qt,
     )
     return [problem for check in checks if (problem := check(bundle)) is not None]
 

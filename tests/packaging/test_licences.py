@@ -269,35 +269,3 @@ def test_the_committed_qt_notices_are_for_the_qt_installed_here() -> None:
     recorded = (ROOT / "packaging" / "qt-attributions" / "VERSION").read_text(encoding="utf-8")
 
     assert recorded.strip() == metadata.version("PyQt6-Qt6")
-
-
-@pytest.mark.parametrize(
-    "dest",
-    [
-        "PyQt6/Qt6/plugins/imageformats/qsvg.dll",
-        "PyQt6/Qt6/plugins/imageformats/qjpeg.dll",
-        "PyQt6/Qt6/plugins/imageformats/qgif.dll",
-        "PyQt6/Qt6/plugins/imageformats/qwebp.dll",
-        "PyQt6/Qt6/plugins/imageformats/qtiff.dll",
-        "PyQt6/Qt6/plugins/platforms/qwindows.dll",
-        "PyQt6/Qt6/bin/Qt6Gui.dll",
-    ],
-)
-def test_qt_a_reader_s_icons_can_need_is_kept(licences: ModuleType, dest: str) -> None:
-    """An SVG icon can embed a raster image in any of these formats, and Qt SVG
-    decodes it through the image plugins."""
-    assert not licences.unused_qt(dest)
-
-
-@pytest.mark.parametrize(
-    "dest",
-    [
-        "PyQt6\\Qt6\\bin\\Qt6Pdf.dll",
-        "PyQt6/Qt6/bin/Qt6Network.dll",
-        "PyQt6/Qt6/bin/opengl32sw.dll",
-        "PyQt6/Qt6/plugins/imageformats/qpdf.dll",
-        "PyQt6/Qt6/plugins/generic/qtuiotouchplugin.dll",
-    ],
-)
-def test_qt_the_application_never_uses_is_left_out(licences: ModuleType, dest: str) -> None:
-    assert licences.unused_qt(dest)

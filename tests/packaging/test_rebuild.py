@@ -160,7 +160,6 @@ def test_verification_rejects_a_qt_runtime_that_cannot_load(
         "check_crs",
         "check_icons",
         "check_licences",
-        "check_unused_qt",
     ):
         monkeypatch.setattr(rebuild, name, lambda bundle: None)
     monkeypatch.setattr(
@@ -571,7 +570,6 @@ def test_the_icon_check_is_one_of_the_checks(
         "check_qt_runtime",
         "check_crs",
         "check_licences",
-        "check_unused_qt",
     ):
         monkeypatch.setattr(rebuild, name, lambda bundle: None)
     monkeypatch.setattr(rebuild, "check_icons", lambda bundle: "no icons")
@@ -811,7 +809,6 @@ def test_the_licence_check_is_one_of_the_checks(
         "check_qt_runtime",
         "check_crs",
         "check_icons",
-        "check_unused_qt",
     ):
         monkeypatch.setattr(rebuild, name, lambda bundle: None)
     monkeypatch.setattr(rebuild, "check_licences", lambda bundle: "no licences")
@@ -827,39 +824,3 @@ def test_a_bundle_without_qt_s_third_party_notices_is_refused(
     problem = rebuild.check_licences(bundle)
 
     assert problem is not None and "qt" in problem
-
-
-def _with_qt(tmp_path: Path, *names: str) -> Path:
-    qt = tmp_path / "bundle" / "_internal" / "PyQt6" / "Qt6"
-    for name in names:
-        (qt / name).parent.mkdir(parents=True, exist_ok=True)
-        (qt / name).write_bytes(b"MZ")
-    return tmp_path / "bundle"
-
-
-def test_qt_the_application_never_uses_stays_out(rebuild: ModuleType, tmp_path: Path) -> None:
-    """Each of these carries third-party code of its own, PDFium and Mesa among
-    them, for features the application does not have."""
-    bundle = _with_qt(
-        tmp_path, "bin/Qt6Core.dll", "bin/Qt6Pdf.dll", "plugins/imageformats/qpdf.dll"
-    )
-
-    problem = rebuild.check_unused_qt(bundle)
-
-    assert problem is not None and "Qt6Pdf.dll" in problem and "qpdf.dll" in problem
-
-
-def test_the_qt_the_application_uses_passes(rebuild: ModuleType, tmp_path: Path) -> None:
-    bundle = _with_qt(
-        tmp_path,
-        "bin/Qt6Core.dll",
-        "bin/Qt6Svg.dll",
-        "plugins/imageformats/qsvg.dll",
-        "plugins/imageformats/qjpeg.dll",
-        "plugins/imageformats/qgif.dll",
-        "plugins/imageformats/qwebp.dll",
-        "plugins/imageformats/qtiff.dll",
-        "plugins/platforms/qwindows.dll",
-    )
-
-    assert rebuild.check_unused_qt(bundle) is None

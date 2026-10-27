@@ -38,35 +38,6 @@ ROOT: Final = Path(__file__).resolve().parents[1]
 QT_ATTRIBUTIONS: Final = ROOT / "packaging" / "qt-attributions"
 _QT: Final = "pyqt6-qt6"
 
-#: Qt the application never uses, left out of the bundle because each piece
-#: brings third-party code of its own: PDFium with Qt PDF and its image plugin,
-#: Mesa with the software OpenGL renderer, and Qt Network, which only Qt PDF
-#: and the TUIO touch plugin link. Every other image plugin stays: a reader's
-#: SVG icon can embed a raster image in any format, and Qt SVG decodes it
-#: through these plugins. An icon whose embedded image Qt cannot read, a PDF
-#: among them here, is refused when it is chosen (`logarc.gui.icons`), rather
-#: than drawn without that image.
-_UNUSED_QT_FILES: Final = frozenset(
-    {
-        "bin/Qt6Pdf.dll",
-        "bin/Qt6Network.dll",
-        "bin/opengl32sw.dll",
-        "plugins/imageformats/qpdf.dll",
-    }
-)
-_UNUSED_QT_FOLDERS: Final = ("plugins/generic/",)
-
-
-def unused_qt(dest: str) -> bool:
-    """Whether a collected file is Qt the application never uses, by its path
-    in the bundle (`PyQt6/Qt6/plugins/imageformats/qwebp.dll`)."""
-    path = dest.replace("\\", "/")
-    if not path.startswith("PyQt6/Qt6/"):
-        return False
-    inside = path.removeprefix("PyQt6/Qt6/")
-    return inside in _UNUSED_QT_FILES or inside.startswith(_UNUSED_QT_FOLDERS)
-
-
 #: Where the generated index is written before the spec bundles it.
 STAGE: Final = ROOT / "build" / "licences"
 

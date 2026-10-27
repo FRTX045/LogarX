@@ -64,10 +64,12 @@ those components beside its source, so `packaging/fetch_qt_attributions.py`
 reads the records for the shipped Qt modules from Qt's sources at the installed
 version into `packaging/qt-attributions/`, which is committed and bundled under
 `_internal/licenses/qt/`. Run it again after upgrading PyQt6-Qt6: the build
-stops while the recorded version differs from the installed one. Qt the
-application never uses, Qt PDF and the software OpenGL renderer, is left out of
-the bundle along with the third-party code it would bring. The image plugins
-all stay, because an SVG icon can embed a raster image in any of their formats.
+stops while the recorded version differs from the installed one.
+
+**Not covered yet: Qt PDF, Qt Network and the software OpenGL renderer.** They
+ship in the bundle, and the third-party code they carry (PDFium, the Public
+Suffix List and libpsl, and Mesa) has no notice there. Gather those before the
+folder is distributed.
 
 One folder rather than one file: a one-file build unpacks the whole bundle to
 `%TEMP%` on every launch, which with Qt and Arrow in it costs seconds each time
