@@ -528,6 +528,11 @@ class MainWindow(QMainWindow):
         for index, explained in enumerate(_WORKSPACE_TIPS):
             self._workspace.setTabToolTip(index, explained)
         self._workspace.setCurrentIndex(1)
+        self._workspace.currentChanged.connect(
+            lambda _index: self._evidence.triage_in_front(
+                self._workspace.currentWidget() is self._triage
+            )
+        )
         splitter = self._build_splitter(self._workspace)
         # Kept as an attribute for the tests that size it directly, now that
         # the strip sits between it and the window.
