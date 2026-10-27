@@ -49,6 +49,13 @@ datas = [
 # the tool made it, which is the one thing the manifest is for.
 datas += copy_metadata("logarc")
 
+# The licences of what the bundle redistributes, committed in
+# packaging/third-party/ and refreshed by hand when a dependency changes (its
+# README says how). `packaging/rebuild.py` refuses a bundle without them.
+THIRD_PARTY = PROJECT / "packaging" / "third-party"
+datas += [(str(THIRD_PARTY / "python.txt"), "licenses")]
+datas += [(str(THIRD_PARTY / name), f"licenses/{name}") for name in ("python-extra", "native", "qt")]
+
 # The CRS sidecar, its ruleset and the licences of what is compiled into it,
 # placed where `logarc.detect.crs.sidecar` looks when frozen. Neither is Python,
 # so PyInstaller cannot find them; `crs_bundle.datas()` raises rather than
@@ -115,25 +122,6 @@ analysis = Analysis(
     noarchive=False,
     optimize=0,
 )
-
-# The licences of everything collected above, Qt, CPython and the native
-# libraries CPython links included, under licenses/. Read from what was
-# collected rather than from the dependency list, so the command line kept out
-# of the bundle brings no notice for code it does not contain; `licences.datas()`
-# raises for anything shipped without a licence, which stops the build here.
-import licences  # noqa: E402
-
-try:
-    analysis.datas += [
-        ((PurePosixPath(dest) / Path(source).name).as_posix(), source, "DATA")
-        for source, dest in licences.datas(
-            scripts=(entry[1] for entry in analysis.scripts),
-            pure=(entry[0] for entry in analysis.pure),
-            binaries=(entry[0] for entry in analysis.binaries),
-        )
-    ]
-except licences.LicenceError as exc:
-    raise SystemExit(str(exc)) from exc
 
 pyz = PYZ(analysis.pure)
 

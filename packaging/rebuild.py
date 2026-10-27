@@ -556,23 +556,39 @@ def check_icons(bundle: Path) -> str | None:
     return None
 
 
-#: Notices a bundle must carry whatever else it collects: CPython's, and Qt's and
-#: its bindings', which are the largest code the bundle redistributes.
-_REQUIRED_LICENCES: Final = ("python/python", "python/pyqt6", "python/pyqt6-qt6", "qt")
+#: What `packaging/third-party/` carries into the bundle's licenses/: the Python
+#: packages' licences, the further notices some of them carry, CPython's and the
+#: native libraries', and those of the code compiled into Qt.
+LICENCES: Final = ("python.txt", "python-extra", "native", "qt/THIRD-PARTY-NOTICES.txt")
+
+
+def installed_qt() -> str | None:
+    """The PyQt6-Qt6 version installed here, which is the Qt the build bundles."""
+    try:
+        return metadata.version("PyQt6-Qt6")
+    except metadata.PackageNotFoundError:
+        return None
 
 
 def check_licences(bundle: Path) -> str | None:
-    """Every notice folder `packaging/licences.py` indexed is in the bundle and
-    holds a file, and the index names CPython's and Qt's."""
+    """The licences committed in `packaging/third-party/` are in the bundle, and
+    its Qt notices were fetched for the Qt the bundle ships."""
     root = bundle / "_internal" / "licenses"
-    index = root / "INDEX.txt"
-    if not index.is_file():
-        return "no licence index - the licences of what the bundle ships were not collected"
-    listed = index.read_text(encoding="utf-8").split()
-    missing = [name for name in _REQUIRED_LICENCES if name not in listed]
-    empty = [name for name in listed if not any(p.is_file() for p in (root / name).rglob("*"))]
-    if missing or empty:
-        return "licences not bundled: " + ", ".join([*missing, *empty])
+    missing = [
+        name
+        for name in LICENCES
+        if not ((root / name).is_file() or any(p.is_file() for p in (root / name).rglob("*")))
+    ]
+    if missing:
+        return "licences not bundled: " + ", ".join(missing)
+    version = root / "qt" / "VERSION"
+    recorded = version.read_text(encoding="utf-8").strip() if version.is_file() else None
+    shipped = installed_qt()
+    if recorded != shipped:
+        return (
+            f"Qt's third-party notices are for Qt {recorded} and the bundle ships Qt {shipped}: "
+            "run packaging/fetch_qt_attributions.py"
+        )
     return None
 
 
