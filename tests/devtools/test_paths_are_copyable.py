@@ -17,8 +17,8 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from logarc.cli import main as cli
-from logarc.cli.main import app
+from logarc.devtools import main as cli
+from logarc.devtools.main import app
 
 LINE = '203.0.113.5 - - [10/Oct/2020:13:55:36 +0000] "GET /?q=1 HTTP/1.1" 200 2326 "-" "curl/8.0"'
 
@@ -52,41 +52,6 @@ def test_the_case_path_can_be_copied_out_of_the_ingest_report(
 
     assert result.exit_code == 0, result.output
     assert str(case) in result.output, "the case path did not survive being printed"
-
-
-def test_a_written_report_names_a_path_that_can_be_copied(
-    narrow_console: None, log: Path, tmp_path: Path
-) -> None:
-    case = tmp_path / "case"
-    runner = CliRunner()
-    assert runner.invoke(app, ["ingest", str(log), "--case", str(case)]).exit_code == 0
-
-    out = tmp_path / "report.html"
-    result = runner.invoke(
-        app,
-        [
-            "export", "--case", str(case), "--ip", "203.0.113.5",
-            "--format", "html", "--out", str(out),
-        ],
-    )  # fmt: skip
-
-    assert result.exit_code == 0, result.output
-    assert str(out) in result.output
-
-
-def test_the_client_list_names_a_case_path_that_can_be_copied(
-    narrow_console: None, log: Path, tmp_path: Path
-) -> None:
-    """`list-ips` had the same fault as `ingest` and outlived the first fix:
-    both put the path in a table title, and only one was moved out of it."""
-    case = tmp_path / "case"
-    runner = CliRunner()
-    assert runner.invoke(app, ["ingest", str(log), "--case", str(case)]).exit_code == 0
-
-    result = runner.invoke(app, ["list-ips", "--case", str(case)])
-
-    assert result.exit_code == 0, result.output
-    assert str(case) in result.output
 
 
 def test_the_quarantine_path_can_be_copied(narrow_console: None, tmp_path: Path) -> None:

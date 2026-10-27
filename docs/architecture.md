@@ -155,8 +155,8 @@ depth greater than 1 is itself an evasion signal. Both raw and decoded forms are
 separate match fields.
 
 **OWASP CRS is a third source of signature matches**, run through Coraza in a Go sidecar after
-every scan — by the window and by `logarc ingest`, unless the reader turned it off — and by
-`logarc enrich` on demand, then read from the case thereafter. It supplies the signatures the packs
+every scan — by the window and by `logarc-dev ingest`, unless the reader turned it off — and by
+`logarc-dev enrich` on demand, then read from the case thereafter. It supplies the signatures the packs
 above miss — they catch 961 of the 1,099 access-log-visible cases in CRS's own regression corpus,
 87.4% on 2026-10-05, and fire on none of its 134 certified-harmless ones — and nothing else: CRS is
 stateless per request, so it expresses no behavioural rule, and it emits rule ids and tags rather than an
@@ -187,7 +187,7 @@ class LogParser(Protocol):
 Register it in `parsers/registry.py`. Nothing else changes.
 
 For Apache-style formats there is no new code at all, and no Python either: write the
-directive down with `logarc formats add` or in **Case → Formats and rules…**, and
+directive down in **Case → Formats and rules…**, and
 `parsers/logformat.py` compiles it into a matcher.
 
 A format is a *definition*, not a name — `parsers/spec.py` — because a name only

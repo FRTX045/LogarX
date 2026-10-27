@@ -491,7 +491,7 @@ rather than quarantine it. `--format` is what turns that refusal into silence,
 and the CLI is the only place it can be given:
 
 ```bash
-logarc ingest access.log notes.txt --case ./case-dead --format apache-combined
+logarc-dev ingest access.log notes.txt --case ./case-dead --format apache-combined
 ```
 
 where `notes.txt` is any file that is not an access log. That the case has to
@@ -786,7 +786,7 @@ from the one a directive gets.
 4. Put `client.ip` back, name it `ecs`, save, and make a case from `ecs.jsonl`
    with it.
 
-**Pass:** 40 events, none quarantined. `logarc formats show ecs` prints the
+**Pass:** 40 events, none quarantined. Selecting `ecs` in the list shows the
 mapping.
 
 ---
@@ -821,7 +821,7 @@ table shows what those read out of the row, and the columns nobody mapped
 **Pass:** 40 events and **0 quarantined** — the four `#` directives are the
 log's own bookkeeping, not lines that failed. No amber strip appears.
 
-4. `logarc formats show iis`
+4. Select `iis` in the list.
 
 **Pass:** Columns reads **from the log**, not a frozen list. The case's
 `case.json`, though, names the columns that were actually in this file.
@@ -867,13 +867,13 @@ Automated in `tests/parsers/test_builtins.py`, one real line each. What is
 here is the part a test cannot check: that the list reads as something a person
 can choose from.
 
-1. `logarc formats`
+1. **Case → Formats and rules**, the formats tab.
 
-**Pass:** twenty-one rows, each with a plain sentence saying what it reads —
+**Pass:** twenty-one built-ins, each with a plain note saying what it reads —
 "Caddy's default JSON access log", "IIS and anything else writing W3C
-extended". Not a definition; the line under the table says where those are.
+extended".
 
-2. `logarc formats show caddy-json`
+2. Select `caddy-json`.
 
 **Pass:** the mapping, field by field, and the kind.
 

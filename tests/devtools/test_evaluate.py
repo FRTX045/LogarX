@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from logarc.cli.main import app
 from logarc.core.activity import ActivityCategory
+from logarc.devtools.main import app
 from logarc.evaluation.truth import TruthRecord, TruthWriter
 
 runner = CliRunner()

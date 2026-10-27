@@ -242,7 +242,7 @@ def analyse_ip(
 ) -> AnalysisResult:
     """Reconstruct what one client did.
 
-    `crs` is the detection set from `logarc enrich`, if the case has one. It
+    `crs` is the detection set from `logarc-dev enrich` or the window's CRS run, if the case has one. It
     never changes a label a rule packed here asserted; it only names requests
     that would otherwise fall through to ordinary traffic.
 

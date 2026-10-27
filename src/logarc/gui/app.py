@@ -1396,7 +1396,7 @@ class MainWindow(QMainWindow):
 
         Said rather than done silently. Nothing happening is indistinguishable
         from a control that does not work, and there is one reason somebody
-        might mean it: `logarc enrich` can add CRS evidence to a case from a
+        might mean it: Case → Run OWASP CRS can add CRS evidence to a case from a
         terminal while the window holds it, and reopening is how that gets
         picked up. A reader who came here for that has to learn they did not.
         """

@@ -1,7 +1,7 @@
 # ADR-0012: The window is the product; the command line is a developer tool
 
-- **Status:** Accepted. The build check is in force now; the rest is carried
-  out at the first public release (see *When* below).
+- **Status:** Accepted, and carried out: the build check on 2026-10-17, the
+  rest on 2026-10-28, before the first public release (see *When* below).
 - **Date:** 2026-10-17
 
 ## Context

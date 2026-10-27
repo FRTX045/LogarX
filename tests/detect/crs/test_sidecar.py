@@ -210,7 +210,7 @@ def test_a_source_checkout_missing_crs_is_pointed_at_setup_crs(
     with pytest.raises(CrsUnavailableError) as raised:
         config.check()
 
-    assert "logarc setup-crs" in str(raised.value)
+    assert "logarc-dev setup-crs" in str(raised.value)
 
 
 def test_the_binary_name_follows_the_interpreter_not_the_build_host() -> None:
@@ -581,7 +581,7 @@ def test_crs_runs_on_a_new_case_unless_somebody_says_otherwise(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """On by default, in the window and on the command line alike. The switch
-    is only consulted for the run nobody asked for: `logarc enrich` and the
+    is only consulted for the run nobody asked for: `logarc-dev enrich` and the
     window's own menu item still run CRS when they are told to."""
     monkeypatch.delenv(AUTO_ENV, raising=False)
 

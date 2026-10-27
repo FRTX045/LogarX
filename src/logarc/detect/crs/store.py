@@ -1,6 +1,6 @@
 """Where a case keeps the CRS detections it was enriched with.
 
-One JSONL file beside the manifest, written once by `logarc enrich` and read by
+One JSONL file beside the manifest, written once by an enrichment and read by
 every analysis afterwards. Not folded into the event store: detections are
 optional, regenerable, and a different shape from events — several per request
 or none — so keeping them separate leaves the parquet schema alone and makes an

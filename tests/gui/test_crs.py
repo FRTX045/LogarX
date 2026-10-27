@@ -275,7 +275,7 @@ def test_a_run_that_returns_no_outcome_still_lets_the_scan_start(
 # -- running it by hand, from the Case menu --------------------------------
 #
 # With the preference off, or `LOGARC_CRS=off`, the window used to have no way
-# to run CRS on one case at all — only `logarc enrich` could. The old offer's
+# to run CRS on one case at all — only `logarc-dev enrich` could. The old offer's
 # "You can run it later instead" had no route behind it in the window either.
 
 

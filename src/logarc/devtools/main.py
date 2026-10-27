@@ -9,23 +9,18 @@ import tempfile
 from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Final
+from typing import TYPE_CHECKING, Annotated
 
 import typer
 from rich.table import Table
 
 from logarc import __version__
-from logarc.analysis import AnalysisPolicy, analyse_ip
+from logarc.analysis import AnalysisPolicy
 from logarc.case import Case, CaseError
-from logarc.cli.formats import formats_app
-from logarc.cli.support import console, errors, fail, path_line, safe_output
-from logarc.core.activity import Severity
 from logarc.detect.crs import (
     AUTO_ENV,
     CrsUnavailableError,
     SidecarConfig,
-    host_speaks_for,
-    primary_site_host,
     runs_by_default,
 )
 from logarc.detect.crs.setup import SetupError, setup_crs
@@ -34,6 +29,7 @@ from logarc.detect.engine import RuleEngine
 from logarc.detect.rulepacks import default_rules
 from logarc.detect.rules import RulePackError
 from logarc.detect.ruleset import build_rules
+from logarc.devtools.support import console, errors, fail, path_line, safe_output
 from logarc.enrich import EnrichOutcome, enrich_case
 from logarc.episode.builder import EpisodePolicy
 from logarc.evaluation.benchmark import BenchmarkError, BenchmarkResult, run_benchmark
@@ -51,29 +47,19 @@ from logarc.parsers.registry import (
     UnknownFormatError,
     register_saved_formats,
 )
-from logarc.report import export as export_formats
 from logarc.sessionize.segmenter import SessionPolicy
-from logarc.storage.event_store import SORT_KEYS, StoreStateError
+from logarc.storage.event_store import StoreStateError
 from logarc.style import plural
 
 if TYPE_CHECKING:
-    from logarc.analysis import AnalysisResult
-
-_SEVERITY_STYLE: Final[dict[Severity, str]] = {
-    Severity.INFO: "dim",
-    Severity.LOW: "cyan",
-    Severity.MEDIUM: "yellow",
-    Severity.HIGH: "bright_red",
-    Severity.CRITICAL: "bold red",
-}
+    pass
 
 app = typer.Typer(
-    name="logarc",
-    help="Reconstruct what an IP did on a web server, from its access logs.",
+    name="logarc-dev",
+    help="Developer tools: build cases from logs, and measure what logarc gets right.",
     no_args_is_help=True,
     add_completion=False,
 )
-app.add_typer(formats_app, name="formats")
 #: Errors that represent a bad request from the user rather than a defect. These
 #: are reported as a single line; anything else keeps its traceback, because an
 #: unexpected failure in a forensic tool should be loud.
@@ -119,24 +105,6 @@ def _rule_engine(rules: list[Path] | None) -> RuleEngine | None:
     return RuleEngine(in_force.rules, described=in_force.described)
 
 
-def _reconstruct(opened: Case, ip: str, rules: list[Path] | None) -> AnalysisResult:
-    """One client's reconstruction, with whatever CRS contributed to the case.
-
-    The one way the command line reconstructs a client, so `analyze`,
-    `evidence` and `export` cannot disagree about which rules and which CRS
-    evidence a result rests on.
-    """
-    crs = opened.crs_evidence()
-    return analyse_ip(
-        opened.store,
-        ip,
-        engine=opened.rule_engine(extra_packs=rules or ()),
-        crs=crs.index,
-        crs_fingerprint=crs.fingerprint,
-        crs_coverage=crs.coverage,
-    )
-
-
 def _say_crs_coverage(coverage: tuple[int, int] | None, case: Path) -> None:
     """Warn that CRS read only part of `case`, when it did.
 
@@ -150,7 +118,7 @@ def _say_crs_coverage(coverage: tuple[int, int] | None, case: Path) -> None:
     console.print(
         f"[yellow]CRS stopped part way[/yellow]: it read {replayed:,} of {requests:,} "
         "requests, and the rest carry no CRS findings. Run "
-        f"[bold]logarc enrich --case {case}[/bold] again to cover them."
+        f"[bold]logarc-dev enrich --case {case}[/bold] again to cover them."
     )
 
 
@@ -197,7 +165,7 @@ def main(
         typer.Option("--version", callback=_version_callback, is_eager=True, help="Show version."),
     ] = False,
 ) -> None:
-    """Reconstruct what an IP did on a web server, from its access logs."""
+    """Developer tools: build cases from logs, and measure what logarc gets right."""
     safe_output()
     _install_saved_formats()
 
@@ -238,7 +206,7 @@ def ingest(
             help="A domain this site owns. Repeatable. It lets logarc tell a "
             "link to your own site from a link somewhere else, which is the "
             "only thing separating remote file inclusion from an ordinary "
-            "redirect. Set it later with `logarc site-hosts`.",
+            "redirect. The window asks for it after a log is opened.",
         ),
     ] = None,
     crs: Annotated[
@@ -246,7 +214,7 @@ def ingest(
         typer.Option(
             "--crs/--no-crs",
             help="Replay the new case through OWASP CRS once it is read. On "
-            f"unless {AUTO_ENV}=off says otherwise; `logarc enrich` runs it "
+            f"unless {AUTO_ENV}=off says otherwise; `logarc-dev enrich` runs it "
             "again later, at another paranoia level if wanted.",
             show_default=False,
         ),
@@ -319,7 +287,7 @@ def _enrich_after_ingest(case: Path) -> None:
 
     Nothing here exits non-zero. The ingest the command was asked for has
     succeeded, and CRS only adds findings — so a missing sidecar is a notice and
-    a failed run is a warning with the command that tries again. `logarc enrich`
+    a failed run is a warning with the command that tries again. `logarc-dev enrich`
     is where CRS failing is a failure, because there it is the whole job.
     """
     config = SidecarConfig()
@@ -339,7 +307,7 @@ def _enrich_after_ingest(case: Path) -> None:
     except (CrsUnavailableError, OSError, *USER_ERRORS) as exc:
         console.print("\n[yellow]CRS did not finish:[/yellow]", end=" ")
         console.print(str(exc), markup=False)
-        path_line(f"The case is complete without it. To try again: logarc enrich --case {case}")
+        path_line(f"The case is complete without it. To try again: logarc-dev enrich --case {case}")
         return
 
     console.print()
@@ -436,190 +404,6 @@ def score_crs(
             caught_by = ", ".join(f"{rule} x{n}" for rule, n in list(score.by_rule.items())[:3])
             console.print(f"  [dim]caught by: {caught_by}[/dim]")
         console.print()
-
-
-@app.command("list-ips")
-def list_ips(
-    case: Annotated[Path, typer.Option("--case", "-c", help="Case directory to read.")],
-    limit: Annotated[int, typer.Option("--limit", "-n", help="How many to show.")] = 20,
-    sort: Annotated[
-        str, typer.Option("--sort", "-s", help=f"One of: {', '.join(SORT_KEYS)}.")
-    ] = "requests",
-) -> None:
-    """List the clients seen in a case."""
-    try:
-        with Case.open(case) as opened:
-            summaries = opened.store.ip_summaries(limit=limit, order_by=sort)
-    except USER_ERRORS as exc:
-        raise fail(str(exc)) from exc
-
-    if not summaries:
-        console.print("[yellow]No events in this case.[/yellow]")
-        return
-
-    table = Table(title="Clients")
-    table.add_column("IP")
-    for column in ("Requests", "Paths", "4xx", "Bytes"):
-        table.add_column(column, justify="right")
-    table.add_column("First seen")
-    table.add_column("Last seen")
-    for summary in summaries:
-        table.add_row(
-            summary.client_ip,
-            f"{summary.request_count:,}",
-            f"{summary.distinct_paths:,}",
-            f"{summary.client_error_ratio:.0%}",
-            f"{summary.bytes_total:,}",
-            summary.first_seen.strftime("%Y-%m-%d %H:%M:%S"),
-            summary.last_seen.strftime("%Y-%m-%d %H:%M:%S"),
-        )
-    console.print(table)
-    path_line(f"Case: {case}")
-
-
-@app.command()
-def analyze(
-    case: Annotated[Path, typer.Option("--case", "-c", help="Case directory to read.")],
-    ip: Annotated[str, typer.Option("--ip", help="Client address to reconstruct.")],
-    out: Annotated[
-        Path | None, typer.Option("--out", "-o", help="Write the graph as JSON to this path.")
-    ] = None,
-    rules: Annotated[list[Path] | None, RULES_OPTION] = None,
-) -> None:
-    """Reconstruct one client's activity as a graph."""
-    try:
-        with Case.open(case) as opened:
-            result = _reconstruct(opened, ip, rules)
-    except USER_ERRORS as exc:
-        raise fail(str(exc)) from exc
-
-    if result.crs_fingerprint is None:
-        # Said out loud on every run, not once at enrich time. The same log
-        # analysed on a machine without the sidecar yields a different answer,
-        # and a forensic result that does not say so is the failure mode this
-        # warning exists to prevent.
-        console.print(
-            "[yellow]CRS not consulted[/yellow] — signature coverage is the bundled rules "
-            f"alone. Run [bold]logarc enrich --case {case}[/bold] to add it."
-        )
-    _say_crs_coverage(result.crs_coverage, case)
-
-    if not result.episodes:
-        console.print(f"[yellow]No activity found for {ip} in this case.[/yellow]")
-        return
-
-    table = Table(title=f"Activity of {ip}")
-    table.add_column("Time")
-    table.add_column("Activity")
-    table.add_column("Severity")
-    table.add_column("OWASP")
-    table.add_column("Requests", justify="right")
-    table.add_column("Outcome")
-    for episode in result.episodes:
-        table.add_row(
-            episode.start.strftime("%Y-%m-%d %H:%M:%S"),
-            episode.label,
-            f"[{_SEVERITY_STYLE[episode.severity]}]{episode.severity.name.title()}[/]",
-            episode.activity.owasp or "-",
-            f"{episode.request_count:,}",
-            episode.outcome.value,
-        )
-    console.print(table)
-    console.print(
-        f"{plural(result.request_count, 'request')} across "
-        f"{plural(len(result.sessions), 'session')} reduced to "
-        f"{plural(len(result.episodes), 'activity', 'activities')}."
-    )
-
-    if out is not None:
-        out.write_text(json.dumps(result.to_dict(), indent=2), encoding="utf-8")
-        path_line(f"Graph written to {out}")
-
-
-@app.command()
-def evidence(
-    case: Annotated[Path, typer.Option("--case", "-c", help="Case directory to read.")],
-    ip: Annotated[str, typer.Option("--ip", help="Client address to show evidence for.")],
-    episode: Annotated[
-        str | None, typer.Option("--episode", "-e", help="Show only this activity.")
-    ] = None,
-    limit: Annotated[
-        int, typer.Option("--limit", "-n", help="Source lines to show per activity.")
-    ] = 10,
-    rules: Annotated[list[Path] | None, RULES_OPTION] = None,
-) -> None:
-    """Show the raw log lines behind a client's reconstructed activity.
-
-    The other half of the chain of custody: `analyze` says what happened, this
-    says which lines say so.
-    """
-    try:
-        with Case.open(case) as opened:
-            result = _reconstruct(opened, ip, rules)
-            episodes = result.episodes
-            if episode is not None:
-                episodes = tuple(item for item in episodes if item.episode_id == episode)
-                if not episodes:
-                    known = ", ".join(item.episode_id for item in result.episodes) or "none"
-                    raise fail(f"no activity {episode!r} for {ip}; this client has: {known}")
-            lines = {
-                item.episode_id: opened.read_evidence(item.evidence[:limit]) for item in episodes
-            }
-    except USER_ERRORS as exc:
-        raise fail(str(exc)) from exc
-
-    if not episodes:
-        console.print(f"[yellow]No activity found for {ip} in this case.[/yellow]")
-        return
-
-    for item in episodes:
-        console.print(
-            f"\n[bold]{item.episode_id}[/bold]  "
-            f"[{_SEVERITY_STYLE[item.severity]}]{item.label}[/]  "
-            f"{plural(item.request_count, 'request')}, outcome {item.outcome.value}"
-        )
-        for line in lines[item.episode_id]:
-            if line.available:
-                marker = "" if line.verified else " [yellow](not verified)[/yellow]"
-                console.print(f"  [dim]{line.ref}[/dim]{marker}")
-                console.print(f"    {line.text}", highlight=False)
-                if line.warning is not None:
-                    # The reader's own account: not being able to check a source
-                    # is not the same finding as the source having changed.
-                    console.print(f"    {line.warning}", style="yellow", markup=False)
-            else:
-                console.print(f"  [dim]{line.ref}[/dim] [yellow]unavailable[/yellow]")
-                if line.note:
-                    console.print(f"    [yellow]{line.note}[/yellow]")
-        left = item.evidence_total - len(lines[item.episode_id])
-        if left > 0:
-            console.print(f"  [dim]… {plural(left, 'more line')} in this activity[/dim]")
-
-
-@app.command()
-def export(
-    case: Annotated[Path, typer.Option("--case", "-c", help="Case directory to read.")],
-    ip: Annotated[str, typer.Option("--ip", help="Client address to report on.")],
-    out: Annotated[Path, typer.Option("--out", "-o", help="File to write.")],
-    output_format: Annotated[str, typer.Option("--format", "-f", help="html or json.")] = "html",
-    rules: Annotated[list[Path] | None, RULES_OPTION] = None,
-) -> None:
-    """Write a standalone report for one client."""
-    # Checked before the case is opened, so a typo costs nothing but the typo.
-    try:
-        export_formats.named(output_format)
-    except ValueError as exc:
-        raise fail(str(exc)) from exc
-
-    try:
-        with Case.open(case) as opened:
-            result = _reconstruct(opened, ip, rules)
-            manifest = opened.manifest
-    except USER_ERRORS as exc:
-        raise fail(str(exc)) from exc
-
-    export_formats.write_reconstruction(result, manifest, kind=output_format, target=out)
-    path_line(f"Report written to {out}")
 
 
 @app.command()
@@ -816,90 +600,6 @@ def convert_csic_command(
         "\nThe traces carry no responses, so status is written as 200 throughout: "
         "outcome cannot be evaluated on this dataset."
     )
-
-
-@app.command("site-hosts")
-def site_hosts(
-    case: Annotated[Path, typer.Option("--case", "-c", help="Case directory.")],
-    set_: Annotated[
-        list[str] | None,
-        typer.Option("--set", help="A domain this site owns. Repeatable. Replaces what is there."),
-    ] = None,
-    clear: Annotated[
-        bool, typer.Option("--clear", help="Forget the domains this case was told.")
-    ] = False,
-) -> None:
-    """Show or set the domains a case treats as its own site.
-
-    It decides whether a URL in a query parameter points somewhere this site
-    does not own — the only thing separating remote file inclusion from a share
-    link, an OAuth callback or a login redirect, since the request is
-    `GET /page?url=...` either way. `rfi_offsite_url` reads it directly, and
-    `logarc enrich` hands it to CRS, whose off-domain rule 931130 names nothing
-    until it has been told.
-
-    **A case with no answer is not guessed at.** Both stay silent, so the cost
-    of never running this command is findings rather than false ones. The
-    alternative — reading the site's name out of the log's own Host header —
-    was measured against the OWASP CRS corpus and accused two ordinary requests
-    for no extra catches, because behind a reverse proxy that header says
-    `localhost`.
-
-    **A wrong answer fails the other way.** A domain of the site's left off
-    this list, or mistyped, turns its own links into findings.
-
-    Whole hosts, never suffixes: a `www.` is a different host and has to be
-    named too. Whatever is given is reduced the way a URL's host is, so
-    `https://shop.test/` and `shop.test` mean the same thing.
-    """
-    if set_ and clear:
-        raise fail("--set and --clear ask for opposite things; pass one.")
-
-    try:
-        with Case.open(case) as opened:
-            if clear:
-                opened.set_site_hosts([])
-            elif set_:
-                opened.set_site_hosts(set_)
-            named = opened.site_hosts
-            # Whether enriching again would tell CRS a different host, and one
-            # its off-domain rule could then be trusted with. An answer given
-            # after enrichment usually does both; two unrelated domains do
-            # neither, since no one Host header speaks for them.
-            enriched = opened.crs_evidence().fingerprint is not None
-            crs_host = opened.manifest.config.get("crs_host")
-            told_next = primary_site_host(named)
-            stale = (
-                enriched
-                and bool(set_)
-                and crs_host != told_next
-                and host_speaks_for(told_next, named)
-            )
-    except USER_ERRORS as exc:
-        raise fail(str(exc)) from exc
-
-    if not named:
-        console.print(
-            "[yellow]This case names no domains as its own.[/yellow] "
-            "Remote file inclusion cannot be told from an ordinary outbound link "
-            "without them, so that rule stays silent.\n\n"
-            f"  logarc site-hosts --case {case} --set example.com"
-        )
-        return
-
-    table = Table(title="This site's own domains")
-    table.add_column("Domain")
-    for name in named:
-        table.add_row(name)
-    console.print(table)
-
-    if stale:
-        console.print(
-            f"\n[yellow]This case was enriched against {crs_host or 'an unrecorded host'}, "
-            "so CRS's off-domain verdicts on disk were not reached against these "
-            "domains and are not used until it runs again.[/yellow]\n\n"
-            f"  logarc enrich --case {case}"
-        )
 
 
 @app.command()

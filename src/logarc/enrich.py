@@ -101,7 +101,7 @@ def crs_config(site_hosts: Sequence[str], base: SidecarConfig | None = None) -> 
     whatever configuration the caller built. It is a fact about the site, not a
     preference: the command line builds its own for the paranoia level and has
     no way to set a host, and if the answer only applied when nothing was
-    passed, `logarc enrich` would go on telling CRS that every site is
+    passed, an enrichment would go on telling CRS that every site is
     `localhost`. The window asks the same question when it judges whether a
     case's CRS results are current, which is why both ask it here.
     """

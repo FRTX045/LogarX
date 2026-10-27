@@ -2,7 +2,7 @@
 
 Found 2026-10-05. On Windows, Python encodes redirected output in the locale's
 code page — cp1252 here — and refuses anything outside it. A log line is
-whatever the client sent, so `logarc evidence … > evidence.txt` stopped half way
+whatever the client sent, so evidence redirected to a file stopped half way
 with a traceback on a User-Agent in Chinese, and every command showing Rich's
 progress spinner failed outright on `> NUL`, which Windows reports as a
 terminal: the spinner's braille is not in cp1252 either. The second surfaced as
@@ -23,8 +23,6 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from logarc.case import Case
-
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -35,18 +33,16 @@ LINE = (
 
 
 @pytest.fixture
-def case(tmp_path: Path) -> Path:
-    log = tmp_path / "access.log"
-    log.write_text(LINE + "\n", encoding="utf-8")
-    root = tmp_path / "case"
-    with Case.create(root) as opened:
-        opened.ingest([log])
-    return root
+def log(tmp_path: Path) -> Path:
+    path = tmp_path / "access.log"
+    path.write_text(LINE + "\n", encoding="utf-8")
+    return path
 
 
-def _evidence(case: Path, tmp_path: Path, **env: str) -> tuple[int, bytes]:
-    """`logarc evidence` in its own process, stdout on a file. Returns the
-    exit code and the bytes written."""
+def _ingest(log: Path, tmp_path: Path, **env: str) -> tuple[int, bytes]:
+    """`logarc-dev ingest` in its own process, stdout on a file, into a case
+    whose path is written in Chinese, which the command prints back. Returns
+    the exit code and the bytes written."""
     environment = {
         key: value
         for key, value in os.environ.items()
@@ -59,12 +55,13 @@ def _evidence(case: Path, tmp_path: Path, **env: str) -> tuple[int, bytes]:
             [
                 sys.executable,
                 "-c",
-                "import sys; from logarc.cli.main import app; sys.argv[0] = 'logarc'; app()",
-                "evidence",
+                "import sys; from logarc.devtools.main import app; "
+                "sys.argv[0] = 'logarc-dev'; app()",
+                "ingest",
+                str(log),
                 "--case",
-                str(case),
-                "--ip",
-                "203.0.113.5",
+                str(tmp_path / "中文案例"),
+                "--no-crs",
             ],
             stdout=handle,
             stderr=subprocess.PIPE,
@@ -75,23 +72,22 @@ def _evidence(case: Path, tmp_path: Path, **env: str) -> tuple[int, bytes]:
     return done.returncode, out.read_bytes()
 
 
-def test_evidence_redirected_to_a_file_keeps_every_character(case: Path, tmp_path: Path) -> None:
+def test_output_redirected_to_a_file_keeps_every_character(log: Path, tmp_path: Path) -> None:
     """Python's own default for a redirect, UTF-8 mode off. On Windows that is
     the code page, which is where it broke; elsewhere it is UTF-8 already, and
-    this holds either way. UTF-8 because it loses nothing, and evidence is the
-    one output that may not."""
-    code, written = _evidence(case, tmp_path, PYTHONUTF8="0")
+    this holds either way. UTF-8 because it loses nothing."""
+    code, written = _ingest(log, tmp_path, PYTHONUTF8="0")
 
     assert code == 0
-    assert "中文浏览器" in written.decode("utf-8")
+    assert "中文案例" in written.decode("utf-8")
 
 
-def test_a_chosen_encoding_is_kept_and_nothing_crashes(case: Path, tmp_path: Path) -> None:
+def test_a_chosen_encoding_is_kept_and_nothing_crashes(log: Path, tmp_path: Path) -> None:
     """Somebody who set `PYTHONIOENCODING` chose it, so it is kept. What it
     cannot hold is written as an escape rather than failing the command — and
     this is the case that reproduces the crash on every platform, not only on
     Windows."""
-    code, written = _evidence(case, tmp_path, PYTHONIOENCODING="cp1252")
+    code, written = _ingest(log, tmp_path, PYTHONIOENCODING="cp1252")
 
     assert code == 0
     assert "\\u4e2d\\u6587" in written.decode("cp1252")

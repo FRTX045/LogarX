@@ -237,7 +237,7 @@ file paths, which is why their configuration differs from the excerpt's older fi
 The README's ingest rate is the medium log ingested three times at `e87e8d7` with nothing else
 running: 84,623, 85,908 and 87,202 lines/s, median **85,908**, with the default four workers on
 four physical cores (Windows 11, Python 3.12). It is a different measurement from the sequential
-`logarc benchmark` figures under [Throughput and memory](#throughput-and-memory).
+`logarc-dev benchmark` figures under [Throughput and memory](#throughput-and-memory).
 
 | | small native | small + CRS | medium native | medium + CRS | large native | large + CRS |
 |---|---:|---:|---:|---:|---:|---:|
@@ -300,10 +300,10 @@ The commands that produced every column, per tier:
 ```bash
 B=datasets/apache-shopfront/2026-10-06-medium
 (cd $B && sha256sum -c SHA256SUMS)
-logarc ingest $B/access.log --case ./case --no-crs
-logarc enrich --case ./case
-logarc evaluate -c ./case -t $B/truth.jsonl -o native.json --no-crs
-logarc evaluate -c ./case -t $B/truth.jsonl -o crs.json
+logarc-dev ingest $B/access.log --case ./case --no-crs
+logarc-dev enrich --case ./case
+logarc-dev evaluate -c ./case -t $B/truth.jsonl -o native.json --no-crs
+logarc-dev evaluate -c ./case -t $B/truth.jsonl -o crs.json
 ```
 
 A rebuild from the recipe will not have these digests: the dataset reproduces its plan of requests
@@ -383,8 +383,8 @@ To score one format:
 python3 tools/render.py datasets/apache-shopfront/2026-10-06-medium   # in the dataset's checkout
 R=datasets/apache-shopfront/2026-10-06-medium/rendered
 (cd $R && sha256sum -c SHA256SUMS)
-logarc ingest $R/nginx-json.log --case ./case --no-crs
-logarc evaluate -c ./case -t $R/nginx-json.truth.jsonl -o every-record.json --no-crs
+logarc-dev ingest $R/nginx-json.log --case ./case --no-crs
+logarc-dev evaluate -c ./case -t $R/nginx-json.truth.jsonl -o every-record.json --no-crs
 ```
 
 For the table, score again with a truth file that leaves out the line numbers listed under
@@ -622,10 +622,10 @@ Point them at any build you do have and expect different numbers.
 
 ```bash
 B=samples/apache-shopfront/2026-09-07-medium
-logarc ingest $B/access.log --case ./case-medium
-logarc enrich --case ./case-medium
-logarc evaluate --case ./case-medium --truth $B/truth.jsonl --out medium.json
-logarc evaluate --case ./case-medium --truth $B/truth.jsonl --no-absorb --out medium-noabsorb.json
+logarc-dev ingest $B/access.log --case ./case-medium
+logarc-dev enrich --case ./case-medium
+logarc-dev evaluate --case ./case-medium --truth $B/truth.jsonl --out medium.json
+logarc-dev evaluate --case ./case-medium --truth $B/truth.jsonl --no-absorb --out medium-noabsorb.json
 ```
 
 The `enrich` step is part of the measurement, not an extra: every headline figure is of the
@@ -641,8 +641,8 @@ evaluation output for the committed 3,825-line excerpt, beside the log and the
 truth it was scored against:
 
 ```bash
-logarc ingest tests/data/apache-shopfront/excerpt.log --case /tmp/c --no-crs
-logarc evaluate -c /tmp/c -t tests/data/apache-shopfront/excerpt.truth.jsonl
+logarc-dev ingest tests/data/apache-shopfront/excerpt.log --case /tmp/c --no-crs
+logarc-dev evaluate -c /tmp/c -t tests/data/apache-shopfront/excerpt.truth.jsonl
 ```
 
 `tests/evaluation/test_published_scores.py` re-runs exactly that and compares
@@ -663,9 +663,9 @@ could move what a reader sees and fail no build.
 same way, with the enrichment actually run:
 
 ```bash
-logarc ingest tests/data/apache-shopfront/excerpt.log --case /tmp/c
-logarc enrich --case /tmp/c
-logarc evaluate -c /tmp/c -t tests/data/apache-shopfront/excerpt.truth.jsonl
+logarc-dev ingest tests/data/apache-shopfront/excerpt.log --case /tmp/c
+logarc-dev enrich --case /tmp/c
+logarc-dev evaluate -c /tmp/c -t tests/data/apache-shopfront/excerpt.truth.jsonl
 ```
 
 | committed excerpt, 3,825 requests | native | with CRS |
@@ -762,7 +762,7 @@ were one line.
 
 #### 931130, told the site's name
 
-**Added 2026-09-23.** `logarc enrich` now sends CRS the case's own domain as the
+**Added 2026-09-23.** `logarc-dev enrich` now sends CRS the case's own domain as the
 Host header, and 931130's verdicts count only when that one domain covers every
 domain the reader named. CRS compares by suffix, so `shop.test` covers
 `www.shop.test`; a site that also answers to an unrelated domain keeps the rule
@@ -1039,7 +1039,7 @@ below means restoring the original, which scored a fixed corpus revision:
 git revert 2868e78
 git clone https://github.com/coreruleset/coreruleset vendor/coreruleset
 git -C vendor/coreruleset checkout d694d465951ee06347214f1291ae096e40700001
-logarc score-crs --corpus vendor/coreruleset --out crs.json
+logarc-dev score-crs --corpus vendor/coreruleset --out crs.json
 ```
 
 The corpus revision matters: both the denominator and the rate drift as CRS gains cases, so a
@@ -1055,7 +1055,7 @@ the rules have since changed substantially and the figures below are stale. The
 tree now holds 107 rules across twelve attack packs and one action pack; family
 933 alone went from 0.012 to 0.68 on 2026-09-15.
 
-For current figures run `logarc score-crs`, which reports both directions —
+For current figures run `logarc-dev score-crs`, which reports both directions —
 what was caught, and what fired on traffic CRS certifies as harmless. The
 second column did not exist when this table was made.
 
@@ -1251,7 +1251,7 @@ reported, not tuned for accuracy.**
 
 ## Throughput and memory
 
-`logarc benchmark`, Windows 11, Python 3.12, one machine, on the medium build's real log. Each
+`logarc-dev benchmark`, Windows 11, Python 3.12, one machine, on the medium build's real log. Each
 size runs in a process of its own so peak memory is that run's and not the previous one's.
 
 | Lines | Log | Ingest | Lines/s | MB/s | Peak RSS | Store | Ratio | Clients |
@@ -1422,7 +1422,7 @@ Parse only, `apache-combined`, best of three runs of 300,000 lines:
 | Positional groups | 55,298 | +7.9% |
 | ...and the shifted timestamp | **58,508** | **+14.1%** |
 
-End to end, `logarc benchmark -n 1000000`, both runs on this machine minutes apart:
+End to end, `logarc-dev benchmark -n 1000000`, both runs on this machine minutes apart:
 
 | | Ingest | Lines/s |
 |---|---:|---:|
@@ -1521,14 +1521,14 @@ the generated corpus, where a third of traffic was an attack and the rate was me
 benign traffic than a deployment would present.
 
 **The CRS corpus figure has a ceiling.** 2,650 of its cases carry their payload in a body or a
-header no access log writes, and no tool reading a log can reach them; `logarc score-crs` leaves
+header no access log writes, and no tool reading a log can reach them; `logarc-dev score-crs` leaves
 them out rather than counting them as misses. Of the 1,099 that remain the native rules catch 960
 (87.4%), and they fire on none of the 134 the corpus certifies as harmless. Status is synthesised
 as 200 for every case, so a rule that needs a 4xx cannot fire there at all.
 
 **Recall on CSIC 2010 has a ceiling below 100%.** A substantial share of its attacks carry their
 payload in a POST body, and a web server access log records the request line and nothing after it.
-`logarc convert-csic` counts them in the corpus it is given and prints the resulting ceiling, so
+`logarc-dev convert-csic` counts them in the corpus it is given and prints the resulting ceiling, so
 the figure quoted alongside a CSIC result is measured on that copy of the dataset rather than
 repeated from elsewhere.
 

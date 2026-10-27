@@ -5,17 +5,15 @@ It is 841 lines of three days' traffic against a fictional shop, and every
 feature the application has is reachable from it.
 
 ```bash
-logarc ingest samples/demo/demo.log --format apache-vhost-combined --case demo-case
+logarc-dev ingest samples/demo/demo.log --format apache-vhost-combined --case demo-case
 logarc-gui                      # Case -> Open, pick demo-case
 ```
 
-Or from the command line:
+Or **Case → New from logs…** in the window and pick `demo.log`. To add OWASP
+CRS to a case made with `--no-crs` (see "CRS" below):
 
 ```bash
-logarc list-ips --case demo-case
-logarc analyze  --ip 192.0.2.111 --case demo-case
-logarc evidence --ip 192.0.2.110 --case demo-case
-logarc enrich   --case demo-case          # adds OWASP CRS; see "CRS" below
+logarc-dev enrich --case demo-case
 ```
 
 ## What it covers, measured
@@ -143,7 +141,7 @@ at a person's browser and usually arrives from one.
 
 ## Why no truth file
 
-Every other corpus here ships a `.truth.jsonl` and `logarc evaluate` scores
+Every other corpus here ships a `.truth.jsonl` and `logarc-dev evaluate` scores
 against it. This one does not, and should not.
 
 Scoring the rules against traffic written to suit them is marking your own

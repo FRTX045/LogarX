@@ -1,4 +1,4 @@
-"""Getting CRS working in a source checkout: once, on purpose, `logarc setup-crs`.
+"""Getting CRS working in a source checkout: once, on purpose, `logarc-dev setup-crs`.
 
 The packaged Windows application carries the sidecar and the ruleset, so it has
 nothing to set up. A source checkout has neither: the ruleset is a git clone
@@ -155,7 +155,7 @@ def _verify(binary: Path, ruleset: Path, crs_dir: Path) -> None:
         query=_CHECK_QUERY,
         protocol="HTTP/1.1",
         status=200,
-        user_agent="logarc setup-crs",
+        user_agent="logarc-dev setup-crs",
     )
     config = SidecarConfig(binary=binary, rules=ruleset, conf=crs_dir)
     found = run_sidecar([probe], config=config, workers=1)

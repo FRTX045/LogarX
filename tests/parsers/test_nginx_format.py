@@ -199,8 +199,9 @@ def test_a_percent_sign_in_an_nginx_format_is_a_percent_sign() -> None:
     ids=["escape=json", "a JSON template"],
 )
 def test_a_json_format_is_sent_to_the_json_kind(pasted: str) -> None:
-    """Its log is JSON, which the JSON kind reads from the log itself."""
-    with pytest.raises(LogFormatError, match="add-json"):
+    """Its log is JSON, which the JSON kind reads from the log itself. Named as
+    the window offers it: there is no command to run."""
+    with pytest.raises(LogFormatError, match="New → JSON"):
         LogFormatParser(pasted)
 
 

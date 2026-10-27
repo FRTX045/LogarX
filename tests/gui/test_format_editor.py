@@ -318,7 +318,7 @@ def test_a_heading_is_not_offered_as_a_format(
 def test_a_format_saved_elsewhere_is_there_when_the_screen_opens(
     qt_app: QApplication,
 ) -> None:
-    """Saved by `logarc formats add`, or in another window, or by hand.
+    """Saved in another window, or by another process, or by hand.
 
     Nothing in the application installed saved formats at startup: they were
     registered only as a side effect of saving one *here*. So a reader who

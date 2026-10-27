@@ -524,7 +524,7 @@ def test_a_sidecar_older_than_this_code_is_named_rather_than_waited_on(
 
     assert isinstance(raised, sidecar.CrsUnavailableError)
     assert "older than this logarc" in str(raised)
-    assert "logarc setup-crs" in str(raised)
+    assert "logarc-dev setup-crs" in str(raised)
 
 
 def test_a_share_too_big_for_a_pipe_from_a_sidecar_that_talks_is_answered(

@@ -1,6 +1,6 @@
 # Installing
 
-Requires **Python 3.11 or newer**. The engine and the command line are tested on
+Requires **Python 3.11 or newer**. The engine and the developer tools are tested on
 Linux and Windows, Python 3.11 and 3.12, on every push.
 
 **The desktop application is built and packaged for Windows, and runs on Linux.**
@@ -33,7 +33,7 @@ restoring it maximized, avoiding the failing transition with a fresh surface. Se
 
 ```bash
 pip install -e ".[gui]"      # the tool and the desktop application
-pip install -e "."           # the command line alone
+pip install -e "."           # the engine and developer tools alone
 pip install -e ".[dev]"      # add the test and lint toolchain
 ```
 
@@ -101,7 +101,7 @@ recognised.
 
 **It runs after every scan, without asking.** The window replays each new case
 through CRS on a card that can be stopped, keeping what it found so far, and
-`logarc ingest` does the same once the log is read. A stopped run is recorded
+`logarc-dev ingest` does the same once the log is read. A stopped run is recorded
 as one: the window, `analyze`, `evaluate` and every exported report say how many
 requests CRS read, and stopping a rerun over a case already checked in full
 keeps that earlier result. To turn it off:
@@ -113,14 +113,14 @@ keeps that earlier result. To turn it off:
 | A whole machine, both | `LOGARC_CRS=off` |
 
 Turned off or not, *Case → Run CRS scan* runs it on the open
-case whenever asked, as `logarc enrich` does on the command line.
+case whenever asked, as `logarc-dev enrich` does on the command line.
 
 The packaged Windows build carries the sidecar and the ruleset, so there is
 nothing to install. From source, set them up once:
 
 ```bash
-logarc setup-crs                                # needs git, Go 1.25+ and a connection, once
-logarc enrich --case ./case-shop --paranoia 3   # run again, at another level
+logarc-dev setup-crs                                # needs git, Go 1.25+ and a connection, once
+logarc-dev enrich --case ./case-shop --paranoia 3   # run again, at another level
 ```
 
 `setup-crs` fetches the ruleset at the revision this project measures against

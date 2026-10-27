@@ -162,7 +162,7 @@ def _line(seconds: int, target: str, *, status: int = 200, size: int = 512) -> s
 
 @pytest.fixture
 def enriched(campaign: Path, tmp_path: Path) -> Path:
-    """A copy of the campaign case that `logarc enrich` has been run over."""
+    """A copy of the campaign case that `logarc-dev enrich` has been run over."""
     import shutil
 
     root = tmp_path / "enriched"
@@ -3028,7 +3028,7 @@ def test_choosing_the_case_already_open_says_so(
     qt_app: QApplication, campaign: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Doing nothing quietly is indistinguishable from a control that is
-    broken. It has to say why nothing happened — and `logarc enrich` can add
+    broken. It has to say why nothing happened — and `logarc-dev enrich` can add
     CRS evidence to an open case from a terminal, so a reader who came here to
     pick that up needs to know they did not."""
     from logarc.gui import app as app_module

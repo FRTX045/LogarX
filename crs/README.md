@@ -14,7 +14,7 @@ exactly the parts that would be lost by copying CRS's regexes into a rule pack i
 From a source checkout, one command does all of it and then checks that it works:
 
 ```bash
-logarc setup-crs
+logarc-dev setup-crs
 ```
 
 It fetches the ruleset at the pinned revision below, builds the sidecar if it is missing or older

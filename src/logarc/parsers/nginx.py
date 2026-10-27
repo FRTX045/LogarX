@@ -176,7 +176,7 @@ def to_directive(text: str) -> str:
     if escape == "json" or log_format.lstrip().startswith("{"):
         raise NginxFormatError(
             "this nginx format writes JSON. Read its log as a JSON format: "
-            "`logarc formats add-json NAME --log FILE` proposes the mapping from the log itself"
+            "in Case → Formats and rules, New → JSON proposes the mapping from a line of the log"
         )
     if escape not in ("default", "none"):
         raise NginxFormatError(f"escape={escape} is not one nginx knows: default, json or none")

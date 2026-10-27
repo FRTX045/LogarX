@@ -177,7 +177,7 @@ def test_the_host_comes_from_the_case_even_when_a_caller_builds_the_config(
 ) -> None:
     """The command line builds its own `SidecarConfig` for the paranoia level
     and the paths, and offers no way to set a host. If the case's answer only
-    applied when no config was passed, `logarc enrich` would quietly go on
+    applied when no config was passed, `logarc-dev enrich` would quietly go on
     telling CRS the site is `localhost`."""
     seen: list[SidecarConfig] = []
     monkeypatch.setattr("logarc.enrich.run_sidecar", _recording(seen))
@@ -211,7 +211,7 @@ def test_the_outcome_names_the_configuration_that_actually_ran(
     """Not the one the caller passed in, which on a named case is a different one.
 
     The host is swapped in here, so a caller reporting its own config reports a
-    run that did not happen: `logarc enrich` printed a fingerprint the case it
+    run that did not happen: `logarc-dev enrich` printed a fingerprint the case it
     had just written did not carry.
     """
     monkeypatch.setattr("logarc.enrich.run_sidecar", _recording([]))

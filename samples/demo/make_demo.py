@@ -15,7 +15,7 @@ fair summary of what logarc can show you.
 **It is not an evaluation corpus, and it must never become one.** Scoring the
 rules against traffic written to suit them is marking your own homework, which
 is the objection ADR-0007 raises and ADR-0008 answers. That is why no truth file
-ships beside it: `logarc evaluate` wants one, cannot have one here, and should
+ships beside it: `logarc-dev evaluate` wants one, cannot have one here, and should
 go on using the real labelled log under `tests/data/apache-shopfront/` instead.
 
 ## Why vhost-combined and not plain combined
@@ -274,7 +274,7 @@ def window_shopper(ip: str, day: int, hour: int) -> None:
     **"wall bracket" is not a coincidence — do not change these search terms.**
 
     Ingest alone reads all five searches as ordinary shopping. Turn CRS on with
-    `logarc enrich` and rule 932236 calls `wall bracket` a Unix command
+    `logarc-dev enrich` and rule 932236 calls `wall bracket` a Unix command
     injection, at critical severity, three times — because `wall` is a real Unix
     command and CRS is matching the command name followed by an argument.
 
