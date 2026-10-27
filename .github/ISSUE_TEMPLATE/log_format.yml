@@ -1,0 +1,39 @@
+name: New log format
+description: A log logarc does not read yet.
+labels: ["log format"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        logarc reads 21 log formats on its own, and **Case → Formats and rules** reads many more once a line is pasted in. If a format it should know is not detected, or reads wrongly, this is the place.
+
+        Logs from a real server hold other people's addresses and requests. Replace anything sensitive in the lines below before you paste them, but keep their shape: quotes, separators and empty fields matter.
+  - type: input
+    id: source
+    attributes:
+      label: What writes this log
+      description: The server, proxy or service, and its version if you know it.
+      placeholder: Varnish 7.4, varnishncsa
+    validations:
+      required: true
+  - type: textarea
+    id: lines
+    attributes:
+      label: A few lines of the log
+      description: Five to twenty lines, with the file's header lines if it has any. They are shown as written.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Its log configuration
+      description: The directive or setting that defines the format, if you can see it (a LogFormat, log_format, a JSON field list).
+      render: text
+  - type: textarea
+    id: tried
+    attributes:
+      label: What logarc did with it
+      description: Not detected, detected as another format, or read with a field wrong. What you expected instead.
+    validations:
+      required: true

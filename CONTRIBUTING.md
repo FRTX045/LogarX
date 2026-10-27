@@ -1,14 +1,19 @@
 # Contributing to logarc
 
-## Contributions open with the first release
+## How to help
 
-logarc has not been released yet. Until it is, the code is still moving under
-anything written against it, so there are three ways to help now, and pull
-requests and feature requests open with the first release:
+Contributions are open. Each of these is welcome:
 
 - **A bug**, including a log logarc should read and does not: open an issue
   with the [bug report form](https://github.com/FRTX045/logarc/issues/new/choose).
   The smallest log that shows the problem is worth more than any description.
+- **A log format logarc does not read yet**: the
+  [new log format form](https://github.com/FRTX045/logarc/issues/new/choose), with a
+  few lines of the log and, if you know it, the server's log configuration.
+- **A feature**: the [feature request form](https://github.com/FRTX045/logarc/issues/new/choose).
+  Say what you were trying to find out from a log, not only what to add.
+- **A pull request**: open an issue first for anything larger than a fix, so the
+  approach can be agreed before the work is done.
 - **A vulnerability**: report it privately, as [SECURITY.md](SECURITY.md)
   describes. Never in a public issue.
 - **A question or an idea**: [Discussions](https://github.com/FRTX045/logarc/discussions).
