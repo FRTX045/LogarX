@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from logarc.case import Case, CaseError
-from logarc.core.evidence import EvidenceRef
-from logarc.ingest.pipeline import IngestCancelled
+from logarx.case import Case, CaseError
+from logarx.core.evidence import EvidenceRef
+from logarx.ingest.pipeline import IngestCancelled
 
 LINES = [
     '203.0.113.5 - - [10/Oct/2020:13:55:36 +0000] "GET / HTTP/1.1" 200 2326 "-" "curl/8.0"',
@@ -51,7 +51,7 @@ def test_the_manifest_records_every_ingested_source(tmp_path: Path) -> None:
 def test_relative_source_evidence_survives_a_different_launch_directory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workers: int
 ) -> None:
-    monkeypatch.setattr("logarc.ingest.parallel.MIN_PARALLEL_BYTES", 0)
+    monkeypatch.setattr("logarx.ingest.parallel.MIN_PARALLEL_BYTES", 0)
     log = write_log(tmp_path / "logs" / "access.log")
     monkeypatch.chdir(tmp_path)
     case_root = tmp_path / "case"
@@ -302,7 +302,7 @@ def test_the_window_s_reconstruction_honours_the_case_s_domains(tmp_path: Path) 
     function the window calls rather than through the window, because the
     defect is in which engine is built and not in anything Qt draws.
     """
-    from logarc.caseview import reconstruct_client
+    from logarx.caseview import reconstruct_client
 
     case_dir = tmp_path / "case"
     lines = [
@@ -323,7 +323,7 @@ def test_the_window_s_reconstruction_honours_the_case_s_domains(tmp_path: Path) 
 
 
 def _crs_931130_on_line_one():
-    from logarc.detect.crs.sidecar import CrsDetection
+    from logarx.detect.crs.sidecar import CrsDetection
 
     detection = CrsDetection(
         source_file_id="rfi.log",
@@ -383,3 +383,60 @@ def test_the_case_engine_distrusts_931130_from_a_placeholder_run(tmp_path: Path)
         (labelled,) = case.rule_engine().label_events([event], crs=_crs_931130_on_line_one())
 
     assert labelled.label.rule_id != "crs:931130"
+
+
+# -- what each file cannot record ---------------------------------------------
+
+#: Apache's common format: no Referer and no User-Agent on any line.
+COMMON = [
+    '203.0.113.5 - - [10/Oct/2020:13:55:36 +0000] "GET /assets/site.css HTTP/1.1" 200 2326',
+    '203.0.113.5 - - [10/Oct/2020:13:55:37 +0000] "GET / HTTP/1.1" 200 512',
+]
+
+#: Combined, from a client that sent no User-Agent.
+NO_AGENT = [
+    '203.0.113.5 - - [10/Oct/2020:13:55:36 +0000] "GET / HTTP/1.1" 200 2326 "-" "-"',
+]
+
+
+def _rule_ids(case: Case) -> set[str]:
+    events = list(case.store.events_for_ip("203.0.113.5"))
+    return {
+        label.rule_id
+        for labelled in case.rule_engine().label_events(events)
+        for label in labelled.all_labels
+    }
+
+
+def test_a_log_with_no_user_agents_is_not_read_as_clients_without_one(tmp_path: Path) -> None:
+    """Every request of a common-format log was reconnaissance: 59,226 of
+    63,310 innocent requests on the small tier."""
+    log = write_log(tmp_path / "access.log", COMMON)
+    with Case.create(tmp_path / "case") as case:
+        case.ingest([log], log_format="apache-common")
+
+    with Case.open(tmp_path / "case") as case:
+        assert "absent_user_agent" not in _rule_ids(case)
+
+
+def test_a_client_that_sent_no_user_agent_is_still_noticed(tmp_path: Path) -> None:
+    log = write_log(tmp_path / "access.log", NO_AGENT)
+    with Case.create(tmp_path / "case") as case:
+        case.ingest([log])
+
+    with Case.open(tmp_path / "case") as case:
+        assert "absent_user_agent" in _rule_ids(case)
+
+
+def test_the_case_says_what_each_of_its_files_cannot_record(tmp_path: Path) -> None:
+    common = write_log(tmp_path / "common.log", COMMON)
+    combined = write_log(tmp_path / "combined.log", NO_AGENT)
+    with Case.create(tmp_path / "case") as case:
+        case.ingest([common], log_format="apache-common")
+        case.ingest([combined])
+
+    with Case.open(tmp_path / "case") as case:
+        unrecorded = case.unrecorded_fields()
+
+    assert unrecorded["common.log"] >= {"referer", "user_agent"}
+    assert "user_agent" not in unrecorded.get("combined.log", frozenset())

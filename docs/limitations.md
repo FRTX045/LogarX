@@ -1,6 +1,6 @@
-# What logarc cannot tell you
+# What LogarX cannot tell you
 
-logarc reads access logs, and an access log is a record of requests and the
+LogarX reads access logs, and an access log is a record of requests and the
 status codes that answered them. Everything below follows from that. These are
 the limits to keep in mind when reading a reconstruction or quoting one; the
 limits of the accuracy figures themselves are in
@@ -21,15 +21,16 @@ recovered.
 ## A status code is not an outcome
 
 Each activity's outline summarises the status codes it received
-(`derive_outcome` in `src/logarc/core/episode.py`). Requests with no status are
+(`derive_outcome` in `src/logarx/core/episode.py`). Requests with no status are
 left out. With no known status the outcome is *unknown*; otherwise it is
 *success* when every status is below 400, *blocked* when every one is 400 or
 above, and *mixed* in between. So a redirect counts as success, and an activity
 answered only with server errors counts as blocked. An injection attempt answered with HTTP 200
 was answered, not necessarily exploited. The response sizes and the lines
 themselves are what to read next; the label is where to start, not a verdict.
-The window words the three as *served*, *partly served* and *refused*, which say
-what was measured; exports and the command line keep the values above.
+The window words the three as *served*, *partly served* and *refused*, and the
+HTML report in the same terms, which say what was measured; the JSON export and
+the command line keep the values above.
 
 ## A client is an IP address, not a person
 
@@ -51,16 +52,16 @@ away, or a second server that was not included, is not in the answer.
 
 ## It works after the fact
 
-logarc reads logs that have already been written. It does not watch live
+LogarX reads logs that have already been written. It does not watch live
 traffic, raise alerts or block anything.
 
 ## It runs as a desktop application
 
-The window is the only way a user works with logarc
+The window is the only way a user works with LogarX
 ([ADR-0012](adr/0012-the-window-is-the-product.md)). The packaged application
 has no supported headless workflow, so it is not a batch job for a server. A
-source checkout keeps a command line as developer tooling, which ADR-0012
-reduces and renames at the first release.
+source checkout keeps `logarx-dev` as developer tooling, to build cases and
+measure the project, and nothing a user needs is only there.
 
 ## The raw lines stay where they were
 
@@ -76,6 +77,6 @@ which may differ from the ones it was first read with.
 ## Its accuracy is measured on one application
 
 The headline accuracy figures come from one PHP shop with modelled timestamps
-([evaluation.md](evaluation.md)). Nothing yet separates what is true of logarc
+([evaluation.md](evaluation.md)). Nothing yet separates what is true of LogarX
 from what is true of that shop, so the figures are evidence, not a guarantee for
 every site.

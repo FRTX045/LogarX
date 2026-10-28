@@ -8,13 +8,13 @@ from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QMenu, QTableWidget, QTableWidgetItem
 
-from logarc.gui.case_chooser import CaseChooser
-from logarc.gui.columns import ColumnWidths
-from logarc.gui.evidence_panel import EvidencePanel
-from logarc.gui.format_editor import FormatEditor
-from logarc.gui.panels import ClientTable
-from logarc.gui.triage import TriagePanel
-from logarc.gui.who_else import WhoElseDialog
+from logarx.gui.case_chooser import CaseChooser
+from logarx.gui.columns import ColumnWidths
+from logarx.gui.evidence_panel import EvidencePanel
+from logarx.gui.format_editor import FormatEditor
+from logarx.gui.panels import ClientTable
+from logarx.gui.triage import TriagePanel
+from logarx.gui.who_else import WhoElseDialog
 
 
 def drag_edge(table, column, distance=30):
@@ -80,7 +80,7 @@ def test_every_table_cuts_a_long_cell_at_its_edge(qt_app, kind):
     first, so a long cell was cut at its first break rather than at its edge:
     `GET /search?q=' AND 1=(SELECT …` with a fifth of the Request column empty,
     and a case folder read `C:…` at any width. Seen on the real display."""
-    from logarc.gui.rules_editor import RulesEditor
+    from logarx.gui.rules_editor import RulesEditor
 
     views = {
         "clients": lambda: (ClientTable(), "_table"),
@@ -187,7 +187,7 @@ _LET_GO = """
 import os, sys
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PyQt6.QtWidgets import QApplication, QTableWidget, QTableWidgetItem
-from logarc.gui.columns import ColumnWidths
+from logarx.gui.columns import ColumnWidths
 app = QApplication(sys.argv)
 table = QTableWidget(1, 2)
 table.setItem(0, 0, QTableWidgetItem("192.0.2.100"))

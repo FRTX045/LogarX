@@ -22,10 +22,10 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 from PyQt6.QtWidgets import QApplication
 
 from conftest import settled
-from logarc.case import Case
-from logarc.gui import prefs
-from logarc.gui.app import MainWindow
-from logarc.gui.density import Density
+from logarx.case import Case
+from logarx.gui import prefs
+from logarx.gui.app import MainWindow
+from logarx.gui.density import Density
 
 START = datetime(2024, 5, 1, 0, 0, tzinfo=UTC)
 

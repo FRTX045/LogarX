@@ -16,15 +16,15 @@ from typing import TYPE_CHECKING
 import pytest
 from test_event_store import START, event
 
-from logarc.core.window import TimeWindow
-from logarc.search import Scope, parse
-from logarc.storage.event_store import ParquetEventStore
+from logarx.core.window import TimeWindow
+from logarx.search import Scope, parse
+from logarx.storage.event_store import ParquetEventStore
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-    from logarc.core.event import NormalizedEvent
+    from logarx.core.event import NormalizedEvent
 
 # Requests that make decoding and lower-casing hard, one client each, so a
 # disagreement names the request that caused it.

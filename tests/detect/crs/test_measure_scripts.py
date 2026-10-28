@@ -3,7 +3,7 @@
 The scripts are run by hand against the dataset tiers, which are not in the
 repository, so nothing else would notice when a change to the sidecar's
 interface broke one. Each is run here on a three-line case with a stand-in for
-the sidecar process, which proves it still works with logarc, not that its
+the sidecar process, which proves it still works with LogarX, not that its
 timings mean anything.
 """
 
@@ -19,10 +19,10 @@ from types import ModuleType
 import pytest
 from fake_sidecar import FakeCrs, Record, union_rule
 
-from logarc.case import Case
-from logarc.core.event import NormalizedEvent
-from logarc.detect.crs import sidecar
-from logarc.detect.crs.sidecar import SidecarConfig
+from logarx.case import Case
+from logarx.core.event import NormalizedEvent
+from logarx.detect.crs import sidecar
+from logarx.detect.crs.sidecar import SidecarConfig
 
 ROOT = Path(__file__).resolve().parents[3]
 MEASURE = ROOT / "tools" / "measure"

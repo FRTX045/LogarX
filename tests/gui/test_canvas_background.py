@@ -9,8 +9,8 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QApplication
 
-from logarc.gui.canvas import STARTUP_MESSAGE, WAITING_MESSAGE, ActivityCanvas
-from logarc.style import PAPER
+from logarx.gui.canvas import STARTUP_MESSAGE, WAITING_MESSAGE, ActivityCanvas
+from logarx.style import PAPER
 
 
 @pytest.mark.parametrize("message", [STARTUP_MESSAGE, WAITING_MESSAGE])

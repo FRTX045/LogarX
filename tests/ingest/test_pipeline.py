@@ -3,18 +3,23 @@
 from __future__ import annotations
 
 import gzip
+import json
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
 
-from logarc.ingest.pipeline import (
+from logarx.core.event import NormalizedEvent
+from logarx.core.evidence import EvidenceRef
+from logarx.ingest.pipeline import (
     PROGRESS_STRIDE,
     FormatDetectionError,
     IngestCancelled,
     ingest_file,
 )
-from logarc.ingest.quarantine import Quarantine
-from logarc.storage.event_store import ParquetEventStore
+from logarx.ingest.quarantine import Quarantine
+from logarx.parsers.registry import get_parser, register_format, unregister_format
+from logarx.storage.event_store import ParquetEventStore
 
 LINES = [
     '203.0.113.5 - - [10/Oct/2020:13:55:36 +0000] "GET / HTTP/1.1" 200 2326 "-" "curl/8.0"',
@@ -399,3 +404,131 @@ def test_the_last_report_is_the_whole_file_even_off_the_stride(tmp_path: Path, c
     store.close()
 
     assert seen[-1] == lines, f"the read finished at {seen[-1]} of {lines}"
+
+
+# -- one line never ends the import ------------------------------------------
+
+
+class _BuggyParser:
+    """Apache combined, with a bug that raises on any line mentioning `/boom`."""
+
+    name = "test-buggy"
+
+    def __init__(self, error: BaseException) -> None:
+        self._error = error
+        self._inner = get_parser("apache-combined")
+
+    def parse_line(self, line: str, ref: EvidenceRef) -> NormalizedEvent | None:
+        if "/boom" in line:
+            raise self._error
+        return self._inner.parse_line(line, ref)
+
+
+@pytest.fixture
+def buggy() -> Iterator[Callable[[BaseException], str]]:
+    names: list[str] = []
+
+    def install(error: BaseException) -> str:
+        name = f"test-buggy-{len(names)}"
+        register_format(name, lambda: _BuggyParser(error))
+        names.append(name)
+        return name
+
+    yield install
+    for name in names:
+        unregister_format(name)
+
+
+def test_a_line_the_parser_raises_on_is_quarantined_and_the_rest_is_read(
+    tmp_path: Path, case: Path, buggy: Callable[[BaseException], str]
+) -> None:
+    """A parser bug used to end the ingest at that line, with nothing stored:
+    the whole log lost to one line, which is the cheapest denial of service
+    there is against a tool that reads what attackers wrote."""
+    path = tmp_path / "access.log"
+    crafted = LINES[0].replace("GET / ", "GET /boom ")
+    path.write_text(NEWLINE.join([LINES[0], crafted, *LINES[1:]]) + NEWLINE, encoding="utf-8")
+
+    store = ParquetEventStore(case)
+    with Quarantine(case) as quarantine:
+        result = ingest_file(path, store, quarantine, log_format=buggy(OverflowError("bug")))
+    store.finalize()
+
+    assert (result.events_parsed, result.lines_quarantined) == (3, 1)
+    (entry,) = [json.loads(row) for row in quarantine.path.read_text("utf-8").splitlines()]
+    assert entry["line_no"] == 2
+    assert "OverflowError" in entry["reason"]
+
+
+def test_running_out_of_memory_still_stops_the_ingest(
+    tmp_path: Path, case: Path, buggy: Callable[[BaseException], str]
+) -> None:
+    """That says the machine is the problem, not the line, and the next line
+    would say the same."""
+    path = tmp_path / "access.log"
+    path.write_text(LINES[0].replace("GET / ", "GET /boom ") + NEWLINE, encoding="utf-8")
+
+    store = ParquetEventStore(case)
+    with Quarantine(case) as quarantine, pytest.raises(MemoryError):
+        ingest_file(path, store, quarantine, log_format=buggy(MemoryError()))
+
+
+#: One crafted line per kind found while auditing the tool as a target, each of
+#: which used to end the import of the log it was in, with nothing stored.
+_COMBINED_WIDE = LINES[0].replace(" 200 2326 ", " 99999999999999999999 99999999999999999999 ")
+_JSON_GOOD = (
+    '{"time_local": "01/May/2024:09:00:4%d +0000", "remote_addr": "203.0.113.5", '
+    '"request": "GET /p%d HTTP/1.1", "status": "200", "body_bytes_sent": "12", '
+    '"http_referer": "", "http_user_agent": "%s"}'
+)
+_CADDY_GOOD = (
+    '{"level": "info", "ts": %s, "logger": "http.log.access", "msg": "handled request", '
+    '"request": {"remote_ip": "203.0.113.5", "method": "GET", "uri": "/p%d", '
+    '"proto": "HTTP/1.1", "host": "x", "headers": {}}, "status": 200, "size": 12}'
+)
+_IIS_HEAD = [
+    "#Software: Microsoft Internet Information Services 10.0",
+    "#Version: 1.0",
+    "#Fields: date time s-ip cs-method cs-uri-stem cs-uri-query s-port cs-username c-ip"
+    " cs(User-Agent) sc-status",
+]
+_IIS_ROW = "2024-05-01 09:00:4%d 10.0.0.1 GET /p%d - 80 - 203.0.113.5 %s 200"
+
+
+@pytest.mark.parametrize(
+    ("lines", "events"),
+    [
+        pytest.param([LINES[0], _COMBINED_WIDE, *LINES[1:]], 4, id="integers-past-64-bits"),
+        pytest.param(
+            [_JSON_GOOD % (n, n, "\\ud800" if n == 1 else "curl/8.0") for n in range(4)],
+            4,
+            id="lone-surrogate-escape",
+        ),
+        pytest.param(
+            [_CADDY_GOOD % ("1" + "0" * 400 if n == 1 else f"171455404{n}.0", n) for n in range(4)],
+            3,
+            id="epoch-of-400-digits",
+        ),
+        pytest.param(
+            [
+                *_IIS_HEAD,
+                *(_IIS_ROW % (n, n, "curl\r/8.0" if n == 1 else "curl") for n in range(4)),
+            ],
+            4,
+            id="bare-carriage-return",
+        ),
+    ],
+)
+def test_one_crafted_line_does_not_end_the_import(
+    tmp_path: Path, case: Path, lines: list[str], events: int
+) -> None:
+    path = tmp_path / "crafted.log"
+    path.write_bytes((NEWLINE.join(lines) + NEWLINE).encode("utf-8"))
+
+    store = ParquetEventStore(case)
+    with Quarantine(case) as quarantine:
+        result = ingest_file(path, store, quarantine)
+    store.finalize()
+
+    assert result.events_parsed == events
+    assert result.events_parsed + result.lines_quarantined == 4

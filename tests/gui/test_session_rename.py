@@ -13,15 +13,15 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from PyQt6.QtWidgets import QApplication, QDialog
 
-from logarc.gui.session_rename import SessionRename
-from logarc.session_names import SessionNameWriteError
+from logarx.gui.session_rename import SessionRename
+from logarx.session_names import SessionNameWriteError
 
 PLACE = "Session 1 of 7 · 09 Mar 09:06\u201309:08"
-LOGARC = "Configuration File Probe"
+LOGARX = "Configuration File Probe"
 
 
 def opened(
-    *, current: str = LOGARC, renamed: bool = False, failing: OSError | None = None
+    *, current: str = LOGARX, renamed: bool = False, failing: OSError | None = None
 ) -> tuple[SessionRename, list[str | None]]:
     saved: list[str | None] = []
 
@@ -31,18 +31,18 @@ def opened(
         saved.append(name)
 
     window = SessionRename(
-        None, place=PLACE, current=current, logarc_name=LOGARC, renamed=renamed, save=save
+        None, place=PLACE, current=current, logarx_name=LOGARX, renamed=renamed, save=save
     )
     window.show()
     return window, saved
 
 
-def test_it_says_which_session_and_logarcs_name(qt_app: QApplication) -> None:
+def test_it_says_which_session_and_logarxs_name(qt_app: QApplication) -> None:
     window, _ = opened()
 
     assert window.windowTitle() == "Rename session"
     assert window.place.text() == PLACE
-    assert window.note.text() == f"logarc's name: {LOGARC}"
+    assert window.note.text() == f"LogarX's name: {LOGARX}"
     assert window.error.isHidden()
     window.close()
 
@@ -75,13 +75,13 @@ def test_the_field_takes_sixty_characters(qt_app: QApplication) -> None:
     window.close()
 
 
-def test_use_logarcs_name_is_live_only_for_a_renamed_session(qt_app: QApplication) -> None:
+def test_use_logarxs_name_is_live_only_for_a_renamed_session(qt_app: QApplication) -> None:
     plain, _ = opened()
     renamed, _ = opened(current="Scanner", renamed=True)
 
     assert not plain.reset_button.isEnabled()
     assert renamed.reset_button.isEnabled()
-    assert renamed.reset_button.text() == "Use logarc's name"
+    assert renamed.reset_button.text() == "Use LogarX's name"
     plain.close()
     renamed.close()
 
@@ -97,7 +97,7 @@ def test_rename_saves_what_was_typed_and_closes(qt_app: QApplication) -> None:
     assert not window.isVisible()
 
 
-def test_use_logarcs_name_saves_none_and_closes(qt_app: QApplication) -> None:
+def test_use_logarxs_name_saves_none_and_closes(qt_app: QApplication) -> None:
     window, saved = opened(current="Scanner", renamed=True)
 
     window.reset_button.click()

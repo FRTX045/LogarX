@@ -29,7 +29,7 @@ from PyQt6.QtGui import QFontDatabase, QGuiApplication
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication
 
-from logarc.gui import app, workers
+from logarx.gui import app, workers
 
 #: Kept here, not only in the fixture's cache, so nothing pytest lets go of can
 #: take the application with it.
@@ -186,9 +186,12 @@ def settings_in_a_temp_file(tmp_path_factory: pytest.TempPathFactory) -> Iterato
     tests clear the store by hand, which only means anything if what an earlier
     test wrote is still there.
     """
-    ini = tmp_path_factory.mktemp("settings") / "logarc.ini"
+    ini = tmp_path_factory.mktemp("settings") / "logarx.ini"
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(app, "_settings", lambda: QSettings(str(ini), QSettings.Format.IniFormat))
+        # Starting the window brings over what the machine kept under the old
+        # name, logarc: its real folder and its real registry. Not from a test.
+        patch.setattr(app, "_move_old_name_over", lambda: None)
         yield ini
 
 

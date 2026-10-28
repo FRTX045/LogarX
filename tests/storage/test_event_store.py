@@ -8,10 +8,10 @@ from pathlib import Path
 
 import pytest
 
-from logarc.core.event import NormalizedEvent
-from logarc.core.evidence import EvidenceRef
-from logarc.core.window import EVERYTHING, TimeWindow
-from logarc.storage.event_store import ParquetEventStore, StoreStateError
+from logarx.core.event import NormalizedEvent
+from logarx.core.evidence import EvidenceRef
+from logarx.core.window import EVERYTHING, TimeWindow
+from logarx.storage.event_store import ParquetEventStore, StoreStateError
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 
@@ -136,6 +136,38 @@ def test_bytes_that_are_not_valid_utf8_are_stored_as_escapes(store: ParquetEvent
     (restored,) = store.events_for_ip("203.0.113.5")
 
     assert restored.path == "/caf\\xe9\\xff"
+
+
+def test_a_lone_surrogate_is_stored_as_the_escape_that_wrote_it(store: ParquetEventStore) -> None:
+    """JSON can write `\\ud800`, and the decoder hands back half a character no
+    UTF-8 column can hold. One such field failed the write of its whole batch,
+    and the ingest with it."""
+    store.write([event(user_agent="sqlmap\ud800/1.8", path="/caf\udce9")])
+    store.finalize()
+
+    (restored,) = store.events_for_ip("203.0.113.5")
+
+    assert restored.user_agent == "sqlmap\\ud800/1.8"
+    assert restored.path == "/caf\\xe9"
+
+
+@pytest.mark.parametrize(
+    ("field", "written"),
+    [("status", 10**20), ("status", 2**31), ("bytes_sent", 10**20), ("bytes_sent", -(2**63) - 1)],
+)
+def test_a_number_too_wide_for_its_column_is_stored_as_unknown(
+    store: ParquetEventStore, field: str, written: int
+) -> None:
+    """The request is kept and only the number is lost: a crafted byte count must
+    not be able to take an attack line out of the analysis. It used to fail the
+    write of its whole batch, and the ingest with it."""
+    store.write([event(**{field: written}), event(offset_seconds=1, path="/next")])
+    store.finalize()
+
+    restored = store.events_for_ip("203.0.113.5")
+
+    assert [e.path for e in restored] == ["/index.html", "/next"]
+    assert getattr(restored[0], field) is None
 
 
 def test_writes_accumulate_across_batches(store: ParquetEventStore) -> None:

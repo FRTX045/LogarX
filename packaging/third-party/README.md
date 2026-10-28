@@ -1,6 +1,6 @@
 # Third-party licences
 
-The licences of what the Windows bundle redistributes. `packaging/logarc.spec`
+The licences of what the Windows bundle redistributes. `packaging/logarx.spec`
 copies everything here except this file into the bundle's `_internal/licenses/`,
 and `packaging/rebuild.py` refuses a bundle that lacks any of it.
 
@@ -9,14 +9,14 @@ a dependency, or upgrading Qt, refresh the part it touches** and commit it.
 
 | Path | What | How it is refreshed |
 |---|---|---|
-| `python.txt` | Each bundled Python package's licence, PyInstaller's included, because its bootloader is `logarc.exe` | `pip-licenses`, below |
+| `python.txt` | Each bundled Python package's licence, PyInstaller's included, because its bootloader is `logarx.exe` | `pip-licenses`, below |
 | `python-extra/` | Further notices some of those packages carry for code they include, which `pip-licenses` leaves out because it takes one licence file per package | By hand, from the package's `.dist-info/licenses/` |
 | `native/` | CPython's licence and those of the native libraries it links (OpenSSL, libffi, expat and the rest), from the conda packages that installed them | By hand, from each conda package's `info/licenses/`, when the conda Python is replaced |
 | `qt/` | The third-party code compiled into Qt (HarfBuzz, FreeType, libpng and more), which the Qt wheel does not carry | `packaging/fetch_qt_attributions.py`, below |
 
 ## Python packages
 
-The packages PyInstaller collects into the bundle, which are logarc's runtime
+The packages PyInstaller collects into the bundle, which are LogarX's runtime
 dependencies, PyQt6 and what they pull in, and PyInstaller:
 
 ```bash
@@ -37,8 +37,9 @@ Needs the network. `rebuild.py` stops while `qt/VERSION` differs from the
 PyQt6-Qt6 version installed, so a Qt upgrade cannot ship the previous version's
 notices.
 
-## Not covered yet
-
-Qt PDF, Qt Network and the software OpenGL renderer ship in the bundle, and the
-third-party code they carry (PDFium, the Public Suffix List and libpsl, and
-Mesa) has no notice here.
+Qt PDF and the software OpenGL renderer (`opengl32sw.dll`) are built outside
+the repositories Qt's records cover, so the same script fetches their notices
+from their own sources: PDFium and the libraries it links, from the Chromium
+snapshot the installed Qt's `qtwebengine` pins, and Mesa and LLVM at the versions
+the DLL's own strings name (`OPENGL32SW` in the script; check them when Qt is
+upgraded).

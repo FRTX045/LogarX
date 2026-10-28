@@ -6,18 +6,19 @@ each case is a payload seen in the wild, asserted to reach the right category.
 
 from __future__ import annotations
 
+import time
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
 import yaml
 
-from logarc.core.activity import ActivityCategory, Severity
-from logarc.core.event import NormalizedEvent
-from logarc.core.evidence import EvidenceRef
-from logarc.detect.engine import LabelledEvent, RuleEngine
-from logarc.detect.rulepacks import DEFAULT_RULEPACK_DIR, default_rules
-from logarc.detect.rules import load_rules
+from logarx.core.activity import ActivityCategory, Severity
+from logarx.core.event import NormalizedEvent
+from logarx.core.evidence import EvidenceRef
+from logarx.detect.engine import LabelledEvent, RuleEngine
+from logarx.detect.rulepacks import DEFAULT_RULEPACK_DIR, default_rules
+from logarx.detect.rules import load_rules
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 
@@ -303,6 +304,32 @@ def test_shellshock_is_detected_in_the_user_agent(engine: RuleEngine) -> None:
     )
 
     assert labelled.label.rule_id == "shellshock"
+
+
+@pytest.mark.parametrize(
+    "agent", ["() { :;};echo x", "() {:;};", "( ) { _; } ; x", "Mozilla () { :; }; ping"]
+)
+def test_shellshock_is_detected_however_it_is_spaced(engine: RuleEngine, agent: str) -> None:
+    (labelled,) = engine.label_events([request("/cgi-bin/x", user_agent=agent)])
+
+    assert labelled.label.rule_id == "shellshock"
+
+
+def test_one_long_user_agent_costs_shellshock_no_more_than_its_length(
+    engine: RuleEngine,
+) -> None:
+    """Read from every `() {` in turn, each to the end of the field, the rule
+    was quadratic: 24.5 seconds for one 320 KB User-Agent, measured while
+    auditing the tool as a target, and a log of such lines is a denial of
+    service. Only the first `() {` can match where any later one would."""
+    agent = "() {" * 40_000
+
+    started = time.perf_counter()
+    (labelled,) = engine.label_events([request("/", user_agent=agent)])
+    took = time.perf_counter() - started
+
+    assert labelled.label.rule_id != "shellshock"
+    assert took < 2.0, f"{took:.2f}s for one {len(agent):,}-character User-Agent"
 
 
 def test_a_scanner_announces_itself(engine: RuleEngine) -> None:
@@ -1763,7 +1790,7 @@ def test_the_action_guard_and_the_ladder_name_the_same_crawlers() -> None:
     one list."""
     import re
 
-    from logarc.detect.engine import _CRAWLER_HINTS
+    from logarx.detect.engine import _CRAWLER_HINTS
 
     pack = DEFAULT_RULEPACK_DIR / "action" / "global.yaml"
     guards: set[frozenset[str]] = set()

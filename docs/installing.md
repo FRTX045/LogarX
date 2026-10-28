@@ -1,6 +1,6 @@
 # Installing
 
-Requires **Python 3.11 or newer**. The engine and the command line are tested on
+Requires **Python 3.11 or newer**. The engine and the developer tools are tested on
 Linux and Windows, Python 3.11 and 3.12, on every push.
 
 **The desktop application is built and packaged for Windows, and runs on Linux.**
@@ -33,7 +33,7 @@ restoring it maximized, avoiding the failing transition with a fresh surface. Se
 
 ```bash
 pip install -e ".[gui]"      # the tool and the desktop application
-pip install -e "."           # the command line alone
+pip install -e "."           # the engine and developer tools alone
 pip install -e ".[dev]"      # add the test and lint toolchain
 ```
 
@@ -47,7 +47,7 @@ python packaging/rebuild.py
 `dev` as well, because the script runs the test suite, across every core with
 pytest-xdist, before it builds anything; a red suite stops the build.
 
-Produces `dist/logarc/` (~270 MB), which runs without Python installed, and
+Produces `dist/logarx/` (~270 MB), which runs without Python installed, and
 with CRS enrichment working: the script builds the CRS sidecar and bundles it
 with the ruleset and the licences of everything compiled into it, so the build
 needs Go and the ruleset clone described under *OWASP CRS* below.
@@ -63,11 +63,6 @@ upgrading a dependency, or upgrading Qt, refresh them** as
 `packaging/fetch_qt_attributions.py` for Qt. The build stops while the Qt
 notices are for a different Qt version from the one installed, and does not
 otherwise check that the list is current.
-
-**Not covered yet: Qt PDF, Qt Network and the software OpenGL renderer.** They
-ship in the bundle, and the third-party code they carry (PDFium, the Public
-Suffix List and libpsl, and Mesa) has no notice there. Gather those before the
-folder is distributed.
 
 One folder rather than one file: a one-file build unpacks the whole bundle to
 `%TEMP%` on every launch, which with Qt and Arrow in it costs seconds each time
@@ -92,6 +87,24 @@ the sidecar and PyInstaller each reading something different. When that
 happens nothing is swapped in, and the status file says what moved. Run it
 again once the tree is settled.
 
+### Publishing a release
+
+The application a user downloads is the folder `rebuild.py` makes, zipped, on a
+GitHub release whose tag is the version:
+
+1. Set the version in `pyproject.toml`, and move the CHANGELOG's *Unreleased*
+   entries under it with the date.
+2. Merge that, then build from `main` with nothing else changed:
+   `python packaging/rebuild.py`. It refuses to swap in a bundle whose version is
+   not the one the source declares.
+3. Zip `dist/logarx/` as `LogarX-<version>-windows-x64.zip`, and write its SHA-256
+   beside it, so a download can be checked against the release page.
+4. Tag the merge `v<version>` and publish the release with both files attached:
+   `gh release create v<version> LogarX-<version>-windows-x64.zip <zip>.sha256`.
+
+A release's files can be replaced later without a new version:
+`gh release upload v<version> <file> --clobber`.
+
 ## OWASP CRS
 
 The bundled rules classify *behaviour*; OWASP CRS enumerates payload *syntax*,
@@ -101,7 +114,7 @@ recognised.
 
 **It runs after every scan, without asking.** The window replays each new case
 through CRS on a card that can be stopped, keeping what it found so far, and
-`logarc ingest` does the same once the log is read. A stopped run is recorded
+`logarx-dev ingest` does the same once the log is read. A stopped run is recorded
 as one: the window, `analyze`, `evaluate` and every exported report say how many
 requests CRS read, and stopping a rerun over a case already checked in full
 keeps that earlier result. To turn it off:
@@ -110,22 +123,22 @@ keeps that earlier result. To turn it off:
 |---|---|
 | The window | Edit → Preferences → General → *Run OWASP CRS after a scan* |
 | One `ingest` | `--no-crs` (and `--crs` asks for it whatever the machine says) |
-| A whole machine, both | `LOGARC_CRS=off` |
+| A whole machine, both | `LOGARX_CRS=off` |
 
 Turned off or not, *Case → Run CRS scan* runs it on the open
-case whenever asked, as `logarc enrich` does on the command line.
+case whenever asked, as `logarx-dev enrich` does on the command line.
 
 The packaged Windows build carries the sidecar and the ruleset, so there is
 nothing to install. From source, set them up once:
 
 ```bash
-logarc setup-crs                                # needs git, Go 1.25+ and a connection, once
-logarc enrich --case ./case-shop --paranoia 3   # run again, at another level
+logarx-dev setup-crs                                # needs git, Go 1.25+ and a connection, once
+logarx-dev enrich --case ./case-shop --paranoia 3   # run again, at another level
 ```
 
 `setup-crs` fetches the ruleset at the revision this project measures against
 (`d694d465951ee06347214f1291ae096e40700001`), builds the sidecar, and replays a
-known SQL injection to prove the two work together. It is the one time logarc
+known SQL injection to prove the two work together. It is the one time LogarX
 reaches for the network, and only because it was asked to. (In the window,
 **Help → User guide** opens the online guide in your browser.) The manual steps are
 in [crs/README.md](../crs/README.md).

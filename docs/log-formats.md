@@ -1,8 +1,7 @@
 # Log formats
 
 In the window, **Case → Formats and rules…** shows the whole library, and a format
-written there is tried against your log as you type. The command line does the
-same, as below.
+written there is tried against your log as you type.
 
 ![The format library: twenty-one built in, one written by the reader](images/screenshot-log-formats.png)
 
@@ -54,7 +53,8 @@ Four things are worth knowing about logs from containers and proxies:
   read as one. Detection needs 60% of the first 200 lines to be requests, so a
   log that is mostly messages is not recognised on its own. Measured: 200
   requests to the nginx image, half of them 404s, came to 59% once its error
-  log was merged in. Name the format then: `--format nginx-main`.
+  log was merged in. Choose `nginx-main` then, when opening the log asks
+  which format it is in, rather than leaving it to detection.
   `docker logs nginx > access.log` keeps only the start-up lines and the
   requests, and is recognised.
 - **Behind a load balancer, the client may be the load balancer.** These formats
@@ -63,8 +63,8 @@ Four things are worth knowing about logs from containers and proxies:
   (`use-forwarded-headers`, `enable-real-ip` or the PROXY protocol). A forwarded-for header is
   kept beside the event and never used as the client: anyone can write one.
 - **Apache combined with `%D` on the end is no server's default.** It is a site's
-  own setting, so it is a format to add once:
-  `logarc formats add apache-timed '%h %l %u %t "%r" %>s %b "%{Referer}i" "%{User-Agent}i" %D'`.
+  own setting, so it is a format to add once, in **Case → Formats and rules**:
+  `%h %l %u %t "%r" %>s %b "%{Referer}i" "%{User-Agent}i" %D`.
 
 ### Proxies that write the client with its port
 
@@ -74,7 +74,7 @@ never cut, and it is kept beside the event.
 
 - **HAProxy** is read bare, as `log stdout format raw` writes it, or behind any
   syslog envelope it writes, or as rsyslog files it. It writes a `"` the client
-  sent as `#22`, and logarc turns that back into `"` before any rule reads it.
+  sent as `#22`, and LogarX turns that back into `"` before any rule reads it.
   Three things to know:
   - Its time has no zone, so it is read as UTC. That is right in a container.
     On a host that runs local time, every event is off by the zone.
@@ -105,36 +105,25 @@ never cut, and it is kept beside the event.
   `use_remote_address`, Envoy takes it from X-Forwarded-For and writes the port
   as `0`: a port of 0 marks a client that came from that header.
 
-```bash
-logarc formats                     # every format, built in and saved
-```
-
-![logarc formats lists what each built-in reads](images/cli-formats.png)
+Every format, built in and saved, is listed in **Case → Formats and rules**,
+with what each one reads.
 
 A format you write yourself is a first-class one: saved by name, offered wherever
-the built-ins are, usable in every later case. There are four kinds, and none of
-them needs Python.
+the built-ins are, usable in every later case. There are four kinds, all under
+**New** in that dialog, and none of them needs Python. Paste a line of the log and
+the preview shows what every field reads as before anything is saved.
 
-```bash
-# A text log: write the Apache LogFormat directive down.
-logarc formats check '%h|%t|"%r"|%>s|%b' --log access.log
-logarc formats add office-edge '%h|%t|"%r"|%>s|%b'
-
-# Or paste nginx's log_format, as it is in nginx.conf or just the format.
-logarc formats add site-timed '$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent" rt=$request_time uct="$upstream_connect_time" uht="$upstream_header_time" urt="$upstream_response_time"'
-
-# One JSON object per line: the mapping is proposed for you, nested keys included.
-logarc formats check-json --log gateway.jsonl
-logarc formats add-json gateway --log gateway.jsonl --map client_ip=http_x_real_ip
-
-# A table: IIS declares its columns in `#Fields:`, most CSVs in the first row.
-logarc formats add-columns iis --log u_ex240501.log
-logarc formats add-columns edge --log edge.csv --separator comma
-
-# Anything else — syslog-wrapped, an appliance with a syntax of its own.
-logarc formats add-pattern gw-proxy '^(?P<timestamp>\S+) (?P<client_ip>\S+) …' \
-    --time-format '%Y %b %d %H:%M:%S'
-```
+- **Text (LogFormat)**: write the Apache `LogFormat` directive down, such as
+  `%h|%t|"%r"|%>s|%b`, or paste nginx's `log_format` as it is in `nginx.conf`.
+- **JSON**: one object per line. **Guess fields** proposes the mapping, nested
+  keys included; change a row it got wrong, such as `client_ip` to
+  `http_x_real_ip` behind a proxy.
+- **Table (CSV, TSV, W3C)**: IIS declares its columns in `#Fields:`, most CSVs in
+  the first row. **Guess fields** reads them.
+- **Pattern (regular expression)**: anything else, syslog-wrapped or an
+  appliance with a syntax of its own. The named groups are the mapping, and
+  **Time format** takes a strftime pattern for a time that is neither ISO nor
+  a number.
 
 In a directive, a field in quotes or in brackets reads up to the closing quote
 or bracket, spaces included, and may be empty. An unquoted header or variable
@@ -169,8 +158,7 @@ wrote it and read as the directive it means. The common variables have one:
 each saying why:
 
 - One that writes JSON (`escape=json`): read its log as a JSON format instead,
-  with `logarc formats add-json NAME --log FILE`, which proposes the mapping from
-  the log itself.
+  with **New → JSON**, which proposes the mapping from a line of the log.
 - One with no `$time_local` or `$time_iso8601`. `$msec` is not read yet.
 - One with no `$remote_addr`. A forwarded-for header is the client's own to write,
   and is not read as the client.

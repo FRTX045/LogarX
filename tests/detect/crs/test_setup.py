@@ -1,4 +1,4 @@
-"""Setting CRS up in a source checkout, once, on purpose: `logarc setup-crs`.
+"""Setting CRS up in a source checkout, once, on purpose: `logarx-dev setup-crs`.
 
 The packaged Windows application carries the sidecar and the ruleset. A source
 checkout has neither, and until this existed its reader was given two commands
@@ -19,8 +19,8 @@ from typing import Any
 
 import pytest
 
-from logarc.detect.crs import setup
-from logarc.detect.crs.setup import CRS_REVISION, SetupError, setup_crs
+from logarx.detect.crs import setup
+from logarx.detect.crs.setup import CRS_REVISION, SetupError, setup_crs
 
 
 class Tools:

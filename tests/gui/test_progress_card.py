@@ -17,10 +17,10 @@ from PyQt6.QtGui import QFont
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication
 
-from logarc.gui.crs import CrsCard
-from logarc.gui.progress import Progress
-from logarc.gui.progress_card import IngestCard
-from logarc.gui.theme import MONO_FAMILIES, ui_font
+from logarx.gui.crs import CrsCard
+from logarx.gui.progress import Progress
+from logarx.gui.progress_card import IngestCard
+from logarx.gui.theme import MONO_FAMILIES, ui_font
 
 
 def _reading() -> Progress:

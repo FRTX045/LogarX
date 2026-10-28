@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from logarc.normalize.decode import canonical_path, normalize
+from logarx.normalize.decode import canonical_path, normalize
 
 
 def test_plain_text_is_unchanged_apart_from_case() -> None:

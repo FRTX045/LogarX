@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 @pytest.fixture
 def fetch() -> ModuleType:
     path = ROOT / "packaging" / "fetch_qt_attributions.py"
-    spec = importlib.util.spec_from_file_location("logarc_fetch_qt_script", path)
+    spec = importlib.util.spec_from_file_location("logarx_fetch_qt_script", path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -180,11 +180,16 @@ def test_the_fetch_writes_each_kept_component_with_its_licence_text(
     monkeypatch.setattr(fetch, "_get", get)
     monkeypatch.setattr(fetch, "REPOSITORIES", ("qtbase",))
     monkeypatch.setattr(fetch, "OUT", tmp_path / "out")
+    monkeypatch.setattr(fetch, "fetch_pdfium", lambda tag: (["PDFium stand-in\n"], "pdfium src"))
+    monkeypatch.setattr(fetch, "fetch_opengl32sw", lambda: ["Mesa stand-in\n"])
 
     fetch.fetch("v6.11.1")
 
     notices = (tmp_path / "out" / "THIRD-PARTY-NOTICES.txt").read_text(encoding="utf-8")
     assert "Own\n" in notices and "ById\n" in notices
+    assert "PDFium stand-in" in notices and "Mesa stand-in" in notices, (
+        "Qt PDF and the software renderer ship, so their notices must be written too"
+    )
     assert "Sql" not in notices
     assert (tmp_path / "out" / "licenses" / "qtbase-src-3rdparty-own-COPYING").read_text() == (
         "own terms"
@@ -193,3 +198,35 @@ def test_the_fetch_writes_each_kept_component_with_its_licence_text(
         "apache terms"
     )
     assert (tmp_path / "out" / "VERSION").read_text().strip() == "6.11.1"
+
+
+def test_pdfium_s_licences_are_found_at_any_depth_but_not_in_its_tests(fetch: ModuleType) -> None:
+    """Qt PDF ships PDFium and the libraries in its tree; no Qt record lists them."""
+    found = fetch.pdfium_licences(
+        [
+            "LICENSE",
+            "third_party/agg23/copying",
+            "third_party/libopenjpeg/LICENSE",
+            "third_party/libtiff/LICENSE.md",
+            "third_party/libtiff/tif_dir.c",
+            "testing/resources/LICENSE",
+            "third_party/test_fonts/LICENSE",
+        ]
+    )
+
+    assert found == [
+        "LICENSE",
+        "third_party/agg23/copying",
+        "third_party/libopenjpeg/LICENSE",
+        "third_party/libtiff/LICENSE.md",
+    ]
+
+
+def test_the_committed_notices_cover_qt_pdf_and_the_software_renderer() -> None:
+    """Both ship in the bundle. Their notices were missing until 2026-10-28."""
+    root = Path(__file__).resolve().parents[2] / "packaging" / "third-party" / "qt"
+    notices = (root / "THIRD-PARTY-NOTICES.txt").read_text(encoding="utf-8")
+
+    assert "PDFium" in notices
+    assert "Mesa 3D Graphics Library" in notices and "LLVM" in notices
+    assert "The Public Suffix List" in notices, "Qt Network ships too"

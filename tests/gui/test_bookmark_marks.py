@@ -19,19 +19,19 @@ from test_triage_panel import make_case
 from test_who_else import DIRB, GOBUSTER
 
 from conftest import settled
-from logarc.core.activity import ActivityCategory, Outcome, Severity
-from logarc.core.event import NormalizedEvent
-from logarc.core.evidence import EvidenceRef
-from logarc.core.graph import GraphNode
-from logarc.evidence import EvidenceLine
-from logarc.gui.canvas import ActivityCanvas
-from logarc.gui.evidence_panel import EvidencePanel
-from logarc.gui.panels import ClientTable
-from logarc.gui.ribbon import ribbon_icon
-from logarc.gui.triage import TriagePanel
-from logarc.gui.who_else import WhoElseDialog
-from logarc.storage.base import ClientMatchPage, IpSummary
-from logarc.triage.scan import scan_case
+from logarx.core.activity import ActivityCategory, Outcome, Severity
+from logarx.core.event import NormalizedEvent
+from logarx.core.evidence import EvidenceRef
+from logarx.core.graph import GraphNode
+from logarx.evidence import EvidenceLine
+from logarx.gui.canvas import ActivityCanvas
+from logarx.gui.evidence_panel import EvidencePanel
+from logarx.gui.panels import ClientTable
+from logarx.gui.ribbon import ribbon_icon
+from logarx.gui.triage import TriagePanel
+from logarx.gui.who_else import WhoElseDialog
+from logarx.storage.base import ClientMatchPage, IpSummary
+from logarx.triage.scan import scan_case
 
 START = datetime(2026, 3, 10, 19, 12, tzinfo=UTC)
 BLUE = "#49a9ff"

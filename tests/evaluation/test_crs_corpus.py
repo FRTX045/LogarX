@@ -3,7 +3,7 @@
 The corpus is OWASP CRS's own regression suite. That makes the direction matter
 more than usual, and ADR-0008 is the reason: the `score-crs` it retired scored
 *CRS's* rules with *CRS's* corpus, a project grading itself. This runs the other
-way — logarc's rules against a question paper logarc had no hand in — which is
+way — LogarX's rules against a question paper LogarX had no hand in — which is
 the only kind of score worth quoting.
 
 The tests here use a corpus written inline rather than the vendored one. The
@@ -17,10 +17,10 @@ from pathlib import Path
 
 import pytest
 
-from logarc.detect.engine import RuleEngine
-from logarc.detect.rulepacks import default_rules
-from logarc.detect.rules import load_rules
-from logarc.evaluation.crs_corpus import CorpusError, score_corpus
+from logarx.detect.engine import RuleEngine
+from logarx.detect.rulepacks import default_rules
+from logarx.detect.rules import load_rules
+from logarx.evaluation.crs_corpus import CorpusError, score_corpus
 
 #: One case per shape, so each assertion below has exactly one thing to fail on.
 CASES = """\
@@ -30,7 +30,7 @@ meta:
 rule_id: 933150
 tests:
   - test_id: 1
-    desc: payload in the query, and logarc catches it
+    desc: payload in the query, and LogarX catches it
     stages:
       - input:
           uri: "/get?x=system('id')"
@@ -41,7 +41,7 @@ tests:
           log:
             expect_ids: [933150]
   - test_id: 2
-    desc: payload in the query, and logarc does not catch it
+    desc: payload in the query, and LogarX does not catch it
     stages:
       - input:
           uri: "/get?x=perfectly-ordinary-value"
@@ -91,7 +91,7 @@ def test_a_payload_in_the_body_is_not_counted_as_a_miss(corpus: Path, engine: Ru
     """The line this whole measurement rests on.
 
     A combined access log records the request line, the Referer and the
-    User-Agent. It does not record the body — not for logarc, not for anything.
+    User-Agent. It does not record the body — not for LogarX, not for anything.
     Scoring those cases as failures would measure the log format and report it
     as a score for the rules.
     """
@@ -241,7 +241,7 @@ def test_a_rule_specific_negative_is_not_treated_as_harmless_traffic(
     the request. This one is `system('echo cd /tmp;wget …;rm -rf')` — an
     attack, marked so that *this* CRS rule stays out of the way of another one.
 
-    logarc has no mapping onto CRS rule IDs, so it can be neither right nor
+    LogarX has no mapping onto CRS rule IDs, so it can be neither right nor
     wrong here. Counting the match as a false alarm would be the same error as
     counting it as a miss, pointed the other way — and this time it would
     understate the rules rather than overstate them.

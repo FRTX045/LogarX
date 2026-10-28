@@ -3,10 +3,10 @@ from dataclasses import replace
 import pytest
 from test_profiles import events
 
-from logarc.core.evidence import EvidenceRef
-from logarc.detect.engine import RuleEngine
-from logarc.detect.rulepacks import default_rules
-from logarc.triage.profile import RequestExample, profile_client
+from logarx.core.evidence import EvidenceRef
+from logarx.detect.engine import RuleEngine
+from logarx.detect.rulepacks import default_rules
+from logarx.triage.profile import RequestExample, profile_client
 
 
 def example(line, path="/login", note="", seconds=0):
@@ -42,13 +42,13 @@ def kinds(reasons):
 
 
 def reason(profile, kind):
-    from logarc.triage.reasons import suspicious_reasons
+    from logarx.triage.reasons import suspicious_reasons
 
     return next(item for item in suspicious_reasons(profile) if item.kind == kind)
 
 
 def test_a_client_with_no_context_facts_has_only_its_flagged_requests(plain):
-    from logarc.triage.reasons import suspicious_reasons
+    from logarx.triage.reasons import suspicious_reasons
 
     reasons = suspicious_reasons(plain)
     assert kinds(reasons) == ["support"]
@@ -57,8 +57,8 @@ def test_a_client_with_no_context_facts_has_only_its_flagged_requests(plain):
 
 
 def test_flagged_requests_come_first_then_context_then_categories(plain):
-    from logarc.triage.profile import PriorityReason
-    from logarc.triage.reasons import suspicious_reasons
+    from logarx.triage.profile import PriorityReason
+    from logarx.triage.reasons import suspicious_reasons
 
     category = PriorityReason("Injection indicators on 3 requests; strongest high", ())
     profile = replace(
@@ -263,7 +263,7 @@ def test_sessions_far_apart_are_offered_for_review_not_called_persistent(plain):
 
 
 def test_one_hostile_session_is_not_recurrence(plain):
-    from logarc.triage.reasons import suspicious_reasons
+    from logarx.triage.reasons import suspicious_reasons
 
     assert "recurrence" not in kinds(suspicious_reasons(replace(plain, sessions=5)))
 
@@ -277,7 +277,7 @@ def exploiting(plain):
 
 
 def test_a_client_with_exploit_evidence_leads_with_the_rule_and_the_request(plain):
-    from logarc.triage.reasons import suspicious_reasons
+    from logarx.triage.reasons import suspicious_reasons
 
     profile = exploiting(plain)
     reasons = suspicious_reasons(profile)
@@ -294,7 +294,7 @@ def test_a_client_with_exploit_evidence_leads_with_the_rule_and_the_request(plai
 
 
 def test_an_exploit_request_without_a_path_says_so(plain):
-    from logarc.triage.reasons import suspicious_reasons
+    from logarx.triage.reasons import suspicious_reasons
 
     profile = replace(
         plain,
@@ -305,7 +305,7 @@ def test_an_exploit_request_without_a_path_says_so(plain):
 
 
 def test_no_reason_claims_more_than_the_evidence_shows(plain):
-    from logarc.triage.reasons import suspicious_reasons
+    from logarx.triage.reasons import suspicious_reasons
 
     profile = replace(
         recurring(plain, "2026-01-02T00:00:00+00:00"),
@@ -334,7 +334,7 @@ def test_no_reason_claims_more_than_the_evidence_shows(plain):
 
 
 def test_the_order_of_the_queue_is_unchanged():
-    from logarc.triage.profile import rank_profiles
+    from logarx.triage.profile import rank_profiles
 
     engine = RuleEngine(default_rules())
     quiet = profile_client(events("192.0.2.9", 1, path="/etc/passwd"), engine)
@@ -371,7 +371,7 @@ NATIVE_WHY = (
 
 
 def test_a_native_exploit_reason_describes_the_shared_first_group(plain):
-    from logarc.triage.reasons import suspicious_reasons
+    from logarx.triage.reasons import suspicious_reasons
 
     lead = suspicious_reasons(exploiting(plain))[0]
     assert lead.why == NATIVE_WHY
@@ -388,7 +388,7 @@ def crs_exploiting(plain, path="/search"):
 
 
 def test_a_client_with_crs_exploit_evidence_says_it_is_crs(plain):
-    from logarc.triage.reasons import suspicious_reasons
+    from logarx.triage.reasons import suspicious_reasons
 
     profile = crs_exploiting(plain)
     reasons = suspicious_reasons(profile)
@@ -411,7 +411,7 @@ def test_a_client_with_crs_exploit_evidence_says_it_is_crs(plain):
 
 
 def test_a_crs_exploit_request_without_a_path_says_so(plain):
-    from logarc.triage.reasons import suspicious_reasons
+    from logarx.triage.reasons import suspicious_reasons
 
     profile = replace(
         crs_exploiting(plain),

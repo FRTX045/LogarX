@@ -6,9 +6,9 @@ from datetime import UTC, datetime
 
 import pytest
 
-from logarc.core.evidence import EvidenceRef
-from logarc.parsers.apache import COMBINED, COMMON, VHOST_COMBINED
-from logarc.parsers.logformat import LogFormatError, LogFormatParser
+from logarx.core.evidence import EvidenceRef
+from logarx.parsers.apache import COMBINED, COMMON, VHOST_COMBINED
+from logarx.parsers.logformat import LogFormatError, LogFormatParser
 
 REF = EvidenceRef(source_file_id="f1", line_no=1)
 
@@ -405,7 +405,7 @@ def test_a_time_format_ending_in_a_bare_percent_is_refused() -> None:
 
 def test_an_argument_directive_that_is_not_supported_is_still_named() -> None:
     """`t` joining the table of argument-taking directives must not have taken
-    the refusal with it: `%{...}` on a letter logarc does not read is a
+    the refusal with it: `%{...}` on a letter LogarX does not read is a
     mistake worth naming."""
     with pytest.raises(LogFormatError, match=re.escape("%{anything}Q")):
         LogFormatParser('%h %{anything}Q "%r" %>s %b')
@@ -453,7 +453,7 @@ def test_a_number_too_small_to_be_a_real_timestamp_is_not_one() -> None:
     number is a field somebody misidentified as the time — and read as an
     instant in 1970 every event of the log lands there together, sorted and
     plotted and believed."""
-    from logarc.parsers.times import read_time
+    from logarx.parsers.times import read_time
 
     assert read_time(1) is None
     assert read_time("1") is None

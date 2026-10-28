@@ -15,6 +15,6 @@ A change to the window: a screenshot.
 ## Checklist
 
 - [ ] Tests added or changed, and seen to fail without the change
-- [ ] `ruff check .`, `ruff format --check .`, `mypy src/logarc` and `mypy --platform linux src/logarc` pass
+- [ ] `ruff check .`, `ruff format --check .`, `mypy src/logarx` and `mypy --platform linux src/logarx` pass
 - [ ] CHANGELOG and docs updated where a user would notice the change
 - [ ] Measurements reported as they came out, including any target that was missed

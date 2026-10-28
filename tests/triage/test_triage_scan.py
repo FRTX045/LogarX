@@ -1,7 +1,7 @@
 from test_profiles import events, scanned
 
-from logarc.case import Case
-from logarc.core.window import TimeWindow
+from logarx.case import Case
+from logarx.core.window import TimeWindow
 
 
 def test_client_iterator_groups_all_clients_and_filters_at_storage(tmp_path):
@@ -16,7 +16,7 @@ def test_client_iterator_groups_all_clients_and_filters_at_storage(tmp_path):
 
 
 def test_scan_cache_search_beyond_first_500_and_invalidation(tmp_path):
-    from logarc.triage.scan import read_page, scan_case
+    from logarx.triage.scan import read_page, scan_case
 
     with Case.create(tmp_path / "case") as case:
         case.store.write([e for i in range(505) for e in events(f"192.0.2.{i}", 1)])
@@ -41,7 +41,7 @@ def test_scan_cache_search_beyond_first_500_and_invalidation(tmp_path):
 def test_cancelled_scan_does_not_publish_a_cache(tmp_path):
     import pytest
 
-    from logarc.triage.scan import ScanCancelled, scan_case
+    from logarx.triage.scan import ScanCancelled, scan_case
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events())
@@ -52,8 +52,8 @@ def test_cancelled_scan_does_not_publish_a_cache(tmp_path):
 
 
 def test_scan_spill_is_owned_and_does_not_share_reconstruction_scratch(tmp_path, monkeypatch):
-    from logarc.storage.event_store import ParquetEventStore
-    from logarc.triage.scan import scan_case
+    from logarx.storage.event_store import ParquetEventStore
+    from logarx.triage.scan import scan_case
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events())
@@ -78,7 +78,7 @@ def test_scan_spill_is_owned_and_does_not_share_reconstruction_scratch(tmp_path,
 
 
 def test_native_only_scan_skips_per_request_crs_queries(tmp_path, monkeypatch):
-    from logarc.triage import scan
+    from logarx.triage import scan
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events())
@@ -95,7 +95,7 @@ def test_corrupt_cache_is_rebuilt(tmp_path):
     import sqlite3
     from contextlib import closing
 
-    from logarc.triage.scan import scan_case
+    from logarx.triage.scan import scan_case
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events())
@@ -112,7 +112,7 @@ def test_keyboard_interrupt_during_direct_scan_cleans_scratch_and_preserves_comp
 ):
     import pytest
 
-    from logarc.triage.scan import scan_case
+    from logarx.triage.scan import scan_case
 
     with Case.create(tmp_path / "case") as case:
         sample = events(count=3)
@@ -139,7 +139,7 @@ def test_scan_labels_with_the_case_site_hosts(tmp_path):
     domains, so a scan building its own engine silently misses every offsite
     URL the reconstruction reports for the same client.
     """
-    from logarc.triage.scan import read_page, scan_case
+    from logarx.triage.scan import read_page, scan_case
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events("203.0.113.9", 1, query="url=http://evil.test/x"))
@@ -160,7 +160,7 @@ def test_who_else_matched_a_rule_includes_clients_it_did_not_name(tmp_path):
     """
     from dataclasses import replace
 
-    from logarc.triage.scan import RuleMatch, read_rule_matches, scan_case
+    from logarx.triage.scan import RuleMatch, read_rule_matches, scan_case
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(scanned("192.0.2.31"))
@@ -183,7 +183,7 @@ def test_an_index_without_rule_counts_is_rebuilt(tmp_path):
     import sqlite3
     from contextlib import closing
 
-    from logarc.triage.scan import scan_case
+    from logarx.triage.scan import scan_case
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events())
@@ -201,8 +201,8 @@ def test_stored_profiles_keep_their_request_examples(tmp_path):
 
     from test_profiles import probe_attack_engine
 
-    from logarc.triage.profile import profile_client
-    from logarc.triage.scan import _profile
+    from logarx.triage.profile import profile_client
+    from logarx.triage.scan import _profile
 
     sample = events(count=4)
     sample[1] = replace(sample[1], query="probe")
@@ -215,7 +215,7 @@ def test_stored_profiles_keep_their_request_examples(tmp_path):
 
 def test_an_index_written_in_the_previous_layout_is_rebuilt(tmp_path, monkeypatch):
     """Read as current, it would hand back profiles without the facts reasons need."""
-    from logarc.triage import scan
+    from logarx.triage import scan
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events())
@@ -230,7 +230,7 @@ def test_an_index_written_in_the_previous_layout_is_rebuilt(tmp_path, monkeypatc
 
 def test_an_index_written_in_layout_five_is_rebuilt(tmp_path, monkeypatch):
     """Read as current, it would show every client as having no exploit evidence."""
-    from logarc.triage import scan
+    from logarx.triage import scan
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events())
@@ -245,7 +245,7 @@ def test_an_index_written_in_layout_five_is_rebuilt(tmp_path, monkeypatch):
 
 def test_an_index_written_in_layout_six_is_rebuilt(tmp_path, monkeypatch):
     """Read as current, it would name the lowest-id rule rather than the strongest."""
-    from logarc.triage import scan
+    from logarx.triage import scan
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events())
@@ -263,7 +263,7 @@ def test_suspicious_reasons_follow_the_code_not_the_cached_text(tmp_path):
     import sqlite3
     from contextlib import closing
 
-    from logarc.triage.scan import read_page, scan_case
+    from logarx.triage.scan import read_page, scan_case
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events("203.0.113.9", 3, path="/etc/passwd"))
@@ -282,7 +282,7 @@ def test_suspicious_reasons_follow_the_code_not_the_cached_text(tmp_path):
 
 def test_an_index_written_in_layout_seven_is_rebuilt(tmp_path, monkeypatch):
     """Read as current, it would leave clients with only CRS level 1 evidence in the second group."""
-    from logarc.triage import scan
+    from logarx.triage import scan
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events())
@@ -298,7 +298,7 @@ def test_an_index_written_in_layout_seven_is_rebuilt(tmp_path, monkeypatch):
 def test_an_index_written_in_layout_eight_is_rebuilt(tmp_path, monkeypatch):
     """Read as current, it would keep a visitor whose only level-1 evidence was
     an ad platform's click ID in the first group."""
-    from logarc.triage import scan
+    from logarx.triage import scan
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events())
@@ -315,7 +315,7 @@ def test_an_index_written_in_layout_nine_is_rebuilt(tmp_path, monkeypatch):
     """Read as current, it would keep a visitor whose only level-1 evidence was
     a file-list match inside a client's name, `libwww-perl/6.72`, in the first
     group."""
-    from logarc.triage import scan
+    from logarx.triage import scan
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events())
@@ -364,8 +364,8 @@ def activity_case(tmp_path):
 def test_an_activity_finds_the_clients_the_scan_saw_it_on(tmp_path):
     """By category, by part of a rule's name, and for a detection only CRS made,
     whose category no rule pack knows: the index records the labels it saw."""
-    from logarc.search import labels_for_activity
-    from logarc.triage.scan import read_activity_clients, read_labels, scan_case
+    from logarx.search import labels_for_activity
+    from logarx.triage.scan import read_activity_clients, read_labels, scan_case
 
     result = scan_case(activity_case(tmp_path))
     labels = read_labels(result.path)
@@ -383,7 +383,7 @@ def test_an_activity_finds_the_clients_the_scan_saw_it_on(tmp_path):
 
 
 def test_the_activities_in_a_scan_with_how_many_clients(tmp_path):
-    from logarc.triage.scan import read_activity_counts, scan_case
+    from logarx.triage.scan import read_activity_counts, scan_case
 
     result = scan_case(activity_case(tmp_path))
     counts = dict(read_activity_counts(result.path))
@@ -401,8 +401,8 @@ def test_the_count_beside_an_activity_is_the_clients_it_finds(tmp_path):
     and listed two."""
     from dataclasses import replace
 
-    from logarc.search import labels_for_activity
-    from logarc.triage.scan import (
+    from logarx.search import labels_for_activity
+    from logarx.triage.scan import (
         read_activity_clients,
         read_activity_counts,
         read_labels,
@@ -435,7 +435,7 @@ def test_an_index_without_labels_is_rebuilt(tmp_path):
     import sqlite3
     from contextlib import closing
 
-    from logarc.triage.scan import scan_case
+    from logarx.triage.scan import scan_case
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events())
@@ -449,7 +449,7 @@ def test_an_index_without_labels_is_rebuilt(tmp_path):
 
 def test_an_index_written_in_layout_ten_is_rebuilt(tmp_path, monkeypatch):
     """It has no table of labels, so `activity:` could not be answered from it."""
-    from logarc.triage import scan
+    from logarx.triage import scan
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events())
@@ -462,8 +462,30 @@ def test_an_index_written_in_layout_ten_is_rebuilt(tmp_path, monkeypatch):
     assert current.path != old.path
 
 
+def test_a_change_in_what_a_file_records_is_a_scan_of_its_own(tmp_path, monkeypatch):
+    """A scan cached while a common-format log was read as clients without a
+    User-Agent holds every one of them as reconnaissance. Served again, the
+    fix would not reach a case the reader had already scanned."""
+    from logarx.triage.scan import scan_case
+
+    with Case.create(tmp_path / "case") as case:
+        case.store.write(events("192.0.2.1", 3))
+        case.store.finalize()
+        root = case.root
+    first = scan_case(root)
+    assert scan_case(root).cached
+
+    monkeypatch.setattr(
+        Case, "unrecorded_fields", lambda self: {"access.log": frozenset({"user_agent"})}
+    )
+    again = scan_case(root)
+
+    assert not again.cached
+    assert again.path != first.path
+
+
 def test_a_scan_says_when_its_crs_evidence_covers_part_of_the_case(tmp_path):
-    from logarc.triage.scan import scan_case
+    from logarx.triage.scan import scan_case
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events("192.0.2.1", 2))
@@ -482,7 +504,7 @@ def test_asking_about_coverage_loads_no_detections(tmp_path, monkeypatch):
     """The scan streams CRS records through a disk table. Reading the whole
     index into memory to ask whether the run finished would undo that on every
     call, cached ones included."""
-    from logarc.triage.scan import scan_case
+    from logarx.triage.scan import scan_case
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events("192.0.2.1", 2))
@@ -493,6 +515,6 @@ def test_asking_about_coverage_loads_no_detections(tmp_path, monkeypatch):
     def refuse(*_args, **_kwargs):
         raise AssertionError("the whole detection index was loaded")
 
-    monkeypatch.setattr("logarc.detect.crs.store.load_detections", refuse)
+    monkeypatch.setattr("logarx.detect.crs.store.load_detections", refuse)
     assert not scan_case(root).crs_partial
     assert scan_case(root).cached

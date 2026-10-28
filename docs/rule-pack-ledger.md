@@ -6,12 +6,12 @@ next pass continues rather than repeats.
 
 Read this before opening a rule file. Numbers are as they came out.
 
-Recall is against the OWASP CRS regression corpus (`logarc score-crs`), over
+Recall is against the OWASP CRS regression corpus (`logarc-dev score-crs`), over
 cases that should match *and* whose payload an access log records. False alarms
 are over the cases in the same family that CRS certifies as harmless.
 
 **Since 2026-09-22 a pass that scores a real log scores it twice** — native, and
-with the CRS sidecar enriching the same case. `logarc evaluate --no-crs` gets
+with the CRS sidecar enriching the same case. `logarc-dev evaluate --no-crs` gets
 the native figure out of an enriched case, so both come from one case. Rows
 before that date have a native figure only, and saying so is cheaper than
 implying the CRS column was ever checked.

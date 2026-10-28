@@ -44,7 +44,7 @@ Desktop.ini
 
 # Case directories hold ingested evidence; never commit them.
 case-*/
-*.logarc-case/
+*.logarx-case/
 
 # Sample and generated logs can be huge. The ground-truth sidecars are larger
 # still, and a fixed seed reproduces both exactly — samples/README.md carries

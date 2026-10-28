@@ -1,21 +1,21 @@
-![Logarx logo](docs/images/logarx-outline-open-corner.png)
+![LogarX logo](docs/images/logarx-outline-open-corner.png)
 
 **Reconstruct what one IP address actually did on a web server, from its access logs.**
 
-[![CI](https://github.com/FRTX045/logarc/actions/workflows/ci.yml/badge.svg)](https://github.com/FRTX045/logarc/actions/workflows/ci.yml)
+[![CI](https://github.com/FRTX045/LogarX/actions/workflows/ci.yml/badge.svg)](https://github.com/FRTX045/LogarX/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Runs offline](https://img.shields.io/badge/runs-offline-informational)](#no-network-no-account-no-api-key)
-[![Status: pre-release](https://img.shields.io/badge/status-pre--release-orange)](CHANGELOG.md)
+[![Release: v1.0.0](https://img.shields.io/badge/release-v1.0.0-brightgreen)](https://github.com/FRTX045/LogarX/releases/latest)
 
-logarc is a desktop application that turns a web server's access log into a
+LogarX is a desktop application that turns a web server's access log into a
 readable account of what each client did. Instead of thousands of lines, you get
 each client's requests grouped into **activities**, connected in the order they
 happened, and every one of them opens the exact log lines it was built from.
 
-![logarc opening a log, ranking its clients, drawing one attacker's three visits as a chain, showing the log line behind a webshell, and folding a second client's sixty activities into two](docs/images/demo.gif)
+![LogarX opening a log, ranking its clients, drawing one attacker's three visits as a chain, showing the log line behind a webshell, and folding a second client's sixty activities into two](docs/images/demo.gif)
 
-<sub>Open a log and logarc ranks who to look at first. The top client becomes a chain across three visits: a wordlist that finds `/admin`, a password guessed on the thirteenth try, an upload that is really a PHP shell, and a return to use it, with the exact log line behind each step. A second client's sixty back-and-forth requests fold into two activities in the behaviour map. The traffic is synthetic, written for this demo.</sub>
+<sub>Open a log and LogarX ranks who to look at first. The top client becomes a chain across three visits: a wordlist that finds `/admin`, a password guessed on the thirteenth try, an upload that is really a PHP shell, and a return to use it, with the exact log line behind each step. A second client's sixty back-and-forth requests fold into two activities in the behaviour map. The traffic is synthetic, written for this demo.</sub>
 
 ---
 
@@ -30,7 +30,7 @@ slashes. The clues are in there, but reading them by hand is slow and easy to ge
 wrong, writing queries takes skills you may not have, and uploading the log
 means handing your visitors' data to someone else just to understand it.
 
-logarc is built for that moment. You open the log, and instead of a million
+LogarX is built for that moment. You open the log, and instead of a million
 lines you get a short list of who to look at first, each with its reason in
 plain words. Click one address and its requests become steps you can read: an
 ordinary-looking search, then searches no customer would type, then a burst of
@@ -55,13 +55,13 @@ professionals.**
 |---|---|---|
 | **Who** | A shop owner, school or campus IT, a freelance web developer | An IT or security analyst, an incident responder, a consultant |
 | **Their problem** | "I can't turn this log into something I can explain." | "Extracting, grouping and explaining the requests takes manual work." |
-| **What logarc gives them** | No SQL, regular expressions or terminal for supported formats, and a shortlist with plain-language reasons | The same workflow, plus a record to check: a SHA-256 of every source file, the rule configuration in each report, and every finding traced to its log line |
+| **What LogarX gives them** | No SQL, regular expressions or terminal for supported formats, and a shortlist with plain-language reasons | The same workflow, plus a record to check: a SHA-256 of every source file, the rule configuration in each report, and every finding traced to its log line |
 
 ---
 
 ## How it helps
 
-| Step | The question | What logarc does |
+| Step | The question | What LogarX does |
 |---|---|---|
 | **Open the log** | "What format is this? Do I need a database?" | **Case → New from logs…** detects the format (twenty-one are built in) and reads the log on your machine. Lines it cannot read are counted and reported, never silently dropped. |
 | **Find a starting point** | "A million lines. Where do I look?" | **Triage** ranks clients in a *Suspicious* and an *Unusual* queue, each with a *Finding* and the reasons behind its place. |
@@ -83,13 +83,13 @@ pointed at it, so no separate dataset download is needed. Only the timestamps
 were changed, moved onto a realistic week; the dataset explains how.
 
 ```bash
-git clone https://github.com/FRTX045/logarc.git
-cd logarc
+git clone https://github.com/FRTX045/LogarX.git
+cd logarx
 python -m venv .venv
 .venv\Scripts\activate            # Windows
 source .venv/bin/activate         # Linux and macOS
 pip install -e ".[gui]"
-logarc-gui
+logarx-gui
 ```
 
 Then, in the window:
@@ -114,7 +114,7 @@ Then, in the window:
 6. **Ctrl+D** bookmarks what you are looking at. **Export → Report (HTML)…**
    writes a standalone report.
 
-![The logarc window: the client list, one client's trace with each session in a box headed by its name, and the 46 log lines behind the selected SQL injection](docs/images/screenshot-trace.png)
+![The LogarX window: the client list, one client's trace with each session in a box headed by its name, and the 46 log lines behind the selected SQL injection](docs/images/screenshot-trace.png)
 
 <sub>Step 4 on this log: sqlmap against the shop, in the last of three sessions. The selected activity is 46 requests: 30 `UNION ALL SELECT`, 11 always-true conditions, one column count, and four known only by sqlmap's user agent. The server answered every one with HTTP 200. The panel on the right is the evidence: line numbers, statuses, and the raw line exactly as Apache wrote it.</sub>
 
@@ -139,10 +139,10 @@ Every screen is described in [docs/desktop-app.md](docs/desktop-app.md).
 ### No network, no account, no API key
 
 Reading a log, analysing it and reporting on it make no outbound connections.
-The one command that reaches the network is `logarc setup-crs`, run once and by
+The one command that reaches the network is `logarx-dev setup-crs`, run once and by
 choice in a source checkout to fetch the CRS ruleset and build the sidecar; the
 packaged application has nothing to set up. **Help → User guide** opens the
-online guide in your browser, which is the browser's request, not logarc's. Its
+online guide in your browser, which is the browser's request, not LogarX's. Its
 runtime dependencies are pyarrow,
 duckdb, pyyaml, pydantic, typer and rich, and the desktop application adds
 PyQt6: no cloud SDK, no model, no telemetry.
@@ -159,7 +159,7 @@ The failure this tool is built against is not a crash. It is a case that looks
 complete and is not.
 
 - **A log it cannot read is refused, not guessed at.** If a log produces no
-  events, logarc stops and names the format it was read as, rather than
+  events, LogarX stops and names the format it was read as, rather than
   presenting a clean, empty case.
 - **Malformed lines are quarantined and counted, never dropped.** A case that
   could not read all of its logs says so every time it is opened.
@@ -196,7 +196,7 @@ wherever the sidecar and ruleset are built, and CI always does:
 accuracy 0.9749, macro F1 0.9592 and 0 false alarms with CRS, 21 attack requests
 missed. [docs/evaluation.md](docs/evaluation.md) has the method, the
 per-category figures and what the numbers do not establish, and
-[docs/limitations.md](docs/limitations.md) what logarc cannot tell you.
+[docs/limitations.md](docs/limitations.md) what LogarX cannot tell you.
 
 ---
 
@@ -208,14 +208,43 @@ packaged for Windows, and runs on Linux.
 
 ```bash
 pip install -e ".[gui]"      # the tool and the desktop application
-pip install -e "."           # the command line alone
+pip install -e "."           # the engine and developer tools alone
 pip install -e ".[dev]"      # add the test and lint toolchain
 ```
 
-No prebuilt release is available yet; run from source using the steps above. A
-Windows build that runs without Python can be made from a checkout with
-`python packaging/rebuild.py`, and a ready-made one comes with the first release. Linux display libraries, the packaged build and the
+**On Windows, download the application** from
+[Releases](https://github.com/FRTX045/LogarX/releases/latest): unzip it and run
+`logarx.exe`. Nothing else is needed, Python included. To build the same thing
+from a checkout, run `python packaging/rebuild.py`. Linux display libraries, the packaged build and the
 OWASP CRS sidecar are covered in [docs/installing.md](docs/installing.md).
+
+---
+
+## Log formats it reads
+
+Twenty-one formats are recognised on their own, from the first lines of a log.
+Nothing has to be configured.
+
+| Server | Formats |
+|---|---|
+| Apache | `combined`, `common`, `vhost_combined`, `vhost_common`, and `combined` with mod_logio's byte counts |
+| nginx | `combined`, the `main` format of nginx.org's packages and Docker image, `combined` with the forwarded-for header and request time, and the widely copied JSON template |
+| Kubernetes ingress-nginx | its default, `upstreaminfo` |
+| Traefik | the default text log, and JSON |
+| Caddy | the default JSON access log |
+| HAProxy | `option httplog`, bare or in any syslog envelope |
+| Envoy and Istio | their default access logs |
+| IIS | W3C extended |
+| AWS | Application Load Balancer and CloudFront |
+| Cloudflare | Logpush HTTP requests |
+| Google Cloud | load balancer request logs |
+| Elastic | Elastic Common Schema, as Filebeat and the Elastic Agent write it |
+
+Servers that write Apache's `combined` line, such as OpenLiteSpeed and Express's
+morgan, are read as it. Any other log is a format you write once, in
+**Case → Formats and rules…**: an Apache `LogFormat` directive, an nginx
+`log_format` pasted as it is, a JSON mapping, a table with its columns, or a
+regular expression. [docs/log-formats.md](docs/log-formats.md) has the details.
 
 ---
 
@@ -228,7 +257,7 @@ OWASP CRS sidecar are covered in [docs/installing.md](docs/installing.md).
 | [docs/detection.md](docs/detection.md) | What it detects, and what its OWASP Top 10 annotations do and do not claim |
 | [docs/log-formats.md](docs/log-formats.md) | The twenty-one built-in formats, and writing your own |
 | [docs/evaluation.md](docs/evaluation.md) | How accuracy is measured, the numbers, and their limits |
-| [docs/limitations.md](docs/limitations.md) | What logarc cannot tell you, and why |
+| [docs/limitations.md](docs/limitations.md) | What LogarX cannot tell you, and why |
 | [docs/architecture.md](docs/architecture.md) | How it separates one action from the next, layers and data flow |
 | [docs/writing-rules.md](docs/writing-rules.md) | Adding detection without writing Python |
 | [docs/adding-a-parser.md](docs/adding-a-parser.md) | Supporting another log format in code |

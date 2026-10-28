@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from logarc.detect.crs import AUTO_ENV
-from logarc.parsers.registry import register_saved_formats
+from logarx.detect.crs import AUTO_ENV
+from logarx.parsers.registry import register_saved_formats
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -21,8 +21,8 @@ if TYPE_CHECKING:
 
 
 @pytest.fixture(autouse=True)
-def _private_logarc_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """Point `LOGARC_HOME` at a directory this test owns.
+def _private_logarx_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Point `LOGARX_HOME` at a directory this test owns.
 
     The saved-format library is a real file in the user's config directory. A
     test that saved a format would otherwise write into it, and one that
@@ -39,7 +39,7 @@ def _private_logarc_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Ite
     asserts on the resolved path instead, which proves the same thing without
     touching anything outside the test's own directory.
     """
-    monkeypatch.setenv("LOGARC_HOME", str(tmp_path / "logarc-home"))
+    monkeypatch.setenv("LOGARX_HOME", str(tmp_path / "logarx-home"))
     # Reconcile the registry with the empty library this test now has. Saved
     # formats are installed into a module-level registry that outlives any one
     # test, so without this a format installed by an earlier test is still
@@ -58,6 +58,6 @@ def _crs_only_when_asked(monkeypatch: pytest.MonkeyPatch) -> None:
     machine with the sidecar built from one without it.
 
     The tests about that run take the switch back off with `delenv`. Set rather
-    than `setdefault`, so a developer's own `LOGARC_CRS=on` cannot leak in.
+    than `setdefault`, so a developer's own `LOGARX_CRS=on` cannot leak in.
     """
     monkeypatch.setenv(AUTO_ENV, "off")

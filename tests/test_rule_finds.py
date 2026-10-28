@@ -16,11 +16,11 @@ from pathlib import Path
 
 import pytest
 
-from logarc.analysis import analyse_ip
-from logarc.case import Case
-from logarc.detect.rules import load_pack_text
-from logarc.detect.ruleset import build_rules
-from logarc.rule_finds import Find, FindsCancelled, count_finds
+from logarx.analysis import analyse_ip
+from logarx.case import Case
+from logarx.detect.rules import load_pack_text
+from logarx.detect.ruleset import build_rules
+from logarx.rule_finds import Find, FindsCancelled, count_finds
 
 SHOPFRONT_LOG = Path(__file__).parent / "data" / "apache-shopfront" / "excerpt.log"
 

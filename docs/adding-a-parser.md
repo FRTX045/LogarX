@@ -11,29 +11,25 @@ There are two levels of effort, and most formats need the first.
 
 Apache's `LogFormat` directives are not hardcoded here; they are compiled. So a
 site with its own directive string needs no code at all — write it down once
-and it is yours from then on:
+and it is yours from then on, in **Case → Formats and rules**: **New → Text
+(LogFormat)**, paste the directive and a line of the log, and the preview shows
+what each field reads as before anything is saved. Then
+`logarx-dev ingest access.log --case ./case-001 --format site-main` reads with
+it from the developer tools too.
 
-```bash
-# See what the directive actually pulls out, before saving anything.
-logarc formats check '%h %l %u %t "%r" %>s %b "%{X-Forwarded-For}i"' --log access.log
+The preview is worth reading. A wrong directive does not announce itself: it
+quarantines every line and presents as an empty case.
 
-logarc formats add site-main '%h %l %u %t "%r" %>s %b "%{X-Forwarded-For}i"'
-logarc ingest access.log --case ./case-001 --format site-main
-```
-
-`logarc formats check` is worth the extra step. A wrong directive does not
-announce itself: it quarantines every line and presents as an empty case.
-
-Saved formats live in a plain JSON file — `logarc formats` prints its path — and
-are available to `--format`, to auto-detection, and to the window. Each case
-also records the definition it was ingested with, so editing or removing a
-saved format later cannot make an existing case unreadable.
+Saved formats live in a plain JSON file in LogarX's own folder, and are
+available to `--format`, to auto-detection, and to the window. Each case also
+records the definition it was ingested with, so editing or removing a saved
+format later cannot make an existing case unreadable.
 
 From inside Python the same thing is `register_spec`:
 
 ```python
-from logarc.parsers.registry import register_spec
-from logarc.parsers.spec import LogFormatSpec
+from logarx.parsers.registry import register_spec
+from logarx.parsers.spec import LogFormatSpec
 
 register_spec(LogFormatSpec(name="site-main", directive='%h %t "%r" %>s %b'))
 ```
@@ -44,52 +40,42 @@ registered that way works only in the process that registered it.
 
 A note on nginx. Its default `combined` output is byte-identical to Apache's,
 so an ordinary nginx access log is already read by `apache-combined` with no
-work at all. Its `log_format` *definition* syntax is a different matter: it uses
-`$remote_addr` where Apache uses `%h`, and pasting one here is rejected with
-`no directives found`. A custom nginx format has to be rewritten as the
-equivalent Apache directive — `$remote_addr` becomes `%h`, `$request` becomes
-`%r`, and so on.
+work at all, and its packaged `main` format is a built-in. A custom
+`log_format` definition can be pasted as it is: the editor translates
+`$remote_addr`, `$request` and the rest into the directive they mean.
 
 ## Level 1b — it is JSON
 
-One object per line. No code either: the format is a mapping from logarc's
-field names to your log's keys, and it is proposed for you.
-
-```bash
-logarc formats check-json --log gateway.jsonl
-logarc formats add-json gateway --log gateway.jsonl --map client_ip=http_x_real_ip
-```
+One object per line. No code either: the format is a mapping from LogarX's
+field names to your log's keys, and it is proposed for you. **New → JSON**,
+paste a line, and **Guess fields** fills the mapping in; change any row the
+guess got wrong, for example `client_ip` to `http_x_real_ip` behind a proxy.
 
 Nested keys are reached by their dotted path (`client.ip`), and a path whose
 leaf names a shape rather than a field — `user_agent.original` — is matched on
 its parent. Timestamps in ISO, epoch seconds, milliseconds or microseconds are
-read without being configured; anything else takes `--time-format`, a strftime
+read without being configured; anything else takes a time format, a strftime
 pattern.
 
 ## Level 1c — it is a table
 
 IIS W3C, or CSV. Least work of the three, because the log names its own columns
-— a `#Fields:` line in W3C, the first row in most CSVs.
-
-```bash
-logarc formats check-columns --log u_ex240501.log
-logarc formats add-columns iis --log u_ex240501.log
-logarc formats add-columns edge --log edge.csv --separator comma
-```
+— a `#Fields:` line in W3C, the first row in most CSVs. **New → Table (CSV, TSV,
+W3C)**, paste the header and a line, and **Guess fields**.
 
 The date and time in separate columns, as W3C writes them, is spelled
-`date+time`. A log with no header at all takes `--columns when,who,code`.
+`date+time`. A log with no header at all is given its column names in the
+editor's Columns box.
 
 ## Level 1d — it is none of those
 
 A syslog-wrapped line, a load balancer that agrees with nobody. Write a regular
-expression; its named groups are the mapping, and a group logarc does not
-recognise is kept beside the event as evidence.
+expression; its named groups are the mapping, and a group LogarX does not
+recognise is kept beside the event as evidence. **New → Pattern (regular
+expression)**, for example:
 
-```bash
-logarc formats check-pattern \
-  '^(?P<timestamp>\S+) \S+: client=(?P<client_ip>\S+) url=(?P<path>\S+)' \
-  --log proxy.log
+```
+^(?P<timestamp>\S+) \S+: client=(?P<client_ip>\S+) url=(?P<path>\S+)
 ```
 
 It is matched from the **start** of the line. Begin with `.*` to skip a prefix
@@ -99,7 +85,7 @@ It is matched from the **start** of the line. Begin with `.*` to skip a prefix
 ## Level 2 — it is a different shape entirely
 
 Something none of the four kinds can express. Implement the protocol in
-`logarc/parsers/base.py`:
+`logarx/parsers/base.py`:
 
 ```python
 class LogParser(Protocol):
@@ -126,7 +112,7 @@ to every worker. Keep per-line state in locals, not on `self`.
 Then register it:
 
 ```python
-from logarc.parsers.registry import register_format
+from logarx.parsers.registry import register_format
 
 register_format("iis-w3c", IisParser, description="IIS W3C extended log")
 ```
@@ -152,7 +138,7 @@ NormalizedEvent(
 ```
 
 `path` is the **raw** path — do not decode it. Normalisation happens later, in
-`logarc.normalize.decode`, and both the raw and decoded forms are exposed to
+`logarx.normalize.decode`, and both the raw and decoded forms are exposed to
 rules as separate match fields. A parser that helpfully percent-decodes destroys
 the distinction, and `decode_depth` — double-encoding, which is itself a signal
 — becomes unobservable.
@@ -181,10 +167,10 @@ rather than a parser, do the same.
 
 ## What this does not cover
 
-`logarc formats` and `--format` read the registry at the moment they run, so a
+The window and `--format` read the registry at the moment they run, so a
 registration has to have happened first. There is currently no plugin discovery
 — no entry-point scanning, no rule-pack-style directory of parsers — so
 registering means importing a module that calls `register_format`, either in
-your own script or by adding it to `logarc.parsers`. That is enough for a fork
+your own script or by adding it to `logarx.parsers`. That is enough for a fork
 or an embedded use, and it is not enough for distributing a parser as a separate
 package. Entry-point discovery is the obvious next step and is not built.

@@ -13,10 +13,10 @@ from pathlib import Path
 
 import pytest
 
-from logarc.case import Case
-from logarc.core.evidence import EvidenceRef
-from logarc.parsers.registry import register_spec, unregister_format
-from logarc.parsers.spec import LogFormatSpec, PatternFormatSpec
+from logarx.case import Case
+from logarx.core.evidence import EvidenceRef
+from logarx.parsers.registry import register_spec, unregister_format
+from logarx.parsers.spec import LogFormatSpec, PatternFormatSpec
 
 LINES = [
     '203.0.113.5 - - [10/Oct/2020:13:55:36 +0000] "GET / HTTP/1.1" 200 2326 "-" "curl/8.0"',
@@ -93,7 +93,7 @@ def test_a_source_that_changed_since_ingest_is_flagged(case: Case, tmp_path: Pat
 def test_a_line_that_could_not_be_checked_still_carries_a_warning() -> None:
     """Unverified with no account of why is still unverified. Whatever writes
     the line out has something to say beside it."""
-    from logarc.evidence import EvidenceLine
+    from logarx.evidence import EvidenceLine
 
     line = EvidenceLine(ref=EvidenceRef("access.log", 1), source_path="a.log", text="x")
 
@@ -310,7 +310,7 @@ def test_a_case_s_pattern_that_will_not_compile_costs_the_fields_not_the_line(
     assert line.event is None
 
 
-def test_a_pattern_this_logarc_holds_word_for_word_still_reads_the_fields(
+def test_a_pattern_this_logarx_holds_word_for_word_still_reads_the_fields(
     tmp_path: Path,
 ) -> None:
     """The case's copy is used when it is identical to one held here, a built-in

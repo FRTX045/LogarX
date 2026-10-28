@@ -16,9 +16,9 @@ from __future__ import annotations
 
 import pytest
 
-from logarc.core.evidence import EvidenceRef
-from logarc.parsers.columns import ColumnsFormatError
-from logarc.parsers.spec import ColumnsFormatSpec
+from logarx.core.evidence import EvidenceRef
+from logarx.parsers.columns import ColumnsFormatError
+from logarx.parsers.spec import ColumnsFormatSpec
 
 REF = EvidenceRef(source_file_id="f", line_no=1)
 
@@ -193,6 +193,41 @@ def test_a_comma_separated_value_may_be_quoted() -> None:
     assert event.user_agent == "Mozilla/5.0 (X11; Linux, x86_64)"
 
 
+def test_a_bare_carriage_return_in_a_cell_does_not_stop_the_row_being_read() -> None:
+    """The `csv` module refuses a CR outside quotes, and that refusal used to
+    leave the parser as an exception and end the ingest of the whole log. W3C
+    quotes nothing, so a split on the separator is that format's own rule."""
+    parser = resolved(W3C, IIS).build()
+
+    event = parser.parse_line(IIS[4].replace("curl/8.4.0", "curl\r/8.4.0"), REF)
+
+    assert event is not None
+    assert event.user_agent == "curl\r/8.4.0"
+
+
+def test_a_cell_longer_than_the_csv_module_allows_is_still_read() -> None:
+    """128 KB is `csv`'s own limit on a field, and well under the line limit."""
+    parser = resolved(W3C, IIS).build()
+    agent = "A" * 200_000
+
+    event = parser.parse_line(IIS[4].replace("curl/8.4.0", agent), REF)
+
+    assert event is not None
+    assert event.user_agent == agent
+
+
+def test_a_first_row_with_a_cell_that_long_still_declares_its_columns() -> None:
+    """Format detection splits the first row as a possible header, so this one
+    line used to break detection of every format at once."""
+    spec = ColumnsFormatSpec(
+        name="csv",
+        separator=",",
+        fields=(("timestamp", "when"), ("client_ip", "who"), ("user_agent", "agent")),
+    )
+
+    assert spec.resolved([f"when,who,agent{'A' * 200_000}"]).columns[:2] == ("when", "who")
+
+
 # -- rows that are not rows of this table ----------------------------------
 
 
@@ -260,7 +295,7 @@ def test_a_field_that_is_not_in_the_schema_is_refused_by_name() -> None:
 def test_a_columns_format_survives_the_round_trip_through_json() -> None:
     import json
 
-    from logarc.parsers.spec import spec_from_dict, spec_to_dict
+    from logarx.parsers.spec import spec_from_dict, spec_to_dict
 
     spec = resolved(W3C, IIS)
 
@@ -538,7 +573,7 @@ def test_the_escapes_travel_with_the_definition() -> None:
 
 
 def test_a_definition_without_escapes_writes_no_key_for_them() -> None:
-    """An older logarc refuses a key it does not know."""
+    """An older LogarX refuses a key it does not know."""
     assert "escapes" not in _cloudfront("").to_payload()
 
 

@@ -1,7 +1,7 @@
 """`tools/hooks/` stops a commit CI's lint job would reject, and keeps `dist/` current.
 
 Turned on with `git config core.hooksPath tools/hooks`. The two rebuild hooks do
-nothing unless `git config logarc.rebuild true` asks for them, because most
+nothing unless `git config logarx.rebuild true` asks for them, because most
 checkouts never build the Windows application.
 
 Each test makes a repository of its own, points it at these hooks, and does what
@@ -38,7 +38,7 @@ class Repo:
     def __init__(self, root: Path, env: dict[str, str]) -> None:
         self.root = root
         self.env = env
-        self.build_log = Path(env["HOME"]) / ".cache" / "logarc-build.log"
+        self.build_log = Path(env["HOME"]) / ".cache" / "logarx-build.log"
 
     def git(self, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -53,7 +53,7 @@ class Repo:
         return self.git("commit", "-q", "-m", f"change {path}")
 
     def ask_for_rebuilds(self) -> None:
-        self.git("config", "logarc.rebuild", "true")
+        self.git("config", "logarx.rebuild", "true")
 
 
 def said(done: subprocess.CompletedProcess[str]) -> str:
@@ -154,7 +154,7 @@ def test_without_a_venv_the_lint_check_steps_aside(repo: Repo) -> None:
 def test_a_commit_on_main_that_changes_the_bundle_rebuilds_it(repo: Repo) -> None:
     repo.ask_for_rebuilds()
 
-    assert REBUILDING in said(repo.commit("src/logarc/a.py"))
+    assert REBUILDING in said(repo.commit("src/logarx/a.py"))
     assert "post-commit" in repo.build_log.read_text(encoding="utf-8")
 
 
@@ -189,9 +189,9 @@ def test_the_sidecars_readme_rebuilds_nothing(repo: Repo) -> None:
 
 
 def test_nothing_is_rebuilt_unless_asked_for(repo: Repo) -> None:
-    committed = said(repo.commit("src/logarc/a.py"))
+    committed = said(repo.commit("src/logarx/a.py"))
     repo.git("checkout", "-q", "-b", "feat/x")
-    repo.commit("src/logarc/b.py")
+    repo.commit("src/logarx/b.py")
     repo.git("checkout", "-q", "main")
     merged = said(repo.git("merge", "--no-ff", "-q", "-m", "merge", "feat/x"))
 
@@ -204,7 +204,7 @@ def test_a_commit_on_a_branch_waits_for_its_merge(repo: Repo) -> None:
     repo.ask_for_rebuilds()
     repo.git("checkout", "-q", "-b", "feat/x")
 
-    assert REBUILDING not in said(repo.commit("src/logarc/a.py"))
+    assert REBUILDING not in said(repo.commit("src/logarx/a.py"))
 
 
 def test_a_commit_on_main_that_changes_only_documents_rebuilds_nothing(repo: Repo) -> None:
@@ -216,7 +216,7 @@ def test_a_commit_on_main_that_changes_only_documents_rebuilds_nothing(repo: Rep
 def test_a_merge_into_main_that_changes_the_bundle_rebuilds_it(repo: Repo) -> None:
     repo.ask_for_rebuilds()
     repo.git("checkout", "-q", "-b", "feat/x")
-    repo.commit("src/logarc/a.py")
+    repo.commit("src/logarx/a.py")
     repo.git("checkout", "-q", "main")
 
     done = repo.git("merge", "--no-ff", "-q", "-m", "merge", "feat/x")
@@ -239,7 +239,7 @@ def test_a_merge_into_main_that_changes_only_documents_says_so(repo: Repo) -> No
 
 
 def test_a_failed_rebuild_is_reported_while_its_marker_stands(repo: Repo) -> None:
-    marker = repo.root / ".git" / "logarc-build-failed"
+    marker = repo.root / ".git" / "logarx-build-failed"
     marker.write_text("the tests failed", encoding="utf-8")
 
     assert "dist/ was NOT rebuilt: the tests failed" in said(repo.git("checkout", "-b", "x"))

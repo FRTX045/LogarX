@@ -1,6 +1,6 @@
 # Developer tools
 
-Tools for working on logarc. Nothing here is part of the application.
+Tools for working on LogarX. Nothing here is part of the application.
 
 | | What it is for |
 |---|---|
@@ -8,7 +8,7 @@ Tools for working on logarc. Nothing here is part of the application.
 | [`hooks/`](hooks/) | Git hooks: stop a commit CI would reject, keep `dist/` built. |
 | [`regen-crs-corpus.sh`](regen-crs-corpus.sh) | Rewrite the CRS corpus record from a complete clone. |
 | [`measure/`](measure/) | Measure the CRS sidecar: replay time, start-up time, memory, how responsive the window stays. |
-| [`lucide_data.py`](lucide_data.py) | Write `src/logarc/gui/lucide.json`, the icon set the application ships, from a Lucide release. Its docstring says where the two inputs come from. |
+| [`lucide_data.py`](lucide_data.py) | Write `src/logarx/gui/lucide.json`, the icon set the application ships, from a Lucide release. Its docstring says where the two inputs come from. |
 
 ## Git hooks
 
@@ -19,7 +19,7 @@ git config core.hooksPath tools/hooks
 | Hook | What it does |
 |---|---|
 | `pre-commit` | Runs `ruff check` and `ruff format --check` over the whole tree, as CI's lint job does, and stops the commit if either fails. Uses `.venv`'s ruff so it agrees with CI on the version; without a `.venv` it says so and lets the commit through. `git commit --no-verify` commits anyway. |
-| `post-merge` | Rebuilds `dist/` in the background when a merge into `main` (a `git pull` included) changed `src/logarc/`, `packaging/`, `pyproject.toml`, or the CRS sidecar's Go source and modules in `crs/`, which are compiled into the application. |
+| `post-merge` | Rebuilds `dist/` in the background when a merge into `main` (a `git pull` included) changed `src/logarx/`, `packaging/`, `pyproject.toml`, or the CRS sidecar's Go source and modules in `crs/`, which are compiled into the application. |
 | `post-commit` | The same for a commit made directly on `main`, which fires no merge. A commit on any other branch waits for its merge, so a branch rebuilds once, not once per commit. |
 | `post-checkout` | Prints the last rebuild failure, if there is one. `post-commit` does too. |
 
@@ -27,12 +27,12 @@ The rebuilds are off unless you ask for them, because they only make sense on
 a Windows machine that builds the application:
 
 ```bash
-git config logarc.rebuild true
+git config logarx.rebuild true
 ```
 
 They run `packaging/rebuild.py`, which tests, builds into a staging directory
-and only then replaces `dist/logarc`. So a failed build leaves the previous
-application in place. Their output goes to `~/.cache/logarc-build.log`, and
+and only then replaces `dist/logarx`. So a failed build leaves the previous
+application in place. Their output goes to `~/.cache/logarx-build.log`, and
 `dist/BUILD-STATUS.txt` says what the last build did.
 
 `core.hooksPath` replaces `.git/hooks`. If you already have hooks there, they
@@ -96,7 +96,7 @@ echo stop > C:\tmp\mem.txt.stop
 python tools\measure\memsum.py C:\tmp\mem.txt
 ```
 
-A case is a directory made by the application or by `logarc ingest`. Close
+A case is a directory made by the application or by `logarx-dev ingest`. Close
 other heavy programs while measuring, and compare builds within one run of
 `crs_replay.py`, not across runs: the rotation is what makes two builds'
 figures comparable.

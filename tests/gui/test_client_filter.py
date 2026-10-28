@@ -1,7 +1,7 @@
 """Tests for the client filter's judgements, which need no display."""
 
-from logarc.gui.client_filter import awaiting_scan, caption, matches
-from logarc.triage.scan import TriageProgress
+from logarx.gui.client_filter import awaiting_scan, caption, matches
+from logarx.triage.scan import TriageProgress
 
 
 def test_an_address_matches_itself() -> None:
@@ -177,7 +177,7 @@ def test_an_activity_search_with_no_scan_running_says_where_to_start_one() -> No
 
 def test_an_open_client_outside_a_search_is_named_as_outside_any_list() -> None:
     """In the words the list uses without a search, so the two read alike."""
-    from logarc.gui.client_filter import match_caption
+    from logarx.gui.client_filter import match_caption
 
     text = match_caption(
         shown=2, total=52, query="status:404", first=1, matching=2, requests=9,
@@ -191,7 +191,7 @@ def test_an_open_client_outside_a_search_is_named_as_outside_any_list() -> None:
 def test_an_activity_on_more_clients_than_a_page_names_the_page() -> None:
     """On the large tier `activity:api_call` names 4,916 clients and a page holds
     500; the caption read as though every one of them were listed."""
-    from logarc.gui.client_filter import match_caption
+    from logarx.gui.client_filter import match_caption
 
     paged = match_caption(
         shown=500, total=7_450, query="activity:api_call", first=501, matching=4_916,

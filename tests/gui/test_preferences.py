@@ -24,17 +24,17 @@ from PyQt6.QtWidgets import (
     QTabWidget,
 )
 
-from logarc.core.activity import ActivityCategory
-from logarc.gui import prefs
-from logarc.gui._qt import required
-from logarc.gui.density import Density
-from logarc.gui.folding import FoldRule
-from logarc.gui.icon_grid import KindIconGrid
-from logarc.gui.icon_set import KIND_NAMES
-from logarc.gui.icons import first_drawable
-from logarc.gui.preferences import PreferencesDialog
-from logarc.gui.theme import ui_font
-from logarc.style import THEME
+from logarx.core.activity import ActivityCategory
+from logarx.gui import prefs
+from logarx.gui._qt import required
+from logarx.gui.density import Density
+from logarx.gui.folding import FoldRule
+from logarx.gui.icon_grid import KindIconGrid
+from logarx.gui.icon_set import KIND_NAMES
+from logarx.gui.icons import first_drawable
+from logarx.gui.preferences import PreferencesDialog
+from logarx.gui.theme import ui_font
+from logarx.style import THEME
 
 
 def _opened(values: dict[str, bool | Density] | None = None) -> PreferencesDialog:

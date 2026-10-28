@@ -21,10 +21,10 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication
 
-from logarc.core.activity import ActivityCategory, Outcome, Severity
-from logarc.core.evidence import EvidenceRef
-from logarc.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
-from logarc.gui.canvas import ActivityCanvas
+from logarx.core.activity import ActivityCategory, Outcome, Severity
+from logarx.core.evidence import EvidenceRef
+from logarx.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
+from logarx.gui.canvas import ActivityCanvas
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 

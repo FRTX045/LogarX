@@ -1,17 +1,22 @@
-# Contributing to logarc
+# Contributing to LogarX
 
-## Contributions open with the first release
+## How to help
 
-logarc has not been released yet. Until it is, the code is still moving under
-anything written against it, so there are three ways to help now, and pull
-requests and feature requests open with the first release:
+Contributions are open. Each of these is welcome:
 
-- **A bug**, including a log logarc should read and does not: open an issue
-  with the [bug report form](https://github.com/FRTX045/logarc/issues/new/choose).
+- **A bug**, including a log LogarX should read and does not: open an issue
+  with the [bug report form](https://github.com/FRTX045/LogarX/issues/new/choose).
   The smallest log that shows the problem is worth more than any description.
+- **A log format LogarX does not read yet**: the
+  [new log format form](https://github.com/FRTX045/LogarX/issues/new/choose), with a
+  few lines of the log and, if you know it, the server's log configuration.
+- **A feature**: the [feature request form](https://github.com/FRTX045/LogarX/issues/new/choose).
+  Say what you were trying to find out from a log, not only what to add.
+- **A pull request**: open an issue first for anything larger than a fix, so the
+  approach can be agreed before the work is done.
 - **A vulnerability**: report it privately, as [SECURITY.md](SECURITY.md)
   describes. Never in a public issue.
-- **A question or an idea**: [Discussions](https://github.com/FRTX045/logarc/discussions).
+- **A question or an idea**: [Discussions](https://github.com/FRTX045/LogarX/discussions).
 
 Everyone taking part agrees to the [code of conduct](CODE_OF_CONDUCT.md).
 
@@ -22,8 +27,8 @@ The rest of this guide is how the project is worked on, for whoever works on it.
 Requires Python 3.11 or newer.
 
 ```bash
-git clone https://github.com/FRTX045/logarc.git
-cd logarc
+git clone https://github.com/FRTX045/LogarX.git
+cd logarx
 python -m venv .venv
 .venv\Scripts\activate            # Windows
 source .venv/bin/activate         # Linux and macOS
@@ -38,9 +43,9 @@ need it are skipped and a case analyses on the bundled rules alone.
 
 ```bash
 ruff check . && ruff format --check .
-mypy src/logarc
-mypy --platform linux src/logarc    # not redundant — some code is platform-shaped
-pytest --cov=logarc --cov-report=term-missing
+mypy src/logarx
+mypy --platform linux src/logarx    # not redundant — some code is platform-shaped
+pytest --cov=logarx --cov-report=term-missing
 ```
 
 The second type check matters: `mypy` analyses for the platform it runs on, so a
@@ -50,7 +55,7 @@ on Linux, and the reverse.
 `pytest`'s default temp root is unwritable on some Windows machines; set
 `PYTEST_DEBUG_TEMPROOT` to a short writable path if the suite fails to start.
 
-The four CRS contract tests skip without the Go binary. `LOGARC_REQUIRE_CRS=1`
+The four CRS contract tests skip without the Go binary. `LOGARX_REQUIRE_CRS=1`
 turns that skip into a failure; CI sets it.
 
 ### The whole CI, locally
@@ -72,7 +77,7 @@ repeating them, so the two cannot drift, and `tests/test_local_ci.py` checks
 that. Needs Docker, [uv](https://docs.astral.sh/uv/), the ruleset clone in
 [docs/installing.md](docs/installing.md#owasp-crs),
 and on Windows Git Bash and Go 1.25+. A summary is printed and kept under
-`~/.cache/logarc-ci/runs/` (`LOGARC_CI_DIR` moves it). Exit 0 means every job
+`~/.cache/logarx-ci/runs/` (`LOGARX_CI_DIR` moves it). Exit 0 means every job
 passed; 3 means nothing failed but some jobs could not run on this machine.
 
 ### Git hooks and the other tools

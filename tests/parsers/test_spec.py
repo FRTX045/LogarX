@@ -13,9 +13,9 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from logarc.core.evidence import EvidenceRef
-from logarc.parsers.apache import COMBINED
-from logarc.parsers.spec import (
+from logarx.core.evidence import EvidenceRef
+from logarx.parsers.apache import COMBINED
+from logarx.parsers.spec import (
     SPEC_VERSION,
     FormatSpecError,
     LogFormatSpec,
@@ -55,7 +55,7 @@ def test_a_written_definition_names_its_kind_and_version() -> None:
     assert payload["version"] == SPEC_VERSION
 
 
-def test_a_definition_from_a_newer_logarc_is_refused_by_version() -> None:
+def test_a_definition_from_a_newer_logarx_is_refused_by_version() -> None:
     payload = spec_to_dict(LogFormatSpec(name="site", directive=COMBINED))
     payload["version"] = SPEC_VERSION + 1
 
@@ -66,7 +66,7 @@ def test_a_definition_from_a_newer_logarc_is_refused_by_version() -> None:
     assert "newer" in str(raised.value)
 
 
-def test_an_unknown_kind_names_the_kinds_this_logarc_reads() -> None:
+def test_an_unknown_kind_names_the_kinds_this_logarx_reads() -> None:
     payload = spec_to_dict(LogFormatSpec(name="site", directive=COMBINED))
     payload["kind"] = "runes"
 

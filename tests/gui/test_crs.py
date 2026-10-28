@@ -1,7 +1,7 @@
 """Running CRS when a scan finishes, and showing it running.
 
 Since 2026-10-05 nothing asks first. CRS runs after every scan unless the reader
-turned it off in Preferences or the machine sets `LOGARC_CRS=off`, and the card
+turned it off in Preferences or the machine sets `LOGARX_CRS=off`, and the card
 it shows can stop it. The dialog that used to ask is gone; what it said about
 the trade lives on as the note under that preference.
 
@@ -22,15 +22,15 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 from PyQt6.QtWidgets import QDialog
 
 from conftest import settled
-from logarc.case import Case
-from logarc.core.event import NormalizedEvent
-from logarc.core.evidence import EvidenceRef
-from logarc.detect.crs import AUTO_ENV, CrsUnavailableError
-from logarc.enrich import EnrichProgress
-from logarc.gui import app as app_module
-from logarc.gui import prefs
-from logarc.gui.app import MainWindow
-from logarc.gui.crs import CrsCard, CrsUnavailable
+from logarx.case import Case
+from logarx.core.event import NormalizedEvent
+from logarx.core.evidence import EvidenceRef
+from logarx.detect.crs import AUTO_ENV, CrsUnavailableError
+from logarx.enrich import EnrichProgress
+from logarx.gui import app as app_module
+from logarx.gui import prefs
+from logarx.gui.app import MainWindow
+from logarx.gui.crs import CrsCard, CrsUnavailable
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -81,7 +81,7 @@ class _Watched:
 def watched(qt_app: QApplication, monkeypatch: pytest.MonkeyPatch) -> Iterator[_Watched]:
     """A window on a machine where CRS is installed and nobody has turned it off.
 
-    `tests/conftest.py` sets `LOGARC_CRS=off` for the whole suite, so that a
+    `tests/conftest.py` sets `LOGARX_CRS=off` for the whole suite, so that a
     test which ingests through the window does not also run CRS. These tests
     are about exactly that run, so they take the switch back off.
     """
@@ -142,7 +142,7 @@ def test_turned_off_in_preferences_it_is_not_run(
 def test_the_machine_wide_switch_wins_over_the_preference(
     watched: _Watched, qt_app: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`LOGARC_CRS=off` is for a machine, the preference for a reader. The
+    """`LOGARX_CRS=off` is for a machine, the preference for a reader. The
     machine is the narrower claim — somebody set it for a reason the reader
     may not know — so it wins, and the preference still reads as on."""
     monkeypatch.setenv(AUTO_ENV, "off")
@@ -274,8 +274,8 @@ def test_a_run_that_returns_no_outcome_still_lets_the_scan_start(
 
 # -- running it by hand, from the Case menu --------------------------------
 #
-# With the preference off, or `LOGARC_CRS=off`, the window used to have no way
-# to run CRS on one case at all — only `logarc enrich` could. The old offer's
+# With the preference off, or `LOGARX_CRS=off`, the window used to have no way
+# to run CRS on one case at all — only `logarx-dev enrich` could. The old offer's
 # "You can run it later instead" had no route behind it in the window either.
 
 

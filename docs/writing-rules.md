@@ -6,27 +6,22 @@ what an attack looks like should not have to know Python to say so, and a rule
 pack can be reviewed, diffed and versioned by someone who will never read
 `engine.py`.
 
-The packs that ship are in `src/logarc/detect/rulepacks/`. They are ordinary
+The packs that ship are in `src/logarx/detect/rulepacks/`. They are ordinary
 input to the loader: yours work the same way.
 
-```bash
-logarc analyze  --case ./case-001 --ip 203.0.113.45 --rules ./my-rules.yaml
-logarc evidence --case ./case-001 --ip 203.0.113.45 --rules ./my-rules.yaml
-logarc export   --case ./case-001 --ip 203.0.113.45 --rules ./my-rules.yaml -o report.html
-```
+Your own packs live in the *Detection rules* tab of **Case → Formats and
+rules…**, which keeps them in your settings, checks each one as you type, shows
+what it finds in the open case, and reads every case you open with them. It is
+also where a built-in rule that is wrong for your site can be switched off. See
+[Detection rules](desktop-app.md#detection-rules).
 
-`--rules` takes a file or a directory, and repeats. Rules apply at *analysis*
-time, not at ingest — a case stores events, and the same events can be re-read
-against a better ruleset tomorrow without re-ingesting a gigabyte. Extra packs
-add to the bundled ones rather than replacing them, so writing one rule about
-your own application does not silently drop OWASP coverage.
-
-In the window there is no `--rules`: the *Detection rules* tab of **Case →
-Formats and rules…** keeps your packs in your settings, checks each one as you
-type, shows what it finds in the open case, and reads every case you open with
-them. It is also where a built-in rule that is wrong for your site can be
-switched off. See [Detection rules](desktop-app.md#detection-rules). The command
-line never reads those packs: it uses only what `--rules` names.
+Rules apply at *analysis* time, not at ingest — a case stores events, and the
+same events can be re-read against a better ruleset tomorrow without
+re-ingesting a gigabyte. Your packs add to the bundled ones rather than
+replacing them, so writing one rule about your own application does not
+silently drop OWASP coverage. To measure a pack against CRS's corpus,
+`logarx-dev score-crs --rules ./my-rules.yaml` takes a file or a directory, and
+repeats.
 
 A rule about a single request can be written without YAML: **Add rule…** in that
 tab, or **Make a rule from this line…** on a line in the evidence panel, opens a
@@ -123,6 +118,13 @@ after one decode pass and `SELECT` after two; a rule against the raw `query`
 sees none of that. The raw forms are kept so a rule can deliberately target what
 was literally sent — `decode_depth` above 1 is itself worth a rule, since
 double-encoding is not something a browser does by accident.
+
+**A condition on a field the log does not record never holds.** Apache's common
+format has no User-Agent column, so `{field: user_agent, equals: ""}` does not
+match its lines: an empty field there says nothing about the client. It still
+matches a combined line with `-`, where the client sent none. Each file's format
+says what it records, and the decoded and derived fields go with the field they
+are read from (`user_agent_decoded` with `user_agent`, `extension` with `path`).
 
 Regexes are compiled case-insensitively, once at load time.
 
@@ -289,9 +291,9 @@ small dataset build; `samples/README.md` says how to get it:
 ```bash
 pytest tests/detect tests/evaluation -q
 B=samples/apache-shopfront/2026-08-23-small
-logarc ingest $B/access.log --case ./case-check
-logarc enrich --case ./case-check
-logarc evaluate --case ./case-check --truth $B/truth.jsonl
+logarx-dev ingest $B/access.log --case ./case-check
+logarx-dev enrich --case ./case-check
+logarx-dev evaluate --case ./case-check --truth $B/truth.jsonl
 ```
 
 `docs/evaluation.md` has what that prints today, so a change is a comparison

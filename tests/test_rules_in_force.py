@@ -12,12 +12,12 @@ from pathlib import Path
 
 import pytest
 
-from logarc.analysis import analyse_ip
-from logarc.case import Case
-from logarc.caseview import reconstruct_client
-from logarc.detect.ruleset import PackText, RuleSet
-from logarc.report.html import render_report
-from logarc.triage.scan import read_labels, scan_case
+from logarx.analysis import analyse_ip
+from logarx.case import Case
+from logarx.caseview import reconstruct_client
+from logarx.detect.ruleset import PackText, RuleSet
+from logarx.report.html import render_report
+from logarx.triage.scan import read_labels, scan_case
 
 IP = "203.0.113.5"
 

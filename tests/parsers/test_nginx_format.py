@@ -11,10 +11,10 @@ from datetime import UTC, datetime
 
 import pytest
 
-from logarc.core.evidence import EvidenceRef
-from logarc.parsers.logformat import LogFormatError, LogFormatParser
-from logarc.parsers.nginx import looks_like_nginx
-from logarc.parsers.registry import get_spec
+from logarx.core.evidence import EvidenceRef
+from logarx.parsers.logformat import LogFormatError, LogFormatParser
+from logarx.parsers.nginx import looks_like_nginx
+from logarx.parsers.registry import get_spec
 
 REF = EvidenceRef(source_file_id="f", line_no=1)
 
@@ -199,8 +199,9 @@ def test_a_percent_sign_in_an_nginx_format_is_a_percent_sign() -> None:
     ids=["escape=json", "a JSON template"],
 )
 def test_a_json_format_is_sent_to_the_json_kind(pasted: str) -> None:
-    """Its log is JSON, which the JSON kind reads from the log itself."""
-    with pytest.raises(LogFormatError, match="add-json"):
+    """Its log is JSON, which the JSON kind reads from the log itself. Named as
+    the window offers it: there is no command to run."""
+    with pytest.raises(LogFormatError, match="New → JSON"):
         LogFormatParser(pasted)
 
 

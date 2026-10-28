@@ -9,11 +9,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from logarc.core.activity import ActivityCategory, ActivityLabel, Severity
-from logarc.core.event import NormalizedEvent
-from logarc.core.evidence import EvidenceRef
-from logarc.detect.engine import LabelledEvent
-from logarc.episode.builder import build_episodes, segment
+from logarx.core.activity import ActivityCategory, ActivityLabel, Severity
+from logarx.core.event import NormalizedEvent
+from logarx.core.evidence import EvidenceRef
+from logarx.detect.engine import LabelledEvent
+from logarx.episode.builder import build_episodes, segment
 
 START = datetime(2024, 5, 1, 9, 0, tzinfo=UTC)
 

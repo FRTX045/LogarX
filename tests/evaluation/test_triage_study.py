@@ -1,8 +1,8 @@
 import pytest
 
-from logarc.case import Case
-from logarc.core.activity import ActivityCategory
-from logarc.evaluation.truth import TruthRecord, TruthWriter
+from logarx.case import Case
+from logarx.core.activity import ActivityCategory
+from logarx.evaluation.truth import TruthRecord, TruthWriter
 
 
 def fixture_case(tmp_path, categories=(ActivityCategory.BROWSING,)):
@@ -27,7 +27,7 @@ def fixture_case(tmp_path, categories=(ActivityCategory.BROWSING,)):
 
 
 def test_case_evaluation_verifies_sources_and_keeps_no_attack_recall_undefined(tmp_path):
-    from logarc.evaluation.triage_study import evaluate_case
+    from logarx.evaluation.triage_study import evaluate_case
 
     case, source, truth = fixture_case(tmp_path)
     result = evaluate_case(case, source, truth, include_model=False)
@@ -43,7 +43,7 @@ def test_case_evaluation_verifies_sources_and_keeps_no_attack_recall_undefined(t
 
 
 def test_wrong_truth_ip_cannot_be_scored_against_a_case(tmp_path):
-    from logarc.evaluation.triage_study import evaluate_case
+    from logarx.evaluation.triage_study import evaluate_case
 
     case, source, truth = fixture_case(tmp_path)
     truth.write_text(truth.read_text().replace("192.0.2.1", "192.0.2.9"))
@@ -52,7 +52,7 @@ def test_wrong_truth_ip_cannot_be_scored_against_a_case(tmp_path):
 
 
 def test_unknown_truth_excludes_whole_client_explicitly_instead_of_assuming_benign(tmp_path):
-    from logarc.evaluation.triage_study import evaluate_case
+    from logarx.evaluation.triage_study import evaluate_case
 
     case, source, truth = fixture_case(tmp_path)
     truth.write_text(truth.read_text().replace('"browsing"', '"unknown"'))
@@ -65,7 +65,7 @@ def test_unknown_truth_excludes_whole_client_explicitly_instead_of_assuming_beni
 
 
 def test_challenger_selection_uses_development_yield_then_declared_ties():
-    from logarc.evaluation.priorities import choose_challenger
+    from logarx.evaluation.priorities import choose_challenger
 
     metrics = {"yield10": 0.7, "yield25": 0.7, "yield50": 0.6, "quiet50": 0.2, "hits10": 7}
     cases = {"development": dict.fromkeys(("support", "weighted", "share"), metrics)}
@@ -75,7 +75,7 @@ def test_challenger_selection_uses_development_yield_then_declared_ties():
 
 
 def test_explicit_hostile_truth_keeps_mixed_unknown_client_in_attack_recall(tmp_path):
-    from logarc.evaluation.triage_study import evaluate_case
+    from logarx.evaluation.triage_study import evaluate_case
 
     hostile = next(category for category in ActivityCategory if category.is_hostile)
     case, source, truth = fixture_case(tmp_path, (hostile, ActivityCategory.UNKNOWN))
@@ -129,8 +129,8 @@ def graded_fixture(tmp_path):
 
 
 def test_graded_study_grades_clients_from_truth_and_scores_every_method(tmp_path):
-    from logarc.evaluation.graded import load_scores
-    from logarc.evaluation.triage_study import evaluate_graded_case
+    from logarx.evaluation.graded import load_scores
+    from logarx.evaluation.triage_study import evaluate_graded_case
 
     result = evaluate_graded_case(*graded_fixture(tmp_path))
     assert result["identity"]["crs_paranoia_level"] == 2
@@ -154,7 +154,7 @@ def test_graded_study_grades_clients_from_truth_and_scores_every_method(tmp_path
 
 
 def test_the_audit_flags_high_confidence_rules_that_matched_benign_truth(tmp_path):
-    from logarc.evaluation.triage_study import evaluate_graded_case
+    from logarx.evaluation.triage_study import evaluate_graded_case
 
     audit = evaluate_graded_case(*graded_fixture(tmp_path))["audit"]
     flagged = {rule for rule, row in audit["rules"].items() if row["flagged"]}
@@ -171,7 +171,7 @@ def test_exploit_study_counts_a_client_placed_by_crs_level_one_evidence(tmp_path
     """The sqlmap client has no native exploit evidence; a level 1 detection places it first."""
     import json
 
-    from logarc.evaluation.triage_study import evaluate_exploit_case
+    from logarx.evaluation.triage_study import evaluate_exploit_case
 
     root, source, truth = graded_fixture(tmp_path)
     detection = {
@@ -194,7 +194,7 @@ def test_exploit_study_counts_a_client_placed_by_crs_level_one_evidence(tmp_path
 
 
 def test_exploit_study_reports_orderings_identity_and_the_pre_exclusion_queue(tmp_path):
-    from logarc.evaluation.triage_study import evaluate_exploit_case
+    from logarx.evaluation.triage_study import evaluate_exploit_case
 
     result = evaluate_exploit_case(*graded_fixture(tmp_path))
     assert {
@@ -222,7 +222,7 @@ def test_exploit_study_reports_orderings_identity_and_the_pre_exclusion_queue(tm
 
 
 def test_a_stopped_crs_run_is_not_a_complete_product_evaluation(tmp_path):
-    from logarc.evaluation.triage_study import evaluate_case
+    from logarx.evaluation.triage_study import evaluate_case
 
     case, source, truth = fixture_case(tmp_path)
     with Case.open(case) as opened:

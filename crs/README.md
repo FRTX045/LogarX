@@ -14,7 +14,7 @@ exactly the parts that would be lost by copying CRS's regexes into a rule pack i
 From a source checkout, one command does all of it and then checks that it works:
 
 ```bash
-logarc setup-crs
+logarx-dev setup-crs
 ```
 
 It fetches the ruleset at the pinned revision below, builds the sidecar if it is missing or older
@@ -34,9 +34,9 @@ GOOS=windows GOARCH=amd64 go build -o crs-sidecar.exe .  # cross-compile
 Cross-compilation is clean because Coraza's dependency tree is pure Go. RE2 is no exception: go-re2
 builds it to WebAssembly and translates that to Go, so no C toolchain is involved. Cross-compiling
 is **required** when
-the Python interpreter running `logarc` targets a different OS than the toolchain — a Windows venv
-cannot spawn an ELF binary. `logarc` looks for `crs-sidecar.exe` on Windows and `crs-sidecar`
-elsewhere; `LOGARC_CRS_BINARY` overrides both.
+the Python interpreter running `logarx` targets a different OS than the toolchain — a Windows venv
+cannot spawn an ELF binary. `logarx` looks for `crs-sidecar.exe` on Windows and `crs-sidecar`
+elsewhere; `LOGARX_CRS_BINARY` overrides both.
 
 Neither binary nor the ruleset clone is committed. The packaged Windows build carries both:
 `packaging/rebuild.py` builds the sidecar fresh with `-trimpath`, and `packaging/crs_bundle.py`
@@ -69,7 +69,7 @@ rest, through the built binary.
 
 ## Interface
 
-Input is **pre-parsed JSON**, not raw log lines, so `logarc`'s parsers stay the single source of
+Input is **pre-parsed JSON**, not raw log lines, so `logarx`'s parsers stay the single source of
 truth for reading a log.
 
 ```bash
@@ -81,10 +81,10 @@ stdin, one object per line: `line_no`, `client_ip`, `method`, `raw_target`, `pro
 skipped, not an error.
 
 A line `{"flush": N}` is answered with `{"flushed": N}` once everything before it has been, and
-stdout is flushed. `logarc` keeps each sidecar running for a whole replay and sends it one share
+stdout is flushed. `logarx` keeps each sidecar running for a whole replay and sends it one share
 of requests after another, each followed by a marker, so it knows where one share's answers end
 without closing the pipe. It passes `--protocol 2` too: a binary built before
-flush markers rejects the unknown flag at once, and `logarc` says to rebuild it, where it would
+flush markers rejects the unknown flag at once, and `logarx` says to rebuild it, where it would
 otherwise read every marker as a record and never answer.
 
 stdout, one object per **matched datum** — a rule matching in two parameters emits two lines

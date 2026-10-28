@@ -18,8 +18,8 @@ from datetime import UTC, datetime, timedelta, timezone
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from logarc.core.evidence import EvidenceRef
-from logarc.parsers.logformat import LogFormatParser
+from logarx.core.evidence import EvidenceRef
+from logarx.parsers.logformat import LogFormatParser
 
 REF = EvidenceRef(source_file_id="prop", line_no=1)
 

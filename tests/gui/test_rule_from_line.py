@@ -17,15 +17,15 @@ from test_bookmark_marks import attack, lines, row_point
 from test_rules_window import IP, LINES, _on_screen, _opened
 
 from conftest import fired, settled
-from logarc import rules_library
-from logarc.case import Case
-from logarc.core.activity import ActivityCategory, Severity
-from logarc.core.event import NormalizedEvent
-from logarc.core.evidence import EvidenceRef
-from logarc.evidence import EvidenceLine
-from logarc.gui import app as app_module
-from logarc.gui.add_rule import AddRuleDialog
-from logarc.gui.evidence_panel import EvidencePanel
+from logarx import rules_library
+from logarx.case import Case
+from logarx.core.activity import ActivityCategory, Severity
+from logarx.core.event import NormalizedEvent
+from logarx.core.evidence import EvidenceRef
+from logarx.evidence import EvidenceLine
+from logarx.gui import app as app_module
+from logarx.gui.add_rule import AddRuleDialog
+from logarx.gui.evidence_panel import EvidencePanel
 
 MAKE = "Make a rule from this line\N{HORIZONTAL ELLIPSIS}"
 

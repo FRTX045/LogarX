@@ -11,9 +11,9 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
-from logarc.core.event import NormalizedEvent
-from logarc.core.evidence import EvidenceRef
-from logarc.search import (
+from logarx.core.event import NormalizedEvent
+from logarx.core.evidence import EvidenceRef
+from logarx.search import (
     ANY_DAY,
     Scope,
     Suggestion,

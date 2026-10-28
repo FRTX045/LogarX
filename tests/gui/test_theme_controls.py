@@ -25,9 +25,9 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem, QWidget,
 )
 from PyQt6.QtCore import Qt
-from logarc.gui import theme
-from logarc.gui.splitter import PanelSplitter
-from logarc.style import THEME
+from logarx.gui import theme
+from logarx.gui.splitter import PanelSplitter
+from logarx.style import THEME
 
 qt = QApplication([])
 theme.apply_theme(qt)
@@ -105,7 +105,7 @@ grip = splitter.handle(1)
 facts["resting_grip_accent"] = bluish(grip.grab().toImage())
 
 # Last, because it takes the stylesheet away to measure Fusion alone.
-from logarc.gui.panels import ClientTable
+from logarx.gui.panels import ClientTable
 clients = ClientTable(); clients.resize(420, 500); clients.show(); qt.processEvents()
 header = clients._table.horizontalHeader()
 shown = [i for i in range(clients._table.columnCount()) if not header.isSectionHidden(i)]

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from logarc.core.activity import ActivityCategory
-from logarc.gui.rule_form_view import (
+from logarx.core.activity import ActivityCategory
+from logarx.gui.rule_form_view import (
     CATEGORY_LABELS,
     FIELD_LABELS,
     TEST_LABELS,
@@ -11,8 +11,8 @@ from logarc.gui.rule_form_view import (
     id_caption,
     parts_heading,
 )
-from logarc.rule_draft import FORM_FIELDS, Test
-from logarc.rule_finds import Find
+from logarx.rule_draft import FORM_FIELDS, Test
+from logarx.rule_finds import Find
 
 
 def test_every_form_field_has_a_label() -> None:

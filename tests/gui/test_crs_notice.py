@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from logarc.detect.crs import SidecarConfig
-from logarc.gui.crs_notice import partial_crs_notice, stale_crs_notice
+from logarx.detect.crs import SidecarConfig
+from logarx.gui.crs_notice import partial_crs_notice, stale_crs_notice
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -67,7 +67,7 @@ def test_without_crs_here_there_is_nothing_to_offer(tmp_path: Path) -> None:
 
 
 def test_a_case_checked_at_another_paranoia_level_says_nothing(tmp_path: Path) -> None:
-    """`logarc enrich --paranoia 3` is a choice, not an old version. Running
+    """`logarx-dev enrich --paranoia 3` is a choice, not an old version. Running
     it again from the window would quietly undo it at the default level."""
     then = _config(tmp_path, paranoia=3).as_config()
 

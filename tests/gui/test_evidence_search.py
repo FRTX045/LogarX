@@ -23,13 +23,13 @@ from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QPushButton
 
 from conftest import fired
-from logarc.core.activity import ActivityCategory, Outcome, Severity
-from logarc.core.event import NormalizedEvent
-from logarc.core.evidence import EvidenceRef
-from logarc.core.graph import GraphNode
-from logarc.evidence import EvidenceLine
-from logarc.gui.evidence_panel import EvidencePanel
-from logarc.gui.evidence_view import Filtered
+from logarx.core.activity import ActivityCategory, Outcome, Severity
+from logarx.core.event import NormalizedEvent
+from logarx.core.evidence import EvidenceRef
+from logarx.core.graph import GraphNode
+from logarx.evidence import EvidenceLine
+from logarx.gui.evidence_panel import EvidencePanel
+from logarx.gui.evidence_view import Filtered
 
 START = datetime(2026, 3, 11, 0, 50, tzinfo=UTC)
 

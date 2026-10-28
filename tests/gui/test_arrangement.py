@@ -11,8 +11,8 @@ import json
 
 import pytest
 
-from logarc.core.graph import GraphKind
-from logarc.gui.arrangement import (
+from logarx.core.graph import GraphKind
+from logarx.gui.arrangement import (
     LIMIT,
     Move,
     MoveHistory,

@@ -5,9 +5,9 @@ and it catches packaging mistakes (bad `src` layout, missing wheel config) that
 would otherwise only surface much later.
 """
 
-import logarc
+import logarx
 
 
 def test_package_exposes_version() -> None:
-    assert isinstance(logarc.__version__, str)
-    assert logarc.__version__
+    assert isinstance(logarx.__version__, str)
+    assert logarx.__version__

@@ -17,8 +17,8 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from PyQt6.QtWidgets import QApplication
 
-from logarc.gui.app import MainWindow
-from logarc.gui.evidence_panel import TRIAGE_HINT, EvidencePanel
+from logarx.gui.app import MainWindow
+from logarx.gui.evidence_panel import TRIAGE_HINT, EvidencePanel
 
 
 def test_an_empty_panel_says_where_its_lines_come_from_while_triage_is_in_front(

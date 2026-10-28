@@ -35,10 +35,10 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from fake_sidecar import FakeCrs
 
-from logarc.core.event import NormalizedEvent
-from logarc.core.evidence import EvidenceRef
-from logarc.detect.crs import sidecar
-from logarc.detect.crs.sidecar import SidecarConfig, run_sidecar
+from logarx.core.event import NormalizedEvent
+from logarx.core.evidence import EvidenceRef
+from logarx.detect.crs import sidecar
+from logarx.detect.crs.sidecar import SidecarConfig, run_sidecar
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -523,8 +523,8 @@ def test_a_sidecar_older_than_this_code_is_named_rather_than_waited_on(
     raised = _finishing_within(30, lambda: run_sidecar([request(1)], config=config))
 
     assert isinstance(raised, sidecar.CrsUnavailableError)
-    assert "older than this logarc" in str(raised)
-    assert "logarc setup-crs" in str(raised)
+    assert "older than this LogarX" in str(raised)
+    assert "logarx-dev setup-crs" in str(raised)
 
 
 def test_a_share_too_big_for_a_pipe_from_a_sidecar_that_talks_is_answered(

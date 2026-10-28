@@ -2,7 +2,7 @@
 
 `packaging/rebuild.py` is a script rather than part of the package, so it is
 loaded here by path. It is worth testing anyway: it is the only thing standing
-between a red suite and a broken `dist/logarc`, and it runs unattended from a
+between a red suite and a broken `dist/logarx`, and it runs unattended from a
 git hook where nobody reads its output.
 """
 
@@ -28,7 +28,7 @@ def _rebuild() -> ModuleType:
     installed here, so importing that name would find the wrong thing.
     """
     path = ROOT / "packaging" / "rebuild.py"
-    spec = importlib.util.spec_from_file_location("logarc_rebuild_script", path)
+    spec = importlib.util.spec_from_file_location("logarx_rebuild_script", path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -46,17 +46,17 @@ def bundles(rebuild: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     """Point the script's fixed paths at a temporary tree."""
     dist = tmp_path / "dist"
     dist.mkdir()
-    monkeypatch.setattr(rebuild, "LIVE", dist / "logarc")
+    monkeypatch.setattr(rebuild, "LIVE", dist / "logarx")
     monkeypatch.setattr(rebuild, "PREVIOUS", dist / ".previous")
     monkeypatch.setattr(rebuild, "STAGING", dist / ".staging")
-    monkeypatch.setattr(rebuild, "INTERMEDIATE", tmp_path / "build" / "logarc" / "logarc.exe")
+    monkeypatch.setattr(rebuild, "INTERMEDIATE", tmp_path / "build" / "logarx" / "logarx.exe")
     return tmp_path
 
 
 def _staged(rebuild: ModuleType) -> Path:
-    staged = rebuild.STAGING / "logarc"
+    staged = rebuild.STAGING / "logarx"
     staged.mkdir(parents=True)
-    (staged / "logarc.exe").write_bytes(b"the real one")
+    (staged / "logarx.exe").write_bytes(b"the real one")
     return staged
 
 
@@ -65,7 +65,7 @@ def test_the_swap_puts_the_staged_bundle_where_the_application_lives(
 ) -> None:
     rebuild.swap(_staged(rebuild))
 
-    assert (rebuild.LIVE / "logarc.exe").read_bytes() == b"the real one"
+    assert (rebuild.LIVE / "logarx.exe").read_bytes() == b"the real one"
 
 
 def test_the_swap_discards_the_intermediate_executable(rebuild: ModuleType, bundles: Path) -> None:
@@ -74,7 +74,7 @@ def test_the_swap_discards_the_intermediate_executable(rebuild: ModuleType, bund
     It is a bootstrap loader with the same name and icon as the application and
     no `_internal` beside it, so double-clicking it produces "Failed to load
     Python DLL" and nothing else, forever. Leaving it in the tree means a search
-    for `logarc.exe` returns two indistinguishable hits, one of which is broken
+    for `logarx.exe` returns two indistinguishable hits, one of which is broken
     by construction.
     """
     rebuild.INTERMEDIATE.parent.mkdir(parents=True)
@@ -92,18 +92,18 @@ def test_the_swap_does_not_mind_a_build_directory_that_was_never_written(
     """A first build, or one run after `build/` was cleared by hand."""
     rebuild.swap(_staged(rebuild))
 
-    assert (rebuild.LIVE / "logarc.exe").exists()
+    assert (rebuild.LIVE / "logarx.exe").exists()
 
 
 def test_the_swap_replaces_a_bundle_that_is_already_there(
     rebuild: ModuleType, bundles: Path
 ) -> None:
     rebuild.LIVE.mkdir(parents=True)
-    (rebuild.LIVE / "logarc.exe").write_bytes(b"the old one")
+    (rebuild.LIVE / "logarx.exe").write_bytes(b"the old one")
 
     rebuild.swap(_staged(rebuild))
 
-    assert (rebuild.LIVE / "logarc.exe").read_bytes() == b"the real one"
+    assert (rebuild.LIVE / "logarx.exe").read_bytes() == b"the real one"
     assert not rebuild.PREVIOUS.exists(), "the displaced bundle is not kept once the swap holds"
 
 
@@ -175,27 +175,27 @@ def test_verification_rejects_a_qt_runtime_that_cannot_load(
 def test_the_command_line_is_found_among_the_bundled_modules(rebuild: ModuleType) -> None:
     """ADR-0012: the window is the product, and the command line is a developer
     tool that never ships. Matched by dotted name, so `click` is not
-    `clickhouse_driver` and `logarc.cli` is not a `logarc.client_filter`."""
+    `clickhouse_driver` and `logarx.cli` is not a `logarx.client_filter`."""
     bundled = [
-        "logarc.gui.app",
-        "logarc.cli.main",
-        "logarc.devtools",
+        "logarx.gui.app",
+        "logarx.cli.main",
+        "logarx.devtools",
         "typer.core",
         "click",
         "clickhouse_driver",
-        "logarc.client_filter",
+        "logarx.client_filter",
     ]
 
     assert rebuild.command_line_in(bundled) == [
         "click",
-        "logarc.cli.main",
-        "logarc.devtools",
+        "logarx.cli.main",
+        "logarx.devtools",
         "typer.core",
     ]
 
 
 def test_a_bundle_without_the_command_line_holds_none_of_it(rebuild: ModuleType) -> None:
-    assert rebuild.command_line_in(["logarc.gui.app", "PyQt6.QtCore", "duckdb"]) == []
+    assert rebuild.command_line_in(["logarx.gui.app", "PyQt6.QtCore", "duckdb"]) == []
 
 
 def test_a_bundle_whose_modules_cannot_be_read_is_refused(
@@ -203,7 +203,7 @@ def test_a_bundle_whose_modules_cannot_be_read_is_refused(
 ) -> None:
     """Not read is not clean: a check that passed whatever it could not open
     would pass the one build it exists to stop."""
-    (tmp_path / "logarc.exe").write_bytes(b"not an archive")
+    (tmp_path / "logarx.exe").write_bytes(b"not an archive")
 
     problem = rebuild.check_no_command_line(tmp_path)
 
@@ -223,7 +223,7 @@ def test_verification_rejects_a_bundle_without_the_crs_sidecar(
 
 def _bundled_crs(tmp_path: Path) -> Path:
     """A bundle holding copies of this checkout's built sidecar and ruleset."""
-    from logarc.detect.crs import SidecarConfig, binary_name
+    from logarx.detect.crs import SidecarConfig, binary_name
 
     config = SidecarConfig()
     internal = tmp_path / "bundle" / "_internal"
@@ -247,7 +247,7 @@ _CRS_BUILT = (
 
 
 @pytest.mark.skipif(
-    not _CRS_BUILT and os.environ.get("LOGARC_REQUIRE_CRS") != "1",
+    not _CRS_BUILT and os.environ.get("LOGARX_REQUIRE_CRS") != "1",
     reason="CRS sidecar or ruleset not built; see crs/README.md",
 )
 def test_verification_runs_the_bundled_sidecar_on_a_known_attack(
@@ -258,7 +258,7 @@ def test_verification_runs_the_bundled_sidecar_on_a_known_attack(
 
 
 @pytest.mark.skipif(
-    not _CRS_BUILT and os.environ.get("LOGARC_REQUIRE_CRS") != "1",
+    not _CRS_BUILT and os.environ.get("LOGARX_REQUIRE_CRS") != "1",
     reason="CRS sidecar or ruleset not built; see crs/README.md",
 )
 def test_verification_rejects_a_bundled_ruleset_with_a_rule_file_missing(
@@ -353,7 +353,7 @@ def tree(rebuild: ModuleType, bundles: Path, monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(rebuild, "ROOT", repo)
     monkeypatch.setattr(rebuild, "GIT_DIR", repo / ".git")
     monkeypatch.setattr(rebuild, "STATUS", bundles / "dist" / "BUILD-STATUS.txt")
-    monkeypatch.setattr(rebuild, "MARKER", repo / ".git" / "logarc-build-failed")
+    monkeypatch.setattr(rebuild, "MARKER", repo / ".git" / "logarx-build-failed")
     monkeypatch.setattr(rebuild, "refresh_metadata", lambda: (True, ""))
     monkeypatch.setattr(rebuild.crs_bundle, "build_sidecar", lambda: None)
     monkeypatch.setattr(rebuild.crs_bundle, "prepare", lambda: [])
@@ -378,7 +378,7 @@ def test_a_quiet_tree_is_built_and_stamped_with_its_commit(
     built = _git(tree, "rev-parse", "--short", "HEAD")
 
     assert rebuild._rebuild() == 0
-    assert (rebuild.LIVE / "logarc.exe").exists()
+    assert (rebuild.LIVE / "logarx.exe").exists()
     assert rebuild.STATUS.read_text(encoding="utf-8").split()[2] == built
 
 
@@ -493,7 +493,7 @@ def _bundled_icons(
     text: str = '{"icons": {"syringe": {"svg": "<svg/>"}}}',
     notice: str = "Lucide, https://lucide.dev, ISC License",
 ) -> Path:
-    data = tmp_path / "_internal" / "logarc" / "gui" / "lucide.json"
+    data = tmp_path / "_internal" / "logarx" / "gui" / "lucide.json"
     data.parent.mkdir(parents=True)
     data.write_text(text, encoding="utf-8")
     (tmp_path / "_internal" / "NOTICE").write_text(notice, encoding="utf-8")
@@ -504,7 +504,7 @@ def test_verification_rejects_icons_shipped_without_their_licence(
     rebuild: ModuleType, tmp_path: Path
 ) -> None:
     """ISC asks for the notice in every copy, and the bundle is a copy."""
-    problem = rebuild.check_icons(_bundled_icons(tmp_path, notice="logarc"))
+    problem = rebuild.check_icons(_bundled_icons(tmp_path, notice="logarx"))
     assert problem is not None and "NOTICE" in problem
 
 
@@ -581,15 +581,15 @@ def test_the_icon_check_is_one_of_the_checks(
 
 def _with_version(tmp_path: Path, version: str) -> Path:
     bundle = tmp_path / "bundle"
-    info = bundle / "_internal" / f"logarc-{version}.dist-info"
+    info = bundle / "_internal" / f"logarx-{version}.dist-info"
     info.mkdir(parents=True)
-    (info / "METADATA").write_text(f"Name: logarc\nVersion: {version}\n", encoding="utf-8")
+    (info / "METADATA").write_text(f"Name: logarx\nVersion: {version}\n", encoding="utf-8")
     return bundle
 
 
 def _declaring(rebuild: ModuleType, tmp_path: Path, monkeypatch, version: str) -> None:
     pyproject = tmp_path / "pyproject.toml"
-    pyproject.write_text(f'[project]\nname = "logarc"\nversion = "{version}"\n', encoding="utf-8")
+    pyproject.write_text(f'[project]\nname = "logarx"\nversion = "{version}"\n', encoding="utf-8")
     monkeypatch.setattr(rebuild, "PYPROJECT", pyproject)
 
 

@@ -8,12 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from logarc.core.activity import ActivityCategory, Severity
-from logarc.core.event import NormalizedEvent
-from logarc.core.evidence import EvidenceRef
-from logarc.detect.crs import CrsDetection
-from logarc.detect.engine import LabelledEvent, RuleEngine, _metric, _metric_holds
-from logarc.detect.rules import WINDOW_METRICS, RulePackError, WindowCondition, load_rules
+from logarx.core.activity import ActivityCategory, Severity
+from logarx.core.event import NormalizedEvent
+from logarx.core.evidence import EvidenceRef
+from logarx.detect.crs import CrsDetection
+from logarx.detect.engine import LabelledEvent, RuleEngine, _metric, _metric_holds
+from logarx.detect.rules import WINDOW_METRICS, RulePackError, WindowCondition, load_rules
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 
@@ -111,8 +111,8 @@ def test_every_matchable_field_reads_its_own_value() -> None:
     quietly resolving to the empty string that the fallthrough returns. Each
     value is distinct, so returning the wrong one cannot look right.
     """
-    from logarc.detect.engine import RequestView
-    from logarc.detect.rules import MATCH_FIELDS
+    from logarx.detect.engine import RequestView
+    from logarx.detect.rules import MATCH_FIELDS
 
     view = RequestView(
         NormalizedEvent(
@@ -922,8 +922,8 @@ def test_failed_dense_window_scan_does_bounded_query_work(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Missing assets must not make every window rescan all its prefixes."""
-    from logarc.detect.engine import _range_min_tree, _WindowMeasurements
-    from logarc.detect.rulepacks import default_rules
+    from logarx.detect.engine import _range_min_tree, _WindowMeasurements
+    from logarx.detect.rulepacks import default_rules
 
     work = 0
     original = _WindowMeasurements.add
@@ -951,7 +951,7 @@ def test_failed_dense_window_scan_does_bounded_query_work(
         return CountingTree(tree), size
 
     monkeypatch.setattr(_WindowMeasurements, "add", counted_add)
-    monkeypatch.setattr("logarc.detect.engine._range_min_tree", counted_tree)
+    monkeypatch.setattr("logarx.detect.engine._range_min_tree", counted_tree)
     events = [
         event(n / 10, path=f"/missing-{n}.png", status=404, user_agent="Mozilla/5.0")
         for n in range(500)
@@ -1284,7 +1284,7 @@ def test_crs_s_own_click_id_false_positives_are_click_tokens(parameter: str, val
     """CRS's regression corpus keeps these two as false positives against 942440
     (942440.yaml, tests 19 and 20): its own maintainers' answer to the same
     question, for the neighbouring rule."""
-    from logarc.detect.engine import names_activity
+    from logarx.detect.engine import names_activity
 
     assert not names_activity(
         crs_detection(rule_id=942440, matched_var=f"ARGS:{parameter}", transformed_value=value)
@@ -1822,7 +1822,7 @@ def test_subdomains_of_the_host_crs_was_told_are_covered_by_it() -> None:
 
 
 def test_names_activity_is_public_and_is_the_check_rescue_applies() -> None:
-    from logarc.detect.engine import names_activity
+    from logarx.detect.engine import names_activity
 
     query = crs_detection()
     assert names_activity(query)
@@ -1834,3 +1834,94 @@ def test_names_activity_is_public_and_is_the_check_rescue_applies() -> None:
 def test_crs_host_trusted_is_readable_from_the_engine() -> None:
     assert RuleEngine([], site_hosts=("shop.test",), crs_host="shop.test").crs_host_trusted
     assert not RuleEngine([], site_hosts=("shop.test",), crs_host="localhost").crs_host_trusted
+
+
+# -- fields a log does not record ------------------------------------------
+
+#: Asks after the absence of a field, and after its decoded form.
+ABSENCE_PACK = """
+version: 1
+rules:
+  - id: no_user_agent
+    name: No User-Agent
+    category: reconnaissance
+    severity: low
+    confidence: 0.4
+    match:
+      any:
+        - field: user_agent
+          equals: ""
+
+  - id: empty_decoded_referer
+    name: Empty Referer
+    category: reconnaissance
+    severity: low
+    confidence: 0.4
+    match:
+      all:
+        - field: referer_decoded
+          equals: ""
+        - field: path
+          equals: "/"
+"""
+
+
+@pytest.fixture
+def absence(tmp_path: Path) -> list:
+    path = tmp_path / "absence.yaml"
+    path.write_text(ABSENCE_PACK, encoding="utf-8")
+    return load_rules([path])
+
+
+def _fired(engine: RuleEngine, item: NormalizedEvent) -> list[str]:
+    (labelled,) = engine.label_events([item])
+    return [label.rule_id for label in labelled.all_labels]
+
+
+def test_a_field_the_log_does_not_record_is_not_evidence_of_absence(absence: list) -> None:
+    """Apache's common format has no User-Agent on any line. Read as "every
+    client sent none", every request in such a log was reconnaissance: 59,226
+    of 63,310 innocent requests on the small tier."""
+    engine = RuleEngine(absence, unrecorded={"access.log": frozenset({"user_agent"})})
+
+    assert "no_user_agent" not in _fired(engine, event(user_agent=None))
+
+
+def test_a_client_that_sent_none_still_is(absence: list) -> None:
+    """Where the log records the field, its absence is the client's doing."""
+    engine = RuleEngine(absence, unrecorded={"other.log": frozenset({"user_agent"})})
+
+    assert "no_user_agent" in _fired(engine, event(user_agent=None))
+
+
+def test_a_decoded_field_is_as_unrecorded_as_the_field_it_decodes(absence: list) -> None:
+    engine = RuleEngine(absence, unrecorded={"access.log": frozenset({"referer"})})
+
+    assert "empty_decoded_referer" not in _fired(engine, event(referer=None))
+    assert "empty_decoded_referer" in _fired(RuleEngine(absence), event(referer=None))
+
+
+def test_every_matchable_field_depends_on_a_field_an_event_carries() -> None:
+    """A field added to the rules without saying which event field it reads
+    would be matched against a log that cannot record it."""
+    from logarx.detect.engine import FIELD_SOURCES
+    from logarx.detect.rules import MATCH_FIELDS
+    from logarx.parsers.fieldnames import OPTIONAL_FIELDS
+
+    assert set(FIELD_SOURCES) == set(MATCH_FIELDS)
+    assert set(FIELD_SOURCES.values()) <= set(OPTIONAL_FIELDS) | {None}
+
+
+def test_the_decoded_user_agent_is_unrecorded_with_the_user_agent(tmp_path: Path) -> None:
+    """The rules read `user_agent_decoded` far more often than the raw field."""
+    path = tmp_path / "ua.yaml"
+    path.write_text(
+        ABSENCE_PACK.replace("field: user_agent\n", "field: user_agent_decoded\n"),
+        encoding="utf-8",
+    )
+    rules = load_rules([path])
+
+    blind = RuleEngine(rules, unrecorded={"access.log": frozenset({"user_agent"})})
+
+    assert "no_user_agent" not in _fired(blind, event(user_agent=None))
+    assert "no_user_agent" in _fired(RuleEngine(rules), event(user_agent=None))

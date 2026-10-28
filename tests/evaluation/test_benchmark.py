@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from logarc.evaluation.benchmark import BenchmarkError, run_benchmark
-from logarc.evaluation.memory import peak_rss_bytes
+from logarx.evaluation.benchmark import BenchmarkError, run_benchmark
+from logarx.evaluation.memory import peak_rss_bytes
 
 EXCERPT = Path(__file__).parent.parent / "data" / "apache-shopfront"
 

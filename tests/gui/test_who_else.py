@@ -1,12 +1,12 @@
 from datetime import UTC, datetime, timedelta
 
 from conftest import settled
-from logarc.case import Case
-from logarc.core.event import NormalizedEvent
-from logarc.core.evidence import EvidenceRef
-from logarc.gui.app import MainWindow
-from logarc.gui.who_else import WhoElseDialog, describe, unavailable
-from logarc.triage.scan import RuleMatch, TriageProgress
+from logarx.case import Case
+from logarx.core.event import NormalizedEvent
+from logarx.core.evidence import EvidenceRef
+from logarx.gui.app import MainWindow
+from logarx.gui.who_else import WhoElseDialog, describe, unavailable
+from logarx.triage.scan import RuleMatch, TriageProgress
 
 
 def enumeration(ip, count, user_agent, first_line):
@@ -174,7 +174,7 @@ def test_the_dialog_explains_its_columns_on_hover_not_in_a_footnote(qt_app):
 def test_a_rule_is_called_by_the_name_its_labels_carry() -> None:
     from types import SimpleNamespace
 
-    from logarc.gui.who_else import rule_names
+    from logarx.gui.who_else import rule_names
 
     browsing = SimpleNamespace(rule_id="benign:browsing", name="Page View")
     probe = SimpleNamespace(rule_id="config_probe", name="Configuration File Probe")

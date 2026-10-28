@@ -16,7 +16,7 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 from PyQt6.QtCore import QRect
 from PyQt6.QtWidgets import QApplication, QWidget
 
-from logarc.gui.flow import FlowLayout
+from logarx.gui.flow import FlowLayout
 
 GAP = 8
 

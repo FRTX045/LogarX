@@ -14,9 +14,9 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 from PyQt6.QtWidgets import QApplication
 
 from conftest import settled
-from logarc.case import Case
-from logarc.gui.app import MainWindow
-from logarc.storage.case import CaseManifest
+from logarx.case import Case
+from logarx.gui.app import MainWindow
+from logarx.storage.case import CaseManifest
 
 LINE = '203.0.113.9 - - [10/Mar/2026:10:00:{second:02d} +0000] "GET /{path} HTTP/1.1" 200 512 "-" "Mozilla/5.0"'
 
@@ -33,10 +33,10 @@ def small_case(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return root / "case"
 
 
-def test_a_window_with_no_case_is_called_logarc(qt_app: QApplication) -> None:
+def test_a_window_with_no_case_is_called_logarx(qt_app: QApplication) -> None:
     window = MainWindow()
 
-    assert window.windowTitle() == "logarc"
+    assert window.windowTitle() == "LogarX"
     assert window._status.text() == "No case open"
     window.close()
 
@@ -65,7 +65,7 @@ def test_the_title_names_the_open_case(qt_app: QApplication, small_case: Path) -
     settled(qt_app)
 
     name = CaseManifest.load(small_case).case_id
-    assert window.windowTitle() == f"{name} — logarc"
+    assert window.windowTitle() == f"{name} — LogarX"
     window.close()
 
 
@@ -80,7 +80,7 @@ def test_a_case_that_fails_to_open_takes_its_name_off_the_title(
     window._load_case(tmp_path / "not-a-case")
     settled(qt_app)
 
-    assert window.windowTitle() == "logarc"
+    assert window.windowTitle() == "LogarX"
     window.close()
 
 
@@ -108,7 +108,7 @@ def test_trace_and_behaviour_sit_beside_the_client_they_describe(
 
 
 def test_the_activity_metadata_is_called_details(qt_app: QApplication) -> None:
-    from logarc.gui.evidence_panel import EvidencePanel
+    from logarx.gui.evidence_panel import EvidencePanel
 
     panel = EvidencePanel()
 
@@ -119,8 +119,8 @@ def test_the_activity_metadata_is_called_details(qt_app: QApplication) -> None:
 def test_the_categories_dialog_says_its_rule_on_the_delete_button(qt_app: QApplication) -> None:
     from PyQt6.QtWidgets import QLabel
 
-    from logarc.bookmarks import EMPTY
-    from logarc.gui.bookmarks_tab import CategoriesDialog
+    from logarx.bookmarks import EMPTY
+    from logarx.gui.bookmarks_tab import CategoriesDialog
 
     dialog = CategoriesDialog(None, EMPTY)
 
@@ -132,7 +132,7 @@ def test_the_categories_dialog_says_its_rule_on_the_delete_button(qt_app: QAppli
 def test_the_bookmark_box_explains_new_categories_on_hover(qt_app: QApplication) -> None:
     from PyQt6.QtWidgets import QLabel, QWidget
 
-    from logarc.gui.bookmark_box import BookmarkBox
+    from logarx.gui.bookmark_box import BookmarkBox
 
     host = QWidget()
     box = BookmarkBox(
@@ -152,7 +152,7 @@ def test_the_bookmark_box_explains_new_categories_on_hover(qt_app: QApplication)
 
 
 def test_the_canvas_and_the_notice_use_the_new_words() -> None:
-    from logarc.gui.canvas import STARTUP_MESSAGE, WAITING_MESSAGE
+    from logarx.gui.canvas import STARTUP_MESSAGE, WAITING_MESSAGE
 
     assert STARTUP_MESSAGE == "Open a case, or start a new one from log files."
     assert WAITING_MESSAGE == "Select a client."
@@ -233,7 +233,7 @@ def test_an_open_case_with_no_requests_does_not_say_no_case_is_open(
 ) -> None:
     """Every line refused leaves a case with nothing to draw. The band said the
     case was not open, beside a title naming it."""
-    from logarc.gui import app as app_module
+    from logarx.gui import app as app_module
 
     log = tmp_path / "garbage.log"
     log.write_text("not a log line\nnor this\n", encoding="utf-8")

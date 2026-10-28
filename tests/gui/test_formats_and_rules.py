@@ -16,10 +16,10 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication, QDialogButtonBox, QMessageBox
 
-from logarc.gui import theme
-from logarc.gui.format_editor import FormatEditor
-from logarc.gui.formats_and_rules import FORMATS_TAB, RULES_TAB, FormatsAndRules
-from logarc.gui.rules_editor import RulesEditor
+from logarx.gui import theme
+from logarx.gui.format_editor import FormatEditor
+from logarx.gui.formats_and_rules import FORMATS_TAB, RULES_TAB, FormatsAndRules
+from logarx.gui.rules_editor import RulesEditor
 
 
 def test_the_two_tabs_say_what_each_half_decides(qt_app: QApplication) -> None:
@@ -75,7 +75,7 @@ def test_the_pack_list_rows_do_not_overlap_when_the_dialog_opens_on_formats(
     """The pack list is filled while its tab is hidden. Measured before the
     stylesheet's item padding reached it, its rows were placed closer than they
     are drawn, and the highlight on one spilled onto the rows either side."""
-    from logarc.gui import theme
+    from logarx.gui import theme
 
     sheet = qt_app.styleSheet()
     qt_app.setStyleSheet(theme.controls_sheet(11))
@@ -153,7 +153,7 @@ def test_a_format_name_wider_than_the_list_never_scrolls_it_sideways(
 
 def _answer_both(monkeypatch: pytest.MonkeyPatch, button: QMessageBox.StandardButton) -> list[str]:
     """Answer either tab's unsaved-changes question with `button`, noting which asked."""
-    from logarc.gui import format_editor, rules_editor
+    from logarx.gui import format_editor, rules_editor
 
     asked: list[str] = []
     for module, tab in ((format_editor, "formats"), (rules_editor, "rules")):

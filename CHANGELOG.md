@@ -1,17 +1,37 @@
 # Changelog
 
-Notable changes to logarc. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
+Notable changes to LogarX, called logarc until 2026-10-28. Entries written
+before the rename keep the old name, as do the decision records. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-logarc has not been released yet. 0.1.0 and 0.2.0 below are development
-milestones: points the work reached and wrote down, never published as releases,
-and neither has a tag. The version reads `0.3.0.dev0` until the first release,
-which will be the first tag.
+1.0.0 is the first release and the first tag. 0.1.0 and 0.2.0 below are
+development milestones: points the work reached and wrote down, never published
+as releases, and neither has a tag.
 
 ## [Unreleased]
 
+### Changed
+
+- HTML reconstruction graphs now use request-sized circles, shared severity
+  colours and outcome outlines, bundled category icons, captions and named
+  session boxes. Both graph views have distinct SVG markers and readable
+  scrolling layouts, with a corrected legend matching the desktop.
+
+- HTML reports share the desktop's font preferences and offer an offline,
+  keyboard-accessible dark/light switch without JavaScript. A clearer report
+  hierarchy, scrollable tables, full activity dates and expandable provenance
+  keep the evidence readable; printing uses a light palette.
+
+## [1.0.0] — 2026-10-28 — the first release
+
 ### Added
 
+- **The Windows application carries the notices of everything Qt brings in.**
+  Qt Network, Qt PDF and the software OpenGL renderer ship in the bundle, and
+  the code they carry had no notice there: the Public Suffix List and libpsl;
+  PDFium with the libraries in its tree and the Chromium ones it links; Mesa
+  and LLVM. `packaging/fetch_qt_attributions.py` now fetches them all, PDFium
+  from the Chromium snapshot the installed Qt pins.
 - **An nginx `log_format` can be pasted as it is.** Wherever a directive is
   accepted (the window's format editor, `logarc formats add` and `check`), the
   whole statement from `nginx.conf`, its quoted strings, or the format alone is
@@ -412,6 +432,24 @@ which will be the first tag.
 
 ### Changed
 
+- **logarc is now LogarX.** The package is `logarx`, the commands `logarx-gui`
+  and `logarx-dev`, the variables `LOGARX_HOME` and the rest `LOGARX_*`, and the
+  repository `FRTX045/LogarX` (the old address redirects). What a reader had
+  under the old name comes with them: on first start the folder of saved
+  formats, rules and icons is copied to LogarX's, and the window's preferences
+  with it; the old ones are left where they were. Cases and truth files made
+  before still open: a truth file saying `logarc-truth` is read as one. The CRS
+  configuration file keeps its old comment, because its bytes are part of every
+  recorded CRS fingerprint.
+
+- **The command line is developer tooling, named `logarc-dev`** (ADR-0012, step 2).
+  The window is how logarc is used. The package moves from `logarc.cli` to
+  `logarc.devtools`, and keeps the seven commands the project builds cases and
+  measures itself with: `ingest`, `enrich`, `evaluate`, `score-crs`, `benchmark`,
+  `convert-csic` and `setup-crs`. `list-ips`, `analyze`, `evidence`, `export`,
+  `site-hosts` and the `formats` group are removed: each repeated something the
+  window does. A message a user can see names the window's menu, not a command;
+  the documents follow.
 - **The window reads like one desktop application.** The dark theme is lifted
   to a warm graphite so the window meets its title bar, and one stylesheet draws
   every control: check boxes with a visible box, one filled default button per
@@ -932,6 +970,13 @@ which will be the first tag.
 
 ### Documentation
 
+- **The evaluation reads the same traffic in every log format.** The small and medium
+  builds, rendered by the dataset into 20 other formats, each scored against its own
+  truth and compared with the Apache original. Leaving out the records no real server
+  would have logged as Apache did, 15 formats score identically to it on every figure and
+  none raises a false alarm. The three without a Referer lose 0.0003 of accuracy. The
+  three without a User-Agent lose their crawlers and the rules that know a tool by its
+  User-Agent (accuracy 0.892 on the medium tier). The rendering is what found #86 to #89.
 - **The headline figures are re-taken on the dataset's 2026-10-06 builds.** The README and
   `docs/evaluation.md` move from the 2026-09-20 build to `2026-10-06-medium`, 235,732 requests:
   accuracy 0.996, macro F1 0.870, attack precision 1.000 and recall 0.994, and no false alarms,
@@ -962,6 +1007,32 @@ which will be the first tag.
 
 ### Security
 
+- **One crafted line no longer stops a whole log being read.** A line went to
+  the quarantine only when its parser declined it; anything that *raised* —
+  in reading the line, in detecting the format, or in writing the events —
+  ended the import with nothing stored. An audit of logarc as a target found
+  four ways to do that from a single line a client controls: a status or byte
+  count of twenty digits, which no column can hold; a JSON `\ud800`, which
+  decodes to half a character; an epoch number of 400 digits, too large for a
+  float; and a carriage return or a 128 KB cell in an IIS or CloudFront row.
+  Each is now read: the oversized number is stored as unknown with the request
+  kept, the half character as the escape that wrote it, the epoch as no time
+  (its line quarantined), the row split as W3C splits it. And a parser that
+  raises on a line now costs that line only — quarantined, with the reason
+  naming the exception — so the next bug of this kind loses one line rather
+  than the log. Running out of memory still stops the import.
+- **A long User-Agent no longer costs the shellshock rule seconds.** Its pattern
+  was searched from every `() {` in turn, each to the end of the field, so its
+  cost grew with the square of the length: 24.5 seconds for one 320 KB
+  User-Agent, and a log of such lines would take hours to read. It now commits
+  to the first `() {`, which is the only one that can match where a later one
+  would: 0.46 seconds for the whole rule set on the same line. Same verdict on
+  a million generated strings and on 2.48 million real Referers and
+  User-Agents, and every CRS family scores as before.
+- **A client address holding markup is shown as written.** The heading above
+  the graph is rich text, and a format that reads the client from a
+  forwarded-for header takes the address from the request. A client could
+  write `<span>` there and the heading drew it, hiding text and adding its own.
 - **The CRS sidecar is built on Coraza v3.8.1**, from v3.7.0, which closes the twelve Coraza
   advisories and one `golang.org/x/net` advisory GitHub reported for it (libinjection-go moves to
   v0.3.3 and `x/net` to v0.58.0 with it). The sidecar replays only the request line and three
@@ -1035,6 +1106,27 @@ which will be the first tag.
   261 lines of unchanged values and buried the line that had actually moved.
 
 ### Fixed
+
+- **A log with no User-Agent column no longer makes every client
+  reconnaissance.** The rule for a request without a User-Agent read an empty
+  field the same way whether the client sent none or the log format has no such
+  field, and Apache's common format, `vhost_common` and HAProxy without header
+  captures have none on any line. On the small tier rendered in those formats:
+  every one of the 59,226 innocent requests reported as reconnaissance, accuracy 0.057
+  where the combined log of the same traffic scores 0.997. Each format now says
+  which fields it can record, the case works that out for every file from the
+  format it was ingested with, and a rule condition on a field a file cannot
+  record does not hold for its lines. Cases already on disk are read correctly
+  without being ingested again, and a Where to start scan made before is made
+  again rather than reused.
+- An interrupted finalization no longer presents an incomplete case as ready.
+  New stores publish completion after writing all partitions and the index,
+  preserve staging for retries, and keep completed data if staging cleanup is
+  interrupted. Ambiguous incomplete legacy stores are refused without deletion.
+
+- Per-IP reconstruction and timelines remain readable after a DuckDB upgrade
+  changes its hash function. New indexes record the assigned partition; older
+  cases are read without guessing their bucket or rewriting their files.
 
 - **CloudFront logs no longer raise false alarms over CloudFront's own
   encoding.** CloudFront percent-encodes what it writes, `%` included, so a
@@ -1852,6 +1944,7 @@ and draws it as an activity graph.
 
 <!-- Reference links for the version headings above. `0.1.0` was never tagged,
      so it points at the history rather than at a release that does not exist. -->
-[Unreleased]: https://github.com/FRTX045/logarc/compare/44d7bcbe3c23ee10eba3331cfa5fd9ed4e992c24...main
+[Unreleased]: https://github.com/FRTX045/LogarX/compare/v1.0.0...main
+[1.0.0]: https://github.com/FRTX045/LogarX/releases/tag/v1.0.0
 [0.2.0]: https://github.com/FRTX045/logarc/tree/44d7bcbe3c23ee10eba3331cfa5fd9ed4e992c24
 [0.1.0]: https://github.com/FRTX045/logarc/tree/0622b7ddb57e95ef81cc520f0dd459d872eec9d4
