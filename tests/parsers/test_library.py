@@ -155,6 +155,15 @@ def test_a_saved_format_that_cannot_compile_is_refused() -> None:
         save_library([LogFormatSpec(name="empty", directive="no percent signs here")])
 
 
+def test_a_file_that_cannot_be_written_is_the_library_s_own_error() -> None:
+    """A read-only folder or a full disk fails in the filesystem. Every caller
+    handles the library's error and says so; an `OSError` reached none of them."""
+    library_path().mkdir(parents=True)
+
+    with pytest.raises(FormatLibraryError, match="could not be written"):
+        save_library([OFFICE])
+
+
 def test_the_file_is_json_a_person_can_read_and_edit() -> None:
     save_library([OFFICE])
 

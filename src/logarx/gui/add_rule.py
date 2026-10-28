@@ -14,6 +14,7 @@ changed".
 
 from __future__ import annotations
 
+import html
 import threading
 from datetime import UTC
 from pathlib import Path
@@ -35,6 +36,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -101,6 +103,46 @@ _CHOOSE: Final = "Choose…"
 
 #: How big the rule's icon is drawn beside what it is.
 _ICON_SHOWN: Final = 20
+
+#: The longest value a request part's checkbox spells out. A checkbox label
+#: never wraps, so a longer one is shortened in the middle, where it keeps the
+#: start and the end of a payload, and the whole of it is on hover.
+_PART_CHARS: Final = 80
+
+#: Room kept between the window and the edges of the screen's work area.
+_SCREEN_MARGIN: Final = 40
+
+
+class _Natural(QScrollArea):
+    """A scroll area that asks for as much room as its contents would take.
+
+    `QScrollArea` asks for a fixed modest size whatever it holds. This one asks
+    for its contents' own, so a window opens exactly as large as before, and
+    only scrolls when that is more than the screen gives it.
+    """
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt's naming
+        inner = self.widget()
+        if inner is None:
+            return super().sizeHint()
+        frame = self.frameWidth() * 2
+        return inner.sizeHint() + QSize(frame, frame)
+
+
+def _scrolled(content: QWidget) -> QScrollArea:
+    area = _Natural()
+    area.setWidget(content)
+    area.setWidgetResizable(True)
+    area.setFrameShape(QFrame.Shape.NoFrame)
+    return area
+
+
+def _part_label(label: str, value: str) -> str:
+    """A request part as its checkbox says it: the value shortened past `_PART_CHARS`."""
+    if len(value) > _PART_CHARS:
+        keep = _PART_CHARS - 1
+        value = value[: keep - keep // 3] + "\u2026" + value[len(value) - keep // 3 :]
+    return f"{label}: {value}"
 
 
 def _caption(text: str = "") -> QLabel:
@@ -316,7 +358,11 @@ class AddRuleDialog(QDialog):
             self._parts_note.setText(line.note or "")
             self._parts_note.setVisible(bool(line.note))
             for part in line_parts(line.event):
-                tick = QCheckBox(f"{FIELD_LABELS[part.field]}: {display_safe(part.value)}")
+                shown = display_safe(part.value)
+                tick = QCheckBox(_part_label(FIELD_LABELS[part.field], shown))
+                # Escaped and marked up, or Qt reads a payload that looks like
+                # HTML as HTML and the hover loses the very part that matters.
+                tick.setToolTip(f"<span style='white-space:pre-wrap'>{html.escape(shown)}</span>")
                 tick.setChecked(part.ticked)
                 self._part_boxes.append((part, tick))
             self._pages.setCurrentIndex(0)
@@ -326,6 +372,7 @@ class AddRuleDialog(QDialog):
             self.add_condition()
             self._pages.setCurrentIndex(1)
         self._fill_parts_page()
+        self._fit_to_screen()
         self._schedule()
 
     # -- assembling ----------------------------------------------------------
@@ -368,7 +415,16 @@ class AddRuleDialog(QDialog):
         self._pages.addWidget(self._parts_page)
         self._pages.addWidget(form)
         outer.addWidget(self._pages)
-        column = QVBoxLayout(form)
+        # The fields scroll and the buttons under them do not, so however many
+        # conditions there are, Add rule is never below the bottom of the screen.
+        page = QVBoxLayout(form)
+        page.setContentsMargins(0, 0, 0, 0)
+        page.setSpacing(GAP // 2)
+        fields = QWidget()
+        page.addWidget(_scrolled(fields), 1)
+        page.addWidget(self._ask)
+        page.addWidget(self._buttons)
+        column = QVBoxLayout(fields)
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(GAP // 2)
         column.addWidget(_heading("Name"))
@@ -415,11 +471,14 @@ class AddRuleDialog(QDialog):
         column.addWidget(_heading("Matches in this case"))
         column.addWidget(self._finds_line)
         column.addWidget(self._examples, 2)
-        column.addWidget(self._ask)
-        column.addWidget(self._buttons)
 
     def _fill_parts_page(self) -> None:
-        column = QVBoxLayout(self._parts_page)
+        page = QVBoxLayout(self._parts_page)
+        page.setContentsMargins(0, 0, 0, 0)
+        page.setSpacing(GAP // 2)
+        parts = QWidget()
+        page.addWidget(_scrolled(parts), 1)
+        column = QVBoxLayout(parts)
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(GAP // 2)
         column.addWidget(self._parts_heading)
@@ -436,7 +495,19 @@ class AddRuleDialog(QDialog):
         buttons.addButton(go_on, QDialogButtonBox.ButtonRole.AcceptRole)
         cancel = required(buttons.addButton(QDialogButtonBox.StandardButton.Cancel))
         cancel.clicked.connect(self.reject)
-        column.addWidget(buttons)
+        page.addWidget(buttons)
+
+    def _fit_to_screen(self) -> None:
+        """Open as large as the contents ask, but never past the screen's work area."""
+        screen = self.screen() or QApplication.primaryScreen()
+        if screen is None:
+            return
+        area = screen.availableGeometry()
+        wanted = self.sizeHint()
+        self.resize(
+            min(wanted.width(), area.width() - _SCREEN_MARGIN),
+            min(wanted.height(), area.height() - _SCREEN_MARGIN),
+        )
 
     def _continue(self) -> None:
         """Conditions from the ticked parts, in place of any there; the rest is kept."""

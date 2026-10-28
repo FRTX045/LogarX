@@ -16,7 +16,7 @@ import pytest
 
 from logarx.analysis import analyse_ip
 from logarx.case import Case
-from logarx.report.export import FORMATS, named, write_reconstruction
+from logarx.report.export import FORMATS, named, write_reconstruction, write_text
 from logarx.report.html import render_report
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
@@ -127,3 +127,64 @@ def test_the_path_written_is_the_path_handed_back(campaign: Case, tmp_path: Path
     target.parent.mkdir()
 
     assert write_reconstruction(result, campaign.manifest, kind="html", target=target) == target
+
+
+# -- writing the file ------------------------------------------------------------
+
+
+def test_a_byte_that_was_not_utf_8_is_written_as_the_byte_it_was(tmp_path: Path) -> None:
+    """A log line is read keeping any byte that is not UTF-8, as a lone
+    surrogate, and UTF-8 cannot write one: the export failed. It is written as
+    the byte, spelled as Apache spells one it cannot print."""
+    target = tmp_path / "out.txt"
+
+    write_text(target, "GET /search?q=\udcff")
+
+    assert target.read_text(encoding="utf-8") == "GET /search?q=\\xff"
+
+
+def test_a_failed_write_leaves_the_file_that_was_there(tmp_path: Path) -> None:
+    target = tmp_path / "out.txt"
+    target.write_text("the report from before", encoding="utf-8")
+
+    with pytest.raises(UnicodeEncodeError):
+        write_text(target, "caf\u00e9", encoding="ascii")
+
+    assert target.read_text(encoding="utf-8") == "the report from before"
+    assert [path.name for path in tmp_path.iterdir()] == ["out.txt"]
+
+
+def test_a_bookmarked_line_with_a_byte_that_was_not_utf_8_is_reported(
+    campaign: Case, tmp_path: Path
+) -> None:
+    from logarx.bookmarks import DEFAULT, EMPTY, Bookmark, Kind, add
+    from logarx.core.evidence import EvidenceRef
+    from logarx.evidence import EvidenceLine
+
+    result = analyse_ip(campaign.store, ATTACKER)
+    ref = EvidenceRef("access.log", 1)
+    mark = Bookmark(
+        id="r-1",
+        kind=Kind.REQUEST,
+        category=DEFAULT,
+        said="GET /search",
+        note="",
+        saved=START,
+        client=ATTACKER,
+        line=ref,
+    )
+    raw = EvidenceLine(
+        ref=ref, source_path="access.log", text="GET /search?q=\udcff", verified=True
+    )
+    target = tmp_path / "report.html"
+
+    write_reconstruction(
+        result,
+        campaign.manifest,
+        kind="html",
+        target=target,
+        shelf=add(EMPTY, mark),
+        lines={ref: raw},
+    )
+
+    assert "GET /search?q=\\xff" in target.read_text(encoding="utf-8")

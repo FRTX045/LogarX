@@ -56,6 +56,7 @@ from logarx.search import Scope
 from logarx.style import (
     EVIDENCE_INK,
     EVIDENCE_MUTED,
+    OUTCOME_WORDS,
     PAPER,
     PAPER_EDGE,
     PAPER_STRIPE,
@@ -73,7 +74,10 @@ if TYPE_CHECKING:
     from logarx.core.graph import GraphNode
     from logarx.evidence import EvidenceLine
 
-__all__ = ["EvidencePanel"]
+__all__ = ["TRIAGE_HINT", "EvidencePanel"]
+
+#: What an empty panel says while Triage is in front: where its lines come from.
+TRIAGE_HINT = "Open an activity from Triage, and its requests are listed here."
 
 #: The two columns whose values are numbers, and the one of them that is often
 #: absent. Right-aligned so their digits line up under a heading wider than any
@@ -114,6 +118,9 @@ class EvidencePanel(QWidget):
         super().__init__()
         self._decode = True
         self._shown: tuple[GraphNode, Sequence[EvidenceLine], Filtered | None] | None = None
+        # What an empty panel says: see `_idle_heading`.
+        self._prompt = False
+        self._triage_in_front = False
         # Which lines carry a bookmark, kept so every refill can mark them again.
         self._marks: dict[EvidenceRef, Mark] = {}
         # Folding repeated lines (`gui.folding`). Off until the window applies the
@@ -244,6 +251,20 @@ class EvidencePanel(QWidget):
         """The table and the details back to the share they open with."""
         self.split.setSizes([_TABLE_SHARE * 1000, _DETAIL_SHARE * 1000])
 
+    def triage_in_front(self, shown: bool) -> None:
+        """Say whether Triage is the view beside this panel. While it is and
+        nothing is shown here, the panel says where its lines come from."""
+        self._triage_in_front = shown
+        if self._shown is None:
+            self._heading.setText(self._idle_heading())
+
+    def _idle_heading(self) -> str:
+        """What an empty panel says: where its lines come from beside Triage,
+        an invitation when there is something to select, else nothing."""
+        if self._triage_in_front:
+            return TRIAGE_HINT
+        return "Select an activity." if self._prompt else ""
+
     def clear(self, *, prompt: bool = True) -> None:
         """Empty the panel, and either invite a selection or say nothing.
 
@@ -262,7 +283,8 @@ class EvidencePanel(QWidget):
         anything has been chosen.
         """
         self._shown = None
-        self._heading.setText("Select an activity." if prompt else "")
+        self._prompt = prompt
+        self._heading.setText(self._idle_heading())
         self._metadata.clear()
         self.activity_details.hide()
         self.bookmark_button.hide()
@@ -728,10 +750,8 @@ class EvidencePanel(QWidget):
         # undone that to gain a few pixels.
         chips = []
         chips.append(_chip(node.severity.name.title(), colour))
-        # The value stays as the taxonomy spells it. Title case here would have
-        # the panel reading `Blocked` beside a canvas caption reading `blocked`
-        # for the same activity: one name for one thing, in one case.
-        chips.append(_chip(f"Outcome: {node.outcome.value}"))
+        # In the canvas caption's words and case: one name for one thing.
+        chips.append(_chip(f"Responses: {OUTCOME_WORDS[node.outcome]}"))
 
         base = self._heading.font().pointSizeF()
         self._heading.setText(

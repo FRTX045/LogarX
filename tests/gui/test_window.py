@@ -1365,7 +1365,7 @@ def test_activity_summary_keeps_outcome_and_folds_rule_metadata(
     panel.show_evidence(node, lines)  # type: ignore[arg-type]
 
     heading = panel._heading.text()
-    assert "Outcome: blocked" in heading
+    assert "Responses: refused" in heading
     assert "Matched by:" not in heading
     assert "Matched by: directory_enumeration" in panel._metadata.text()
     assert panel._metadata.isHidden()

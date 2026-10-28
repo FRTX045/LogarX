@@ -167,11 +167,16 @@ def save_library(specs: Sequence[FormatSpec], path: Path | None = None) -> Path:
         "version": LIBRARY_VERSION,
         "formats": [spec_to_dict(spec) for spec in specs],
     }
-    path.parent.mkdir(parents=True, exist_ok=True)
-    # Indented, because this file is meant to be openable in an editor: a user
-    # who wants to copy a format to another machine should find something
-    # readable when they get there.
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # Indented, because this file is meant to be openable in an editor: a
+        # user who wants to copy a format to another machine should find
+        # something readable when they get there.
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    except OSError as exc:
+        # A read-only folder or a full disk, reported as the library's own
+        # error: the one its callers catch to put in front of the reader.
+        raise FormatLibraryError(f"{path} could not be written: {exc.strerror or exc}") from exc
     return path
 
 

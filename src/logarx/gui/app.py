@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 from PyQt6 import sip
-from PyQt6.QtCore import QByteArray, QEvent, QPoint, QSettings, Qt, QTimer
+from PyQt6.QtCore import QByteArray, QEvent, QPoint, QRect, QSettings, QSize, Qt, QTimer
 from PyQt6.QtGui import (
     QAction,
     QActionGroup,
@@ -184,8 +184,19 @@ _TRIAGE_SPLIT_KEY = "window/triage_split"
 _EVIDENCE_SPLIT_KEY = "window/evidence_split"
 
 #: The widths of the client list, the graph and the evidence panel when the
-#: window opens, and after Reset panel sizes.
+#: window opens, and after Reset panel sizes. The side panels hold their
+#: tables' columns, and any width beyond them goes to the graph.
 OPENING_PANELS: Final = (480, 520, 400)
+
+#: The window's size before it knows its screen, and the least `opening_size`
+#: gives a screen with room for it.
+OPENING_WINDOW: Final = (1400, 880)
+
+#: How much of a big screen's work area a first launch takes.
+_OPENING_SHARE: Final = 0.9
+
+#: Room kept between a first launch and the edges of a small screen's work area.
+_SCREEN_EDGE: Final = 40
 
 #: The two views, in the order the tab bar shows them. One list rather than a
 #: pair of indices spelled out at each end, so a tab and the view it selects
@@ -298,13 +309,26 @@ def _whole(phrase: str) -> str:
     return phrase.replace(" ", "&nbsp;")
 
 
+def opening_size(area: QRect) -> QSize:
+    """How big a first launch opens, on a screen whose work area is `area`.
+
+    At least `OPENING_WINDOW`, growing to `_OPENING_SHARE` of a bigger screen so
+    the graph, which takes all the width the side panels do not, has room; and
+    never more than the work area, so a laptop's window is not taller than it.
+    """
+    width = max(OPENING_WINDOW[0], round(area.width() * _OPENING_SHARE))
+    height = max(OPENING_WINDOW[1], round(area.height() * _OPENING_SHARE))
+    return QSize(min(width, area.width() - _SCREEN_EDGE), min(height, area.height() - _SCREEN_EDGE))
+
+
 class MainWindow(QMainWindow):
     """Open a case, pick a client, read what it did."""
 
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("LogarX")
-        self.resize(1400, 880)
+        self.resize(*OPENING_WINDOW)
+        self._shape_restored = False
 
         self._case_path: Path | None = None
         # One piece of state for the range, changed in one place. The graph,
@@ -536,6 +560,11 @@ class MainWindow(QMainWindow):
         for index, explained in enumerate(_WORKSPACE_TIPS):
             self._workspace.setTabToolTip(index, explained)
         self._workspace.setCurrentIndex(1)
+        self._workspace.currentChanged.connect(
+            lambda _index: self._evidence.triage_in_front(
+                self._workspace.currentWidget() is self._triage
+            )
+        )
         splitter = self._build_splitter(self._workspace)
         # Kept as an attribute for the tests that size it directly, now that
         # the strip sits between it and the window.
@@ -3088,7 +3117,7 @@ class MainWindow(QMainWindow):
             # With a byte-order mark: without one a spreadsheet reads the file in
             # the machine's own code page, and an address or a note in anything
             # but plain English comes out garbled. The rows end themselves.
-            target.write_text(to_csv(shelf, lines), encoding="utf-8-sig", newline="")
+            export.write_text(target, to_csv(shelf, lines), encoding="utf-8-sig", newline="")
             return str(target)
 
         run_job(
@@ -3126,6 +3155,19 @@ class MainWindow(QMainWindow):
         for key, splitter in self._splitters().items():
             stored.setValue(key, splitter.saveState())
 
+    def open_to(self, area: QRect) -> None:
+        """Size and centre a first launch on the screen work area `area`.
+
+        Does nothing to a window that was put back as it was left: that size
+        is the reader's.
+        """
+        if self._shape_restored:
+            return
+        self.resize(opening_size(area))
+        frame = self.frameGeometry()
+        frame.moveCenter(area.center())
+        self.move(frame.topLeft())
+
     def _restore_shape(self) -> None:
         """Put back what `_remember_shape` kept. Anything missing, or that Qt cannot
         read (another version's, or damaged), leaves that part as it opens.
@@ -3136,7 +3178,7 @@ class MainWindow(QMainWindow):
         stored = _settings()
         geometry = stored.value(_GEOMETRY_KEY)
         if isinstance(geometry, QByteArray):
-            self.restoreGeometry(geometry)
+            self._shape_restored = self.restoreGeometry(geometry)
         for key, splitter in self._splitters().items():
             state = stored.value(key)
             if isinstance(state, QByteArray):
@@ -3246,6 +3288,9 @@ def main() -> int:
     # it, a mistake anywhere in the interface reached Qt's own handler, which
     # ends the process without printing anything at all — see `gui.crash`.
     previous = crash.install(window.report_error)
+    screen = app.primaryScreen()
+    if screen is not None:
+        window.open_to(screen.availableGeometry())
     window.show()
     window.offer_start()
     code = app.exec()

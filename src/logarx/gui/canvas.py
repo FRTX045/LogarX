@@ -24,6 +24,7 @@ from PyQt6.QtGui import (
     QFont,
     QFontMetricsF,
     QIcon,
+    QKeyEvent,
     QPainter,
     QPainterPath,
     QPen,
@@ -47,13 +48,22 @@ from PyQt6.QtWidgets import (
 )
 
 from logarx.core.graph import GraphKind, reciprocal_pairs
-from logarx.graphbuild.layout import COLUMN, ROW, Point, layout_graph, session_of, sessions_in
+from logarx.graphbuild.layout import (
+    COLUMN,
+    ROW,
+    SESSION_GAP,
+    Point,
+    layout_graph,
+    session_of,
+    sessions_in,
+)
 from logarx.gui.arrangement import Move, MoveHistory, Positions
 from logarx.gui.icon_set import KIND_NAMES, IconChoice
 from logarx.gui.icons import ICON_PIXELS, first_drawable, icon_pixmap, ink_for
 from logarx.gui.ribbon import Mark, ribbon_polygon, ribbon_tip
 from logarx.style import (
     CAPTION_COLOUR,
+    OUTCOME_WORDS,
     PAPER,
     PAPER_EDGE,
     SELECTION_COLOUR,
@@ -163,9 +173,12 @@ def _spread(positions: dict[str, Point], graph: ActivityGraph) -> dict[str, Poin
     the other, and the failure it produces is captions written over each other.
 
     So the constant states the intent and this measures the reality: whatever
-    the font, the columns end up at least a caption wide and the rows at least
-    a caption tall. On a display where the numbers in `layout.py` already
-    suffice this changes nothing, because the factor cannot go below one.
+    the font, the columns end up at least a caption wide, and a trace's rows far
+    enough apart that a caption clears the circle in the row below it, which
+    reaches up by its own radius. Sessions, `SESSION_GAP` rows apart, must also
+    leave room for the box edges and the next box's heading between them. On a
+    display where the numbers in `layout.py` already suffice this changes
+    nothing, because the factor cannot go below one.
     """
     if not positions:
         return positions
@@ -173,24 +186,77 @@ def _spread(positions: dict[str, Point], graph: ActivityGraph) -> dict[str, Poin
     font = QFont()
     font.setPointSizeF(_CAPTION_POINTS / _LEGIBLE_AT)
     metrics = QFontMetricsF(font)
-    widest = tallest = 0.0
+    padding = _TEXT_PADDING / _LEGIBLE_AT
+    widest = tallest = reach = hang = 0.0
     for node in graph.nodes:
+        style = style_for(node)
         # Line by line. `summarise` has already broken the caption where it
         # wants it, and the single-argument `boundingRect` measures a newline
         # as a character rather than as a break — which reports one long line
         # and a stretch factor of 1.0, leaving the overlap it was meant to fix.
         lines = summarise(node).split("\n")
         widest = max(widest, max(metrics.horizontalAdvance(line) for line in lines))
-        tallest = max(tallest, len(lines) * metrics.lineSpacing() + style_for(node).radius)
+        tallest = max(tallest, len(lines) * metrics.lineSpacing() + style.radius)
+        # How far the circle's outline reaches from its centre, and how far
+        # below the centre its caption's patch ends, as `_canvas_text` hangs it.
+        circle = style.radius + style.border.width / 2
+        reach = max(reach, circle)
+        caption = _text_height(summarise(node), font) + padding * 2
+        hang = max(hang, circle + _CAPTION_GAP / _LEGIBLE_AT + caption)
 
     across = max(1.0, (widest + _CAPTION_MARGIN) / COLUMN)
-    down = max(1.0, (tallest + _CAPTION_MARGIN) / ROW)
+    if graph.kind is GraphKind.TRACE:
+        row = hang + _CAPTION_MARGIN + reach
+        between_sessions = hang + _SESSION_PAD * 2 + _heading_height() + reach + _CAPTION_MARGIN
+        down = max(1.0, row / ROW, between_sessions / (SESSION_GAP * ROW))
+    else:
+        # A behaviour map is a ring, not rows: stretched only as far as it
+        # always was, so a big circle does not pull the ring into an oval.
+        down = max(1.0, (tallest + _CAPTION_MARGIN) / ROW)
     if across == 1.0 and down == 1.0:
         return positions
     return {
         node_id: Point(x=point.x * across, y=point.y * down) for node_id, point in positions.items()
     }
 
+
+def _text_height(text: str, font: QFont) -> float:
+    """How tall `text` comes out in `font`, measured as the canvas draws it."""
+    item = QGraphicsSimpleTextItem(text)
+    item.setFont(font)
+    return item.boundingRect().height()
+
+
+def _session_fonts() -> tuple[QFont, QFont]:
+    """A session heading's name font and detail font.
+
+    One definition for `_session_heading`, which writes in them, and `_spread`,
+    which leaves room between sessions for a heading written in them.
+    """
+    name = QFont()
+    name.setPointSizeF(_SESSION_POINTS * _SESSION_NAME_SCALE / _LEGIBLE_AT)
+    name.setWeight(QFont.Weight.DemiBold)
+    detail = QFont()
+    detail.setPointSizeF(_SESSION_POINTS / _LEGIBLE_AT)
+    return name, detail
+
+
+def _heading_height() -> float:
+    """How tall `_session_heading` makes a heading: a line in each of its fonts,
+    padded above, between and below."""
+    name, detail = _session_fonts()
+    return _TEXT_PADDING / _LEGIBLE_AT * 3 + _text_height("Hg", name) + _text_height("Hg", detail)
+
+
+#: The keys that move the ring between activities, and which way each moves it.
+_STEPS: Final[dict[int, str]] = {
+    Qt.Key.Key_Right.value: "next",
+    Qt.Key.Key_Down.value: "next",
+    Qt.Key.Key_Left.value: "previous",
+    Qt.Key.Key_Up.value: "previous",
+    Qt.Key.Key_Home.value: "first",
+    Qt.Key.Key_End.value: "last",
+}
 
 _PEN_STYLES: Final = {
     "solid": Qt.PenStyle.SolidLine,
@@ -747,6 +813,9 @@ class ActivityCanvas(QGraphicsView):
         self.setStyleSheet(f"QGraphicsView {{ border: 1px solid {PAPER_EDGE}; }}")
         self._graph: ActivityGraph | None = None
         self._nodes: dict[str, _NodeItem] = {}
+        # The circles are not in the accessibility tree, so the canvas says
+        # which one is ringed: see `highlight`.
+        self.setAccessibleName("Activity graph")
         self._edge_art: list[_EdgeArt] = []
         self._edges_by_node: dict[str, list[_EdgeArt]] = {}
         self._halo: QGraphicsEllipseItem | None = None
@@ -1341,8 +1410,11 @@ class ActivityCanvas(QGraphicsView):
         item = self._nodes.get(node_id)
         if item is None:
             self._selected = None
+            self.setAccessibleDescription("")
             return
         self._selected = node_id
+        node = self._graph_node(node_id)
+        self.setAccessibleDescription("" if node is None else summarise(node).replace("\n", ", "))
 
         radius = item.rect().width() / 2 + SELECTION_WIDTH + 2.0
         halo = QGraphicsEllipseItem(QRectF(-radius, -radius, radius * 2, radius * 2))
@@ -1654,6 +1726,7 @@ class ActivityCanvas(QGraphicsView):
         self._box_of.clear()
         self._patches.clear()
         self._selected = None
+        self.setAccessibleDescription("")
         self._lit = None
         self._history.clear()
         self._base.clear()
@@ -1727,9 +1800,7 @@ class ActivityCanvas(QGraphicsView):
         title = QGraphicsSimpleTextItem(name, backdrop)
         title.setData(0, "session-name")
         title.setBrush(QBrush(QColor(_SESSION_NAME_INK)))
-        font = QFont()
-        font.setPointSizeF(_SESSION_POINTS * _SESSION_NAME_SCALE / _LEGIBLE_AT)
-        font.setWeight(QFont.Weight.DemiBold)
+        font, small = _session_fonts()
         title.setFont(font)
         line = title.boundingRect().height()
 
@@ -1747,8 +1818,6 @@ class ActivityCanvas(QGraphicsView):
         under = QGraphicsSimpleTextItem(detail, backdrop)
         under.setData(0, "session-detail")
         under.setBrush(QBrush(QColor(_SESSION_INK)))
-        small = QFont()
-        small.setPointSizeF(_SESSION_POINTS / _LEGIBLE_AT)
         under.setFont(small)
         under.setPos(padding, padding + line + padding)
 
@@ -1940,6 +2009,42 @@ class ActivityCanvas(QGraphicsView):
         if isinstance(item, _NodeItem):
             self.node_selected.emit(item.node_id)
 
+    def keyPressEvent(self, event: QKeyEvent | None) -> None:  # noqa: N802 - Qt's naming
+        """Move the ring between activities from the keyboard, as a click does.
+
+        Right and Down go to the next activity in the order the graph draws
+        them, which on a trace is the order they happened; Left and Up to the
+        previous; Home and End to the first and last. Tab is left to move
+        between panels. Every other key is the view's as before.
+        """
+        if event is None:  # pragma: no cover - Qt always supplies one
+            return
+        order = list(self._nodes)
+        key = event.key()
+        if not order or key not in _STEPS:
+            super().keyPressEvent(event)
+            return
+        here = order.index(self._selected) if self._selected in order else None
+        step = _STEPS[key]
+        if step == "first":
+            there = 0
+        elif step == "last":
+            there = len(order) - 1
+        elif here is None:
+            there = 0 if step == "next" else len(order) - 1
+        else:
+            there = here + (1 if step == "next" else -1)
+        event.accept()
+        if not 0 <= there < len(order) or there == here:
+            return
+        self.ensureVisible(self._nodes[order[there]])
+        self.node_selected.emit(order[there])
+
+    def _graph_node(self, node_id: str) -> GraphNode | None:
+        if self._graph is None:
+            return None
+        return next((node for node in self._graph.nodes if node.node_id == node_id), None)
+
     def wheelEvent(self, event: QWheelEvent | None) -> None:  # noqa: N802 - Qt's naming
         if event is None:  # pragma: no cover - Qt always supplies one
             return
@@ -1984,7 +2089,7 @@ def _tooltip(node: GraphNode) -> str:
         node.label,
         f"kind: {KIND_NAMES[node.category]}",
         f"{node.request_count:,} requests over {node.distinct_paths:,} path(s)",
-        f"outcome: {node.outcome.value}",
+        f"responses: {OUTCOME_WORDS[node.outcome]}",
         f"severity: {node.severity.name.lower()}",
     ]
     if node.owasp:

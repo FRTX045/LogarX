@@ -53,6 +53,7 @@ __all__ = [
     "EVIDENCE_MUTED",
     "LIGHT",
     "NOTICE_TINT",
+    "OUTCOME_WORDS",
     "PAPER",
     "PAPER_EDGE",
     "PAPER_STRIPE",
@@ -490,11 +491,23 @@ def style_for(node: GraphNode, *, theme: Theme = THEME) -> NodeStyle:
     )
 
 
+#: How an activity's outcome is put to a reader. The outcome is read from
+#: response codes, so it says how the server answered, not whether an attack
+#: achieved its aim: "success" beside "SQL Injection" reads as the second, and
+#: "blocked" as something standing in the way. Words for what was measured.
+OUTCOME_WORDS: Final[dict[Outcome, str]] = {
+    Outcome.SUCCESS: "served",
+    Outcome.MIXED: "partly served",
+    Outcome.BLOCKED: "refused",
+    Outcome.UNKNOWN: "unknown",
+}
+
+
 def summarise(node: GraphNode) -> str:
-    """A short caption: what it was, how much of it, and whether it worked."""
+    """A short caption: what it was, how much of it, and how the server answered."""
     lines = (
         *_wrap_label(node.label),
-        f"{format_requests(node.request_count)} · {node.outcome.value}",
+        f"{format_requests(node.request_count)} · {OUTCOME_WORDS[node.outcome]}",
     )
     return "\n".join(lines)
 
@@ -548,7 +561,7 @@ def outcome_legend(*, theme: Theme = THEME) -> tuple[LegendItem, ...]:
     """The border styles, likewise read from the table that draws them."""
     return tuple(
         LegendItem(
-            label=outcome.value.title(),
+            label=OUTCOME_WORDS[outcome].capitalize(),
             colour=theme.outcomes[outcome].colour,
             border=theme.outcomes[outcome],
         )

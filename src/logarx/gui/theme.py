@@ -48,6 +48,7 @@ if TYPE_CHECKING:
 __all__ = [
     "FLOOR",
     "GAP",
+    "LIST_WIDTH",
     "MONO_FAMILIES",
     "PAD",
     "ROOM",
@@ -73,6 +74,14 @@ PAD: Final = 8
 GAP: Final = 12
 ROOM: Final = 16
 STEP: Final = 24
+
+#: How wide the list down the left of the formats and rules tabs may be. Room
+#: for the longest built-in format name, `nginx-combined-forwarded`, whole at
+#: the size the window opens at, with a few pixels to spare in Segoe UI and in
+#: DejaVu Sans, the wider face a Linux machine falls back to; a longer name, or
+#: larger text, is shortened in the middle. One width for both tabs, so the
+#: column does not move when the tab changes.
+LIST_WIDTH: Final = 240
 
 #: Minimum for callers outside the themed launcher. The size itself is the
 #: reader's zoom; role fonts follow it as steps above or below.

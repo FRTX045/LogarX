@@ -17,8 +17,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QMessageBox
 
+from logarx.gui import format_editor as format_editor_module
 from logarx.gui.format_editor import FormatChoice, FormatEditor
 from logarx.parsers.apache import COMBINED
 from logarx.parsers.fieldnames import MAPPABLE
@@ -384,6 +385,129 @@ def test_renaming_a_saved_format_renames_it_rather_than_leaving_a_twin(
     assert [spec.name for spec in load_library()] == ["log-kantor-lama"]
 
 
+def test_renaming_onto_another_saved_format_is_refused(
+    qt_app: QApplication, saved_office: LogFormatSpec
+) -> None:
+    """A rename that lands on another saved format's name would delete that
+    format without asking. Refused, and both are kept as they were."""
+    branch = LogFormatSpec(name="log-cabang", directive=COMBINED, description="the branch")
+    save_library([saved_office, branch])
+    register_saved_formats()
+    editor = FormatEditor()
+    editor.select("log-kantor")
+
+    editor._name.setText("log-cabang")
+
+    assert not editor.save()
+    assert "log-cabang" in editor.trouble()
+    assert load_library() == [saved_office, branch]
+
+
+def test_a_new_format_cannot_take_a_saved_format_s_name(
+    qt_app: QApplication, saved_office: LogFormatSpec
+) -> None:
+    editor = FormatEditor()
+    editor.start_new()
+    editor._name.setText("log-kantor")
+    editor._rule.setText(COMBINED)
+
+    assert not editor.save()
+    assert "log-kantor" in editor.trouble()
+    assert load_library() == [saved_office]
+
+
+# -- unsaved work ------------------------------------------------------------
+
+
+def _answer(monkeypatch: pytest.MonkeyPatch, button: QMessageBox.StandardButton) -> list[bool]:
+    """Answer the unsaved-changes question with `button`, and record each time it is asked."""
+    asked: list[bool] = []
+
+    def answer(_parent: object) -> QMessageBox.StandardButton:
+        asked.append(True)
+        return button
+
+    monkeypatch.setattr(format_editor_module, "_ask_unsaved", answer)
+    return asked
+
+
+def _half_written(editor: FormatEditor) -> None:
+    editor.start_new()
+    editor._name.setText("log-cabang")
+    editor._rule.setText(PIPED)
+
+
+def test_leaving_a_half_written_format_asks_and_cancel_keeps_it(
+    qt_app: QApplication, saved_office: LogFormatSpec, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    editor = FormatEditor()
+    _half_written(editor)
+    asked = _answer(monkeypatch, QMessageBox.StandardButton.Cancel)
+
+    editor.select("log-kantor")
+
+    assert asked == [True]
+    assert (editor._name.text(), editor._rule.text()) == ("log-cabang", PIPED)
+    current = editor._formats.currentItem()
+    assert current is not None
+    assert format_editor_module._is_draft(current)
+
+
+def test_discarding_a_half_written_format_goes_where_the_reader_clicked(
+    qt_app: QApplication, saved_office: LogFormatSpec, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    editor = FormatEditor()
+    _half_written(editor)
+    _answer(monkeypatch, QMessageBox.StandardButton.Discard)
+
+    editor.select("log-kantor")
+
+    assert editor._name.text() == "log-kantor"
+    assert load_library() == [saved_office]
+
+
+def test_saving_a_half_written_format_keeps_it_and_goes_where_the_reader_clicked(
+    qt_app: QApplication, saved_office: LogFormatSpec, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    editor = FormatEditor()
+    _half_written(editor)
+    asked = _answer(monkeypatch, QMessageBox.StandardButton.Save)
+
+    editor.select("log-kantor")
+
+    assert asked == [True]
+    assert editor._name.text() == "log-kantor"
+    assert sorted(spec.name for spec in load_library()) == ["log-cabang", "log-kantor"]
+
+
+def test_an_edit_to_a_saved_format_is_asked_about_before_starting_a_new_one(
+    qt_app: QApplication, saved_office: LogFormatSpec, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    editor = FormatEditor()
+    editor.select("log-kantor")
+    editor._note.setText("the office, edited")
+    asked = _answer(monkeypatch, QMessageBox.StandardButton.Cancel)
+
+    editor.start_new_json()
+
+    assert asked == [True]
+    assert editor._name.text() == "log-kantor"
+    assert editor._note.text() == "the office, edited"
+
+
+def test_nothing_is_asked_when_nothing_was_typed(
+    qt_app: QApplication, saved_office: LogFormatSpec, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    editor = FormatEditor()
+    asked = _answer(monkeypatch, QMessageBox.StandardButton.Cancel)
+
+    editor.select("log-kantor")
+    editor.select("apache-combined")
+    editor.start_new()
+
+    assert asked == []
+
+
 # -- the corners ------------------------------------------------------------
 
 
@@ -462,6 +586,48 @@ def test_a_library_that_will_not_take_a_write_is_reported_not_raised(
 
     assert not editor.save()
     assert "could not be written" in editor.trouble()
+
+
+def _library_refuses_writes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make the real write of the library file fail the way a read-only folder does."""
+    from pathlib import Path
+
+    write = Path.write_text
+
+    def refuse(path: Path, *args: object, **kwargs: object) -> int:
+        if path == library_path():
+            raise PermissionError(13, "Access is denied", str(path))
+        return write(path, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(Path, "write_text", refuse)
+
+
+def test_a_save_the_filesystem_refuses_is_reported_and_the_work_kept(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    editor = FormatEditor()
+    editor.start_new()
+    editor._name.setText("log-kantor")
+    editor._rule.setText(PIPED)
+    _library_refuses_writes(monkeypatch)
+
+    assert not editor.save()
+    assert "could not be written" in editor.trouble()
+    assert (editor._name.text(), editor._rule.text()) == ("log-kantor", PIPED)
+
+
+def test_a_delete_the_filesystem_refuses_is_reported_and_the_format_kept(
+    qt_app: QApplication, saved_office: LogFormatSpec, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    editor = FormatEditor()
+    editor.select("log-kantor")
+    _library_refuses_writes(monkeypatch)
+
+    editor.delete()
+
+    assert "could not be written" in editor.trouble()
+    assert "log-kantor" in editor.listed()
+    assert editor._name.text() == "log-kantor"
 
 
 def test_the_manage_button_reopens_the_chooser_on_what_was_written(
@@ -1106,14 +1272,19 @@ def test_new_of_the_same_kind_keeps_the_untitled_format_being_written(
     assert editor._rule.text() == PIPED
 
 
-def test_new_of_another_kind_starts_that_kind(qt_app: QApplication) -> None:
-    """A different kind is a different form: the fields do not carry across."""
+def test_new_of_another_kind_starts_that_kind(
+    qt_app: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A different kind is a different form: the fields do not carry across,
+    once the reader has said what to do with what they typed."""
     editor = FormatEditor()
     editor.start_new()
     editor._name.setText("log-kantor")
+    asked = _answer(monkeypatch, QMessageBox.StandardButton.Discard)
 
     editor.start_new_json()
 
+    assert asked == [True]
     assert editor.kind() == "json"
     assert editor._name.text() == ""
 

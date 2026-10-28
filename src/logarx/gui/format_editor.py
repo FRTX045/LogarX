@@ -39,6 +39,7 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMenu,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QTableWidget,
@@ -55,7 +56,15 @@ from logarx.gui.format_preview import (
     preview_mapping,
     preview_pattern,
 )
-from logarx.gui.theme import GAP, ROOM, caption_font, colour_text, on_font_change, settle_buttons
+from logarx.gui.theme import (
+    GAP,
+    LIST_WIDTH,
+    ROOM,
+    caption_font,
+    colour_text,
+    on_font_change,
+    settle_buttons,
+)
 from logarx.parsers.columns import FIELDS_DIRECTIVE, declared_columns
 from logarx.parsers.fieldnames import MAPPABLE
 from logarx.parsers.fieldnames import guess_mapping as guess_from_names
@@ -87,8 +96,9 @@ __all__ = ["FormatChoice", "FormatEditor"]
 #: `apache-vhost-combined`, which is the longest thing this has to show.
 _WIDTH = 820
 
-#: Tall enough to open with every field of the preview in sight, measured
-#: rather than guessed: eleven rows at `_ROW` plus the fields above them.
+#: The height when the editor is opened on its own. In the window it is a tab of
+#: `FormatsAndRules`, which sets the size, and a preview with more fields than
+#: there is room for scrolls.
 _HEIGHT = 700
 
 _ROW = 26
@@ -168,6 +178,29 @@ def _is_draft(item: QListWidgetItem) -> bool:
     return bool(item.data(_DRAFT_ROLE))
 
 
+def _ask_unsaved(parent: QWidget) -> QMessageBox.StandardButton:
+    """Save, Discard or Cancel for a format with changes not saved. A seam for tests."""
+    buttons = (
+        QMessageBox.StandardButton.Save
+        | QMessageBox.StandardButton.Discard
+        | QMessageBox.StandardButton.Cancel
+    )
+    return QMessageBox.question(
+        parent,
+        "Unsaved changes",
+        "This format has changes that are not saved. Save them first?",
+        buttons,
+        QMessageBox.StandardButton.Save,
+    )
+
+
+def _named_item(name: str) -> QListWidgetItem:
+    """A format's row in the list, carrying its whole name for when the row cuts it short."""
+    item = QListWidgetItem(name)
+    item.setToolTip(name)
+    return item
+
+
 def _saved() -> list[FormatSpec]:
     """The library, or an empty one when it cannot be read.
 
@@ -207,6 +240,8 @@ class FormatEditor(QDialog):
         self.resize(_WIDTH, _HEIGHT)
 
         self._editing: str | None = None
+        #: The definition as it was put on screen, which `has_unsaved` compares against.
+        self._shown: tuple[object, ...] = ()
         self._trouble = ""
         self._library_trouble = ""
         self._kind = "logformat"
@@ -217,7 +252,12 @@ class FormatEditor(QDialog):
         self._escapes = ""
 
         self._formats = QListWidget()
-        self._formats.setMaximumWidth(220)
+        self._formats.setMaximumWidth(LIST_WIDTH)
+        # A name wider than the list is shortened in the middle, where two
+        # formats of one family differ least, rather than scrolled to; the
+        # whole name is each item's tooltip.
+        self._formats.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._formats.setTextElideMode(Qt.TextElideMode.ElideMiddle)
         self._formats.currentItemChanged.connect(self._on_item)
         self._headings: set[int] = set()
         self._draft_kind = "logformat"
@@ -309,16 +349,21 @@ class FormatEditor(QDialog):
         self._save.clicked.connect(self.save)
 
         self._build(parent_layout=QHBoxLayout(self))
+        # The empty form counts as shown, so filling it for the first time is
+        # not mistaken for leaving work behind.
+        self._shown = self._on_screen()
         self._reload()
 
     # -- assembling --------------------------------------------------------
 
     def _fit_rows(self) -> None:
-        """Tight rows, so all eleven fields are in sight at the opening size.
+        """Rows as tight as the text allows, so as many fields as fit are in sight.
 
-        At Qt's default only seven were, and the four out of view are the ones
-        a custom format most often gets wrong: referer, user agent, host, and
-        the byte count. Taller only when zoomed text would not fit `_ROW`.
+        The fields furthest down are the ones a custom format most often gets
+        wrong: referer, user agent, host, and the byte count. `_ROW` is the
+        floor; text that needs more gets more, and Qt raises a row to its own
+        minimum for the font, which for Segoe UI at the size the window opens at
+        is already above `_ROW`.
         """
         for table in (self._mapping, self._fields):
             height = max(_ROW, table.fontMetrics().height() + 8)
@@ -569,6 +614,8 @@ class FormatEditor(QDialog):
         current = self._formats.currentItem()
         if current is not None and _is_draft(current) and kind == self._draft_kind:
             return
+        if not self.settle():
+            return
         self._draft_kind = kind
         self._formats.blockSignals(True)
         self._formats.setCurrentRow(self._draft_row())
@@ -596,6 +643,7 @@ class FormatEditor(QDialog):
         self._show_kind(kind)
         self._set_editable(True)
         self._refresh_preview()
+        self._shown = self._on_screen()
 
     def _show_kind(self, kind: str) -> None:
         """Put the right half of the screen in front of the reader.
@@ -626,9 +674,24 @@ class FormatEditor(QDialog):
             ["Field", "Your log's column" if kind == "columns" else "Your log's key"]
         )
 
-    def _on_item(self, item: QListWidgetItem | None, _previous: QListWidgetItem | None) -> None:
+    def _on_item(self, item: QListWidgetItem | None, previous: QListWidgetItem | None) -> None:
         if item is None:
             return
+        if previous is not None and self.has_unsaved():
+            # Saving rebuilds the list, so where the reader clicked is kept by
+            # name rather than by the row, which will not survive it.
+            wanted = None if _is_draft(item) else item.text()
+            if not self.settle():
+                self._formats.blockSignals(True)
+                self._formats.setCurrentItem(previous)
+                self._formats.blockSignals(False)
+                return
+            if self._formats.currentItem() is not item:
+                if wanted is None:
+                    self._formats.setCurrentRow(self._draft_row())
+                else:
+                    self.select(wanted)
+                return
         if _is_draft(item):
             self._blank(self._draft_kind)
             return
@@ -652,6 +715,7 @@ class FormatEditor(QDialog):
             self._note.clear()
             self._set_editable(False)
             self._refresh_preview()
+            self._shown = self._on_screen()
             return
 
         self._editing = name if self._is_saved(name) else None
@@ -680,6 +744,7 @@ class FormatEditor(QDialog):
             )
         self._set_editable(self._is_saved(name))
         self._refresh_preview()
+        self._shown = self._on_screen()
 
     def _is_saved(self, name: str) -> bool:
         return name in available_formats() and not is_built_in(name)
@@ -700,6 +765,50 @@ class FormatEditor(QDialog):
         # not editing, and it is the first useful thing a reader can do here.
         self._sample.setEnabled(True)
 
+    # -- unsaved work -----------------------------------------------------
+
+    def _on_screen(self) -> tuple[object, ...]:
+        """Everything on the right that a save would write, the sample line aside."""
+        return (
+            self._kind,
+            self._name.text(),
+            self._rule.text(),
+            self._note.text(),
+            self._time_format.text(),
+            self._columns.text(),
+            self._separator.currentText(),
+            self.mapping(),
+        )
+
+    def has_unsaved(self) -> bool:
+        """Whether the format on show has typing in it that was not saved. A
+        built-in, or one registered from code, cannot be typed into."""
+        return self._save.isEnabled() and self._on_screen() != self._shown
+
+    def settle(self) -> bool:
+        """Ask what to do with unsaved work before it is replaced or closed.
+
+        True when it is safe to go on: nothing was unsaved, the reader chose
+        Discard, or Save worked. False when they chose Cancel, or Save was
+        refused, and the work stays on screen.
+        """
+        if not self.has_unsaved():
+            return True
+        answer = _ask_unsaved(self)
+        if answer == QMessageBox.StandardButton.Save:
+            return self.save()
+        return answer == QMessageBox.StandardButton.Discard
+
+    def reject(self) -> None:
+        """Close, by the Close button or Escape. As its own window, as any
+        dialog does. As a tab, only by saying so with `rejected`: the dialog
+        does the closing, asks about unsaved work first, and must find this
+        tab still drawn if the reader stays."""
+        if self.isWindow():
+            super().reject()
+        else:
+            self.rejected.emit()
+
     # -- writing ----------------------------------------------------------
 
     def save(self) -> bool:
@@ -716,6 +825,11 @@ class FormatEditor(QDialog):
             return self._refuse(
                 f"{name!r} is a built-in format. Built-ins are matched first, so a "
                 "saved format of the same name would never be reached."
+            )
+        if name != self._editing and any(item.name == name for item in saved):
+            return self._refuse(
+                f"{name!r} is already a saved format, and saving under its name "
+                "would replace it. Choose another name, or select it to change it."
             )
 
         spec = self._spec_on_screen(name)
@@ -737,6 +851,9 @@ class FormatEditor(QDialog):
             save_library([*kept, spec])
         except FormatLibraryError as exc:
             return self._refuse(str(exc))
+        # Saved, so nothing on screen is unsaved any more: the list rebuilt
+        # below must not stop to ask about it.
+        self._shown = self._on_screen()
 
         # `_reload` re-registers from the file, so the format is usable now
         # rather than at the next launch: one that is in the file and absent
@@ -781,7 +898,11 @@ class FormatEditor(QDialog):
         """
         if self._editing is None:
             return
-        save_library([spec for spec in _saved() if spec.name != self._editing])
+        try:
+            save_library([spec for spec in _saved() if spec.name != self._editing])
+        except FormatLibraryError as exc:
+            self._refuse(str(exc))
+            return
         self._editing = None
         # `_reload` reconciles the registry with the file, which is what takes
         # the deleted format out of every list that was offering it.
@@ -828,10 +949,12 @@ class FormatEditor(QDialog):
         italic.setItalic(True)
         draft.setFont(italic)
         self._formats.addItem(draft)
-        self._formats.addItems(saved)
+        for name in saved:
+            self._formats.addItem(_named_item(name))
         self._headings.add(self._formats.count())
         self._formats.addItem(self._heading_item(_BUILT_IN_HEADING))
-        self._formats.addItems(built_in)
+        for name in built_in:
+            self._formats.addItem(_named_item(name))
         self._formats.blockSignals(False)
 
         if current in available_formats():

@@ -71,5 +71,9 @@ class FormatsAndRules(QDialog):
         self.resize(_WIDTH, _HEIGHT)
 
     def done(self, result: int) -> None:
+        """Close, by any route, once each tab's unsaved work is saved or let go.
+        A Cancel, or a save that is refused, keeps the dialog open."""
+        if not (self.formats.settle() and self.rules.settle()):
+            return
         self.rules.shutdown()
         super().done(result)

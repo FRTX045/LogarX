@@ -16,7 +16,7 @@ import pytest
 from logarx.case import Case
 from logarx.core.evidence import EvidenceRef
 from logarx.parsers.registry import register_spec, unregister_format
-from logarx.parsers.spec import LogFormatSpec
+from logarx.parsers.spec import LogFormatSpec, PatternFormatSpec
 
 LINES = [
     '203.0.113.5 - - [10/Oct/2020:13:55:36 +0000] "GET / HTTP/1.1" 200 2326 "-" "curl/8.0"',
@@ -244,3 +244,84 @@ def test_an_unresolvable_format_still_returns_the_line_itself(tmp_path: Path) ->
     assert line.available
     assert line.text == PIPED_LINES[1]
     assert line.event is None
+
+
+PIPED_PATTERN = PatternFormatSpec(
+    name="pipes-pattern",
+    pattern=(
+        r'(?P<client_ip>[^|]+)\|\[(?P<timestamp>[^\]]+)\]\|"(?P<request_line>[^"]*)"'
+        r"\|(?P<status>\d+)\|(?P<bytes_sent>\d+)"
+    ),
+    time_format="%d/%b/%Y:%H:%M:%S %z",
+)
+
+
+def _piped_case(tmp_path: Path, *, stored: dict[str, object] | None = None) -> Path:
+    """A case read with `PIPED_PATTERN`, which is then no longer held here. With
+    `stored`, the case's own copy of the definition is replaced by it."""
+    log = tmp_path / "access.log"
+    log.write_text("\n".join(PIPED_LINES) + "\n", encoding="utf-8")
+    register_spec(PIPED_PATTERN)
+    try:
+        with Case.create(tmp_path / "case") as opened:
+            opened.ingest([log], log_format="pipes-pattern")
+    finally:
+        unregister_format("pipes-pattern")
+    if stored is not None:
+        manifest_path = tmp_path / "case" / "case.json"
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        payload["sources"][0]["format_spec"] = stored
+        manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+    return tmp_path / "case"
+
+
+def test_a_case_s_own_pattern_is_never_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A case is a folder anyone can hand over, and a regular expression can be
+    written to take hours on one short line. Opening someone else's case must not
+    run theirs: the lines come back, without the fields."""
+    case = _piped_case(tmp_path)
+
+    def refuse(_spec: object) -> object:
+        raise AssertionError("a pattern stored in the case was compiled")
+
+    monkeypatch.setattr(PatternFormatSpec, "build", refuse)
+    with Case.open(case) as reopened:
+        (line,) = reopened.read_evidence([EvidenceRef("access.log", 2)])
+
+    assert line.text == PIPED_LINES[1]
+    assert line.event is None
+
+
+def test_a_case_s_pattern_that_will_not_compile_costs_the_fields_not_the_line(
+    tmp_path: Path,
+) -> None:
+    stored = {
+        "version": 1,
+        "kind": "pattern",
+        "name": "pipes-pattern",
+        "pattern": "(?P<client_ip>(",
+    }
+    case = _piped_case(tmp_path, stored=stored)
+
+    with Case.open(case) as reopened:
+        (line,) = reopened.read_evidence([EvidenceRef("access.log", 2)])
+
+    assert line.text == PIPED_LINES[1]
+    assert line.event is None
+
+
+def test_a_pattern_this_logarx_holds_word_for_word_still_reads_the_fields(
+    tmp_path: Path,
+) -> None:
+    """The case's copy is used when it is identical to one held here, a built-in
+    or the reader's own: then it is not the case's pattern being run."""
+    case = _piped_case(tmp_path)
+    register_spec(PIPED_PATTERN)
+    try:
+        with Case.open(case) as reopened:
+            (line,) = reopened.read_evidence([EvidenceRef("access.log", 2)])
+    finally:
+        unregister_format("pipes-pattern")
+
+    assert line.event is not None
+    assert line.event.status == 404

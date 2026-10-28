@@ -20,7 +20,7 @@ from logarx.core.graph import GraphKind
 if TYPE_CHECKING:
     from logarx.core.graph import ActivityGraph, GraphNode
 
-__all__ = ["COLUMN", "ROW", "Point", "layout_graph", "session_of", "sessions_in"]
+__all__ = ["COLUMN", "ROW", "SESSION_GAP", "Point", "layout_graph", "session_of", "sessions_in"]
 
 #: Spacing in abstract units. Renderers scale from here.
 #:
@@ -40,7 +40,7 @@ ROW: Final = 165.0
 #: Larger than a wrap on purpose: once a trace wraps, a session boundary drawn at
 #: the same spacing is indistinguishable from a line break, and the graph would
 #: report two visits where the log holds one.
-_SESSION_GAP: Final = 2
+SESSION_GAP: Final = 2
 
 #: Shortest chain that is allowed to wrap, and the narrowest a wrap may be.
 #: Below this a trace already fits, and wrapping would cost the straight timeline
@@ -147,7 +147,7 @@ def _chronological_layout(graph: ActivityGraph, *, wrap: bool = True) -> dict[st
     row = 0
     for index, nodes in enumerate(sessions_in(graph)):
         if index:
-            row += _SESSION_GAP
+            row += SESSION_GAP
         width = _wrap_width(len(nodes)) if wrap else len(nodes)
         for position, node in enumerate(nodes):
             line, offset = divmod(position, width)
