@@ -187,11 +187,11 @@ requests from the
 build `2026-10-06-medium`: **accuracy 0.9975, macro F1 0.9525 and 0 false alarms**, with 41
 attack requests missed. Macro F1 is the lower figure because it weighs every
 category equally, and the smallest categories hold only a handful of requests.
-That build's full log is not published yet: the dataset's README says how to
-rebuild it, at commit `d2ef291`, and a rebuild gets the same plan of requests,
-not the same bytes. Until it is published those figures are recorded
-measurements a reader cannot rerun. What anyone can rerun from this repository
-is the committed 3,825-request excerpt, which the test suite scores with CRS
+The build is published as a
+[release of the dataset](https://github.com/FRTX045/LogarX-Dataset/releases/tag/2026-10-06-medium),
+and rerun from a fresh download on 2026-10-28 it gave every one of those figures
+again. What anyone can rerun without downloading anything is the
+committed 3,825-request excerpt, which the test suite scores with CRS
 wherever the sidecar and ruleset are built, and CI always does:
 accuracy 0.9749, macro F1 0.9592 and 0 false alarms with CRS, 21 attack requests
 missed. [docs/evaluation.md](docs/evaluation.md) has the method, the
