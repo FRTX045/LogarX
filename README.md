@@ -183,7 +183,7 @@ complete and is not.
 Scored 2026-10-14 as the complete tool, native rules plus OWASP CRS at paranoia
 level 2 (revision `d694d465`, configuration `f4a1c8296441d261`), on 235,732
 requests from the
-[BlackHat-Dataset](https://github.com/FRTX045/BlackHat-Dataset) `apache-shopfront`
+[LogarX Dataset](https://github.com/FRTX045/LogarX-Dataset) `apache-shopfront`
 build `2026-10-06-medium`: **accuracy 0.9975, macro F1 0.9525 and 0 false alarms**, with 41
 attack requests missed. Macro F1 is the lower figure because it weighs every
 category equally, and the smallest categories hold only a handful of requests.

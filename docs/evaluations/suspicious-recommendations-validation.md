@@ -25,7 +25,7 @@ after the run, because the script is not published; its hash is unchanged.
 
 ## Method
 
-Fresh cases were built from the BlackHat-Dataset `apache-shopfront` builds and
+Fresh cases were built from the LogarX Dataset `apache-shopfront` builds and
 enriched with today's code: CRS revision `d694d465951ee06347214f1291ae096e40700001`,
 paranoia level 2, configuration fingerprint `1c4b66d67838c5e8`, CRS host
 `localhost` (no site host named, so rule 931130 stays withheld). The cases used by

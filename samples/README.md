@@ -8,7 +8,7 @@ rest of this page is about the full builds the excerpt was cut from, which are
 not in the repository.
 
 The full builds are real logs, with the answer key. Everything under `samples/apache-shopfront/` is
-a build of the BlackHat-Dataset `apache-shopfront` project: a real Apache 2.4
+a build of the LogarX Dataset `apache-shopfront` project: a real Apache 2.4
 serving a real PHP shop, driven by scripted shoppers and crawlers, a real
 Chromium for some sessions, real security tools and six scripted attack
 campaigns, with every log line joined to a record of which client made it and
@@ -92,7 +92,7 @@ rebuild route below can be attempted — it just produces a comparable corpus
 rather than these bytes, for the reason given under it.
 
 The method is unchanged and a newer build is worth having. Copy a folder from
-[BlackHat-Dataset](https://github.com/FRTX045/BlackHat-Dataset)'s
+[LogarX Dataset](https://github.com/FRTX045/LogarX-Dataset)'s
 `datasets/apache-shopfront/`, then check it:
 
 ```bash

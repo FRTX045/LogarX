@@ -2,7 +2,7 @@
 
 A claim that the tool is accurate needs something to be accurate *about*. This
 is that something: a sidecar beside a log, recording for every line which
-activity produced it. The BlackHat-Dataset shopfront builds write it from the
+activity produced it. The LogarX Dataset shopfront builds write it from the
 ledger of the client that made each request; `convert-csic` writes it from
 CSIC's own labels.
 
