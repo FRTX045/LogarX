@@ -76,10 +76,11 @@ STEP: Final = 24
 
 #: How wide the list down the left of the formats and rules tabs may be. Room
 #: for the longest built-in format name, `nginx-combined-forwarded`, whole at
-#: the size the window opens at, with a few pixels to spare; a longer name, or
+#: the size the window opens at, with a few pixels to spare in Segoe UI and in
+#: DejaVu Sans, the wider face a Linux machine falls back to; a longer name, or
 #: larger text, is shortened in the middle. One width for both tabs, so the
 #: column does not move when the tab changes.
-LIST_WIDTH: Final = 236
+LIST_WIDTH: Final = 240
 
 #: The interface font, in preference order.
 #:
