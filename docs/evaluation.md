@@ -20,7 +20,7 @@ for the scoring method it kept.
 ## In brief
 
 Measured on a real Apache log whose contents are known: the
-[BlackHat-Dataset](https://github.com/FRTX045/BlackHat-Dataset) `apache-shopfront`
+[LogarX Dataset](https://github.com/FRTX045/LogarX-Dataset) `apache-shopfront`
 `2026-10-06-medium` build — 235,732 requests over seven days, a real PHP shop
 driven by real security tools, where a tagging proxy joins every line to a record
 of which client made the request and why. It includes an administrator doing
@@ -112,7 +112,7 @@ run, including on sources that cannot support anything finer.
 ## Where the ground truth comes from
 
 The corpus is a real server's log. The companion repository
-[BlackHat-Dataset](https://github.com/FRTX045/BlackHat-Dataset) stands up Apache 2.4 serving a
+[LogarX Dataset](https://github.com/FRTX045/LogarX-Dataset) stands up Apache 2.4 serving a
 PHP shop in a container, drives scripted shoppers, crawlers and a real Chromium at it, runs five
 real security tools (whatweb, dirb, gobuster, nmap, sqlmap) alongside six attack campaigns that
 read each response and decide what to do next, and ships the log Apache wrote.
@@ -319,7 +319,7 @@ requests in each. Every rendered file was scored against its own truth and compa
 the Apache original.
 
 The rendering is the dataset's: `render` at
-[`1e29c09`](https://github.com/FRTX045/BlackHat-Dataset/blob/main/docs/rendered-formats.md),
+[`1e29c09`](https://github.com/FRTX045/LogarX-Dataset/blob/1e29c09/docs/rendered-formats.md),
 from the builds above. Every file is the Apache capture written in another server's
 columns, never a capture of that server. A field the capture never measured is a declared
 constant. All 41 files of each tier matched its `SHA256SUMS` before scoring

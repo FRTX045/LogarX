@@ -1,4 +1,4 @@
-"""Cut the test fixture out of a pinned BlackHat-Dataset build.
+"""Cut the test fixture out of a pinned LogarX Dataset build.
 
 Run by hand, with the build folder as the argument:
 
