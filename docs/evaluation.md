@@ -9,10 +9,13 @@ Two kinds of figure appear here, and they are not equally checkable.
   Its scores, native and with CRS, are committed beside it.
   `tests/evaluation/test_published_scores.py` reruns the native scores on every test run, and
   the CRS scores wherever the sidecar and ruleset are built; CI requires them.
-- **Recorded measurements of builds that are not published:** the headline figures and every
-  baseline below. They are what the commands shown produced against the builds named, whose
-  checksums are recorded, but a reader cannot rerun them until those bytes are published, and a
-  rebuild from the dataset's recipe reproduces its plan of requests, not its bytes.
+- **Reproducible from published builds:** the headline figures. The three `2026-10-06` builds
+  they were measured on are published by the dataset, one release per build, and decompress to
+  the digests recorded under [the current baseline](#the-current-baseline--2026-10-06), where
+  the commands that scored them are printed.
+- **Recorded measurements of builds that are not published:** every earlier baseline. Their
+  checksums are recorded, but those bytes can no longer be obtained, so a reader cannot rerun
+  them, and a rebuild from the dataset's recipe reproduces its plan of requests, not its bytes.
 See [ADR-0011](adr/0011-a-real-server-log-is-the-headline-corpus.md) for why it is measured on a
 real server's log, and [ADR-0005](adr/0005-measuring-accuracy-against-generated-ground-truth.md)
 for the scoring method it kept.
@@ -192,8 +195,12 @@ ships these builds. It moves no figure here: neither engine flags the line, and 
 | Truth lines unmatched | 0 | 0 | 0 |
 
 `d2ef291` is on that repository's default branch, and the builds' manifests and samples are committed
-there at `332b06b`; the logs themselves are rebuilt from the recipe in its README. Every file of all
-three was verified against the build's own `SHA256SUMS` before scoring:
+there at `332b06b`. The logs themselves are published as one release per build, each tagged at that
+commit: [`2026-10-06-small`](https://github.com/FRTX045/LogarX-Dataset/releases/tag/2026-10-06-small),
+[`2026-10-06-medium`](https://github.com/FRTX045/LogarX-Dataset/releases/tag/2026-10-06-medium) and
+[`2026-10-06-large`](https://github.com/FRTX045/LogarX-Dataset/releases/tag/2026-10-06-large). Every file of all three was
+verified against the build's own `SHA256SUMS` before scoring, and on 2026-10-28 a fresh download
+of each release decompressed to the same digests:
 
 ```
 # 2026-10-06-small
@@ -295,20 +302,29 @@ explained them wrongly, as an administrator's page views. They were admin pages 
 sign-in form, each followed by the sign-in page asking to come back; `action_sign_in_wall` names all
 of them.
 
-The commands that produced every column, per tier:
+The commands that produced every column, per tier, starting from the build's release. The
+release is 3.5 MB small, 13 MB medium and 53 MB large, compressed; `sha256sum` warns about
+the comment lines in `SHA256SUMS` and checks every file it names:
 
 ```bash
 B=datasets/apache-shopfront/2026-10-06-medium
-(cd $B && sha256sum -c SHA256SUMS)
+gh release download 2026-10-06-medium -R FRTX045/LogarX-Dataset -D $B
+(cd $B && xz -dk *.xz && sha256sum -c SHA256SUMS --ignore-missing)
 logarx-dev ingest $B/access.log --case ./case --no-crs
 logarx-dev enrich --case ./case
 logarx-dev evaluate -c ./case -t $B/truth.jsonl -o native.json --no-crs
 logarx-dev evaluate -c ./case -t $B/truth.jsonl -o crs.json
 ```
 
-A rebuild from the recipe will not have these digests: the dataset reproduces its plan of requests
-from a seed, not its bytes (see below). Expect the last decimal to move, and say which build was
-measured.
+Download the build rather than rebuilding it. A rebuild from the recipe will not have these
+digests: the dataset reproduces its plan of requests from a seed, not its bytes (see below).
+Expect the last decimal to move on a rebuild, and say which build was measured.
+
+Rerun exactly that way on 2026-10-28, from a fresh download of the medium release, at `main`
+`d4466ba`: a later ruleset than the table's (`9ede4d8efca57302`), the same CRS configuration. Every
+medium figure above came out identical, natively and with CRS: accuracy 0.9975, macro F1 0.9532
+and 0.9525, 17,107 and 17,108 caught, 42 and 41 missed, 0 false alarms, boundary F1 0.9136 and
+0.9137.
 
 ## The same traffic in every log format — 2026-10-27
 
@@ -615,7 +631,11 @@ pinned by its own checksums.
 
 ## Reproducing
 
-**These commands cannot be run today.** They are the commands that produced the figures, kept so
+**The current baseline can be rerun:** its builds are published, and the commands that scored
+them, starting from the download, are under
+[the current baseline](#the-current-baseline--2026-10-06).
+
+**The commands below cannot be run today.** They are the commands that produced the figures, kept so
 that the method is on the record, but the build they name cannot be obtained — see
 [the note above](#the-headline-builds-bytes-are-gone-and-this-document-never-recorded-enough-to-rebuild-them).
 Point them at any build you do have and expect different numbers.
