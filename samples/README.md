@@ -4,8 +4,8 @@ Two logs here work from a fresh clone: `demo/demo.log`, written to show every
 feature, and a 3,825-line excerpt of a real build, committed under
 `tests/data/apache-shopfront/` with its answer key and its scores. The
 [quick start](#quick-start-on-what-is-in-the-repository) below uses them. The
-rest of this page is about the full builds the excerpt was cut from, which are
-not in the repository.
+rest of this page is about the full builds, which are not in the repository
+and are downloaded from the dataset's releases.
 
 The full builds are real logs, with the answer key. Everything under `samples/apache-shopfront/` is
 a build of the LogarX Dataset `apache-shopfront` project: a real Apache 2.4
@@ -14,10 +14,11 @@ Chromium for some sessions, real security tools and six scripted attack
 campaigns, with every log line joined to a record of which client made it and
 why. Nothing in it was written by a template.
 
-The files are not in this repository. They are 22 MB and 80 MB for the whole
-build — the log, its truth file and the manifest together — and the numbers
-in [docs/evaluation.md](../docs/evaluation.md) are tied to the exact bytes, so
-they are pinned by checksum rather than versioned.
+The files are not in this repository. The numbers in
+[docs/evaluation.md](../docs/evaluation.md) are tied to the exact bytes, so
+they are pinned by checksum rather than versioned, and the builds they were
+measured on are published as releases of the dataset: see
+[Getting them](#getting-them).
 
 ## Quick start, on what is in the repository
 
@@ -51,11 +52,15 @@ obtain. What the builds printed is in [docs/evaluation.md](../docs/evaluation.md
 
 | Folder | Lines | Span | What it is for |
 |---|---:|---|---|
-| `apache-shopfront/2026-09-07-medium/` | 243,908 | 7 days | A past headline evaluation; the current one is `2026-10-06-medium`, in [docs/evaluation.md](../docs/evaluation.md). |
-| `apache-shopfront/2026-08-23-small/` | 66,305 | 1 day | Past fast checks; use the excerpt and `demo/` below instead. |
+| `apache-shopfront/2026-10-06-small/` | 63,310 | 1 day | The fast check. |
+| `apache-shopfront/2026-10-06-medium/` | 235,732 | 7 days | **The headline evaluation**, in [docs/evaluation.md](../docs/evaluation.md). |
+| `apache-shopfront/2026-10-06-large/` | 941,031 | 30 days | A month. |
+| `apache-shopfront/2026-09-07-medium/` | 243,908 | 7 days | A past headline evaluation, and the build the committed excerpt was cut from. |
+| `apache-shopfront/2026-08-23-small/` | 66,305 | 1 day | Past fast checks. |
 
-Both are **unobtainable** as of 2026-09-18 — see "Getting them" below before
-going looking for them.
+The three `2026-10-06` builds are published. The two older ones are
+**unobtainable** as of 2026-09-18 — see "Getting them" below before going
+looking for them.
 
 ## `demo/` is the exception, and is not one of these
 
@@ -77,7 +82,24 @@ commit, and every attack command line with its source address) and
 
 ## Getting them
 
-**Neither of the two builds above can be obtained, and the steps below no longer
+**The `2026-10-06` builds are published,** one release per build on
+[LogarX Dataset](https://github.com/FRTX045/LogarX-Dataset/releases), each tagged at
+the commit that holds the build's manifest. Download one, unpack it and check it:
+
+```bash
+B=samples/apache-shopfront/2026-10-06-medium
+gh release download 2026-10-06-medium -R FRTX045/LogarX-Dataset -D $B
+(cd $B && xz -dk *.xz && sha256sum -c SHA256SUMS --ignore-missing)
+```
+
+The release is 3.5 MB small, 13 MB medium and 53 MB large, compressed. Every
+file should print `OK`; `sha256sum` also warns about the comment lines in
+`SHA256SUMS`, which is expected. The decompressed `access.log`, `truth.jsonl`
+and `MANIFEST.json` have the digests
+[docs/evaluation.md](../docs/evaluation.md) records, and each build's manifest
+says the tree was clean when it was made.
+
+**The two older builds cannot be obtained, and the steps below no longer
 reach them.** Checked on 2026-09-18 against the GitHub API: that repository's
 `datasets/apache-shopfront/` holds `2026-08-17-{small,medium,large}` and neither
 of the folders named above. Following these steps lands you on a different build,
@@ -101,10 +123,9 @@ cd samples/apache-shopfront/<build> && sha256sum -c SHA256SUMS
 
 Prefer a build whose `MANIFEST.json` records that the tree was clean when it was
 made — otherwise the recorded commit does not determine the output and
-`git checkout` reproduces something else. **None of the three published there
-today qualify.** Checked on 2026-09-18: `2026-08-17-{small,medium,large}` each
-carry `commit_is_clean: false`. Builds that record a full source state and a
-rebuild recipe do exist, but are not on that repository's default branch yet.
+`git checkout` reproduces something else. The `2026-10-06` builds do; the
+`2026-08-17-{small,medium,large}` builds committed there each carry
+`commit_is_clean: false`, checked on 2026-09-18.
 
 A build can also be regenerated with the dataset's own
 `tools/build.py apache-shopfront medium`, which needs Docker and about half an
