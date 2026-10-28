@@ -38,6 +38,7 @@ from PyQt6.QtWidgets import (
 
 from logarx.gui.text_size import MIN_POINTS, automatic_points, clamped
 from logarx.style import THEME
+from logarx.typography import MONO_FAMILIES, UI_FAMILIES
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -72,19 +73,6 @@ PAD: Final = 8
 GAP: Final = 12
 ROOM: Final = 16
 STEP: Final = 24
-
-#: The interface font, in preference order.
-#:
-#: `Segoe UI Variable Text` is the Windows 11 UI face and is optically sized for
-#: body copy — the `Display` cut of the same family is drawn for headlines and
-#: is noticeably too tight at 9pt. Everything after it is a fallback for a
-#: machine that does not have it; the final `sans-serif` is what Qt resolves on
-#: a bare Linux CI box, where these tests also run.
-UI_FAMILIES: Final = ("Segoe UI Variable Text", "Segoe UI", "Inter", "sans-serif")
-
-#: The evidence font. Monospace is not decoration here: a log line is columnar,
-#: and `100.66.1.152` only lines up under `100.66.2.9` if the digits are.
-MONO_FAMILIES: Final = ("Cascadia Mono", "Consolas", "DejaVu Sans Mono", "monospace")
 
 #: Minimum for callers outside the themed launcher. The size itself is the
 #: reader's zoom; role fonts follow it as steps above or below.

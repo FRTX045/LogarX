@@ -172,7 +172,7 @@ def test_an_edge_that_runs_backwards_leaves_from_the_left_of_its_node(tmp_path: 
     would draw it back across both nodes it connects.
     """
     from logarx.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
-    from logarx.report.html import _NODE_WIDTH, _svg
+    from logarx.report.html import _svg
 
     def node(node_id: str) -> GraphNode:
         return GraphNode(
@@ -203,16 +203,19 @@ def test_an_edge_that_runs_backwards_leaves_from_the_left_of_its_node(tmp_path: 
     )
     positions = {"right": Point(x=440.0, y=0.0), "left": Point(x=0.0, y=0.0)}
 
-    with mock.patch("logarx.report.html.layout_graph", return_value=positions):
+    with mock.patch("logarx.report.graph.layout_graph", return_value=positions):
         svg = _svg(graph)
 
-    # Anchored on the cubic, not on any `<path>`: the arrowhead in `<defs>` is
-    # also a path and starts at M0,0, which would satisfy any bound asked of it.
+    # The arrow leaves the left rim of the source circle, facing the target.
+    from xml.etree import ElementTree as ET
+
+    root = ET.fromstring(svg)
+    circles = root.findall('.//circle[@class="activity-node"]')
+    source_x = float(circles[0].attrib["cx"])
+    radius = float(circles[0].attrib["r"])
     path = re.search(r'<path d="M([\d.]+),[\d.]+ C', svg)
     assert path is not None
-    # 440 + offset is the source's own x — its left edge, facing the target.
-    # Adding _NODE_WIDTH would anchor the line to the right edge, pointing away.
-    assert float(path.group(1)) < 440.0 + _NODE_WIDTH
+    assert float(path.group(1)) == pytest.approx(source_x - radius, abs=0.02)
 
 
 def test_two_transitions_between_the_same_pair_are_drawn_apart(tmp_path: Path) -> None:
@@ -256,7 +259,7 @@ def test_two_transitions_between_the_same_pair_are_drawn_apart(tmp_path: Path) -
     )
     positions = {"enumeration": Point(x=0.0, y=0.0), "injection": Point(x=440.0, y=0.0)}
 
-    with mock.patch("logarx.report.html.layout_graph", return_value=positions):
+    with mock.patch("logarx.report.graph.layout_graph", return_value=positions):
         svg = _svg(graph)
 
     # Control points, not endpoints: reversing an edge already swaps the ends,
@@ -331,7 +334,7 @@ def test_an_arrow_is_labelled_the_same_on_paper_as_on_screen(tmp_path: Path) -> 
     )
     positions = {name: Point(x=index * 400.0, y=0.0) for index, name in enumerate(names)}
 
-    with mock.patch("logarx.report.html.layout_graph", return_value=positions):
+    with mock.patch("logarx.report.graph.layout_graph", return_value=positions):
         svg = _svg(graph)
 
     drawn = re.findall(r'class="edge-label"[^>]*>([^<]+)</text>', svg)
