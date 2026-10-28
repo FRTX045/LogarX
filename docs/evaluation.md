@@ -320,6 +320,12 @@ Download the build rather than rebuilding it. A rebuild from the recipe will not
 digests: the dataset reproduces its plan of requests from a seed, not its bytes (see below).
 Expect the last decimal to move on a rebuild, and say which build was measured.
 
+Rerun exactly that way on 2026-10-28, from a fresh download of the medium release, at `main`
+`d4466ba`: a later ruleset than the table's (`9ede4d8efca57302`), the same CRS configuration. Every
+medium figure above came out identical, natively and with CRS: accuracy 0.9975, macro F1 0.9532
+and 0.9525, 17,107 and 17,108 caught, 42 and 41 missed, 0 false alarms, boundary F1 0.9136 and
+0.9137.
+
 ## The same traffic in every log format — 2026-10-27
 
 Every figure above is from an Apache log. LogarX reads 21 built-in formats, and a format
