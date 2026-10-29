@@ -314,3 +314,12 @@ def test_a_named_client_leads_with_its_name_and_keeps_its_address():
     assert address in named
     assert named.index("Office") < named.index(address)
     assert "Office" not in plain
+
+
+def test_a_right_to_left_override_in_a_name_cannot_turn_the_address():
+    from logarx.gui.recommendation import render_recommendation
+
+    page = render_recommendation(row(), client_name="VPN‮")
+
+    assert "‮" not in page
+    assert row().profile.client_ip in page

@@ -2393,7 +2393,7 @@ class MainWindow(QMainWindow):
         # it from the request, and the client wrote that; a name is typed text.
         address = html.escape(result.client_ip)
         who = (
-            f'<span style="color:{THEME.identity}"><b>{html.escape(name)}</b></span>&nbsp; '
+            f'<span style="color:{THEME.identity}"><b>{html.escape(display_safe(name))}</b></span>&nbsp; '
             f'<span style="font-family:{_MONO_CSS};color:{THEME.identity};font-weight:normal">'
             f"{address}</span>"
             if name

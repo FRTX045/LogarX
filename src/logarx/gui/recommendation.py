@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from html import escape
 from typing import TYPE_CHECKING
 
-from logarx.style import THEME, plural
+from logarx.style import THEME, display_safe, plural
 from logarx.triage.profile import FEATURES, HIGH_CONFIDENCE
 
 if TYPE_CHECKING:
@@ -64,7 +64,8 @@ def _identity(address: str, name: str | None) -> str:
     """The client at the head of the details: its name and then its address, or its address."""
     if not name:
         return f"<b>{escape(address)}</b>"
-    return f'<b>{escape(name)}</b> <span class="secondary">{escape(address)}</span>'
+    # Shown safely, so a direction override in the name cannot turn the address after it.
+    return f'<b>{escape(display_safe(name))}</b> <span class="secondary">{escape(address)}</span>'
 
 
 def _card(content: str) -> str:

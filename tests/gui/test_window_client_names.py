@@ -455,3 +455,13 @@ def test_a_client_found_by_its_requests_too_keeps_the_filter(
     assert window._evidence.filter_text() == "passwd"
     window.close()
 
+
+def test_a_right_to_left_override_in_a_name_cannot_turn_the_heading_address(
+    qt_app: QApplication, case_dir: Path
+) -> None:
+    name_it(case_dir, "VPN‮")
+    window = opened_on_client(qt_app, case_dir)
+
+    assert "‮" not in window._heading.text()
+    assert CLIENT in window._heading.text()
+    window.close()
