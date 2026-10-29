@@ -19,8 +19,10 @@ from logarx import client_names
 from logarx.case import Case
 from logarx.core.event import NormalizedEvent
 from logarx.core.evidence import EvidenceRef
+from logarx.gui import prefs
 from logarx.gui.app import MainWindow
 from logarx.gui.client_name_keeper import ClientNameKeeper
+from logarx.gui.columns import CLIENT_ADDRESS
 
 CLIENT = "192.0.2.0"
 RENAME = "Rename this client…"
@@ -63,7 +65,9 @@ def entries(menu: QMenu | None) -> list[str]:
 
 def sidebar_menu(window: MainWindow) -> QMenu | None:
     table = window._clients._table
-    row = next(r for r in range(table.rowCount()) if table.item(r, 0).text() == CLIENT)
+    row = next(
+        r for r in range(table.rowCount()) if table.item(r, 0).data(CLIENT_ADDRESS) == CLIENT
+    )
     return window._clients._menu_at(table.visualItemRect(table.item(row, 0)).center())
 
 
@@ -175,3 +179,52 @@ def test_renaming_over_an_unreadable_file_says_so(qt_app: QApplication, tmp_path
     assert client_names.UNREADABLE_NAME in said[0]
     assert keeper.dialog is not None
     keeper.dialog.close()
+
+
+def sidebar_text(window: MainWindow, address: str) -> str:
+    table = window._clients._table
+    for row in range(table.rowCount()):
+        item = table.item(row, 0)
+        if item is not None and item.data(CLIENT_ADDRESS) == address:
+            return item.text()
+    raise AssertionError(f"{address} is not listed")
+
+
+def test_a_saved_name_shows_in_the_sidebar_at_once(qt_app: QApplication, case_dir: Path) -> None:
+    window = opened(qt_app, case_dir)
+
+    choose(sidebar_menu(window), RENAME)
+    name_in_the_window(window, "Office VPN")
+
+    assert sidebar_text(window, CLIENT) == "Office VPN"
+    window.close()
+
+
+def test_names_show_when_the_case_opens(qt_app: QApplication, case_dir: Path) -> None:
+    client_names.apply(
+        case_dir,
+        lambda names: client_names.rename(names, CLIENT, "Office VPN", now=datetime.now(UTC)),
+    )
+
+    window = opened(qt_app, case_dir)
+
+    assert sidebar_text(window, CLIENT) == "Office VPN"
+    window.close()
+
+
+def test_the_view_menu_switches_names_off_and_on(qt_app: QApplication, case_dir: Path) -> None:
+    client_names.apply(
+        case_dir,
+        lambda names: client_names.rename(names, CLIENT, "Office VPN", now=datetime.now(UTC)),
+    )
+    window = opened(qt_app, case_dir)
+    action = window._client_names_action
+    assert action.isChecked()
+
+    action.trigger()
+    assert sidebar_text(window, CLIENT) == CLIENT
+    assert window._prefs[prefs.SHOW_CLIENT_NAMES] is False
+
+    action.trigger()
+    assert sidebar_text(window, CLIENT) == "Office VPN"
+    window.close()

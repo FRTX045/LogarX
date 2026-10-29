@@ -536,6 +536,7 @@ class MainWindow(QMainWindow):
         )
         self._clients.rename_requested.connect(self._client_names.rename)
         self._triage.rename_requested.connect(self._client_names.rename)
+        self._client_names.changed.connect(self._show_client_names)
         self._arrangement_bar.save_requested.connect(self._arrangements_kept.save)
         self._arrangement_bar.reset_requested.connect(self._arrangements_kept.reset)
 
@@ -794,6 +795,14 @@ class MainWindow(QMainWindow):
         self._timeline_action.setCheckable(True)
         self._timeline_action.setStatusTip(
             "Show or hide the traffic timeline above the date fields."
+        )
+        self._client_names_action = self._add(
+            view_menu, "Client &names", self._client_names_from_menu
+        )
+        self._client_names_action.setCheckable(True)
+        self._client_names_action.setChecked(bool(self._prefs[prefs.SHOW_CLIENT_NAMES]))
+        self._client_names_action.setStatusTip(
+            "Show the names you gave client addresses, or the addresses themselves."
         )
         view_menu.addSeparator()
         self._fit_action = self._add(view_menu, "&Fit to window", self._canvas.fit)
@@ -1503,6 +1512,7 @@ class MainWindow(QMainWindow):
         # The last case's bookmarks go now, not when this one arrives: until
         # then nothing on screen may carry a ribbon from another case.
         self._bookmarks.load(None)
+        self._show_client_names()
         # Read here, on the interface thread. The worker must not reach into a
         # widget to ask how wide it is while the window is free to resize it.
         buckets = self._buckets()
@@ -1597,6 +1607,7 @@ class MainWindow(QMainWindow):
             self._clients.show_clients(summaries, total=view.whole.clients)
             self._clients.set_open_client(None)
             self._bookmarks.load(path)
+            self._show_client_names()
             self._activity_values = []
             self._count_values()
             self._workspace.setCurrentIndex(0)
@@ -2234,13 +2245,14 @@ class MainWindow(QMainWindow):
         ]
 
     def changeEvent(self, event: QEvent | None) -> None:  # noqa: N802 - Qt's naming
-        """Coming back to the window reads the bookmarks again.
+        """Coming back to the window reads the bookmarks and client names again.
 
-        Another window on the same case may have saved some meanwhile; the keeper
+        Another window on the same case may have saved some meanwhile; each keeper
         redraws only when the file says something it is not already showing.
         """
         if event is not None and event.type() == QEvent.Type.ActivationChange:
             self._bookmarks.refresh()
+            self._client_names.refresh()
         super().changeEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent | None) -> None:  # noqa: N802 - Qt's naming
@@ -2323,7 +2335,25 @@ class MainWindow(QMainWindow):
         # this as a plain attribute, so without this line the switch goes one
         # way only: off from the dialog, and never back on from Preferences.
         self._arrangements_kept.ask_before_leaving = bool(chosen[prefs.ASK_UNSAVED_ARRANGEMENT])
+        self._show_client_names()
         prefs.write(_settings().setValue, self._prefs)
+
+    def _show_client_names(self) -> None:
+        """Label clients by the names readers gave them, or by address, as the switch says.
+
+        Read from the file each time, so a name saved in another window shows
+        too. The menu's check follows the preference; it uses `triggered`, so
+        setting it here does not apply the preference again.
+        """
+        on = bool(self._prefs[prefs.SHOW_CLIENT_NAMES])
+        self._client_names_action.setChecked(on)
+        self._clients.set_names(self._client_names.names(), shown=on)
+
+    def _client_names_from_menu(self) -> None:
+        """Use the same saved choice as the Preferences dialog."""
+        self._apply_preferences(
+            {**self._prefs, prefs.SHOW_CLIENT_NAMES: self._client_names_action.isChecked()}
+        )
 
     def _apply_band(self, showing: bool) -> None:
         """Draw the traffic above the fields, or stop drawing it."""

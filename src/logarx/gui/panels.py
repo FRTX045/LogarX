@@ -28,7 +28,7 @@ from logarx.caseview import CLIENT_LIMIT
 from logarx.gui._qt import SORT_KEY, SortableItem, required
 from logarx.gui.client_filter import caption as filter_caption
 from logarx.gui.client_filter import match_caption, matches
-from logarx.gui.columns import SHORT_TEXT, ColumnWidths, ShortWhenNarrow
+from logarx.gui.columns import CLIENT_ADDRESS, SHORT_TEXT, ColumnWidths, ShortWhenNarrow
 from logarx.gui.filter_box import FilterBox
 from logarx.gui.flow import FlowLayout
 from logarx.gui.icon_set import KIND_NAMES
@@ -39,6 +39,7 @@ from logarx.search import ANY_DAY, Scope, is_time, parse
 from logarx.style import (
     SIZE_NOTE,
     THEME,
+    display_safe,
     outcome_legend,
     severity_legend,
 )
@@ -48,6 +49,7 @@ if TYPE_CHECKING:
     from datetime import datetime
 
     from PyQt6.QtGui import QMouseEvent
+    from PyQt6.QtWidgets import QTableWidgetItem
 
     from logarx.core.activity import ActivityCategory
     from logarx.gui.icon_set import IconChoice
@@ -242,6 +244,10 @@ class ClientTable(QWidget):
         self._open: str | None = None
         # Which clients carry a bookmark, kept so every refill can mark them again.
         self._marks: dict[str, Mark] = {}
+        # The names readers gave addresses, and whether they are shown in place
+        # of the addresses; kept so every refill labels its rows the same way.
+        self._names: dict[str, str] = {}
+        self._names_shown = True
         self._table = _Rows(0, len(_COLUMNS))
         self._table.setHorizontalHeaderLabels(_COLUMNS)
         # The day while the column is narrow, the time as well once it is not.
@@ -417,7 +423,8 @@ class ClientTable(QWidget):
             self._natural_order(), Qt.SortOrder.DescendingOrder
         )
         for row, summary in enumerate(summaries):
-            self._set(row, 0, summary.client_ip)
+            self._set(row, _ADDRESS, summary.client_ip, sort_key=summary.client_ip)
+            self._label(row)
             self._set(row, 1, f"{summary.request_count:,}", sort_key=summary.request_count)
             self._set(row, 2, f"{summary.distinct_paths:,}", sort_key=summary.distinct_paths)
             self._set(
@@ -581,7 +588,7 @@ class ClientTable(QWidget):
         table = self._table
         for row in range(table.rowCount()):
             cell = table.item(row, _ADDRESS)
-            if cell is not None and cell.text() == client_ip:
+            if cell is not None and cell.data(CLIENT_ADDRESS) == client_ip:
                 blocked = table.blockSignals(True)
                 table.selectRow(row)
                 table.blockSignals(blocked)
@@ -607,9 +614,49 @@ class ClientTable(QWidget):
             cell = self._table.item(row, _ADDRESS)
             if cell is None:
                 continue
-            mark = self._marks.get(cell.text())
+            mark = self._marks.get(cell.data(CLIENT_ADDRESS))
             cell.setIcon(ribbon_icon(mark[0]) if mark is not None else QIcon())
-            cell.setToolTip(ribbon_tip(mark[1]) if mark is not None else "")
+            self._tip(cell)
+
+    # -- names -----------------------------------------------------------------
+
+    def set_names(self, names: Mapping[str, str], *, shown: bool) -> None:
+        """Label each client by the name a reader gave it while `shown`, by its address
+        otherwise, and keep doing so through every refill."""
+        self._names, self._names_shown = dict(names), shown
+        blocked = self._table.blockSignals(True)
+        self._table.setSortingEnabled(False)
+        for row in range(self._table.rowCount()):
+            self._label(row)
+        self._column_sizes.fit_unset()
+        self._table.setSortingEnabled(True)
+        header = required(self._table.horizontalHeader(), "column header")
+        self._column_sizes.fit_heading(header.sortIndicatorSection())
+        self._table.blockSignals(blocked)
+
+    def _label(self, row: int) -> None:
+        """Show the row's name or its address, as the names in force say."""
+        cell = self._table.item(row, _ADDRESS)
+        if cell is None:
+            return
+        address = cell.data(CLIENT_ADDRESS)
+        name = self._names.get(address) if self._names_shown else None
+        cell.setText(display_safe(name) if name else address)
+        self._tip(cell)
+
+    def _tip(self, cell: QTableWidgetItem) -> None:
+        """The address under a name, then the ribbon's note when the client is bookmarked.
+
+        The address leads even when it is what the row shows: a long one is cut
+        short by a narrow column, and the tip is where it is read whole.
+        """
+        address = cell.data(CLIENT_ADDRESS)
+        mark = self._marks.get(address)
+        named = self._names_shown and address in self._names
+        parts = ([display_safe(address)] if named else []) + (
+            [ribbon_tip(mark[1])] if mark is not None else []
+        )
+        cell.setToolTip("\n".join(parts))
 
     def _sort_changed(self, section: int, _order: Qt.SortOrder) -> None:
         """Ordered by another column: the caption says so, and its heading fits."""
@@ -624,7 +671,7 @@ class ClientTable(QWidget):
     def selected_client(self) -> str | None:
         rows = required(self._table.selectionModel(), "selection model").selectedRows()
         cell = self._table.item(rows[0].row(), _ADDRESS) if rows else None
-        return cell.text() if cell is not None else None
+        return cell.data(CLIENT_ADDRESS) if cell is not None else None
 
     def answered_search(self) -> tuple[str, int, int | None] | None:
         """The search whose answer is on screen: its text, clients, and requests if counted."""
@@ -644,7 +691,7 @@ class ClientTable(QWidget):
         cell = self._table.item(index.row(), _ADDRESS) if index.isValid() else None
         if cell is None:
             return None
-        address = cell.text()
+        address = cell.data(CLIENT_ADDRESS)
         menu = QMenu(self)
         menu.addAction("Bookmark this client\u2026", lambda: self.bookmark_requested.emit(address))
         menu.addAction("Rename this client\u2026", lambda: self.rename_requested.emit(address))
@@ -712,7 +759,9 @@ class ClientTable(QWidget):
             elif waiting or cell is None:
                 hidden = True
             else:
-                hidden = not any(matches(cell.text(), address) for address in query.ips)
+                hidden = not any(
+                    matches(cell.data(CLIENT_ADDRESS), address) for address in query.ips
+                )
             self._table.setRowHidden(row, hidden)
 
     def _ask(self) -> None:
@@ -760,7 +809,8 @@ class ClientTable(QWidget):
     def _refresh_caption(self) -> None:
         self.search_bookmark.setVisible(self.answered_search() is not None)
         listed = self._open is None or any(
-            (cell := self._table.item(row, _ADDRESS)) is not None and cell.text() == self._open
+            (cell := self._table.item(row, _ADDRESS)) is not None
+            and cell.data(CLIENT_ADDRESS) == self._open
             for row in range(self._table.rowCount())
         )
         self.show_open.setVisible(not listed)
@@ -810,11 +860,13 @@ class ClientTable(QWidget):
         column: int,
         text: str,
         *,
-        sort_key: float | None = None,
+        sort_key: float | str | None = None,
         short: str = "",
         tooltip: str = "",
     ) -> None:
         item = SortableItem(text)
+        if column == _ADDRESS:
+            item.setData(CLIENT_ADDRESS, text)
         if short:
             item.setData(SHORT_TEXT, short)
         if tooltip:
@@ -842,9 +894,9 @@ class ClientTable(QWidget):
         if not rows:
             self.client_released.emit()
             return
-        cell = self._table.item(rows[0].row(), 0)
+        cell = self._table.item(rows[0].row(), _ADDRESS)
         if cell is not None:
-            self.client_chosen.emit(cell.text())
+            self.client_chosen.emit(cell.data(CLIENT_ADDRESS))
 
 
 #: How big an outcome sample is drawn. Larger than the severity swatch beside

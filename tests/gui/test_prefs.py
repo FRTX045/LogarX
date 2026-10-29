@@ -29,6 +29,7 @@ def test_every_setting_the_window_keeps_is_in_the_catalogue() -> None:
         "view/fold_lines",
         "analysis/run_crs",
         "cases/reopen_last",
+        "view/client_names",
     }
 
 
@@ -45,6 +46,7 @@ def test_the_defaults_are_the_ones_the_menu_already_used() -> None:
         "view/fold_lines": FoldRule.REQUEST_STATUS_SIZE,
         "analysis/run_crs": True,
         "cases/reopen_last": False,
+        "view/client_names": True,
     }
 
 
@@ -87,7 +89,7 @@ def test_the_startup_setting_is_not_filed_under_the_graph() -> None:
     it decides is what happens when the application opens."""
     general = [s.key for s in prefs.in_group("General")]
 
-    assert general == [prefs.RUN_CRS, "cases/reopen_last"]
+    assert general == [prefs.RUN_CRS, "cases/reopen_last", prefs.SHOW_CLIENT_NAMES]
 
 
 def test_crs_is_on_until_the_reader_turns_it_off() -> None:
@@ -269,3 +271,11 @@ def test_the_layout_setting_is_named_for_the_layout() -> None:
     by_key = {setting.key: setting for setting in prefs.EVERY}
 
     assert by_key["view/ask_unsaved_arrangement"].label == "Ask before leaving an unsaved layout"
+
+
+def test_client_names_show_until_the_reader_turns_them_off() -> None:
+    assert prefs.defaults()[prefs.SHOW_CLIENT_NAMES] is True
+    stored: dict[str, object] = {}
+    prefs.write(stored.__setitem__, {**prefs.defaults(), prefs.SHOW_CLIENT_NAMES: False})
+
+    assert prefs.read(stored.get)[prefs.SHOW_CLIENT_NAMES] is False
