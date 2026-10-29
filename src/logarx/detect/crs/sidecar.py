@@ -687,6 +687,11 @@ class _Sidecar:
 
     def __init__(self, config: SidecarConfig) -> None:
         self._binary = config.binary
+        # The Windows GUI has no console to inherit. Keep each parallel
+        # helper hidden; its output and errors still travel over the pipes.
+        creationflags = 0
+        if sys.platform == "win32":
+            creationflags = subprocess.CREATE_NO_WINDOW
         # Fixed argv: the binary path comes from config, never from log content.
         self._process = subprocess.Popen(
             [
@@ -707,6 +712,7 @@ class _Sidecar:
             stderr=subprocess.PIPE,
             text=True,
             encoding="utf-8",
+            creationflags=creationflags,
         )
         self._answers: queue.Queue[str | None] = queue.Queue()
         # The last of what it said on stderr: its summary, or why it stopped.

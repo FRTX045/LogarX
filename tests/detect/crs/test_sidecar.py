@@ -14,6 +14,7 @@ from collections.abc import Iterator
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 from fake_sidecar import FakeCrs
@@ -349,6 +350,27 @@ def working_config(tmp_path: Path) -> SidecarConfig:
     binary.write_text("", encoding="utf-8")
     (tmp_path / "rules").mkdir(exist_ok=True)
     return SidecarConfig(binary=binary, rules=tmp_path, conf=tmp_path)
+
+
+@pytest.mark.parametrize("platform", ["win32", "linux", "darwin"])
+def test_sidecar_console_is_hidden_only_on_windows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, platform: str
+) -> None:
+    config = working_config(tmp_path)
+    fake = FakeCrs()
+    launch = Mock(wraps=fake)
+    monkeypatch.setattr(subprocess, "Popen", launch)
+    monkeypatch.setattr(subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+    monkeypatch.setattr(sys, "platform", platform)
+
+    found = run_sidecar([event(query="q=1 union select password")], config=config, workers=1)
+
+    options = launch.call_args.kwargs
+    assert options["creationflags"] == (0x08000000 if platform == "win32" else 0)
+    assert options["stdin"] == options["stdout"] == options["stderr"] == subprocess.PIPE
+    assert len(found) == 1
+    assert found[0].rule_id == 942100
+    assert fake.all_closed()
 
 
 def test_a_failing_sidecar_reports_its_own_error(
