@@ -246,3 +246,24 @@ def test_a_whole_list_still_asks_the_case_when_a_name_matches(qt_app: QApplicati
 
 def test_the_box_says_it_finds_names(table: ClientTable) -> None:
     assert "name:" in table._filter.toolTip()
+
+
+def test_an_address_after_a_name_search_is_looked_for_in_the_whole_list(
+    qt_app: QApplication,
+) -> None:
+    whole = ClientTable()
+    whole.show_clients(
+        [summary("10.0.0.1", 90), summary("10.0.0.3", 80), summary("10.0.0.4", 70)], total=3
+    )
+    whole.set_names({"10.0.0.1": "Attacker 2"}, shown=True)
+    whole._filter.setText("2")
+    whole.show_matches(matched(("10.0.0.1", 0)), "2", counted=False, named=frozenset({"10.0.0.1"}))
+
+    whole._filter.setText("10.0.0.4")
+
+    visible = [
+        whole._table.item(row, 0).data(CLIENT_ADDRESS)
+        for row in range(whole._table.rowCount())
+        if not whole._table.isRowHidden(row)
+    ]
+    assert visible == ["10.0.0.4"]

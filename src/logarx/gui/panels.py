@@ -764,6 +764,12 @@ class ClientTable(QWidget):
             and len(self._busiest) >= self._total
             and not (typed and name_matching(self._names, typed))
         )
+        if complete and (self._query or self._first != 1):
+            # The rows on screen answer the last search; the address is looked
+            # for among every client, which the busiest page holds.
+            self._counted = None
+            self._found_by_name = frozenset()
+            self._show_rows(self._busiest, first=1, query="", matching=None, page_total=self._total)
         self._searching = not complete
         if not complete:
             # The page on screen belongs to the previous text, so stepping from it
