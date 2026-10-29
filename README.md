@@ -1,4 +1,4 @@
-![LogarX logo](docs/images/logarx-outline-open-corner.png)
+![Zodiarc logo](docs/images/zodiarc-banner.png)
 
 **Reconstruct what one IP address actually did on a web server, from its access logs.**
 
