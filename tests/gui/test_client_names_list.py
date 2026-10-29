@@ -7,10 +7,12 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication, QTableWidgetItem
+from tables import column_of
 
+from conftest import fired
 from logarx.gui.columns import CLIENT_ADDRESS
 from logarx.gui.panels import ClientTable
-from logarx.storage.base import IpSummary
+from logarx.storage.base import ClientMatchPage, IpSummary
 from logarx.style import display_safe
 
 START = datetime(2026, 3, 10, 19, 12, tzinfo=UTC)
@@ -138,3 +140,105 @@ def test_a_name_with_control_characters_is_shown_safely(table: ClientTable) -> N
     table.set_names({"10.0.0.1": "a‮b"}, shown=True)
 
     assert cell(table, "10.0.0.1").text() == display_safe("a‮b")
+
+
+# -- finding clients by name --------------------------------------------------------
+
+
+def matched(*rows: tuple[str, int], counted: bool = True) -> ClientMatchPage:
+    return ClientMatchPage(
+        tuple(summary(ip, 10 + n) for n, (ip, _hits) in enumerate(rows)),
+        tuple(hits for _ip, hits in rows),
+        len(rows),
+        sum(hits for _ip, hits in rows),
+        0,
+    )
+
+
+def match_texts(table: ClientTable) -> list[tuple[str, str]]:
+    column = column_of(table._table, "Match")
+    return [
+        (table._table.item(row, 0).data(CLIENT_ADDRESS), table._table.item(row, column).text())
+        for row in range(table._table.rowCount())
+        if not table._table.isRowHidden(row)
+    ]
+
+
+def test_a_client_found_only_by_name_says_so_and_comes_first(table: ClientTable) -> None:
+    table.set_names({"10.0.0.3": "Office VPN"}, shown=True)
+    table._filter.setText("office")
+
+    table.show_matches(
+        matched(("10.0.0.3", 0), ("10.0.0.9", 5)), "office", named=frozenset({"10.0.0.3"})
+    )
+
+    assert match_texts(table) == [("10.0.0.3", "by name"), ("10.0.0.9", "5")]
+    assert not table._table.isColumnHidden(column_of(table._table, "Match"))
+
+
+def test_a_client_found_both_ways_shows_both(table: ClientTable) -> None:
+    table.set_names({"10.0.0.3": "Office VPN"}, shown=True)
+    table._filter.setText("office")
+
+    table.show_matches(
+        matched(("10.0.0.3", 2), ("10.0.0.9", 5)), "office", named=frozenset({"10.0.0.3"})
+    )
+
+    assert match_texts(table) == [("10.0.0.3", "2, by name"), ("10.0.0.9", "5")]
+
+
+def test_names_alone_show_the_match_column_without_counts(table: ClientTable) -> None:
+    table.set_names({"10.0.0.3": "Office VPN"}, shown=True)
+    table._filter.setText("name:office")
+
+    table.show_matches(
+        matched(("10.0.0.3", 0)), "name:office", counted=False, named=frozenset({"10.0.0.3"})
+    )
+
+    assert match_texts(table) == [("10.0.0.3", "by name")]
+    assert table._caption.text().startswith("1 of 2 clients match name:office")
+    assert "Triage" not in table._caption.text()
+
+
+def test_a_named_row_on_the_page_is_not_hidden_while_searching(qt_app: QApplication) -> None:
+    partial = ClientTable()
+    partial.show_clients([summary("10.0.0.1", 90), summary("10.0.0.2", 80)], total=900)
+    partial.set_names({"10.0.0.2": "Office VPN"}, shown=True)
+
+    partial._filter.setText("office")
+
+    visible = [
+        partial._table.item(row, 0).data(CLIENT_ADDRESS)
+        for row in range(partial._table.rowCount())
+        if not partial._table.isRowHidden(row)
+    ]
+    assert visible == ["10.0.0.2"]
+
+
+def test_a_name_on_the_page_is_found_with_names_hidden(qt_app: QApplication) -> None:
+    partial = ClientTable()
+    partial.show_clients([summary("10.0.0.1", 90), summary("10.0.0.2", 80)], total=2)
+    partial.set_names({"10.0.0.2": "Office VPN"}, shown=False)
+
+    partial._filter.setText("office")
+
+    visible = [
+        partial._table.item(row, 0).text()
+        for row in range(partial._table.rowCount())
+        if not partial._table.isRowHidden(row)
+    ]
+    assert visible == ["10.0.0.2"]
+
+
+def test_a_whole_list_still_asks_the_case_when_a_name_matches(qt_app: QApplication) -> None:
+    """An address-like word would be answered on the page; a name it matches needs marking."""
+    whole = ClientTable()
+    whole.show_clients([summary("10.0.0.1", 90), summary("10.0.0.3", 80)], total=2)
+    whole.set_names({"10.0.0.1": "Attacker 2"}, shown=True)
+    asked: list[tuple[str, int]] = []
+    whole.page_requested.connect(lambda query, offset: asked.append((query, offset)))
+
+    whole._filter.setText("2")
+    fired(whole._search_timer)
+
+    assert asked == [("2", 0)]

@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
 )
 
 from logarx.caseview import CLIENT_LIMIT
+from logarx.client_names import matching as name_matching
 from logarx.gui._qt import SORT_KEY, SortableItem, required
 from logarx.gui.client_filter import caption as filter_caption
 from logarx.gui.client_filter import match_caption, matches
@@ -35,7 +36,7 @@ from logarx.gui.icon_set import KIND_NAMES
 from logarx.gui.icons import first_drawable
 from logarx.gui.ribbon import Mark, ribbon_icon, ribbon_tip
 from logarx.gui.theme import PAD, TIGHT, caption_font, colour_text, mono_font, on_font_change
-from logarx.search import ANY_DAY, Scope, is_time, parse
+from logarx.search import ANY_DAY, Scope, is_time, parse, plain_text
 from logarx.style import (
     SIZE_NOTE,
     THEME,
@@ -82,6 +83,8 @@ _ADDRESS = _COLUMNS.index("Client")
 #: columns, so none of the others moves, and shown beside the address: it is
 #: what the list is ordered by while a search is on.
 _MATCH = _COLUMNS.index("Match")
+#: Added to a Match count for a client a name found: more than any client sends.
+_NAMED_FIRST = 10**15
 _FIRST = _COLUMNS.index("First")
 _LAST = _COLUMNS.index("Last")
 
@@ -237,6 +240,9 @@ class ClientTable(QWidget):
         # and how many requests the whole search found. None otherwise.
         self._counted: bool | None = None
         self._requests = 0
+        # Which of those rows a name a reader gave them found, rather than (or as
+        # well as) their requests. They are listed first and say so in Match.
+        self._found_by_name: frozenset[str] = frozenset()
         # Why the search on screen has no answer, and in what colour, until
         # the text changes or an answer arrives. Kept, not only drawn, so a
         # redraw of the caption cannot replace it with a count of nothing.
@@ -380,6 +386,7 @@ class ClientTable(QWidget):
         self._searching = False
         self._message = None
         self._counted = None
+        self._found_by_name = frozenset()
         self._show_rows(summaries, first=1, query="", matching=None, page_total=self._total)
 
     def _show_rows(
@@ -414,7 +421,7 @@ class ClientTable(QWidget):
             self._table.setRowHidden(row, False)
         # Shown or hidden before the columns are measured, so a Match column
         # that appears is sized to its counts with the rest.
-        self._table.setColumnHidden(_MATCH, not self._counted)
+        self._table.setColumnHidden(_MATCH, not (self._counted or self._found_by_name))
         # The indicator before sorting is turned back on, which sorts by it at
         # once, and ties keep whatever order that leaves. Left on the reader's
         # last column, ties came out in that column's order rather than the
@@ -440,7 +447,8 @@ class ClientTable(QWidget):
                     tooltip=seen_whole(when),
                 )
             found = hits[row] if row < len(hits) else 0
-            self._set(row, _MATCH, f"{found:,}", sort_key=found)
+            said, key = self._match(summary.client_ip, found)
+            self._set(row, _MATCH, said, sort_key=key)
         # Marked before the columns are measured, so a ribbon's width is counted
         # and never cuts the address beside it.
         self._apply_marks()
@@ -472,6 +480,7 @@ class ClientTable(QWidget):
         self._search_timer.stop()
         self._searching = False
         self._counted = None
+        self._found_by_name = frozenset()
         self._message = None
         self._filter.give_way()
         self._show_rows(
@@ -483,12 +492,20 @@ class ClientTable(QWidget):
         )
         return True
 
-    def show_matches(self, page: ClientMatchPage, query: str, *, counted: bool = True) -> bool:
+    def show_matches(
+        self,
+        page: ClientMatchPage,
+        query: str,
+        *,
+        counted: bool = True,
+        named: frozenset[str] = frozenset(),
+    ) -> bool:
         """Show the clients a search of requests found; False if it is stale.
 
         `counted` is false when the Where to start scan answered on its own: it
         says which clients an activity reached, not in how many requests, so
-        there is no Match number to show.
+        there is no Match number to show. `named` are the clients a name a
+        reader gave them found; the store lists them first, and Match says so.
         """
         wanted = query.strip()
         if wanted != self._filter.text().strip():
@@ -496,6 +513,7 @@ class ClientTable(QWidget):
         self._search_timer.stop()
         self._searching = False
         self._counted = counted
+        self._found_by_name = named
         self._message = None
         self._filter.give_way()
         self._requests = page.requests
@@ -721,6 +739,7 @@ class ClientTable(QWidget):
             # its value. The busiest page, as the case opened with it.
             self._searching = False
             self._counted = None
+            self._found_by_name = frozenset()
             if self._query or self._first != 1:
                 self._show_rows(
                     self._busiest, first=1, query="", matching=None, page_total=self._total
@@ -732,7 +751,14 @@ class ClientTable(QWidget):
         self._hide_unmatched()
         # A page holds clients, not their requests, so only an address can be
         # answered from it; anything else asks the whole case, however small.
-        complete = query.is_address_only and len(self._busiest) >= self._total
+        # Nor a name: a client one finds is listed first and marked, which only
+        # the whole-case search does.
+        typed = plain_text(self._filter.text())
+        complete = (
+            query.is_address_only
+            and len(self._busiest) >= self._total
+            and not (typed and name_matching(self._names, typed))
+        )
         self._searching = not complete
         if not complete:
             # The page on screen belongs to the previous text, so stepping from it
@@ -752,11 +778,19 @@ class ClientTable(QWidget):
         query = parse(self._filter.text(), Scope.CASE, day=ANY_DAY)
         answered = self._counted is not None and self._query == self._filter.text().strip()
         waiting = not (query.is_empty or query.is_address_only or answered)
+        # Plain words also find the names readers gave clients, whether or not
+        # names are on show: those rows are known answers, so they stay.
+        typed = plain_text(self._filter.text())
+        named = name_matching(self._names, typed) if typed else frozenset()
         for row in range(self._table.rowCount()):
             cell = self._table.item(row, _ADDRESS)
             if query.is_empty or answered:
                 hidden = False
-            elif waiting or cell is None:
+            elif cell is None:
+                hidden = True
+            elif cell.data(CLIENT_ADDRESS) in named:
+                hidden = False
+            elif waiting:
                 hidden = True
             else:
                 hidden = not any(
@@ -803,8 +837,20 @@ class ClientTable(QWidget):
         return self._open is None or self.select_quietly(self._open)
 
     def _natural_order(self) -> int:
-        """The column a page is cut by: matches for a counted search, requests otherwise."""
-        return _MATCH if self._counted else _COLUMNS.index("Reqs")
+        """The column a page is cut by: matches for a counted search or one names
+        answered, requests otherwise."""
+        return _MATCH if self._counted or self._found_by_name else _COLUMNS.index("Reqs")
+
+    def _match(self, address: str, hits: int) -> tuple[str, float]:
+        """The Match cell for a row, and what it sorts on.
+
+        A client a name found sorts above every count, so the table's own sort
+        keeps it where the store put it: first.
+        """
+        if address not in self._found_by_name:
+            return f"{hits:,}", hits
+        said = f"{hits:,}, by name" if self._counted and hits else "by name"
+        return said, hits + _NAMED_FIRST
 
     def _refresh_caption(self) -> None:
         self.search_bookmark.setVisible(self.answered_search() is not None)
@@ -836,6 +882,7 @@ class ClientTable(QWidget):
                     matching=self._matching,
                     requests=self._requests,
                     counted=self._counted,
+                    named=bool(self._found_by_name),
                     reordered=reordered,
                     missing_open=None if listed else self._open,
                 )

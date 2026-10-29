@@ -14,6 +14,7 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from PyQt6.QtCore import QEvent
 from PyQt6.QtWidgets import QApplication, QMenu
+from tables import column_of
 
 from conftest import settled
 from logarx import client_names
@@ -313,4 +314,94 @@ def test_a_who_else_dialog_opened_later_shows_names(qt_app: QApplication, case_d
     assert dialog._names == {CLIENT: "Office VPN"}
     assert dialog._names_shown is True
     dialog.close()
+    window.close()
+
+
+def searched(qt_app: QApplication, window: MainWindow, text: str) -> list[tuple[str, str]]:
+    """The rows a search of the whole case leaves listed, with their Match cells."""
+    window._clients.set_query(text)
+    settled(qt_app)
+    table = window._clients._table
+    match = column_of(table, "Match")
+    return [
+        (
+            table.item(row, 0).data(CLIENT_ADDRESS),
+            "" if table.isColumnHidden(match) else table.item(row, match).text(),
+        )
+        for row in range(table.rowCount())
+        if not table.isRowHidden(row)
+    ]
+
+
+def test_typing_a_name_finds_a_client_with_no_matching_requests(
+    qt_app: QApplication, case_dir: Path
+) -> None:
+    name_it(case_dir)
+    window = opened(qt_app, case_dir)
+
+    assert searched(qt_app, window, "office") == [(CLIENT, "by name")]
+    window.close()
+
+
+def test_a_client_found_both_ways_appears_once(qt_app: QApplication, case_dir: Path) -> None:
+    name_it(case_dir, "passwd reader")
+    window = opened(qt_app, case_dir)
+
+    found = searched(qt_app, window, "passwd")
+
+    assert found[0] == (CLIENT, "1, by name")
+    assert [address for address, _ in found].count(CLIENT) == 1
+    assert ("192.0.2.1", "1") in found
+    window.close()
+
+
+def test_a_name_with_a_digit_is_found(qt_app: QApplication, case_dir: Path) -> None:
+    name_it(case_dir, "Attacker 2")
+    window = opened(qt_app, case_dir)
+
+    assert searched(qt_app, window, "attacker 2") == [(CLIENT, "by name")]
+    window.close()
+
+
+def test_a_filter_chip_turns_name_matching_off(qt_app: QApplication, case_dir: Path) -> None:
+    name_it(case_dir)
+    window = opened(qt_app, case_dir)
+
+    assert searched(qt_app, window, "status:200 office") == []
+    window.close()
+
+
+def test_name_key_lists_only_named_clients(qt_app: QApplication, case_dir: Path) -> None:
+    name_it(case_dir, "passwd reader")
+    window = opened(qt_app, case_dir)
+
+    assert searched(qt_app, window, "name:passwd") == [(CLIENT, "by name")]
+    window.close()
+
+
+def test_name_key_combines_with_a_status_filter(qt_app: QApplication, case_dir: Path) -> None:
+    name_it(case_dir)
+    window = opened(qt_app, case_dir)
+
+    assert searched(qt_app, window, "name:office status:200") == [(CLIENT, "1, by name")]
+    assert searched(qt_app, window, "name:office status:404") == []
+    window.close()
+
+
+def test_name_search_works_with_names_hidden(qt_app: QApplication, case_dir: Path) -> None:
+    name_it(case_dir)
+    window = opened(qt_app, case_dir)
+    window._client_names_action.trigger()
+
+    assert searched(qt_app, window, "office") == [(CLIENT, "by name")]
+    window.close()
+
+
+def test_a_single_address_without_name_matches_is_unchanged(
+    qt_app: QApplication, case_dir: Path
+) -> None:
+    name_it(case_dir)
+    window = opened(qt_app, case_dir)
+
+    assert searched(qt_app, window, "192.0.2.1") == [("192.0.2.1", "")]
     window.close()

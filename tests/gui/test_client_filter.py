@@ -1,6 +1,6 @@
 """Tests for the client filter's judgements, which need no display."""
 
-from logarx.gui.client_filter import awaiting_scan, caption, matches
+from logarx.gui.client_filter import awaiting_scan, caption, match_caption, matches
 from logarx.triage.scan import TriageProgress
 
 
@@ -206,3 +206,29 @@ def test_an_activity_on_more_clients_than_a_page_names_the_page() -> None:
         "Clients 501\u20131,000 of 4,916 that match activity:api_call in the Triage scan"
     )
     assert whole == "3 of 7,450 clients match activity:injection in the Triage scan"
+
+
+def test_a_page_of_a_search_names_answered_says_so() -> None:
+    text = match_caption(
+        shown=100, total=900, query="office", first=1, matching=501, requests=0, named=True
+    )
+
+    assert "or have a name holding it" in text
+
+
+def test_only_an_activity_search_is_credited_to_the_triage_scan() -> None:
+    named = match_caption(
+        shown=0, total=900, query="name:nobody", first=1, matching=0, requests=0, counted=False
+    )
+    scanned = match_caption(
+        shown=2,
+        total=900,
+        query="activity:injection",
+        first=1,
+        matching=2,
+        requests=0,
+        counted=False,
+    )
+
+    assert "Triage" not in named
+    assert scanned.endswith("in the Triage scan")

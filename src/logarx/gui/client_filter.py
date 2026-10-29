@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from logarx.search import is_whole_address
+from logarx.search import ANY_DAY, Scope, is_whole_address, parse
 from logarx.style import plural
 
 if TYPE_CHECKING:
@@ -101,24 +101,31 @@ def match_caption(
     matching: int,
     requests: int,
     counted: bool = True,
+    named: bool = False,
     reordered: bool = False,
     missing_open: str | None = None,
 ) -> str:
     """What to write above the clients a search of their requests found.
 
     Both numbers again: how many clients matched, of how many in the case, and
-    how many requests that is. `counted` is false for a search the Triage scan
-    answered on its own, which knows which clients an activity
-    reached but not in how many of their requests.
+    how many requests that is. `counted` is false for a search that did not
+    count requests: the Triage scan knows which clients an activity reached but
+    not in how many of their requests, and a name chooses clients, not
+    requests. `named` says some of the clients were found by a name a reader
+    gave them, which the Match column then marks.
     """
     wanted = query.strip()
+    # Only the scan knows which clients an activity reached; a name or an
+    # address chooses clients without it.
+    scan = " in the Triage scan" if parse(wanted, Scope.CASE, day=ANY_DAY).activities else ""
+    either = " or have a name holding it" if named else ""
     if not counted and shown < matching:
         text = (
             f"Clients {first:,}\u2013{first + shown - 1:,} of {matching:,} that match {wanted}"
-            " in the Triage scan"
+            f"{scan}"
         )
     elif not counted:
-        text = f"{matching:,} of {total:,} clients match {wanted} in the Triage scan"
+        text = f"{matching:,} of {total:,} clients match {wanted}{scan}"
     elif matching == 0:
         text = f"No client sent a request matching {wanted}. {total:,} in the case."
     else:
@@ -128,10 +135,12 @@ def match_caption(
             order = ", sorted within this page" if reordered else ""
             text = (
                 f"Clients {first:,}\u2013{last:,} of {matching:,} that sent a request"
-                f" matching {wanted}{found}{order}"
+                f" matching {wanted}{either}{found}{order}"
             )
         else:
-            text = f"{matching:,} of {total:,} clients sent a request matching {wanted}{found}"
+            text = (
+                f"{matching:,} of {total:,} clients sent a request matching {wanted}{either}{found}"
+            )
     if missing_open:
         text += _outside(missing_open)
     return text

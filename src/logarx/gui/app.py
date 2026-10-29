@@ -61,6 +61,7 @@ from logarx.caseview import (
     read_case,
     reconstruct_client,
 )
+from logarx.client_names import matching as name_matching
 from logarx.core.graph import GraphKind
 from logarx.core.window import EVERYTHING, TimeWindow
 from logarx.detect.crs import CrsEvidence, CrsUnavailableError, SidecarConfig, runs_by_default
@@ -126,7 +127,14 @@ from logarx.ingest.pipeline import IngestCancelled
 from logarx.ingest.quarantine import DIRECTORY_NAME as QUARANTINE_DIR
 from logarx.parsers.library import move_old_home
 from logarx.report import export
-from logarx.search import Scope, evidence_part, labels_for_activity, parse, value_counts
+from logarx.search import (
+    Scope,
+    evidence_part,
+    labels_for_activity,
+    parse,
+    plain_text,
+    value_counts,
+)
 from logarx.storage.base import ClientMatchPage, IpSummaryPage
 from logarx.storage.case import CaseManifest
 from logarx.style import THEME, display_safe, format_requests, plural
@@ -1846,6 +1854,11 @@ class MainWindow(QMainWindow):
         the unfiltered list does. One address is looked up as it always was, a
         complete one exactly; anything else is a search of the clients' requests,
         narrowed to the clients the scan saw an `activity:` on.
+
+        Names readers gave clients answer too. `name:` holds the search to the
+        clients it names, as `activity:` does. Plain words with no filter also
+        find the clients whose name holds them, listed first even with no
+        matching request. Names are read here, on the interface thread.
         """
         if self._case_path is None:
             return
@@ -1861,7 +1874,14 @@ class MainWindow(QMainWindow):
                 query, awaiting_scan(self._triage.progress, scanning=self._triage.scanning)
             )
             return
-        single = wanted.is_empty or (wanted.is_address_only and len(wanted.ips) == 1)
+        names = self._client_names.names()
+        chosen: frozenset[str] | None = None
+        if wanted.names:
+            chosen = frozenset().union(*(name_matching(names, name) for name in wanted.names))
+        typed = plain_text(query)
+        also = name_matching(names, typed) if typed else frozenset()
+        named = also if chosen is None else chosen
+        single = not also and (wanted.is_empty or (wanted.is_address_only and len(wanted.ips) == 1))
 
         def work(_: Callable[[str], None]) -> IpSummaryPage | ClientMatchPage:
             with Case.open(path) as case:
@@ -1881,14 +1901,17 @@ class MainWindow(QMainWindow):
                         *(labels_for_activity(labels, value) for value in wanted.activities)
                     )
                     clients = read_activity_clients(index.path, rules)
+                if chosen is not None:
+                    clients = chosen if clients is None else clients & chosen
                 page = case.store.search_clients(
                     wanted,
                     offset=offset,
                     limit=ClientTable.PAGE_SIZE,
                     window=window if narrowed else None,
                     clients=clients,
+                    also=also,
                 )
-            if wanted.is_address_only:
+            if wanted.is_address_only and not also:
                 # Several addresses are still an address search, listed and
                 # captioned as one: busiest first, no Match column.
                 return IpSummaryPage(page.rows, page.total, page.offset)
@@ -1898,7 +1921,9 @@ class MainWindow(QMainWindow):
             if generation != self._client_search:
                 return
             if isinstance(page, ClientMatchPage):
-                self._clients.show_matches(page, query, counted=wanted.has_request_filters)
+                self._clients.show_matches(
+                    page, query, counted=wanted.has_request_filters, named=named
+                )
             else:
                 self._clients.show_page(page, query)
 
