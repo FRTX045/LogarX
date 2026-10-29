@@ -30,7 +30,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-gui = ["PyQt6>=6.6"]
+# PyQt6 6.12.0 ships QtGui stubs with invalid parameter syntax for mypy.
+# Keep CI and desktop builds on the tested pair; Qt's bundled notices also
+# correspond to 6.11.1 (packaging/third-party/qt/VERSION).
+gui = ["PyQt6==6.11.0", "PyQt6-Qt6==6.11.1"]
 evaluation = ["scikit-learn>=1.5,<2"]
 # Kept out of `dev` on purpose: CI runs the tests, it does not build the
 # desktop bundle, and PyInstaller is a slow install to pay for on every job.
