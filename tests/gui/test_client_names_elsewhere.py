@@ -9,7 +9,7 @@ from test_bookmarks_tab import shelf
 from test_triage_panel import make_case
 from test_who_else import DIRB, GOBUSTER
 
-from conftest import settled
+from conftest import fired, settled
 from logarx.core.event import NormalizedEvent
 from logarx.core.evidence import EvidenceRef
 from logarx.evidence import EvidenceLine
@@ -109,3 +109,19 @@ def test_bookmarks_tab_shows_the_client_name(qt_app: QApplication) -> None:
     assert "10.0.0.9" not in client_column(tab)
     tab.set_names({"10.0.0.9": "Office VPN"}, shown=False)
     assert "10.0.0.9" in client_column(tab)
+
+
+def test_the_triage_filter_finds_a_client_by_name(qt_app: QApplication, tmp_path) -> None:
+    panel = TriagePanel()
+    panel.show_result(scan_case(make_case(tmp_path, 3)))
+    settled(qt_app)
+    panel.set_names({"192.0.2.1": "Office VPN"}, shown=False)
+
+    panel.search.setText("office")
+    fired(panel._search_timer)
+    settled(qt_app)
+
+    assert panel.table.rowCount() == 1
+    assert panel.table.item(0, 1).text() == "192.0.2.1"
+    assert panel.caption.text().endswith("(matching your search)")
+    panel.close()

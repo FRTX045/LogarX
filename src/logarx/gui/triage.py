@@ -349,6 +349,8 @@ class TriagePanel(QWidget):
             return
         result = self._result
         query, offset = self.search.text(), self._offset
+        # The names readers gave clients answer too, shown or not.
+        named = client_names.matching(self._names, query)
 
         def done(page: TriagePage) -> None:
             if generation != self._page_generation:
@@ -385,7 +387,7 @@ class TriagePanel(QWidget):
 
         run_job(
             lambda report: read_page(
-                result.path, queue, query=query, offset=offset, limit=PAGE_SIZE
+                result.path, queue, query=query, named=named, offset=offset, limit=PAGE_SIZE
             ),
             on_done=done,
             on_error=failed,
