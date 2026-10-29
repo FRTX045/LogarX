@@ -59,6 +59,8 @@ class TriagePanel(QWidget):
     investigate = pyqtSignal(str, object)
     bookmark_requested = pyqtSignal(str)
     """A queued client asked to be bookmarked, from its right-click menu."""
+    rename_requested = pyqtSignal(str)
+    """A queued client asked to be named, from its right-click menu; carries the address."""
 
     finished = pyqtSignal()
     """A scan finished, and `result` now answers for the case and range."""
@@ -535,6 +537,7 @@ class TriagePanel(QWidget):
         address = self._rows[index.row()].profile.client_ip
         menu = QMenu(self)
         menu.addAction("Bookmark this client\u2026", lambda: self.bookmark_requested.emit(address))
+        menu.addAction("Rename this client\u2026", lambda: self.rename_requested.emit(address))
         return menu
 
     def _show_menu(self, point: QPoint) -> None:

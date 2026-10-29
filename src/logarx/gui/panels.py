@@ -208,6 +208,9 @@ class ClientTable(QWidget):
     bookmark_requested = pyqtSignal(str)
     """A client's row asked to be bookmarked, from its right-click menu."""
 
+    rename_requested = pyqtSignal(str)
+    """A client's row asked to be named, from its right-click menu; carries the address."""
+
     bookmark_search_requested = pyqtSignal()
     """The search answered on screen asked to be bookmarked."""
 
@@ -644,6 +647,7 @@ class ClientTable(QWidget):
         address = cell.text()
         menu = QMenu(self)
         menu.addAction("Bookmark this client\u2026", lambda: self.bookmark_requested.emit(address))
+        menu.addAction("Rename this client\u2026", lambda: self.rename_requested.emit(address))
         return menu
 
     def _show_menu(self, point: QPoint) -> None:

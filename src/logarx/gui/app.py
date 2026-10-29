@@ -78,6 +78,7 @@ from logarx.gui.bookmarks_tab import BookmarksTab
 from logarx.gui.canvas import ActivityCanvas
 from logarx.gui.case_chooser import CaseChooser
 from logarx.gui.client_filter import awaiting_scan, is_whole_address
+from logarx.gui.client_name_keeper import ClientNameKeeper
 from logarx.gui.crs import CrsCard, CrsUnavailable
 from logarx.gui.crs_notice import partial_crs_notice, stale_crs_notice
 from logarx.gui.density import Density, buckets_for
@@ -530,6 +531,11 @@ class MainWindow(QMainWindow):
             say=self._idle,
         )
         self._canvas.rename_requested.connect(self._session_names.rename)
+        self._client_names = ClientNameKeeper(
+            parent=self, case_path=lambda: self._case_path, say=self._idle
+        )
+        self._clients.rename_requested.connect(self._client_names.rename)
+        self._triage.rename_requested.connect(self._client_names.rename)
         self._arrangement_bar.save_requested.connect(self._arrangements_kept.save)
         self._arrangement_bar.reset_requested.connect(self._arrangements_kept.reset)
 

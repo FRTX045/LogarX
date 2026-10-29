@@ -32,8 +32,8 @@ _CANNOT_WRITE: Final = "Could not save the name: the case folder cannot be writt
 _FIELD_CHARACTERS: Final = 40
 
 
-def write_failed(error: SessionNameWriteError) -> str:
-    """What to say when the case folder would not take the name.
+def write_failed(error: OSError) -> str:
+    """What to say when the case folder would not take a session's or a client's name.
 
     The same test `bookmark_keeper` uses for a bookmark: a folder that refuses
     is named as such, anything else gives the system's own reason.
