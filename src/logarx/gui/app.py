@@ -45,7 +45,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from logarx import rules_library
+from logarx import client_names, rules_library
 from logarx.bookmarks import (
     Kind,
     said_for_activity,
@@ -129,7 +129,7 @@ from logarx.report import export
 from logarx.search import Scope, evidence_part, labels_for_activity, parse, value_counts
 from logarx.storage.base import ClientMatchPage, IpSummaryPage
 from logarx.storage.case import CaseManifest
-from logarx.style import THEME, format_requests, plural
+from logarx.style import THEME, display_safe, format_requests, plural
 from logarx.timerange import nobody_here, summary
 from logarx.triage.scan import (
     read_activity_clients,
@@ -2049,8 +2049,11 @@ class MainWindow(QMainWindow):
                 and (client_ip, window) == self._awaiting
             )
 
+        # Read here, on the interface thread: the worker only says it.
+        opening = f"Opening {self._client_label(client_ip)}…"
+
         def work(report: Callable[[str], None]) -> tuple[AnalysisResult, list[TimeSlot]]:
-            report(f"Opening {client_ip}…")
+            report(opening)
             result = reconstruct_client(path, client_ip, crs, window=window, rules=rules)
             # This client's own traffic, across its own life — not the range in
             # force. Built from the reconstruction it would only ever cover that
@@ -2061,7 +2064,7 @@ class MainWindow(QMainWindow):
             with Case.open(path) as case:
                 return result, case.store.activity_over_time(buckets=buckets, client_ip=client_ip)
 
-        self._busy(f"Opening {client_ip}…")
+        self._busy(opening)
 
         def done(loaded: tuple[AnalysisResult, list[TimeSlot]]) -> None:
             result, bars = loaded
@@ -2097,40 +2100,20 @@ class MainWindow(QMainWindow):
             self._selected = None
             self._evidence.clear()
             self._tabs.setVisible(True)
-            # The address, then three counts. Not a sentence.
-            #
-            # `100.66.2.0 — 69 requests across 1 session, reduced to 9
-            # activities` reads as prose and is scanned as prose: the numbers
-            # are what the line is for, and they were buried among connectives
-            # at one weight with the address. Separated values put the three
-            # counts where the eye can take them one at a time, and dropping the
-            # address to monospace makes it an address rather than the first
-            # word of a sentence.
-            self._heading.setText(
-                f'<span style="font-family:{_MONO_CSS};color:{THEME.identity}">'
-                # Escaped: a format reading the client from a forwarded-for
-                # header takes it from the request, and the client wrote that.
-                f"<b>{html.escape(result.client_ip)}</b></span>"
-                # Normal weight, explicitly: the label itself is set in the
-                # heading face, which is DemiBold, and without this the counts
-                # carry the same emphasis as the address they belong to.
-                # Each count is one unbreakable piece, so a narrow column
-                # wraps the heading between counts and never between a
-                # number and its noun.
-                f'<span style="color:{THEME.muted};font-weight:normal">&nbsp; '
-                f"{_whole(format_requests(result.request_count))}"
-                f" · {_whole(plural(len(result.sessions), 'session'))}"
-                f" · {_whole(plural(len(result.episodes), 'activity', 'activities'))}</span>"
-            )
+            self._write_heading(result)
             self._redraw()
             self._workspace.setCurrentIndex(1)
             # This client's bookmarked lines, ribboned through every refill.
             self._evidence.set_marks(self._bookmarks.line_marks(result.client_ip))
+            self._evidence.set_client_name(self._client_names.names().get(result.client_ip))
             held = evidence or ((activity_of,) if activity_of is not None else ())
             if held:
                 self._show_holding(result, held, evidence=evidence)
             self._say_what_is_left(result)
-            read = f"{client_ip}: {plural(len(result.episodes), 'activity', 'activities')}"
+            read = (
+                f"{self._client_label(client_ip)}: "
+                f"{plural(len(result.episodes), 'activity', 'activities')}"
+            )
             self._idle(f"{read}. {note}" if note else read)
 
         run_job(
@@ -2346,8 +2329,59 @@ class MainWindow(QMainWindow):
         setting it here does not apply the preference again.
         """
         on = bool(self._prefs[prefs.SHOW_CLIENT_NAMES])
+        names = self._client_names.names()
         self._client_names_action.setChecked(on)
-        self._clients.set_names(self._client_names.names(), shown=on)
+        self._clients.set_names(names, shown=on)
+        self._triage.set_names(names, shown=on)
+        self._bookmarks_tab.set_names(names, shown=on)
+        if self._who_else_dialog is not None:
+            self._who_else_dialog.set_names(names, shown=on)
+        if self._result is not None:
+            self._evidence.set_client_name(names.get(self._result.client_ip))
+            self._write_heading(self._result)
+
+    def _client_label(self, address: str) -> str:
+        """How the window names `address` in what it says: its name while names are shown."""
+        on = bool(self._prefs[prefs.SHOW_CLIENT_NAMES])
+        return display_safe(client_names.shown(address, self._client_names.names(), on=on))
+
+    def _write_heading(self, result: AnalysisResult) -> None:
+        """The client being read, then three counts. Not a sentence.
+
+        `100.66.2.0: 69 requests across 1 session, reduced to 9 activities`
+        reads as prose and is scanned as prose: the numbers are what the line is
+        for, and they were buried among connectives at one weight with the
+        address. Separated values put the three counts where the eye can take
+        them one at a time, and the address in monospace reads as an address
+        rather than the first word of a sentence. A name the reader gave the
+        client leads, in the heading face, with the address after it at normal
+        weight, so the address is still on screen to be checked against the log.
+        """
+        on = bool(self._prefs[prefs.SHOW_CLIENT_NAMES])
+        name = self._client_names.names().get(result.client_ip) if on else None
+        # Escaped: a format reading the client from a forwarded-for header takes
+        # it from the request, and the client wrote that; a name is typed text.
+        address = html.escape(result.client_ip)
+        who = (
+            f'<span style="color:{THEME.identity}"><b>{html.escape(name)}</b></span>&nbsp; '
+            f'<span style="font-family:{_MONO_CSS};color:{THEME.identity};font-weight:normal">'
+            f"{address}</span>"
+            if name
+            else f'<span style="font-family:{_MONO_CSS};color:{THEME.identity}">'
+            f"<b>{address}</b></span>"
+        )
+        self._heading.setText(
+            who
+            # Normal weight, explicitly: the label itself is set in the heading
+            # face, which is DemiBold, and without this the counts carry the same
+            # emphasis as the client they belong to. Each count is one unbreakable
+            # piece, so a narrow column wraps the heading between counts and never
+            # between a number and its noun.
+            + f'<span style="color:{THEME.muted};font-weight:normal">&nbsp; '
+            f"{_whole(format_requests(result.request_count))}"
+            f" · {_whole(plural(len(result.sessions), 'session'))}"
+            f" · {_whole(plural(len(result.episodes), 'activity', 'activities'))}</span>"
+        )
 
     def _client_names_from_menu(self) -> None:
         """Use the same saved choice as the Preferences dialog."""
@@ -2523,6 +2557,9 @@ class MainWindow(QMainWindow):
             self._who_else_dialog = WhoElseDialog(self)
             self._who_else_dialog.open_client.connect(self._reconstruct)
             self._who_else_dialog.bookmark_requested.connect(self._bookmark_client)
+            self._who_else_dialog.set_names(
+                self._client_names.names(), shown=bool(self._prefs[prefs.SHOW_CLIENT_NAMES])
+            )
         dialog = self._who_else_dialog
         index = self._triage.result
         if index is None:

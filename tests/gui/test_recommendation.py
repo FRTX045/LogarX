@@ -301,3 +301,16 @@ def test_source_warnings_are_visible_even_with_every_finding_closed():
     assert "Source warning:" in html
     assert "1 sample source line unavailable" in html
     assert "Examples:" not in html
+
+
+def test_a_named_client_leads_with_its_name_and_keeps_its_address():
+    from logarx.gui.recommendation import render_recommendation
+
+    plain = render_recommendation(row())
+    named = render_recommendation(row(), client_name="Office <VPN>")
+
+    address = row().profile.client_ip
+    assert "Office &lt;VPN&gt;" in named
+    assert address in named
+    assert named.index("Office") < named.index(address)
+    assert "Office" not in plain

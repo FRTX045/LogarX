@@ -12,6 +12,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
+from PyQt6.QtCore import QEvent
 from PyQt6.QtWidgets import QApplication, QMenu
 
 from conftest import settled
@@ -227,4 +228,89 @@ def test_the_view_menu_switches_names_off_and_on(qt_app: QApplication, case_dir:
 
     action.trigger()
     assert sidebar_text(window, CLIENT) == "Office VPN"
+    window.close()
+
+
+def opened_on_client(qt_app: QApplication, case_dir: Path) -> MainWindow:
+    window = opened(qt_app, case_dir)
+    table = window._clients._table
+    table.selectRow(
+        next(r for r in range(table.rowCount()) if table.item(r, 0).data(CLIENT_ADDRESS) == CLIENT)
+    )
+    settled(qt_app)
+    assert window._result is not None and window._result.client_ip == CLIENT
+    return window
+
+
+def name_it(case_dir: Path, name: str = "Office VPN") -> None:
+    client_names.apply(
+        case_dir, lambda names: client_names.rename(names, CLIENT, name, now=datetime.now(UTC))
+    )
+
+
+def test_heading_shows_the_name_and_the_address(qt_app: QApplication, case_dir: Path) -> None:
+    name_it(case_dir, "Office <VPN>")
+    window = opened_on_client(qt_app, case_dir)
+
+    heading = window._heading.text()
+    assert "Office &lt;VPN&gt;" in heading
+    assert CLIENT in heading
+    assert heading.index("Office") < heading.index(CLIENT)
+    window.close()
+
+
+def test_heading_shows_only_the_address_when_names_are_off(
+    qt_app: QApplication, case_dir: Path
+) -> None:
+    name_it(case_dir)
+    window = opened_on_client(qt_app, case_dir)
+
+    window._client_names_action.trigger()
+
+    assert "Office VPN" not in window._heading.text()
+    assert CLIENT in window._heading.text()
+    window.close()
+
+
+def test_the_status_line_uses_the_name(qt_app: QApplication, case_dir: Path) -> None:
+    name_it(case_dir)
+    window = opened_on_client(qt_app, case_dir)
+
+    assert window._status.text().startswith("Office VPN: ")
+    window.close()
+
+
+def test_a_name_saved_in_another_window_shows_after_activation(
+    qt_app: QApplication, case_dir: Path
+) -> None:
+    window = opened(qt_app, case_dir)
+    assert sidebar_text(window, CLIENT) == CLIENT
+
+    name_it(case_dir)
+    QApplication.sendEvent(window, QEvent(QEvent.Type.ActivationChange))
+
+    assert sidebar_text(window, CLIENT) == "Office VPN"
+    window.close()
+
+
+def test_the_evidence_record_names_the_open_client(qt_app: QApplication, case_dir: Path) -> None:
+    name_it(case_dir)
+    window = opened_on_client(qt_app, case_dir)
+
+    assert window._evidence._client_name == "Office VPN"
+    window.close()
+
+
+def test_a_who_else_dialog_opened_later_shows_names(qt_app: QApplication, case_dir: Path) -> None:
+    name_it(case_dir)
+    window = opened_on_client(qt_app, case_dir)
+    assert window._who_else_dialog is None, "premise: no dialog yet"
+
+    window._who_else("directory_enumeration")
+
+    dialog = window._who_else_dialog
+    assert dialog is not None
+    assert dialog._names == {CLIENT: "Office VPN"}
+    assert dialog._names_shown is True
+    dialog.close()
     window.close()
