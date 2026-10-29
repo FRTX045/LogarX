@@ -117,6 +117,8 @@ class EvidencePanel(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self._decode = True
+        #: The name a reader gave the client whose evidence this is, for its record.
+        self._client_name: str | None = None
         self._shown: tuple[GraphNode, Sequence[EvidenceLine], Filtered | None] | None = None
         # What an empty panel says: see `_idle_heading`.
         self._prompt = False
@@ -645,6 +647,12 @@ class EvidencePanel(QWidget):
 
     # -- bookmarks -------------------------------------------------------------
 
+    def set_client_name(self, name: str | None) -> None:
+        """The name a reader gave the client on show, for the record of the line chosen."""
+        if name != self._client_name:
+            self._client_name = name
+            self._selection_changed()
+
     def set_marks(self, marks: Mapping[EvidenceRef, Mark]) -> None:
         """Ribbon the lines in `marks`, and keep doing so through every refill."""
         self._marks = dict(marks)
@@ -846,7 +854,9 @@ class EvidencePanel(QWidget):
         # it cannot be out of step with them while the two are in step.
         if not isinstance(index, int) or not 0 <= index < len(lines):  # pragma: no cover - guarded
             return
-        self._show_detail(detail_for(lines[index], decode=self._decode))
+        self._show_detail(
+            detail_for(lines[index], decode=self._decode, client_name=self._client_name)
+        )
 
     def _show_detail(self, detail: Detail) -> None:
         self._detail.show_detail(detail)

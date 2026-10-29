@@ -139,7 +139,7 @@ def test_a_right_click_on_a_client_bookmarks_it(table: ClientTable) -> None:
     row = table._table.row(cell(table, "172.16.0.9"))
     menu = table._menu_at(row_point(table._table, row))
     assert menu is not None
-    (action,) = menu.actions()
+    action, _rename = menu.actions()
     assert action.text() == "Bookmark this client\N{HORIZONTAL ELLIPSIS}"
     action.trigger()
     assert asked == ["172.16.0.9"]
@@ -451,7 +451,7 @@ def test_a_right_click_in_the_queue_bookmarks_that_client(qt_app: QApplication, 
     panel.bookmark_requested.connect(asked.append)
     menu = panel._menu_at(row_point(panel.table, 1))
     assert menu is not None
-    (action,) = menu.actions()
+    action, _rename = menu.actions()
     assert action.text() == "Bookmark this client\u2026"
     action.trigger()
     assert asked == [panel.table.item(1, 1).text()]

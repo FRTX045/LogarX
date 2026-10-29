@@ -45,7 +45,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from logarx import rules_library
+from logarx import client_names, rules_library
 from logarx.bookmarks import (
     Kind,
     said_for_activity,
@@ -61,6 +61,7 @@ from logarx.caseview import (
     read_case,
     reconstruct_client,
 )
+from logarx.client_names import matching as name_matching
 from logarx.core.graph import GraphKind
 from logarx.core.window import EVERYTHING, TimeWindow
 from logarx.detect.crs import CrsEvidence, CrsUnavailableError, SidecarConfig, runs_by_default
@@ -78,6 +79,7 @@ from logarx.gui.bookmarks_tab import BookmarksTab
 from logarx.gui.canvas import ActivityCanvas
 from logarx.gui.case_chooser import CaseChooser
 from logarx.gui.client_filter import awaiting_scan, is_whole_address
+from logarx.gui.client_name_keeper import ClientNameKeeper
 from logarx.gui.crs import CrsCard, CrsUnavailable
 from logarx.gui.crs_notice import partial_crs_notice, stale_crs_notice
 from logarx.gui.density import Density, buckets_for
@@ -125,10 +127,17 @@ from logarx.ingest.pipeline import IngestCancelled
 from logarx.ingest.quarantine import DIRECTORY_NAME as QUARANTINE_DIR
 from logarx.parsers.library import move_old_home
 from logarx.report import export
-from logarx.search import Scope, evidence_part, labels_for_activity, parse, value_counts
+from logarx.search import (
+    Scope,
+    evidence_part,
+    labels_for_activity,
+    parse,
+    plain_text,
+    value_counts,
+)
 from logarx.storage.base import ClientMatchPage, IpSummaryPage
 from logarx.storage.case import CaseManifest
-from logarx.style import THEME, format_requests, plural
+from logarx.style import THEME, display_safe, format_requests, plural
 from logarx.timerange import nobody_here, summary
 from logarx.triage.scan import (
     read_activity_clients,
@@ -530,6 +539,12 @@ class MainWindow(QMainWindow):
             say=self._idle,
         )
         self._canvas.rename_requested.connect(self._session_names.rename)
+        self._client_names = ClientNameKeeper(
+            parent=self, case_path=lambda: self._case_path, say=self._idle
+        )
+        self._clients.rename_requested.connect(self._client_names.rename)
+        self._triage.rename_requested.connect(self._client_names.rename)
+        self._client_names.changed.connect(self._show_client_names)
         self._arrangement_bar.save_requested.connect(self._arrangements_kept.save)
         self._arrangement_bar.reset_requested.connect(self._arrangements_kept.reset)
 
@@ -788,6 +803,14 @@ class MainWindow(QMainWindow):
         self._timeline_action.setCheckable(True)
         self._timeline_action.setStatusTip(
             "Show or hide the traffic timeline above the date fields."
+        )
+        self._client_names_action = self._add(
+            view_menu, "Client &names", self._client_names_from_menu
+        )
+        self._client_names_action.setCheckable(True)
+        self._client_names_action.setChecked(bool(self._prefs[prefs.SHOW_CLIENT_NAMES]))
+        self._client_names_action.setStatusTip(
+            "Show the names you gave client addresses, or the addresses themselves."
         )
         view_menu.addSeparator()
         self._fit_action = self._add(view_menu, "&Fit to window", self._canvas.fit)
@@ -1497,6 +1520,7 @@ class MainWindow(QMainWindow):
         # The last case's bookmarks go now, not when this one arrives: until
         # then nothing on screen may carry a ribbon from another case.
         self._bookmarks.load(None)
+        self._show_client_names()
         # Read here, on the interface thread. The worker must not reach into a
         # widget to ask how wide it is while the window is free to resize it.
         buckets = self._buckets()
@@ -1591,6 +1615,7 @@ class MainWindow(QMainWindow):
             self._clients.show_clients(summaries, total=view.whole.clients)
             self._clients.set_open_client(None)
             self._bookmarks.load(path)
+            self._show_client_names()
             self._activity_values = []
             self._count_values()
             self._workspace.setCurrentIndex(0)
@@ -1829,6 +1854,11 @@ class MainWindow(QMainWindow):
         the unfiltered list does. One address is looked up as it always was, a
         complete one exactly; anything else is a search of the clients' requests,
         narrowed to the clients the scan saw an `activity:` on.
+
+        Names readers gave clients answer too. `name:` holds the search to the
+        clients it names, as `activity:` does. Plain words with no filter also
+        find the clients whose name holds them, listed first even with no
+        matching request. Names are read here, on the interface thread.
         """
         if self._case_path is None:
             return
@@ -1844,7 +1874,14 @@ class MainWindow(QMainWindow):
                 query, awaiting_scan(self._triage.progress, scanning=self._triage.scanning)
             )
             return
-        single = wanted.is_empty or (wanted.is_address_only and len(wanted.ips) == 1)
+        names = self._client_names.names()
+        chosen: frozenset[str] | None = None
+        if wanted.names:
+            chosen = frozenset().union(*(name_matching(names, name) for name in wanted.names))
+        typed = plain_text(query)
+        also = name_matching(names, typed) if typed else frozenset()
+        named = also if chosen is None else chosen
+        single = not also and (wanted.is_empty or (wanted.is_address_only and len(wanted.ips) == 1))
 
         def work(_: Callable[[str], None]) -> IpSummaryPage | ClientMatchPage:
             with Case.open(path) as case:
@@ -1864,14 +1901,17 @@ class MainWindow(QMainWindow):
                         *(labels_for_activity(labels, value) for value in wanted.activities)
                     )
                     clients = read_activity_clients(index.path, rules)
+                if chosen is not None:
+                    clients = chosen if clients is None else clients & chosen
                 page = case.store.search_clients(
                     wanted,
                     offset=offset,
                     limit=ClientTable.PAGE_SIZE,
                     window=window if narrowed else None,
                     clients=clients,
+                    also=also,
                 )
-            if wanted.is_address_only:
+            if wanted.is_address_only and not also:
                 # Several addresses are still an address search, listed and
                 # captioned as one: busiest first, no Match column.
                 return IpSummaryPage(page.rows, page.total, page.offset)
@@ -1881,7 +1921,9 @@ class MainWindow(QMainWindow):
             if generation != self._client_search:
                 return
             if isinstance(page, ClientMatchPage):
-                self._clients.show_matches(page, query, counted=wanted.has_request_filters)
+                self._clients.show_matches(
+                    page, query, counted=wanted.has_request_filters, named=named
+                )
             else:
                 self._clients.show_page(page, query)
 
@@ -2020,8 +2062,13 @@ class MainWindow(QMainWindow):
         rules = self._rules
         buckets = self._buckets()
         # The requests a search found this client by, if one did: a new
-        # client is read through the same filter.
-        carried = evidence_part(self._clients.query_text())
+        # client is read through the same filter. Not when only its name was
+        # found: the words matched no request of its, and would hide them all.
+        carried = (
+            ""
+            if self._clients.found_only_by_name(client_ip)
+            else evidence_part(self._clients.query_text())
+        )
         self._awaiting = (client_ip, window)
         self._reconstruction_request = request = object()
 
@@ -2032,8 +2079,11 @@ class MainWindow(QMainWindow):
                 and (client_ip, window) == self._awaiting
             )
 
+        # Read here, on the interface thread: the worker only says it.
+        opening = f"Opening {self._client_label(client_ip)}…"
+
         def work(report: Callable[[str], None]) -> tuple[AnalysisResult, list[TimeSlot]]:
-            report(f"Opening {client_ip}…")
+            report(opening)
             result = reconstruct_client(path, client_ip, crs, window=window, rules=rules)
             # This client's own traffic, across its own life — not the range in
             # force. Built from the reconstruction it would only ever cover that
@@ -2044,7 +2094,7 @@ class MainWindow(QMainWindow):
             with Case.open(path) as case:
                 return result, case.store.activity_over_time(buckets=buckets, client_ip=client_ip)
 
-        self._busy(f"Opening {client_ip}…")
+        self._busy(opening)
 
         def done(loaded: tuple[AnalysisResult, list[TimeSlot]]) -> None:
             result, bars = loaded
@@ -2080,40 +2130,20 @@ class MainWindow(QMainWindow):
             self._selected = None
             self._evidence.clear()
             self._tabs.setVisible(True)
-            # The address, then three counts. Not a sentence.
-            #
-            # `100.66.2.0 — 69 requests across 1 session, reduced to 9
-            # activities` reads as prose and is scanned as prose: the numbers
-            # are what the line is for, and they were buried among connectives
-            # at one weight with the address. Separated values put the three
-            # counts where the eye can take them one at a time, and dropping the
-            # address to monospace makes it an address rather than the first
-            # word of a sentence.
-            self._heading.setText(
-                f'<span style="font-family:{_MONO_CSS};color:{THEME.identity}">'
-                # Escaped: a format reading the client from a forwarded-for
-                # header takes it from the request, and the client wrote that.
-                f"<b>{html.escape(result.client_ip)}</b></span>"
-                # Normal weight, explicitly: the label itself is set in the
-                # heading face, which is DemiBold, and without this the counts
-                # carry the same emphasis as the address they belong to.
-                # Each count is one unbreakable piece, so a narrow column
-                # wraps the heading between counts and never between a
-                # number and its noun.
-                f'<span style="color:{THEME.muted};font-weight:normal">&nbsp; '
-                f"{_whole(format_requests(result.request_count))}"
-                f" · {_whole(plural(len(result.sessions), 'session'))}"
-                f" · {_whole(plural(len(result.episodes), 'activity', 'activities'))}</span>"
-            )
+            self._write_heading(result)
             self._redraw()
             self._workspace.setCurrentIndex(1)
             # This client's bookmarked lines, ribboned through every refill.
             self._evidence.set_marks(self._bookmarks.line_marks(result.client_ip))
+            self._evidence.set_client_name(self._client_names.names().get(result.client_ip))
             held = evidence or ((activity_of,) if activity_of is not None else ())
             if held:
                 self._show_holding(result, held, evidence=evidence)
             self._say_what_is_left(result)
-            read = f"{client_ip}: {plural(len(result.episodes), 'activity', 'activities')}"
+            read = (
+                f"{self._client_label(client_ip)}: "
+                f"{plural(len(result.episodes), 'activity', 'activities')}"
+            )
             self._idle(f"{read}. {note}" if note else read)
 
         run_job(
@@ -2228,13 +2258,14 @@ class MainWindow(QMainWindow):
         ]
 
     def changeEvent(self, event: QEvent | None) -> None:  # noqa: N802 - Qt's naming
-        """Coming back to the window reads the bookmarks again.
+        """Coming back to the window reads the bookmarks and client names again.
 
-        Another window on the same case may have saved some meanwhile; the keeper
+        Another window on the same case may have saved some meanwhile; each keeper
         redraws only when the file says something it is not already showing.
         """
         if event is not None and event.type() == QEvent.Type.ActivationChange:
             self._bookmarks.refresh()
+            self._client_names.refresh()
         super().changeEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent | None) -> None:  # noqa: N802 - Qt's naming
@@ -2317,7 +2348,76 @@ class MainWindow(QMainWindow):
         # this as a plain attribute, so without this line the switch goes one
         # way only: off from the dialog, and never back on from Preferences.
         self._arrangements_kept.ask_before_leaving = bool(chosen[prefs.ASK_UNSAVED_ARRANGEMENT])
+        self._show_client_names()
         prefs.write(_settings().setValue, self._prefs)
+
+    def _show_client_names(self) -> None:
+        """Label clients by the names readers gave them, or by address, as the switch says.
+
+        Read from the file each time, so a name saved in another window shows
+        too. The menu's check follows the preference; it uses `triggered`, so
+        setting it here does not apply the preference again.
+        """
+        on = bool(self._prefs[prefs.SHOW_CLIENT_NAMES])
+        names = self._client_names.names()
+        self._client_names_action.setChecked(on)
+        self._clients.set_names(names, shown=on)
+        self._triage.set_names(names, shown=on)
+        self._bookmarks_tab.set_names(names, shown=on)
+        if self._who_else_dialog is not None:
+            self._who_else_dialog.set_names(names, shown=on)
+        if self._result is not None:
+            self._evidence.set_client_name(names.get(self._result.client_ip))
+            self._write_heading(self._result)
+
+    def _client_label(self, address: str) -> str:
+        """How the window names `address` in what it says: its name while names are shown."""
+        on = bool(self._prefs[prefs.SHOW_CLIENT_NAMES])
+        return display_safe(client_names.shown(address, self._client_names.names(), on=on))
+
+    def _write_heading(self, result: AnalysisResult) -> None:
+        """The client being read, then three counts. Not a sentence.
+
+        `100.66.2.0: 69 requests across 1 session, reduced to 9 activities`
+        reads as prose and is scanned as prose: the numbers are what the line is
+        for, and they were buried among connectives at one weight with the
+        address. Separated values put the three counts where the eye can take
+        them one at a time, and the address in monospace reads as an address
+        rather than the first word of a sentence. A name the reader gave the
+        client leads, in the heading face, with the address after it at normal
+        weight, so the address is still on screen to be checked against the log.
+        """
+        on = bool(self._prefs[prefs.SHOW_CLIENT_NAMES])
+        name = self._client_names.names().get(result.client_ip) if on else None
+        # Escaped: a format reading the client from a forwarded-for header takes
+        # it from the request, and the client wrote that; a name is typed text.
+        address = html.escape(result.client_ip)
+        who = (
+            f'<span style="color:{THEME.identity}"><b>{html.escape(display_safe(name))}</b></span>&nbsp; '
+            f'<span style="font-family:{_MONO_CSS};color:{THEME.identity};font-weight:normal">'
+            f"{address}</span>"
+            if name
+            else f'<span style="font-family:{_MONO_CSS};color:{THEME.identity}">'
+            f"<b>{address}</b></span>"
+        )
+        self._heading.setText(
+            who
+            # Normal weight, explicitly: the label itself is set in the heading
+            # face, which is DemiBold, and without this the counts carry the same
+            # emphasis as the client they belong to. Each count is one unbreakable
+            # piece, so a narrow column wraps the heading between counts and never
+            # between a number and its noun.
+            + f'<span style="color:{THEME.muted};font-weight:normal">&nbsp; '
+            f"{_whole(format_requests(result.request_count))}"
+            f" · {_whole(plural(len(result.sessions), 'session'))}"
+            f" · {_whole(plural(len(result.episodes), 'activity', 'activities'))}</span>"
+        )
+
+    def _client_names_from_menu(self) -> None:
+        """Use the same saved choice as the Preferences dialog."""
+        self._apply_preferences(
+            {**self._prefs, prefs.SHOW_CLIENT_NAMES: self._client_names_action.isChecked()}
+        )
 
     def _apply_band(self, showing: bool) -> None:
         """Draw the traffic above the fields, or stop drawing it."""
@@ -2487,6 +2587,9 @@ class MainWindow(QMainWindow):
             self._who_else_dialog = WhoElseDialog(self)
             self._who_else_dialog.open_client.connect(self._reconstruct)
             self._who_else_dialog.bookmark_requested.connect(self._bookmark_client)
+            self._who_else_dialog.set_names(
+                self._client_names.names(), shown=bool(self._prefs[prefs.SHOW_CLIENT_NAMES])
+            )
         dialog = self._who_else_dialog
         index = self._triage.result
         if index is None:
@@ -3023,6 +3126,9 @@ class MainWindow(QMainWindow):
         crs = self._crs
         rules = self._rules
         shelf = self._bookmarks.shelf
+        # Whatever the window shows: a file handed on carries the name beside
+        # the address, and the worker must not read the case folder itself.
+        client_name = self._client_names.names().get(client_ip)
 
         if kind == "png":
             self._export_png(target)
@@ -3062,6 +3168,7 @@ class MainWindow(QMainWindow):
                     target=target,
                     shelf=shelf,
                     lines=_raw_lines(case, requests),
+                    client_name=client_name,
                 )
             return str(written)
 
@@ -3110,6 +3217,7 @@ class MainWindow(QMainWindow):
         if not chosen:
             return
         target = Path(chosen)
+        names = self._client_names.names()
 
         def work(_: Callable[[str], None]) -> str:
             with Case.open(path) as case:
@@ -3117,7 +3225,9 @@ class MainWindow(QMainWindow):
             # With a byte-order mark: without one a spreadsheet reads the file in
             # the machine's own code page, and an address or a note in anything
             # but plain English comes out garbled. The rows end themselves.
-            export.write_text(target, to_csv(shelf, lines), encoding="utf-8-sig", newline="")
+            export.write_text(
+                target, to_csv(shelf, lines, names=names), encoding="utf-8-sig", newline=""
+            )
             return str(target)
 
         run_job(

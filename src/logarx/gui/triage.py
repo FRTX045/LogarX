@@ -24,6 +24,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from logarx import client_names
 from logarx.case import Case
 from logarx.core.window import EVERYTHING, TimeWindow
 from logarx.detect.ruleset import NO_EXTRA_RULES, RuleSet
@@ -37,13 +38,13 @@ from logarx.gui.recommendation import (
 from logarx.gui.splitter import PanelSplitter
 from logarx.gui.theme import GAP, PAD, ROOM, TIGHT, colour_text
 from logarx.gui.workers import run_job
-from logarx.style import THEME, plural
+from logarx.style import THEME, display_safe, plural
 from logarx.triage.process import run_scan
 from logarx.triage.profile import DEFAULT_POLICY, QueueName, RankedClient
 from logarx.triage.scan import ScanCancelled, TriagePage, TriageProgress, TriageResult, read_page
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
     from logarx.core.evidence import EvidenceRef
 
@@ -59,6 +60,8 @@ class TriagePanel(QWidget):
     investigate = pyqtSignal(str, object)
     bookmark_requested = pyqtSignal(str)
     """A queued client asked to be bookmarked, from its right-click menu."""
+    rename_requested = pyqtSignal(str)
+    """A queued client asked to be named, from its right-click menu; carries the address."""
 
     finished = pyqtSignal()
     """A scan finished, and `result` now answers for the case and range."""
@@ -76,6 +79,10 @@ class TriagePanel(QWidget):
         self._result: TriageResult | None = None
         self._progress: TriageProgress | None = None
         self._rows: Sequence[RankedClient] = ()
+        # The names readers gave addresses, and whether they are shown in place
+        # of the addresses; the address stays in `_rows`, which is what is acted on.
+        self._names: dict[str, str] = {}
+        self._names_shown = True
         self._offset = 0
         self._shown: RankedClient | None = None
         self._expanded: frozenset[tuple[int, int]] = frozenset()
@@ -342,6 +349,8 @@ class TriagePanel(QWidget):
             return
         result = self._result
         query, offset = self.search.text(), self._offset
+        # The names readers gave clients answer too, shown or not.
+        named = client_names.matching(self._names, query)
 
         def done(page: TriagePage) -> None:
             if generation != self._page_generation:
@@ -378,7 +387,7 @@ class TriagePanel(QWidget):
 
         run_job(
             lambda report: read_page(
-                result.path, queue, query=query, offset=offset, limit=PAGE_SIZE
+                result.path, queue, query=query, named=named, offset=offset, limit=PAGE_SIZE
             ),
             on_done=done,
             on_error=failed,
@@ -408,6 +417,7 @@ class TriagePanel(QWidget):
                     item.setForeground(QColor(THEME.muted))
                 item.setToolTip(value)
                 self.table.setItem(index, column, item)
+            self._label(index)
         self._column_sizes.fit_unset()
 
     def _show_details(self) -> None:
@@ -441,6 +451,9 @@ class TriagePanel(QWidget):
             expanded=self._expanded,
             opened=self._opened,
             show_context=self._context_open,
+            client_name=(
+                self._names.get(self._shown.profile.client_ip) if self._names_shown else None
+            ),
         )
         if self._source_error:
             html = (
@@ -527,6 +540,22 @@ class TriagePanel(QWidget):
         index = self.table.currentRow()
         return self._rows[index].profile.client_ip if 0 <= index < len(self._rows) else None
 
+    def set_names(self, names: Mapping[str, str], *, shown: bool) -> None:
+        """Label each queued client by the name a reader gave it while `shown`."""
+        self._names, self._names_shown = dict(names), shown
+        for index in range(min(self.table.rowCount(), len(self._rows))):
+            self._label(index)
+        self._render()
+
+    def _label(self, index: int) -> None:
+        """The row's name or address, as the names in force say; the tip is always the address."""
+        item = self.table.item(index, 1)
+        if item is None or not 0 <= index < len(self._rows):
+            return
+        address = self._rows[index].profile.client_ip
+        item.setText(display_safe(client_names.shown(address, self._names, on=self._names_shown)))
+        item.setToolTip(address)
+
     def _menu_at(self, point: QPoint) -> QMenu | None:
         """The menu a right-click at `point` opens, or None off the rows."""
         index = self.table.indexAt(point)
@@ -535,6 +564,7 @@ class TriagePanel(QWidget):
         address = self._rows[index.row()].profile.client_ip
         menu = QMenu(self)
         menu.addAction("Bookmark this client\u2026", lambda: self.bookmark_requested.emit(address))
+        menu.addAction("Rename this client\u2026", lambda: self.rename_requested.emit(address))
         return menu
 
     def _show_menu(self, point: QPoint) -> None:

@@ -625,6 +625,7 @@ _CSV_HEAD: Final = (
     "category",
     "kind",
     "client",
+    "client name",
     "what",
     "note",
     "saved",
@@ -641,8 +642,16 @@ def _cell(text: str) -> str:
     return f"'{text}" if text[:1] in _FORMULA_STARTS else text
 
 
-def to_csv(shelf: Shelf, lines: Mapping[EvidenceRef, EvidenceLine]) -> str:
+def to_csv(
+    shelf: Shelf,
+    lines: Mapping[EvidenceRef, EvidenceLine],
+    *,
+    names: Mapping[str, str] | None = None,
+) -> str:
     """Every bookmark, one row each, by category and newest first within one.
+
+    `names` are the names readers gave client addresses, written in a column of
+    their own beside the address, which is never replaced.
 
     A line whose source the evidence reader could not verify is written with its
     warning beside it, never alone.
@@ -658,6 +667,7 @@ def to_csv(shelf: Shelf, lines: Mapping[EvidenceRef, EvidenceLine]) -> str:
                 b.category,
                 b.kind.value,
                 b.client or "",
+                (names or {}).get(b.client, "") if b.client else "",
                 b.said,
                 b.note,
                 _time_text(b.saved),

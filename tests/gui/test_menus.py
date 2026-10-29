@@ -67,7 +67,7 @@ def _everywhere(window: MainWindow) -> list[QAction]:
 
 
 def test_the_view_menu_holds_only_what_is_shown(qt_app: QApplication) -> None:
-    """View controls what is shown, including a quick timeline toggle.
+    """View controls what is shown, including quick timeline and client-name toggles.
 
     `Full screen` belongs here on the same test every other entry passes: it
     decides what is on screen and nothing else. It is not a preference — it is
@@ -81,6 +81,7 @@ def test_the_view_menu_holds_only_what_is_shown(qt_app: QApplication) -> None:
         "Trace",
         "Behaviour",
         "Timeline",
+        "Client names",
         "Fit to window",
         "Zoom in",
         "Zoom out",

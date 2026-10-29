@@ -160,12 +160,17 @@ class Detail:
     note: str | None
 
 
-def detail_for(line: EvidenceLine, *, decode: bool) -> Detail:
+def detail_for(line: EvidenceLine, *, decode: bool, client_name: str | None = None) -> Detail:
     """The full record for one piece of evidence.
 
     The table shows what fits; this shows everything, including the agent at
     full length — the table has no room for one and this has plenty, and a
     scanner signature must not be cut in the one place it can be read whole.
+
+    `client_name` is the name a reader gave the client, shown on a row of its
+    own above the logged address and whatever the window's names switch says:
+    this is where a reader comes to see exactly what the log holds, so the
+    address is never replaced here.
     """
     fields: list[tuple[str, str, str]] = []
     event = line.event
@@ -181,6 +186,8 @@ def detail_for(line: EvidenceLine, *, decode: bool) -> Detail:
                 EVIDENCE_INK,
             )
         )
+        if client_name:
+            fields.append(("Name", display_safe(client_name), THEME.identity))
         fields.append(("Client IP (logged address)", display_safe(event.client_ip), THEME.identity))
         fields.append(("Time (UTC)", f"{event.timestamp:%Y-%m-%d %H:%M:%S}", THEME.timestamp))
         if event.protocol:

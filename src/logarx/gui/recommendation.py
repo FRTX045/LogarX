@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from html import escape
 from typing import TYPE_CHECKING
 
-from logarx.style import THEME, plural
+from logarx.style import THEME, display_safe, plural
 from logarx.triage.profile import FEATURES, HIGH_CONFIDENCE
 
 if TYPE_CHECKING:
@@ -58,6 +58,14 @@ a {{ color: {THEME.accent}; }}
 .disclosure {{ color: {THEME.ink}; text-decoration: none; }}
 .context {{ color: {THEME.muted}; text-decoration: none; }}
 </style>"""
+
+
+def _identity(address: str, name: str | None) -> str:
+    """The client at the head of the details: its name and then its address, or its address."""
+    if not name:
+        return f"<b>{escape(address)}</b>"
+    # Shown safely, so a direction override in the name cannot turn the address after it.
+    return f'<b>{escape(display_safe(name))}</b> <span class="secondary">{escape(address)}</span>'
 
 
 def _card(content: str) -> str:
@@ -115,8 +123,12 @@ def render_recommendation(
     expanded: frozenset[tuple[int, int]] = frozenset(),
     opened: frozenset[int] = frozenset(),
     show_context: bool = False,
+    client_name: str | None = None,
 ) -> str:
     """The details area for `row`.
+
+    `client_name` is the name a reader gave the client; it leads, and the address
+    follows it so the address is still there to be checked against the log.
 
     `status` marks references that did not read cleanly. `path_chars` is how much of
     a request path fits the space given to it, measured by the caller; a longer path
@@ -129,7 +141,7 @@ def render_recommendation(
     profile = row.profile
     parts = [
         _STYLES,
-        f'<p class="identity" style="margin-bottom: 4px;"><b>{escape(profile.client_ip)}</b></p>'
+        f'<p class="identity" style="margin-bottom: 4px;">{_identity(profile.client_ip, client_name)}</p>'
         '<p class="secondary">'
         f"{plural(profile.requests, 'request')} · "
         f'<span class="{"caution" if profile.hostile_requests else "secondary"}">'

@@ -53,4 +53,7 @@ class SortableItem(QTableWidgetItem):
         mine, theirs = self.data(SORT_KEY), other.data(SORT_KEY)
         if mine is None or theirs is None:
             return super().__lt__(other)
+        if isinstance(mine, str) and isinstance(theirs, str):
+            # A client's address, kept so the column sorts by it whatever name it shows.
+            return mine < theirs
         return float(mine) < float(theirs)

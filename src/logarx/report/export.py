@@ -129,17 +129,27 @@ def write_reconstruction(
     target: Path,
     shelf: Shelf | None = None,
     lines: Mapping[EvidenceRef, EvidenceLine] | None = None,
+    client_name: str | None = None,
 ) -> Path:
     """Write `result` to `target` in the format `kind` names, and say where.
 
     Hands the path back rather than leaving each caller to work out again what
     it passed in: both of them report where the file went, and one of them does
     it from a worker thread. `shelf` and `lines` are the case's bookmarks and
-    the log lines behind them, for the report's Bookmarks section.
+    the log lines behind them, for the report's Bookmarks section. `client_name`
+    is the name a reader gave the client: the report shows it beside the
+    address, and the JSON gains a `client_name` field beside `client_ip`, only
+    when there is one, so a reader of the JSON as it was sees nothing change.
     """
     fmt = named(kind)
     if fmt.kind == "json":
-        write_text(target, json.dumps(result.to_dict(), indent=2))
+        data = result.to_dict()
+        if client_name:
+            data = {**data, "client_name": client_name}
+        write_text(target, json.dumps(data, indent=2))
     else:
-        write_text(target, render_report(result, manifest, shelf=shelf, lines=lines))
+        write_text(
+            target,
+            render_report(result, manifest, shelf=shelf, lines=lines, client_name=client_name),
+        )
     return target

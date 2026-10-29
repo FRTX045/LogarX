@@ -24,6 +24,7 @@ from logarx.search import (
     is_whole_address,
     labels_for_activity,
     parse,
+    plain_text,
     suggestions,
     tokens,
     understood,
@@ -435,3 +436,39 @@ def test_the_activity_filter_names_the_tab_it_comes_from() -> None:
     (activity,) = [row for row in rows if row.completion == "activity:"]
 
     assert activity.note.endswith("(per client, from Triage)")
+
+
+# -- names ------------------------------------------------------------------------
+
+
+def test_name_key_is_read_in_the_case_box() -> None:
+    assert parse('name:"Office VPN"', Scope.CASE).names == ("office vpn",)
+    assert understood("name:office", Scope.CASE)
+
+
+def test_name_key_is_not_read_in_the_evidence_box() -> None:
+    assert not understood("name:office", Scope.EVIDENCE)
+    assert parse("name:office", Scope.EVIDENCE).names == ()
+
+
+def test_a_name_query_is_not_address_only_and_not_empty() -> None:
+    query = parse("name:office", Scope.CASE)
+
+    assert not query.is_empty
+    assert not query.is_address_only
+    assert not query.has_request_filters
+
+
+def test_plain_text() -> None:
+    assert plain_text("office vpn") == "office vpn"
+    assert plain_text("  Attacker   2 ") == "Attacker 2"
+    assert plain_text("office status:404") is None
+    assert plain_text("status:") is None
+    assert plain_text("name:office") is None
+    assert plain_text("  ") is None
+    assert plain_text("2001:db8::1") == "2001:db8::1"
+
+
+def test_a_name_is_not_carried_into_the_evidence_box() -> None:
+    """It chose the client; inside that client's evidence it would match nothing."""
+    assert evidence_part('name:office status:404 name:"Office VPN"') == "status:404"

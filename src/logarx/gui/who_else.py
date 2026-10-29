@@ -29,13 +29,14 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from logarx import client_names
 from logarx.gui._qt import required
-from logarx.gui.columns import ColumnWidths
+from logarx.gui.columns import CLIENT_ADDRESS, ColumnWidths
 from logarx.gui.theme import PAD
-from logarx.style import THEME
+from logarx.style import THEME, display_safe
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
     from logarx.analysis import AnalysisResult
     from logarx.triage.scan import RuleMatch, TriageProgress
@@ -97,6 +98,10 @@ class WhoElseDialog(QDialog):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Who else did this?")
+        # The names readers gave addresses, and whether they are shown in place
+        # of the addresses; each row keeps its address in `CLIENT_ADDRESS`.
+        self._names: dict[str, str] = {}
+        self._names_shown = True
         self.caption = QLabel()
         self.caption.setWordWrap(True)
         self.caption.setTextFormat(Qt.TextFormat.PlainText)
@@ -151,9 +156,25 @@ class WhoElseDialog(QDialog):
                 item = QTableWidgetItem(value)
                 if column == 0:
                     item.setForeground(QColor(THEME.identity))
+                    item.setData(CLIENT_ADDRESS, value)
                 self.table.setItem(index, column, item)
+            self._label(index)
         self.table.setVisible(bool(rows))
         self._column_sizes.fit_unset()
+
+    def set_names(self, names: Mapping[str, str], *, shown: bool) -> None:
+        """Label each listed client by the name a reader gave it while `shown`."""
+        self._names, self._names_shown = dict(names), shown
+        for index in range(self.table.rowCount()):
+            self._label(index)
+
+    def _label(self, index: int) -> None:
+        item = self.table.item(index, 0)
+        if item is None:
+            return
+        address = item.data(CLIENT_ADDRESS)
+        item.setText(display_safe(client_names.shown(address, self._names, on=self._names_shown)))
+        item.setToolTip(address)
 
     def show_unavailable(self, rule_id: str, text: str) -> None:
         self.setWindowTitle(f"Who else matched {rule_id}?")
@@ -167,7 +188,7 @@ class WhoElseDialog(QDialog):
         item = self.table.item(index.row(), 0) if index.isValid() else None
         if item is None:
             return None
-        address = item.text()
+        address = item.data(CLIENT_ADDRESS)
         menu = QMenu(self)
         menu.addAction("Bookmark this client\u2026", lambda: self.bookmark_requested.emit(address))
         return menu
@@ -181,4 +202,4 @@ class WhoElseDialog(QDialog):
     def _opened(self, row: int, _column: int) -> None:
         item = self.table.item(row, 0)
         if item is not None:
-            self.open_client.emit(item.text())
+            self.open_client.emit(item.data(CLIENT_ADDRESS))

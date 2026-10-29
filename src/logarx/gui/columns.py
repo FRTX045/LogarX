@@ -26,6 +26,11 @@ if TYPE_CHECKING:
 #: for its text: a date without its time, a line number without its file.
 SHORT_TEXT = Qt.ItemDataRole.UserRole + 2
 
+#: Where a client's cell keeps its address. The cell may show a name the reader
+#: gave it instead, so anything acting on the client reads the address from here,
+#: never from the cell's text.
+CLIENT_ADDRESS = Qt.ItemDataRole.UserRole + 4
+
 
 class ShortWhenNarrow(QStyledItemDelegate):
     """Draws a cell's short form while its whole text does not fit the column.

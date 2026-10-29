@@ -153,17 +153,22 @@ def read_page(
     queue: QueueName,
     *,
     query: str = "",
+    named: frozenset[str] = frozenset(),
     offset: int = 0,
     limit: int = 100,
 ) -> TriagePage:
-    """Search the entire ranking and retrieve only the requested page."""
+    """Search the entire ranking and retrieve only the requested page.
+
+    A client matches when its address holds `query`, or when it is one of
+    `named`: the clients whose name, given by a reader, holds it.
+    """
     if queue not in ("suspicious", "unusual", "all"):
         raise ValueError(f"unknown investigation queue: {queue}")
     if offset < 0 or limit < 1:
         raise ValueError("page offset must be nonnegative and limit positive")
     with closing(sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)) as connection:
-        where = "queue = ? AND instr(ip, ?) > 0"
-        params = (queue, query.strip())
+        where = "queue = ? AND (instr(ip, ?) > 0 OR ip IN (SELECT value FROM json_each(?)))"
+        params = (queue, query.strip(), json.dumps(sorted(named)))
         total = connection.execute(
             f"SELECT count(*) FROM ranking WHERE {where}", params
         ).fetchone()[0]

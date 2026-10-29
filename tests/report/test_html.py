@@ -551,3 +551,35 @@ def test_a_bookmarked_line_that_cannot_be_read_is_explained(campaign: Case) -> N
     page = render_report(result, campaign.manifest, shelf=_marks(), lines={ref: gone})
 
     assert "Not available: access.log is not available" in page
+
+
+# -- the name a reader gave the client --------------------------------------------
+
+
+def test_report_heading_shows_name_and_address(campaign: Case) -> None:
+    result = analyse_ip(campaign.store, ATTACKER)
+
+    page = render_report(result, campaign.manifest, client_name="Office VPN")
+
+    heading = re.search(r"<h1>.*?</h1>", page, re.S)
+    assert heading is not None
+    assert f"Office VPN ({ATTACKER})" in heading.group(0)
+    assert f"activity reconstruction for Office VPN ({ATTACKER})</title>" in page
+
+
+def test_a_name_with_markup_is_escaped(campaign: Case) -> None:
+    result = analyse_ip(campaign.store, ATTACKER)
+
+    page = render_report(result, campaign.manifest, client_name="<b>x</b>")
+
+    assert "&lt;b&gt;x&lt;/b&gt;" in page
+    assert "<b>x</b>" not in page
+
+
+def test_embedded_payload_has_no_client_name(campaign: Case) -> None:
+    result = analyse_ip(campaign.store, ATTACKER)
+
+    page = render_report(result, campaign.manifest, client_name="Office VPN")
+
+    embedded = page.split("<details><summary>Machine-readable data</summary><pre>")[1]
+    assert "client_name" not in embedded.split("</pre>")[0]

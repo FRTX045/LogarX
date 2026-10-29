@@ -16,6 +16,7 @@ import json
 from typing import TYPE_CHECKING, Final
 
 from logarx.bookmarks import newest_first
+from logarx.client_names import labelled
 from logarx.core.activity import Outcome, Severity
 from logarx.core.graph import GraphKind
 from logarx.report.graph import render_graph as _svg
@@ -57,20 +58,24 @@ def render_report(
     *,
     shelf: Shelf | None = None,
     lines: Mapping[EvidenceRef, EvidenceLine] | None = None,
+    client_name: str | None = None,
 ) -> str:
     """Render a complete report for one client as a single HTML document.
 
     `shelf` is the case's bookmarks; the ones on this client are listed, with
     the raw log line from `lines` under each request, and the evidence reader's
-    warning under any line whose source it could not verify.
+    warning under any line whose source it could not verify. `client_name` is
+    the name a reader gave the client: the report names it with the address
+    beside it, never instead of it. The embedded data stays the reconstruction
+    alone.
     """
     return DOCUMENT.format(
-        ip=html.escape(result.client_ip),
+        ip=html.escape(labelled(result.client_ip, client_name)),
         style=STYLE,
         summary=_summary(result),
         legend=_legend(),
-        trace=_svg(result.trace),
-        behaviour=_svg(result.behaviour),
+        trace=_svg(result.trace, client_name=client_name),
+        behaviour=_svg(result.behaviour, client_name=client_name),
         episodes=_episode_table(result),
         bookmarks=_bookmarks(result, shelf, lines or {}),
         provenance=_provenance(result, manifest),

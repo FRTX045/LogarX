@@ -13,6 +13,7 @@ import math
 import textwrap
 from typing import TYPE_CHECKING, Final
 
+from logarx.client_names import labelled
 from logarx.core.graph import GraphKind, reciprocal_pairs
 from logarx.graphbuild.layout import COLUMN, Point, layout_graph, sessions_in
 from logarx.gui.icon_set import DEFAULT_ICONS, lucide
@@ -152,7 +153,8 @@ def _edge(
     return path
 
 
-def render_graph(graph: ActivityGraph) -> str:
+def render_graph(graph: ActivityGraph, *, client_name: str | None = None) -> str:
+    """The graph as inline SVG; titled with the client's name beside its address when it has one."""
     if not graph.nodes:
         return '<p class="empty">No activity to draw.</p>'
     groups = sessions_in(graph) if graph.kind is GraphKind.TRACE else ()
@@ -208,7 +210,8 @@ def render_graph(graph: ActivityGraph) -> str:
         f'<svg viewBox="0 0 {width:.2f} {height:.2f}" '
         f'width="{width:.2f}" height="{height:.2f}" class="{graph.kind.value}" role="img" '
         f'aria-labelledby="{graph.kind.value}-title {graph.kind.value}-description">',
-        f'<title id="{graph.kind.value}-title">{name} for {html.escape(graph.client_ip)}</title>',
+        f'<title id="{graph.kind.value}-title">{name} for '
+        f"{html.escape(labelled(graph.client_ip, client_name))}</title>",
         f'<desc id="{graph.kind.value}-description">Colour shows severity; circle size shows '
         "request count. Solid heavy outlines mean served, dashed mean mixed, dotted mean "
         "refused and thin solid mean unknown. Read the activity table for full details.</desc>",

@@ -83,7 +83,7 @@ and respects existing environment settings. For a larger cursor, launch with
 |---|---|
 | **Case** | New from logs… (Ctrl+N) · Open… (Ctrl+O) · Open recent… (Ctrl+Shift+O) · Formats and rules… · Run CRS scan · Exit |
 | **Edit** | Undo move (Ctrl+Z) · Save layout (Ctrl+S) · Reset layout (Ctrl+Shift+R) · Bookmark… (Ctrl+D) · Preferences… (Ctrl+,) |
-| **View** | Trace · Behaviour · Timeline · Fit to window · Zoom in (Ctrl++) · Zoom out (Ctrl+-) · Reset zoom (Ctrl+0) · Reset panel sizes · Full screen (F11) |
+| **View** | Trace · Behaviour · Timeline · Client names · Fit to window · Zoom in (Ctrl++) · Zoom out (Ctrl+-) · Reset zoom (Ctrl+0) · Reset panel sizes · Full screen (F11) |
 | **Export** | Report (HTML)… · Graph (JSON)… · Image (PNG)… · Bookmarks (CSV)… |
 | **Help** | User guide (F1) · Keyboard shortcuts · About LogarX |
 
@@ -93,12 +93,14 @@ shortcut the menus hold, and **User guide** opens this page.
 
 Several behaviours that read like menu items are **preferences**, under
 **Edit → Preferences…**: *Wrap long traces*, *Outline each session*, *Show
-timeline*, and *Reopen the last case on start*. They are remembered between
-launches.
+timeline*, *Show client names*, and *Reopen the last case on start*. They are
+remembered between launches.
 
 **View → Timeline** toggles the blue traffic timeline above the panels. The date
 filters stay available when it is hidden. This uses the same saved choice as
 **Show timeline** in Preferences and preserves it when leaving fullscreen.
+**View → Client names** switches between the names you gave clients and their
+addresses, and is the same choice as **Show client names**.
 
 ---
 
@@ -156,6 +158,34 @@ partial read can never be analysed as if it were complete.
 and the band goes back to the whole case. Pressing a different row moves to that
 client as it always did.
 
+### Naming a client
+
+Right-click a client in the list on the left, or in a Triage queue, and choose
+**Rename this client…** to give its address a name of your own, such as
+`Office VPN`. **Remove name** in that window takes it away. Two addresses may
+share a name, and a name is at most 60 characters.
+
+The name then stands in for the address wherever the window lists the client:
+the client list, the Triage queues and their details, the heading above the
+graph, the status line, **Who else did this?** and the Bookmarks tab. The
+address follows the name in the heading and the Triage details, and is in the
+tooltip in the client list, the Triage queues and **Who else did this?**. The
+evidence record keeps **Client IP (logged address)** exactly as the log has it,
+with the name on a row of its own above. Everything
+you do to a client still acts on its address. **View → Client names** shows the
+addresses instead.
+
+A name is your note, not evidence. Names are kept in `client-names.json` in the
+case folder, beside your bookmarks and session names and outside the manifest,
+so they travel with the folder. Nothing that reads the log, the store or a
+finding sees them. A file that cannot be read is left as it is, the addresses
+are shown, and the next rename moves it aside as `client-names.unreadable.json`.
+
+Files you hand on carry the name beside the address, whatever the window is
+showing: the HTML report is headed `Office VPN (203.0.113.47)`, the JSON graph
+gains a `client_name` field beside `client_ip`, and the bookmarks CSV has a
+client name column after the address.
+
 ### Searching the case
 
 The **Search clients** box above the list searches every client in the case, not
@@ -170,6 +200,7 @@ matching request:
 |---|---|
 | `status:404`, `path:/admin`, `method:POST`, any text | clients with at least one matching request, most matches first, with a **Match** column saying how many |
 | `ip:10.0` | clients whose address contains it |
+| `name:office` | clients whose name holds it, marked **by name** in the **Match** column. Quote a name with a space in it: `name:"office vpn"` |
 | `activity:enumeration` | clients the Triage scan saw that activity on, by category or by part of a rule's name. Quote a value with a space in it: `activity:"path traversal"` |
 | `after:02:58`, `before:2026-03-09T03:00` | move the range above the list, and leave the box. A time of day is read on the range's first day |
 
@@ -182,6 +213,13 @@ from the list. So a pause while typing `after:2026-03-09` on the way to a time
 on that day does not move the range to midnight. Whatever else is in the box is
 searched again over the new range.
 
+Words alone, with no filter, also find the clients whose name holds them as one
+phrase, case aside: `office vpn` finds `Office VPN`. They are listed first,
+marked **by name**, with a count beside it when their requests matched too, and
+are found whether or not names are on show. A filter such as `status:404`
+leaves names out; use `name:` to combine them. Triage's **Filter clients** box
+finds names the same way.
+
 `activity:` is answered by the Triage scan. Until the scan finishes the
 line above the list says so, and the list fills in by itself when it does.
 
@@ -191,8 +229,8 @@ status or a method how many requests, carry each.
 
 **A client opened from a search of its requests is read the same way.** Its
 evidence is filtered by those filters, and the first activity holding a match
-opens. Addresses, activities and times chose the client and the range, so they
-are not carried over.
+opens. Addresses, names, activities and times chose the client and the range, so
+they are not carried over.
 
 ---
 
@@ -398,8 +436,8 @@ saved moves it aside as `bookmarks.unreadable.json`.
 
 The HTML report lists the exported client's bookmarks, with their notes and,
 for a log line, the line itself. **Export → Bookmarks (CSV)…** writes every
-bookmark in the case to a CSV file: category, kind, client, what, note, when
-saved, and for a log line or an activity its file and line number and the line
+bookmark in the case to a CSV file: category, kind, client, the name you gave
+the client, what, note, when saved, and for a log line or an activity its file and line number and the line
 itself. Both say so beside a line whose log file has changed size since the case
 read it, because that line may not be the one the finding was built from.
 

@@ -518,3 +518,64 @@ def test_asking_about_coverage_loads_no_detections(tmp_path, monkeypatch):
     monkeypatch.setattr("logarx.detect.crs.store.load_detections", refuse)
     assert not scan_case(root).crs_partial
     assert scan_case(root).cached
+
+
+def named_scan(tmp_path):
+    """Three clients, 192.0.2.0 to .2, each with one request."""
+    from datetime import UTC, datetime, timedelta
+
+    from logarx.core.event import NormalizedEvent
+    from logarx.core.evidence import EvidenceRef
+    from logarx.triage.scan import scan_case
+
+    with Case.create(tmp_path / "case") as case:
+        case.store.write(
+            [
+                NormalizedEvent(
+                    datetime(2026, 1, 1, tzinfo=UTC) + timedelta(seconds=i),
+                    f"192.0.2.{i}",
+                    EvidenceRef("source", i + 1),
+                    path="/etc/passwd",
+                    method="GET",
+                    status=200,
+                    user_agent="Mozilla/5.0",
+                )
+                for i in range(3)
+            ]
+        )
+        case.store.finalize()
+    return scan_case(case.root)
+
+
+def test_read_page_finds_named_addresses(tmp_path):
+    from logarx.triage.scan import read_page
+
+    result = named_scan(tmp_path)
+
+    page = read_page(result.path, "all", query="office", named=frozenset({"192.0.2.1"}))
+
+    assert [row.profile.client_ip for row in page.rows] == ["192.0.2.1"]
+    assert page.total == 1
+
+
+def test_read_page_without_names_is_unchanged(tmp_path):
+    from logarx.triage.scan import read_page
+
+    result = named_scan(tmp_path)
+
+    assert read_page(result.path, "all", query="office").total == 0
+    assert read_page(result.path, "all", query="192.0.2.2").total == 1
+
+
+def test_named_and_address_matches_count_once(tmp_path):
+    from logarx.triage.scan import read_page
+
+    result = named_scan(tmp_path)
+    everyone = read_page(result.path, "all")
+
+    page = read_page(result.path, "all", query="192.0.2.", named=frozenset({"192.0.2.1"}))
+
+    assert page.total == everyone.total == 3
+    assert [r.profile.client_ip for r in page.rows] == [
+        r.profile.client_ip for r in everyone.rows
+    ], "ranking order is unchanged"

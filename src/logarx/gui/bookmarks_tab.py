@@ -35,17 +35,18 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from logarx import client_names
 from logarx.bookmarks import matches, newest_first
 from logarx.core.window import EVERYTHING
 from logarx.gui._qt import required
 from logarx.gui.flow import FlowLayout
 from logarx.gui.ribbon import ribbon_icon
 from logarx.gui.theme import PAD, caption_font, colour_text, mono_font, on_font_change
-from logarx.style import THEME, plural
+from logarx.style import THEME, display_safe, plural
 from logarx.timerange import spoken
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping
 
     from logarx.bookmarks import Bookmark, Shelf
 
@@ -153,6 +154,10 @@ class BookmarksTab(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self._shelf: Shelf | None = None
+        # The names readers gave addresses, and whether they are shown in place
+        # of the addresses in the Client column.
+        self._names: dict[str, str] = {}
+        self._names_shown = True
         # Which bookmarks point at nothing now, by id: kept as data rather
         # than as the caller's function, which would tie this tab to it.
         self._gone: frozenset[str] = frozenset()
@@ -286,6 +291,11 @@ class BookmarksTab(QWidget):
         self.category.blockSignals(blocked)
         self._fill()
 
+    def set_names(self, names: Mapping[str, str], *, shown: bool) -> None:
+        """Name each bookmarked client as a reader named it while `shown`."""
+        self._names, self._names_shown = dict(names), shown
+        self._fill()
+
     def count(self) -> int:
         return len(self._shelf.bookmarks) if self._shelf is not None else 0
 
@@ -329,7 +339,11 @@ class BookmarksTab(QWidget):
                     [
                         bookmark.kind.value.title(),
                         "",
-                        bookmark.client if bookmark.client is not None else spoken(window),
+                        display_safe(
+                            client_names.shown(bookmark.client, self._names, on=self._names_shown)
+                        )
+                        if bookmark.client is not None
+                        else spoken(window),
                         bookmark.saved.strftime("%d %b %H:%M"),
                     ],
                 )

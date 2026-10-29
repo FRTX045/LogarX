@@ -48,6 +48,7 @@ __all__ = [
     "is_whole_address",
     "labels_for_activity",
     "parse",
+    "plain_text",
     "suggestions",
     "tokens",
     "understood",
@@ -69,7 +70,7 @@ class Scope(Enum):
     def keys(self) -> frozenset[str]:
         if self is Scope.EVIDENCE:
             return _REQUEST_KEYS
-        return _REQUEST_KEYS | {"ip", "activity"}
+        return _REQUEST_KEYS | {"ip", "activity", "name"}
 
 
 _REQUEST_KEYS: Final = frozenset({"status", "path", "method", "after", "before"})
@@ -151,7 +152,7 @@ def _valid(key: str, value: str) -> bool:
         return _moment(value, date(2000, 1, 1)) is not None
     if key == "ip":
         return bool(_ADDRESS.fullmatch(value))
-    return key in ("path", "activity")
+    return key in ("path", "activity", "name")
 
 
 def _moment(value: str, day: date | None) -> datetime | None:
@@ -211,10 +212,13 @@ class Query:
     ips: tuple[str, ...] = ()
     activities: tuple[str, ...] = ()
     """Read at the client level, from the Where to start scan; `matches` ignores them."""
+    names: tuple[str, ...] = ()
+    """Read at the client level, from the names readers gave addresses; `matches`
+    ignores them. Folded, so they compare as a reader typed them."""
 
     @property
     def is_empty(self) -> bool:
-        return not (self.has_request_filters or self.ips or self.activities)
+        return not (self.has_request_filters or self.ips or self.activities or self.names)
 
     @property
     def has_request_filters(self) -> bool:
@@ -232,7 +236,7 @@ class Query:
     @property
     def is_address_only(self) -> bool:
         """An address search and nothing else: the client box's search before this one."""
-        return bool(self.ips) and not (self.has_request_filters or self.activities)
+        return bool(self.ips) and not (self.has_request_filters or self.activities or self.names)
 
     def matches(self, event: NormalizedEvent) -> bool:
         """Whether this one request passes every filter and contains every word."""
@@ -324,6 +328,7 @@ def parse(text: str, scope: Scope, *, day: date | None = None) -> Query:
     words: list[str] = []
     ips: list[str] = []
     activities: list[str] = []
+    names: list[str] = []
     for token in tokens(text):
         split = _split(token)
         if split is not None and split[0] in scope.keys and not split[1]:
@@ -351,6 +356,8 @@ def parse(text: str, scope: Scope, *, day: date | None = None) -> Query:
             before = _moment(value, day) or before
         elif key == "ip":
             ips.append(value)
+        elif key == "name":
+            names.append(fold(" ".join(value.split())))
         else:
             activities.append(value.lower())
     return Query(
@@ -364,7 +371,23 @@ def parse(text: str, scope: Scope, *, day: date | None = None) -> Query:
         words=tuple(word for word in words if word),
         ips=tuple(ips),
         activities=tuple(activities),
+        names=tuple(names),
     )
+
+
+def plain_text(text: str) -> str | None:
+    """`text` with its spaces tidied when it holds no filter at all, else `None`.
+
+    What the client box also looks for among the names readers gave addresses.
+    A key the case box reads, finished or still being typed, makes the text a
+    query rather than words, and names are then left to `name:`.
+    """
+    for token in tokens(text):
+        split = _split(token)
+        if split is not None and split[0] in Scope.CASE.keys:
+            return None
+    tidied = " ".join(text.split())
+    return tidied or None
 
 
 def evidence_part(text: str) -> str:
@@ -400,7 +423,7 @@ def is_time(token: str) -> bool:
 
 
 #: The case box's filters that choose clients or the range, not requests.
-_CLIENT_KEYS: Final = frozenset({"ip", "activity", "after", "before"})
+_CLIENT_KEYS: Final = frozenset({"ip", "activity", "name", "after", "before"})
 
 
 def decoded_path(path: str) -> str:

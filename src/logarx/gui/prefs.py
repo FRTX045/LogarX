@@ -51,6 +51,8 @@ ASK_UNSAVED_ARRANGEMENT: Final = "view/ask_unsaved_arrangement"
 #: Whether CRS runs by itself once a scan finishes. Named for the same reason:
 #: the window reads it at the end of every ingest.
 RUN_CRS: Final = "analysis/run_crs"
+#: Whether the window shows the names readers gave client addresses, or the addresses.
+SHOW_CLIENT_NAMES: Final = "view/client_names"
 
 #: Where the dialog this setting replaced kept its answer. Read once, for the
 #: reader who told it "never" — see `read`.
@@ -64,6 +66,7 @@ __all__ = [
     "GROUPS",
     "LEGACY_TEXT_SIZE",
     "RUN_CRS",
+    "SHOW_CLIENT_NAMES",
     "TEXT_POINTS",
     "Setting",
     "Value",
@@ -189,6 +192,16 @@ EVERY: tuple[Setting, ...] = (
             "rather than starting with the list of recent cases."
         ),
         default=False,
+        group="General",
+    ),
+    Setting(
+        key=SHOW_CLIENT_NAMES,
+        label="Show client names",
+        note=(
+            "Show the names you gave client addresses in place of the addresses. "
+            "Reports always show both."
+        ),
+        default=True,
         group="General",
     ),
 )
