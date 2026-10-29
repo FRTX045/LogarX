@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -13,7 +14,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from PyQt6.QtCore import QEvent
-from PyQt6.QtWidgets import QApplication, QMenu
+from PyQt6.QtWidgets import QApplication, QFileDialog, QMenu
 from tables import column_of
 
 from conftest import settled
@@ -404,4 +405,24 @@ def test_a_single_address_without_name_matches_is_unchanged(
     window = opened(qt_app, case_dir)
 
     assert searched(qt_app, window, "192.0.2.1") == [("192.0.2.1", "")]
+    window.close()
+
+
+def test_the_exported_report_and_json_carry_the_name(
+    qt_app: QApplication, case_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    name_it(case_dir)
+    window = opened_on_client(qt_app, case_dir)
+    window._client_names_action.trigger()  # what the window shows does not decide the file
+    report, data = tmp_path / "report.html", tmp_path / "graph.json"
+    answers = iter([(str(report), ""), (str(data), "")])
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *_a, **_k: next(answers))
+
+    window._export("html")
+    settled(qt_app)
+    window._export("json")
+    settled(qt_app)
+
+    assert f"Office VPN ({CLIENT})" in report.read_text(encoding="utf-8")
+    assert json.loads(data.read_text(encoding="utf-8"))["client_name"] == "Office VPN"
     window.close()

@@ -188,3 +188,29 @@ def test_a_bookmarked_line_with_a_byte_that_was_not_utf_8_is_reported(
     )
 
     assert "GET /search?q=\\xff" in target.read_text(encoding="utf-8")
+
+
+def test_json_export_adds_client_name_only_when_named(campaign: Case, tmp_path: Path) -> None:
+    result = analyse_ip(campaign.store, ATTACKER)
+    named, plain = tmp_path / "named.json", tmp_path / "plain.json"
+
+    write_reconstruction(
+        result, campaign.manifest, kind="json", target=named, client_name="Office VPN"
+    )
+    write_reconstruction(result, campaign.manifest, kind="json", target=plain)
+
+    written = json.loads(named.read_text(encoding="utf-8"))
+    assert written.pop("client_name") == "Office VPN"
+    assert written == json.loads(plain.read_text(encoding="utf-8"))
+    assert "client_name" not in json.loads(plain.read_text(encoding="utf-8"))
+
+
+def test_html_export_carries_the_name(campaign: Case, tmp_path: Path) -> None:
+    result = analyse_ip(campaign.store, ATTACKER)
+    target = tmp_path / "report.html"
+
+    write_reconstruction(
+        result, campaign.manifest, kind="html", target=target, client_name="Office VPN"
+    )
+
+    assert f"Office VPN ({ATTACKER})" in target.read_text(encoding="utf-8")

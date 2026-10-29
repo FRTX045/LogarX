@@ -475,6 +475,7 @@ def test_the_csv_has_one_row_per_bookmark_newest_first_in_each_category() -> Non
         "category",
         "kind",
         "client",
+        "client name",
         "what",
         "note",
         "saved",
@@ -483,15 +484,15 @@ def test_the_csv_has_one_row_per_bookmark_newest_first_in_each_category() -> Non
         "log line warning",
     ]
     assert [row[2] for row in table[1:]] == ["192.0.2.23", "10.0.0.1", "10.0.0.2"]
-    assert table[1][6:] == ["excerpt.log:2014", raw, ""]
-    assert table[1][5] == "2026-10-19T14:02:11Z"
+    assert table[1][7:] == ["excerpt.log:2014", raw, ""]
+    assert table[1][6] == "2026-10-19T14:02:11Z"
 
 
 def test_a_note_that_looks_like_a_formula_cannot_run_in_a_spreadsheet() -> None:
     for start in ("=", "+", "-", "@"):
         shelf = add(EMPTY, client_mark("10.0.0.1", note=f'{start}HYPERLINK("x")'))
         row = rows(to_csv(shelf, {}))[1]
-        assert row[4] == f"'{start}HYPERLINK(" + '"x")'
+        assert row[5] == f"'{start}HYPERLINK(" + '"x")'
 
 
 def test_a_line_from_a_changed_source_is_exported_with_its_warning() -> None:
@@ -504,7 +505,7 @@ def test_a_line_from_a_changed_source_is_exported_with_its_warning() -> None:
 
     row = rows(to_csv(shelf, {line: changed}))[1]
 
-    assert row[7:] == ["a line", note]
+    assert row[8:] == ["a line", note]
 
 
 def test_a_line_that_cannot_be_read_is_exported_with_the_reason() -> None:
@@ -514,4 +515,14 @@ def test_a_line_that_cannot_be_read_is_exported_with_the_reason() -> None:
 
     row = rows(to_csv(shelf, {line: gone}))[1]
 
-    assert row[7:] == ["", "excerpt.log is not available"]
+    assert row[8:] == ["", "excerpt.log is not available"]
+
+
+def test_bookmarks_csv_has_a_client_name_column() -> None:
+    shelf = add(add(EMPTY, client_mark("10.0.0.1", id="a")), client_mark("10.0.0.2", id="b"))
+
+    rows = list(csv.reader(io.StringIO(to_csv(shelf, {}, names={"10.0.0.1": "Office VPN"}))))
+
+    assert rows[0][2:4] == ["client", "client name"]
+    assert {row[2]: row[3] for row in rows[1:]} == {"10.0.0.1": "Office VPN", "10.0.0.2": ""}
+    assert rows[0] == next(csv.reader(io.StringIO(to_csv(shelf, {})))), "the column is always there"

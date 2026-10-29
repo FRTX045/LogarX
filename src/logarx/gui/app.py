@@ -3121,6 +3121,9 @@ class MainWindow(QMainWindow):
         crs = self._crs
         rules = self._rules
         shelf = self._bookmarks.shelf
+        # Whatever the window shows: a file handed on carries the name beside
+        # the address, and the worker must not read the case folder itself.
+        client_name = self._client_names.names().get(client_ip)
 
         if kind == "png":
             self._export_png(target)
@@ -3160,6 +3163,7 @@ class MainWindow(QMainWindow):
                     target=target,
                     shelf=shelf,
                     lines=_raw_lines(case, requests),
+                    client_name=client_name,
                 )
             return str(written)
 
@@ -3208,6 +3212,7 @@ class MainWindow(QMainWindow):
         if not chosen:
             return
         target = Path(chosen)
+        names = self._client_names.names()
 
         def work(_: Callable[[str], None]) -> str:
             with Case.open(path) as case:
@@ -3215,7 +3220,9 @@ class MainWindow(QMainWindow):
             # With a byte-order mark: without one a spreadsheet reads the file in
             # the machine's own code page, and an address or a note in anything
             # but plain English comes out garbled. The rows end themselves.
-            export.write_text(target, to_csv(shelf, lines), encoding="utf-8-sig", newline="")
+            export.write_text(
+                target, to_csv(shelf, lines, names=names), encoding="utf-8-sig", newline=""
+            )
             return str(target)
 
         run_job(

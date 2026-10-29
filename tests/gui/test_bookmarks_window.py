@@ -673,4 +673,4 @@ def test_the_report_and_the_csv_carry_the_notes(
     assert "five failures then in" in report.read_text(encoding="utf-8")
     rows = list(csv.reader(io.StringIO(table.read_text(encoding="utf-8-sig"))))
     assert rows[0][0] == "category"
-    assert rows[1][2] == SWEEPER and rows[1][4] == "five failures then in"
+    assert rows[1][2] == SWEEPER and rows[1][5] == "five failures then in"

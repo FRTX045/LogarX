@@ -143,3 +143,13 @@ def test_both_graphs_have_distinct_marker_and_accessible_title_ids() -> None:
     assert len(ids) == len(set(ids))
     for svg in graphs:
         assert all(ident in ids for ident in svg.attrib["aria-labelledby"].split())
+
+
+def test_svg_title_carries_the_name() -> None:
+    graph = ActivityGraph(GraphKind.TRACE, "192.0.2.1", (node(1),))
+
+    svg = ET.fromstring(render_graph(graph, client_name="Office <VPN>"))
+
+    title = svg.find("title")
+    assert title is not None
+    assert title.text == "Chronological reconstruction for Office <VPN> (192.0.2.1)"
