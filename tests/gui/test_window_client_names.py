@@ -426,3 +426,32 @@ def test_the_exported_report_and_json_carry_the_name(
     assert f"Office VPN ({CLIENT})" in report.read_text(encoding="utf-8")
     assert json.loads(data.read_text(encoding="utf-8"))["client_name"] == "Office VPN"
     window.close()
+
+
+def test_a_client_found_only_by_name_opens_unfiltered(qt_app: QApplication, case_dir: Path) -> None:
+    """The words found its name, not its requests: carried in, they would hide them all."""
+    name_it(case_dir)
+    window = opened(qt_app, case_dir)
+    assert searched(qt_app, window, "office") == [(CLIENT, "by name")]
+
+    window._clients._table.selectRow(0)
+    settled(qt_app)
+
+    assert window._result is not None and window._result.client_ip == CLIENT
+    assert window._evidence.filter_text() == ""
+    window.close()
+
+
+def test_a_client_found_by_its_requests_too_keeps_the_filter(
+    qt_app: QApplication, case_dir: Path
+) -> None:
+    name_it(case_dir, "passwd reader")
+    window = opened(qt_app, case_dir)
+    searched(qt_app, window, "passwd")
+
+    window._clients._table.selectRow(0)
+    settled(qt_app)
+
+    assert window._evidence.filter_text() == "passwd"
+    window.close()
+

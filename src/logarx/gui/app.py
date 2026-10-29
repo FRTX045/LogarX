@@ -2062,8 +2062,13 @@ class MainWindow(QMainWindow):
         rules = self._rules
         buckets = self._buckets()
         # The requests a search found this client by, if one did: a new
-        # client is read through the same filter.
-        carried = evidence_part(self._clients.query_text())
+        # client is read through the same filter. Not when only its name was
+        # found: the words matched no request of its, and would hide them all.
+        carried = (
+            ""
+            if self._clients.found_only_by_name(client_ip)
+            else evidence_part(self._clients.query_text())
+        )
         self._awaiting = (client_ip, window)
         self._reconstruction_request = request = object()
 

@@ -243,6 +243,8 @@ class ClientTable(QWidget):
         # Which of those rows a name a reader gave them found, rather than (or as
         # well as) their requests. They are listed first and say so in Match.
         self._found_by_name: frozenset[str] = frozenset()
+        # How many requests each listed client matched, for a search that counted.
+        self._hits: dict[str, int] = {}
         # Why the search on screen has no answer, and in what colour, until
         # the text changes or an answer arrives. Kept, not only drawn, so a
         # redraw of the caption cannot replace it with a count of nothing.
@@ -406,6 +408,7 @@ class ClientTable(QWidget):
         chose the page; it is then ordered by that, most first.
         """
         self._first, self._query, self._matching = first, query, matching
+        self._hits = {}
         self._page_total = page_total
         # Silent for the whole rebuild. A refill is the window replacing its own
         # furniture, not the reader choosing or dropping anything — and left to
@@ -448,6 +451,7 @@ class ClientTable(QWidget):
                     tooltip=seen_whole(when),
                 )
             found = hits[row] if row < len(hits) else 0
+            self._hits[summary.client_ip] = found
             said, key = self._match(summary.client_ip, found)
             self._set(row, _MATCH, said, sort_key=key)
         # Marked before the columns are measured, so a ribbon's width is counted
@@ -836,6 +840,10 @@ class ClientTable(QWidget):
     def _mark_open(self) -> bool:
         """Select the open client's row, quietly, if it is listed; whether it is."""
         return self._open is None or self.select_quietly(self._open)
+
+    def found_only_by_name(self, address: str) -> bool:
+        """Whether the search on screen found `address` by its name and none of its requests."""
+        return address in self._found_by_name and not self._hits.get(address)
 
     def _natural_order(self) -> int:
         """The column a page is cut by: matches for a counted search or one names
