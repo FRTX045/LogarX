@@ -175,6 +175,7 @@ class EventStore(Protocol):
         limit: int = 100,
         window: TimeWindow | None = None,
         clients: frozenset[str] | None = None,
+        also: frozenset[str] = frozenset(),
     ) -> ClientMatchPage:
         """The clients that sent at least one request `query` matches, most first.
 
@@ -183,6 +184,11 @@ class EventStore(Protocol):
         client found here must find there the lines that were counted. Its
         addresses narrow the clients; `clients`, when given, holds the search to
         those (what `activity:` hands over). Ties go to the lower address.
+
+        `also` are clients found another way, by a name a reader gave them: each
+        one in the range is listed, ahead of the rest, whether or not it sent a
+        matching request and whatever the addresses say, with its hits (0 when
+        none). The totals count it once.
         """
         ...
 

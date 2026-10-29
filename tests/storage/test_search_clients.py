@@ -324,3 +324,72 @@ def test_the_values_in_a_range_with_how_many_clients_and_requests(tmp_path: Path
     ]
     assert whole["method"] == [("GET", 4, 5), ("POST", 1, 1)], "M-SEARCH cannot be a chip"
     assert early["status"] == [("404", 2, 3), ("200", 1, 1), ("2xx", 1, 1), ("4xx", 2, 3)]
+
+
+# -- clients found by name ----------------------------------------------------------
+
+
+def named_case(tmp_path: Path) -> ParquetEventStore:
+    store = ParquetEventStore(tmp_path / "case")
+    store.write(
+        [event("10.0.0.1", path="/office", line_no=1, offset_seconds=1)]
+        + [event("10.0.0.2", path="/office", line_no=n, offset_seconds=n) for n in (2, 3)]
+        + [event("10.0.0.3", path="/other", line_no=4, offset_seconds=4)]
+    )
+    store.finalize()
+    return store
+
+
+def test_also_adds_clients_without_hits_first(tmp_path: Path) -> None:
+    with closing(named_case(tmp_path)) as store:
+        page = store.search_clients(parse("office", Scope.CASE), also=frozenset({"10.0.0.3"}))
+
+    assert [row.client_ip for row in page.rows] == ["10.0.0.3", "10.0.0.2", "10.0.0.1"]
+    assert page.hits == (0, 2, 1)
+    assert (page.total, page.requests) == (3, 3)
+
+
+def test_also_and_hits_count_once(tmp_path: Path) -> None:
+    with closing(named_case(tmp_path)) as store:
+        page = store.search_clients(parse("office", Scope.CASE), also=frozenset({"10.0.0.1"}))
+
+    assert [row.client_ip for row in page.rows] == ["10.0.0.1", "10.0.0.2"]
+    assert page.hits == (1, 2)
+    assert page.total == 2
+
+
+def test_also_outside_the_range_is_absent(tmp_path: Path) -> None:
+    with closing(named_case(tmp_path)) as store:
+        window = TimeWindow(START + timedelta(seconds=1), START + timedelta(seconds=3))
+        page = store.search_clients(
+            parse("office", Scope.CASE), window=window, also=frozenset({"10.0.0.3"})
+        )
+
+    assert "10.0.0.3" not in [row.client_ip for row in page.rows]
+    assert page.total == 2
+
+
+def test_also_bypasses_the_address_filter(tmp_path: Path) -> None:
+    with closing(named_case(tmp_path)) as store:
+        page = store.search_clients(
+            parse("office 10.0.0.2", Scope.CASE), also=frozenset({"10.0.0.3"})
+        )
+
+    assert [row.client_ip for row in page.rows] == ["10.0.0.3", "10.0.0.2"]
+
+
+def test_empty_also_is_todays_answer(awkward: ParquetEventStore) -> None:
+    for text in QUERIES:
+        assert store_hits(awkward, text, also=frozenset()) == store_hits(awkward, text), text
+
+
+def test_the_named_clients_are_not_left_behind(tmp_path: Path) -> None:
+    with closing(named_case(tmp_path)) as store:
+        store.search_clients(parse("office", Scope.CASE), also=frozenset({"10.0.0.3"}))
+        left = (
+            store._connect()
+            .execute("SELECT count(*) FROM duckdb_views() WHERE view_name LIKE 'named_%'")
+            .fetchone()
+        )
+
+    assert left == (0,)

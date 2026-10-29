@@ -567,6 +567,7 @@ class ParquetEventStore:
         limit: int = 100,
         window: TimeWindow | None = None,
         clients: frozenset[str] | None = None,
+        also: frozenset[str] = frozenset(),
     ) -> ClientMatchPage:
         self._require_finalized()
         if offset < 0 or limit < 1:
@@ -589,6 +590,29 @@ class ParquetEventStore:
                 table, pa.table({"client_ip": pa.array(sorted(clients), pa.string())})
             )
             chosen = f" AND client_ip IN (SELECT client_ip FROM {table})"
+        # The clients found by name, joined as `clients` is. Without any, the
+        # statement is the one the parity tests hold to the evidence box: an
+        # inner join on the hits.
+        named = ""
+        matching = f"""matching AS (
+                SELECT ranked.*, hits.hits
+                FROM ranked JOIN hits USING (client_ip)
+                WHERE {who}
+            )"""
+        order, page_order = "hits DESC, client_ip", "page.hits DESC, page.client_ip"
+        if also:
+            named = f"named_{uuid.uuid4().hex}"
+            connection.register(named, pa.table({"client_ip": pa.array(sorted(also), pa.string())}))
+            # No column of its own for being named: the page's columns are read
+            # by position below. Named clients sort first by the test itself.
+            first = f"client_ip IN (SELECT client_ip FROM {named})"
+            matching = f"""matching AS (
+                SELECT ranked.*, coalesce(hits.hits, 0) AS hits
+                FROM ranked LEFT JOIN hits USING (client_ip)
+                WHERE (hits.hits IS NOT NULL AND {who}) OR ranked.{first}
+            )"""
+            order = f"{first} DESC, hits DESC, client_ip"
+            page_order = f"page.{first} DESC, page.hits DESC, page.client_ip"
         try:
             rows = connection.execute(
                 f"""
@@ -602,23 +626,21 @@ class ParquetEventStore:
                 FROM read_parquet({self._sql_path(self._events_glob)}, hive_partitioning = true)
                 WHERE TRUE{clause} AND {matches}{chosen}
                 GROUP BY client_ip
-            ), matching AS (
-                SELECT ranked.*, hits.hits
-                FROM ranked JOIN hits USING (client_ip)
-                WHERE {who}
-            )
+            ), {matching}
             SELECT page.*, totals.total, totals.requests
             FROM (SELECT count(*) AS total, coalesce(sum(hits), 0) AS requests
                   FROM matching) totals
-            LEFT JOIN (SELECT * FROM matching ORDER BY hits DESC, client_ip
+            LEFT JOIN (SELECT * FROM matching ORDER BY {order}
                        LIMIT ? OFFSET ?) page ON true
-            ORDER BY page.hits DESC, page.client_ip
+            ORDER BY {page_order}
             """,
                 [*source_bounds, *bounds, *values, *whose, limit, offset],
             ).fetchall()
         finally:
             if table is not None:
                 connection.unregister(table)
+            if named:
+                connection.unregister(named)
         found = [row for row in rows if row[0] is not None]
         return ClientMatchPage(
             tuple(_to_summary(row, position=int(row[7])) for row in found),
