@@ -306,8 +306,9 @@ class ClientTable(QWidget):
             scope=Scope.CASE, placeholder=CASE_HINT, accessible_name="Search clients"
         )
         self._filter.setToolTip(
-            "Type an address, or filter by what clients sent: status:404, path:/admin, "
-            "method:POST, activity:injection, after:14:05, before:2026-03-10"
+            "Type an address or a name you gave a client, or filter by what clients sent: "
+            "status:404, path:/admin, method:POST, activity:injection, name:office, "
+            "after:14:05, before:2026-03-10"
         )
         self._filter.textChanged.connect(lambda _text: self._filter_changed())
         self._filter.committed.connect(self._committed)

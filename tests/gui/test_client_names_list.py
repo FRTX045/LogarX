@@ -242,3 +242,7 @@ def test_a_whole_list_still_asks_the_case_when_a_name_matches(qt_app: QApplicati
     fired(whole._search_timer)
 
     assert asked == [("2", 0)]
+
+
+def test_the_box_says_it_finds_names(table: ClientTable) -> None:
+    assert "name:" in table._filter.toolTip()
