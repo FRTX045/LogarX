@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
@@ -39,7 +38,6 @@ __all__ = [
     "FormatLibraryError",
     "library_path",
     "load_library",
-    "move_old_home",
     "save_library",
     "zodiarc_home",
 ]
@@ -56,11 +54,6 @@ class FormatLibraryError(RuntimeError):
     """Raised when the saved-format file cannot be read or would be invalid."""
 
 
-#: The folder's names before the tool was renamed, newest first: LogarX from
-#: 2026-10-28, logarc before that.
-_OLD_HOMES: Final = ("LogarX", "logarc")
-
-
 def _config_base() -> Path:
     if sys.platform == "win32":
         return Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
@@ -72,38 +65,6 @@ def zodiarc_home() -> Path:
     if override := os.environ.get("ZODIARC_HOME"):
         return Path(override)
     return _config_base() / "Zodiarc"
-
-
-def move_old_home(base: Path | None = None) -> bool:
-    """Copy the folder the tool kept under an old name to Zodiarc's, once.
-
-    Saved formats, rules and icons are the reader's own work, and a rename is
-    no reason to lose them. Copied rather than moved, so the old folder stays
-    as it was; through a staging folder, so a copy that fails part way leaves
-    no half-filled new one to be taken for the real thing. Never over a new
-    folder that exists, and never when `ZODIARC_HOME` names one. Called once at
-    start-up rather than from `zodiarc_home`, which a test suite calls freely.
-
-    The newest old name that has a folder is the one copied, not a blend of
-    them: a reader who used both has their latest work under the later name.
-    """
-    if base is None:
-        if os.environ.get("ZODIARC_HOME"):
-            return False
-        base = _config_base()
-    new = base / "Zodiarc"
-    old = next((base / name for name in _OLD_HOMES if (base / name).is_dir()), None)
-    if new.exists() or old is None:
-        return False
-    staging = base / "Zodiarc.moving"
-    shutil.rmtree(staging, ignore_errors=True)
-    try:
-        shutil.copytree(old, staging)
-        staging.rename(new)
-    except OSError:
-        shutil.rmtree(staging, ignore_errors=True)
-        return False
-    return True
 
 
 def library_path() -> Path:

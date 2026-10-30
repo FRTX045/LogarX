@@ -20,7 +20,6 @@ from zodiarc.parsers.library import (
     FormatLibraryError,
     library_path,
     load_library,
-    move_old_home,
     save_library,
     zodiarc_home,
 )
@@ -28,60 +27,6 @@ from zodiarc.parsers.spec import LogFormatSpec
 
 OFFICE = LogFormatSpec(name="log-kantor", directive=COMBINED, description="the office")
 GATEWAY = LogFormatSpec(name="gateway", directive=COMMON)
-
-
-# -- the folder the tool kept as logarc, until 2026-10-28 ---------------------
-
-
-def test_the_old_folder_is_copied_to_the_new_one_once(tmp_path: Path) -> None:
-    """Saved formats, rules and icons are the reader's own work, and a rename
-    of the tool is no reason to lose them."""
-    old = tmp_path / "logarc"
-    (old / "rules").mkdir(parents=True)
-    (old / LIBRARY_NAME).write_text("{}", encoding="utf-8")
-    (old / "rules" / "mine.yaml").write_text("rules: []\n", encoding="utf-8")
-
-    assert move_old_home(tmp_path) is True
-
-    new = tmp_path / "Zodiarc"
-    assert (new / LIBRARY_NAME).read_text(encoding="utf-8") == "{}"
-    assert (new / "rules" / "mine.yaml").exists()
-    assert (old / LIBRARY_NAME).exists(), "the old folder is kept, not moved"
-    assert move_old_home(tmp_path) is False, "only once"
-
-
-def test_the_folder_kept_as_logarx_is_copied_too(tmp_path: Path) -> None:
-    """The tool was LogarX from 2026-10-28 to 2026-10-30, and a first release
-    went out under that name."""
-    (tmp_path / "LogarX").mkdir()
-    (tmp_path / "LogarX" / LIBRARY_NAME).write_text("logarx", encoding="utf-8")
-
-    assert move_old_home(tmp_path) is True
-    assert (tmp_path / "Zodiarc" / LIBRARY_NAME).read_text(encoding="utf-8") == "logarx"
-
-
-def test_the_newer_old_folder_wins_over_the_older_one(tmp_path: Path) -> None:
-    """A reader who used both names has their latest work under the later one."""
-    for name in ("logarc", "LogarX"):
-        (tmp_path / name).mkdir()
-        (tmp_path / name / LIBRARY_NAME).write_text(name, encoding="utf-8")
-
-    assert move_old_home(tmp_path) is True
-    assert (tmp_path / "Zodiarc" / LIBRARY_NAME).read_text(encoding="utf-8") == "LogarX"
-
-
-def test_a_new_folder_that_exists_is_never_overwritten(tmp_path: Path) -> None:
-    (tmp_path / "logarc").mkdir()
-    (tmp_path / "logarc" / LIBRARY_NAME).write_text("old", encoding="utf-8")
-    (tmp_path / "Zodiarc").mkdir()
-
-    assert move_old_home(tmp_path) is False
-    assert not (tmp_path / "Zodiarc" / LIBRARY_NAME).exists()
-
-
-def test_nothing_to_move_is_not_an_error(tmp_path: Path) -> None:
-    assert move_old_home(tmp_path) is False
-    assert not (tmp_path / "Zodiarc").exists()
 
 
 def test_a_saved_format_comes_back() -> None:
