@@ -16,11 +16,11 @@ wrong tool for this job:
   and a build with no rules reports every request as benign — a failure that
   looks exactly like a clean log. The package metadata is where the case
   manifest gets `tool_version`; without it every case is stamped `0.0.0.dev0`.
-  Both are handled in `packaging/logarx.spec`, and checked here in case that
+  Both are handled in `packaging/zodiarc.spec`, and checked here in case that
   regresses, because the day the spec breaks is the day a build starts lying
   rather than the day it starts failing.
 
-* **COLLECT deletes the old bundle first.** `INFO: Removing dir ...\\dist\\logarx`
+* **COLLECT deletes the old bundle first.** `INFO: Removing dir ...\\dist\\zodiarc`
   happens before the new one is written, so a build that fails after that point
   leaves no application at all. Everything is therefore built into a staging
   directory and swapped in only once it has passed.
@@ -62,25 +62,25 @@ import crs_bundle
 ROOT = Path(__file__).resolve().parents[1]
 GIT_DIR = ROOT / ".git"
 
-SPEC = ROOT / "packaging" / "logarx.spec"
+SPEC = ROOT / "packaging" / "zodiarc.spec"
 PYPROJECT = ROOT / "pyproject.toml"
 PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
 DIST = ROOT / "dist"
-LIVE = DIST / "logarx"
+LIVE = DIST / "zodiarc"
 STAGING = DIST / ".staging"
 PREVIOUS = DIST / ".previous"
 
 #: PyInstaller's own work directory, and the half-built executable it leaves
 #: there. `--distpath` moves the finished bundle; the work directory is not
 #: `--distpath`'s to move, so this one stays behind after every build.
-WORK = ROOT / "build" / "logarx"
-INTERMEDIATE = WORK / "logarx.exe"
+WORK = ROOT / "build" / "zodiarc"
+INTERMEDIATE = WORK / "zodiarc.exe"
 LOCK = DIST / ".rebuild.lock"
 STATUS = DIST / "BUILD-STATUS.txt"
-MARKER = GIT_DIR / "logarx-build-failed"
+MARKER = GIT_DIR / "zodiarc-build-failed"
 
 #: pytest's default temp root is unwritable on this machine.
-TEMPROOT = Path(os.environ.get("LOCALAPPDATA", ROOT)) / "Temp" / "logarx-rebuild-pytest"
+TEMPROOT = Path(os.environ.get("LOCALAPPDATA", ROOT)) / "Temp" / "zodiarc-rebuild-pytest"
 
 #: A stale lock should not block builds forever. Tests and build together take
 #: about six minutes; anything holding it this long is a crash or a run that was
@@ -153,7 +153,7 @@ def take_lock() -> bool:
 
 
 def fail(reason: str, detail: str = "") -> int:
-    """Record the failure where it will be seen, and leave `dist/logarx` alone.
+    """Record the failure where it will be seen, and leave `dist/zodiarc` alone.
 
     The marker is what the git hooks print on the next command. A status file
     alone has to be opened to be read, which means a broken or stale bundle can
@@ -166,7 +166,7 @@ def fail(reason: str, detail: str = "") -> int:
     STATUS.write_text(
         f"{stamp}  {head()}  NOT REBUILT\n  {reason}\n"
         + (f"\n{detail}\n" if detail else "")
-        + "\nThe previously built application in dist/logarx is untouched and still runnable.\n",
+        + "\nThe previously built application in dist/zodiarc is untouched and still runnable.\n",
         encoding="utf-8",
     )
     shutil.rmtree(STAGING, ignore_errors=True)
@@ -180,7 +180,7 @@ def source_version() -> str:
 
 
 def refresh_metadata() -> tuple[bool, str]:
-    """Reinstall logarx's metadata when it lags the version the source declares.
+    """Reinstall zodiarc's metadata when it lags the version the source declares.
 
     PyInstaller bundles the dist-info pip wrote at install time, and an
     editable install keeps the version it was installed with, so a bump in
@@ -190,7 +190,7 @@ def refresh_metadata() -> tuple[bool, str]:
     """
     declared = source_version()
     try:
-        installed: str | None = metadata.version("logarx")
+        installed: str | None = metadata.version("zodiarc")
     except metadata.PackageNotFoundError:
         installed = None
     if installed == declared:
@@ -289,8 +289,8 @@ def build() -> tuple[bool, str]:
 
 
 def check_executable(bundle: Path) -> str | None:
-    if not (bundle / "logarx.exe").exists():
-        return "logarx.exe was not produced"
+    if not (bundle / "zodiarc.exe").exists():
+        return "zodiarc.exe was not produced"
     return None
 
 
@@ -302,8 +302,8 @@ def check_rule_packs(bundle: Path) -> str | None:
     would pass a bundle that had flattened `attack/php.yaml` to `php.yaml` —
     which loads, but stops the grouping meaning anything.
     """
-    source = ROOT / "src" / "logarx" / "detect" / "rulepacks"
-    packed = bundle / "_internal" / "logarx" / "detect" / "rulepacks"
+    source = ROOT / "src" / "zodiarc" / "detect" / "rulepacks"
+    packed = bundle / "_internal" / "zodiarc" / "detect" / "rulepacks"
     wanted = {path.relative_to(source).as_posix() for path in source.rglob("*.yaml")}
     if not wanted:
         return "no rule packs in the source tree to compare against"
@@ -321,9 +321,9 @@ def check_metadata(bundle: Path) -> str | None:
     """Where the case manifest gets the version it records, checked against the
     source rather than the install, which a stale bundle was built from and so
     agrees with."""
-    found = list((bundle / "_internal").glob("logarx-*.dist-info/METADATA"))
+    found = list((bundle / "_internal").glob("zodiarc-*.dist-info/METADATA"))
     if not found:
-        return "no logarx dist-info - every case would be stamped 0.0.0.dev0"
+        return "no zodiarc dist-info - every case would be stamped 0.0.0.dev0"
     match = re.search(
         r"^Version:\s*(.+)$",
         found[0].read_text(encoding="utf-8", errors="replace"),
@@ -346,7 +346,7 @@ def check_no_browser_engine(bundle: Path) -> str | None:
 #: ADR-0012: the window is the product, and the command line is a developer
 #: tool. These are its package, under either name it has had, and the libraries
 #: it alone uses; none of them belongs in what a user installs.
-_COMMAND_LINE = ("logarx.cli", "logarx.devtools", "typer", "click")
+_COMMAND_LINE = ("zodiarc.cli", "zodiarc.devtools", "typer", "click")
 
 
 def command_line_in(modules: list[str]) -> list[str]:
@@ -372,7 +372,7 @@ def check_no_command_line(bundle: Path) -> str | None:
     try:
         from PyInstaller.archive.readers import CArchiveReader, ZlibArchiveReader
 
-        package = CArchiveReader(str(bundle / "logarx.exe"))
+        package = CArchiveReader(str(bundle / "zodiarc.exe"))
         archive = next(name for name in package.toc if name.endswith(".pyz"))
         with tempfile.TemporaryDirectory() as scratch:
             pyz = Path(scratch) / "modules.pyz"
@@ -380,7 +380,7 @@ def check_no_command_line(bundle: Path) -> str | None:
             modules = list(ZlibArchiveReader(str(pyz)).toc)
     except Exception as exc:
         # Any failure to read is a refusal: not read is not clean.
-        return f"could not read the bundled modules from logarx.exe: {exc}"
+        return f"could not read the bundled modules from zodiarc.exe: {exc}"
     if found := command_line_in(modules):
         shown = ", ".join(found[:5]) + (f" and {len(found) - 5} more" if len(found) > 5 else "")
         return f"the command line is in the bundle ({shown}) - see ADR-0012"
@@ -420,15 +420,15 @@ for name in ("QtCore", "QtGui", "QtWidgets"):
 
 
 #: Run by the venv's interpreter against the staged files: the bundled sidecar,
-#: bundled ruleset and bundled confs, driven through logarx's own client so the
+#: bundled ruleset and bundled confs, driven through zodiarc's own client so the
 #: check speaks the same protocol the application does.
 _CRS_PROBE: Final = """
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from logarx.core.event import NormalizedEvent
-from logarx.core.evidence import EvidenceRef
-from logarx.detect.crs import SidecarConfig, binary_name, run_sidecar
+from zodiarc.core.event import NormalizedEvent
+from zodiarc.core.evidence import EvidenceRef
+from zodiarc.detect.crs import SidecarConfig, binary_name, run_sidecar
 root = Path(sys.argv[1]) / "_internal"
 config = SidecarConfig(
     binary=root / "crs" / binary_name(),
@@ -504,7 +504,7 @@ from PyQt6.QtCore import QByteArray, QRectF
 from PyQt6.QtGui import QColor, QGuiApplication, QImage, QPainter
 from PyQt6.QtSvg import QSvgRenderer
 application = QGuiApplication(["probe", "-platform", "offscreen"])
-icons = json.loads((root / "logarx" / "gui" / "lucide.json").read_text(encoding="utf-8"))
+icons = json.loads((root / "zodiarc" / "gui" / "lucide.json").read_text(encoding="utf-8"))
 svg = icons["icons"]["syringe"]["svg"].replace("currentColor", "#000000")
 image = QImage(64, 64, QImage.Format.Format_ARGB32)
 image.fill(0)
@@ -524,11 +524,11 @@ def check_icons(bundle: Path) -> str | None:
     draw none.
     """
     root = bundle / "_internal"
-    data = root / "logarx" / "gui" / "lucide.json"
+    data = root / "zodiarc" / "gui" / "lucide.json"
     try:
         json.loads(data.read_text(encoding="utf-8"))["icons"]["syringe"]
     except (OSError, ValueError, KeyError, TypeError) as exc:
-        return f"the icon set logarx/gui/lucide.json is missing or unreadable: {exc}"
+        return f"the icon set zodiarc/gui/lucide.json is missing or unreadable: {exc}"
     try:
         notice = (root / "NOTICE").read_text(encoding="utf-8")
     except OSError:
@@ -553,6 +553,35 @@ def check_icons(bundle: Path) -> str | None:
     drawn = re.search(r"^drawn (\d+)$", result.stdout, re.MULTILINE)
     if drawn is None or int(drawn.group(1)) == 0:
         return "the bundle's Qt loaded but did not draw the syringe icon"
+    return None
+
+
+def check_app_icon(bundle: Path) -> str | None:
+    """The executable carries the application's icon, and the window's picture ships.
+
+    PyInstaller builds an executable with Windows's default icon when the spec
+    names none, or names one it could not read, and exits 0 either way: nothing
+    but looking at the file says so. So the executable's resources are read for
+    an icon group (`RT_GROUP_ICON`), which is what Explorer and a shortcut show.
+    """
+    picture = bundle / "_internal" / "zodiarc" / "gui" / "zodiarc.png"
+    if not picture.is_file():
+        return "zodiarc/gui/zodiarc.png, the picture the window draws, is not in the bundle"
+    try:
+        import pefile
+    except ImportError:
+        return "the executable's icon could not be checked: pefile is not installed"
+    try:
+        executable = pefile.PE(str(bundle / "zodiarc.exe"))
+    except (OSError, pefile.PEFormatError) as exc:
+        return f"zodiarc.exe could not be read for its icon: {exc}"
+    try:
+        resources = getattr(executable, "DIRECTORY_ENTRY_RESOURCE", None)
+        kinds = {entry.id for entry in resources.entries} if resources is not None else set()
+    finally:
+        executable.close()
+    if pefile.RESOURCE_TYPE["RT_GROUP_ICON"] not in kinds:
+        return "zodiarc.exe carries no icon: the spec's icon= was not applied"
     return None
 
 
@@ -601,6 +630,7 @@ def verify(bundle: Path) -> list[str]:
         check_no_command_line,
         check_qt_runtime,
         check_icons,
+        check_app_icon,
         check_crs,
         check_licences,
     )
@@ -608,7 +638,7 @@ def verify(bundle: Path) -> list[str]:
 
 
 def running_instances() -> str:
-    """Any `logarx.exe` currently running, as `tasklist` reports it.
+    """Any `zodiarc.exe` currently running, as `tasklist` reports it.
 
     Asked only after a swap has already failed, and only so the failure can be
     worded correctly.
@@ -623,14 +653,14 @@ def running_instances() -> str:
     """
     try:
         listing = subprocess.run(
-            ["tasklist", "/FI", "IMAGENAME eq logarx.exe", "/NH"],
+            ["tasklist", "/FI", "IMAGENAME eq zodiarc.exe", "/NH"],
             capture_output=True,
             text=True,
             timeout=20,
         ).stdout
     except (OSError, subprocess.SubprocessError):
         return ""
-    return listing.strip() if "logarx.exe" in listing else ""
+    return listing.strip() if "zodiarc.exe" in listing else ""
 
 
 #: How long to keep trying the swap, in seconds between attempts. The tree
@@ -655,7 +685,7 @@ def swap(staged: Path) -> None:
     """Put the verified build in place, keeping the old one until it is.
 
     Rename-then-rename rather than delete-then-move, so there is no moment when
-    `dist/logarx` is missing because a copy is halfway through — and if the
+    `dist/zodiarc` is missing because a copy is halfway through — and if the
     second rename fails after the first succeeded, the old bundle goes back
     where it was. That window is short, but landing in it would leave no
     application at all, which is the one outcome this whole path exists to
@@ -665,7 +695,7 @@ def swap(staged: Path) -> None:
     has the application's name and icon and can never run: it looks beside
     itself for the `_internal` directory that only COLLECT writes, so opening
     it gives "Failed to load Python DLL" and nothing else. Leaving it in the
-    tree means a search for `logarx.exe` answers with two indistinguishable
+    tree means a search for `zodiarc.exe` answers with two indistinguishable
     hits, one of them broken by construction. Someone did open it.
     """
     shutil.rmtree(PREVIOUS, ignore_errors=True)
@@ -711,7 +741,7 @@ def _rebuild() -> int:
     # First: the tests and the bundle both read the installed version.
     refreshed, detail = refresh_metadata()
     if not refreshed:
-        return fail("logarx's installed metadata could not be brought up to date", detail)
+        return fail("zodiarc's installed metadata could not be brought up to date", detail)
 
     # Before the tests, whose CRS contract tests run this binary: built after
     # them, a merge that changed `crs/` was tested against the build before it.
@@ -741,7 +771,7 @@ def _rebuild() -> int:
     if not built:
         return fail("the build failed", detail)
 
-    staged = STAGING / "logarx"
+    staged = STAGING / "zodiarc"
     if problems := verify(staged):
         return fail(
             "the build completed but is unusable: " + "; ".join(problems),
@@ -766,15 +796,15 @@ def _rebuild() -> int:
             "the build is ready but could not be put in place",
             f"{exc}\n\n"
             + (
-                f"logarx.exe is running:\n{running}\nClose it and run this again.\n"
+                f"zodiarc.exe is running:\n{running}\nClose it and run this again.\n"
                 if running
-                else "No logarx.exe is running, so something else is holding the\n"
+                else "No zodiarc.exe is running, so something else is holding the\n"
                 "folder — OneDrive finishing an upload, or the virus scanner\n"
                 "reading 243 MB written seconds ago. Both let go shortly.\n"
             )
             + "\nRetry with:\n  .venv\\Scripts\\python.exe packaging\\rebuild.py\n\n"
             "The build passed every check; only the last step failed, and the\n"
-            "application already in dist/logarx is untouched.",
+            "application already in dist/zodiarc is untouched.",
         )
 
     stamp = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -782,7 +812,7 @@ def _rebuild() -> int:
     STATUS.write_text(
         f"{stamp}  {started[0]}  ok  {size_mb(LIVE):.0f} MB\n"
         "tests green; rule packs bundled; version metadata bundled; no QtWebEngine; "
-        "no command line; Qt runtime loads; icons draw; "
+        "no command line; Qt runtime loads; icons draw; app icon on the executable; "
         "CRS sidecar bundled and catches 942100; licences of what it ships bundled\n",
         encoding="utf-8",
     )

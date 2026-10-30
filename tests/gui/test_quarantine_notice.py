@@ -6,8 +6,8 @@ say them, and both are plain data. That is why it is not in the widget.
 
 from __future__ import annotations
 
-from logarx.gui.quarantine_notice import notice_for
-from logarx.storage.case import SourceRecord
+from zodiarc.gui.quarantine_notice import notice_for
+from zodiarc.storage.case import SourceRecord
 
 
 def source(
@@ -114,7 +114,7 @@ def test_a_file_that_produced_nothing_is_escalated() -> None:
     # The way out is named where the reader is: the window, not a command
     # line the packaged application does not have (ADR-0012).
     assert "Case → New from logs…" in notice.detail
-    assert "LogarX formats" not in notice.detail
+    assert "Zodiarc formats" not in notice.detail
 
 
 def test_every_file_failing_is_the_same_rule() -> None:

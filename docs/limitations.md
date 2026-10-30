@@ -1,6 +1,6 @@
-# What LogarX cannot tell you
+# What Zodiarc cannot tell you
 
-LogarX reads access logs, and an access log is a record of requests and the
+Zodiarc reads access logs, and an access log is a record of requests and the
 status codes that answered them. Everything below follows from that. These are
 the limits to keep in mind when reading a reconstruction or quoting one; the
 limits of the accuracy figures themselves are in
@@ -21,7 +21,7 @@ recovered.
 ## A status code is not an outcome
 
 Each activity's outline summarises the status codes it received
-(`derive_outcome` in `src/logarx/core/episode.py`). Requests with no status are
+(`derive_outcome` in `src/zodiarc/core/episode.py`). Requests with no status are
 left out. With no known status the outcome is *unknown*; otherwise it is
 *success* when every status is below 400, *blocked* when every one is 400 or
 above, and *mixed* in between. So a redirect counts as success, and an activity
@@ -52,15 +52,15 @@ away, or a second server that was not included, is not in the answer.
 
 ## It works after the fact
 
-LogarX reads logs that have already been written. It does not watch live
+Zodiarc reads logs that have already been written. It does not watch live
 traffic, raise alerts or block anything.
 
 ## It runs as a desktop application
 
-The window is the only way a user works with LogarX
+The window is the only way a user works with Zodiarc
 ([ADR-0012](adr/0012-the-window-is-the-product.md)). The packaged application
 has no supported headless workflow, so it is not a batch job for a server. A
-source checkout keeps `logarx-dev` as developer tooling, to build cases and
+source checkout keeps `zodiarc-dev` as developer tooling, to build cases and
 measure the project, and nothing a user needs is only there.
 
 ## The raw lines stay where they were
@@ -77,6 +77,6 @@ which may differ from the ones it was first read with.
 ## Its accuracy is measured on one application
 
 The headline accuracy figures come from one PHP shop with modelled timestamps
-([evaluation.md](evaluation.md)). Nothing yet separates what is true of LogarX
+([evaluation.md](evaluation.md)). Nothing yet separates what is true of Zodiarc
 from what is true of that shop, so the figures are evidence, not a guarantee for
 every site.

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from logarx.detect.rules import RulePackError, load_pack_text
-from logarx.detect.ruleset import PackText, RuleSet, build_rules
-from logarx.gui.rules_view import (
+from zodiarc.detect.rules import RulePackError, load_pack_text
+from zodiarc.detect.ruleset import PackText, RuleSet, build_rules
+from zodiarc.gui.rules_view import (
     NEW_PACK_TEXT,
     ask_text,
     delete_question,

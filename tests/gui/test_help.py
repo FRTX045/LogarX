@@ -12,8 +12,8 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from PyQt6.QtWidgets import QApplication
 
-from logarx.gui.app import MainWindow
-from logarx.gui.help import USER_GUIDE, about_text, shortcut_rows
+from zodiarc.gui.app import MainWindow
+from zodiarc.gui.help import USER_GUIDE, about_text, shortcut_rows
 
 
 def test_the_shortcut_list_names_every_menu_entry_that_has_a_key(qt_app: QApplication) -> None:
@@ -45,4 +45,4 @@ def test_about_names_the_version_and_the_licence() -> None:
 
 
 def test_the_user_guide_is_the_published_desktop_guide() -> None:
-    assert USER_GUIDE == "https://github.com/FRTX045/LogarX/blob/main/docs/desktop-app.md"
+    assert USER_GUIDE == "https://github.com/FRTX045/Zodiarc/blob/main/docs/desktop-app.md"

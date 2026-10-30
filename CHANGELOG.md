@@ -1,7 +1,8 @@
 # Changelog
 
-Notable changes to LogarX, called logarc until 2026-10-28. Entries written
-before the rename keep the old name, as do the decision records. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
+Notable changes to Zodiarc, called LogarX from 2026-10-28 to 2026-10-30 and
+logarc before that. Entries written before a rename keep the name they were
+written under, as do the decision records. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 1.0.0 is the first release and the first tag. 0.1.0 and 0.2.0 below are
@@ -10,22 +11,19 @@ as releases, and neither has a tag.
 
 ## [Unreleased]
 
-### Changed
-
-- HTML reconstruction graphs now use request-sized circles, shared severity
-  colours and outcome outlines, bundled category icons, captions and named
-  session boxes. Both graph views have distinct SVG markers and readable
-  scrolling layouts, with a corrected legend matching the desktop.
-
-- HTML reports share the desktop's font preferences and offer an offline,
-  keyboard-accessible dark/light switch without JavaScript. A clearer report
-  hierarchy, scrollable tables, full activity dates and expandable provenance
-  keep the evidence readable; printing uses a light palette.
-
 ## [1.0.0] — 2026-10-28 — the first release
+
+First published on 2026-10-28 as LogarX, and issued again on 2026-10-30 under the
+name Zodiarc, with the changes that had landed since. Same version: the first
+issue was a trial release, and its files were replaced.
 
 ### Added
 
+- **The application has an icon.** A white Z on a dark rounded tile, built from
+  the supplied mark by `packaging/icon/make_icon.py`. The executable carries it
+  (Explorer, shortcuts, the taskbar), and the window draws it in its title bar.
+  A build whose executable has none is now refused, where PyInstaller exits 0
+  and writes Windows's default one.
 - **The Windows application carries the notices of everything Qt brings in.**
   Qt Network, Qt PDF and the software OpenGL renderer ship in the bundle, and
   the code they carry had no notice there: the Public Suffix List and libpsl;
@@ -431,6 +429,25 @@ as releases, and neither has a tag.
   says to reinstall, instead of pointing at a source install.
 
 ### Changed
+
+- **LogarX is now Zodiarc.** The package is `zodiarc`, the commands `zodiarc-gui`
+  and `zodiarc-dev`, the variables `ZODIARC_HOME` and the rest `ZODIARC_*`, and
+  the repository `FRTX045/Zodiarc` (the old address redirects). What a reader had
+  under either earlier name comes with them: on first start the folder of saved
+  formats, rules and icons is copied to Zodiarc's, and the window's preferences
+  with it, from the newest of the two names that has any; the old ones are left
+  where they were. A truth file saying `logarx-truth` or `logarc-truth` is read
+  as one, and the tool now writes `zodiarc-truth`.
+
+- HTML reconstruction graphs now use request-sized circles, shared severity
+  colours and outcome outlines, bundled category icons, captions and named
+  session boxes. Both graph views have distinct SVG markers and readable
+  scrolling layouts, with a corrected legend matching the desktop.
+
+- HTML reports share the desktop's font preferences and offer an offline,
+  keyboard-accessible dark/light switch without JavaScript. A clearer report
+  hierarchy, scrollable tables, full activity dates and expandable provenance
+  keep the evidence readable; printing uses a light palette.
 
 - **logarc is now LogarX.** The package is `logarx`, the commands `logarx-gui`
   and `logarx-dev`, the variables `LOGARX_HOME` and the rest `LOGARX_*`, and the
@@ -1944,7 +1961,7 @@ and draws it as an activity graph.
 
 <!-- Reference links for the version headings above. `0.1.0` was never tagged,
      so it points at the history rather than at a release that does not exist. -->
-[Unreleased]: https://github.com/FRTX045/LogarX/compare/v1.0.0...main
-[1.0.0]: https://github.com/FRTX045/LogarX/releases/tag/v1.0.0
+[Unreleased]: https://github.com/FRTX045/Zodiarc/compare/v1.0.0...main
+[1.0.0]: https://github.com/FRTX045/Zodiarc/releases/tag/v1.0.0
 [0.2.0]: https://github.com/FRTX045/logarc/tree/44d7bcbe3c23ee10eba3331cfa5fd9ed4e992c24
 [0.1.0]: https://github.com/FRTX045/logarc/tree/0622b7ddb57e95ef81cc520f0dd459d872eec9d4

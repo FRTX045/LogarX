@@ -1,7 +1,7 @@
 // Copyright 2023 Juan Pablo Tosso and the OWASP Coraza contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Adapted for logarx from rx.go in github.com/corazawaf/coraza-wasilibs
+// Adapted for zodiarc from rx.go in github.com/corazawaf/coraza-wasilibs
 // v0.2.0. Changed: registered from this package's init rather than by a call,
 // and compiled patterns are not memoised, since a sidecar builds one WAF.
 

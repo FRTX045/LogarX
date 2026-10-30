@@ -42,13 +42,13 @@ OUT=$(mktemp -d)
 trap 'rm -rf "$OUT"' EXIT
 echo "recording $RECORD for ${SHA:0:7} against CRS ${CRS_COMMIT:0:7}"
 
-MSYS_NO_PATHCONV=1 docker build -q -t "logarx-ci:$PY" --build-arg "PY=$PY" \
+MSYS_NO_PATHCONV=1 docker build -q -t "zodiarc-ci:$PY" --build-arg "PY=$PY" \
   -f "$(winpath "$REPO/tools/local-ci.Dockerfile")" "$(winpath "$REPO/tools")" > /dev/null
 
 git -C "$REPO" archive "$SHA" | MSYS_NO_PATHCONV=1 docker run -i --rm \
   -v "$(winpath "$OUT"):/out" \
-  -v logarx-ci-uv:/root/.cache/uv -v logarx-ci-go:/root/go \
-  -e CRS_COMMIT="$CRS_COMMIT" "logarx-ci:$PY" bash -c '
+  -v zodiarc-ci-uv:/root/.cache/uv -v zodiarc-ci-go:/root/go \
+  -e CRS_COMMIT="$CRS_COMMIT" "zodiarc-ci:$PY" bash -c '
     set -e
     mkdir -p /src && tar -x -C /src && cd /src
     git init -q && git add -A
@@ -59,7 +59,7 @@ git -C "$REPO" archive "$SHA" | MSYS_NO_PATHCONV=1 docker run -i --rm \
     (cd crs && go build -o crs-sidecar . && go version -m crs-sidecar | grep go-re2 || true)
     uv pip install -q -e ".[dev]"
     python tests/detect/crs/test_corpus_detections.py
-    LOGARX_REQUIRE_CRS=1 python -m pytest -q -p no:cacheprovider --no-cov \
+    ZODIARC_REQUIRE_CRS=1 python -m pytest -q -p no:cacheprovider --no-cov \
       tests/detect/crs/test_corpus_detections.py
     cp tests/data/crs-corpus-detections.json /out/
   '

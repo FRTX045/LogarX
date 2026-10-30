@@ -9,8 +9,8 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from logarx.core.activity import ActivityCategory
-from logarx.evaluation.truth import read_truth
+from zodiarc.core.activity import ActivityCategory
+from zodiarc.evaluation.truth import read_truth
 
 EXCERPT = Path(__file__).parent.parent / "data" / "apache-shopfront"
 

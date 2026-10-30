@@ -18,8 +18,8 @@ from PyQt6.QtWidgets import QApplication
 from tables import column_of
 
 from conftest import fired
-from logarx.gui.panels import ClientTable
-from logarx.storage.base import ClientMatchPage, IpSummary, IpSummaryPage
+from zodiarc.gui.panels import ClientTable
+from zodiarc.storage.base import ClientMatchPage, IpSummary, IpSummaryPage
 
 if TYPE_CHECKING:
     from collections.abc import Iterator

@@ -9,8 +9,8 @@ callers:
   `crs/`, record the ruleset's revision, and gather the licences of everything
   compiled into the binary. A Go binary links its dependencies statically, so
   shipping it is shipping them, and their licences ask to travel with them.
-* `datas()`, from `packaging/logarx.spec`: every file the bundle needs, mapped
-  to the layout `logarx.detect.crs.sidecar` looks in when frozen. It refuses
+* `datas()`, from `packaging/zodiarc.spec`: every file the bundle needs, mapped
+  to the layout `zodiarc.detect.crs.sidecar` looks in when frozen. It refuses
   rather than returning a short list, so a spec run without `prepare()` fails at
   build time instead of producing an application with CRS quietly missing.
 """
@@ -59,7 +59,7 @@ def _binary_name() -> str:
     # The runtime's own definition, so the file bundled is the file it looks for.
     sys.path.insert(0, str(ROOT / "src"))
     try:
-        from logarx.detect.crs.sidecar import binary_name
+        from zodiarc.detect.crs.sidecar import binary_name
     finally:
         sys.path.pop(0)
     return binary_name()

@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-SOURCE = Path(__file__).resolve().parents[2] / "src" / "logarx"
+SOURCE = Path(__file__).resolve().parents[2] / "src" / "zodiarc"
 SHOWN = [*sorted((SOURCE / "gui").glob("*.py")), SOURCE / "search.py"]
 
 RETIRED = (

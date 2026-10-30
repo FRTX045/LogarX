@@ -1,11 +1,11 @@
 name: New log format
-description: A log LogarX does not read yet.
+description: A log Zodiarc does not read yet.
 labels: ["log format"]
 body:
   - type: markdown
     attributes:
       value: |
-        LogarX reads 21 log formats on its own, and **Case → Formats and rules** reads many more once a line is pasted in. If a format it should know is not detected, or reads wrongly, this is the place.
+        Zodiarc reads 21 log formats on its own, and **Case → Formats and rules** reads many more once a line is pasted in. If a format it should know is not detected, or reads wrongly, this is the place.
 
         Logs from a real server hold other people's addresses and requests. Replace anything sensitive in the lines below before you paste them, but keep their shape: quotes, separators and empty fields matter.
   - type: input
@@ -33,7 +33,7 @@ body:
   - type: textarea
     id: tried
     attributes:
-      label: What LogarX did with it
+      label: What Zodiarc did with it
       description: Not detected, detected as another format, or read with a field wrong. What you expected instead.
     validations:
       required: true

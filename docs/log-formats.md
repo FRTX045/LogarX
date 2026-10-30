@@ -74,7 +74,7 @@ never cut, and it is kept beside the event.
 
 - **HAProxy** is read bare, as `log stdout format raw` writes it, or behind any
   syslog envelope it writes, or as rsyslog files it. It writes a `"` the client
-  sent as `#22`, and LogarX turns that back into `"` before any rule reads it.
+  sent as `#22`, and Zodiarc turns that back into `"` before any rule reads it.
   Three things to know:
   - Its time has no zone, so it is read as UTC. That is right in a container.
     On a host that runs local time, every event is off by the zone.

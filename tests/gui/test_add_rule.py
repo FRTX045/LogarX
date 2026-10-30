@@ -20,22 +20,22 @@ from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QPushButton, QWidget
 
 from conftest import fired, settled
-from logarx import rules_library
-from logarx.case import Case
-from logarx.core.activity import ActivityCategory, Severity
-from logarx.core.event import NormalizedEvent
-from logarx.core.evidence import EvidenceRef
-from logarx.detect.engine import RuleEngine
-from logarx.detect.rules import load_pack_text
-from logarx.detect.ruleset import built_in_packs
-from logarx.evidence import EvidenceLine
-from logarx.gui import add_rule as add_rule_module
-from logarx.gui.add_rule import AddRuleDialog
-from logarx.gui.icon_set import icons_dir
-from logarx.gui.icons import first_drawable
-from logarx.rule_draft import Condition, Test, rule_block
-from logarx.rule_finds import Find, FindsProgress
-from logarx.style import THEME
+from zodiarc import rules_library
+from zodiarc.case import Case
+from zodiarc.core.activity import ActivityCategory, Severity
+from zodiarc.core.event import NormalizedEvent
+from zodiarc.core.evidence import EvidenceRef
+from zodiarc.detect.engine import RuleEngine
+from zodiarc.detect.rules import load_pack_text
+from zodiarc.detect.ruleset import built_in_packs
+from zodiarc.evidence import EvidenceLine
+from zodiarc.gui import add_rule as add_rule_module
+from zodiarc.gui.add_rule import AddRuleDialog
+from zodiarc.gui.icon_set import icons_dir
+from zodiarc.gui.icons import first_drawable
+from zodiarc.rule_draft import Condition, Test, rule_block
+from zodiarc.rule_finds import Find, FindsProgress
+from zodiarc.style import THEME
 
 SHOPFRONT_LOG = Path(__file__).parents[1] / "data" / "apache-shopfront" / "excerpt.log"
 BUILT_IN = built_in_packs()
@@ -695,7 +695,7 @@ def test_a_shortened_part_s_tooltip_spells_out_markup_literally(qt_app: QApplica
     built to look like it. The whole value on hover must be the value."""
     from datetime import UTC, datetime
 
-    from logarx.style import display_safe
+    from zodiarc.style import display_safe
 
     ref = EvidenceRef("access.log", 7)
     query = "q=<script>alert(document.cookie)</script>&next=" + "a" * 80

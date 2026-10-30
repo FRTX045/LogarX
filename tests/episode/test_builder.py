@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from logarx.core.activity import ActivityCategory, ActivityLabel, Outcome, Severity
-from logarx.core.event import NormalizedEvent
-from logarx.core.evidence import EvidenceRef
-from logarx.detect.engine import LabelledEvent
-from logarx.episode.builder import EpisodePolicy, build_episodes
+from zodiarc.core.activity import ActivityCategory, ActivityLabel, Outcome, Severity
+from zodiarc.core.event import NormalizedEvent
+from zodiarc.core.evidence import EvidenceRef
+from zodiarc.detect.engine import LabelledEvent
+from zodiarc.episode.builder import EpisodePolicy, build_episodes
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 

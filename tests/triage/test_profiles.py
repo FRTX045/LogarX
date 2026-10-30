@@ -3,12 +3,12 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from logarx.analysis import analyse_ip
-from logarx.core.event import NormalizedEvent
-from logarx.core.evidence import EvidenceRef
-from logarx.detect.engine import RuleEngine
-from logarx.detect.rulepacks import default_rules
-from logarx.storage.event_store import ParquetEventStore
+from zodiarc.analysis import analyse_ip
+from zodiarc.core.event import NormalizedEvent
+from zodiarc.core.evidence import EvidenceRef
+from zodiarc.detect.engine import RuleEngine
+from zodiarc.detect.rulepacks import default_rules
+from zodiarc.storage.event_store import ParquetEventStore
 
 
 def events(ip="192.0.2.1", count=20, **fields):
@@ -34,7 +34,7 @@ def events(ip="192.0.2.1", count=20, **fields):
 
 
 def test_quiet_attack_precedes_busy_benign_and_matches_reconstruction(tmp_path):
-    from logarx.triage.profile import profile_client, rank_profiles
+    from zodiarc.triage.profile import profile_client, rank_profiles
 
     engine = RuleEngine(default_rules())
     quiet = events("192.0.2.9", 1, path="/etc/passwd", query="file=../../etc/passwd")
@@ -60,7 +60,7 @@ def test_quiet_attack_precedes_busy_benign_and_matches_reconstruction(tmp_path):
 
 
 def test_promoted_order_bounds_severity_and_explains_support_without_losing_evidence():
-    from logarx.triage.profile import DEFAULT_POLICY, profile_client, rank_profiles
+    from zodiarc.triage.profile import DEFAULT_POLICY, profile_client, rank_profiles
 
     engine = RuleEngine(default_rules())
     base = profile_client(events(count=1, path="/etc/passwd"), engine)
@@ -81,7 +81,7 @@ def test_promoted_order_bounds_severity_and_explains_support_without_losing_evid
 def test_priority_score_matches_hand_calculated_support_severity_and_share():
     import pytest
 
-    from logarx.triage.profile import priority_score, profile_client
+    from zodiarc.triage.profile import priority_score, profile_client
 
     base = profile_client(events(count=1), RuleEngine(default_rules()))
     for hostile, requests, severity, expected in (
@@ -96,7 +96,7 @@ def test_priority_score_matches_hand_calculated_support_severity_and_share():
 
 
 def test_duplicate_rule_matches_count_one_request():
-    from logarx.triage.profile import profile_client
+    from zodiarc.triage.profile import profile_client
 
     rules = default_rules()
     sample = events(count=1, path="/etc/passwd", query="file=../../etc/passwd")
@@ -106,8 +106,8 @@ def test_duplicate_rule_matches_count_one_request():
 
 
 def test_shared_ip_native_and_crs_labels_match_reconstruction(tmp_path):
-    from logarx.detect.crs import CrsDetection
-    from logarx.triage.profile import profile_client
+    from zodiarc.detect.crs import CrsDetection
+    from zodiarc.triage.profile import profile_client
 
     sample = events(count=24)
     sample[0] = replace(sample[0], query="id=1 UNION SELECT password FROM users")
@@ -153,7 +153,7 @@ def test_shared_ip_native_and_crs_labels_match_reconstruction(tmp_path):
 
 
 def test_statistics_preserve_missingness_and_real_peak_evidence():
-    from logarx.triage.profile import profile_client
+    from zodiarc.triage.profile import profile_client
 
     sample = events(count=80, status=None, bytes_sent=None)
     profile = profile_client(sample, RuleEngine([]))
@@ -166,7 +166,7 @@ def test_statistics_preserve_missingness_and_real_peak_evidence():
 
 
 def test_uniform_traffic_is_not_declared_unusual():
-    from logarx.triage.profile import profile_client, rank_profiles
+    from zodiarc.triage.profile import profile_client, rank_profiles
 
     engine = RuleEngine([])
     profiles = [profile_client(events(f"192.0.2.{i}"), engine) for i in range(30)]
@@ -174,7 +174,7 @@ def test_uniform_traffic_is_not_declared_unusual():
 
 
 def test_unusual_order_uses_complete_population_and_measured_reasons():
-    from logarx.triage.profile import profile_client, rank_profiles
+    from zodiarc.triage.profile import profile_client, rank_profiles
 
     engine = RuleEngine([])
     profiles = [profile_client(events(f"192.0.2.{i}"), engine) for i in range(30)]
@@ -190,7 +190,7 @@ def test_unusual_order_uses_complete_population_and_measured_reasons():
 
 
 def test_short_clients_and_sparse_fields_cannot_drive_anomaly_comparisons():
-    from logarx.triage.profile import profile_client, rank_profiles
+    from zodiarc.triage.profile import profile_client, rank_profiles
 
     engine = RuleEngine([])
     profiles = [profile_client(events(f"192.0.2.{i}"), engine) for i in range(30)]
@@ -202,7 +202,7 @@ def test_short_clients_and_sparse_fields_cannot_drive_anomaly_comparisons():
 
 
 def test_leading_reason_explains_the_strongest_evidence():
-    from logarx.triage.profile import profile_client
+    from zodiarc.triage.profile import profile_client
 
     sample = events(count=2, path="/wp-admin/", status=404)
     sample[1] = replace(
@@ -216,7 +216,7 @@ def test_leading_reason_explains_the_strongest_evidence():
 
 
 def test_tied_security_ranks_use_ip_order():
-    from logarx.triage.profile import profile_client, rank_profiles
+    from zodiarc.triage.profile import profile_client, rank_profiles
 
     engine = RuleEngine(default_rules())
     profiles = [
@@ -245,7 +245,7 @@ def test_a_rule_that_matches_but_loses_the_label_is_still_counted():
     confidence. Counting only the label that won would say nobody else
     enumerated.
     """
-    from logarx.triage.profile import profile_client
+    from zodiarc.triage.profile import profile_client
 
     profile = profile_client(scanned(), RuleEngine(default_rules()))
     assert profile.rules_matched["directory_enumeration"] == 30
@@ -258,7 +258,7 @@ def test_ordinary_traffic_is_counted_under_the_label_it_was_given():
 
     Asking who else browsed has to find these requests all the same.
     """
-    from logarx.triage.profile import profile_client
+    from zodiarc.triage.profile import profile_client
 
     profile = profile_client(events(count=3), RuleEngine(default_rules()))
     assert profile.rules_matched == {"benign:browsing": 3}
@@ -273,7 +273,7 @@ def test_rule_counts_agree_with_reconstruction(tmp_path):
     """
     from collections import Counter
 
-    from logarx.triage.profile import profile_client
+    from zodiarc.triage.profile import profile_client
 
     engine = RuleEngine(default_rules())
     sample = [
@@ -312,7 +312,7 @@ def test_rule_counts_agree_with_reconstruction(tmp_path):
 
 def fixture_rules(tmp_path, *rules):
     """Signature rules matching a word in the query: (id, category, severity, confidence, word)."""
-    from logarx.detect.rules import load_rules
+    from zodiarc.detect.rules import load_rules
 
     body = "version: 1\nrules:\n" + "".join(
         f"  - id: {rule_id}\n"
@@ -341,7 +341,7 @@ def at(event, seconds, line=None):
 
 
 def test_distinct_rule_pairs_are_a_maximum_matching_not_a_minimum_of_counts(tmp_path):
-    from logarx.triage.profile import profile_client
+    from zodiarc.triage.profile import profile_client
 
     engine = fixture_rules(
         tmp_path,
@@ -358,8 +358,8 @@ def test_distinct_rule_pairs_are_a_maximum_matching_not_a_minimum_of_counts(tmp_
 
 
 def test_only_native_rules_at_high_confidence_count_as_specific(tmp_path):
-    from logarx.detect.crs import CrsDetection
-    from logarx.triage.profile import profile_client
+    from zodiarc.detect.crs import CrsDetection
+    from zodiarc.triage.profile import profile_client
 
     engine = fixture_rules(
         tmp_path,
@@ -387,7 +387,7 @@ def test_only_native_rules_at_high_confidence_count_as_specific(tmp_path):
 
 
 def test_many_distinct_matches_keep_the_full_count_and_a_bounded_sample(tmp_path):
-    from logarx.triage.profile import SAMPLE_SIZE, profile_client
+    from zodiarc.triage.profile import SAMPLE_SIZE, profile_client
 
     words = [f"word{i}" for i in range(12)]
     engine = fixture_rules(
@@ -410,7 +410,7 @@ def probe_attack_engine(tmp_path):
 
 
 def test_a_probe_followed_by_an_attack_marks_its_session(tmp_path):
-    from logarx.triage.profile import profile_client
+    from zodiarc.triage.profile import profile_client
 
     sample = events(count=4)
     sample[1] = replace(sample[1], query="probe", path="/admin/")
@@ -423,7 +423,7 @@ def test_a_probe_followed_by_an_attack_marks_its_session(tmp_path):
 
 
 def test_an_attack_before_the_probe_is_not_a_sequence(tmp_path):
-    from logarx.triage.profile import profile_client
+    from zodiarc.triage.profile import profile_client
 
     sample = events(count=4)
     sample[1] = replace(sample[1], query="attack")
@@ -432,7 +432,7 @@ def test_an_attack_before_the_probe_is_not_a_sequence(tmp_path):
 
 
 def test_one_request_with_both_labels_is_not_a_sequence(tmp_path):
-    from logarx.triage.profile import profile_client
+    from zodiarc.triage.profile import profile_client
 
     sample = events(count=4)
     sample[1] = replace(sample[1], query="probe attack")
@@ -440,7 +440,7 @@ def test_one_request_with_both_labels_is_not_a_sequence(tmp_path):
 
 
 def test_the_ordering_is_counted_once_per_session(tmp_path):
-    from logarx.triage.profile import profile_client
+    from zodiarc.triage.profile import profile_client
 
     first = events(count=4)
     first[0] = replace(first[0], query="probe")
@@ -453,7 +453,7 @@ def test_the_ordering_is_counted_once_per_session(tmp_path):
 
 
 def test_equal_timestamps_never_establish_an_order(tmp_path):
-    from logarx.triage.profile import profile_client
+    from zodiarc.triage.profile import profile_client
 
     engine = probe_attack_engine(tmp_path)
     base = events(count=2)
@@ -470,7 +470,7 @@ def test_equal_timestamps_never_establish_an_order(tmp_path):
 
 
 def test_hostile_sessions_and_the_span_of_matching_requests(tmp_path):
-    from logarx.triage.profile import profile_client
+    from zodiarc.triage.profile import profile_client
 
     engine = probe_attack_engine(tmp_path)
     day = 86_400
@@ -491,7 +491,7 @@ def test_hostile_sessions_and_the_span_of_matching_requests(tmp_path):
 
 
 def test_flagged_requests_are_counted_per_category_and_per_rule(tmp_path):
-    from logarx.triage.profile import profile_client
+    from zodiarc.triage.profile import profile_client
 
     engine = probe_attack_engine(tmp_path)
     sample = events(count=5)
@@ -505,7 +505,7 @@ def test_flagged_requests_are_counted_per_category_and_per_rule(tmp_path):
 
 
 def test_example_requests_keep_their_query(tmp_path):
-    from logarx.triage.profile import profile_client
+    from zodiarc.triage.profile import profile_client
 
     sample = events(count=4)
     sample[1] = replace(sample[1], query="probe=1", path="/admin/")
@@ -526,7 +526,7 @@ EXCLUDED_FROM_EXPLOIT_EVIDENCE = (
 
 
 def test_a_quiet_exploit_attempt_precedes_a_loud_probing_client(tmp_path):
-    from logarx.triage.profile import profile_client, rank_profiles
+    from zodiarc.triage.profile import profile_client, rank_profiles
 
     engine = fixture_rules(
         tmp_path,
@@ -544,7 +544,7 @@ def test_a_quiet_exploit_attempt_precedes_a_loud_probing_client(tmp_path):
 
 
 def test_inside_the_exploit_group_more_flagged_requests_come_first(tmp_path):
-    from logarx.triage.profile import profile_client, rank_profiles
+    from zodiarc.triage.profile import profile_client, rank_profiles
 
     engine = fixture_rules(tmp_path, ("sqli_fixture", "injection", "high", 0.9, "attack"))
     few = profile_client(events("192.0.2.1", 2, query="attack"), engine)
@@ -555,7 +555,7 @@ def test_inside_the_exploit_group_more_flagged_requests_come_first(tmp_path):
 
 @pytest.mark.parametrize(("rule_id", "category"), EXCLUDED_FROM_EXPLOIT_EVIDENCE)
 def test_an_excluded_rule_alone_does_not_place_a_client_first(tmp_path, rule_id, category):
-    from logarx.triage.profile import profile_client
+    from zodiarc.triage.profile import profile_client
 
     engine = fixture_rules(
         tmp_path,
@@ -573,7 +573,7 @@ def test_an_excluded_rule_alone_does_not_place_a_client_first(tmp_path, rule_id,
 
 
 def test_the_earliest_eligible_request_is_the_exploit_example_across_sessions(tmp_path):
-    from logarx.triage.profile import profile_client
+    from zodiarc.triage.profile import profile_client
 
     engine = fixture_rules(
         tmp_path,
@@ -592,7 +592,7 @@ def test_the_earliest_eligible_request_is_the_exploit_example_across_sessions(tm
 
 
 def test_the_strongest_eligible_rule_on_the_request_is_named(tmp_path):
-    from logarx.triage.profile import profile_client
+    from zodiarc.triage.profile import profile_client
 
     engine = fixture_rules(
         tmp_path,
@@ -605,7 +605,7 @@ def test_the_strongest_eligible_rule_on_the_request_is_named(tmp_path):
 
 
 def test_an_eligible_match_that_loses_the_label_still_counts(tmp_path):
-    from logarx.triage.profile import profile_client
+    from zodiarc.triage.profile import profile_client
 
     engine = fixture_rules(
         tmp_path,
@@ -620,8 +620,8 @@ def test_an_eligible_match_that_loses_the_label_still_counts(tmp_path):
 
 
 def test_is_exploit_evidence_by_rule_and_category(tmp_path):
-    from logarx.core.activity import ActivityCategory
-    from logarx.triage.profile import is_exploit_evidence
+    from zodiarc.core.activity import ActivityCategory
+    from zodiarc.triage.profile import is_exploit_evidence
 
     engine = fixture_rules(
         tmp_path,
@@ -637,7 +637,7 @@ def test_is_exploit_evidence_by_rule_and_category(tmp_path):
 
 
 def test_a_crs_label_alone_never_places_a_client_first(tmp_path):
-    from logarx.triage.profile import priority_score, profile_client, rank_profiles
+    from zodiarc.triage.profile import priority_score, profile_client, rank_profiles
 
     sample = events(count=3)
     profile = profile_client(
@@ -658,7 +658,7 @@ def test_a_crs_label_alone_never_places_a_client_first(tmp_path):
 
 
 def test_the_same_detection_at_level_one_places_the_client_first(tmp_path):
-    from logarx.triage.profile import priority_score, profile_client, rank_profiles
+    from zodiarc.triage.profile import priority_score, profile_client, rank_profiles
 
     sample = events(count=3)
     profile = profile_client(
@@ -675,7 +675,7 @@ def test_the_same_detection_at_level_one_places_the_client_first(tmp_path):
 
 
 def test_a_window_rule_match_is_exploit_evidence():
-    from logarx.triage.profile import profile_client
+    from zodiarc.triage.profile import profile_client
 
     sample = events(count=5, path="/login", method="POST", status=401)
     profile = profile_client(sample, RuleEngine(default_rules()))
@@ -693,7 +693,7 @@ def crs_detection(
     severity="critical",
     msg="Fixture detection",
 ):
-    from logarx.detect.crs import CrsDetection
+    from zodiarc.detect.crs import CrsDetection
 
     return CrsDetection(
         source_file_id="source",
@@ -727,14 +727,14 @@ def crs_detection(
     ],
 )
 def test_crs_exploit_category(changes, trusted, expected):
-    from logarx.triage.profile import crs_exploit_category
+    from zodiarc.triage.profile import crs_exploit_category
 
     category = crs_exploit_category(crs_detection(**changes), site_host_known=trusted)
     assert (category.value if category else None) == expected
 
 
 def test_a_level_one_detection_alone_names_the_request_and_message():
-    from logarx.triage.profile import profile_client
+    from zodiarc.triage.profile import profile_client
 
     engine = RuleEngine(default_rules())
     profile = profile_client(events(count=3), engine, crs={("source", 2): [crs_detection(line=2)]})
@@ -748,7 +748,7 @@ def test_a_level_one_detection_alone_names_the_request_and_message():
 
 
 def test_a_level_one_detection_counts_when_a_native_label_won(tmp_path):
-    from logarx.triage.profile import profile_client
+    from zodiarc.triage.profile import profile_client
 
     engine = fixture_rules(tmp_path, ("recon_fixture", "reconnaissance", "high", 0.9, "probe"))
     sample = events(count=2, query="probe")
@@ -759,7 +759,7 @@ def test_a_level_one_detection_counts_when_a_native_label_won(tmp_path):
 
 
 def test_a_level_two_rescue_label_is_not_exploit_evidence():
-    from logarx.triage.profile import profile_client
+    from zodiarc.triage.profile import profile_client
 
     engine = RuleEngine(default_rules())
     # A log file in the User-Agent. This was `libwww-perl/6.72` until a file-list
@@ -783,7 +783,7 @@ def test_a_level_two_rescue_label_is_not_exploit_evidence():
 
 
 def test_native_evidence_is_named_even_when_crs_evidence_came_first(tmp_path):
-    from logarx.triage.profile import profile_client
+    from zodiarc.triage.profile import profile_client
 
     engine = fixture_rules(tmp_path, ("sqli_fixture", "injection", "high", 0.9, "attack"))
     sample = events(count=3)
@@ -801,7 +801,7 @@ def test_native_evidence_is_named_even_when_crs_evidence_came_first(tmp_path):
     ],
 )
 def test_the_crs_tie_break_is_severity_then_rule_id(first, second, named):
-    from logarx.triage.profile import profile_client
+    from zodiarc.triage.profile import profile_client
 
     detections = [
         crs_detection(rule_id=rule, family=family, severity=severity)
@@ -814,7 +814,7 @@ def test_the_crs_tie_break_is_severity_then_rule_id(first, second, named):
 
 
 def test_only_the_eligible_detection_on_a_request_is_named():
-    from logarx.triage.profile import profile_client
+    from zodiarc.triage.profile import profile_client
 
     detections = [
         crs_detection(rule_id=942999, var="REQUEST_HEADERS:Referer"),
@@ -828,7 +828,7 @@ def test_only_the_eligible_detection_on_a_request_is_named():
 
 
 def test_crs_exploit_evidence_changes_nothing_else_about_the_profile():
-    from logarx.triage.profile import priority_score, profile_client
+    from zodiarc.triage.profile import priority_score, profile_client
 
     engine = RuleEngine(default_rules())
     sample = events(count=3)
@@ -841,7 +841,7 @@ def test_crs_exploit_evidence_changes_nothing_else_about_the_profile():
 
 
 def test_crs_exploit_evidence_does_not_bring_a_client_into_the_queue(tmp_path):
-    from logarx.triage.profile import profile_client, rank_profiles
+    from zodiarc.triage.profile import profile_client, rank_profiles
 
     engine = fixture_rules(tmp_path, ("browse_fixture", "browsing", "low", 0.9, "plain"))
     sample = events(count=3, query="plain")
@@ -852,7 +852,7 @@ def test_crs_exploit_evidence_does_not_bring_a_client_into_the_queue(tmp_path):
 
 
 def test_the_other_queues_ignore_exploit_evidence():
-    from logarx.triage.profile import RequestExample, TriagePolicy, profile_client, rank_profiles
+    from zodiarc.triage.profile import RequestExample, TriagePolicy, profile_client, rank_profiles
 
     engine = RuleEngine(default_rules())
     profiles = [profile_client(events(f"192.0.2.{n}", 20 + n), engine) for n in range(4)]

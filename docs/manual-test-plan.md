@@ -6,11 +6,11 @@ is the one whose evidence appeared", and "the exported report says the same
 thing the screen said" are judgements about what a person sees. This is the
 checklist that makes those judgements repeatable instead of impressionistic.
 
-Run it before tagging a release, and after any change to `src/logarx/gui/` or to
+Run it before tagging a release, and after any change to `src/zodiarc/gui/` or to
 the packaging spec.
 
 **This is for whoever is about to ship a change, not for someone trying the
-tool.** Nothing here needs doing to use LogarX — the README's quickstart is that
+tool.** Nothing here needs doing to use Zodiarc — the README's quickstart is that
 page. It is published rather than kept aside because a reader deciding whether to
 trust the tool is entitled to see what its own maintainers check by hand, and how
 specific those checks are.
@@ -40,8 +40,8 @@ else's machine.
   dataset's `large` tier: about a million lines and 250 MB, roughly an hour of
   `tools/build.py apache-shopfront large`.
 
-Start the application with `.venv\Scripts\logarx-gui.exe`, or the packaged
-`dist\logarx\logarx.exe` when checking a build.
+Start the application with `.venv\Scripts\zodiarc-gui.exe`, or the packaged
+`dist\zodiarc\zodiarc.exe` when checking a build.
 
 ---
 
@@ -114,7 +114,7 @@ cancelled case is discarded, not resumed.
 4. Confirm the same from the command line, which reads the case independently:
 
 ```powershell
-.venv\Scripts\logarx.exe list-ips -c <cancelled-case>
+.venv\Scripts\zodiarc.exe list-ips -c <cancelled-case>
 ```
 
 **Pass:** the same refusal, naming the same reason. If the CLI can analyse a
@@ -147,7 +147,7 @@ window shown in the heading.
 6. Compare with the CLI, which builds the same evidence a different way:
 
 ```powershell
-.venv\Scripts\logarx.exe evidence -c <case> --ip <address> -n 25
+.venv\Scripts\zodiarc.exe evidence -c <case> --ip <address> -n 25
 ```
 
 **Pass:** the same references for the same activity.
@@ -184,8 +184,8 @@ screen, the screen was a preview of nothing.
 2. Produce the CLI's version of the same client:
 
 ```powershell
-.venv\Scripts\logarx.exe export -c <case> --ip <address> -f json -o cli-graph.json
-.venv\Scripts\logarx.exe analyze -c <case> --ip <address> -o cli-analysis.json
+.venv\Scripts\zodiarc.exe export -c <case> --ip <address> -f json -o cli-graph.json
+.venv\Scripts\zodiarc.exe analyze -c <case> --ip <address> -o cli-analysis.json
 ```
 
 **Pass:** the GUI's JSON and the CLI's JSON describe the same nodes, edges and
@@ -225,10 +225,10 @@ exactly what a freezer drops, and both fail at runtime rather than at build time
 
 ```powershell
 pip install -e ".[gui,package]"
-pyinstaller --clean --noconfirm packaging\logarx.spec
+pyinstaller --clean --noconfirm packaging\zodiarc.spec
 ```
 
-Then, on the built `dist\logarx\logarx.exe`:
+Then, on the built `dist\zodiarc\zodiarc.exe`:
 
 1. Launch it on a machine, or in an account, with no Python installed.
 
@@ -491,7 +491,7 @@ rather than quarantine it. `--format` is what turns that refusal into silence,
 and the CLI is the only place it can be given:
 
 ```bash
-logarx-dev ingest access.log notes.txt --case ./case-dead --format apache-combined
+zodiarc-dev ingest access.log notes.txt --case ./case-dead --format apache-combined
 ```
 
 where `notes.txt` is any file that is not an access log. That the case has to
@@ -561,7 +561,7 @@ is not that.
 6. Press **Ctrl+A**, then **Remove from list**. Close the window and open it again.
 
 **Pass:** the chooser does not appear at all — there is nothing to offer. Check
-`HKCU\Software\logarx` with `regedit`: the recent-cases value is **gone**, not
+`HKCU\Software\zodiarc` with `regedit`: the recent-cases value is **gone**, not
 present and empty. That distinction is the whole promise of this control.
 
 ---
@@ -923,10 +923,10 @@ back the drag from step 3.
    the first box and choose **Rename session…**. Type `Scanner looking
    around` and press Enter.
 
-**Pass:** the window says which session and LogarX's own name. After Enter
+**Pass:** the window says which session and Zodiarc's own name. After Enter
 the box is headed `Scanner looking around` with a pencil before it, and
 nothing else moves. Resting on the heading, the tip begins `Named by you.
-LogarX's name:` and the name the box had before.
+Zodiarc's name:` and the name the box had before.
 
 8. Right-click the paper outside every box.
 
@@ -936,7 +936,7 @@ LogarX's name:` and the name the box had before.
 
 **Pass:** the first box is still `Scanner looking around`, with its pencil.
 
-10. Double-click that heading and press **Use LogarX's name**.
+10. Double-click that heading and press **Use Zodiarc's name**.
 
 **Pass:** the box has its old name back, with no pencil.
 
@@ -1128,7 +1128,7 @@ is not in it. The CSV has three rows under
 `category,kind,client,what,note,saved,line,log line`, the line first; the
 activity's row names `excerpt.log:2014`, its first line.
 
-10. Start LogarX a second time and open the same case. Bookmark `203.0.113.6`
+10. Start Zodiarc a second time and open the same case. Bookmark `203.0.113.6`
     from its client list, then click on the first window.
 
 **Pass:** the first window's tab reads `Bookmarks (4)`, and `203.0.113.6` wears a
@@ -1165,7 +1165,7 @@ ground, indented, every number whole. Clicking the request on the same row
 selects it without closing it.
 
 3. Set Windows' text size to its largest (**Settings → Accessibility → Text
-   size**, 225%), start LogarX again, and repeat steps 1 and 2.
+   size**, 225%), start Zodiarc again, and repeat steps 1 and 2.
 
 **Pass:** the ▸ still opens the row and the ▾ closes it. A click on the line
 number just right of the arrow selects the row and nothing else.
@@ -1198,7 +1198,7 @@ minutes and the client list's heading still shows its sort arrow.
 **Pass:** over the queue the text steps one size per notch; over the graph only
 the graph zooms.
 
-5. Press Ctrl+0. Then zoom to 10 pt, close LogarX and start it again.
+5. Press Ctrl+0. Then zoom to 10 pt, close Zodiarc and start it again.
 
 **Pass:** Ctrl+0 returns to the starting size, and the restart opens at 10 pt.
 
@@ -1208,7 +1208,7 @@ the graph zooms.
 
 Writing a pack, its counts, switching a built-in rule off and the strip are all
 tested. What is checked here is the part no test reaches: a pack changed in
-another program while LogarX is closed.
+another program while Zodiarc is closed.
 
 1. Open a case made from the shopfront excerpt. **Case → Formats and rules…**,
    the *Detection rules* tab, **New** under the list. Name it `shopfront`, replace
@@ -1259,8 +1259,8 @@ shop_cart_emptied_by_api, first condition under match`, and **Save** is off.
 was read.` Press **Re-read**: the strip goes, and in `100.70.92.188`'s
 trace an activity is now named *Stock levels polled by a script*.
 
-4. Close LogarX. Open `%APPDATA%\logarx\rules\shopfront.yaml` in Notepad,
-   delete the first `name:` line, save, and start LogarX with the same case.
+4. Close Zodiarc. Open `%APPDATA%\zodiarc\rules\shopfront.yaml` in Notepad,
+   delete the first `name:` line, save, and start Zodiarc with the same case.
 
 **Pass:** a strip says one of your rule packs did not load and names
 `shopfront`. In **Formats and rules…** it is listed as `shopfront (does not

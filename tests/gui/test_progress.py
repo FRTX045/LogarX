@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from logarx.gui.progress import SETTLE_SECONDS, Progress, Reading
+from zodiarc.gui.progress import SETTLE_SECONDS, Progress, Reading
 
 
 def reading(**over: Any) -> Progress:

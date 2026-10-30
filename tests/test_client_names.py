@@ -9,8 +9,8 @@ from typing import Any
 
 import pytest
 
-from logarx.bookmarks import FILE_NAME as BOOKMARKS_FILE
-from logarx.client_names import (
+from zodiarc.bookmarks import FILE_NAME as BOOKMARKS_FILE
+from zodiarc.client_names import (
     EMPTY,
     FILE_NAME,
     UNREADABLE_NAME,
@@ -24,7 +24,7 @@ from logarx.client_names import (
     rename,
     shown,
 )
-from logarx.session_names import FILE_NAME as SESSION_NAMES_FILE
+from zodiarc.session_names import FILE_NAME as SESSION_NAMES_FILE
 
 CLIENT = "203.0.113.47"
 OTHER = "198.51.100.7"

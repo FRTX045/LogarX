@@ -2,7 +2,7 @@
 # Rebuild dist/ when work is merged into main, so the packaged application
 # follows the branch instead of following whoever remembered to build it.
 #
-# Off unless asked for:  git config logarx.rebuild true
+# Off unless asked for:  git config zodiarc.rebuild true
 #
 # post-merge rather than post-commit, because work reaches main through a
 # merge, and hooking commits would rebuild once per commit on a branch for a
@@ -10,7 +10,7 @@
 # partner's merged work belongs in dist/ as much as your own.
 #
 # Backgrounded: a build takes minutes and no merge should wait on it.
-[ "$(git config --bool logarx.rebuild 2>/dev/null)" = "true" ] || exit 0
+[ "$(git config --bool zodiarc.rebuild 2>/dev/null)" = "true" ] || exit 0
 [ "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" = "main" ] || exit 0
 
 # Only when something that ends up in the bundle changed: a documentation
@@ -19,17 +19,17 @@
 _touched=$(git diff --name-only ORIG_HEAD HEAD 2>/dev/null \
     || git diff --name-only HEAD~1 HEAD 2>/dev/null)
 case "$_touched" in
-    *src/logarx/*|*packaging/*|*pyproject.toml*|*crs/*.go*|*crs/go.mod*|*crs/go.sum*)
+    *src/zodiarc/*|*packaging/*|*pyproject.toml*|*crs/*.go*|*crs/go.mod*|*crs/go.sum*)
         _root=$(git rev-parse --show-toplevel)
         _py="$_root/.venv/Scripts/python.exe"
         [ -x "$_py" ] || _py=python
-        _log="$HOME/.cache/logarx-build.log"
+        _log="$HOME/.cache/zodiarc-build.log"
         mkdir -p "$(dirname "$_log")"
         echo "--- $(date '+%Y-%m-%d %H:%M:%S') post-merge $(git rev-parse --short HEAD)" >> "$_log"
         "$_py" "$_root/packaging/rebuild.py" >> "$_log" 2>&1 &
-        echo "[logarx] rebuilding dist/ in the background (log: $_log)"
+        echo "[zodiarc] rebuilding dist/ in the background (log: $_log)"
         ;;
     *)
-        echo "[logarx] nothing in the bundle changed - dist/ left alone"
+        echo "[zodiarc] nothing in the bundle changed - dist/ left alone"
         ;;
 esac

@@ -8,12 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from logarx.core.activity import ActivityCategory, Severity
-from logarx.core.event import NormalizedEvent
-from logarx.core.evidence import EvidenceRef
-from logarx.detect.crs import CrsDetection
-from logarx.detect.engine import LabelledEvent, RuleEngine, _metric, _metric_holds
-from logarx.detect.rules import WINDOW_METRICS, RulePackError, WindowCondition, load_rules
+from zodiarc.core.activity import ActivityCategory, Severity
+from zodiarc.core.event import NormalizedEvent
+from zodiarc.core.evidence import EvidenceRef
+from zodiarc.detect.crs import CrsDetection
+from zodiarc.detect.engine import LabelledEvent, RuleEngine, _metric, _metric_holds
+from zodiarc.detect.rules import WINDOW_METRICS, RulePackError, WindowCondition, load_rules
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 
@@ -111,8 +111,8 @@ def test_every_matchable_field_reads_its_own_value() -> None:
     quietly resolving to the empty string that the fallthrough returns. Each
     value is distinct, so returning the wrong one cannot look right.
     """
-    from logarx.detect.engine import RequestView
-    from logarx.detect.rules import MATCH_FIELDS
+    from zodiarc.detect.engine import RequestView
+    from zodiarc.detect.rules import MATCH_FIELDS
 
     view = RequestView(
         NormalizedEvent(
@@ -922,8 +922,8 @@ def test_failed_dense_window_scan_does_bounded_query_work(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Missing assets must not make every window rescan all its prefixes."""
-    from logarx.detect.engine import _range_min_tree, _WindowMeasurements
-    from logarx.detect.rulepacks import default_rules
+    from zodiarc.detect.engine import _range_min_tree, _WindowMeasurements
+    from zodiarc.detect.rulepacks import default_rules
 
     work = 0
     original = _WindowMeasurements.add
@@ -951,7 +951,7 @@ def test_failed_dense_window_scan_does_bounded_query_work(
         return CountingTree(tree), size
 
     monkeypatch.setattr(_WindowMeasurements, "add", counted_add)
-    monkeypatch.setattr("logarx.detect.engine._range_min_tree", counted_tree)
+    monkeypatch.setattr("zodiarc.detect.engine._range_min_tree", counted_tree)
     events = [
         event(n / 10, path=f"/missing-{n}.png", status=404, user_agent="Mozilla/5.0")
         for n in range(500)
@@ -1284,7 +1284,7 @@ def test_crs_s_own_click_id_false_positives_are_click_tokens(parameter: str, val
     """CRS's regression corpus keeps these two as false positives against 942440
     (942440.yaml, tests 19 and 20): its own maintainers' answer to the same
     question, for the neighbouring rule."""
-    from logarx.detect.engine import names_activity
+    from zodiarc.detect.engine import names_activity
 
     assert not names_activity(
         crs_detection(rule_id=942440, matched_var=f"ARGS:{parameter}", transformed_value=value)
@@ -1822,7 +1822,7 @@ def test_subdomains_of_the_host_crs_was_told_are_covered_by_it() -> None:
 
 
 def test_names_activity_is_public_and_is_the_check_rescue_applies() -> None:
-    from logarx.detect.engine import names_activity
+    from zodiarc.detect.engine import names_activity
 
     query = crs_detection()
     assert names_activity(query)
@@ -1904,9 +1904,9 @@ def test_a_decoded_field_is_as_unrecorded_as_the_field_it_decodes(absence: list)
 def test_every_matchable_field_depends_on_a_field_an_event_carries() -> None:
     """A field added to the rules without saying which event field it reads
     would be matched against a log that cannot record it."""
-    from logarx.detect.engine import FIELD_SOURCES
-    from logarx.detect.rules import MATCH_FIELDS
-    from logarx.parsers.fieldnames import OPTIONAL_FIELDS
+    from zodiarc.detect.engine import FIELD_SOURCES
+    from zodiarc.detect.rules import MATCH_FIELDS
+    from zodiarc.parsers.fieldnames import OPTIONAL_FIELDS
 
     assert set(FIELD_SOURCES) == set(MATCH_FIELDS)
     assert set(FIELD_SOURCES.values()) <= set(OPTIONAL_FIELDS) | {None}

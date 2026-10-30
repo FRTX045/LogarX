@@ -20,16 +20,16 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 from PyQt6.QtWidgets import QApplication
 
 from conftest import settled
-from logarx.case import Case
-from logarx.formats import FormatDrift
-from logarx.gui.app import MainWindow
-from logarx.gui.format_notice import drift_notice
-from logarx.gui.notice_bar import NoticeBanner
-from logarx.gui.quarantine_notice import Notice
-from logarx.parsers.apache import COMBINED
-from logarx.parsers.library import save_library
-from logarx.parsers.registry import register_saved_formats, unregister_format
-from logarx.parsers.spec import LogFormatSpec
+from zodiarc.case import Case
+from zodiarc.formats import FormatDrift
+from zodiarc.gui.app import MainWindow
+from zodiarc.gui.format_notice import drift_notice
+from zodiarc.gui.notice_bar import NoticeBanner
+from zodiarc.gui.quarantine_notice import Notice
+from zodiarc.parsers.apache import COMBINED
+from zodiarc.parsers.library import save_library
+from zodiarc.parsers.registry import register_saved_formats, unregister_format
+from zodiarc.parsers.spec import LogFormatSpec
 
 #: Pipe-separated, so nothing built in reads it and the case genuinely depends
 #: on the saved definition it was ingested with.

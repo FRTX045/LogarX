@@ -6,7 +6,7 @@ what an attack looks like should not have to know Python to say so, and a rule
 pack can be reviewed, diffed and versioned by someone who will never read
 `engine.py`.
 
-The packs that ship are in `src/logarx/detect/rulepacks/`. They are ordinary
+The packs that ship are in `src/zodiarc/detect/rulepacks/`. They are ordinary
 input to the loader: yours work the same way.
 
 Your own packs live in the *Detection rules* tab of **Case → Formats and
@@ -20,7 +20,7 @@ same events can be re-read against a better ruleset tomorrow without
 re-ingesting a gigabyte. Your packs add to the bundled ones rather than
 replacing them, so writing one rule about your own application does not
 silently drop OWASP coverage. To measure a pack against CRS's corpus,
-`logarx-dev score-crs --rules ./my-rules.yaml` takes a file or a directory, and
+`zodiarc-dev score-crs --rules ./my-rules.yaml` takes a file or a directory, and
 repeats.
 
 A rule about a single request can be written without YAML: **Add rule…** in that
@@ -291,9 +291,9 @@ small dataset build; `samples/README.md` says how to get it:
 ```bash
 pytest tests/detect tests/evaluation -q
 B=samples/apache-shopfront/2026-08-23-small
-logarx-dev ingest $B/access.log --case ./case-check
-logarx-dev enrich --case ./case-check
-logarx-dev evaluate --case ./case-check --truth $B/truth.jsonl
+zodiarc-dev ingest $B/access.log --case ./case-check
+zodiarc-dev enrich --case ./case-check
+zodiarc-dev evaluate --case ./case-check --truth $B/truth.jsonl
 ```
 
 `docs/evaluation.md` has what that prints today, so a change is a comparison

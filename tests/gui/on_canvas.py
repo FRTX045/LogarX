@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from PyQt6.QtWidgets import QGraphicsItem
 
-    from logarx.gui.canvas import ActivityCanvas, _EdgeArt, _NodeItem, _SessionBox
+    from zodiarc.gui.canvas import ActivityCanvas, _EdgeArt, _NodeItem, _SessionBox
 
 __all__ = [
     "box_detail",

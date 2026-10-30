@@ -21,8 +21,8 @@ from PyQt6.QtGui import QFocusEvent, QFontMetrics
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QHBoxLayout, QVBoxLayout, QWidget
 
-from logarx.gui.filter_box import FilterBox
-from logarx.search import Scope
+from zodiarc.gui.filter_box import FilterBox
+from zodiarc.search import Scope
 
 VALUES = {"status": [("404", "3,555 lines"), ("200", "9 lines"), ("500", "1 line")]}
 
@@ -439,7 +439,7 @@ def test_a_chip_longer_than_the_box_gives_way_and_keeps_its_cross(window: QWidge
 
 def test_typing_is_in_the_interface_font_not_the_evidence_font(window: QWidget) -> None:
     """Monospace made the hint and the query look like terminal input."""
-    from logarx.gui.theme import MONO_FAMILIES
+    from zodiarc.gui.theme import MONO_FAMILIES
 
     box = boxed(window)
 
@@ -455,7 +455,7 @@ def test_the_field_inside_the_box_draws_no_box_of_its_own(window: QWidget) -> No
 
 
 def test_chips_are_set_in_the_interface_caption_size(window: QWidget) -> None:
-    from logarx.gui.theme import MONO_FAMILIES, caption_font
+    from zodiarc.gui.theme import MONO_FAMILIES, caption_font
 
     box = boxed(window)
     box.setText("status:404")
@@ -473,8 +473,8 @@ def test_with_chips_the_box_invites_another(window: QWidget) -> None:
 
 
 def test_the_two_boxes_are_named_shortly_with_the_syntax_on_hover(qt_app: QApplication) -> None:
-    from logarx.gui.evidence_panel import EVIDENCE_HINT
-    from logarx.gui.panels import CASE_HINT, ClientTable
+    from zodiarc.gui.evidence_panel import EVIDENCE_HINT
+    from zodiarc.gui.panels import CASE_HINT, ClientTable
 
     assert CASE_HINT == "Search clients\u2026"
     assert EVIDENCE_HINT == "Filter lines\u2026"

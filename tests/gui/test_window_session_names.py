@@ -21,13 +21,13 @@ from PyQt6.QtGui import QContextMenuEvent
 from PyQt6.QtWidgets import QApplication
 
 from conftest import settled
-from logarx.analysis import analyse_ip
-from logarx.case import Case
-from logarx.core.window import TimeWindow
-from logarx.gui.app import MainWindow
-from logarx.gui.canvas import ActivityCanvas
-from logarx.gui.session_name_keeper import SessionNameKeeper
-from logarx.session_names import FILE_NAME, SessionKey, load
+from zodiarc.analysis import analyse_ip
+from zodiarc.case import Case
+from zodiarc.core.window import TimeWindow
+from zodiarc.gui.app import MainWindow
+from zodiarc.gui.canvas import ActivityCanvas
+from zodiarc.gui.session_name_keeper import SessionNameKeeper
+from zodiarc.session_names import FILE_NAME, SessionKey, load
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 CLIENT = "10.0.0.9"
@@ -113,11 +113,11 @@ def test_the_name_comes_back_when_the_case_is_opened_again(
     again.close()
 
 
-def test_use_logarxs_name_takes_the_name_and_pencil_away(
+def test_use_zodiarcs_name_takes_the_name_and_pencil_away(
     qt_app: QApplication, case_dir: Path
 ) -> None:
     window = opened(qt_app, case_dir)
-    logarx_name = box_name(session_boxes(window._canvas)[0])
+    zodiarc_name = box_name(session_boxes(window._canvas)[0])
     rename_through_the_window(window, FIRST, "Mine")
 
     window._session_names.rename(FIRST)
@@ -127,7 +127,7 @@ def test_use_logarxs_name_takes_the_name_and_pencil_away(
     dialog.reset_button.click()
 
     first = session_boxes(window._canvas)[0]
-    assert (box_name(first), has_pencil(first)) == (logarx_name, False)
+    assert (box_name(first), has_pencil(first)) == (zodiarc_name, False)
     assert load(case_dir).names.name_for(key_of(window, 0)) is None
     window.close()
 
@@ -181,7 +181,7 @@ def test_double_clicking_a_heading_opens_the_window(qt_app: QApplication, case_d
     dialog = window._session_names.dialog
     assert dialog is not None and dialog.isVisible()
     assert dialog.place.text().startswith("Session 1 of 2 · ")
-    assert dialog.note.text() == f"LogarX's name: {box_name(session_boxes(window._canvas)[0])}"
+    assert dialog.note.text() == f"Zodiarc's name: {box_name(session_boxes(window._canvas)[0])}"
     dialog.close()
     window.close()
 
@@ -199,7 +199,7 @@ def test_behaviour_and_back_keeps_the_name(qt_app: QApplication, case_dir: Path)
     window.close()
 
 
-def test_an_unreadable_file_shows_logarxs_names_and_says_so_once(
+def test_an_unreadable_file_shows_zodiarcs_names_and_says_so_once(
     qt_app: QApplication, case_dir: Path
 ) -> None:
     (case_dir / FILE_NAME).write_bytes(b"{oops")
@@ -215,7 +215,7 @@ def test_an_unreadable_file_shows_logarxs_names_and_says_so_once(
         "The session names file in this case could not be read ("
     )
     assert window._status.text().endswith(
-        "), so LogarX's names are shown. It is kept as it is; the next rename sets it aside"
+        "), so Zodiarc's names are shown. It is kept as it is; the next rename sets it aside"
         " as session-names.unreadable.json."
     )
     said: list[str] = []
@@ -227,7 +227,7 @@ def test_an_unreadable_file_shows_logarxs_names_and_says_so_once(
     window.close()
 
 
-def test_a_filter_that_cuts_the_first_request_shows_logarxs_name(
+def test_a_filter_that_cuts_the_first_request_shows_zodiarcs_name(
     qt_app: QApplication, case_dir: Path
 ) -> None:
     window = opened(qt_app, case_dir)
@@ -259,7 +259,7 @@ def test_a_refused_folder_leaves_the_heading_as_it_was(
     qt_app: QApplication, case_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     window = opened(qt_app, case_dir)
-    logarx_name = box_name(session_boxes(window._canvas)[0])
+    zodiarc_name = box_name(session_boxes(window._canvas)[0])
 
     def refuse(*_: object) -> None:
         raise PermissionError("Access is denied")
@@ -271,7 +271,7 @@ def test_a_refused_folder_leaves_the_heading_as_it_was(
     assert dialog is not None and dialog.isVisible()
     assert dialog.error.text() == "Could not save the name: the case folder cannot be written to."
     first = session_boxes(window._canvas)[0]
-    assert (box_name(first), has_pencil(first)) == (logarx_name, False)
+    assert (box_name(first), has_pencil(first)) == (zodiarc_name, False)
     dialog.close()
     window.close()
 

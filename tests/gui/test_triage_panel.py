@@ -5,12 +5,12 @@ from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QTabWidget
 
 from conftest import fired, settled
-from logarx.case import Case
-from logarx.core.event import NormalizedEvent
-from logarx.core.evidence import EvidenceRef
-from logarx.core.window import TimeWindow
-from logarx.gui.app import MainWindow
-from logarx.triage.scan import scan_case
+from zodiarc.case import Case
+from zodiarc.core.event import NormalizedEvent
+from zodiarc.core.evidence import EvidenceRef
+from zodiarc.core.window import TimeWindow
+from zodiarc.gui.app import MainWindow
+from zodiarc.triage.scan import scan_case
 
 
 def make_case(tmp_path, count=1):
@@ -34,7 +34,7 @@ def make_case(tmp_path, count=1):
 
 
 def test_panel_pages_and_searches_all_clients(qt_app, tmp_path):
-    from logarx.gui.triage import TriagePanel
+    from zodiarc.gui.triage import TriagePanel
 
     result = scan_case(make_case(tmp_path, 105))
     panel = TriagePanel()
@@ -69,7 +69,7 @@ def test_panel_pages_and_searches_all_clients(qt_app, tmp_path):
 def test_reason_click_emits_original_evidence_and_escapes_log_fields(qt_app, tmp_path):
     from PyQt6.QtCore import QUrl
 
-    from logarx.gui.triage import TriagePanel
+    from zodiarc.gui.triage import TriagePanel
 
     panel = TriagePanel()
     panel.show_result(scan_case(make_case(tmp_path)))
@@ -108,8 +108,8 @@ def test_case_open_starts_scan_and_reason_opens_reconstruction(qt_app, tmp_path)
 
 
 def test_old_page_response_cannot_overwrite_new_query(qt_app, tmp_path, monkeypatch):
-    from logarx.gui import triage
-    from logarx.triage.scan import read_page
+    from zodiarc.gui import triage
+    from zodiarc.triage.scan import read_page
 
     result = scan_case(make_case(tmp_path, 2))
     callbacks = []
@@ -147,8 +147,8 @@ def test_the_client_list_finds_any_client_while_the_scan_is_blocked_and_after_ca
     import threading
     import time
 
-    from logarx.gui import triage
-    from logarx.triage.scan import ScanCancelled
+    from zodiarc.gui import triage
+    from zodiarc.triage.scan import ScanCancelled
 
     started = threading.Event()
 
@@ -181,7 +181,7 @@ def test_the_client_list_finds_any_client_while_the_scan_is_blocked_and_after_ca
 
 
 def test_where_to_start_offers_only_the_queues_that_analyse_clients(qt_app):
-    from logarx.gui.triage import TriagePanel
+    from zodiarc.gui.triage import TriagePanel
 
     panel = TriagePanel()
     assert [panel.queues.tabText(i) for i in range(panel.queues.count())] == [
@@ -193,7 +193,7 @@ def test_where_to_start_offers_only_the_queues_that_analyse_clients(qt_app):
 
 def test_the_queues_explain_themselves_on_hover(qt_app):
     """What "About these queues" said, now where a reader rests the pointer."""
-    from logarx.gui.triage import TriagePanel
+    from zodiarc.gui.triage import TriagePanel
 
     panel = TriagePanel()
     suspicious, unusual = (panel.queues.tabToolTip(i) for i in range(2))
@@ -214,7 +214,7 @@ def test_fullscreen_menu_shows_reconstruction_from_priorities(qt_app):
 
 
 def test_scan_response_for_an_old_case_is_ignored(qt_app, tmp_path, monkeypatch):
-    from logarx.gui import triage
+    from zodiarc.gui import triage
 
     first = scan_case(make_case(tmp_path / "first", 1))
     second = scan_case(make_case(tmp_path / "second", 2))
@@ -240,9 +240,9 @@ def test_each_reason_links_to_its_own_evidence(qt_app, tmp_path):
 
     from PyQt6.QtCore import QUrl
 
-    from logarx.gui.triage import TriagePanel
-    from logarx.triage.profile import PriorityReason
-    from logarx.triage.scan import read_page
+    from zodiarc.gui.triage import TriagePanel
+    from zodiarc.triage.profile import PriorityReason
+    from zodiarc.triage.scan import read_page
 
     result = scan_case(make_case(tmp_path))
     row = read_page(result.path, "suspicious").rows[0]
@@ -265,7 +265,7 @@ def test_reason_evidence_precedes_sample_and_stale_reads_are_discarded(
     from contextlib import nullcontext
     from types import SimpleNamespace
 
-    from logarx.gui import app
+    from zodiarc.gui import app
 
     callbacks = []
     monkeypatch.setattr(app, "run_job", lambda work, **kw: callbacks.append((work, kw)))
@@ -311,7 +311,7 @@ def test_reason_evidence_precedes_sample_and_stale_reads_are_discarded(
 
 
 def test_same_client_reason_requests_cannot_finish_out_of_order(qt_app, tmp_path, monkeypatch):
-    from logarx.gui import app
+    from zodiarc.gui import app
 
     window = MainWindow()
     window._case_path = make_case(tmp_path)
@@ -330,12 +330,12 @@ def test_same_client_reason_requests_cannot_finish_out_of_order(qt_app, tmp_path
 
 
 def test_a_client_search_answer_for_a_previous_case_is_dropped(qt_app, tmp_path, monkeypatch):
-    import logarx.caseview
-    from logarx.gui import app
-    from logarx.gui.panels import ClientTable
+    import zodiarc.caseview
+    from zodiarc.gui import app
+    from zodiarc.gui.panels import ClientTable
 
     monkeypatch.setattr(ClientTable, "PAGE_SIZE", 1)
-    monkeypatch.setattr(logarx.caseview, "CLIENT_LIMIT", 1)
+    monkeypatch.setattr(zodiarc.caseview, "CLIENT_LIMIT", 1)
     window = MainWindow()
     window._load_case(make_case(tmp_path / "first", 3))
     settled(qt_app)
@@ -356,7 +356,7 @@ def test_a_client_search_answer_for_a_previous_case_is_dropped(qt_app, tmp_path,
 
 
 def test_departing_case_clears_triage_before_new_load_finishes(qt_app, tmp_path, monkeypatch):
-    from logarx.gui import app, triage
+    from zodiarc.gui import app, triage
 
     window = MainWindow()
     root = make_case(tmp_path)
@@ -381,7 +381,7 @@ def test_departing_case_clears_triage_before_new_load_finishes(qt_app, tmp_path,
 def test_departure_rejects_old_evidence_and_old_load_errors_or_progress(
     qt_app, tmp_path, monkeypatch
 ):
-    from logarx.gui import app, triage
+    from zodiarc.gui import app, triage
 
     window = MainWindow()
     root = make_case(tmp_path)
@@ -420,9 +420,9 @@ def test_prioritization_waits_until_crs_has_finished(qt_app, tmp_path, monkeypat
     see. It waits for the run to end, and the reader keeps the client list in
     the meantime.
     """
-    from logarx.detect.crs import AUTO_ENV, SidecarConfig
-    from logarx.enrich import EnrichOutcome
-    from logarx.gui import app as app_module
+    from zodiarc.detect.crs import AUTO_ENV, SidecarConfig
+    from zodiarc.enrich import EnrichOutcome
+    from zodiarc.gui import app as app_module
 
     monkeypatch.delenv(AUTO_ENV, raising=False)
     monkeypatch.setattr(app_module.SidecarConfig, "check", lambda self: None)
@@ -491,8 +491,8 @@ def ingested_case(tmp_path):
 
 
 def selected_panel(qt_app, root):
-    from logarx.gui.triage import TriagePanel
-    from logarx.triage.scan import read_page
+    from zodiarc.gui.triage import TriagePanel
+    from zodiarc.triage.scan import read_page
 
     panel = TriagePanel()
     panel._request = (root, TimeWindow())
@@ -514,7 +514,7 @@ def first_example(row):
 
 
 def test_the_queue_shows_each_clients_key_observation(qt_app, tmp_path):
-    from logarx.gui.recommendation import summary_for
+    from zodiarc.gui.recommendation import summary_for
 
     panel = selected_panel(qt_app, make_case(tmp_path))
     headers = [panel.table.horizontalHeaderItem(i).text() for i in range(4)]
@@ -528,7 +528,7 @@ def test_the_queue_shows_each_clients_key_observation(qt_app, tmp_path):
 
 def test_paging_sits_left_and_opening_sits_right(qt_app):
     """At their own widths: three equal slabs read as one control."""
-    from logarx.gui.triage import TriagePanel
+    from zodiarc.gui.triage import TriagePanel
 
     panel = TriagePanel()
     panel.resize(900, 600)
@@ -541,7 +541,7 @@ def test_paging_sits_left_and_opening_sits_right(qt_app):
 
 
 def test_the_notice_counts_clients(qt_app, tmp_path):
-    from logarx.gui.triage import TriagePanel
+    from zodiarc.gui.triage import TriagePanel
 
     panel = TriagePanel()
     panel.show_result(scan_case(make_case(tmp_path)))
@@ -552,7 +552,7 @@ def test_the_notice_counts_clients(qt_app, tmp_path):
 
 
 def test_the_notice_stays_short(qt_app, tmp_path):
-    from logarx.gui.triage import TriagePanel
+    from zodiarc.gui.triage import TriagePanel
 
     panel = TriagePanel()
     panel.show_result(scan_case(make_case(tmp_path)))
@@ -565,7 +565,7 @@ def test_the_notice_stays_short(qt_app, tmp_path):
 def test_details_share_a_draggable_divider_with_the_queue(qt_app):
     from PyQt6.QtCore import Qt
 
-    from logarx.gui.triage import TriagePanel
+    from zodiarc.gui.triage import TriagePanel
 
     panel = TriagePanel()
     assert panel.split.orientation() == Qt.Orientation.Vertical
@@ -651,9 +651,9 @@ def test_a_source_changed_since_ingest_still_opens_with_its_warning(qt_app, tmp_
 
 
 def test_a_late_source_check_for_another_row_is_ignored(qt_app, tmp_path, monkeypatch):
-    from logarx.gui import triage
-    from logarx.gui.recommendation import SourceStatus
-    from logarx.triage.scan import read_page
+    from zodiarc.gui import triage
+    from zodiarc.gui.recommendation import SourceStatus
+    from zodiarc.triage.scan import read_page
 
     root = make_case(tmp_path, count=2)
     rows = read_page(scan_case(root).path, "suspicious").rows
@@ -708,8 +708,8 @@ def test_a_click_on_the_key_observation_reads_the_row_without_leaving(qt_app, tm
 
 
 def test_moving_quickly_through_rows_checks_sources_once(qt_app, tmp_path, monkeypatch):
-    from logarx.gui import triage
-    from logarx.triage.scan import read_page
+    from zodiarc.gui import triage
+    from zodiarc.triage.scan import read_page
 
     root = make_case(tmp_path, count=3)
     rows = read_page(scan_case(root).path, "suspicious").rows
@@ -727,9 +727,9 @@ def test_moving_quickly_through_rows_checks_sources_once(qt_app, tmp_path, monke
 
 
 def test_a_stale_check_does_no_reading(qt_app, tmp_path, monkeypatch):
-    from logarx.case import Case as RealCase
-    from logarx.gui import triage
-    from logarx.triage.scan import read_page
+    from zodiarc.case import Case as RealCase
+    from zodiarc.gui import triage
+    from zodiarc.triage.scan import read_page
 
     root = make_case(tmp_path, count=2)
     rows = read_page(scan_case(root).path, "suspicious").rows
@@ -779,7 +779,7 @@ def test_rewriting_the_details_keeps_the_readers_place(qt_app, tmp_path):
 
 
 def test_a_failed_source_check_says_the_sources_were_not_checked(qt_app, tmp_path, monkeypatch):
-    from logarx.gui import triage
+    from zodiarc.gui import triage
 
     root = make_case(tmp_path)
     panel = selected_panel(qt_app, root)
@@ -832,9 +832,9 @@ def test_context_and_disclosure_choices_survive_source_updates(qt_app, tmp_path)
 
 def test_running_the_scan_again_keeps_the_rules_it_was_started_with(qt_app, tmp_path, monkeypatch):
     """Run scan, after a cancel, must not fall back to the built-in rules."""
-    from logarx.detect.ruleset import PackText, RuleSet
-    from logarx.gui import triage as triage_module
-    from logarx.gui.triage import TriagePanel
+    from zodiarc.detect.ruleset import PackText, RuleSet
+    from zodiarc.gui import triage as triage_module
+    from zodiarc.gui.triage import TriagePanel
 
     handed = []
 
@@ -857,7 +857,7 @@ def test_running_the_scan_again_keeps_the_rules_it_was_started_with(qt_app, tmp_
 def test_crs_from_part_of_the_case_is_said_as_such(qt_app, tmp_path):
     """The queue ranks on what CRS found, and a stopped run found nothing in the
     requests it never reached."""
-    from logarx.gui.triage import TriagePanel
+    from zodiarc.gui.triage import TriagePanel
 
     root = make_case(tmp_path)
     (root / "crs.jsonl").write_text("", encoding="utf-8")

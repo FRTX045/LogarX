@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from logarx.core.window import EVERYTHING, TimeWindow
+from zodiarc.core.window import EVERYTHING, TimeWindow
 
 MORNING = datetime(2024, 5, 2, 1, 25, 30, tzinfo=UTC)
 NOON = datetime(2024, 5, 2, 2, 57, 0, tzinfo=UTC)

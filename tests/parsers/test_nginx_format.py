@@ -11,10 +11,10 @@ from datetime import UTC, datetime
 
 import pytest
 
-from logarx.core.evidence import EvidenceRef
-from logarx.parsers.logformat import LogFormatError, LogFormatParser
-from logarx.parsers.nginx import looks_like_nginx
-from logarx.parsers.registry import get_spec
+from zodiarc.core.evidence import EvidenceRef
+from zodiarc.parsers.logformat import LogFormatError, LogFormatParser
+from zodiarc.parsers.nginx import looks_like_nginx
+from zodiarc.parsers.registry import get_spec
 
 REF = EvidenceRef(source_file_id="f", line_no=1)
 

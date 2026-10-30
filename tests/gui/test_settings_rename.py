@@ -15,7 +15,7 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from PyQt6.QtCore import QSettings
 
-from logarx.gui.app import move_old_settings
+from zodiarc.gui.app import move_old_settings
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -37,6 +37,25 @@ def test_the_old_preferences_are_copied_to_the_new_name(tmp_path: Path) -> None:
     assert int(new.value("view/text_points")) == 12
     assert new.value("cases/recent") == ["C:/cases/one"]
     assert old.value("view/text_points") is not None, "the old ones are kept"
+
+
+def test_preferences_come_from_the_newest_old_name_that_has_any(tmp_path: Path) -> None:
+    """The names go in order, newest first: LogarX, then logarc."""
+    logarx = _ini(tmp_path / "logarx.ini")
+    logarc = _ini(tmp_path / "logarc.ini")
+    logarc.setValue("view/text_points", 11)
+    logarc.setValue("view/older_only", "kept")
+    new = _ini(tmp_path / "new.ini")
+
+    assert move_old_settings(new, logarx, logarc) == 2, "an empty LogarX is passed over"
+    assert int(new.value("view/text_points")) == 11
+
+    logarx.setValue("view/text_points", 13)
+    fresh = _ini(tmp_path / "fresh.ini")
+
+    assert move_old_settings(fresh, logarx, logarc) == 1
+    assert int(fresh.value("view/text_points")) == 13
+    assert fresh.value("view/older_only") is None, "one old name, not a blend of two"
 
 
 def test_preferences_already_kept_under_the_new_name_win(tmp_path: Path) -> None:

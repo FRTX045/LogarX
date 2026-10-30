@@ -13,8 +13,8 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from PyQt6.QtWidgets import QApplication
 
-from logarx.client_names import ClientNameWriteError
-from logarx.gui.client_rename import ClientRename
+from zodiarc.client_names import ClientNameWriteError
+from zodiarc.gui.client_rename import ClientRename
 
 ADDRESS = "203.0.113.47"
 

@@ -64,7 +64,7 @@ def chroma(colour: str) -> float:
     """How saturated a colour is, in OKLab.
 
     Needed to know whether a colour's *hue* means anything. A near-grey has a
-    hue in the arithmetic sense and none in the perceptual one — LogarX's `Info`
+    hue in the arithmetic sense and none in the perceptual one — Zodiarc's `Info`
     grey computes to a blue hue three degrees off the selection blue, while
     being obviously not blue.
     """

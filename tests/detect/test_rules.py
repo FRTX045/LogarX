@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from logarx.core.activity import ActivityCategory, Severity
-from logarx.detect.rulepacks import DEFAULT_RULEPACK_DIR
-from logarx.detect.rules import (
+from zodiarc.core.activity import ActivityCategory, Severity
+from zodiarc.detect.rulepacks import DEFAULT_RULEPACK_DIR
+from zodiarc.detect.rules import (
     RulePackError,
     SignatureRule,
     WindowRule,
@@ -526,7 +526,7 @@ def test_an_icon_moves_no_fingerprint() -> None:
     """The fingerprint keys the Triage cache and is recorded in every report:
     counted, a new field would re-scan every case once, and each change of
     icon would again."""
-    from logarx.detect.engine import RuleEngine
+    from zodiarc.detect.engine import RuleEngine
 
     plain = RuleEngine(load_pack_text("a.yaml", SIGNATURE_PACK)).fingerprint
     iconic = RuleEngine(load_pack_text("a.yaml", ICON_PACK)).fingerprint

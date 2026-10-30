@@ -21,9 +21,9 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from logarx.gui import theme
-from logarx.gui.app import MainWindow
-from logarx.gui.theme import caption_font, mono_font, set_text_points, ui_font
+from zodiarc.gui import theme
+from zodiarc.gui.app import MainWindow
+from zodiarc.gui.theme import caption_font, mono_font, set_text_points, ui_font
 
 
 @pytest.fixture
@@ -173,7 +173,7 @@ def required_header(table: QTableWidget) -> QWidget:
 def test_evidence_heading_redraws_at_the_new_size(themed: QApplication) -> None:
     from test_narrow_columns import lines, node
 
-    from logarx.gui.evidence_panel import EvidencePanel
+    from zodiarc.gui.evidence_panel import EvidencePanel
 
     panel = EvidencePanel()
     try:
@@ -187,7 +187,7 @@ def test_evidence_heading_redraws_at_the_new_size(themed: QApplication) -> None:
 
 
 def test_following_the_text_size_with_nothing_shown_draws_nothing(themed: QApplication) -> None:
-    from logarx.gui.evidence_panel import EvidencePanel
+    from zodiarc.gui.evidence_panel import EvidencePanel
 
     panel = EvidencePanel()
     try:
@@ -198,7 +198,7 @@ def test_following_the_text_size_with_nothing_shown_draws_nothing(themed: QAppli
 
 
 def test_the_no_results_title_follows_the_zoom(themed: QApplication) -> None:
-    from logarx.gui.evidence_panel import EvidencePanel
+    from zodiarc.gui.evidence_panel import EvidencePanel
 
     panel = EvidencePanel()
     try:
@@ -214,7 +214,7 @@ def test_the_no_results_title_follows_the_zoom(themed: QApplication) -> None:
 
 
 def test_timeline_stamps_follow_the_app_font(themed: QApplication) -> None:
-    from logarx.gui.timeline import stamp_font
+    from zodiarc.gui.timeline import stamp_font
 
     assert stamp_font().pointSizeF() == 11
     set_text_points(themed, 15)
@@ -224,7 +224,7 @@ def test_timeline_stamps_follow_the_app_font(themed: QApplication) -> None:
 def test_date_fields_widen_with_the_text(themed: QApplication) -> None:
     from PyQt6.QtGui import QFontMetrics
 
-    from logarx.gui.time_filter import _ARROW, TimeFilterBar
+    from zodiarc.gui.time_filter import _ARROW, TimeFilterBar
 
     bar = TimeFilterBar()
     try:
@@ -239,7 +239,7 @@ def test_date_fields_widen_with_the_text(themed: QApplication) -> None:
 
 
 def test_client_header_keeps_room_for_its_sort_arrow(themed: QApplication) -> None:
-    from logarx.gui.panels import ClientTable
+    from zodiarc.gui.panels import ClientTable
 
     panel = ClientTable()
     try:
@@ -252,7 +252,7 @@ def test_client_header_keeps_room_for_its_sort_arrow(themed: QApplication) -> No
 
 
 def test_bookmark_category_keeps_room_for_eight_characters(themed: QApplication) -> None:
-    from logarx.gui.bookmarks_tab import BookmarksTab
+    from zodiarc.gui.bookmarks_tab import BookmarksTab
 
     tab = BookmarksTab()
     try:
@@ -266,8 +266,8 @@ def test_bookmark_category_keeps_room_for_eight_characters(themed: QApplication)
 def test_client_rows_shown_after_a_zoom_match_their_table(themed: QApplication) -> None:
     from datetime import UTC, datetime
 
-    from logarx.gui.panels import ClientTable
-    from logarx.storage.base import IpSummary
+    from zodiarc.gui.panels import ClientTable
+    from zodiarc.storage.base import IpSummary
 
     panel = ClientTable()
     try:
@@ -282,7 +282,7 @@ def test_client_rows_shown_after_a_zoom_match_their_table(themed: QApplication) 
 
 
 def test_unset_columns_refit_after_a_zoom_and_dragged_ones_stay(themed: QApplication) -> None:
-    from logarx.gui.columns import ColumnWidths
+    from zodiarc.gui.columns import ColumnWidths
 
     table = QTableWidget(1, 3)
     for column in range(3):
@@ -305,7 +305,7 @@ def test_unset_columns_refit_after_a_zoom_and_dragged_ones_stay(themed: QApplica
 
 @pytest.fixture
 def window(themed: QApplication) -> Iterator[MainWindow]:
-    from logarx.gui import app, prefs
+    from zodiarc.gui import app, prefs
 
     shown = MainWindow()
     shown.show()
@@ -336,7 +336,7 @@ def _wheel(target: QWidget, dy: int) -> None:
 def test_shortcuts_step_and_reset(window: MainWindow, themed: QApplication) -> None:
     from PyQt6.QtTest import QTest
 
-    from logarx.gui.theme import automatic_points_for
+    from zodiarc.gui.theme import automatic_points_for
 
     ctrl = Qt.KeyboardModifier.ControlModifier
     QTest.keyClick(window, Qt.Key.Key_Equal, ctrl)
@@ -369,7 +369,7 @@ def test_limits_disable_the_action(window: MainWindow) -> None:
 
 
 def test_zoom_is_remembered(window: MainWindow) -> None:
-    from logarx.gui import app, prefs
+    from zodiarc.gui import app, prefs
 
     window._zoom_text(-2)
     assert prefs.text_points_in(app._settings().value, automatic=12) == 9
@@ -466,7 +466,7 @@ def test_a_zoom_in_the_window_redraws_the_evidence_heading(window: MainWindow) -
 
 
 def test_reset_forgets_the_saved_size_so_automatic_keeps_adapting(window: MainWindow) -> None:
-    from logarx.gui import app, prefs
+    from zodiarc.gui import app, prefs
 
     stored = app._settings()
     stored.setValue(prefs.LEGACY_TEXT_SIZE, "compact")
@@ -480,7 +480,7 @@ def test_reset_forgets_the_saved_size_so_automatic_keeps_adapting(window: MainWi
 
 @pytest.mark.parametrize("points", [15, 16])
 def test_format_editor_rows_fit_their_text(themed: QApplication, points: int) -> None:
-    from logarx.gui.format_editor import FormatEditor
+    from zodiarc.gui.format_editor import FormatEditor
 
     editor = FormatEditor()
     try:
@@ -497,7 +497,7 @@ def test_format_editor_rows_stay_tight_at_ordinary_sizes(themed: QApplication) -
     """Tight is 26 pixels, unless the text and its padding need more, or Qt's own
     floor for a header in this font is higher. Qt raises a smaller row to that
     floor whatever it is asked for: 28 for Segoe UI at 11 points."""
-    from logarx.gui.format_editor import FormatEditor
+    from zodiarc.gui.format_editor import FormatEditor
 
     editor = FormatEditor()
     try:
@@ -512,7 +512,7 @@ def test_format_editor_rows_stay_tight_at_ordinary_sizes(themed: QApplication) -
 
 @pytest.mark.parametrize("points", [15, 16])
 def test_rule_editor_rows_fit_their_text(themed: QApplication, points: int) -> None:
-    from logarx.gui.rules_editor import RulesEditor
+    from zodiarc.gui.rules_editor import RulesEditor
 
     editor = RulesEditor()
     try:
@@ -529,7 +529,7 @@ def test_rule_editor_rows_fit_their_text(themed: QApplication, points: int) -> N
 
 def test_rule_editor_rows_stay_tight_at_ordinary_sizes(themed: QApplication) -> None:
     """Tight as `test_format_editor_rows_stay_tight_at_ordinary_sizes` means it."""
-    from logarx.gui.rules_editor import RulesEditor
+    from zodiarc.gui.rules_editor import RulesEditor
 
     editor = RulesEditor()
     try:
@@ -545,7 +545,7 @@ def test_rule_editor_rows_stay_tight_at_ordinary_sizes(themed: QApplication) -> 
 def test_a_partial_wheel_turn_is_forgotten_after_a_pause(
     window: MainWindow, themed: QApplication, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from logarx.gui import wheel_zoom
+    from zodiarc.gui import wheel_zoom
 
     clock = [100.0]
     monkeypatch.setattr(wheel_zoom, "_now", lambda: clock[0])
@@ -581,9 +581,9 @@ def test_the_menus_follow_a_live_zoom(themed: QApplication) -> None:
 
 @pytest.mark.parametrize("points", [15, 16])
 def test_add_rule_example_rows_fit_their_text(themed: QApplication, points: int) -> None:
-    from logarx import rules_library
-    from logarx.detect.ruleset import built_in_packs
-    from logarx.gui.add_rule import AddRuleDialog
+    from zodiarc import rules_library
+    from zodiarc.detect.ruleset import built_in_packs
+    from zodiarc.gui.add_rule import AddRuleDialog
 
     built_in = built_in_packs()
     dialog = AddRuleDialog(

@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from logarx.core.activity import ActivityCategory, Severity
-from logarx.detect.crs.mapping import (
+from zodiarc.core.activity import ActivityCategory, Severity
+from zodiarc.detect.crs.mapping import (
     _FAMILY_CATEGORY,
     _RULE_CATEGORY,
     _UNMAPPED,

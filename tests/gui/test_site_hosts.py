@@ -20,8 +20,8 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 from PyQt6.QtWidgets import QDialog
 
 from conftest import settled
-from logarx.case import Case, SiteHostSuggestion
-from logarx.gui.site_hosts import SiteHostsOffer
+from zodiarc.case import Case, SiteHostSuggestion
+from zodiarc.gui.site_hosts import SiteHostsOffer
 
 if TYPE_CHECKING:
     from PyQt6.QtWidgets import QApplication
@@ -48,7 +48,7 @@ def _suggested(*hosts: str, urls: int = 4) -> SiteHostSuggestion:
 def test_the_log_s_own_host_arrives_already_filled_in(qt_app: QApplication) -> None:
     """**This is what makes it one click rather than a chore.**
 
-    The alternative was asking before the scan, where LogarX has read nothing
+    The alternative was asking before the scan, where Zodiarc has read nothing
     and the box can only be empty. Proposing is the whole reason the question
     was worth adding at the end instead.
     """
@@ -168,7 +168,7 @@ def test_answering_saves_it_to_the_case(tmp_path: Path, qt_app: QApplication) ->
     get the same findings. That is the project's rule about the two front ends,
     and this is the only setting either of them can write.
     """
-    from logarx.gui.app import MainWindow
+    from zodiarc.gui.app import MainWindow
 
     case_dir = _case_with_urls(tmp_path)
     window = MainWindow()
@@ -190,7 +190,7 @@ def test_answering_saves_it_to_the_case(tmp_path: Path, qt_app: QApplication) ->
 def test_skipping_leaves_the_case_unanswered(tmp_path: Path, qt_app: QApplication) -> None:
     """Skipped and never asked are the same state on purpose — the rule is
     silent either way, so nothing should be written that makes them differ."""
-    from logarx.gui.app import MainWindow
+    from zodiarc.gui.app import MainWindow
 
     case_dir = _case_with_urls(tmp_path)
     window = MainWindow()
@@ -215,7 +215,7 @@ def test_crs_runs_only_once_the_domains_are_answered(tmp_path: Path, qt_app: QAp
     from a link somewhere else (rule 931130), so a run started before the
     reader answered would be told the wrong host for its whole length.
     """
-    from logarx.gui.app import MainWindow
+    from zodiarc.gui.app import MainWindow
 
     case_dir = _case_with_urls(tmp_path)
     window = MainWindow()

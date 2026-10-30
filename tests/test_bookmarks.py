@@ -1,6 +1,6 @@
 """A case's bookmarks: the file they live in, and the changes made to it.
 
-Checked without a display, as `logarx.bookmarks` has no Qt: what is kept, what is
+Checked without a display, as `zodiarc.bookmarks` has no Qt: what is kept, what is
 set aside, and what two windows writing one file end up with are decisions, not
 drawing.
 """
@@ -17,7 +17,7 @@ from typing import Any
 
 import pytest
 
-from logarx.bookmarks import (
+from zodiarc.bookmarks import (
     DEFAULT,
     EMPTY,
     FILE_NAME,
@@ -44,12 +44,12 @@ from logarx.bookmarks import (
     said_for_search,
     to_csv,
 )
-from logarx.core.activity import ActivityCategory, Outcome, Severity
-from logarx.core.event import NormalizedEvent
-from logarx.core.evidence import EvidenceRef
-from logarx.core.graph import GraphNode
-from logarx.core.window import TimeWindow
-from logarx.evidence import EvidenceLine
+from zodiarc.core.activity import ActivityCategory, Outcome, Severity
+from zodiarc.core.event import NormalizedEvent
+from zodiarc.core.evidence import EvidenceRef
+from zodiarc.core.graph import GraphNode
+from zodiarc.core.window import TimeWindow
+from zodiarc.evidence import EvidenceLine
 
 SAVED = datetime(2026, 10, 19, 14, 2, 11, tzinfo=UTC)
 

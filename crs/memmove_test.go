@@ -46,7 +46,7 @@ func TestCRSLoadsAndMatchesOnEveryMemmovePath(t *testing.T) {
 
 			waf, err := buildWAF("../vendor/coreruleset", ".", 2)
 			if err != nil {
-				t.Fatalf("loading CRS: %v (fetch it with `logarx setup-crs`)", err)
+				t.Fatalf("loading CRS: %v (fetch it with `zodiarc setup-crs`)", err)
 			}
 
 			// 942100 is libinjection; 930110 is @rx, so RE2 has to match as

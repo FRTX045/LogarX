@@ -21,7 +21,7 @@ import subprocess
 import tomllib
 from pathlib import Path
 
-from logarx.detect.rules import load_rules
+from zodiarc.detect.rules import load_rules
 
 ROOT = Path(__file__).parent.parent
 
@@ -39,7 +39,7 @@ NAMES_THE_PIN = (
     "docs/evaluations/suspicious-recommendations-validation.md",
     "docs/installing.md",
     "docs/ip-prioritization.md",
-    "src/logarx/detect/crs/setup.py",
+    "src/zodiarc/detect/crs/setup.py",
 )
 
 SHA1 = re.compile(r"\b[0-9a-f]{40}\b")
@@ -92,7 +92,7 @@ STATES_THE_RULE_COUNT = (
 
 
 def test_the_documented_rule_count_is_the_real_one() -> None:
-    live = len(load_rules([ROOT / "src" / "logarx" / "detect" / "rulepacks"]))
+    live = len(load_rules([ROOT / "src" / "zodiarc" / "detect" / "rulepacks"]))
 
     for name, pattern in STATES_THE_RULE_COUNT:
         text = (ROOT / name).read_text(encoding="utf-8")

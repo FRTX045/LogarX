@@ -12,8 +12,8 @@ from PyQt6.QtCore import QPoint, QRect, Qt
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QDialog, QWidget
 
-from logarx.bookmarks import NAME_LIMIT, NOTE_LIMIT
-from logarx.gui.bookmark_box import BookmarkBox
+from zodiarc.bookmarks import NAME_LIMIT, NOTE_LIMIT
+from zodiarc.gui.bookmark_box import BookmarkBox
 
 
 @pytest.fixture

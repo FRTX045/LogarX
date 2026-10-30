@@ -22,8 +22,8 @@ from pathlib import Path
 
 import pytest
 
-from logarx.ingest.reader import open_log
-from logarx.ingest.scan import Chunk, read_range, scan_chunks
+from zodiarc.ingest.reader import open_log
+from zodiarc.ingest.scan import Chunk, read_range, scan_chunks
 
 
 def write(path: Path, lines: int, *, trailing_newline: bool = True) -> Path:

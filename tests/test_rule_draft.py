@@ -12,13 +12,13 @@ from textwrap import indent
 
 import pytest
 
-from logarx import rule_draft
-from logarx.core.activity import ActivityCategory, Severity
-from logarx.core.event import NormalizedEvent
-from logarx.core.evidence import EvidenceRef
-from logarx.detect.engine import RuleEngine
-from logarx.detect.rules import MATCH_FIELDS, SignatureRule, load_pack_text
-from logarx.rule_draft import (
+from zodiarc import rule_draft
+from zodiarc.core.activity import ActivityCategory, Severity
+from zodiarc.core.event import NormalizedEvent
+from zodiarc.core.evidence import EvidenceRef
+from zodiarc.detect.engine import RuleEngine
+from zodiarc.detect.rules import MATCH_FIELDS, SignatureRule, load_pack_text
+from zodiarc.rule_draft import (
     FORM_FIELDS,
     Condition,
     Draft,

@@ -3,8 +3,8 @@ from datetime import timedelta
 
 from test_event_store import START, event
 
-from logarx.core.window import TimeWindow
-from logarx.storage.event_store import ParquetEventStore
+from zodiarc.core.window import TimeWindow
+from zodiarc.storage.event_store import ParquetEventStore
 
 
 def test_summary_search_includes_quiet_clients_beyond_500_and_retains_positions(tmp_path):

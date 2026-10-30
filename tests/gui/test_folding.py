@@ -14,10 +14,10 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from logarx.core.event import NormalizedEvent
-from logarx.core.evidence import EvidenceRef
-from logarx.evidence import EvidenceLine
-from logarx.gui.folding import DEFAULT_FOLD, Fold, FoldRule, fold, log_order, named, spread
+from zodiarc.core.event import NormalizedEvent
+from zodiarc.core.evidence import EvidenceRef
+from zodiarc.evidence import EvidenceLine
+from zodiarc.gui.folding import DEFAULT_FOLD, Fold, FoldRule, fold, log_order, named, spread
 
 START = datetime(2026, 3, 10, 19, 12, 18, tzinfo=UTC)
 

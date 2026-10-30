@@ -3,8 +3,8 @@ import re
 import pytest
 from PyQt6.QtCore import QUrl
 
-from logarx.core.evidence import EvidenceRef
-from logarx.triage.profile import (
+from zodiarc.core.evidence import EvidenceRef
+from zodiarc.triage.profile import (
     ClientProfile,
     PriorityReason,
     RankedClient,
@@ -49,7 +49,7 @@ def matches(*examples):
 
 def render_opened(row, status=None, **kwargs):
     """Inspect the full content after opening every finding and More context."""
-    from logarx.gui.recommendation import render_recommendation
+    from zodiarc.gui.recommendation import render_recommendation
 
     return render_recommendation(
         row, status, opened=frozenset(range(len(row.reasons))), show_context=True, **kwargs
@@ -82,7 +82,7 @@ def test_no_supporting_request_denominator_is_invented():
 
 
 def test_an_unreadable_source_stays_visible_and_cannot_open():
-    from logarx.gui.recommendation import SourceStatus
+    from zodiarc.gui.recommendation import SourceStatus
 
     lost = example(7, file="missing.log")
     html = render_opened(
@@ -95,7 +95,7 @@ def test_an_unreadable_source_stays_visible_and_cannot_open():
 
 
 def test_a_changed_source_opens_and_shows_its_warning():
-    from logarx.gui.recommendation import SourceStatus
+    from zodiarc.gui.recommendation import SourceStatus
 
     edited = example(8)
     html = render_opened(
@@ -107,7 +107,7 @@ def test_a_changed_source_opens_and_shows_its_warning():
 
 
 def test_reasons_without_examples_list_their_source_lines():
-    from logarx.gui.recommendation import SourceStatus
+    from zodiarc.gui.recommendation import SourceStatus
 
     refs = (EvidenceRef("access.log", 4), EvidenceRef("gone.log", 5))
     support = PriorityReason(
@@ -130,7 +130,7 @@ def test_responses_are_context_not_proof():
 
 
 def test_the_table_shows_the_first_reasons_summary():
-    from logarx.gui.recommendation import summary_for
+    from zodiarc.gui.recommendation import summary_for
 
     assert summary_for(row(matches(example(1), example(2)))) == "2 distinct rule matches"
     plain = PriorityReason("Injection indicators on 1 request; strongest high", ())
@@ -154,7 +154,7 @@ def test_the_table_shows_the_first_reasons_summary():
     ],
 )
 def test_anchors_parse_back_to_what_they_name(anchor, parsed):
-    from logarx.gui.recommendation import parse_anchor
+    from zodiarc.gui.recommendation import parse_anchor
 
     assert parse_anchor(QUrl(anchor)) == parsed
 
@@ -215,7 +215,7 @@ def test_a_short_path_is_never_cut():
 
 
 def test_expand_anchors_parse():
-    from logarx.gui.recommendation import parse_anchor
+    from zodiarc.gui.recommendation import parse_anchor
 
     assert parse_anchor(QUrl("expand:2:1")) == ("expand", 2, 1)
     assert parse_anchor(QUrl("expand:2")) is None
@@ -238,7 +238,7 @@ def test_the_full_request_includes_its_query():
 
 
 def test_exploit_evidence_is_titled_and_shows_its_request():
-    from logarx.gui.recommendation import TITLES
+    from zodiarc.gui.recommendation import TITLES
 
     lead = PriorityReason(
         "Rule A matched a request to /login.",
@@ -256,7 +256,7 @@ def test_exploit_evidence_is_titled_and_shows_its_request():
 
 
 def test_findings_start_with_only_their_title_and_short_observation():
-    from logarx.gui.recommendation import render_recommendation
+    from zodiarc.gui.recommendation import render_recommendation
 
     html = render_recommendation(row(matches(example(1), example(2))))
     assert "Distinct rule matches" in html
@@ -270,7 +270,7 @@ def test_findings_start_with_only_their_title_and_short_observation():
 
 
 def test_only_requested_findings_show_their_explanations_and_examples():
-    from logarx.gui.recommendation import render_recommendation
+    from zodiarc.gui.recommendation import render_recommendation
 
     first = PriorityReason("First observation", (), why="First explanation", kind="support")
     second = matches(example(7))
@@ -282,7 +282,7 @@ def test_only_requested_findings_show_their_explanations_and_examples():
 
 
 def test_context_opens_independently_of_findings():
-    from logarx.gui.recommendation import render_recommendation
+    from zodiarc.gui.recommendation import render_recommendation
 
     html = render_recommendation(row(matches(example(1))), show_context=True)
     assert "Responses: 200: 2, 403: 1." in html
@@ -292,7 +292,7 @@ def test_context_opens_independently_of_findings():
 
 
 def test_source_warnings_are_visible_even_with_every_finding_closed():
-    from logarx.gui.recommendation import SourceStatus, render_recommendation
+    from zodiarc.gui.recommendation import SourceStatus, render_recommendation
 
     item = example(1)
     html = render_recommendation(
@@ -304,7 +304,7 @@ def test_source_warnings_are_visible_even_with_every_finding_closed():
 
 
 def test_a_named_client_leads_with_its_name_and_keeps_its_address():
-    from logarx.gui.recommendation import render_recommendation
+    from zodiarc.gui.recommendation import render_recommendation
 
     plain = render_recommendation(row())
     named = render_recommendation(row(), client_name="Office <VPN>")
@@ -317,7 +317,7 @@ def test_a_named_client_leads_with_its_name_and_keeps_its_address():
 
 
 def test_a_right_to_left_override_in_a_name_cannot_turn_the_address():
-    from logarx.gui.recommendation import render_recommendation
+    from zodiarc.gui.recommendation import render_recommendation
 
     page = render_recommendation(row(), client_name="VPN‮")
 

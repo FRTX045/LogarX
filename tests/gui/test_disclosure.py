@@ -4,8 +4,8 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QLabel
 
-from logarx.gui.app import MainWindow
-from logarx.gui.disclosure import Disclosure
+from zodiarc.gui.app import MainWindow
+from zodiarc.gui.disclosure import Disclosure
 
 
 def test_explanations_start_closed_and_open_with_mouse_or_keyboard(qt_app):

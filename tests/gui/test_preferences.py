@@ -24,17 +24,17 @@ from PyQt6.QtWidgets import (
     QTabWidget,
 )
 
-from logarx.core.activity import ActivityCategory
-from logarx.gui import prefs
-from logarx.gui._qt import required
-from logarx.gui.density import Density
-from logarx.gui.folding import FoldRule
-from logarx.gui.icon_grid import KindIconGrid
-from logarx.gui.icon_set import KIND_NAMES
-from logarx.gui.icons import first_drawable
-from logarx.gui.preferences import PreferencesDialog
-from logarx.gui.theme import ui_font
-from logarx.style import THEME
+from zodiarc.core.activity import ActivityCategory
+from zodiarc.gui import prefs
+from zodiarc.gui._qt import required
+from zodiarc.gui.density import Density
+from zodiarc.gui.folding import FoldRule
+from zodiarc.gui.icon_grid import KindIconGrid
+from zodiarc.gui.icon_set import KIND_NAMES
+from zodiarc.gui.icons import first_drawable
+from zodiarc.gui.preferences import PreferencesDialog
+from zodiarc.gui.theme import ui_font
+from zodiarc.style import THEME
 
 
 def _opened(values: dict[str, bool | Density] | None = None) -> PreferencesDialog:

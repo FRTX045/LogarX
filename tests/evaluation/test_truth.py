@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from logarx.core.activity import ActivityCategory
-from logarx.evaluation.truth import (
+from zodiarc.core.activity import ActivityCategory
+from zodiarc.evaluation.truth import (
     TruthError,
     TruthRecord,
     TruthWriter,
@@ -73,14 +73,14 @@ def test_the_header_comes_first_so_the_body_can_stream(tmp_path: Path) -> None:
         writer.write(record(1, ActivityCategory.BROWSING, "a#0"))
 
     first = path.read_text(encoding="utf-8").splitlines()[0]
-    assert '"kind": "logarx-truth"' in first
+    assert '"kind": "zodiarc-truth"' in first
 
 
 def test_reading_a_file_that_is_not_truth_is_an_error(tmp_path: Path) -> None:
     path = tmp_path / "not-truth.jsonl"
     path.write_text('{"hello": "world"}\n', encoding="utf-8")
 
-    with pytest.raises(TruthError, match="not a LogarX ground-truth file"):
+    with pytest.raises(TruthError, match="not a Zodiarc ground-truth file"):
         read_truth(path)
 
 
@@ -99,9 +99,23 @@ def test_a_truth_file_written_under_the_old_name_is_still_read(tmp_path: Path) -
     assert read_truth(path).scenario == "s"
 
 
+def test_a_truth_file_written_as_logarx_is_still_read(tmp_path: Path) -> None:
+    """The tool wrote `logarx-truth` from 2026-10-28 to 2026-10-30."""
+    path = tmp_path / "t.jsonl"
+    path.write_text(
+        '{"kind": "logarx-truth", "version": 1, "scenario": "s", "seed": 1, '
+        '"source_file_id": "a.log", "granularity": "category"}\n'
+        '{"line_no": 1, "client_ip": "203.0.113.5", "category": "browsing", '
+        '"instance_id": "203.0.113.5#1"}\n',
+        encoding="utf-8",
+    )
+
+    assert read_truth(path).scenario == "s"
+
+
 def test_reading_a_future_version_is_an_error(tmp_path: Path) -> None:
     path = tmp_path / "t.jsonl"
-    path.write_text('{"kind": "logarx-truth", "version": 99}\n', encoding="utf-8")
+    path.write_text('{"kind": "zodiarc-truth", "version": 99}\n', encoding="utf-8")
 
     with pytest.raises(TruthError, match="version 99"):
         read_truth(path)
@@ -116,7 +130,7 @@ def test_reading_an_empty_file_is_an_error(tmp_path: Path) -> None:
 
 
 HEADER = (
-    '{"kind": "logarx-truth", "version": 1, "scenario": "s", "seed": 1,'
+    '{"kind": "zodiarc-truth", "version": 1, "scenario": "s", "seed": 1,'
     ' "source_file_id": "a.log", "generated_at": "2024-01-01T00:00:00+00:00"}\n'
 )
 
@@ -176,7 +190,7 @@ def test_a_granularity_the_reader_does_not_know_is_refused(tmp_path: Path) -> No
     category and report the resulting nonsense as a measurement."""
     path = tmp_path / "t.jsonl"
     path.write_text(
-        '{"kind": "logarx-truth", "version": 1, "scenario": "s", "seed": 1,'
+        '{"kind": "zodiarc-truth", "version": 1, "scenario": "s", "seed": 1,'
         ' "source_file_id": "a.log", "granularity": "vibes"}\n',
         encoding="utf-8",
     )
@@ -218,7 +232,7 @@ def test_an_unreadable_timestamp_does_not_invent_provenance(tmp_path: Path) -> N
 
     path = tmp_path / "t.jsonl"
     path.write_text(
-        '{"kind": "logarx-truth", "version": 1, "scenario": "s", "seed": 1,'
+        '{"kind": "zodiarc-truth", "version": 1, "scenario": "s", "seed": 1,'
         ' "source_file_id": "a.log", "generated_at": "not a timestamp"}\n',
         encoding="utf-8",
     )
@@ -232,7 +246,7 @@ def test_an_unknown_category_names_the_offending_line(tmp_path: Path) -> None:
     """A truth file edited by hand should fail loudly, pointing at the record."""
     path = tmp_path / "t.jsonl"
     path.write_text(
-        '{"kind": "logarx-truth", "version": 1, "scenario": "s", "seed": 1,'
+        '{"kind": "zodiarc-truth", "version": 1, "scenario": "s", "seed": 1,'
         ' "source_file_id": "a.log", "generated_at": "2024-01-01T00:00:00+00:00"}\n'
         '{"line_no": 1, "client_ip": "10.0.0.1", "category": "nonsense", "instance_id": "a#0"}\n',
         encoding="utf-8",

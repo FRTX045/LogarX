@@ -15,9 +15,9 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication, QDialog, QDialogButtonBox
 
-from logarx.gui._qt import required
-from logarx.gui.icon_picker import IconPicker
-from logarx.gui.icon_set import icons_dir, lucide
+from zodiarc.gui._qt import required
+from zodiarc.gui.icon_picker import IconPicker
+from zodiarc.gui.icon_set import icons_dir, lucide
 
 SQUARE = (
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">'

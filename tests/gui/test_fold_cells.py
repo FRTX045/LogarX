@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from test_folding import brute_force, line
 
-from logarx.gui.evidence_view import (
+from zodiarc.gui.evidence_view import (
     ARROW_CLOSED,
     ARROW_OPEN,
     MIXED,
@@ -16,8 +16,8 @@ from logarx.gui.evidence_view import (
     fold_cells,
     member_cells,
 )
-from logarx.gui.folding import FoldRule, fold
-from logarx.style import EVIDENCE_MUTED
+from zodiarc.gui.folding import FoldRule, fold
+from zodiarc.style import EVIDENCE_MUTED
 
 
 def test_a_run_of_one_is_drawn_exactly_as_today() -> None:

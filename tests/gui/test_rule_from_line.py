@@ -17,15 +17,15 @@ from test_bookmark_marks import attack, lines, row_point
 from test_rules_window import IP, LINES, _on_screen, _opened
 
 from conftest import fired, settled
-from logarx import rules_library
-from logarx.case import Case
-from logarx.core.activity import ActivityCategory, Severity
-from logarx.core.event import NormalizedEvent
-from logarx.core.evidence import EvidenceRef
-from logarx.evidence import EvidenceLine
-from logarx.gui import app as app_module
-from logarx.gui.add_rule import AddRuleDialog
-from logarx.gui.evidence_panel import EvidencePanel
+from zodiarc import rules_library
+from zodiarc.case import Case
+from zodiarc.core.activity import ActivityCategory, Severity
+from zodiarc.core.event import NormalizedEvent
+from zodiarc.core.evidence import EvidenceRef
+from zodiarc.evidence import EvidenceLine
+from zodiarc.gui import app as app_module
+from zodiarc.gui.add_rule import AddRuleDialog
+from zodiarc.gui.evidence_panel import EvidencePanel
 
 MAKE = "Make a rule from this line\N{HORIZONTAL ELLIPSIS}"
 

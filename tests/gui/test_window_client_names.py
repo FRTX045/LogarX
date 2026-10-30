@@ -18,14 +18,14 @@ from PyQt6.QtWidgets import QApplication, QFileDialog, QMenu
 from tables import column_of
 
 from conftest import settled
-from logarx import client_names
-from logarx.case import Case
-from logarx.core.event import NormalizedEvent
-from logarx.core.evidence import EvidenceRef
-from logarx.gui import prefs
-from logarx.gui.app import MainWindow
-from logarx.gui.client_name_keeper import ClientNameKeeper
-from logarx.gui.columns import CLIENT_ADDRESS
+from zodiarc import client_names
+from zodiarc.case import Case
+from zodiarc.core.event import NormalizedEvent
+from zodiarc.core.evidence import EvidenceRef
+from zodiarc.gui import prefs
+from zodiarc.gui.app import MainWindow
+from zodiarc.gui.client_name_keeper import ClientNameKeeper
+from zodiarc.gui.columns import CLIENT_ADDRESS
 
 CLIENT = "192.0.2.0"
 RENAME = "Rename this client…"

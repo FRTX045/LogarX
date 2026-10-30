@@ -28,10 +28,10 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 from PyQt6.QtWidgets import QApplication
 
 from conftest import settled
-from logarx import caseview
-from logarx.case import Case
-from logarx.core.window import TimeWindow
-from logarx.gui.app import MainWindow
+from zodiarc import caseview
+from zodiarc.case import Case
+from zodiarc.core.window import TimeWindow
+from zodiarc.gui.app import MainWindow
 
 #: Noon, so the quiet client two hours earlier is still the same day and the
 #: dates in any failure message read plainly.
@@ -50,7 +50,7 @@ LATE_AT = START + timedelta(hours=5)
 
 #: Small enough that the fixture does not need five hundred clients to prove
 #: what a cap does. `read_case` reads it when it runs, so patching the module
-#: attribute is enough — `logarx.caseview` now, which is where `read_case` lives
+#: attribute is enough — `zodiarc.caseview` now, which is where `read_case` lives
 #: and therefore whose globals it reads.
 CAP = 2
 

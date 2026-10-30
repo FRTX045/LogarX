@@ -20,14 +20,14 @@ from pathlib import Path
 
 import pytest
 
-from logarx.case import Case
-from logarx.core.event import NormalizedEvent
-from logarx.core.evidence import EvidenceRef
-from logarx.ingest.parallel import _parse_chunk, _Task, can_split
-from logarx.ingest.pipeline import DEFAULT_MAX_LINE_BYTES
-from logarx.ingest.scan import scan_chunks
-from logarx.parsers.registry import get_parser, register_format, register_spec, unregister_format
-from logarx.parsers.spec import LogFormatSpec
+from zodiarc.case import Case
+from zodiarc.core.event import NormalizedEvent
+from zodiarc.core.evidence import EvidenceRef
+from zodiarc.ingest.parallel import _parse_chunk, _Task, can_split
+from zodiarc.ingest.pipeline import DEFAULT_MAX_LINE_BYTES
+from zodiarc.ingest.scan import scan_chunks
+from zodiarc.parsers.registry import get_parser, register_format, register_spec, unregister_format
+from zodiarc.parsers.spec import LogFormatSpec
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 
@@ -62,7 +62,7 @@ def split_small_logs(monkeypatch: pytest.MonkeyPatch) -> None:
     pass while proving nothing — the exact shape of vacuous test this file is
     written to avoid.
     """
-    monkeypatch.setattr("logarx.ingest.parallel.MIN_PARALLEL_BYTES", 1)
+    monkeypatch.setattr("zodiarc.ingest.parallel.MIN_PARALLEL_BYTES", 1)
 
 
 def ingest(
@@ -84,8 +84,8 @@ def test_an_unrecognisable_log_fails_the_same_way_on_both_paths(tmp_path: Path) 
     the flag that fixes the problem — an investigator following the parallel
     path's advice would be following whatever it happened to still say.
     """
-    from logarx.ingest.parallel import ingest_file_parallel
-    from logarx.ingest.pipeline import FormatDetectionError
+    from zodiarc.ingest.parallel import ingest_file_parallel
+    from zodiarc.ingest.pipeline import FormatDetectionError
 
     log = tmp_path / "not-a-log.txt"
     log.write_text("this is prose\nand so is this\n", encoding="utf-8")
@@ -252,7 +252,7 @@ def test_the_parallel_path_is_the_one_being_exercised(
     while none of them tested anything. This is the one assertion that cannot
     be satisfied by the fallback.
     """
-    import logarx.case as case_module
+    import zodiarc.case as case_module
 
     calls: list[int] = []
     real = case_module.ingest_file_parallel
@@ -274,9 +274,9 @@ def test_a_log_too_small_to_be_worth_splitting_stays_sequential(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Below the threshold, spawning costs more than parsing saves."""
-    import logarx.case as case_module
+    import zodiarc.case as case_module
 
-    monkeypatch.setattr("logarx.ingest.parallel.MIN_PARALLEL_BYTES", 1 << 30)
+    monkeypatch.setattr("zodiarc.ingest.parallel.MIN_PARALLEL_BYTES", 1 << 30)
     called = False
 
     def spy(*_args: object, **_kwargs: object) -> object:
@@ -326,7 +326,7 @@ def write_piped_log(path: Path, lines: int) -> Path:
 def test_a_worker_parses_with_a_format_the_parent_invented(tmp_path: Path) -> None:
     """The centre of the whole design.
 
-    A worker started by spawn re-imports `logarx.parsers.registry`, which builds
+    A worker started by spawn re-imports `zodiarc.parsers.registry`, which builds
     itself from the three built-in presets and nothing else. A format registered
     here, in the parent, is simply not there in the child — so passing its
     *name* across cannot work, and the only fix is to send the definition.
@@ -400,7 +400,7 @@ def test_the_default_worker_count_is_bounded_rather_than_the_core_count() -> Non
     sixty-four-core server must not try sixty-four workers and ask for twenty
     gigabytes on a log it could have read in one process.
     """
-    from logarx.ingest.parallel import DEFAULT_WORKERS, MAX_DEFAULT_WORKERS
+    from zodiarc.ingest.parallel import DEFAULT_WORKERS, MAX_DEFAULT_WORKERS
 
     assert 1 <= DEFAULT_WORKERS <= MAX_DEFAULT_WORKERS
     assert (os.cpu_count() or 1) >= DEFAULT_WORKERS, "never more workers than cores"
@@ -408,14 +408,14 @@ def test_the_default_worker_count_is_bounded_rather_than_the_core_count() -> Non
 
 def test_a_single_core_machine_does_not_try_to_split(monkeypatch: pytest.MonkeyPatch) -> None:
     """Spawning costs more than it saves when there is nowhere to spawn to."""
-    from logarx.ingest import parallel
+    from zodiarc.ingest import parallel
 
     monkeypatch.setattr(parallel.os, "cpu_count", lambda: 1)
     assert parallel.default_workers() == 1
 
 
 def test_a_large_machine_is_capped(monkeypatch: pytest.MonkeyPatch) -> None:
-    from logarx.ingest import parallel
+    from zodiarc.ingest import parallel
 
     monkeypatch.setattr(parallel.os, "cpu_count", lambda: 64)
     assert parallel.default_workers() == parallel.MAX_DEFAULT_WORKERS
@@ -424,7 +424,7 @@ def test_a_large_machine_is_capped(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_an_unknown_core_count_falls_back_to_one(monkeypatch: pytest.MonkeyPatch) -> None:
     """`os.cpu_count()` is documented as returning None when it cannot tell.
     Reading that as "lots" would be the wrong way to be wrong."""
-    from logarx.ingest import parallel
+    from zodiarc.ingest import parallel
 
     monkeypatch.setattr(parallel.os, "cpu_count", lambda: None)
     assert parallel.default_workers() == 1
