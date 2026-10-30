@@ -23,7 +23,7 @@ for the scoring method it kept.
 ## In brief
 
 Measured on a real Apache log whose contents are known: the
-[LogarX Dataset](https://github.com/FRTX045/LogarX-Dataset) `apache-shopfront`
+[Zodiarc Dataset](https://github.com/FRTX045/Zodiarc-Dataset) `apache-shopfront`
 `2026-10-06-medium` build — 235,732 requests over seven days, a real PHP shop
 driven by real security tools, where a tagging proxy joins every line to a record
 of which client made the request and why. It includes an administrator doing
@@ -115,7 +115,7 @@ run, including on sources that cannot support anything finer.
 ## Where the ground truth comes from
 
 The corpus is a real server's log. The companion repository
-[LogarX Dataset](https://github.com/FRTX045/LogarX-Dataset) stands up Apache 2.4 serving a
+[Zodiarc Dataset](https://github.com/FRTX045/Zodiarc-Dataset) stands up Apache 2.4 serving a
 PHP shop in a container, drives scripted shoppers, crawlers and a real Chromium at it, runs five
 real security tools (whatweb, dirb, gobuster, nmap, sqlmap) alongside six attack campaigns that
 read each response and decide what to do next, and ships the log Apache wrote.
@@ -196,9 +196,9 @@ ships these builds. It moves no figure here: neither engine flags the line, and 
 
 `d2ef291` is on that repository's default branch, and the builds' manifests and samples are committed
 there at `332b06b`. The logs themselves are published as one release per build, each tagged at that
-commit: [`2026-10-06-small`](https://github.com/FRTX045/LogarX-Dataset/releases/tag/2026-10-06-small),
-[`2026-10-06-medium`](https://github.com/FRTX045/LogarX-Dataset/releases/tag/2026-10-06-medium) and
-[`2026-10-06-large`](https://github.com/FRTX045/LogarX-Dataset/releases/tag/2026-10-06-large). Every file of all three was
+commit: [`2026-10-06-small`](https://github.com/FRTX045/Zodiarc-Dataset/releases/tag/2026-10-06-small),
+[`2026-10-06-medium`](https://github.com/FRTX045/Zodiarc-Dataset/releases/tag/2026-10-06-medium) and
+[`2026-10-06-large`](https://github.com/FRTX045/Zodiarc-Dataset/releases/tag/2026-10-06-large). Every file of all three was
 verified against the build's own `SHA256SUMS` before scoring, and on 2026-10-28 a fresh download
 of each release decompressed to the same digests:
 
@@ -308,7 +308,7 @@ the comment lines in `SHA256SUMS` and checks every file it names:
 
 ```bash
 B=datasets/apache-shopfront/2026-10-06-medium
-gh release download 2026-10-06-medium -R FRTX045/LogarX-Dataset -D $B
+gh release download 2026-10-06-medium -R FRTX045/Zodiarc-Dataset -D $B
 (cd $B && xz -dk *.xz && sha256sum -c SHA256SUMS --ignore-missing)
 zodiarc-dev ingest $B/access.log --case ./case --no-crs
 zodiarc-dev enrich --case ./case
@@ -335,7 +335,7 @@ requests in each. Every rendered file was scored against its own truth and compa
 the Apache original.
 
 The rendering is the dataset's: `render` at
-[`1e29c09`](https://github.com/FRTX045/LogarX-Dataset/blob/1e29c09/docs/rendered-formats.md),
+[`1e29c09`](https://github.com/FRTX045/Zodiarc-Dataset/blob/1e29c09/docs/rendered-formats.md),
 from the builds above. Every file is the Apache capture written in another server's
 columns, never a capture of that server. A field the capture never measured is a declared
 constant. All 41 files of each tier matched its `SHA256SUMS` before scoring
