@@ -46,6 +46,10 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
     "types-PyYAML",
+    # The icon check in packaging/rebuild.py reads the executable with it. A
+    # build machine has it through PyInstaller; CI, which has no PyInstaller,
+    # needs it named here for that check's tests to run.
+    "pefile>=2022.5.30",
 ]
 
 [project.scripts]
