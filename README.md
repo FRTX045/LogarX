@@ -13,9 +13,9 @@ readable account of what each client did. Instead of thousands of lines, you get
 each client's requests grouped into **activities**, connected in the order they
 happened, and every one of them opens the exact log lines it was built from.
 
-![Zodiarc opening a log, ranking its clients, drawing one attacker's three visits as a chain, showing the log line behind a webshell, and folding a second client's sixty activities into two](docs/images/demo.gif)
+![Zodiarc opening a log, ranking its clients, drawing one attacker's three visits as a chain, naming it, showing the log line behind a webshell, and folding a second client's sixty activities into two](docs/images/demo.gif)
 
-<sub>Open a log and Zodiarc ranks who to look at first. The top client becomes a chain across three visits: a wordlist that finds `/admin`, a password guessed on the thirteenth try, an upload that is really a PHP shell, and a return to use it, with the exact log line behind each step. A second client's sixty back-and-forth requests fold into two activities in the behaviour map. The traffic is synthetic, written for this demo.</sub>
+<sub>Open a log and Zodiarc ranks who to look at first. The top client becomes a chain across three visits: a wordlist that finds `/admin`, a password guessed on the thirteenth try, an upload that is really a PHP shell, and a return to use it. Named for what it did, it keeps that name everywhere it is shown, and each step opens the exact log line behind it. A second client's sixty back-and-forth requests fold into two activities in the behaviour map. The traffic is synthetic, written for this demo.</sub>
 
 ---
 
