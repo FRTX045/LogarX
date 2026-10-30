@@ -8,16 +8,16 @@ from datetime import UTC, datetime
 import pytest
 from PyQt6.QtGui import QFont, QFontInfo
 
-from logarx.gui.panels import ClientTable
-from logarx.gui.text_size import (
+from zodiarc.gui.panels import ClientTable
+from zodiarc.gui.text_size import (
     MAX_POINTS,
     MIN_POINTS,
     automatic_points,
     remembered,
     stepped,
 )
-from logarx.gui.theme import caption_font, heading_font, mono_font, title_font, ui_font
-from logarx.storage.base import IpSummary
+from zodiarc.gui.theme import caption_font, heading_font, mono_font, title_font, ui_font
+from zodiarc.storage.base import IpSummary
 
 
 @pytest.mark.parametrize(
@@ -96,9 +96,9 @@ import sys
 from PyQt6.QtCore import QRect
 from PyQt6.QtGui import QFontInfo
 from PyQt6.QtWidgets import QApplication
-from logarx.gui.panels import ClientTable
-from logarx.gui.theme import apply_theme
-from logarx.storage.base import IpSummary
+from zodiarc.gui.panels import ClientTable
+from zodiarc.gui.theme import apply_theme
+from zodiarc.storage.base import IpSummary
 
 width, height, expected = map(int, sys.argv[1:4])
 qt = QApplication([])
@@ -159,7 +159,7 @@ def test_roles_keep_their_step_across_the_whole_range(qt_app, points):
 
 WINDOWS_TABLE = """
 from PyQt6.QtWidgets import QApplication, QTableWidget
-from logarx.gui.theme import apply_theme
+from zodiarc.gui.theme import apply_theme
 
 qt = QApplication([])
 apply_theme(qt, points=11)
@@ -190,7 +190,7 @@ FIXED_THEN_AUTOMATIC = """
 from types import SimpleNamespace
 from PyQt6.QtCore import QRect
 from PyQt6.QtWidgets import QApplication
-from logarx.gui.theme import apply_theme, automatic_points_for
+from zodiarc.gui.theme import apply_theme, automatic_points_for
 
 qt = QApplication([])
 system = qt.font()

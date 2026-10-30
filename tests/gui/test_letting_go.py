@@ -27,9 +27,9 @@ from PyQt6.QtGui import QMouseEvent
 from PyQt6.QtWidgets import QApplication
 
 from conftest import settled
-from logarx.case import Case
-from logarx.gui.app import MainWindow
-from logarx.gui.arrangement_keeper import ArrangementKeeper
+from zodiarc.case import Case
+from zodiarc.gui.app import MainWindow
+from zodiarc.gui.arrangement_keeper import ArrangementKeeper
 
 START = datetime(2024, 5, 1, 0, 0, tzinfo=UTC)
 

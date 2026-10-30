@@ -14,13 +14,13 @@ site with its own directive string needs no code at all — write it down once
 and it is yours from then on, in **Case → Formats and rules**: **New → Text
 (LogFormat)**, paste the directive and a line of the log, and the preview shows
 what each field reads as before anything is saved. Then
-`logarx-dev ingest access.log --case ./case-001 --format site-main` reads with
+`zodiarc-dev ingest access.log --case ./case-001 --format site-main` reads with
 it from the developer tools too.
 
 The preview is worth reading. A wrong directive does not announce itself: it
 quarantines every line and presents as an empty case.
 
-Saved formats live in a plain JSON file in LogarX's own folder, and are
+Saved formats live in a plain JSON file in Zodiarc's own folder, and are
 available to `--format`, to auto-detection, and to the window. Each case also
 records the definition it was ingested with, so editing or removing a saved
 format later cannot make an existing case unreadable.
@@ -28,8 +28,8 @@ format later cannot make an existing case unreadable.
 From inside Python the same thing is `register_spec`:
 
 ```python
-from logarx.parsers.registry import register_spec
-from logarx.parsers.spec import LogFormatSpec
+from zodiarc.parsers.registry import register_spec
+from zodiarc.parsers.spec import LogFormatSpec
 
 register_spec(LogFormatSpec(name="site-main", directive='%h %t "%r" %>s %b'))
 ```
@@ -46,7 +46,7 @@ work at all, and its packaged `main` format is a built-in. A custom
 
 ## Level 1b — it is JSON
 
-One object per line. No code either: the format is a mapping from LogarX's
+One object per line. No code either: the format is a mapping from Zodiarc's
 field names to your log's keys, and it is proposed for you. **New → JSON**,
 paste a line, and **Guess fields** fills the mapping in; change any row the
 guess got wrong, for example `client_ip` to `http_x_real_ip` behind a proxy.
@@ -70,7 +70,7 @@ editor's Columns box.
 ## Level 1d — it is none of those
 
 A syslog-wrapped line, a load balancer that agrees with nobody. Write a regular
-expression; its named groups are the mapping, and a group LogarX does not
+expression; its named groups are the mapping, and a group Zodiarc does not
 recognise is kept beside the event as evidence. **New → Pattern (regular
 expression)**, for example:
 
@@ -85,7 +85,7 @@ It is matched from the **start** of the line. Begin with `.*` to skip a prefix
 ## Level 2 — it is a different shape entirely
 
 Something none of the four kinds can express. Implement the protocol in
-`logarx/parsers/base.py`:
+`zodiarc/parsers/base.py`:
 
 ```python
 class LogParser(Protocol):
@@ -112,7 +112,7 @@ to every worker. Keep per-line state in locals, not on `self`.
 Then register it:
 
 ```python
-from logarx.parsers.registry import register_format
+from zodiarc.parsers.registry import register_format
 
 register_format("iis-w3c", IisParser, description="IIS W3C extended log")
 ```
@@ -138,7 +138,7 @@ NormalizedEvent(
 ```
 
 `path` is the **raw** path — do not decode it. Normalisation happens later, in
-`logarx.normalize.decode`, and both the raw and decoded forms are exposed to
+`zodiarc.normalize.decode`, and both the raw and decoded forms are exposed to
 rules as separate match fields. A parser that helpfully percent-decodes destroys
 the distinction, and `decode_depth` — double-encoding, which is itself a signal
 — becomes unobservable.
@@ -171,6 +171,6 @@ The window and `--format` read the registry at the moment they run, so a
 registration has to have happened first. There is currently no plugin discovery
 — no entry-point scanning, no rule-pack-style directory of parsers — so
 registering means importing a module that calls `register_format`, either in
-your own script or by adding it to `logarx.parsers`. That is enough for a fork
+your own script or by adding it to `zodiarc.parsers`. That is enough for a fork
 or an embedded use, and it is not enough for distributing a parser as a separate
 package. Entry-point discovery is the obvious next step and is not built.

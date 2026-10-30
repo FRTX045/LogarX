@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 import pytest
 from test_event_store import event
 
-from logarx.storage.event_store import ParquetEventStore
+from zodiarc.storage.event_store import ParquetEventStore
 
 if TYPE_CHECKING:
     from collections.abc import Iterator

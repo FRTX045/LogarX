@@ -31,15 +31,15 @@ from PyQt6.QtWidgets import (
 )
 from tables import column_of
 
-from logarx.core.activity import ActivityCategory, Outcome, Severity
-from logarx.core.event import NormalizedEvent
-from logarx.core.evidence import EvidenceRef
-from logarx.core.graph import GraphNode
-from logarx.evidence import EvidenceLine
-from logarx.gui.columns import SHORT_TEXT, ColumnWidths, ShortWhenNarrow
-from logarx.gui.evidence_panel import EvidencePanel
-from logarx.gui.panels import ClientTable
-from logarx.storage.base import IpSummary
+from zodiarc.core.activity import ActivityCategory, Outcome, Severity
+from zodiarc.core.event import NormalizedEvent
+from zodiarc.core.evidence import EvidenceRef
+from zodiarc.core.graph import GraphNode
+from zodiarc.evidence import EvidenceLine
+from zodiarc.gui.columns import SHORT_TEXT, ColumnWidths, ShortWhenNarrow
+from zodiarc.gui.evidence_panel import EvidencePanel
+from zodiarc.gui.panels import ClientTable
+from zodiarc.storage.base import IpSummary
 
 START = datetime(2026, 3, 10, 19, 12, 18, tzinfo=UTC)
 

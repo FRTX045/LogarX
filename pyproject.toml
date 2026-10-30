@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "logarx"
+name = "zodiarc"
 version = "1.0.0"
 description = "Forensic reconstruction of per-IP web activity from server access logs, rendered as an activity graph"
 readme = "README.md"
@@ -49,19 +49,19 @@ dev = [
 ]
 
 [project.scripts]
-logarx-dev = "logarx.devtools.main:app"
+zodiarc-dev = "zodiarc.devtools.main:app"
 
 # Installed by the `gui` extra. Kept as a separate entry point so the CLI never
 # imports Qt: a headless server should be able to ingest a log without a
 # windowing toolkit on it.
 [project.gui-scripts]
-logarx-gui = "logarx.gui.app:main"
+zodiarc-gui = "zodiarc.gui.app:main"
 
 [project.urls]
-Repository = "https://github.com/FRTX045/LogarX"
+Repository = "https://github.com/FRTX045/Zodiarc"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/logarx"]
+packages = ["src/zodiarc"]
 
 # ---------------------------------------------------------------------------
 # Lint / format
@@ -96,7 +96,7 @@ ignore = [
 # These two deliberately contain lookalike characters. Detecting them is the
 # point of the code, and describing them is the point of the docstring, so the
 # confusable-character warnings are exactly backwards here.
-"src/logarx/normalize/decode.py" = ["RUF002"]
+"src/zodiarc/normalize/decode.py" = ["RUF002"]
 "tests/normalize/test_decode.py" = ["RUF001"]
 
 # ---------------------------------------------------------------------------
@@ -118,12 +118,12 @@ show_error_codes = true
 # because it looks like a result.
 [[tool.mypy.overrides]]
 module = [
-    "logarx.core.*",
-    "logarx.detect.*",
-    "logarx.episode.*",
-    "logarx.evaluation.*",
-    "logarx.triage.*",
-    "logarx.sessionize.*",
+    "zodiarc.core.*",
+    "zodiarc.detect.*",
+    "zodiarc.episode.*",
+    "zodiarc.evaluation.*",
+    "zodiarc.triage.*",
+    "zodiarc.sessionize.*",
 ]
 strict = true
 
@@ -159,7 +159,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["src/logarx"]
+source = ["src/zodiarc"]
 branch = true
 # Follow the ingest workers into their own processes.
 #
@@ -205,7 +205,7 @@ sigterm = true
 # gestures through real widgets, so most of what these modules do is reachable
 # without a screen after all.
 omit = [
-    "src/logarx/evaluation/bench_worker.py",
+    "src/zodiarc/evaluation/bench_worker.py",
 ]
 
 # What the GUI numbers do not say, so that nobody reads them as saying it.

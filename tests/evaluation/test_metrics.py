@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from logarx.core.activity import ActivityCategory as Category
-from logarx.evaluation.metrics import (
+from zodiarc.core.activity import ActivityCategory as Category
+from zodiarc.evaluation.metrics import (
     Prediction,
     score_binary,
     score_classification,

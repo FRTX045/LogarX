@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from logarx.ingest.reader import Compression, LogSourceError, open_log
+from zodiarc.ingest.reader import Compression, LogSourceError, open_log
 
 SAMPLE = "line one\nline two\nline three\n"
 

@@ -13,12 +13,12 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from logarx.analysis import AnalysisResult, analyse_ip
-from logarx.case import Case
-from logarx.core.event import NormalizedEvent
-from logarx.core.evidence import EvidenceRef
-from logarx.evidence import EvidenceLine
-from logarx.gui.evidence_view import (
+from zodiarc.analysis import AnalysisResult, analyse_ip
+from zodiarc.case import Case
+from zodiarc.core.event import NormalizedEvent
+from zodiarc.core.evidence import EvidenceRef
+from zodiarc.evidence import EvidenceLine
+from zodiarc.gui.evidence_view import (
     COLUMNS,
     Cell,
     Filtered,
@@ -27,7 +27,7 @@ from logarx.gui.evidence_view import (
     filter_strip,
     no_results,
 )
-from logarx.style import EVIDENCE_INK, EVIDENCE_MUTED
+from zodiarc.style import EVIDENCE_INK, EVIDENCE_MUTED
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -143,7 +143,7 @@ def test_a_line_the_parser_rejects_still_gets_a_row() -> None:
 
 def test_an_unreadable_source_says_so_in_the_row() -> None:
     """A case outlives its logs. The row must report that, not look empty."""
-    from logarx.gui.evidence_view import ALERT_COLOUR
+    from zodiarc.gui.evidence_view import ALERT_COLOUR
 
     target = cells_for(missing(), decode=True)[COLUMNS.index("Request")]
 
@@ -163,7 +163,7 @@ def test_a_control_character_in_a_raw_line_cannot_break_the_row() -> None:
 
 def test_the_detail_carries_the_whole_request() -> None:
     """The table truncates; this is where the reader goes for all of it."""
-    from logarx.gui.evidence_view import detail_for
+    from zodiarc.gui.evidence_view import detail_for
 
     detail = detail_for(line(), decode=True)
     labels = {label for label, _value, _colour in detail.fields}
@@ -191,7 +191,7 @@ def test_the_detail_carries_the_whole_request() -> None:
     ],
 )
 def test_response_status_explains_the_server_code(status: int, meaning: str) -> None:
-    from logarx.gui.evidence_view import detail_for
+    from zodiarc.gui.evidence_view import detail_for
 
     fields = {
         label: value
@@ -202,7 +202,7 @@ def test_response_status_explains_the_server_code(status: int, meaning: str) -> 
 
 
 def test_an_unrecognized_status_is_preserved_without_inventing_a_meaning() -> None:
-    from logarx.gui.evidence_view import detail_for
+    from zodiarc.gui.evidence_view import detail_for
 
     fields = {
         label: value for label, value, _colour in detail_for(line(status=499), decode=True).fields
@@ -212,7 +212,7 @@ def test_an_unrecognized_status_is_preserved_without_inventing_a_meaning() -> No
 
 
 def test_missing_response_fields_are_explained_and_known_size_is_still_shown() -> None:
-    from logarx.gui.evidence_view import detail_for
+    from zodiarc.gui.evidence_view import detail_for
 
     fields = {
         label: value for label, value, _colour in detail_for(line(status=None), decode=True).fields
@@ -228,7 +228,7 @@ def test_missing_response_fields_are_explained_and_known_size_is_still_shown() -
 def test_optional_log_fields_have_explanatory_names() -> None:
     from dataclasses import replace
 
-    from logarx.gui.evidence_view import detail_for
+    from zodiarc.gui.evidence_view import detail_for
 
     evidence = line()
     assert evidence.event is not None
@@ -250,7 +250,7 @@ def test_optional_log_fields_have_explanatory_names() -> None:
 def test_the_detail_holds_the_original_line_byte_for_byte() -> None:
     """The proof. Everything else here is a reading of it, and a reading is
     only allowed while the thing it reads stays reachable and unaltered."""
-    from logarx.gui.evidence_view import detail_for
+    from zodiarc.gui.evidence_view import detail_for
 
     evidence = line()
 
@@ -260,7 +260,7 @@ def test_the_detail_holds_the_original_line_byte_for_byte() -> None:
 def test_the_detail_shows_the_full_agent_not_a_shortened_one() -> None:
     """The table has no room and the detail has plenty. A scanner signature
     must never be cut in the one place it can be read in full."""
-    from logarx.gui.evidence_view import detail_for
+    from zodiarc.gui.evidence_view import detail_for
 
     agent = "Mozilla/5.0 " + "x" * 200
 
@@ -272,7 +272,7 @@ def test_the_detail_shows_the_full_agent_not_a_shortened_one() -> None:
 def test_an_integrity_warning_reaches_the_detail() -> None:
     """A source that changed size since ingest may not hold the line that
     produced the finding, and that has to be said next to the line."""
-    from logarx.gui.evidence_view import detail_for
+    from zodiarc.gui.evidence_view import detail_for
 
     evidence = EvidenceLine(
         ref=EvidenceRef("access.log", 1),

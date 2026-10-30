@@ -9,9 +9,9 @@ from typing import Any
 
 import pytest
 
-from logarx.bookmarks import FILE_NAME as BOOKMARKS_FILE
-from logarx.core.evidence import EvidenceRef
-from logarx.session_names import (
+from zodiarc.bookmarks import FILE_NAME as BOOKMARKS_FILE
+from zodiarc.core.evidence import EvidenceRef
+from zodiarc.session_names import (
     EMPTY,
     FILE_NAME,
     UNREADABLE_NAME,
@@ -28,12 +28,12 @@ from logarx.session_names import (
 KEY = SessionKey("192.0.2.22", EvidenceRef("access.log", 1234))
 OTHER = SessionKey("192.0.2.22", EvidenceRef("access.log", 2000))
 NOW = datetime(2026, 10, 24, 10, 0, tzinfo=UTC)
-LOGARX = "Configuration File Probe"
+ZODIARC = "Configuration File Probe"
 
 
 def named(name: str, key: SessionKey = KEY) -> Any:
     """A change naming `key`, as the Rename session window makes one."""
-    return lambda names: rename(names, key, name, logarx_name=LOGARX, now=NOW)
+    return lambda names: rename(names, key, name, zodiarc_name=ZODIARC, now=NOW)
 
 
 def write(folder: Path, content: Any) -> None:
@@ -78,11 +78,11 @@ def test_the_file_is_the_documented_shape(tmp_path: Path) -> None:
     }
 
 
-def test_logarxs_own_name_removes_the_readers(tmp_path: Path) -> None:
-    """A pencil on LogarX's own words would claim authorship of nothing."""
+def test_zodiarcs_own_name_removes_the_readers(tmp_path: Path) -> None:
+    """A pencil on Zodiarc's own words would claim authorship of nothing."""
     apply(tmp_path, named("Scanner"))
 
-    apply(tmp_path, named(f"  {LOGARX} "))
+    apply(tmp_path, named(f"  {ZODIARC} "))
 
     assert load(tmp_path).names.name_for(KEY) is None
     assert read(tmp_path)["sessions"] == []
@@ -115,9 +115,9 @@ def test_spaces_are_collapsed_and_trimmed(tmp_path: Path) -> None:
 
 
 def test_a_name_over_sixty_characters_is_refused() -> None:
-    assert rename(EMPTY, KEY, "x" * 60, logarx_name=LOGARX, now=NOW).name_for(KEY) == "x" * 60
+    assert rename(EMPTY, KEY, "x" * 60, zodiarc_name=ZODIARC, now=NOW).name_for(KEY) == "x" * 60
     with pytest.raises(ValueError, match="60"):
-        rename(EMPTY, KEY, "x" * 61, logarx_name=LOGARX, now=NOW)
+        rename(EMPTY, KEY, "x" * 61, zodiarc_name=ZODIARC, now=NOW)
 
 
 def test_the_last_of_two_entries_for_one_key_wins_and_a_rename_leaves_one(tmp_path: Path) -> None:
@@ -256,7 +256,7 @@ def test_a_name_belongs_to_the_session_that_holds_its_line() -> None:
     """A name given under a time filter is keyed on the clipped session's first
     line; the whole visit holds that line, so it keeps the name once the filter
     goes."""
-    names = rename(EMPTY, KEY, "Scanner", logarx_name=LOGARX, now=NOW)
+    names = rename(EMPTY, KEY, "Scanner", zodiarc_name=ZODIARC, now=NOW)
 
     assert names.name_in("192.0.2.22", lines(1200, 1234, 1300)) == "Scanner"
     assert names.name_in("192.0.2.22", lines(1200, 1300)) is None
@@ -264,19 +264,24 @@ def test_a_name_belongs_to_the_session_that_holds_its_line() -> None:
 
 
 def test_the_name_given_last_wins_inside_one_session() -> None:
-    names = rename(EMPTY, KEY, "Earlier", logarx_name=LOGARX, now=NOW)
-    names = rename(names, OTHER, "Later", logarx_name=LOGARX, now=NOW)
+    names = rename(EMPTY, KEY, "Earlier", zodiarc_name=ZODIARC, now=NOW)
+    names = rename(names, OTHER, "Later", zodiarc_name=ZODIARC, now=NOW)
 
     assert names.name_in("192.0.2.22", lines(1234, 2000)) == "Later"
 
 
 def test_renaming_a_session_replaces_every_name_inside_it() -> None:
-    names = rename(EMPTY, KEY, "Under one filter", logarx_name=LOGARX, now=NOW)
-    names = rename(names, OTHER, "Under another", logarx_name=LOGARX, now=NOW)
+    names = rename(EMPTY, KEY, "Under one filter", zodiarc_name=ZODIARC, now=NOW)
+    names = rename(names, OTHER, "Under another", zodiarc_name=ZODIARC, now=NOW)
     whole = SessionKey("192.0.2.22", EvidenceRef("access.log", 1000))
 
     renamed = rename(
-        names, whole, "The whole visit", logarx_name=LOGARX, now=NOW, within=lines(1000, 1234, 2000)
+        names,
+        whole,
+        "The whole visit",
+        zodiarc_name=ZODIARC,
+        now=NOW,
+        within=lines(1000, 1234, 2000),
     )
 
     assert [entry.name for entry in renamed.entries] == ["The whole visit"]

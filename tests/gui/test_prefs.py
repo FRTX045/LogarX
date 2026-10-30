@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import pytest
 
-from logarx.gui import prefs
-from logarx.gui.density import Density
-from logarx.gui.folding import FoldRule
+from zodiarc.gui import prefs
+from zodiarc.gui.density import Density
+from zodiarc.gui.folding import FoldRule
 
 
 def test_every_setting_the_window_keeps_is_in_the_catalogue() -> None:

@@ -8,12 +8,12 @@ from datetime import UTC, datetime
 
 import pytest
 
-from logarx.core.event import NormalizedEvent
-from logarx.core.evidence import EvidenceRef
-from logarx.parsers.apache import COMBINED, COMMON
-from logarx.parsers.library import save_library
-from logarx.parsers.logformat import LogFormatParser
-from logarx.parsers.registry import (
+from zodiarc.core.event import NormalizedEvent
+from zodiarc.core.evidence import EvidenceRef
+from zodiarc.parsers.apache import COMBINED, COMMON
+from zodiarc.parsers.library import save_library
+from zodiarc.parsers.logformat import LogFormatParser
+from zodiarc.parsers.registry import (
     UnknownFormatError,
     available_formats,
     detect_format,
@@ -26,7 +26,7 @@ from logarx.parsers.registry import (
     registered_formats,
     unregister_format,
 )
-from logarx.parsers.spec import LogFormatSpec
+from zodiarc.parsers.spec import LogFormatSpec
 
 COMBINED_LINES = [
     '203.0.113.45 - - [10/Oct/2000:13:55:36 +0000] "GET / HTTP/1.1" 200 2326 "-" "curl/8.0"',

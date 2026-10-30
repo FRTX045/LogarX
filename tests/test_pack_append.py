@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import pytest
 
-from logarx.core.activity import ActivityCategory, Severity
-from logarx.detect.rules import load_pack_text
-from logarx.gui.rules_view import NEW_PACK_TEXT
-from logarx.pack_append import CannotAppend, appended
-from logarx.rule_draft import Condition, Draft, Test, rule_block
+from zodiarc.core.activity import ActivityCategory, Severity
+from zodiarc.detect.rules import load_pack_text
+from zodiarc.gui.rules_view import NEW_PACK_TEXT
+from zodiarc.pack_append import CannotAppend, appended
+from zodiarc.rule_draft import Condition, Draft, Test, rule_block
 
 BLOCK = rule_block(
     Draft(

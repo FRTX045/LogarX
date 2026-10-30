@@ -1,4 +1,4 @@
-"""Tests for the developer tools, `logarx-dev`.
+"""Tests for the developer tools, `zodiarc-dev`.
 
 These check the contract a developer sees — exit codes and what is printed —
 rather than internals, which the layers below already cover.
@@ -12,8 +12,8 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-from logarx.case import Case
-from logarx.devtools.main import app
+from zodiarc.case import Case
+from zodiarc.devtools.main import app
 
 runner = CliRunner()
 
@@ -99,7 +99,7 @@ def test_version_is_reported() -> None:
     result = runner.invoke(app, ["--version"])
 
     assert result.exit_code == 0
-    assert "LogarX" in result.stdout
+    assert "Zodiarc" in result.stdout
 
 
 # -- the site's own domains, which one rule needs and nothing else does -------
@@ -150,7 +150,7 @@ def test_enrich_prints_the_fingerprint_the_case_recorded(
             pass
         return []
 
-    monkeypatch.setattr("logarx.enrich.run_sidecar", quiet_sidecar)
+    monkeypatch.setattr("zodiarc.enrich.run_sidecar", quiet_sidecar)
     case = tmp_path / "case"
     runner.invoke(app, ["ingest", str(rfi_log), "--case", str(case), "--site-host", "shop.test"])
 

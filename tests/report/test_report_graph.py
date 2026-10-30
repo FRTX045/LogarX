@@ -7,11 +7,11 @@ from xml.etree import ElementTree as ET
 
 import pytest
 
-from logarx.core.activity import ActivityCategory, Outcome, Severity
-from logarx.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
-from logarx.graphbuild.layout import sessions_in
-from logarx.report.graph import render_graph
-from logarx.style import node_radius, outcome_border, severity_colour
+from zodiarc.core.activity import ActivityCategory, Outcome, Severity
+from zodiarc.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
+from zodiarc.graphbuild.layout import sessions_in
+from zodiarc.report.graph import render_graph
+from zodiarc.style import node_radius, outcome_border, severity_colour
 
 START = datetime(2026, 10, 28, tzinfo=UTC)
 

@@ -10,14 +10,14 @@ from test_triage_panel import make_case
 from test_who_else import DIRB, GOBUSTER
 
 from conftest import fired, settled
-from logarx.core.event import NormalizedEvent
-from logarx.core.evidence import EvidenceRef
-from logarx.evidence import EvidenceLine
-from logarx.gui.bookmarks_tab import BookmarksTab
-from logarx.gui.evidence_view import detail_for
-from logarx.gui.triage import TriagePanel
-from logarx.gui.who_else import WhoElseDialog
-from logarx.triage.scan import scan_case
+from zodiarc.core.event import NormalizedEvent
+from zodiarc.core.evidence import EvidenceRef
+from zodiarc.evidence import EvidenceLine
+from zodiarc.gui.bookmarks_tab import BookmarksTab
+from zodiarc.gui.evidence_view import detail_for
+from zodiarc.gui.triage import TriagePanel
+from zodiarc.gui.who_else import WhoElseDialog
+from zodiarc.triage.scan import scan_case
 
 
 def line() -> EvidenceLine:

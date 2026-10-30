@@ -5,7 +5,7 @@ set. This is not: it checks that the sidecar's JSON contract still holds, which
 guards against CRS or Coraza changing underneath rather than against this code.
 
 Skipped locally when the sidecar has not been built — see `crs/README.md`. CI
-builds it and sets `LOGARX_REQUIRE_CRS=1`, which turns the skip off so a build
+builds it and sets `ZODIARC_REQUIRE_CRS=1`, which turns the skip off so a build
 that quietly failed surfaces as a failure here.
 
 That switch exists because the skip is otherwise self-concealing: the only
@@ -21,13 +21,13 @@ from datetime import UTC, datetime
 
 import pytest
 
-from logarx.core.event import NormalizedEvent
-from logarx.core.evidence import EvidenceRef
-from logarx.detect.crs import SidecarConfig, run_sidecar
+from zodiarc.core.event import NormalizedEvent
+from zodiarc.core.evidence import EvidenceRef
+from zodiarc.detect.crs import SidecarConfig, run_sidecar
 
 CONFIG = SidecarConfig()
 
-REQUIRE_ENV = "LOGARX_REQUIRE_CRS"
+REQUIRE_ENV = "ZODIARC_REQUIRE_CRS"
 
 _unbuilt = not CONFIG.binary.exists() or not (CONFIG.rules / "rules").is_dir()
 
@@ -136,7 +136,7 @@ def test_a_flush_marker_is_answered_before_the_input_ends() -> None:
     import subprocess
     import threading
 
-    from logarx.detect.crs.sidecar import as_record
+    from zodiarc.detect.crs.sidecar import as_record
 
     process = subprocess.Popen(
         [
@@ -191,7 +191,7 @@ def test_a_flush_marker_is_answered_before_the_input_ends() -> None:
 
 
 def test_a_protocol_newer_than_the_sidecar_is_refused_at_once() -> None:
-    """LogarX names the protocol it speaks with `--protocol`. A binary asked
+    """Zodiarc names the protocol it speaks with `--protocol`. A binary asked
     for one it does not know must exit saying so, before reading a line,
     rather than be sent input it cannot answer and leave the run waiting."""
     import subprocess

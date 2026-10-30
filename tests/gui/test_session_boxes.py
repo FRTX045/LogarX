@@ -35,15 +35,15 @@ from PyQt6.QtWidgets import (
 )
 
 from conftest import settled
-from logarx.analysis import analyse_ip
-from logarx.case import Case
-from logarx.core.activity import ActivityCategory, Outcome, Severity
-from logarx.core.evidence import EvidenceRef
-from logarx.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
-from logarx.gui.app import MainWindow
-from logarx.gui.canvas import _SESSION_EDGE_WIDTH, _SESSION_PAD, ActivityCanvas
-from logarx.sessionize.segmenter import SessionPolicy
-from logarx.style import PAPER, RENAME_HINT, SESSION_GROUND, session_rule
+from zodiarc.analysis import analyse_ip
+from zodiarc.case import Case
+from zodiarc.core.activity import ActivityCategory, Outcome, Severity
+from zodiarc.core.evidence import EvidenceRef
+from zodiarc.core.graph import ActivityGraph, GraphEdge, GraphKind, GraphNode
+from zodiarc.gui.app import MainWindow
+from zodiarc.gui.canvas import _SESSION_EDGE_WIDTH, _SESSION_PAD, ActivityCanvas
+from zodiarc.sessionize.segmenter import SessionPolicy
+from zodiarc.style import PAPER, RENAME_HINT, SESSION_GROUND, session_rule
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 
@@ -485,7 +485,7 @@ def tips(canvas: ActivityCanvas) -> set[str]:
 
 
 def explained(policy: SessionPolicy) -> str:
-    """The tip on a heading LogarX named: what a session is, then how to rename."""
+    """The tip on a heading Zodiarc named: what a session is, then how to rename."""
     return session_rule(policy) + "\n\n" + RENAME_HINT
 
 
@@ -646,7 +646,7 @@ def test_a_box_survives_a_redraw(qt_app: QApplication) -> None:
 def test_a_drag_reshapes_only_the_box_it_moved_in(qt_app: QApplication) -> None:
     """A busy client has a hundred and fifty boxes. A drag sends a position
     change per mouse-move event, and each one should touch one box."""
-    from logarx.gui.canvas import _SessionBox
+    from zodiarc.gui.canvas import _SessionBox
 
     canvas = drawn(trace(*([1] * 150)))
     seen: list[tuple[str, ...]] = []

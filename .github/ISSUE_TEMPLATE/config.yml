@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Report a security vulnerability
-    url: https://github.com/FRTX045/LogarX/security/advisories/new
-    about: Privately. An issue is public the moment it is filed, and the people running LogarX are often reading logs from an incident that is still live.
+    url: https://github.com/FRTX045/Zodiarc/security/advisories/new
+    about: Privately. An issue is public the moment it is filed, and the people running Zodiarc are often reading logs from an incident that is still live.
   - name: Ask a question or share an idea
-    url: https://github.com/FRTX045/LogarX/discussions
+    url: https://github.com/FRTX045/Zodiarc/discussions
     about: Questions and open-ended ideas. A feature with a clear use goes in a feature request.

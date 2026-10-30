@@ -20,15 +20,15 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 from PyQt6.QtWidgets import QApplication, QDialog
 
 from conftest import settled
-from logarx.case import Case
-from logarx.core.activity import ActivityCategory
-from logarx.detect.ruleset import PackText, RuleSet
-from logarx.gui import app
-from logarx.gui.app import MainWindow
-from logarx.gui.icon_set import KIND_NAMES, icons_dir
-from logarx.gui.icons import read_kind_icons
-from logarx.gui.preferences import PreferencesDialog
-from logarx.rules_library import Library
+from zodiarc.case import Case
+from zodiarc.core.activity import ActivityCategory
+from zodiarc.detect.ruleset import PackText, RuleSet
+from zodiarc.gui import app
+from zodiarc.gui.app import MainWindow
+from zodiarc.gui.icon_set import KIND_NAMES, icons_dir
+from zodiarc.gui.icons import read_kind_icons
+from zodiarc.gui.preferences import PreferencesDialog
+from zodiarc.rules_library import Library
 
 MINE = """\
 version: 1

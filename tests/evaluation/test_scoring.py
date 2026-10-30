@@ -17,10 +17,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from logarx.case import Case
-from logarx.core.activity import ActivityCategory
-from logarx.evaluation.scoring import evaluate
-from logarx.evaluation.truth import GroundTruth, read_truth
+from zodiarc.case import Case
+from zodiarc.core.activity import ActivityCategory
+from zodiarc.evaluation.scoring import evaluate
+from zodiarc.evaluation.truth import GroundTruth, read_truth
 
 
 def test_every_line_of_the_excerpt_is_scored(
@@ -131,7 +131,7 @@ def test_a_binary_truth_gets_no_per_category_table(tmp_path: Path) -> None:
     The truth file says so in its header, so this is enforced rather than
     written down and hoped for.
     """
-    from logarx.evaluation.csic import convert_csic
+    from zodiarc.evaluation.csic import convert_csic
 
     normal = tmp_path / "normal.txt"
     anomalous = tmp_path / "anomalous.txt"

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from logarx.storage.case import CaseManifest, CaseManifestError, SourceRecord
+from zodiarc.storage.case import CaseManifest, CaseManifestError, SourceRecord
 
 SOURCE = SourceRecord(
     file_id="access.log",

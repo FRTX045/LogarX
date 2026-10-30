@@ -17,7 +17,7 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from PyQt6.QtWidgets import QApplication
 
-from logarx.gui.arrangement_bar import ArrangementBar
+from zodiarc.gui.arrangement_bar import ArrangementBar
 
 
 def test_it_starts_with_nothing_to_say(qt_app: QApplication) -> None:

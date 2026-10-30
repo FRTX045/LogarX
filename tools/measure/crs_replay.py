@@ -24,8 +24,8 @@ from collections import Counter
 from dataclasses import replace
 from pathlib import Path
 
-from logarx.case import Case
-from logarx.detect.crs.sidecar import SidecarConfig, run_sidecar
+from zodiarc.case import Case
+from zodiarc.detect.crs.sidecar import SidecarConfig, run_sidecar
 
 
 def main(argv: list[str] | None = None) -> int:

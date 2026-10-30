@@ -23,8 +23,8 @@ from pathlib import Path
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QApplication
 
-from logarx.case import Case
-from logarx.detect.crs.sidecar import SidecarConfig, run_sidecar
+from zodiarc.case import Case
+from zodiarc.detect.crs.sidecar import SidecarConfig, run_sidecar
 
 INTERVAL_MS = 20
 

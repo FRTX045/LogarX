@@ -18,8 +18,8 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 from PyQt6.QtWidgets import QApplication
 
 from conftest import settled
-from logarx.detect.crs import CrsUnavailableError
-from logarx.gui.workers import run_job
+from zodiarc.detect.crs import CrsUnavailableError
+from zodiarc.gui.workers import run_job
 
 SIDECAR_SAID = "goroutine 1 [running]:\nmain.main()"
 

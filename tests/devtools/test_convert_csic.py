@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from logarx.devtools.main import app
+from zodiarc.devtools.main import app
 
 runner = CliRunner()
 

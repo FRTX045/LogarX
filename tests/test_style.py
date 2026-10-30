@@ -9,11 +9,11 @@ from itertools import combinations, pairwise
 import pytest
 
 from colours import apart, chroma, contrast, hue_apart
-from logarx.core.activity import ActivityCategory, Outcome, Severity
-from logarx.core.evidence import EvidenceRef
-from logarx.core.graph import GraphKind, GraphNode
-from logarx.sessionize.segmenter import SessionPolicy
-from logarx.style import (
+from zodiarc.core.activity import ActivityCategory, Outcome, Severity
+from zodiarc.core.evidence import EvidenceRef
+from zodiarc.core.graph import GraphKind, GraphNode
+from zodiarc.sessionize.segmenter import SessionPolicy
+from zodiarc.style import (
     CAPTION_COLOUR,
     CATEGORY_COLOURS,
     DARK,
@@ -313,7 +313,7 @@ def test_spans_stay_inside_the_line_and_never_overlap() -> None:
 
 
 def test_a_line_in_an_unrecognised_shape_is_left_plain() -> None:
-    """LogarX reads nginx, IIS and JSON too. A highlight guessed wrong is worse
+    """Zodiarc reads nginx, IIS and JSON too. A highlight guessed wrong is worse
     than none: it would point the eye at the wrong part of the evidence."""
     assert highlight_spans('{"remote_addr":"10.0.0.1","request":"GET / HTTP/1.1"}') == ()
     assert highlight_spans("") == ()
@@ -540,7 +540,7 @@ def test_the_light_theme_still_holds_the_colours_it_always_had() -> None:
     """`LIGHT` is not live, and something not drawn is something free to rot.
 
     It is kept so that going back is one line, which is only true while it still
-    holds what it held. These are the values LogarX shipped with.
+    holds what it held. These are the values Zodiarc shipped with.
     """
     assert [severity_colour(level, theme=LIGHT) for level in sorted(Severity)] == [
         "#9aa5b1",
@@ -630,7 +630,7 @@ def test_an_outcome_outline_is_still_visible_where_it_crosses_the_fill(level: Se
 
 
 def test_the_outcome_channel_does_not_lean_on_colour() -> None:
-    """`logarx.style` says on its own face that an outline "must not be a shade of
+    """`zodiarc.style` says on its own face that an outline "must not be a shade of
     the same colour that already means something else". Severity owns colour;
     outcome owns line style and weight. Holding the dark theme to that is what
     freed its outlines to be the one colour that reads on every fill.
@@ -806,13 +806,13 @@ def test_the_place_is_the_number_and_the_time() -> None:
     assert session_place(1, 7, nodes) == "Session 1 of 7 · 09 Mar 09:06\u201309:08"
 
 
-def test_a_tip_for_logarxs_name_is_the_rule_then_the_hint() -> None:
+def test_a_tip_for_zodiarcs_name_is_the_rule_then_the_hint() -> None:
     assert session_heading_tip("RULE", "X", renamed=False) == "RULE\n\n" + RENAME_HINT
 
 
 def test_a_tip_for_a_readers_name_says_so_first() -> None:
     assert session_heading_tip("RULE", "Config probe", renamed=True) == (
-        "Named by you. LogarX's name: Config probe\n\nRULE\n\n" + RENAME_HINT
+        "Named by you. Zodiarc's name: Config probe\n\nRULE\n\n" + RENAME_HINT
     )
 
 

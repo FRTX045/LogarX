@@ -15,7 +15,7 @@ from PyQt6.QtGui import QMouseEvent
 from PyQt6.QtWidgets import QApplication
 
 if TYPE_CHECKING:
-    from logarx.gui.canvas import ActivityCanvas
+    from zodiarc.gui.canvas import ActivityCanvas
 
 __all__ = ["drag", "hold", "let_go", "mouse", "press_on"]
 

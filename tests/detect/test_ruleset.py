@@ -9,11 +9,11 @@ from pathlib import Path
 
 import pytest
 
-from logarx.case import Case
-from logarx.detect.engine import RuleEngine
-from logarx.detect.rulepacks import default_rules
-from logarx.detect.rules import RulePackError
-from logarx.detect.ruleset import (
+from zodiarc.case import Case
+from zodiarc.detect.engine import RuleEngine
+from zodiarc.detect.rulepacks import default_rules
+from zodiarc.detect.rules import RulePackError
+from zodiarc.detect.ruleset import (
     NO_EXTRA_RULES,
     PackText,
     RuleSet,

@@ -14,8 +14,8 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from logarx.case import Case
-from logarx.devtools.main import app
+from zodiarc.case import Case
+from zodiarc.devtools.main import app
 
 runner = CliRunner()
 
@@ -75,7 +75,7 @@ def test_a_missing_sidecar_says_how_to_build_one(ingested_case: Path, tmp_path: 
     # is a worse answer than the line they need to run.
     printed = " ".join(result.output.split())
     assert "go build" in printed
-    assert "LOGARX_CRS_BINARY" in printed
+    assert "ZODIARC_CRS_BINARY" in printed
 
 
 def test_a_sidecar_that_crashes_is_reported_with_what_it_said(
@@ -83,8 +83,8 @@ def test_a_sidecar_that_crashes_is_reported_with_what_it_said(
 ) -> None:
     """CRS is the whole job here, so its own output is printed under the one
     line that says what happened: it is what a report of the fault needs."""
-    from logarx.detect.crs import CrsUnavailableError
-    from logarx.devtools import main as cli_main
+    from zodiarc.detect.crs import CrsUnavailableError
+    from zodiarc.devtools import main as cli_main
 
     def crash(*_args: object, **_kwargs: object) -> object:
         raise CrsUnavailableError(
@@ -112,7 +112,7 @@ def test_a_case_that_is_not_a_case_is_reported(tmp_path: Path) -> None:
 
 def _stopped_part_way(root: Path, *, replayed: int, requests: int) -> Path:
     """`root` as a stopped CRS run leaves it, without needing the sidecar."""
-    from logarx.detect.crs.store import write_detections
+    from zodiarc.detect.crs.store import write_detections
 
     with Case.open(root) as case:
         write_detections(case.root, [])

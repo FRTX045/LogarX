@@ -13,10 +13,10 @@ from PyQt6.QtGui import QPalette
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication
 
-from logarx.gui.evidence_details import EvidenceDetails
-from logarx.gui.evidence_view import Detail
-from logarx.gui.theme import mono_font
-from logarx.style import EVIDENCE_INK, EVIDENCE_MUTED, PAPER
+from zodiarc.gui.evidence_details import EvidenceDetails
+from zodiarc.gui.evidence_view import Detail
+from zodiarc.gui.theme import mono_font
+from zodiarc.style import EVIDENCE_INK, EVIDENCE_MUTED, PAPER
 
 
 @pytest.fixture
@@ -149,7 +149,7 @@ def test_long_requests_wrap_inside_the_shared_scroller(
 def test_the_panel_allocates_room_for_choosing_sections(
     qt_app: QApplication, record: Detail
 ) -> None:
-    from logarx.gui.evidence_panel import EvidencePanel
+    from zodiarc.gui.evidence_panel import EvidencePanel
 
     panel = EvidencePanel()
     panel.resize(480, 780)

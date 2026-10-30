@@ -14,10 +14,10 @@ from pathlib import Path
 
 import pytest
 
-from logarx.analysis import analyse_ip
-from logarx.case import Case
-from logarx.report.export import FORMATS, named, write_reconstruction, write_text
-from logarx.report.html import render_report
+from zodiarc.analysis import analyse_ip
+from zodiarc.case import Case
+from zodiarc.report.export import FORMATS, named, write_reconstruction, write_text
+from zodiarc.report.html import render_report
 
 START = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 ATTACKER = "203.0.113.66"
@@ -157,9 +157,9 @@ def test_a_failed_write_leaves_the_file_that_was_there(tmp_path: Path) -> None:
 def test_a_bookmarked_line_with_a_byte_that_was_not_utf_8_is_reported(
     campaign: Case, tmp_path: Path
 ) -> None:
-    from logarx.bookmarks import DEFAULT, EMPTY, Bookmark, Kind, add
-    from logarx.core.evidence import EvidenceRef
-    from logarx.evidence import EvidenceLine
+    from zodiarc.bookmarks import DEFAULT, EMPTY, Bookmark, Kind, add
+    from zodiarc.core.evidence import EvidenceRef
+    from zodiarc.evidence import EvidenceLine
 
     result = analyse_ip(campaign.store, ATTACKER)
     ref = EvidenceRef("access.log", 1)

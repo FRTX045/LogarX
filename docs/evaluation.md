@@ -244,7 +244,7 @@ file paths, which is why their configuration differs from the excerpt's older fi
 The README's ingest rate is the medium log ingested three times at `e87e8d7` with nothing else
 running: 84,623, 85,908 and 87,202 lines/s, median **85,908**, with the default four workers on
 four physical cores (Windows 11, Python 3.12). It is a different measurement from the sequential
-`logarx-dev benchmark` figures under [Throughput and memory](#throughput-and-memory).
+`zodiarc-dev benchmark` figures under [Throughput and memory](#throughput-and-memory).
 
 | | small native | small + CRS | medium native | medium + CRS | large native | large + CRS |
 |---|---:|---:|---:|---:|---:|---:|
@@ -310,10 +310,10 @@ the comment lines in `SHA256SUMS` and checks every file it names:
 B=datasets/apache-shopfront/2026-10-06-medium
 gh release download 2026-10-06-medium -R FRTX045/LogarX-Dataset -D $B
 (cd $B && xz -dk *.xz && sha256sum -c SHA256SUMS --ignore-missing)
-logarx-dev ingest $B/access.log --case ./case --no-crs
-logarx-dev enrich --case ./case
-logarx-dev evaluate -c ./case -t $B/truth.jsonl -o native.json --no-crs
-logarx-dev evaluate -c ./case -t $B/truth.jsonl -o crs.json
+zodiarc-dev ingest $B/access.log --case ./case --no-crs
+zodiarc-dev enrich --case ./case
+zodiarc-dev evaluate -c ./case -t $B/truth.jsonl -o native.json --no-crs
+zodiarc-dev evaluate -c ./case -t $B/truth.jsonl -o crs.json
 ```
 
 Download the build rather than rebuilding it. A rebuild from the recipe will not have these
@@ -328,7 +328,7 @@ and 0.9525, 17,107 and 17,108 caught, 42 and 41 missed, 0 false alarms, boundary
 
 ## The same traffic in every log format — 2026-10-27
 
-Every figure above is from an Apache log. LogarX reads 21 built-in formats, and a format
+Every figure above is from an Apache log. Zodiarc reads 21 built-in formats, and a format
 can lose a field, or write it differently, in a way no test of a single line would show. So
 the small and medium builds were rendered by the dataset into 20 other formats, the same
 requests in each. Every rendered file was scored against its own truth and compared with
@@ -369,7 +369,7 @@ with its header captures (`haproxy-captures`). Identical means every figure the 
 reports, to the last request.
 
 **No format raises a false alarm.** The rows that differ differ because the log has no
-field, not because LogarX misreads one:
+field, not because Zodiarc misreads one:
 
 - **Without a User-Agent**, nothing says which client is a crawler, so all 22,680 crawler
   requests in the medium tier read as `browsing`: 0.096 of the 0.106 of accuracy lost. The
@@ -399,8 +399,8 @@ To score one format:
 python3 tools/render.py datasets/apache-shopfront/2026-10-06-medium   # in the dataset's checkout
 R=datasets/apache-shopfront/2026-10-06-medium/rendered
 (cd $R && sha256sum -c SHA256SUMS)
-logarx-dev ingest $R/nginx-json.log --case ./case --no-crs
-logarx-dev evaluate -c ./case -t $R/nginx-json.truth.jsonl -o every-record.json --no-crs
+zodiarc-dev ingest $R/nginx-json.log --case ./case --no-crs
+zodiarc-dev evaluate -c ./case -t $R/nginx-json.truth.jsonl -o every-record.json --no-crs
 ```
 
 For the table, score again with a truth file that leaves out the line numbers listed under
@@ -642,10 +642,10 @@ Point them at any build you do have and expect different numbers.
 
 ```bash
 B=samples/apache-shopfront/2026-09-07-medium
-logarx-dev ingest $B/access.log --case ./case-medium
-logarx-dev enrich --case ./case-medium
-logarx-dev evaluate --case ./case-medium --truth $B/truth.jsonl --out medium.json
-logarx-dev evaluate --case ./case-medium --truth $B/truth.jsonl --no-absorb --out medium-noabsorb.json
+zodiarc-dev ingest $B/access.log --case ./case-medium
+zodiarc-dev enrich --case ./case-medium
+zodiarc-dev evaluate --case ./case-medium --truth $B/truth.jsonl --out medium.json
+zodiarc-dev evaluate --case ./case-medium --truth $B/truth.jsonl --no-absorb --out medium-noabsorb.json
 ```
 
 The `enrich` step is part of the measurement, not an extra: every headline figure is of the
@@ -661,8 +661,8 @@ evaluation output for the committed 3,825-line excerpt, beside the log and the
 truth it was scored against:
 
 ```bash
-logarx-dev ingest tests/data/apache-shopfront/excerpt.log --case /tmp/c --no-crs
-logarx-dev evaluate -c /tmp/c -t tests/data/apache-shopfront/excerpt.truth.jsonl
+zodiarc-dev ingest tests/data/apache-shopfront/excerpt.log --case /tmp/c --no-crs
+zodiarc-dev evaluate -c /tmp/c -t tests/data/apache-shopfront/excerpt.truth.jsonl
 ```
 
 `tests/evaluation/test_published_scores.py` re-runs exactly that and compares
@@ -683,9 +683,9 @@ could move what a reader sees and fail no build.
 same way, with the enrichment actually run:
 
 ```bash
-logarx-dev ingest tests/data/apache-shopfront/excerpt.log --case /tmp/c
-logarx-dev enrich --case /tmp/c
-logarx-dev evaluate -c /tmp/c -t tests/data/apache-shopfront/excerpt.truth.jsonl
+zodiarc-dev ingest tests/data/apache-shopfront/excerpt.log --case /tmp/c
+zodiarc-dev enrich --case /tmp/c
+zodiarc-dev evaluate -c /tmp/c -t tests/data/apache-shopfront/excerpt.truth.jsonl
 ```
 
 | committed excerpt, 3,825 requests | native | with CRS |
@@ -782,7 +782,7 @@ were one line.
 
 #### 931130, told the site's name
 
-**Added 2026-09-23.** `logarx-dev enrich` now sends CRS the case's own domain as the
+**Added 2026-09-23.** `zodiarc-dev enrich` now sends CRS the case's own domain as the
 Host header, and 931130's verdicts count only when that one domain covers every
 domain the reader named. CRS compares by suffix, so `shop.test` covers
 `www.shop.test`; a site that also answers to an unrelated domain keeps the rule
@@ -849,7 +849,7 @@ GET /contact 200    Referer: http://shop.test/search?q="><img src=x onerror=aler
 Three CRS XSS rules fire. They are right that an XSS payload is in the request.
 The truth calls this `browsing` and is also right: the payload is in the
 *Referer*, so this is somebody who followed a poisoned link, not somebody who
-wrote one. **CRS judges the payload; LogarX judges the actor.** A firewall
+wrote one. **CRS judges the payload; Zodiarc judges the actor.** A firewall
 should block that request. A tool reconstructing what an address did should say
 it browsed to `/contact` and arrived from a poisoned search link.
 
@@ -1059,7 +1059,7 @@ below means restoring the original, which scored a fixed corpus revision:
 git revert 2868e78
 git clone https://github.com/coreruleset/coreruleset vendor/coreruleset
 git -C vendor/coreruleset checkout d694d465951ee06347214f1291ae096e40700001
-logarx-dev score-crs --corpus vendor/coreruleset --out crs.json
+zodiarc-dev score-crs --corpus vendor/coreruleset --out crs.json
 ```
 
 The corpus revision matters: both the denominator and the rate drift as CRS gains cases, so a
@@ -1075,7 +1075,7 @@ the rules have since changed substantially and the figures below are stale. The
 tree now holds 107 rules across twelve attack packs and one action pack; family
 933 alone went from 0.012 to 0.68 on 2026-09-15.
 
-For current figures run `logarx-dev score-crs`, which reports both directions —
+For current figures run `zodiarc-dev score-crs`, which reports both directions —
 what was caught, and what fired on traffic CRS certifies as harmless. The
 second column did not exist when this table was made.
 
@@ -1271,7 +1271,7 @@ reported, not tuned for accuracy.**
 
 ## Throughput and memory
 
-`logarx-dev benchmark`, Windows 11, Python 3.12, one machine, on the medium build's real log. Each
+`zodiarc-dev benchmark`, Windows 11, Python 3.12, one machine, on the medium build's real log. Each
 size runs in a process of its own so peak memory is that run's and not the previous one's.
 
 | Lines | Log | Ingest | Lines/s | MB/s | Peak RSS | Store | Ratio | Clients |
@@ -1442,7 +1442,7 @@ Parse only, `apache-combined`, best of three runs of 300,000 lines:
 | Positional groups | 55,298 | +7.9% |
 | ...and the shifted timestamp | **58,508** | **+14.1%** |
 
-End to end, `logarx-dev benchmark -n 1000000`, both runs on this machine minutes apart:
+End to end, `zodiarc-dev benchmark -n 1000000`, both runs on this machine minutes apart:
 
 | | Ingest | Lines/s |
 |---|---:|---:|
@@ -1541,14 +1541,14 @@ the generated corpus, where a third of traffic was an attack and the rate was me
 benign traffic than a deployment would present.
 
 **The CRS corpus figure has a ceiling.** 2,650 of its cases carry their payload in a body or a
-header no access log writes, and no tool reading a log can reach them; `logarx-dev score-crs` leaves
+header no access log writes, and no tool reading a log can reach them; `zodiarc-dev score-crs` leaves
 them out rather than counting them as misses. Of the 1,099 that remain the native rules catch 960
 (87.4%), and they fire on none of the 134 the corpus certifies as harmless. Status is synthesised
 as 200 for every case, so a rule that needs a 4xx cannot fire there at all.
 
 **Recall on CSIC 2010 has a ceiling below 100%.** A substantial share of its attacks carry their
 payload in a POST body, and a web server access log records the request line and nothing after it.
-`logarx-dev convert-csic` counts them in the corpus it is given and prints the resulting ceiling, so
+`zodiarc-dev convert-csic` counts them in the corpus it is given and prints the resulting ceiling, so
 the figure quoted alongside a CSIC result is measured on that copy of the dataset rather than
 repeated from elsewhere.
 

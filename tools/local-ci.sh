@@ -9,7 +9,7 @@
 #                          ruff, ruff format, mypy, mypy --platform win32
 #   tests on Linux         in Docker, one container per Python version
 #   tests on Windows       natively, when this is Windows (Git Bash)
-# Every test job builds the CRS sidecar, sets LOGARX_REQUIRE_CRS=1, runs the
+# Every test job builds the CRS sidecar, sets ZODIARC_REQUIRE_CRS=1, runs the
 # engine half with coverage and the window half with --cov-append, so the 94%
 # floor in pyproject.toml applies.
 #
@@ -20,11 +20,11 @@
 # and Git Bash. The ruleset clone at vendor/coreruleset, at the pinned commit.
 #
 # Environment:
-#   LOGARX_CI_DIR       where runs, environments and the worktree go
-#                       (default ~/.cache/logarx-ci)
-#   LOGARX_CI_TEMPROOT  pytest's temp root for the Windows jobs. Keep it short:
+#   ZODIARC_CI_DIR       where runs, environments and the worktree go
+#                       (default ~/.cache/zodiarc-ci)
+#   ZODIARC_CI_TEMPROOT  pytest's temp root for the Windows jobs. Keep it short:
 #                       a long one fails tests with WinError 3 (default
-#                       $LOGARX_CI_DIR/tmp)
+#                       $ZODIARC_CI_DIR/tmp)
 #
 # Exit status: 0 every job passed; 1 a job failed; 2 could not start; 3 nothing
 # failed but some jobs could not run here (no Docker, or no Windows). Only 0
@@ -50,8 +50,8 @@ fi
 case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) WINDOWS=1 ;; *) WINDOWS=0 ;; esac
 winpath() { if [ "$WINDOWS" = 1 ]; then cygpath -w "$1"; else printf '%s' "$1"; fi; }
 
-CI_DIR=${LOGARX_CI_DIR:-$HOME/.cache/logarx-ci}
-TEMPROOT=${LOGARX_CI_TEMPROOT:-$CI_DIR/tmp}
+CI_DIR=${ZODIARC_CI_DIR:-$HOME/.cache/zodiarc-ci}
+TEMPROOT=${ZODIARC_CI_TEMPROOT:-$CI_DIR/tmp}
 UV=$(command -v uv || echo "$HOME/.local/bin/uv")
 GO=$(command -v go || echo "/c/Program Files/Go/bin/go.exe")
 HAVE_DOCKER=1; command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1 || HAVE_DOCKER=0
@@ -75,15 +75,15 @@ record() { echo "$2" > "$RUN/$1.exit"; }
 
 # -- Linux: lint, type checks and tests, in containers --------------------------
 image() {  # image <python version>
-  MSYS_NO_PATHCONV=1 docker build -q -t "logarx-ci:$1" --build-arg "PY=$1" \
+  MSYS_NO_PATHCONV=1 docker build -q -t "zodiarc-ci:$1" --build-arg "PY=$1" \
     -f "$(winpath "$REPO/tools/local-ci.Dockerfile")" "$(winpath "$REPO/tools")"
 }
 
 in_container() {  # in_container <python version> <script> ; the commit is at /src
   git -C "$REPO" archive "$SHA" | MSYS_NO_PATHCONV=1 docker run -i --rm \
     -v "$(winpath "$RULESET"):/ruleset:ro" \
-    -v logarx-ci-uv:/root/.cache/uv -v logarx-ci-go:/root/go \
-    -e LOGARX_REQUIRE_CRS=1 "logarx-ci:$1" bash -c '
+    -v zodiarc-ci-uv:/root/.cache/uv -v zodiarc-ci-go:/root/go \
+    -e ZODIARC_REQUIRE_CRS=1 "zodiarc-ci:$1" bash -c '
       set -e
       mkdir -p /src && tar -x -C /src && cd /src
       # A repository, as actions/checkout leaves one: a test asks `git ls-files`.
@@ -100,8 +100,8 @@ lint_and_types() {
   { image "$LINT_PY" && in_container "$LINT_PY" '
       ruff check .
       ruff format --check .
-      mypy src/logarx
-      mypy --platform win32 src/logarx'; } > "$log" 2>&1
+      mypy src/zodiarc
+      mypy --platform win32 src/zodiarc'; } > "$log" 2>&1
   record lint-typecheck $?
 }
 
@@ -114,8 +114,8 @@ linux_tests() {  # linux_tests <python version>
         GODEBUG=cpu.all=off go test -ldflags=-checklinkname=0 -count=1 ./...)
       python -c "import sys; print(\"python\", sys.version.split()[0])"
       pytest -p no:cacheprovider --ignore=tests/gui -n 4 \
-        --cov=logarx --cov-report=term-missing --cov-fail-under=0
-      QT_QPA_PLATFORM=offscreen pytest -p no:cacheprovider tests/gui --cov=logarx --cov-append --cov-report=term-missing'; } > "$log" 2>&1
+        --cov=zodiarc --cov-report=term-missing --cov-fail-under=0
+      QT_QPA_PLATFORM=offscreen pytest -p no:cacheprovider tests/gui --cov=zodiarc --cov-append --cov-report=term-missing'; } > "$log" 2>&1
   record "linux-$1" $?
 }
 
@@ -155,12 +155,12 @@ windows_tests() {  # windows_tests <python version>
     "$UV" venv --clear --managed-python --python "$py" "$(cygpath -w "$venv")" &&
     "$UV" pip install --python "$(cygpath -w "$venv/Scripts/python.exe")" -e "$(cygpath -w "$WT")[dev,gui]" &&
     cd "$WT" &&
-    export PYTEST_DEBUG_TEMPROOT="$(cygpath -w "$TEMPROOT")" LOGARX_REQUIRE_CRS=1 &&
+    export PYTEST_DEBUG_TEMPROOT="$(cygpath -w "$TEMPROOT")" ZODIARC_REQUIRE_CRS=1 &&
     rm -f .coverage &&
     "$venv/Scripts/python.exe" -m pytest -p no:cacheprovider --ignore=tests/gui -n 4 \
-      --cov=logarx --cov-report=term-missing --cov-fail-under=0 &&
+      --cov=zodiarc --cov-report=term-missing --cov-fail-under=0 &&
     QT_QPA_PLATFORM=offscreen "$venv/Scripts/python.exe" -m pytest -p no:cacheprovider tests/gui \
-      --cov=logarx --cov-append --cov-report=term-missing
+      --cov=zodiarc --cov-append --cov-report=term-missing
   } > "$log" 2>&1
   record "windows-$py" $?
 }

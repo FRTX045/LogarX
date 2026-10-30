@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from logarx.gui.density import DEFAULT, Density, buckets_for, named
+from zodiarc.gui.density import DEFAULT, Density, buckets_for, named
 
 
 def test_a_wider_band_asks_for_more_buckets() -> None:

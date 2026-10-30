@@ -16,7 +16,7 @@ Defender removed three of its files from a Windows checkout, and the record of
 2026-10-14 was written from the 5,051 requests left rather than the 5,060 CI
 replays. So a checkout missing any corpus file is not compared, and is never
 recorded from: the test says which files are gone, and skips unless
-`LOGARX_REQUIRE_CRS=1`, where it fails.
+`ZODIARC_REQUIRE_CRS=1`, where it fails.
 
 After a deliberate change, such as a Coraza or ruleset upgrade, regenerate the
 record and read the per-rule diff before committing it:
@@ -28,7 +28,7 @@ record from it, `tools/regen-crs-corpus.sh` does the same in a Linux container
 from a fresh clone.
 
 Skipped like the contract tests when the sidecar is not built, and required in
-CI by `LOGARX_REQUIRE_CRS=1`.
+CI by `ZODIARC_REQUIRE_CRS=1`.
 """
 
 from __future__ import annotations
@@ -44,9 +44,9 @@ from typing import Any
 
 import pytest
 
-from logarx.core.event import NormalizedEvent
-from logarx.detect.crs import SidecarConfig, run_sidecar
-from logarx.evaluation.crs_corpus import _as_event, _cases
+from zodiarc.core.event import NormalizedEvent
+from zodiarc.detect.crs import SidecarConfig, run_sidecar
+from zodiarc.evaluation.crs_corpus import _as_event, _cases
 
 CONFIG = SidecarConfig()
 
@@ -54,7 +54,7 @@ CORPUS = CONFIG.rules / "tests" / "regression" / "tests"
 
 RECORDED = Path(__file__).parents[2] / "data" / "crs-corpus-detections.json"
 
-REQUIRE_ENV = "LOGARX_REQUIRE_CRS"
+REQUIRE_ENV = "ZODIARC_REQUIRE_CRS"
 
 _unbuilt = not CONFIG.binary.exists() or not CORPUS.is_dir()
 

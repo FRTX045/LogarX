@@ -36,8 +36,8 @@ import pytest
 pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 
 from conftest import settled
-from logarx.case import Case
-from logarx.gui.app import MainWindow
+from zodiarc.case import Case
+from zodiarc.gui.app import MainWindow
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -85,8 +85,8 @@ def test_a_panel_is_collectable_once_nothing_holds_it(qt_app: QApplication, pane
     the panel keeps the panel, its rows and whatever its other signals hold.
     Bound methods on the same signals let go.
     """
-    from logarx.gui.bookmarks_tab import BookmarksTab
-    from logarx.gui.panels import ClientTable
+    from zodiarc.gui.bookmarks_tab import BookmarksTab
+    from zodiarc.gui.panels import ClientTable
 
     built = {"ClientTable": ClientTable, "BookmarksTab": BookmarksTab}[panel]()
     watch = weakref.ref(built)

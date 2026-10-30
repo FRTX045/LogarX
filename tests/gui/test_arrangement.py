@@ -11,8 +11,8 @@ import json
 
 import pytest
 
-from logarx.core.graph import GraphKind
-from logarx.gui.arrangement import (
+from zodiarc.core.graph import GraphKind
+from zodiarc.gui.arrangement import (
     LIMIT,
     Move,
     MoveHistory,

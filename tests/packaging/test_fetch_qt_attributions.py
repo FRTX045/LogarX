@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 @pytest.fixture
 def fetch() -> ModuleType:
     path = ROOT / "packaging" / "fetch_qt_attributions.py"
-    spec = importlib.util.spec_from_file_location("logarx_fetch_qt_script", path)
+    spec = importlib.util.spec_from_file_location("zodiarc_fetch_qt_script", path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module

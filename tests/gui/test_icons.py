@@ -10,10 +10,10 @@ from PyQt6.QtCore import QSettings
 from PyQt6.QtGui import QColor, QImage
 from PyQt6.QtWidgets import QApplication
 
-from logarx.core.activity import ActivityCategory, Severity
-from logarx.gui._qt import required
-from logarx.gui.icon_set import file_name_of, icons_dir
-from logarx.gui.icons import (
+from zodiarc.core.activity import ActivityCategory, Severity
+from zodiarc.gui._qt import required
+from zodiarc.gui.icon_set import file_name_of, icons_dir
+from zodiarc.gui.icons import (
     DARK_INK,
     ICON_PIXELS,
     LIGHT_INK,
@@ -27,7 +27,7 @@ from logarx.gui.icons import (
     read_kind_icons,
     write_kind_icons,
 )
-from logarx.style import THEME
+from zodiarc.style import THEME
 
 #: A small drawing in a colour of its own: an icon of the reader's.
 SQUARE = (

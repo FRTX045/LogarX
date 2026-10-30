@@ -19,19 +19,19 @@ from test_triage_panel import make_case
 from test_who_else import DIRB, GOBUSTER
 
 from conftest import settled
-from logarx.core.activity import ActivityCategory, Outcome, Severity
-from logarx.core.event import NormalizedEvent
-from logarx.core.evidence import EvidenceRef
-from logarx.core.graph import GraphNode
-from logarx.evidence import EvidenceLine
-from logarx.gui.canvas import ActivityCanvas
-from logarx.gui.evidence_panel import EvidencePanel
-from logarx.gui.panels import ClientTable
-from logarx.gui.ribbon import ribbon_icon
-from logarx.gui.triage import TriagePanel
-from logarx.gui.who_else import WhoElseDialog
-from logarx.storage.base import ClientMatchPage, IpSummary
-from logarx.triage.scan import scan_case
+from zodiarc.core.activity import ActivityCategory, Outcome, Severity
+from zodiarc.core.event import NormalizedEvent
+from zodiarc.core.evidence import EvidenceRef
+from zodiarc.core.graph import GraphNode
+from zodiarc.evidence import EvidenceLine
+from zodiarc.gui.canvas import ActivityCanvas
+from zodiarc.gui.evidence_panel import EvidencePanel
+from zodiarc.gui.panels import ClientTable
+from zodiarc.gui.ribbon import ribbon_icon
+from zodiarc.gui.triage import TriagePanel
+from zodiarc.gui.who_else import WhoElseDialog
+from zodiarc.storage.base import ClientMatchPage, IpSummary
+from zodiarc.triage.scan import scan_case
 
 START = datetime(2026, 3, 10, 19, 12, tzinfo=UTC)
 BLUE = "#49a9ff"

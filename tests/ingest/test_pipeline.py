@@ -9,17 +9,17 @@ from pathlib import Path
 
 import pytest
 
-from logarx.core.event import NormalizedEvent
-from logarx.core.evidence import EvidenceRef
-from logarx.ingest.pipeline import (
+from zodiarc.core.event import NormalizedEvent
+from zodiarc.core.evidence import EvidenceRef
+from zodiarc.ingest.pipeline import (
     PROGRESS_STRIDE,
     FormatDetectionError,
     IngestCancelled,
     ingest_file,
 )
-from logarx.ingest.quarantine import Quarantine
-from logarx.parsers.registry import get_parser, register_format, unregister_format
-from logarx.storage.event_store import ParquetEventStore
+from zodiarc.ingest.quarantine import Quarantine
+from zodiarc.parsers.registry import get_parser, register_format, unregister_format
+from zodiarc.storage.event_store import ParquetEventStore
 
 LINES = [
     '203.0.113.5 - - [10/Oct/2020:13:55:36 +0000] "GET / HTTP/1.1" 200 2326 "-" "curl/8.0"',

@@ -21,13 +21,13 @@ from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import QApplication, QGraphicsPixmapItem
 from test_session_boxes import activity, chained
 
-from logarx.core.activity import ActivityCategory, Severity
-from logarx.core.graph import ActivityGraph, GraphKind, GraphNode
-from logarx.gui._qt import required
-from logarx.gui.canvas import ActivityCanvas
-from logarx.gui.icon_set import DEFAULT_ICONS, IconChoice
-from logarx.gui.icons import first_drawable, ink_for
-from logarx.style import style_for
+from zodiarc.core.activity import ActivityCategory, Severity
+from zodiarc.core.graph import ActivityGraph, GraphKind, GraphNode
+from zodiarc.gui._qt import required
+from zodiarc.gui.canvas import ActivityCanvas
+from zodiarc.gui.icon_set import DEFAULT_ICONS, IconChoice
+from zodiarc.gui.icons import first_drawable, ink_for
+from zodiarc.style import style_for
 
 PROBE, PAGE = "1.2.3.4#1/1", "1.2.3.4#1/2"
 

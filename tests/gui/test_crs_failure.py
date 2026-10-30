@@ -24,10 +24,10 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
 from conftest import settled
-from logarx.case import Case
-from logarx.detect.crs import CrsUnavailableError
-from logarx.gui import app as app_module
-from logarx.gui.app import MainWindow
+from zodiarc.case import Case
+from zodiarc.detect.crs import CrsUnavailableError
+from zodiarc.gui import app as app_module
+from zodiarc.gui.app import MainWindow
 
 PANIC = (
     "panic: wasm error: invalid table access\n"

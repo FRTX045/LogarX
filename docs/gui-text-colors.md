@@ -31,7 +31,7 @@ dialog explanations, preferences, menu items, raw logs, graph captions and resiz
 controls keep their existing neutral or already meaningful treatment. The
 layout bar already has a marker for unsaved work.
 
-All role colors come from `logarx.style.Theme`, including light-theme equivalents.
+All role colors come from `zodiarc.style.Theme`, including light-theme equivalents.
 Contrast checks require at least 4.5:1 on document, raised, alternating and selected
 surfaces for role and severity text. Source text continues to be inserted literally
 or HTML-escaped; applying color never changes the evidence or detection rules.

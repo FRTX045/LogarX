@@ -21,11 +21,11 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 from PyQt6.QtWidgets import QApplication
 from tables import cell
 
-from logarx.case import Case
-from logarx.core.window import EVERYTHING, TimeWindow
-from logarx.gui import app
-from logarx.gui.app import MainWindow
-from logarx.gui.time_filter import TimeFilterBar
+from zodiarc.case import Case
+from zodiarc.core.window import EVERYTHING, TimeWindow
+from zodiarc.gui import app
+from zodiarc.gui.app import MainWindow
+from zodiarc.gui.time_filter import TimeFilterBar
 
 FIRST = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 LAST = datetime(2024, 5, 2, 12, 0, tzinfo=UTC)
@@ -321,7 +321,7 @@ def test_the_line_beside_the_control_carries_both_counts(
     qt_app: QApplication, two_bursts: Path, settings_in_a_temp_file: Path
 ) -> None:
     """One line, both numbers, so a reader can see them agree without looking
-    from the list to the heading and back. `logarx.timerange` decides the wording;
+    from the list to the heading and back. `zodiarc.timerange` decides the wording;
     this is what proves the window fills it with the right figures."""
     window = reading(qt_app, two_bursts, BUSY)
     assert window._time_filter._summary.text() == ""
@@ -497,7 +497,7 @@ def test_a_reconstruction_of_a_range_no_longer_in_force_is_discarded(
 
 def _answers_for_the_whole_case(path: Path, client_ip: str, crs: object, **kw: object) -> object:
     """A reconstruction that arrives late, describing the whole case."""
-    from logarx.analysis import analyse_ip
+    from zodiarc.analysis import analyse_ip
 
     with Case.open(path) as case:
         return analyse_ip(case.store, client_ip, crs=crs.index)  # type: ignore[attr-defined]

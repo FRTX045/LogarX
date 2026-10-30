@@ -14,9 +14,9 @@ from PyQt6.QtGui import QTextDocument
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QTreeWidgetItem
 
-from logarx.bookmarks import EMPTY, Bookmark, Kind, Shelf, add, add_category
-from logarx.core.evidence import EvidenceRef
-from logarx.gui.bookmarks_tab import BookmarksTab, CategoriesDialog
+from zodiarc.bookmarks import EMPTY, Bookmark, Kind, Shelf, add, add_category
+from zodiarc.core.evidence import EvidenceRef
+from zodiarc.gui.bookmarks_tab import BookmarksTab, CategoriesDialog
 
 SAVED = datetime(2026, 10, 19, 14, 2, tzinfo=UTC)
 

@@ -24,12 +24,12 @@ from pathlib import Path
 
 FIRST = """
 def test_marks_the_application(qt_app):
-    qt_app.setProperty("logarx-probe", "first file")
+    qt_app.setProperty("zodiarc-probe", "first file")
 """
 
 SECOND = """
 def test_finds_the_same_application(qt_app):
-    assert qt_app.property("logarx-probe") == "first file"
+    assert qt_app.property("zodiarc-probe") == "first file"
 """
 
 

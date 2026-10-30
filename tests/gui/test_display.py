@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from logarx.gui import display
+from zodiarc.gui import display
 
 
 @pytest.fixture(autouse=True)

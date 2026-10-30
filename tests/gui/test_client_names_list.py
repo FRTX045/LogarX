@@ -10,10 +10,10 @@ from PyQt6.QtWidgets import QApplication, QTableWidgetItem
 from tables import column_of
 
 from conftest import fired
-from logarx.gui.columns import CLIENT_ADDRESS
-from logarx.gui.panels import ClientTable
-from logarx.storage.base import ClientMatchPage, IpSummary
-from logarx.style import display_safe
+from zodiarc.gui.columns import CLIENT_ADDRESS
+from zodiarc.gui.panels import ClientTable
+from zodiarc.storage.base import ClientMatchPage, IpSummary
+from zodiarc.style import display_safe
 
 START = datetime(2026, 3, 10, 19, 12, tzinfo=UTC)
 BLUE = "#49a9ff"

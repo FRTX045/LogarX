@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from logarx import rules_library
-from logarx.core.activity import ActivityCategory, Severity
-from logarx.detect.rules import RulePackError, load_pack_text
-from logarx.detect.ruleset import PackText
-from logarx.parsers.library import logarx_home
-from logarx.rule_draft import Condition, Draft, Test, rule_block
+from zodiarc import rules_library
+from zodiarc.core.activity import ActivityCategory, Severity
+from zodiarc.detect.rules import RulePackError, load_pack_text
+from zodiarc.detect.ruleset import PackText
+from zodiarc.parsers.library import zodiarc_home
+from zodiarc.rule_draft import Condition, Draft, Test, rule_block
 
 HOUSE = """\
 version: 1
@@ -33,7 +33,7 @@ def _with_id(rule_id: str) -> str:
 
 
 def test_packs_live_beside_the_saved_formats() -> None:
-    assert rules_library.rules_dir() == logarx_home() / "rules"
+    assert rules_library.rules_dir() == zodiarc_home() / "rules"
 
 
 def test_a_saved_pack_is_a_yaml_file_the_reader_can_open() -> None:

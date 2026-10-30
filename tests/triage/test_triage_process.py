@@ -4,20 +4,20 @@ import time
 import pytest
 from test_profiles import events
 
-from logarx.case import Case
+from zodiarc.case import Case
 
 
 def stubborn_worker(root, window, rules, scratch, output, stop):
     (scratch / "spill").write_bytes(b"unfinished spill")
-    from logarx.triage.scan import TriageProgress
+    from zodiarc.triage.scan import TriageProgress
 
     output.send(("progress", TriageProgress(0, 100, ())))
     time.sleep(30)
 
 
 def test_active_cancel_terminates_only_owned_worker_and_cleans_scratch(tmp_path, monkeypatch):
-    from logarx.triage import process
-    from logarx.triage.scan import ScanCancelled
+    from zodiarc.triage import process
+    from zodiarc.triage.scan import ScanCancelled
 
     monkeypatch.setattr(process, "_scan_worker", stubborn_worker)
     shared = tmp_path / "tmp"
@@ -31,8 +31,8 @@ def test_active_cancel_terminates_only_owned_worker_and_cleans_scratch(tmp_path,
 
 
 def test_spawned_scan_returns_searchable_result_and_progress(tmp_path):
-    from logarx.triage.process import run_scan
-    from logarx.triage.scan import read_page
+    from zodiarc.triage.process import run_scan
+    from zodiarc.triage.scan import read_page
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events(path="/etc/passwd"))
@@ -46,8 +46,8 @@ def test_spawned_scan_returns_searchable_result_and_progress(tmp_path):
 
 
 def test_cancel_before_spawn_does_not_start_work(tmp_path):
-    from logarx.triage.process import run_scan
-    from logarx.triage.scan import ScanCancelled
+    from zodiarc.triage.process import run_scan
+    from zodiarc.triage.scan import ScanCancelled
 
     stop = threading.Event()
     stop.set()
@@ -57,7 +57,7 @@ def test_cancel_before_spawn_does_not_start_work(tmp_path):
 
 
 def test_worker_failure_is_reported_to_parent(tmp_path):
-    from logarx.triage.process import run_scan
+    from zodiarc.triage.process import run_scan
 
     with pytest.raises(RuntimeError, match="no case"):
         run_scan(tmp_path, report=lambda progress: None, stop=threading.Event())
@@ -66,7 +66,7 @@ def test_worker_failure_is_reported_to_parent(tmp_path):
 def abruptly_exiting_worker(root, window, rules, scratch, output, stop):
     import os
 
-    from logarx.triage.scan import scan_case
+    from zodiarc.triage.scan import scan_case
 
     def exit_during_scan(progress):
         assert list(scratch.glob("scan-*/crs.sqlite"))
@@ -79,9 +79,9 @@ def abruptly_exiting_worker(root, window, rules, scratch, output, stop):
 def test_abrupt_child_exit_cleans_real_scan_files_and_preserves_completed_cache(
     tmp_path, monkeypatch
 ):
-    from logarx.core.window import TimeWindow
-    from logarx.triage import process
-    from logarx.triage.scan import scan_case
+    from zodiarc.core.window import TimeWindow
+    from zodiarc.triage import process
+    from zodiarc.triage.scan import scan_case
 
     with Case.create(tmp_path / "case") as case:
         sample = events(count=3)
@@ -108,9 +108,9 @@ def test_abrupt_child_exit_cleans_real_scan_files_and_preserves_completed_cache(
 def test_the_spawned_scan_labels_with_the_rules_it_is_handed(tmp_path):
     """The window hands the worker its rules as an argument. A worker that read
     the bundled rules for itself would rank by a ruleset the graph does not use."""
-    from logarx.detect.ruleset import PackText, RuleSet
-    from logarx.triage.process import run_scan
-    from logarx.triage.scan import read_labels
+    from zodiarc.detect.ruleset import PackText, RuleSet
+    from zodiarc.triage.process import run_scan
+    from zodiarc.triage.scan import read_labels
 
     pack = PackText(
         "house",

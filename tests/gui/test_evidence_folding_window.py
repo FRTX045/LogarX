@@ -23,15 +23,15 @@ from test_bookmarks_window import make_case, reconstruct, show, sign_in
 from test_case_search_window import SWEEPER, opened
 
 from conftest import settled
-from logarx.case import Case
-from logarx.gui import prefs
-from logarx.gui.folding import FoldRule
+from zodiarc.case import Case
+from zodiarc.gui import prefs
+from zodiarc.gui.folding import FoldRule
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-    from logarx.gui.app import MainWindow
+    from zodiarc.gui.app import MainWindow
 
 
 @pytest.fixture

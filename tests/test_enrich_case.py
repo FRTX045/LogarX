@@ -22,14 +22,14 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from logarx.case import Case
-from logarx.detect.crs.sidecar import CrsDetection, SidecarConfig
-from logarx.enrich import EnrichProgress, enrich_case
+from zodiarc.case import Case
+from zodiarc.detect.crs.sidecar import CrsDetection, SidecarConfig
+from zodiarc.enrich import EnrichProgress, enrich_case
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from logarx.core.event import NormalizedEvent
+    from zodiarc.core.event import NormalizedEvent
 
 START = datetime(2020, 10, 10, 13, 55, tzinfo=UTC)
 
@@ -77,7 +77,7 @@ def test_progress_carries_a_denominator_the_bar_can_be_drawn_from(
     draw a proportion. The manifest knows how many events were parsed, so the
     window does not have to guess or count first.
     """
-    monkeypatch.setattr("logarx.enrich.run_sidecar", replaying_everything)
+    monkeypatch.setattr("zodiarc.enrich.run_sidecar", replaying_everything)
     seen: list[EnrichProgress] = []
 
     enrich_case(a_case(tmp_path), report=seen.append, every=1)
@@ -91,7 +91,7 @@ def test_stopping_keeps_what_was_already_found(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The promise the dialog makes, and the reason it can make it."""
-    monkeypatch.setattr("logarx.enrich.run_sidecar", replaying_everything)
+    monkeypatch.setattr("zodiarc.enrich.run_sidecar", replaying_everything)
     case = a_case(tmp_path)
 
     seen = 0
@@ -112,7 +112,7 @@ def test_stopping_keeps_what_was_already_found(
 def test_a_finished_run_is_not_reported_as_stopped(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("logarx.enrich.run_sidecar", replaying_everything)
+    monkeypatch.setattr("zodiarc.enrich.run_sidecar", replaying_everything)
 
     outcome = enrich_case(a_case(tmp_path), every=1)
 
@@ -160,7 +160,7 @@ def test_crs_is_told_the_host_the_reader_named(
     told its domains now hands the real one over.
     """
     seen: list[SidecarConfig] = []
-    monkeypatch.setattr("logarx.enrich.run_sidecar", _recording(seen))
+    monkeypatch.setattr("zodiarc.enrich.run_sidecar", _recording(seen))
     case_dir = a_case(tmp_path)
     with Case.open(case_dir) as case:
         case.set_site_hosts(["www.shop.test", "shop.test"])
@@ -177,10 +177,10 @@ def test_the_host_comes_from_the_case_even_when_a_caller_builds_the_config(
 ) -> None:
     """The command line builds its own `SidecarConfig` for the paranoia level
     and the paths, and offers no way to set a host. If the case's answer only
-    applied when no config was passed, `logarx-dev enrich` would quietly go on
+    applied when no config was passed, `zodiarc-dev enrich` would quietly go on
     telling CRS the site is `localhost`."""
     seen: list[SidecarConfig] = []
-    monkeypatch.setattr("logarx.enrich.run_sidecar", _recording(seen))
+    monkeypatch.setattr("zodiarc.enrich.run_sidecar", _recording(seen))
     case_dir = a_case(tmp_path)
     with Case.open(case_dir) as case:
         case.set_site_hosts(["shop.test"])
@@ -198,7 +198,7 @@ def test_a_case_that_named_nothing_keeps_the_placeholder(
     withheld for it — the engine only trusts the rule when the host CRS was
     given is one the reader named."""
     seen: list[SidecarConfig] = []
-    monkeypatch.setattr("logarx.enrich.run_sidecar", _recording(seen))
+    monkeypatch.setattr("zodiarc.enrich.run_sidecar", _recording(seen))
 
     enrich_case(a_case(tmp_path))
 
@@ -211,10 +211,10 @@ def test_the_outcome_names_the_configuration_that_actually_ran(
     """Not the one the caller passed in, which on a named case is a different one.
 
     The host is swapped in here, so a caller reporting its own config reports a
-    run that did not happen: `logarx-dev enrich` printed a fingerprint the case it
+    run that did not happen: `zodiarc-dev enrich` printed a fingerprint the case it
     had just written did not carry.
     """
-    monkeypatch.setattr("logarx.enrich.run_sidecar", _recording([]))
+    monkeypatch.setattr("zodiarc.enrich.run_sidecar", _recording([]))
     case_dir = a_case(tmp_path)
     with Case.open(case_dir) as case:
         case.set_site_hosts(["shop.test"])
@@ -231,7 +231,7 @@ def test_a_rerun_tells_crs_the_case_s_own_site() -> None:
     they were made with how a rerun would make them, so both have to come from
     one place. A case answered for `shop.test` was enriched with that host;
     compared against `localhost` it would always look out of date."""
-    from logarx.enrich import crs_config
+    from zodiarc.enrich import crs_config
 
     assert crs_config(("shop.test",)).host == "shop.test"
     assert crs_config(()).host == SidecarConfig().host
@@ -259,7 +259,7 @@ def test_a_stopped_run_is_remembered_as_partial(
     """Requests CRS never read look exactly like requests it read and passed. A
     case reopened later has to know which kind it holds, or a partial check
     reads as a clean one."""
-    monkeypatch.setattr("logarx.enrich.run_sidecar", replaying_everything)
+    monkeypatch.setattr("zodiarc.enrich.run_sidecar", replaying_everything)
     case_dir = a_case(tmp_path)
 
     enrich_case(case_dir, should_stop=stop_after(2))
@@ -273,7 +273,7 @@ def test_a_stopped_run_is_remembered_as_partial(
 def test_a_finished_run_is_remembered_as_complete(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("logarx.enrich.run_sidecar", replaying_everything)
+    monkeypatch.setattr("zodiarc.enrich.run_sidecar", replaying_everything)
     case_dir = a_case(tmp_path)
 
     enrich_case(case_dir)
@@ -290,7 +290,7 @@ def test_stopping_a_rerun_keeps_the_complete_result_it_would_replace(
 ) -> None:
     """Enrichment only adds to a case. A rerun stopped after one request would
     otherwise swap four requests' worth of findings for one."""
-    monkeypatch.setattr("logarx.enrich.run_sidecar", replaying_everything)
+    monkeypatch.setattr("zodiarc.enrich.run_sidecar", replaying_everything)
     case_dir = a_case(tmp_path)
     enrich_case(case_dir)
     with Case.open(case_dir) as case:
@@ -313,7 +313,7 @@ def test_stopping_a_rerun_of_a_partial_result_replaces_it(
 ) -> None:
     """Nothing complete is at stake, so the newer run stands, and says how far
     it got."""
-    monkeypatch.setattr("logarx.enrich.run_sidecar", replaying_everything)
+    monkeypatch.setattr("zodiarc.enrich.run_sidecar", replaying_everything)
     case_dir = a_case(tmp_path)
     enrich_case(case_dir, should_stop=stop_after(1))
 
@@ -329,10 +329,10 @@ def test_partial_coverage_reaches_the_analysis_and_its_report(
 ) -> None:
     """Said in every deliverable built from the case, not only on the day the
     run was stopped."""
-    from logarx.caseview import reconstruct_client
-    from logarx.report.html import render_report
+    from zodiarc.caseview import reconstruct_client
+    from zodiarc.report.html import render_report
 
-    monkeypatch.setattr("logarx.enrich.run_sidecar", replaying_everything)
+    monkeypatch.setattr("zodiarc.enrich.run_sidecar", replaying_everything)
     case_dir = a_case(tmp_path)
     enrich_case(case_dir, should_stop=stop_after(2))
     with Case.open(case_dir) as case:
@@ -352,9 +352,9 @@ def test_complete_coverage_is_stated_as_such(
 ) -> None:
     """Present and empty, as `site_hosts` is: a missing key would read as a
     report written before the question existed."""
-    from logarx.caseview import reconstruct_client
+    from zodiarc.caseview import reconstruct_client
 
-    monkeypatch.setattr("logarx.enrich.run_sidecar", replaying_everything)
+    monkeypatch.setattr("zodiarc.enrich.run_sidecar", replaying_everything)
     case_dir = a_case(tmp_path)
     enrich_case(case_dir)
     with Case.open(case_dir) as case:
@@ -370,7 +370,7 @@ def test_completion_is_what_was_recorded_not_what_the_counts_suggest(tmp_path: P
     """The total comes from the manifest, and a manifest that disagreed with
     the store would otherwise turn a stopped run into a finished one, or the
     reverse."""
-    from logarx.detect.crs.store import CrsEvidence, write_detections
+    from zodiarc.detect.crs.store import CrsEvidence, write_detections
 
     write_detections(tmp_path, [])
     stopped = {"crs_fingerprint": "f", "crs_replayed": 4, "crs_requests": 4}
@@ -386,12 +386,12 @@ def test_a_rerun_does_not_hold_the_earlier_detections_while_it_replays(
 ) -> None:
     """Whether the earlier run finished is in the manifest. Loading its whole
     index to find out would hold it in memory beside the new one."""
-    monkeypatch.setattr("logarx.enrich.run_sidecar", replaying_everything)
+    monkeypatch.setattr("zodiarc.enrich.run_sidecar", replaying_everything)
     case_dir = a_case(tmp_path)
     enrich_case(case_dir)
 
     def refuse(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("the earlier detection index was loaded")
 
-    monkeypatch.setattr("logarx.detect.crs.store.load_detections", refuse)
+    monkeypatch.setattr("zodiarc.detect.crs.store.load_detections", refuse)
     assert enrich_case(case_dir, should_stop=stop_after(1)).kept_earlier

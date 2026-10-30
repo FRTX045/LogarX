@@ -24,8 +24,8 @@ pytest.importorskip("PyQt6", reason="the GUI extra is not installed")
 from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
-from logarx.gui import app as app_module
-from logarx.gui import crash
+from zodiarc.gui import app as app_module
+from zodiarc.gui import crash
 
 
 @pytest.fixture(autouse=True)
@@ -169,7 +169,7 @@ def test_a_storm_is_written_down_rather_than_shown_again(
 # -- where the terminal cannot take it ------------------------------------
 
 #: A traceback through a Windows user folder named in Chinese.
-THROUGH_A_CHINESE_FOLDER = 'File "C:\\Users\\王伟\\logarx\\src\\app.py", line 1\nValueError: x'
+THROUGH_A_CHINESE_FOLDER = 'File "C:\\Users\\王伟\\zodiarc\\src\\app.py", line 1\nValueError: x'
 
 
 def _narrow() -> io.TextIOWrapper:
@@ -241,7 +241,7 @@ def test_the_entry_point_puts_the_net_up(
         "install",
         lambda report, **kw: installed.append(report) or sys.excepthook,
     )
-    from logarx.gui import prefs
+    from zodiarc.gui import prefs
 
     themed: list[float | None] = []
     app_module._settings().setValue(prefs.TEXT_POINTS, "10")

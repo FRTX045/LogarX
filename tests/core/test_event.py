@@ -2,8 +2,8 @@
 
 from datetime import UTC, datetime
 
-from logarx.core.event import NormalizedEvent
-from logarx.core.evidence import EvidenceRef
+from zodiarc.core.event import NormalizedEvent
+from zodiarc.core.evidence import EvidenceRef
 
 WHEN = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
 

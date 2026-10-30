@@ -1,5 +1,5 @@
-logarx
-Copyright (c) 2026 the logarx authors
+zodiarc
+Copyright (c) 2026 the zodiarc authors
 Licensed under the MIT License; see LICENSE.
 
 ------------------------------------------------------------------------------
@@ -50,7 +50,7 @@ You may obtain a copy of the Apache License, Version 2.0 at
 ------------------------------------------------------------------------------
 
 The desktop application ships the Lucide icon set, version 0.452.0, as
-`logarx/gui/lucide.json` (written from the npm package lucide-static@0.452.0 by
+`zodiarc/gui/lucide.json` (written from the npm package lucide-static@0.452.0 by
 `tools/lucide_data.py`). Its licence follows, as Lucide publishes it.
 
   Lucide

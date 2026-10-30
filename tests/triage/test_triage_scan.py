@@ -1,7 +1,7 @@
 from test_profiles import events, scanned
 
-from logarx.case import Case
-from logarx.core.window import TimeWindow
+from zodiarc.case import Case
+from zodiarc.core.window import TimeWindow
 
 
 def test_client_iterator_groups_all_clients_and_filters_at_storage(tmp_path):
@@ -16,7 +16,7 @@ def test_client_iterator_groups_all_clients_and_filters_at_storage(tmp_path):
 
 
 def test_scan_cache_search_beyond_first_500_and_invalidation(tmp_path):
-    from logarx.triage.scan import read_page, scan_case
+    from zodiarc.triage.scan import read_page, scan_case
 
     with Case.create(tmp_path / "case") as case:
         case.store.write([e for i in range(505) for e in events(f"192.0.2.{i}", 1)])
@@ -41,7 +41,7 @@ def test_scan_cache_search_beyond_first_500_and_invalidation(tmp_path):
 def test_cancelled_scan_does_not_publish_a_cache(tmp_path):
     import pytest
 
-    from logarx.triage.scan import ScanCancelled, scan_case
+    from zodiarc.triage.scan import ScanCancelled, scan_case
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events())
@@ -52,8 +52,8 @@ def test_cancelled_scan_does_not_publish_a_cache(tmp_path):
 
 
 def test_scan_spill_is_owned_and_does_not_share_reconstruction_scratch(tmp_path, monkeypatch):
-    from logarx.storage.event_store import ParquetEventStore
-    from logarx.triage.scan import scan_case
+    from zodiarc.storage.event_store import ParquetEventStore
+    from zodiarc.triage.scan import scan_case
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events())
@@ -78,7 +78,7 @@ def test_scan_spill_is_owned_and_does_not_share_reconstruction_scratch(tmp_path,
 
 
 def test_native_only_scan_skips_per_request_crs_queries(tmp_path, monkeypatch):
-    from logarx.triage import scan
+    from zodiarc.triage import scan
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events())
@@ -95,7 +95,7 @@ def test_corrupt_cache_is_rebuilt(tmp_path):
     import sqlite3
     from contextlib import closing
 
-    from logarx.triage.scan import scan_case
+    from zodiarc.triage.scan import scan_case
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events())
@@ -112,7 +112,7 @@ def test_keyboard_interrupt_during_direct_scan_cleans_scratch_and_preserves_comp
 ):
     import pytest
 
-    from logarx.triage.scan import scan_case
+    from zodiarc.triage.scan import scan_case
 
     with Case.create(tmp_path / "case") as case:
         sample = events(count=3)
@@ -139,7 +139,7 @@ def test_scan_labels_with_the_case_site_hosts(tmp_path):
     domains, so a scan building its own engine silently misses every offsite
     URL the reconstruction reports for the same client.
     """
-    from logarx.triage.scan import read_page, scan_case
+    from zodiarc.triage.scan import read_page, scan_case
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events("203.0.113.9", 1, query="url=http://evil.test/x"))
@@ -160,7 +160,7 @@ def test_who_else_matched_a_rule_includes_clients_it_did_not_name(tmp_path):
     """
     from dataclasses import replace
 
-    from logarx.triage.scan import RuleMatch, read_rule_matches, scan_case
+    from zodiarc.triage.scan import RuleMatch, read_rule_matches, scan_case
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(scanned("192.0.2.31"))
@@ -183,7 +183,7 @@ def test_an_index_without_rule_counts_is_rebuilt(tmp_path):
     import sqlite3
     from contextlib import closing
 
-    from logarx.triage.scan import scan_case
+    from zodiarc.triage.scan import scan_case
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events())
@@ -201,8 +201,8 @@ def test_stored_profiles_keep_their_request_examples(tmp_path):
 
     from test_profiles import probe_attack_engine
 
-    from logarx.triage.profile import profile_client
-    from logarx.triage.scan import _profile
+    from zodiarc.triage.profile import profile_client
+    from zodiarc.triage.scan import _profile
 
     sample = events(count=4)
     sample[1] = replace(sample[1], query="probe")
@@ -215,7 +215,7 @@ def test_stored_profiles_keep_their_request_examples(tmp_path):
 
 def test_an_index_written_in_the_previous_layout_is_rebuilt(tmp_path, monkeypatch):
     """Read as current, it would hand back profiles without the facts reasons need."""
-    from logarx.triage import scan
+    from zodiarc.triage import scan
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events())
@@ -230,7 +230,7 @@ def test_an_index_written_in_the_previous_layout_is_rebuilt(tmp_path, monkeypatc
 
 def test_an_index_written_in_layout_five_is_rebuilt(tmp_path, monkeypatch):
     """Read as current, it would show every client as having no exploit evidence."""
-    from logarx.triage import scan
+    from zodiarc.triage import scan
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events())
@@ -245,7 +245,7 @@ def test_an_index_written_in_layout_five_is_rebuilt(tmp_path, monkeypatch):
 
 def test_an_index_written_in_layout_six_is_rebuilt(tmp_path, monkeypatch):
     """Read as current, it would name the lowest-id rule rather than the strongest."""
-    from logarx.triage import scan
+    from zodiarc.triage import scan
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events())
@@ -263,7 +263,7 @@ def test_suspicious_reasons_follow_the_code_not_the_cached_text(tmp_path):
     import sqlite3
     from contextlib import closing
 
-    from logarx.triage.scan import read_page, scan_case
+    from zodiarc.triage.scan import read_page, scan_case
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events("203.0.113.9", 3, path="/etc/passwd"))
@@ -282,7 +282,7 @@ def test_suspicious_reasons_follow_the_code_not_the_cached_text(tmp_path):
 
 def test_an_index_written_in_layout_seven_is_rebuilt(tmp_path, monkeypatch):
     """Read as current, it would leave clients with only CRS level 1 evidence in the second group."""
-    from logarx.triage import scan
+    from zodiarc.triage import scan
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events())
@@ -298,7 +298,7 @@ def test_an_index_written_in_layout_seven_is_rebuilt(tmp_path, monkeypatch):
 def test_an_index_written_in_layout_eight_is_rebuilt(tmp_path, monkeypatch):
     """Read as current, it would keep a visitor whose only level-1 evidence was
     an ad platform's click ID in the first group."""
-    from logarx.triage import scan
+    from zodiarc.triage import scan
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events())
@@ -315,7 +315,7 @@ def test_an_index_written_in_layout_nine_is_rebuilt(tmp_path, monkeypatch):
     """Read as current, it would keep a visitor whose only level-1 evidence was
     a file-list match inside a client's name, `libwww-perl/6.72`, in the first
     group."""
-    from logarx.triage import scan
+    from zodiarc.triage import scan
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events())
@@ -364,8 +364,8 @@ def activity_case(tmp_path):
 def test_an_activity_finds_the_clients_the_scan_saw_it_on(tmp_path):
     """By category, by part of a rule's name, and for a detection only CRS made,
     whose category no rule pack knows: the index records the labels it saw."""
-    from logarx.search import labels_for_activity
-    from logarx.triage.scan import read_activity_clients, read_labels, scan_case
+    from zodiarc.search import labels_for_activity
+    from zodiarc.triage.scan import read_activity_clients, read_labels, scan_case
 
     result = scan_case(activity_case(tmp_path))
     labels = read_labels(result.path)
@@ -383,7 +383,7 @@ def test_an_activity_finds_the_clients_the_scan_saw_it_on(tmp_path):
 
 
 def test_the_activities_in_a_scan_with_how_many_clients(tmp_path):
-    from logarx.triage.scan import read_activity_counts, scan_case
+    from zodiarc.triage.scan import read_activity_counts, scan_case
 
     result = scan_case(activity_case(tmp_path))
     counts = dict(read_activity_counts(result.path))
@@ -401,8 +401,8 @@ def test_the_count_beside_an_activity_is_the_clients_it_finds(tmp_path):
     and listed two."""
     from dataclasses import replace
 
-    from logarx.search import labels_for_activity
-    from logarx.triage.scan import (
+    from zodiarc.search import labels_for_activity
+    from zodiarc.triage.scan import (
         read_activity_clients,
         read_activity_counts,
         read_labels,
@@ -435,7 +435,7 @@ def test_an_index_without_labels_is_rebuilt(tmp_path):
     import sqlite3
     from contextlib import closing
 
-    from logarx.triage.scan import scan_case
+    from zodiarc.triage.scan import scan_case
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events())
@@ -449,7 +449,7 @@ def test_an_index_without_labels_is_rebuilt(tmp_path):
 
 def test_an_index_written_in_layout_ten_is_rebuilt(tmp_path, monkeypatch):
     """It has no table of labels, so `activity:` could not be answered from it."""
-    from logarx.triage import scan
+    from zodiarc.triage import scan
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events())
@@ -466,7 +466,7 @@ def test_a_change_in_what_a_file_records_is_a_scan_of_its_own(tmp_path, monkeypa
     """A scan cached while a common-format log was read as clients without a
     User-Agent holds every one of them as reconnaissance. Served again, the
     fix would not reach a case the reader had already scanned."""
-    from logarx.triage.scan import scan_case
+    from zodiarc.triage.scan import scan_case
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events("192.0.2.1", 3))
@@ -485,7 +485,7 @@ def test_a_change_in_what_a_file_records_is_a_scan_of_its_own(tmp_path, monkeypa
 
 
 def test_a_scan_says_when_its_crs_evidence_covers_part_of_the_case(tmp_path):
-    from logarx.triage.scan import scan_case
+    from zodiarc.triage.scan import scan_case
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events("192.0.2.1", 2))
@@ -504,7 +504,7 @@ def test_asking_about_coverage_loads_no_detections(tmp_path, monkeypatch):
     """The scan streams CRS records through a disk table. Reading the whole
     index into memory to ask whether the run finished would undo that on every
     call, cached ones included."""
-    from logarx.triage.scan import scan_case
+    from zodiarc.triage.scan import scan_case
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(events("192.0.2.1", 2))
@@ -515,7 +515,7 @@ def test_asking_about_coverage_loads_no_detections(tmp_path, monkeypatch):
     def refuse(*_args, **_kwargs):
         raise AssertionError("the whole detection index was loaded")
 
-    monkeypatch.setattr("logarx.detect.crs.store.load_detections", refuse)
+    monkeypatch.setattr("zodiarc.detect.crs.store.load_detections", refuse)
     assert not scan_case(root).crs_partial
     assert scan_case(root).cached
 
@@ -524,9 +524,9 @@ def named_scan(tmp_path):
     """Three clients, 192.0.2.0 to .2, each with one request."""
     from datetime import UTC, datetime, timedelta
 
-    from logarx.core.event import NormalizedEvent
-    from logarx.core.evidence import EvidenceRef
-    from logarx.triage.scan import scan_case
+    from zodiarc.core.event import NormalizedEvent
+    from zodiarc.core.evidence import EvidenceRef
+    from zodiarc.triage.scan import scan_case
 
     with Case.create(tmp_path / "case") as case:
         case.store.write(
@@ -548,7 +548,7 @@ def named_scan(tmp_path):
 
 
 def test_read_page_finds_named_addresses(tmp_path):
-    from logarx.triage.scan import read_page
+    from zodiarc.triage.scan import read_page
 
     result = named_scan(tmp_path)
 
@@ -559,7 +559,7 @@ def test_read_page_finds_named_addresses(tmp_path):
 
 
 def test_read_page_without_names_is_unchanged(tmp_path):
-    from logarx.triage.scan import read_page
+    from zodiarc.triage.scan import read_page
 
     result = named_scan(tmp_path)
 
@@ -568,7 +568,7 @@ def test_read_page_without_names_is_unchanged(tmp_path):
 
 
 def test_named_and_address_matches_count_once(tmp_path):
-    from logarx.triage.scan import read_page
+    from zodiarc.triage.scan import read_page
 
     result = named_scan(tmp_path)
     everyone = read_page(result.path, "all")

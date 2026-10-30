@@ -1,6 +1,6 @@
 """Tests for the graph model itself, as opposed to how one is built or drawn."""
 
-from logarx.core.graph import ActivityGraph, GraphEdge, GraphKind, reciprocal_pairs
+from zodiarc.core.graph import ActivityGraph, GraphEdge, GraphKind, reciprocal_pairs
 
 
 def _map(*edges: GraphEdge) -> ActivityGraph:
