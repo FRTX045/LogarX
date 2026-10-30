@@ -2,7 +2,7 @@
 
 A claim that the tool is accurate needs something to be accurate *about*. This
 is that something: a sidecar beside a log, recording for every line which
-activity produced it. The LogarX Dataset shopfront builds write it from the
+activity produced it. The Zodiarc Dataset shopfront builds write it from the
 ledger of the client that made each request; `convert-csic` writes it from
 CSIC's own labels.
 
@@ -42,10 +42,9 @@ __all__ = [
 TRUTH_KIND: Final = "zodiarc-truth"
 TRUTH_VERSION: Final = 1
 
-#: Kinds read as truth. The tool was called logarc until 2026-10-28 and LogarX
-#: until 2026-10-30; the dataset project and every truth file made before
-#: then say so.
-_READ_KINDS: Final = frozenset({TRUTH_KIND, "logarx-truth", "logarc-truth"})
+#: Kinds read as truth. The Zodiarc Dataset's releases were built while the
+#: tool was called logarc, and their truth files say `logarc-truth`.
+_READ_KINDS: Final = frozenset({TRUTH_KIND, "logarc-truth"})
 
 #: What a truth file is able to say about each request.
 #:

@@ -126,7 +126,6 @@ from zodiarc.gui.window_controls import install_window_controls
 from zodiarc.gui.workers import run_job
 from zodiarc.ingest.pipeline import IngestCancelled
 from zodiarc.ingest.quarantine import DIRECTORY_NAME as QUARANTINE_DIR
-from zodiarc.parsers.library import move_old_home
 from zodiarc.report import export
 from zodiarc.search import (
     Scope,
@@ -282,41 +281,6 @@ def _settings() -> QSettings:
     read its own leftovers back on the next run.
     """
     return QSettings(*_SETTINGS)
-
-
-#: Where the preferences were kept before the tool was renamed, newest first:
-#: LogarX from 2026-10-28, logarc before that.
-_OLD_SETTINGS = (("LogarX", "LogarX"), ("logarc", "logarc"))
-
-
-def move_old_settings(new: QSettings, *olds: QSettings) -> int:
-    """Copy the preferences kept under an old name, once; how many were copied.
-
-    `QSettings` files them under the organisation and application names, so a
-    rename would otherwise start every reader over: their text size, their
-    icons, the cases they had open. Nothing is copied over preferences already
-    kept under the new name, which is also what makes it happen only once. The
-    old ones are left where they were. `olds` go newest first, and the first
-    that has any is the one copied: not a blend of two names.
-    """
-    if new.allKeys():
-        return 0
-    old = next((found for found in olds if found.allKeys()), None)
-    if old is None:
-        return 0
-    keys = old.allKeys()
-    for key in keys:
-        new.setValue(key, old.value(key))
-    new.sync()
-    return len(keys)
-
-
-def _move_old_name_over() -> None:
-    """Bring over what the reader had under the old names: their folder of
-    formats, rules and icons, and their preferences. A seam, so that a test
-    starting the window never copies the real machine's."""
-    move_old_home()
-    move_old_settings(_settings(), *(QSettings(*names) for names in _OLD_SETTINGS))
 
 
 def _whole(phrase: str) -> str:
@@ -3392,7 +3356,6 @@ def main() -> int:
     app = running if isinstance(running, QApplication) else QApplication(sys.argv)
     app.setApplicationName("Zodiarc")
     install_application_icon(app)
-    _move_old_name_over()
     apply_theme(
         app, points=prefs.text_points_in(_settings().value, automatic=automatic_points_for(app))
     )

@@ -1,6 +1,6 @@
 # apache-shopfront excerpt
 
-A slice of the LogarX Dataset `apache-shopfront` medium build
+A slice of the Zodiarc Dataset `apache-shopfront` medium build
 (`2026-09-07-medium`, seed 19, 243,908 lines), cut by `cut_excerpt.py`:
 every line of twelve hostile clients chosen so that each hostile category the
 tool knows appears, plus the first forty ordinary clients by first appearance

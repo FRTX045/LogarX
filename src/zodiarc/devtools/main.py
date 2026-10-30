@@ -40,7 +40,7 @@ from zodiarc.evaluation.truth import TruthError, read_truth
 from zodiarc.ingest.parallel import DEFAULT_WORKERS
 from zodiarc.ingest.pipeline import DEFAULT_MAX_LINE_BYTES, FormatDetectionError
 from zodiarc.ingest.reader import LogSourceError
-from zodiarc.parsers.library import FormatLibraryError, move_old_home
+from zodiarc.parsers.library import FormatLibraryError
 from zodiarc.parsers.registry import (
     UnknownFormatError,
     register_saved_formats,
@@ -165,7 +165,6 @@ def main(
 ) -> None:
     """Developer tools: build cases from logs, and measure what Zodiarc gets right."""
     safe_output()
-    move_old_home()
     _install_saved_formats()
 
 

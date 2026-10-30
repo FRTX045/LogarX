@@ -8,7 +8,7 @@ rest of this page is about the full builds, which are not in the repository
 and are downloaded from the dataset's releases.
 
 The full builds are real logs, with the answer key. Everything under `samples/apache-shopfront/` is
-a build of the LogarX Dataset `apache-shopfront` project: a real Apache 2.4
+a build of the Zodiarc Dataset `apache-shopfront` project: a real Apache 2.4
 serving a real PHP shop, driven by scripted shoppers and crawlers, a real
 Chromium for some sessions, real security tools and six scripted attack
 campaigns, with every log line joined to a record of which client made it and
@@ -83,12 +83,12 @@ commit, and every attack command line with its source address) and
 ## Getting them
 
 **The `2026-10-06` builds are published,** one release per build on
-[LogarX Dataset](https://github.com/FRTX045/LogarX-Dataset/releases), each tagged at
+[Zodiarc Dataset](https://github.com/FRTX045/Zodiarc-Dataset/releases), each tagged at
 the commit that holds the build's manifest. Download one, unpack it and check it:
 
 ```bash
 B=samples/apache-shopfront/2026-10-06-medium
-gh release download 2026-10-06-medium -R FRTX045/LogarX-Dataset -D $B
+gh release download 2026-10-06-medium -R FRTX045/Zodiarc-Dataset -D $B
 (cd $B && xz -dk *.xz && sha256sum -c SHA256SUMS --ignore-missing)
 ```
 
@@ -114,7 +114,7 @@ rebuild route below can be attempted — it just produces a comparable corpus
 rather than these bytes, for the reason given under it.
 
 The method is unchanged and a newer build is worth having. Copy a folder from
-[LogarX Dataset](https://github.com/FRTX045/LogarX-Dataset)'s
+[Zodiarc Dataset](https://github.com/FRTX045/Zodiarc-Dataset)'s
 `datasets/apache-shopfront/`, then check it:
 
 ```bash

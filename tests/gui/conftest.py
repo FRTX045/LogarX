@@ -189,9 +189,6 @@ def settings_in_a_temp_file(tmp_path_factory: pytest.TempPathFactory) -> Iterato
     ini = tmp_path_factory.mktemp("settings") / "zodiarc.ini"
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(app, "_settings", lambda: QSettings(str(ini), QSettings.Format.IniFormat))
-        # Starting the window brings over what the machine kept under the old
-        # name, logarc: its real folder and its real registry. Not from a test.
-        patch.setattr(app, "_move_old_name_over", lambda: None)
         yield ini
 
 

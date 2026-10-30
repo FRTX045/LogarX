@@ -85,25 +85,11 @@ def test_reading_a_file_that_is_not_truth_is_an_error(tmp_path: Path) -> None:
 
 
 def test_a_truth_file_written_under_the_old_name_is_still_read(tmp_path: Path) -> None:
-    """The tool was called logarc until 2026-10-28, and the dataset project and
-    every truth file made before then say `logarc-truth`."""
+    """The Zodiarc Dataset's releases were built while the tool was called
+    logarc, and their truth files say `logarc-truth`."""
     path = tmp_path / "t.jsonl"
     path.write_text(
         '{"kind": "logarc-truth", "version": 1, "scenario": "s", "seed": 1, '
-        '"source_file_id": "a.log", "granularity": "category"}\n'
-        '{"line_no": 1, "client_ip": "203.0.113.5", "category": "browsing", '
-        '"instance_id": "203.0.113.5#1"}\n',
-        encoding="utf-8",
-    )
-
-    assert read_truth(path).scenario == "s"
-
-
-def test_a_truth_file_written_as_logarx_is_still_read(tmp_path: Path) -> None:
-    """The tool wrote `logarx-truth` from 2026-10-28 to 2026-10-30."""
-    path = tmp_path / "t.jsonl"
-    path.write_text(
-        '{"kind": "logarx-truth", "version": 1, "scenario": "s", "seed": 1, '
         '"source_file_id": "a.log", "granularity": "category"}\n'
         '{"line_no": 1, "client_ip": "203.0.113.5", "category": "browsing", '
         '"instance_id": "203.0.113.5#1"}\n',

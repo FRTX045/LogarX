@@ -183,12 +183,12 @@ complete and is not.
 Scored 2026-10-14 as the complete tool, native rules plus OWASP CRS at paranoia
 level 2 (revision `d694d465`, configuration `f4a1c8296441d261`), on 235,732
 requests from the
-[LogarX Dataset](https://github.com/FRTX045/LogarX-Dataset) `apache-shopfront`
+[Zodiarc Dataset](https://github.com/FRTX045/Zodiarc-Dataset) `apache-shopfront`
 build `2026-10-06-medium`: **accuracy 0.9975, macro F1 0.9525 and 0 false alarms**, with 41
 attack requests missed. Macro F1 is the lower figure because it weighs every
 category equally, and the smallest categories hold only a handful of requests.
 The build is published as a
-[release of the dataset](https://github.com/FRTX045/LogarX-Dataset/releases/tag/2026-10-06-medium),
+[release of the dataset](https://github.com/FRTX045/Zodiarc-Dataset/releases/tag/2026-10-06-medium),
 and rerun from a fresh download on 2026-10-28 it gave every one of those figures
 again. What anyone can rerun without downloading anything is the
 committed 3,825-request excerpt, which the test suite scores with CRS

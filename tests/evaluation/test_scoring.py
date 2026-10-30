@@ -1,6 +1,6 @@
 """Scoring a whole case against a real log whose contents are known.
 
-The excerpt under tests/data/apache-shopfront is a slice of the LogarX Dataset
+The excerpt under tests/data/apache-shopfront is a slice of the Zodiarc Dataset
 medium build. The floors below come from one native (no CRS) measurement of
 it on 2026-09-08, set a little under what came out so a regression shows and
 noise does not:

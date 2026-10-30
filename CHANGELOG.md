@@ -432,12 +432,10 @@ issue was a trial release, and its files were replaced.
 
 - **LogarX is now Zodiarc.** The package is `zodiarc`, the commands `zodiarc-gui`
   and `zodiarc-dev`, the variables `ZODIARC_HOME` and the rest `ZODIARC_*`, and
-  the repository `FRTX045/Zodiarc` (the old address redirects). What a reader had
-  under either earlier name comes with them: on first start the folder of saved
-  formats, rules and icons is copied to Zodiarc's, and the window's preferences
-  with it, from the newest of the two names that has any; the old ones are left
-  where they were. A truth file saying `logarx-truth` or `logarc-truth` is read
-  as one, and the tool now writes `zodiarc-truth`.
+  the repository `FRTX045/Zodiarc` (the old address redirects). Nothing is
+  carried over from a folder or preferences kept under an earlier name. The tool
+  writes `zodiarc-truth`, and still reads `logarc-truth`, which is what the
+  Zodiarc Dataset's releases say.
 
 - HTML reconstruction graphs now use request-sized circles, shared severity
   colours and outcome outlines, bundled category icons, captions and named
@@ -451,13 +449,10 @@ issue was a trial release, and its files were replaced.
 
 - **logarc is now LogarX.** The package is `logarx`, the commands `logarx-gui`
   and `logarx-dev`, the variables `LOGARX_HOME` and the rest `LOGARX_*`, and the
-  repository `FRTX045/LogarX` (the old address redirects). What a reader had
-  under the old name comes with them: on first start the folder of saved
-  formats, rules and icons is copied to LogarX's, and the window's preferences
-  with it; the old ones are left where they were. Cases and truth files made
-  before still open: a truth file saying `logarc-truth` is read as one. The CRS
-  configuration file keeps its old comment, because its bytes are part of every
-  recorded CRS fingerprint.
+  repository `FRTX045/LogarX` (the old address redirects). Cases and truth
+  files made before still open: a truth file saying `logarc-truth` is read as
+  one. The CRS configuration file keeps its old comment, because its bytes are
+  part of every recorded CRS fingerprint.
 
 - **The command line is developer tooling, named `logarc-dev`** (ADR-0012, step 2).
   The window is how logarc is used. The package moves from `logarc.cli` to
